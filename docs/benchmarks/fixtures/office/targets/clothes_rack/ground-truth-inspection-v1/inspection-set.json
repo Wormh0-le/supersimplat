@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "status": "rendered-pending-independent-ground-truth-annotation",
+  "purpose": "RGB-only multi-direction inspection set for Benchmark Ground Truth annotation",
+  "inspection_layout_version": "office-ground-truth-inspection-v1",
+  "target_id": "clothes_rack",
+  "source_ply": {
+    "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+    "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1",
+    "gaussian_count": 3680541
+  },
+  "resolution": [1008, 1008],
+  "horizontal_fov_degrees": 55.0,
+  "seed_region_framing": {
+    "seed_regions_manifest": "seed-regions.json",
+    "seed_regions_manifest_sha256": "3cf7a5206b61a9718f4a86d391cabd3727249acfffc622fa72ca91dae09c2fb6",
+    "stable_gaussian_id_count": 1658,
+    "center": [7.147896766662598, 0.6052725315093994, 0.8250077962875366],
+    "extent": [0.22533845901489258, 0.18471312522888184, 1.5977319478988647],
+    "scope_note": "Used only to frame inspection cameras. It is not a Benchmark Ground Truth label, candidate selection, or lifting result."
+  },
+  "independence": {
+    "sam_masks_loaded": false,
+    "lifting_results_loaded": false,
+    "required_next_step": "An independent annotation pass must classify relevant Stable Gaussian IDs as selected, rejected, or ambiguous before lifting outputs are evaluated."
+  },
+  "inspection_requirements": {
+    "required_roles": ["anchor", "opposite", "left", "right", "top", "bottom"],
+    "additional_roles": ["oblique"]
+  },
+  "frames": [
+    {
+      "frame_index": 0,
+      "view_id": "anchor",
+      "inspection_role": "anchor",
+      "file": "frames/00-anchor.png",
+      "sha256": "322399367cbfc3950b399604c48eed7b6f614305f9241f3b56def92be4f9fe7d",
+      "camera_to_world": [
+        [
+          0.9706048965454102, -0.032923851162195206, 0.2384159117937088,
+          6.429999828338623
+        ],
+        [
+          -0.24067844450473785, -0.13277487456798553, 0.9614805579185486,
+          -1.850000023841858
+        ],
+        [0.0, -0.9905993342399597, -0.1367960125207901, 1.2000000476837158],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "frozen-anchor-image",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 1.0,
+        "seed_center_depth": 2.6650006771087646
+      }
+    },
+    {
+      "frame_index": 1,
+      "view_id": "opposite",
+      "inspection_role": "opposite",
+      "file": "frames/01-opposite.png",
+      "sha256": "6d25a5f1e18b9f7674729abe0e512356e396d95999c82c3c7831d93ea427a25a",
+      "camera_to_world": [
+        [
+          -0.9598131775856018, 0.04070441424846649, -0.27767208218574524,
+          7.865793704986572
+        ],
+        [
+          0.2806397080421448, 0.13921278715133667, -0.9496636986732483,
+          3.0605452060699463
+        ],
+        [0.0, -0.989425539970398, -0.1450415402650833, 1.2000000476837158],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "service-rendered-inspection-view",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9794933655006032,
+        "seed_center_depth": 2.489104747772217
+      }
+    },
+    {
+      "frame_index": 2,
+      "view_id": "left_orbit",
+      "inspection_role": "left",
+      "file": "frames/02-left_orbit.png",
+      "sha256": "329a21a55f5eb84d53cbae68b3a652d4caa196b42d17864522d48252d10a8421",
+      "camera_to_world": [
+        [
+          0.2806397080421448, 0.13921278715133667, -0.9496636986732483,
+          9.603169441223145
+        ],
+        [
+          0.9598131775856018, -0.04070441424846649, 0.27767208218574524,
+          -0.1126243993639946
+        ],
+        [-0.0, -0.989425539970398, -0.1450415402650833, 1.2000000476837158],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "service-rendered-inspection-view",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.97708082026538,
+        "seed_center_depth": 2.579843044281006
+      }
+    },
+    {
+      "frame_index": 3,
+      "view_id": "right_orbit",
+      "inspection_role": "right",
+      "file": "frames/03-right_orbit.png",
+      "sha256": "cebb1ab616a7a7ab307af59c9c12067b146804c91e9f4b3332c59feca3ef4bb2",
+      "camera_to_world": [
+        [
+          -0.2806397080421448, -0.13921278715133667, 0.9496636986732483,
+          4.692624092102051
+        ],
+        [
+          -0.9598131775856018, 0.04070441424846649, -0.27767208218574524,
+          1.323169469833374
+        ],
+        [0.0, -0.989425539970398, -0.1450415402650833, 1.2000000476837158],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "service-rendered-inspection-view",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.97708082026538,
+        "seed_center_depth": 2.5759878158569336
+      }
+    },
+    {
+      "frame_index": 4,
+      "view_id": "top",
+      "inspection_role": "top",
+      "file": "frames/04-top.png",
+      "sha256": "90c2c854f863a7779162a9c593d7cf8cc9224e6b4d81eb1712017893a0d66629",
+      "camera_to_world": [
+        [1.0, 0.0, 0.0, 7.147896766662598],
+        [-0.0, -1.0, 0.0, 0.6052725315093994],
+        [0.0, -0.0, -1.0, 3.3830814361572266],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "service-rendered-inspection-view",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.97708082026538,
+        "seed_center_depth": 2.5063836574554443
+      }
+    },
+    {
+      "frame_index": 5,
+      "view_id": "bottom",
+      "inspection_role": "bottom",
+      "file": "frames/05-bottom.png",
+      "sha256": "26d9be4e0baa5c3c1817fb5f1a8d4daf269c49905efe78e4c1744dfcd1d1b110",
+      "camera_to_world": [
+        [-1.0, 0.0, 0.0, 7.147896766662598],
+        [0.0, -1.0, 0.0, 0.6052725315093994],
+        [0.0, 0.0, 1.0, -1.7330657243728638],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "service-rendered-inspection-view",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.97708082026538,
+        "seed_center_depth": 2.6097633838653564
+      }
+    },
+    {
+      "frame_index": 6,
+      "view_id": "oblique",
+      "inspection_role": "oblique",
+      "file": "frames/06-oblique.png",
+      "sha256": "cb2d9cd8863f031c320aee269389651a8168d0a49466d1ca6c7b7d3d2c64dfb4",
+      "camera_to_world": [
+        [
+          0.8771326541900635, 0.24605126678943634, -0.41242823004722595,
+          8.3764066696167
+        ],
+        [
+          0.4802481234073639, -0.4493918716907501, 0.753265380859375,
+          -1.638497233390808
+        ],
+        [-0.0, -0.8587815761566162, -0.5123419761657715, 2.351133108139038],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "service-rendered-inspection-view",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9794933655006032,
+        "seed_center_depth": 3.0079309940338135
+      }
+    }
+  ],
+  "contact_sheet": {
+    "file": "contact-sheet.png",
+    "sha256": "5e57736046a5a59465ca4f35825a2dfa9a56479209f1e33e1a3c9f1ed2e765a8"
+  }
+}

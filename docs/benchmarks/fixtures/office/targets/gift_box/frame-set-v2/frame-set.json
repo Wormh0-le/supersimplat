@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "status": "candidate-frame-set-mask-validation-pending",
+  "frame_set_version": "frame-set-v2",
+  "render_config_version": "frame-set-1008-v1",
+  "target_id": "gift_box",
+  "source_ply": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+  "resolution": [1008, 1008],
+  "horizontal_fov_degrees": 55.0,
+  "anchor_frame_index": 4,
+  "frames": [
+    {
+      "frame_index": 0,
+      "candidate_id": "ring-09",
+      "category": "ring",
+      "file": "frames/000-ring-09.png",
+      "camera_to_world": [
+        [
+          -0.04850584641098976, -0.3773135840892792, 0.9248144030570984,
+          6.692260265350342
+        ],
+        [
+          -0.9988229274749756, 0.01832348294556141, -0.04491177201271057,
+          0.7392241358757019
+        ],
+        [0.0, -0.9259043335914612, -0.3777582347393036, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "c3643b7e7df4621cb99d297a672f918d59ab457bc5b0eaabc80fe947101fd98c",
+      "source": "service-rendered-generated-view"
+    },
+    {
+      "frame_index": 1,
+      "candidate_id": "replacement-06",
+      "category": "replacement",
+      "file": "frames/001-replacement-06.png",
+      "camera_to_world": [
+        [
+          0.21166127920150757, -0.6957249045372009, 0.6864156723022461,
+          7.391820430755615
+        ],
+        [
+          -0.9773430824279785, -0.15067178010940552, 0.1486556977033615,
+          0.521458089351654
+        ],
+        [0.0, -0.7023282647132874, -0.7118533253669739, 0.8499999642372131],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "94e6a04d9aa896db549ef6d21fda00d000a42d69a4073a8fe2f2d3d99a791c9b",
+      "source": "service-rendered-generated-view"
+    },
+    {
+      "frame_index": 2,
+      "candidate_id": "ring-10",
+      "category": "ring",
+      "file": "frames/002-ring-10.png",
+      "camera_to_world": [
+        [
+          0.45740410685539246, -0.3359249234199524, 0.8233686685562134,
+          6.845038414001465
+        ],
+        [
+          -0.8892589807510376, -0.17278818786144257, 0.42351242899894714,
+          0.03377406299114227
+        ],
+        [0.0, -0.9259042739868164, -0.377758264541626, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "b54a5aaa0ff2b430540859d82edbc7257c3863e054655ab5ca1d6a9a6a9533da",
+      "source": "service-rendered-generated-view"
+    },
+    {
+      "frame_index": 3,
+      "candidate_id": "ring-11",
+      "category": "ring",
+      "file": "frames/003-ring-11.png",
+      "camera_to_world": [
+        [
+          0.8407530188560486, -0.20452545583248138, 0.5013020634651184,
+          7.33007287979126
+        ],
+        [
+          -0.5414189100265503, -0.31760138273239136, 0.7784568071365356,
+          -0.500774621963501
+        ],
+        [0.0, -0.925904393196106, -0.3777582347393036, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "acb59bb82660c6bca1e271401527af70c6acf3c099eac19daae29b8e248c3ac9",
+      "source": "service-rendered-generated-view"
+    },
+    {
+      "frame_index": 4,
+      "candidate_id": "anchor",
+      "category": "anchor",
+      "file": "frames/004-anchor.png",
+      "camera_to_world": [
+        [1.0, 0.0, 0.0, 8.017399787902832],
+        [-0.0, -0.09950371831655502, 0.9950371384620667, -0.7211899757385254],
+        [0.0, -0.9950371384620667, -0.09950371831655502, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "c857d7c46a1158246e70b4d34f9bf35a373a10380d9da6dd5b1efba2bbeb0734",
+      "source": "frozen-anchor-image"
+    },
+    {
+      "frame_index": 5,
+      "candidate_id": "upper-00",
+      "category": "upper",
+      "file": "frames/005-upper-00.png",
+      "camera_to_world": [
+        [
+          0.9988229274749756, -0.02425292879343033, 0.04200730472803116,
+          8.017399787902832
+        ],
+        [
+          -0.04850585758686066, -0.4994114637374878, 0.8650060296058655,
+          -0.7211900353431702
+        ],
+        [0.0, -0.866025447845459, -0.5, 0.9361611008644104],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "ef2da3279ddf27bebbc40f9906a700ea46de6752c4fc4d7a1bc5441334506a5f",
+      "source": "service-rendered-generated-view"
+    },
+    {
+      "frame_index": 6,
+      "candidate_id": "replacement-00",
+      "category": "replacement",
+      "file": "frames/006-replacement-00.png",
+      "camera_to_world": [
+        [
+          0.9773431420326233, 0.15067161619663239, -0.1486554741859436,
+          8.2351655960083
+        ],
+        [
+          0.21166101098060608, -0.6957250833511353, 0.6864155530929565,
+          -0.021629923954606056
+        ],
+        [-0.0, -0.702328085899353, -0.7118534445762634, 0.8499999642372131],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "c631c4953dbe3242462ffc99631ba93bf4190cb411ddf2fdc9ccfdc4167c172d",
+      "source": "service-rendered-generated-view"
+    },
+    {
+      "frame_index": 7,
+      "candidate_id": "ring-01",
+      "category": "ring",
+      "file": "frames/007-ring-01.png",
+      "camera_to_world": [
+        [
+          0.8892589807510376, 0.17278818786144257, -0.42351242899894714,
+          8.72284984588623
+        ],
+        [
+          0.45740410685539246, -0.3359249234199524, 0.8233686685562134,
+          -0.5684120655059814
+        ],
+        [-0.0, -0.9259042739868164, -0.377758264541626, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "468bcf2da225a64d6f1e4143d02bb4dc08db62fe528cf7af92cbf4433f98c956",
+      "source": "service-rendered-generated-view"
+    },
+    {
+      "frame_index": 8,
+      "candidate_id": "ring-02",
+      "category": "ring",
+      "file": "frames/008-ring-02.png",
+      "camera_to_world": [
+        [
+          0.541418731212616, 0.31760141253471375, -0.7784568667411804,
+          9.25739860534668
+        ],
+        [
+          0.8407530784606934, -0.2045253962278366, 0.5013019442558289,
+          -0.0833774283528328
+        ],
+        [-0.0, -0.9259042739868164, -0.377758264541626, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "ddf328501ab277397a6d74669e05d152c6193a63d9dee86a16ba1a18c316b78c",
+      "source": "service-rendered-generated-view"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "purpose": "accepted SAM3.1 adapter prompt script for the gift-box Frame Set",
+  "target_id": "gift_box",
+  "frame_set_version": "frame-set-v2",
+  "frame_set_manifest_sha256": "bdf0730e0dc21d3bfa9dfe6a7f1cf7ed1eb6831b95e7320f65f5de7f00537cb2",
+  "track_id": "primary-include",
+  "role": "include",
+  "anchor": {
+    "candidate_id": "anchor",
+    "frame_index": 4,
+    "image": "gift_box/anchor-candidate/frames/office_overview_00.png",
+    "image_sha256": "c857d7c46a1158246e70b4d34f9bf35a373a10380d9da6dd5b1efba2bbeb0734"
+  },
+  "adapter_prompt": {
+    "prompt_type": "positive_box_and_text",
+    "box_format": "relative_xywh",
+    "box": [0.4, 0.63, 0.3, 0.29],
+    "text": "green gift box",
+    "output_prob_threshold": 0.5
+  },
+  "source_anchor_mask_prompt_log": {
+    "path": "gift_box/sam31-anchor-probe/prompt-log.json",
+    "sha256": "24c696ff8824411edf722fc49edb8c61a13a1b9f7cbf138d17d56b659158d599"
+  },
+  "selection_evidence": {
+    "rejected_alternative": {
+      "adapter_prompt_type": "positive_box",
+      "reason": "The box-only forward diagnostic returned empty masks for ring-01 and ring-02 despite visually usable renders.",
+      "artifact": "gift_box/frame-set-v2-forward-probe/sam31-track-forward-probe/tracking.json"
+    },
+    "accepted_combination": {
+      "reason": "The same Anchor box plus the target-specific text produced clean non-empty masks on anchor, ring-01, and ring-02; a full-frame diagnostic then produced non-empty, non-border-touching masks for all nine selected frames.",
+      "artifacts": [
+        "gift_box/frame-set-v2-forward-probe/sam31-track-text-prompt-probe/tracking.json",
+        "gift_box/frame-set-v2/sam31-track-text-prompt-v2-diagnostic/tracking.json"
+      ]
+    }
+  },
+  "scope_note": "This is an adapter-specific benchmark bootstrap prompt. The editor-facing point-only service contract remains separate from this fixture."
+}

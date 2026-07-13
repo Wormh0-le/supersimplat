@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "status": "candidate-frame-set-mask-validation-pending",
+  "frame_set_version": "frame-set-v1",
+  "render_config_version": "frame-set-1008-v1",
+  "target_id": "microwave",
+  "source_ply": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+  "resolution": [1008, 1008],
+  "horizontal_fov_degrees": 42.0,
+  "anchor_frame_index": 2,
+  "frames": [
+    {
+      "frame_index": 0,
+      "candidate_id": "replacement-07",
+      "category": "replacement",
+      "file": "frames/000-replacement-07.png",
+      "camera_to_world": [
+        [
+          -0.5069910883903503, -0.12705789506435394, 0.8525351881980896,
+          12.634875297546387
+        ],
+        [
+          -0.8619512915611267, 0.0747341737151146, -0.501452624797821,
+          -1.368032455444336
+        ],
+        [0.0, -0.989075779914856, -0.14740727841854095, 1.149999976158142],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "77133c3bd8dcabfe0c8b705b9e1bb5718608f1832ec842e12fa7031beccb2ee1",
+      "source": "service-rendered-generated-view"
+    },
+    {
+      "frame_index": 1,
+      "candidate_id": "ring-11",
+      "category": "ring",
+      "file": "frames/001-ring-11.png",
+      "camera_to_world": [
+        [
+          -0.5069910883903503, -0.005464882589876652, 0.8619338870048523,
+          12.020779609680176
+        ],
+        [
+          -0.8619512319564819, 0.003214389318600297, -0.5069808959960938,
+          -1.006827473640442
+        ],
+        [0.0, -0.9999797344207764, -0.006340129766613245, 1.0],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "2688a20420798021110ad73f4f248e6de79744c38218853510ec0d50c0daf4cb",
+      "source": "service-rendered-generated-view"
+    },
+    {
+      "frame_index": 2,
+      "candidate_id": "anchor",
+      "category": "anchor",
+      "file": "frames/002-anchor.png",
+      "camera_to_world": [
+        [0.0, 0.0, 1.0, 11.77299976348877],
+        [-1.0, 0.0, 0.0, -1.902500033378601],
+        [0.0, -1.0, 0.0, 1.0],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "0cbbd4989ac217f90331ff04877d78e8b78dcc315b5991aa94603dda9039c2b1",
+      "source": "frozen-anchor-image"
+    },
+    {
+      "frame_index": 3,
+      "candidate_id": "upper-00",
+      "category": "upper",
+      "file": "frames/003-upper-00.png",
+      "camera_to_world": [
+        [
+          -0.008091481402516365, -0.49998360872268677, 0.8659970760345459,
+          11.77299976348877
+        ],
+        [
+          -0.9999672174453735, 0.0040457407012581825, -0.00700742844492197,
+          -1.902500033378601
+        ],
+        [0.0, -0.8660253882408142, -0.5, 2.025132179260254],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "364c2d1923f6fab2d579a07e972b680310ce5ba95de4a73955c5a3ef353821d0",
+      "source": "service-rendered-generated-view"
+    },
+    {
+      "frame_index": 4,
+      "candidate_id": "replacement-00",
+      "category": "replacement",
+      "file": "frames/004-replacement-00.png",
+      "camera_to_world": [
+        [
+          0.2509947717189789, -0.14268851280212402, 0.9574140310287476,
+          12.520052909851074
+        ],
+        [
+          -0.9679884314537048, -0.0369984470307827, 0.24825286865234375,
+          -2.1888158321380615
+        ],
+        [0.0, -0.9890758395195007, -0.14740724861621857, 1.149999976158142],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "3dcfd6b28109ac97d58c4117fb23676be5cdcb0aa905e5c645411d386ef0eeb5",
+      "source": "service-rendered-generated-view"
+    },
+    {
+      "frame_index": 5,
+      "candidate_id": "ring-01",
+      "category": "ring",
+      "file": "frames/005-ring-01.png",
+      "camera_to_world": [
+        [
+          0.4929760694503784, -0.005516183562576771, 0.8700253963470459,
+          12.00625228881836
+        ],
+        [
+          -0.8700428605079651, -0.0031255315989255905, 0.4929661750793457,
+          -2.802064895629883
+        ],
+        [0.0, -0.9999799132347107, -0.006340128369629383, 1.0],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "e3285727711a0d3fa55a5bc2369c63f5da9f61025fabd097cc1ef0bcf37b4e2a",
+      "source": "service-rendered-generated-view"
+    }
+  ]
+}

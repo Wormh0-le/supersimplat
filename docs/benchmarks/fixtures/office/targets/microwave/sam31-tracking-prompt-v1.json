@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "purpose": "accepted SAM3.1 adapter prompt script for the microwave Frame Set",
+  "target_id": "microwave",
+  "frame_set_version": "frame-set-v1",
+  "frame_set_manifest_sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc",
+  "track_id": "primary-include",
+  "role": "include",
+  "anchor": {
+    "candidate_id": "anchor",
+    "frame_index": 2,
+    "image": "microwave/anchor-candidate/frames/office_overview_00.png",
+    "image_sha256": "0cbbd4989ac217f90331ff04877d78e8b78dcc315b5991aa94603dda9039c2b1"
+  },
+  "adapter_prompt": {
+    "prompt_type": "positive_box_and_text",
+    "box_format": "relative_xywh",
+    "box": [0.33, 0.39, 0.36, 0.23],
+    "text": "microwave oven",
+    "output_prob_threshold": 0.5
+  },
+  "source_anchor_mask_prompt_log": {
+    "path": "microwave/sam31-anchor-probe/prompt-log.json",
+    "sha256": "f9fdb86f9860c20614ad08f6e1ae330319f8dc6f7a33f02e33f1ac2b0e39b446"
+  },
+  "selection_evidence": {
+    "accepted_combination": {
+      "reason": "The Anchor box plus 'microwave oven' produced non-empty, non-border-touching masks on all six selected 1008px frames without including the adjacent counter objects.",
+      "artifact": "microwave/frame-set-v1/sam31-track-text-prompt-v1-diagnostic/tracking.json"
+    }
+  },
+  "scope_note": "This is an adapter-specific benchmark bootstrap prompt. The editor-facing point-only service contract remains separate from this fixture."
+}

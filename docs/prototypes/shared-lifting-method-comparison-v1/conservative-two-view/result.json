@@ -1,0 +1,1094 @@
+{
+  "comparison_policy": {
+    "implementation_and_license_risk": {
+      "contributor_three_state": "Moderate service-side accumulation work; uses the already-installed gsplat contributor API and adds no model or code dependency.",
+      "current_top1_visibility": "Lowest implementation effort; intentionally incomplete visible-surface baseline.",
+      "hard_top1_vote": "Low effort; no new dependency, but discards alpha\u00d7transmittance information.",
+      "soft_mask_fit": "Additional numerical solver, configuration, and test burden; project-owned code over the same gsplat inputs, with no SA3D, FlashSplat, or new model dependency."
+    },
+    "methods": {
+      "contributor_three_state": "Accepted views; alpha\u00d7transmittance top-K positive and negative evidence within the same support region.",
+      "current_top1_visibility": "Anchor View only; same-renderer top-1 contributor under the mask; selected versus uncertain only.",
+      "hard_top1_vote": "Accepted views; unweighted top-1 footprint vote inside versus outside the shared mask within a prompt-derived support region.",
+      "soft_mask_fit": "Contributor-weighted linear soft-mask fit over the same support and Mask Set, initialized by contributor evidence."
+    },
+    "minimum_observation_weight": 0.1,
+    "minimum_observed_views": 2,
+    "rejected_ratio": 0.2,
+    "selected_ratio": 0.8,
+    "soft_mask_fit": {
+      "contributor_evidence_prior_strength": 0.05,
+      "iterations": 24,
+      "kind": "project-owned-SA3D-style-linear-soft-mask-fit",
+      "step": 0.35
+    },
+    "support_margin_pixels": 24,
+    "top_k": 8
+  },
+  "generated_at_utc": "2026-07-13T12:54:29.457942+00:00",
+  "prediction_before_ground_truth_scoring": true,
+  "runtime": {
+    "gpu": "NVIDIA GeForce RTX 4090 D",
+    "gsplat": "1.5.3",
+    "torch": "2.11.0+cu128"
+  },
+  "scenarios": [
+    {
+      "accepted_views": 4,
+      "frame_set": {
+        "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/controlled-overlap/frame-set-v1/frame-set.json",
+        "sha256": "1fbe6f5c26be7a88ab7054538532c546baf77ce8058f61d127d3017fb7e2bdee"
+      },
+      "mask_set": {
+        "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/controlled-overlap/frame-set-v1/mask-set-v1/mask-set.json",
+        "sha256": "9af076069eef0dfbf2ed95b94052fb5856f1c9ef8bc45485f642e1cf9dd3c72c",
+        "statuses": {
+          "accepted": 4
+        }
+      },
+      "methods": {
+        "contributor_three_state": {
+          "prediction": {
+            "path": "controlled_overlap/contributor_three_state.npz",
+            "rejected_count": 16,
+            "selected_count": 3061,
+            "sha256": "5d65f48d928a390ea8496bf9cbc80fd0f5e3729c37ab2762f2d2fb89c4b18070",
+            "uncertain_count": 13307
+          },
+          "score": {
+            "anchor_opposite_half_recall": 0.014892578125,
+            "metric_scope_gaussians": 16384,
+            "prediction_on_truth_scope": {
+              "rejected": 16,
+              "selected": 3061,
+              "uncertain": 13307
+            },
+            "scores": {
+              "false_negative": 5131,
+              "false_positive": 0,
+              "gaussian_index_iou": 0.3736572265625,
+              "precision": 1.0,
+              "recall": 0.3736572265625,
+              "true_positive": 3061
+            },
+            "truth": {
+              "ambiguous": 0,
+              "rejected": 8192,
+              "scope": 16384,
+              "selected": 8192
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 16,
+              "selected": 0,
+              "uncertain": 8176
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 0,
+              "selected": 3061,
+              "uncertain": 5131
+            }
+          }
+        },
+        "current_top1_visibility": {
+          "prediction": {
+            "path": "controlled_overlap/current_top1_visibility.npz",
+            "rejected_count": 0,
+            "selected_count": 3314,
+            "sha256": "b015fe63da318cb7aa37e84074c4ccbf7655da115a85ea6bd0fead2e1bc89e2f",
+            "uncertain_count": 13070
+          },
+          "score": {
+            "anchor_opposite_half_recall": 0.0,
+            "metric_scope_gaussians": 16384,
+            "prediction_on_truth_scope": {
+              "rejected": 0,
+              "selected": 3314,
+              "uncertain": 13070
+            },
+            "scores": {
+              "false_negative": 4878,
+              "false_positive": 0,
+              "gaussian_index_iou": 0.404541015625,
+              "precision": 1.0,
+              "recall": 0.404541015625,
+              "true_positive": 3314
+            },
+            "truth": {
+              "ambiguous": 0,
+              "rejected": 8192,
+              "scope": 16384,
+              "selected": 8192
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 0,
+              "selected": 0,
+              "uncertain": 8192
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 0,
+              "selected": 3314,
+              "uncertain": 4878
+            }
+          }
+        },
+        "hard_top1_vote": {
+          "prediction": {
+            "path": "controlled_overlap/hard_top1_vote.npz",
+            "rejected_count": 4,
+            "selected_count": 1727,
+            "sha256": "0edd6b77692f4959ffd25efd0c1da12d40b8cac9edfd3b7900c27692600e30ed",
+            "uncertain_count": 14653
+          },
+          "score": {
+            "anchor_opposite_half_recall": 0.0,
+            "metric_scope_gaussians": 16384,
+            "prediction_on_truth_scope": {
+              "rejected": 4,
+              "selected": 1727,
+              "uncertain": 14653
+            },
+            "scores": {
+              "false_negative": 6465,
+              "false_positive": 0,
+              "gaussian_index_iou": 0.2108154296875,
+              "precision": 1.0,
+              "recall": 0.2108154296875,
+              "true_positive": 1727
+            },
+            "truth": {
+              "ambiguous": 0,
+              "rejected": 8192,
+              "scope": 16384,
+              "selected": 8192
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 0,
+              "selected": 0,
+              "uncertain": 8192
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 4,
+              "selected": 1727,
+              "uncertain": 6461
+            }
+          }
+        },
+        "soft_mask_fit": {
+          "prediction": {
+            "path": "controlled_overlap/soft_mask_fit.npz",
+            "rejected_count": 13,
+            "selected_count": 3061,
+            "sha256": "7095391d79b742d254db39d6d672b918c468a6c810d5cfa678fe03506cc04088",
+            "uncertain_count": 13310
+          },
+          "score": {
+            "anchor_opposite_half_recall": 0.014892578125,
+            "metric_scope_gaussians": 16384,
+            "prediction_on_truth_scope": {
+              "rejected": 13,
+              "selected": 3061,
+              "uncertain": 13310
+            },
+            "scores": {
+              "false_negative": 5131,
+              "false_positive": 0,
+              "gaussian_index_iou": 0.3736572265625,
+              "precision": 1.0,
+              "recall": 0.3736572265625,
+              "true_positive": 3061
+            },
+            "truth": {
+              "ambiguous": 0,
+              "rejected": 8192,
+              "scope": 16384,
+              "selected": 8192
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 13,
+              "selected": 0,
+              "uncertain": 8179
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 0,
+              "selected": 3061,
+              "uncertain": 5131
+            }
+          }
+        }
+      },
+      "per_view_diagnostics": [
+        {
+          "anchor": true,
+          "frame_index": 0,
+          "mask_area_pixels": 109334,
+          "support_area_pixels": 178012,
+          "top1_inside_ids": 3314,
+          "view_id": "anchor-front",
+          "weighted_inside_ids": 4227,
+          "weighted_support_ids": 4227
+        },
+        {
+          "anchor": false,
+          "frame_index": 1,
+          "mask_area_pixels": 58085,
+          "support_area_pixels": 100912,
+          "top1_inside_ids": 2443,
+          "view_id": "side-right",
+          "weighted_inside_ids": 3260,
+          "weighted_support_ids": 3963
+        },
+        {
+          "anchor": false,
+          "frame_index": 2,
+          "mask_area_pixels": 58451,
+          "support_area_pixels": 101175,
+          "top1_inside_ids": 2478,
+          "view_id": "side-left",
+          "weighted_inside_ids": 3295,
+          "weighted_support_ids": 4011
+        },
+        {
+          "anchor": false,
+          "frame_index": 3,
+          "mask_area_pixels": 0,
+          "support_area_pixels": 262144,
+          "top1_inside_ids": 0,
+          "view_id": "rear",
+          "weighted_inside_ids": 0,
+          "weighted_support_ids": 4098
+        }
+      ],
+      "role": "controlled-front-back-overlap",
+      "scenario_id": "controlled_overlap",
+      "scene_snapshot": {
+        "gaussian_count": 16384,
+        "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/controlled-overlap/controlled_front_back_overlap.ply",
+        "sha256": "cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e"
+      },
+      "timing": {
+        "combined_four_method_prototype_peak_gpu_vram_bytes": 190607872,
+        "shared_rasterization_and_attribution_seconds": 0.19104219099972397,
+        "soft_mask_fit_mean_squared_error_history": [
+          0.030115072992961775, 0.03001625473876321, 0.030014546401002037,
+          0.03001370933830731, 0.030013265337749884, 0.030013001522350185,
+          0.030012847186539987, 0.030012751391899174, 0.030012683727430663,
+          0.0300126343095604, 0.03001259857663883, 0.03001256892591667,
+          0.030012549919043494, 0.030012536994369732, 0.030012526350520752,
+          0.030012518747771482, 0.030012512665572064, 0.03001250658337265,
+          0.03001250126144816, 0.030012497460073524, 0.030012494418973815,
+          0.030012492898423962, 0.030012489857324253, 0.030012489097049327
+        ],
+        "soft_mask_fit_seconds": 0.0866952950018458
+      }
+    },
+    {
+      "accepted_views": 9,
+      "frame_set": {
+        "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/office/targets/gift_box/frame-set-v2/frame-set.json",
+        "sha256": "bdf0730e0dc21d3bfa9dfe6a7f1cf7ed1eb6831b95e7320f65f5de7f00537cb2"
+      },
+      "mask_set": {
+        "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/office/targets/gift_box/frame-set-v2/mask-set-v1/mask-set.json",
+        "sha256": "6573b0c998a4cac049ff80ffc415de52a2848c9aa4fbca8cd713aaba4a047667",
+        "statuses": {
+          "accepted": 9
+        }
+      },
+      "methods": {
+        "contributor_three_state": {
+          "prediction": {
+            "path": "gift_box/contributor_three_state.npz",
+            "rejected_count": 2359,
+            "selected_count": 1710,
+            "sha256": "a8a0af9af4c7799b1eddc2056298bbb3768a2d1c5cd69b73023fd17101ab3553",
+            "uncertain_count": 3676472
+          },
+          "score": {
+            "metric_scope_gaussians": 3067,
+            "prediction_on_truth_scope": {
+              "rejected": 1496,
+              "selected": 1708,
+              "uncertain": 2054
+            },
+            "scores": {
+              "false_negative": 172,
+              "false_positive": 0,
+              "gaussian_index_iou": 0.8970676241771395,
+              "precision": 1.0,
+              "recall": 0.8970676241771395,
+              "true_positive": 1499
+            },
+            "truth": {
+              "ambiguous": 2191,
+              "rejected": 1396,
+              "scope": 5258,
+              "selected": 1671
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 849,
+              "selected": 0,
+              "uncertain": 547
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 52,
+              "selected": 1499,
+              "uncertain": 120
+            }
+          }
+        },
+        "current_top1_visibility": {
+          "prediction": {
+            "path": "gift_box/current_top1_visibility.npz",
+            "rejected_count": 0,
+            "selected_count": 484,
+            "sha256": "342c236da555bdf3bd51b0938cf1237e83b354ef622a8d5f1f2a5523b14deb35",
+            "uncertain_count": 3680057
+          },
+          "score": {
+            "metric_scope_gaussians": 3067,
+            "prediction_on_truth_scope": {
+              "rejected": 0,
+              "selected": 484,
+              "uncertain": 4774
+            },
+            "scores": {
+              "false_negative": 1243,
+              "false_positive": 15,
+              "gaussian_index_iou": 0.2538552787663108,
+              "precision": 0.9661399548532731,
+              "recall": 0.2561340514661879,
+              "true_positive": 428
+            },
+            "truth": {
+              "ambiguous": 2191,
+              "rejected": 1396,
+              "scope": 5258,
+              "selected": 1671
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 0,
+              "selected": 15,
+              "uncertain": 1381
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 0,
+              "selected": 428,
+              "uncertain": 1243
+            }
+          }
+        },
+        "hard_top1_vote": {
+          "prediction": {
+            "path": "gift_box/hard_top1_vote.npz",
+            "rejected_count": 590,
+            "selected_count": 737,
+            "sha256": "f8719a7c8b20ca61bc4589413b6a59fba60ad84fb7cd73a8ee9f1f2963953269",
+            "uncertain_count": 3679214
+          },
+          "score": {
+            "metric_scope_gaussians": 3067,
+            "prediction_on_truth_scope": {
+              "rejected": 439,
+              "selected": 737,
+              "uncertain": 4082
+            },
+            "scores": {
+              "false_negative": 960,
+              "false_positive": 0,
+              "gaussian_index_iou": 0.4254937163375224,
+              "precision": 1.0,
+              "recall": 0.4254937163375224,
+              "true_positive": 711
+            },
+            "truth": {
+              "ambiguous": 2191,
+              "rejected": 1396,
+              "scope": 5258,
+              "selected": 1671
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 197,
+              "selected": 0,
+              "uncertain": 1199
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 70,
+              "selected": 711,
+              "uncertain": 890
+            }
+          }
+        },
+        "soft_mask_fit": {
+          "prediction": {
+            "path": "gift_box/soft_mask_fit.npz",
+            "rejected_count": 2292,
+            "selected_count": 1910,
+            "sha256": "b6269e5c39e9179458bcbc9803f371e19898ed02e44b3e44bf6a2e5f35d28b44",
+            "uncertain_count": 3676339
+          },
+          "score": {
+            "metric_scope_gaussians": 3067,
+            "prediction_on_truth_scope": {
+              "rejected": 1445,
+              "selected": 1869,
+              "uncertain": 1944
+            },
+            "scores": {
+              "false_negative": 86,
+              "false_positive": 6,
+              "gaussian_index_iou": 0.9451401311866429,
+              "precision": 0.9962287869264613,
+              "recall": 0.9485338120885697,
+              "true_positive": 1585
+            },
+            "truth": {
+              "ambiguous": 2191,
+              "rejected": 1396,
+              "scope": 5258,
+              "selected": 1671
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 845,
+              "selected": 6,
+              "uncertain": 545
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 54,
+              "selected": 1585,
+              "uncertain": 32
+            }
+          }
+        }
+      },
+      "per_view_diagnostics": [
+        {
+          "anchor": false,
+          "frame_index": 0,
+          "mask_area_pixels": 40061,
+          "support_area_pixels": 69130,
+          "top1_inside_ids": 341,
+          "view_id": "ring-09",
+          "weighted_inside_ids": 1363,
+          "weighted_support_ids": 2762
+        },
+        {
+          "anchor": false,
+          "frame_index": 1,
+          "mask_area_pixels": 91216,
+          "support_area_pixels": 142146,
+          "top1_inside_ids": 397,
+          "view_id": "replacement-06",
+          "weighted_inside_ids": 1361,
+          "weighted_support_ids": 1998
+        },
+        {
+          "anchor": false,
+          "frame_index": 2,
+          "mask_area_pixels": 42941,
+          "support_area_pixels": 76506,
+          "top1_inside_ids": 417,
+          "view_id": "ring-10",
+          "weighted_inside_ids": 1732,
+          "weighted_support_ids": 3235
+        },
+        {
+          "anchor": false,
+          "frame_index": 3,
+          "mask_area_pixels": 49900,
+          "support_area_pixels": 89698,
+          "top1_inside_ids": 497,
+          "view_id": "ring-11",
+          "weighted_inside_ids": 1921,
+          "weighted_support_ids": 3610
+        },
+        {
+          "anchor": true,
+          "frame_index": 4,
+          "mask_area_pixels": 59969,
+          "support_area_pixels": 100674,
+          "top1_inside_ids": 484,
+          "view_id": "anchor",
+          "weighted_inside_ids": 2012,
+          "weighted_support_ids": 3350
+        },
+        {
+          "anchor": false,
+          "frame_index": 5,
+          "mask_area_pixels": 43502,
+          "support_area_pixels": 75330,
+          "top1_inside_ids": 528,
+          "view_id": "upper-00",
+          "weighted_inside_ids": 1865,
+          "weighted_support_ids": 2871
+        },
+        {
+          "anchor": false,
+          "frame_index": 6,
+          "mask_area_pixels": 108407,
+          "support_area_pixels": 156825,
+          "top1_inside_ids": 554,
+          "view_id": "replacement-00",
+          "weighted_inside_ids": 1794,
+          "weighted_support_ids": 2413
+        },
+        {
+          "anchor": false,
+          "frame_index": 7,
+          "mask_area_pixels": 49528,
+          "support_area_pixels": 81378,
+          "top1_inside_ids": 456,
+          "view_id": "ring-01",
+          "weighted_inside_ids": 1775,
+          "weighted_support_ids": 2654
+        },
+        {
+          "anchor": false,
+          "frame_index": 8,
+          "mask_area_pixels": 46600,
+          "support_area_pixels": 83678,
+          "top1_inside_ids": 438,
+          "view_id": "ring-02",
+          "weighted_inside_ids": 1732,
+          "weighted_support_ids": 2665
+        }
+      ],
+      "role": "simple",
+      "scenario_id": "gift_box",
+      "scene_snapshot": {
+        "gaussian_count": 3680541,
+        "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+        "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1"
+      },
+      "timing": {
+        "combined_four_method_prototype_peak_gpu_vram_bytes": 1000778240,
+        "shared_rasterization_and_attribution_seconds": 0.10133887501433492,
+        "soft_mask_fit_mean_squared_error_history": [
+          0.08148281248215031, 0.07592864219943252, 0.07558785745803179,
+          0.07551943622267568, 0.07549357480076169, 0.07548092773264581,
+          0.07547535918498997, 0.0754726644385485, 0.07547098991385022,
+          0.07546996020945548, 0.07546923227650038, 0.07546868730293935,
+          0.07546826895066629, 0.0754679822399085, 0.07546776748574166,
+          0.07546763082399913, 0.07546755384718089, 0.075467501413696,
+          0.07546746459869597, 0.0754674378241505, 0.07546742109005958,
+          0.07546740435596866, 0.0754673943155141, 0.07546738539066561
+        ],
+        "soft_mask_fit_seconds": 0.030554886005120352
+      }
+    },
+    {
+      "accepted_views": 6,
+      "frame_set": {
+        "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/office/targets/microwave/frame-set-v1/frame-set.json",
+        "sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc"
+      },
+      "mask_set": {
+        "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/office/targets/microwave/frame-set-v1/mask-set-v1/mask-set.json",
+        "sha256": "d6fb3d630751832e4151e0a015398e010259a1e734e882e6924c5b594835a4ee",
+        "statuses": {
+          "accepted": 6
+        }
+      },
+      "methods": {
+        "contributor_three_state": {
+          "prediction": {
+            "path": "microwave/contributor_three_state.npz",
+            "rejected_count": 1976,
+            "selected_count": 2738,
+            "sha256": "422b6507ac7190d161183eec0524bed8ffb9d28e14e54f9913b672d6bdd52c9f",
+            "uncertain_count": 3675827
+          },
+          "score": {
+            "metric_scope_gaussians": 17765,
+            "prediction_on_truth_scope": {
+              "rejected": 1953,
+              "selected": 2738,
+              "uncertain": 18464
+            },
+            "scores": {
+              "false_negative": 416,
+              "false_positive": 1,
+              "gaussian_index_iou": 0.8485838779956427,
+              "precision": 0.9995722840034217,
+              "recall": 0.848892117689793,
+              "true_positive": 2337
+            },
+            "truth": {
+              "ambiguous": 5390,
+              "rejected": 15012,
+              "scope": 23155,
+              "selected": 2753
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 681,
+              "selected": 1,
+              "uncertain": 14330
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 159,
+              "selected": 2337,
+              "uncertain": 257
+            }
+          }
+        },
+        "current_top1_visibility": {
+          "prediction": {
+            "path": "microwave/current_top1_visibility.npz",
+            "rejected_count": 0,
+            "selected_count": 709,
+            "sha256": "3ec089bd7ff7bf205359b85cac6541d0bf88482cbec07f7232292a31802a8bc3",
+            "uncertain_count": 3679832
+          },
+          "score": {
+            "metric_scope_gaussians": 17765,
+            "prediction_on_truth_scope": {
+              "rejected": 0,
+              "selected": 709,
+              "uncertain": 22446
+            },
+            "scores": {
+              "false_negative": 2117,
+              "false_positive": 17,
+              "gaussian_index_iou": 0.2296028880866426,
+              "precision": 0.9739663093415007,
+              "recall": 0.2310207046857973,
+              "true_positive": 636
+            },
+            "truth": {
+              "ambiguous": 5390,
+              "rejected": 15012,
+              "scope": 23155,
+              "selected": 2753
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 0,
+              "selected": 17,
+              "uncertain": 14995
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 0,
+              "selected": 636,
+              "uncertain": 2117
+            }
+          }
+        },
+        "hard_top1_vote": {
+          "prediction": {
+            "path": "microwave/hard_top1_vote.npz",
+            "rejected_count": 458,
+            "selected_count": 1135,
+            "sha256": "2f61cec20226dbb5288be777abb10c42b2252b7fd5a3c7714e49eeaf2ec4f4ca",
+            "uncertain_count": 3678948
+          },
+          "score": {
+            "metric_scope_gaussians": 17765,
+            "prediction_on_truth_scope": {
+              "rejected": 456,
+              "selected": 1135,
+              "uncertain": 21564
+            },
+            "scores": {
+              "false_negative": 1693,
+              "false_positive": 0,
+              "gaussian_index_iou": 0.3850345078096622,
+              "precision": 1.0,
+              "recall": 0.3850345078096622,
+              "true_positive": 1060
+            },
+            "truth": {
+              "ambiguous": 5390,
+              "rejected": 15012,
+              "scope": 23155,
+              "selected": 2753
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 172,
+              "selected": 0,
+              "uncertain": 14840
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 128,
+              "selected": 1060,
+              "uncertain": 1565
+            }
+          }
+        },
+        "soft_mask_fit": {
+          "prediction": {
+            "path": "microwave/soft_mask_fit.npz",
+            "rejected_count": 1958,
+            "selected_count": 2989,
+            "sha256": "2fb6c123a57ec1641852be593c86a28b6527f0242aedeabb5ab3879ddfa29578",
+            "uncertain_count": 3675594
+          },
+          "score": {
+            "metric_scope_gaussians": 17765,
+            "prediction_on_truth_scope": {
+              "rejected": 1935,
+              "selected": 2989,
+              "uncertain": 18231
+            },
+            "scores": {
+              "false_negative": 294,
+              "false_positive": 14,
+              "gaussian_index_iou": 0.8886881098662812,
+              "precision": 0.9943388596845936,
+              "recall": 0.8932074100980748,
+              "true_positive": 2459
+            },
+            "truth": {
+              "ambiguous": 5390,
+              "rejected": 15012,
+              "scope": 23155,
+              "selected": 2753
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 672,
+              "selected": 14,
+              "uncertain": 14326
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 168,
+              "selected": 2459,
+              "uncertain": 126
+            }
+          }
+        }
+      },
+      "per_view_diagnostics": [
+        {
+          "anchor": false,
+          "frame_index": 0,
+          "mask_area_pixels": 171273,
+          "support_area_pixels": 247432,
+          "top1_inside_ids": 936,
+          "view_id": "replacement-07",
+          "weighted_inside_ids": 2742,
+          "weighted_support_ids": 3560
+        },
+        {
+          "anchor": false,
+          "frame_index": 1,
+          "mask_area_pixels": 70156,
+          "support_area_pixels": 105664,
+          "top1_inside_ids": 848,
+          "view_id": "ring-11",
+          "weighted_inside_ids": 2808,
+          "weighted_support_ids": 4009
+        },
+        {
+          "anchor": true,
+          "frame_index": 2,
+          "mask_area_pixels": 66332,
+          "support_area_pixels": 98431,
+          "top1_inside_ids": 709,
+          "view_id": "anchor",
+          "weighted_inside_ids": 2750,
+          "weighted_support_ids": 3834
+        },
+        {
+          "anchor": false,
+          "frame_index": 3,
+          "mask_area_pixels": 59946,
+          "support_area_pixels": 98549,
+          "top1_inside_ids": 1018,
+          "view_id": "upper-00",
+          "weighted_inside_ids": 3078,
+          "weighted_support_ids": 4147
+        },
+        {
+          "anchor": false,
+          "frame_index": 4,
+          "mask_area_pixels": 164841,
+          "support_area_pixels": 224358,
+          "top1_inside_ids": 1070,
+          "view_id": "replacement-00",
+          "weighted_inside_ids": 2903,
+          "weighted_support_ids": 3929
+        },
+        {
+          "anchor": false,
+          "frame_index": 5,
+          "mask_area_pixels": 51829,
+          "support_area_pixels": 102672,
+          "top1_inside_ids": 824,
+          "view_id": "ring-01",
+          "weighted_inside_ids": 2428,
+          "weighted_support_ids": 4158
+        }
+      ],
+      "role": "contact",
+      "scenario_id": "microwave",
+      "scene_snapshot": {
+        "gaussian_count": 3680541,
+        "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+        "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1"
+      },
+      "timing": {
+        "combined_four_method_prototype_peak_gpu_vram_bytes": 984550400,
+        "shared_rasterization_and_attribution_seconds": 0.06296472100075334,
+        "soft_mask_fit_mean_squared_error_history": [
+          0.0747609388904035, 0.06948230786369464, 0.06919659931799149,
+          0.06913109180664168, 0.06910983159301014, 0.06910088382098344,
+          0.06909674367411835, 0.06909441223199506, 0.06909321644935874,
+          0.0690926185580406, 0.06909227619010701, 0.06909206909925938,
+          0.06909193994582753, 0.06909185421467018, 0.06909179854508748,
+          0.06909176068977124, 0.06909173619515487, 0.0690917206076717,
+          0.0690917061335802, 0.06909169722644698, 0.06909169110279288,
+          0.06909168497913878, 0.06909168219565964, 0.06909168108226799
+        ],
+        "soft_mask_fit_seconds": 0.025381982006365433
+      }
+    },
+    {
+      "accepted_views": 4,
+      "frame_set": {
+        "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/office/targets/clothes_rack/frame-set-v1/frame-set.json",
+        "sha256": "e6a2f525a0c833a28a00c978549488a8ff7365a3dcb6223d73826351c23e8bba"
+      },
+      "mask_set": {
+        "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/office/targets/clothes_rack/frame-set-v1/mask-set-v1/mask-set.json",
+        "sha256": "50fc52fb9bf4b34e0fa118e11a5002984e040a5ec9443d72c08fc7039f41814b",
+        "statuses": {
+          "accepted": 4,
+          "not_found": 3
+        }
+      },
+      "methods": {
+        "contributor_three_state": {
+          "prediction": {
+            "path": "clothes_rack/contributor_three_state.npz",
+            "rejected_count": 14665,
+            "selected_count": 2479,
+            "sha256": "9bc5060d8ca1eec0eb2dc97bba363fd63bee4e37d9cb1c7e378979f92d461de7",
+            "uncertain_count": 3663397
+          },
+          "score": {
+            "metric_scope_gaussians": 18315,
+            "prediction_on_truth_scope": {
+              "rejected": 4215,
+              "selected": 2478,
+              "uncertain": 26430
+            },
+            "scores": {
+              "false_negative": 1070,
+              "false_positive": 0,
+              "gaussian_index_iou": 0.6341880341880342,
+              "precision": 1.0,
+              "recall": 0.6341880341880342,
+              "true_positive": 1855
+            },
+            "truth": {
+              "ambiguous": 14808,
+              "rejected": 15390,
+              "scope": 33123,
+              "selected": 2925
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 233,
+              "selected": 0,
+              "uncertain": 15157
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 402,
+              "selected": 1855,
+              "uncertain": 668
+            }
+          }
+        },
+        "current_top1_visibility": {
+          "prediction": {
+            "path": "clothes_rack/current_top1_visibility.npz",
+            "rejected_count": 0,
+            "selected_count": 806,
+            "sha256": "c0a05b5609925075930b8a4177fe1e61a30438ce7b535895b8f50604429e7079",
+            "uncertain_count": 3679735
+          },
+          "score": {
+            "metric_scope_gaussians": 18315,
+            "prediction_on_truth_scope": {
+              "rejected": 0,
+              "selected": 806,
+              "uncertain": 32317
+            },
+            "scores": {
+              "false_negative": 2263,
+              "false_positive": 0,
+              "gaussian_index_iou": 0.22632478632478634,
+              "precision": 1.0,
+              "recall": 0.22632478632478634,
+              "true_positive": 662
+            },
+            "truth": {
+              "ambiguous": 14808,
+              "rejected": 15390,
+              "scope": 33123,
+              "selected": 2925
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 0,
+              "selected": 0,
+              "uncertain": 15390
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 0,
+              "selected": 662,
+              "uncertain": 2263
+            }
+          }
+        },
+        "hard_top1_vote": {
+          "prediction": {
+            "path": "clothes_rack/hard_top1_vote.npz",
+            "rejected_count": 3723,
+            "selected_count": 849,
+            "sha256": "75065b61173010b010d235fbb135032cda234010a2568e8c7105d5cdc4705f48",
+            "uncertain_count": 3675969
+          },
+          "score": {
+            "metric_scope_gaussians": 18315,
+            "prediction_on_truth_scope": {
+              "rejected": 1331,
+              "selected": 849,
+              "uncertain": 30943
+            },
+            "scores": {
+              "false_negative": 2217,
+              "false_positive": 0,
+              "gaussian_index_iou": 0.24205128205128204,
+              "precision": 1.0,
+              "recall": 0.24205128205128204,
+              "true_positive": 708
+            },
+            "truth": {
+              "ambiguous": 14808,
+              "rejected": 15390,
+              "scope": 33123,
+              "selected": 2925
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 50,
+              "selected": 0,
+              "uncertain": 15340
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 276,
+              "selected": 708,
+              "uncertain": 1941
+            }
+          }
+        },
+        "soft_mask_fit": {
+          "prediction": {
+            "path": "clothes_rack/soft_mask_fit.npz",
+            "rejected_count": 14549,
+            "selected_count": 2965,
+            "sha256": "1b2e578940beec222587e8b691338b88822f5a3a286ec55a8735c822a0c0728d",
+            "uncertain_count": 3663027
+          },
+          "score": {
+            "metric_scope_gaussians": 18315,
+            "prediction_on_truth_scope": {
+              "rejected": 4178,
+              "selected": 2940,
+              "uncertain": 26005
+            },
+            "scores": {
+              "false_negative": 837,
+              "false_positive": 0,
+              "gaussian_index_iou": 0.7138461538461538,
+              "precision": 1.0,
+              "recall": 0.7138461538461538,
+              "true_positive": 2088
+            },
+            "truth": {
+              "ambiguous": 14808,
+              "rejected": 15390,
+              "scope": 33123,
+              "selected": 2925
+            },
+            "truth_rejected_prediction_state": {
+              "rejected": 233,
+              "selected": 0,
+              "uncertain": 15157
+            },
+            "truth_selected_prediction_state": {
+              "rejected": 420,
+              "selected": 2088,
+              "uncertain": 417
+            }
+          }
+        }
+      },
+      "per_view_diagnostics": [
+        {
+          "anchor": true,
+          "frame_index": 1,
+          "mask_area_pixels": 13030,
+          "support_area_pixels": 163520,
+          "top1_inside_ids": 806,
+          "view_id": "anchor",
+          "weighted_inside_ids": 3367,
+          "weighted_support_ids": 26100
+        },
+        {
+          "anchor": false,
+          "frame_index": 2,
+          "mask_area_pixels": 9957,
+          "support_area_pixels": 111452,
+          "top1_inside_ids": 972,
+          "view_id": "upper-00",
+          "weighted_inside_ids": 4054,
+          "weighted_support_ids": 21497
+        },
+        {
+          "anchor": false,
+          "frame_index": 3,
+          "mask_area_pixels": 13427,
+          "support_area_pixels": 140238,
+          "top1_inside_ids": 919,
+          "view_id": "ring-01",
+          "weighted_inside_ids": 3542,
+          "weighted_support_ids": 17505
+        },
+        {
+          "anchor": false,
+          "frame_index": 4,
+          "mask_area_pixels": 13749,
+          "support_area_pixels": 154869,
+          "top1_inside_ids": 928,
+          "view_id": "ring-02",
+          "weighted_inside_ids": 4096,
+          "weighted_support_ids": 30098
+        }
+      ],
+      "role": "difficult",
+      "scenario_id": "clothes_rack",
+      "scene_snapshot": {
+        "gaussian_count": 3680541,
+        "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+        "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1"
+      },
+      "timing": {
+        "combined_four_method_prototype_peak_gpu_vram_bytes": 980556288,
+        "shared_rasterization_and_attribution_seconds": 0.04710935498587787,
+        "soft_mask_fit_mean_squared_error_history": [
+          0.01447998925231196, 0.013059639532621247, 0.012969825363225426,
+          0.012943641269524159, 0.01293197039529006, 0.012925727899389821,
+          0.012922157730482858, 0.01291991109147537, 0.012918471289656236,
+          0.012917513919945745, 0.012916863396756195, 0.012916396596047434,
+          0.012916071548581425, 0.01291583836235581, 0.012915666416957124,
+          0.012915540080985487, 0.01291545164580534, 0.012915386550660633,
+          0.012915334731499384, 0.012915292976390115, 0.012915257431015044,
+          0.012915229380146765, 0.012915204327081202, 0.012915183770719716
+        ],
+        "soft_mask_fit_seconds": 0.017060027981642634
+      }
+    }
+  ],
+  "schema_version": 1,
+  "shared_input_manifest": {
+    "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/shared-lifting-benchmark-v1.json",
+    "sha256": "3b52c0abf55097d0dfd48624b9187b2085a261411e9efac085ae4933c175514c"
+  },
+  "status": "prototype-result-not-product-selection-semantics"
+}

@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "status": "draft-derived-from-reviewed-2d-annotations-not-frozen",
+  "purpose": "Conservative three-way Benchmark Ground Truth draft; not eligible for scoring until human review freezes a new revision.",
+  "target_id": "clothes_rack",
+  "source_ply": {
+    "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+    "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1",
+    "gaussian_count": 3680541
+  },
+  "inspection_set": {
+    "path": "docs/benchmarks/fixtures/office/targets/clothes_rack/ground-truth-inspection-v1/inspection-set.json",
+    "sha256": "e28cf81b7cd498af8574729aebac865956bbda61fa502a5905365680f4de2231"
+  },
+  "visual_review": {
+    "path": "docs/benchmarks/fixtures/office/targets/clothes_rack/ground-truth-inspection-v1/visual-review.json",
+    "sha256": "ad3e35e17e2a5bb2634383eb6cede64f1919743d63909d807175b70eb4851ef6"
+  },
+  "annotation_spec": {
+    "path": "docs/benchmarks/fixtures/office/targets/clothes_rack/ground-truth-annotation-draft-v1.json",
+    "sha256": "d4e7c1d0917199ca952a3e5d58f265866e272ff08a9b2d53fb57dae2f0bc4e61"
+  },
+  "annotation_masks": {
+    "path": "docs/benchmarks/fixtures/office/targets/clothes_rack/ground-truth-inspection-v1/annotation-masks-draft-v2/annotation-masks.json",
+    "sha256": "0c8ad6748d4cc4c74b6702adb71af4aef354f0f4b52db9601418877677791835"
+  },
+  "seed_region_context": {
+    "path": "docs/benchmarks/fixtures/office/targets/clothes_rack/seed-region.npz",
+    "sha256": "b6725824cf25f6da234f9d23184bd33e2c83796ab5f01a803e3374273338a10d",
+    "role": "framing/candidate context only; no Seed Region ID is automatically selected or rejected"
+  },
+  "local_candidate_region": {
+    "kind": "aabb",
+    "min": [6.85, 0.25, -0.1],
+    "max": [7.45, 0.8, 1.8],
+    "purpose": "Conservative local context for the pole, arms, and feet; thin or occluded structure remains ambiguous without repeated evidence."
+  },
+  "contributor_rasterization": {
+    "backend": "gsplat",
+    "top_k": 8,
+    "minimum_evidence_weight_per_view": 0.01,
+    "stable_id_mapping": "packed projection IDs are mapped through meta.gaussian_ids to immutable PLY-row Stable Gaussian IDs"
+  },
+  "classification_policy": {
+    "selected": "positive manual/color-assisted evidence in at least the configured number of independent inspection views, with no negative evidence",
+    "rejected": "negative manual evidence in at least the configured number of inspection views, with no positive evidence",
+    "ambiguous": "all conflicts, single-view positive evidence, and all unlabeled IDs in the explicit local candidate region or Seed Region context",
+    "minimum_selected_positive_views": 2,
+    "minimum_rejected_negative_views": 1
+  },
+  "evidence_by_view": [
+    {
+      "view_id": "anchor",
+      "positive_stable_gaussians": 4564,
+      "negative_stable_gaussians": 10818,
+      "positive_total_contribution_weight": 14304.921607771888,
+      "negative_total_contribution_weight": 57078.01551511325
+    },
+    {
+      "view_id": "left_orbit",
+      "positive_stable_gaussians": 5144,
+      "negative_stable_gaussians": 2326,
+      "positive_total_contribution_weight": 12259.356878031045,
+      "negative_total_contribution_weight": 32515.338522615843
+    },
+    {
+      "view_id": "right_orbit",
+      "positive_stable_gaussians": 6085,
+      "negative_stable_gaussians": 3401,
+      "positive_total_contribution_weight": 12075.493973119184,
+      "negative_total_contribution_weight": 79878.87562925182
+    },
+    {
+      "view_id": "oblique",
+      "positive_stable_gaussians": 4303,
+      "negative_stable_gaussians": 3043,
+      "positive_total_contribution_weight": 10018.53397815302,
+      "negative_total_contribution_weight": 22565.73689474631
+    }
+  ],
+  "labels": {
+    "artifact": "ground-truth-draft.npz",
+    "artifact_sha256": "f3aab5b494902606246d93f28684e314984633aab02f93b7c55181c2751c3b41",
+    "scope_stable_gaussians": 33123,
+    "selected_stable_gaussians": 2925,
+    "rejected_stable_gaussians": 15390,
+    "ambiguous_stable_gaussians": 14808
+  },
+  "projection_review": {
+    "contact_sheet": "projection-overlay-contact-sheet.png",
+    "contact_sheet_sha256": "2e1a31b208f365e642f602bc23ce20b69c753a5011b8a4609c259cbb7522d218",
+    "frames": [
+      {
+        "frame_index": 0,
+        "view_id": "anchor",
+        "visual_review_status": "usable",
+        "projection_status": "rendered",
+        "overlay": "projection-overlays/00-anchor.png",
+        "sha256": "04ef14e79fe73e757b4de327d660860e06d9255db50c221f2f9f321a56eecd70"
+      },
+      {
+        "frame_index": 1,
+        "view_id": "opposite",
+        "visual_review_status": "partial",
+        "projection_status": "rendered",
+        "overlay": "projection-overlays/01-opposite.png",
+        "sha256": "10d34911ca6f626fe50d851dff518ebf57b9dd51f2961d3d0fa659a4a34a597a"
+      },
+      {
+        "frame_index": 2,
+        "view_id": "left_orbit",
+        "visual_review_status": "usable",
+        "projection_status": "rendered",
+        "overlay": "projection-overlays/02-left_orbit.png",
+        "sha256": "90e5ef982d0d97e3ab8a49fe92e99928189309f43a29fa875f179d06763e18ef"
+      },
+      {
+        "frame_index": 3,
+        "view_id": "right_orbit",
+        "visual_review_status": "usable",
+        "projection_status": "rendered",
+        "overlay": "projection-overlays/03-right_orbit.png",
+        "sha256": "530d89a9303ae3dca51ad9a022b388557e61a593376011f946b11a22241dce40"
+      },
+      {
+        "frame_index": 4,
+        "view_id": "top",
+        "visual_review_status": "partial",
+        "projection_status": "rendered",
+        "overlay": "projection-overlays/04-top.png",
+        "sha256": "470977835d8c251560c07b4750e72d032be985d8dcf43a3505165afd14dbb5cd"
+      },
+      {
+        "frame_index": 5,
+        "view_id": "bottom",
+        "visual_review_status": "insufficient",
+        "projection_status": "excluded_insufficient_view",
+        "reason": "This view is not reliable enough to visually validate Ground Truth and did not contribute annotation evidence."
+      },
+      {
+        "frame_index": 6,
+        "view_id": "oblique",
+        "visual_review_status": "usable",
+        "projection_status": "rendered",
+        "overlay": "projection-overlays/06-oblique.png",
+        "sha256": "93e8b8abd136ca448f9212a282130d279104cd2c730dfec40a9fc00b1dec2688"
+      }
+    ]
+  },
+  "freeze_requirement": "A reviewer must inspect the RGB annotation and projected Stable-ID overlays, then explicitly accept or revise this draft. A frozen revision must preserve this draft artifact rather than overwrite it.",
+  "timing": {
+    "contributor_analysis_and_projection_seconds": 2.0938297339889687,
+    "peak_vram_bytes": 898759680
+  }
+}

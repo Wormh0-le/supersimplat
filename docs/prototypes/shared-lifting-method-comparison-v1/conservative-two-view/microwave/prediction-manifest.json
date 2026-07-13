@@ -1,0 +1,48 @@
+{
+  "frame_set": {
+    "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/office/targets/microwave/frame-set-v1/frame-set.json",
+    "sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc"
+  },
+  "mask_set": {
+    "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/office/targets/microwave/frame-set-v1/mask-set-v1/mask-set.json",
+    "sha256": "d6fb3d630751832e4151e0a015398e010259a1e734e882e6924c5b594835a4ee"
+  },
+  "methods": {
+    "contributor_three_state": {
+      "path": "microwave/contributor_three_state.npz",
+      "rejected_count": 1976,
+      "selected_count": 2738,
+      "sha256": "422b6507ac7190d161183eec0524bed8ffb9d28e14e54f9913b672d6bdd52c9f",
+      "uncertain_count": 3675827
+    },
+    "current_top1_visibility": {
+      "path": "microwave/current_top1_visibility.npz",
+      "rejected_count": 0,
+      "selected_count": 709,
+      "sha256": "3ec089bd7ff7bf205359b85cac6541d0bf88482cbec07f7232292a31802a8bc3",
+      "uncertain_count": 3679832
+    },
+    "hard_top1_vote": {
+      "path": "microwave/hard_top1_vote.npz",
+      "rejected_count": 458,
+      "selected_count": 1135,
+      "sha256": "2f61cec20226dbb5288be777abb10c42b2252b7fd5a3c7714e49eeaf2ec4f4ca",
+      "uncertain_count": 3678948
+    },
+    "soft_mask_fit": {
+      "path": "microwave/soft_mask_fit.npz",
+      "rejected_count": 1958,
+      "selected_count": 2989,
+      "sha256": "2fb6c123a57ec1641852be593c86a28b6527f0242aedeabb5ab3879ddfa29578",
+      "uncertain_count": 3675594
+    }
+  },
+  "prediction_before_ground_truth_scoring": true,
+  "scenario_id": "microwave",
+  "scene_snapshot": {
+    "gaussian_count": 3680541,
+    "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+    "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1"
+  },
+  "schema_version": 1
+}

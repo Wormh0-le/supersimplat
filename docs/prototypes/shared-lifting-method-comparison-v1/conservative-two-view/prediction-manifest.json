@@ -1,0 +1,142 @@
+{
+  "prediction_before_ground_truth_scoring": true,
+  "scenarios": [
+    {
+      "methods": {
+        "contributor_three_state": {
+          "path": "controlled_overlap/contributor_three_state.npz",
+          "rejected_count": 16,
+          "selected_count": 3061,
+          "sha256": "5d65f48d928a390ea8496bf9cbc80fd0f5e3729c37ab2762f2d2fb89c4b18070",
+          "uncertain_count": 13307
+        },
+        "current_top1_visibility": {
+          "path": "controlled_overlap/current_top1_visibility.npz",
+          "rejected_count": 0,
+          "selected_count": 3314,
+          "sha256": "b015fe63da318cb7aa37e84074c4ccbf7655da115a85ea6bd0fead2e1bc89e2f",
+          "uncertain_count": 13070
+        },
+        "hard_top1_vote": {
+          "path": "controlled_overlap/hard_top1_vote.npz",
+          "rejected_count": 4,
+          "selected_count": 1727,
+          "sha256": "0edd6b77692f4959ffd25efd0c1da12d40b8cac9edfd3b7900c27692600e30ed",
+          "uncertain_count": 14653
+        },
+        "soft_mask_fit": {
+          "path": "controlled_overlap/soft_mask_fit.npz",
+          "rejected_count": 13,
+          "selected_count": 3061,
+          "sha256": "7095391d79b742d254db39d6d672b918c468a6c810d5cfa678fe03506cc04088",
+          "uncertain_count": 13310
+        }
+      },
+      "scenario_id": "controlled_overlap"
+    },
+    {
+      "methods": {
+        "contributor_three_state": {
+          "path": "gift_box/contributor_three_state.npz",
+          "rejected_count": 2359,
+          "selected_count": 1710,
+          "sha256": "a8a0af9af4c7799b1eddc2056298bbb3768a2d1c5cd69b73023fd17101ab3553",
+          "uncertain_count": 3676472
+        },
+        "current_top1_visibility": {
+          "path": "gift_box/current_top1_visibility.npz",
+          "rejected_count": 0,
+          "selected_count": 484,
+          "sha256": "342c236da555bdf3bd51b0938cf1237e83b354ef622a8d5f1f2a5523b14deb35",
+          "uncertain_count": 3680057
+        },
+        "hard_top1_vote": {
+          "path": "gift_box/hard_top1_vote.npz",
+          "rejected_count": 590,
+          "selected_count": 737,
+          "sha256": "f8719a7c8b20ca61bc4589413b6a59fba60ad84fb7cd73a8ee9f1f2963953269",
+          "uncertain_count": 3679214
+        },
+        "soft_mask_fit": {
+          "path": "gift_box/soft_mask_fit.npz",
+          "rejected_count": 2292,
+          "selected_count": 1910,
+          "sha256": "b6269e5c39e9179458bcbc9803f371e19898ed02e44b3e44bf6a2e5f35d28b44",
+          "uncertain_count": 3676339
+        }
+      },
+      "scenario_id": "gift_box"
+    },
+    {
+      "methods": {
+        "contributor_three_state": {
+          "path": "microwave/contributor_three_state.npz",
+          "rejected_count": 1976,
+          "selected_count": 2738,
+          "sha256": "422b6507ac7190d161183eec0524bed8ffb9d28e14e54f9913b672d6bdd52c9f",
+          "uncertain_count": 3675827
+        },
+        "current_top1_visibility": {
+          "path": "microwave/current_top1_visibility.npz",
+          "rejected_count": 0,
+          "selected_count": 709,
+          "sha256": "3ec089bd7ff7bf205359b85cac6541d0bf88482cbec07f7232292a31802a8bc3",
+          "uncertain_count": 3679832
+        },
+        "hard_top1_vote": {
+          "path": "microwave/hard_top1_vote.npz",
+          "rejected_count": 458,
+          "selected_count": 1135,
+          "sha256": "2f61cec20226dbb5288be777abb10c42b2252b7fd5a3c7714e49eeaf2ec4f4ca",
+          "uncertain_count": 3678948
+        },
+        "soft_mask_fit": {
+          "path": "microwave/soft_mask_fit.npz",
+          "rejected_count": 1958,
+          "selected_count": 2989,
+          "sha256": "2fb6c123a57ec1641852be593c86a28b6527f0242aedeabb5ab3879ddfa29578",
+          "uncertain_count": 3675594
+        }
+      },
+      "scenario_id": "microwave"
+    },
+    {
+      "methods": {
+        "contributor_three_state": {
+          "path": "clothes_rack/contributor_three_state.npz",
+          "rejected_count": 14665,
+          "selected_count": 2479,
+          "sha256": "9bc5060d8ca1eec0eb2dc97bba363fd63bee4e37d9cb1c7e378979f92d461de7",
+          "uncertain_count": 3663397
+        },
+        "current_top1_visibility": {
+          "path": "clothes_rack/current_top1_visibility.npz",
+          "rejected_count": 0,
+          "selected_count": 806,
+          "sha256": "c0a05b5609925075930b8a4177fe1e61a30438ce7b535895b8f50604429e7079",
+          "uncertain_count": 3679735
+        },
+        "hard_top1_vote": {
+          "path": "clothes_rack/hard_top1_vote.npz",
+          "rejected_count": 3723,
+          "selected_count": 849,
+          "sha256": "75065b61173010b010d235fbb135032cda234010a2568e8c7105d5cdc4705f48",
+          "uncertain_count": 3675969
+        },
+        "soft_mask_fit": {
+          "path": "clothes_rack/soft_mask_fit.npz",
+          "rejected_count": 14549,
+          "selected_count": 2965,
+          "sha256": "1b2e578940beec222587e8b691338b88822f5a3a286ec55a8735c822a0c0728d",
+          "uncertain_count": 3663027
+        }
+      },
+      "scenario_id": "clothes_rack"
+    }
+  ],
+  "schema_version": 1,
+  "shared_input_manifest": {
+    "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/shared-lifting-benchmark-v1.json",
+    "sha256": "3b52c0abf55097d0dfd48624b9187b2085a261411e9efac085ae4933c175514c"
+  }
+}

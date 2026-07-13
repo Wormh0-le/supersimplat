@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "purpose": "reliable contributor-visibility facts; not Gaussian selection labels",
+  "coverage_report_version": "coverage-report-v1",
+  "target_id": "microwave",
+  "source_ply": {
+    "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+    "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1",
+    "gaussian_count": 3680541
+  },
+  "frame_set": {
+    "path": "microwave/frame-set-v1/frame-set.json",
+    "sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc",
+    "version": "frame-set-v1"
+  },
+  "mask_set": {
+    "path": "microwave/frame-set-v1/mask-set-v1/mask-set.json",
+    "sha256": "d6fb3d630751832e4151e0a015398e010259a1e734e882e6924c5b594835a4ee",
+    "masks_sha256": "17c765084871fbd6a93ae31515b09bc639faea47ed329602cb36dbfc53d783ea",
+    "version": "mask-set-v1"
+  },
+  "contributor_rasterization": {
+    "backend": "gsplat",
+    "top_k": 8,
+    "near_plane": 0.01,
+    "far_plane": 1000.0,
+    "stable_id_mapping": "packed projection IDs are mapped through meta.gaussian_ids to immutable PLY-row Stable Gaussian IDs"
+  },
+  "attempted_views": 24,
+  "accepted_views": 6,
+  "not_found_views": [],
+  "rejected_views": [
+    {
+      "view_id": "ring-02",
+      "stage": "quality_review",
+      "reason": "wooden display box materially occludes the microwave"
+    },
+    {
+      "view_id": "ring-03",
+      "stage": "quality_review",
+      "reason": "counter corner and foreground objects obscure the target"
+    },
+    {
+      "view_id": "ring-04",
+      "stage": "quality_review",
+      "reason": "reconstruction collapse"
+    },
+    {
+      "view_id": "ring-05",
+      "stage": "quality_review",
+      "reason": "severe blur/reconstruction collapse"
+    },
+    {
+      "view_id": "ring-06",
+      "stage": "quality_review",
+      "reason": "severe blur/reconstruction collapse"
+    },
+    {
+      "view_id": "ring-07",
+      "stage": "quality_review",
+      "reason": "severe blur/reconstruction collapse"
+    },
+    {
+      "view_id": "ring-08",
+      "stage": "quality_review",
+      "reason": "severe blur/reconstruction collapse"
+    },
+    {
+      "view_id": "ring-09",
+      "stage": "quality_review",
+      "reason": "target not reliably visible"
+    },
+    {
+      "view_id": "ring-10",
+      "stage": "quality_review",
+      "reason": "target is materially occluded by the cabinet partition"
+    },
+    {
+      "view_id": "upper-01",
+      "stage": "quality_review",
+      "reason": "target is seen only as an unreliable rear/side reconstruction"
+    },
+    {
+      "view_id": "upper-02",
+      "stage": "quality_review",
+      "reason": "severe blur/reconstruction collapse"
+    },
+    {
+      "view_id": "upper-03",
+      "stage": "quality_review",
+      "reason": "severe blur/reconstruction collapse"
+    },
+    {
+      "view_id": "replacement-01",
+      "stage": "quality_review",
+      "reason": "wooden display box materially occludes the microwave"
+    },
+    {
+      "view_id": "replacement-02",
+      "stage": "quality_review",
+      "reason": "target not reliably visible"
+    },
+    {
+      "view_id": "replacement-03",
+      "stage": "quality_review",
+      "reason": "severe blur/reconstruction collapse"
+    },
+    {
+      "view_id": "replacement-04",
+      "stage": "quality_review",
+      "reason": "target not reliably visible"
+    },
+    {
+      "view_id": "replacement-05",
+      "stage": "quality_review",
+      "reason": "severe blur/reconstruction collapse"
+    },
+    {
+      "view_id": "replacement-06",
+      "stage": "quality_review",
+      "reason": "empty/unstable reconstruction"
+    }
+  ],
+  "candidate_selection": {
+    "path": "microwave/frame-set-v1-selection.json",
+    "sha256": "3c5ba02d593b93fd7bd8c8b4e63d1c9c370c72589ea4b9e75c6d94f75f5d5f78",
+    "candidate_manifest": "microwave/generated-view-candidates-preview-512-v2-anchor-radius/candidates.json",
+    "candidate_manifest_sha256": "dfce9fa9e7bd01b44100382955ebc2e9cd95262bd335ea590dbf4d8ee37cf8de"
+  },
+  "contributor_observation": {
+    "artifact": "observed-contributors.npz",
+    "artifact_sha256": "630761d1a4dd0c9379fe441beef1f8b3344f374c1a22786ff2a913f40798f8c3",
+    "observed_stable_gaussians": 4426,
+    "total_contribution_weight": 427081.06566566415,
+    "seed_region_candidate_gaussians": 1326,
+    "observed_seed_region_gaussians": 1326,
+    "unobserved_seed_region_gaussians": 0,
+    "note": "The Seed Region is only a framing aid. Its observation fraction is reported but cannot by itself establish whole-object coverage."
+  },
+  "incremental_coverage_by_view": [
+    {
+      "view_id": "replacement-07",
+      "frame_index": 0,
+      "mask_area_pixels": 171273,
+      "contributing_stable_gaussians": 2742,
+      "new_stable_gaussians": 2742,
+      "new_contribution_weight": 121750.22000385716,
+      "cumulative_stable_gaussians": 2742,
+      "observed_seed_gaussians": 1186,
+      "azimuth_degrees": 149.53638295685468,
+      "elevation_degrees": 8.47670621571394
+    },
+    {
+      "view_id": "ring-11",
+      "frame_index": 1,
+      "mask_area_pixels": 70156,
+      "contributing_stable_gaussians": 2808,
+      "new_stable_gaussians": 304,
+      "new_contribution_weight": 1184.7392531111836,
+      "cumulative_stable_gaussians": 3046,
+      "observed_seed_gaussians": 1266,
+      "azimuth_degrees": 149.53638195385366,
+      "elevation_degrees": 0.3632658819817886
+    },
+    {
+      "view_id": "anchor",
+      "frame_index": 2,
+      "mask_area_pixels": 66332,
+      "contributing_stable_gaussians": 2750,
+      "new_stable_gaussians": 410,
+      "new_contribution_weight": 2321.6860973378643,
+      "cumulative_stable_gaussians": 3456,
+      "observed_seed_gaussians": 1326,
+      "azimuth_degrees": 179.53638686760104,
+      "elevation_degrees": 0.36326582643732075
+    },
+    {
+      "view_id": "upper-00",
+      "frame_index": 3,
+      "mask_area_pixels": 59946,
+      "contributing_stable_gaussians": 3078,
+      "new_stable_gaussians": 453,
+      "new_contribution_weight": 10127.640898934565,
+      "cumulative_stable_gaussians": 3909,
+      "observed_seed_gaussians": 1244,
+      "azimuth_degrees": 179.53638686760104,
+      "elevation_degrees": 30.000000958957187
+    },
+    {
+      "view_id": "replacement-00",
+      "frame_index": 4,
+      "mask_area_pixels": 164841,
+      "contributing_stable_gaussians": 2903,
+      "new_stable_gaussians": 296,
+      "new_contribution_weight": 1933.7760209408589,
+      "cumulative_stable_gaussians": 4205,
+      "observed_seed_gaussians": 1217,
+      "azimuth_degrees": 194.5363847591148,
+      "elevation_degrees": 8.47670401087615
+    },
+    {
+      "view_id": "ring-01",
+      "frame_index": 5,
+      "mask_area_pixels": 51829,
+      "contributing_stable_gaussians": 2428,
+      "new_stable_gaussians": 221,
+      "new_contribution_weight": 556.4155207923613,
+      "cumulative_stable_gaussians": 4426,
+      "observed_seed_gaussians": 1106,
+      "azimuth_degrees": 209.53637799082767,
+      "elevation_degrees": 0.3632657678728952
+    }
+  ],
+  "effective_azimuth_elevation_coverage": {
+    "azimuth_degrees_in_frame_order": [
+      149.53638295685468, 149.53638195385366, 179.53638686760104,
+      179.53638686760104, 194.5363847591148, 209.53637799082767
+    ],
+    "elevation_degrees_in_frame_order": [
+      8.47670621571394, 0.3632658819817886, 0.36326582643732075,
+      30.000000958957187, 8.47670401087615, 0.3632657678728952
+    ],
+    "circular_azimuth_span_degrees": 59.99999603697404,
+    "minimum_elevation_degrees": 0.3632657678728952,
+    "maximum_elevation_degrees": 30.000000958957187
+  },
+  "status_value": "insufficient_coverage",
+  "status_reason": "6 accepted masks remain after quality rejection of 18 planned candidates and 0 not-found Frame Set views. They do not provide a reliable full-orbit observation, so unobserved object regions must remain uncertain.",
+  "timing": {
+    "contributor_analysis_seconds": 0.319886413984932,
+    "peak_vram_bytes": 332645888
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "status": "candidate-frame-set-mask-validation-pending",
+  "frame_set_version": "frame-set-anchor-only-diagnostic",
+  "render_config_version": "frame-set-1008-v1",
+  "target_id": "clothes_rack",
+  "source_ply": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+  "resolution": [1008, 1008],
+  "horizontal_fov_degrees": 55.0,
+  "anchor_frame_index": 0,
+  "frames": [
+    {
+      "frame_index": 0,
+      "candidate_id": "anchor",
+      "category": "anchor",
+      "file": "frames/000-anchor.png",
+      "camera_to_world": [
+        [
+          0.9706048965454102, -0.032923851162195206, 0.2384159117937088,
+          6.429999828338623
+        ],
+        [
+          -0.24067844450473785, -0.13277487456798553, 0.9614805579185486,
+          -1.850000023841858
+        ],
+        [0.0, -0.9905993342399597, -0.1367960125207901, 1.2000000476837158],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sha256": "322399367cbfc3950b399604c48eed7b6f614305f9241f3b56def92be4f9fe7d",
+      "source": "frozen-anchor-image"
+    }
+  ]
+}

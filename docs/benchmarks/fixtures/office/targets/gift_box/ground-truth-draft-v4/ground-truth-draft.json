@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "status": "draft-derived-from-reviewed-2d-annotations-not-frozen",
+  "purpose": "Conservative three-way Benchmark Ground Truth draft; not eligible for scoring until human review freezes a new revision.",
+  "target_id": "gift_box",
+  "source_ply": {
+    "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+    "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1",
+    "gaussian_count": 3680541
+  },
+  "inspection_set": {
+    "path": "docs/benchmarks/fixtures/office/targets/gift_box/ground-truth-inspection-v1/inspection-set.json",
+    "sha256": "c5e5fe9cc2a2a4d2d557b989632be447f7ec187544d7997d62b558b755c81f3e"
+  },
+  "visual_review": {
+    "path": "docs/benchmarks/fixtures/office/targets/gift_box/ground-truth-inspection-v1/visual-review.json",
+    "sha256": "1b257c608d3308c08cc9aa3b4af8c9baeab7775a39dc2d187039c43f585b5627"
+  },
+  "annotation_spec": {
+    "path": "docs/benchmarks/fixtures/office/targets/gift_box/ground-truth-annotation-draft-v4.json",
+    "sha256": "767dcfa162749e561a3a165ce04a03d48c9314350c089fedf3ba654ef2510498"
+  },
+  "annotation_masks": {
+    "path": "docs/benchmarks/fixtures/office/targets/gift_box/ground-truth-inspection-v1/annotation-masks-draft-v5/annotation-masks.json",
+    "sha256": "64adb4241394c2278f174a7298681dcdf18e29b1dfcfa6c8f3515c720e3e40ef"
+  },
+  "seed_region_context": {
+    "path": "docs/benchmarks/fixtures/office/targets/gift_box/seed-region.npz",
+    "sha256": "4e0b5e639802eaf95bdd8551eacbb899d2a04fa47c6c250f819b0d811930e31b",
+    "role": "framing/candidate context only; no Seed Region ID is automatically selected or rejected"
+  },
+  "local_candidate_region": {
+    "kind": "aabb",
+    "min": [7.74, 0.38, -0.25],
+    "max": [8.45, 0.98, 0.52],
+    "purpose": "Conservative local context; IDs without sufficient direct evidence remain ambiguous."
+  },
+  "contributor_rasterization": {
+    "backend": "gsplat",
+    "top_k": 8,
+    "minimum_evidence_weight_per_view": 0.01,
+    "stable_id_mapping": "packed projection IDs are mapped through meta.gaussian_ids to immutable PLY-row Stable Gaussian IDs"
+  },
+  "classification_policy": {
+    "selected": "positive manual/color-assisted evidence in at least the configured number of independent inspection views, with no negative evidence",
+    "rejected": "negative manual evidence in at least the configured number of inspection views, with no positive evidence",
+    "ambiguous": "all conflicts, single-view positive evidence, and all unlabeled IDs in the explicit local candidate region or Seed Region context",
+    "minimum_selected_positive_views": 2,
+    "minimum_rejected_negative_views": 1
+  },
+  "evidence_by_view": [
+    {
+      "view_id": "anchor",
+      "positive_stable_gaussians": 1828,
+      "negative_stable_gaussians": 1683,
+      "positive_total_contribution_weight": 35009.289652917534,
+      "negative_total_contribution_weight": 30226.327282164246
+    },
+    {
+      "view_id": "left_orbit",
+      "positive_stable_gaussians": 1268,
+      "negative_stable_gaussians": 0,
+      "positive_total_contribution_weight": 18699.021371196955,
+      "negative_total_contribution_weight": 0.0
+    },
+    {
+      "view_id": "right_orbit",
+      "positive_stable_gaussians": 1077,
+      "negative_stable_gaussians": 0,
+      "positive_total_contribution_weight": 25133.645641103387,
+      "negative_total_contribution_weight": 0.0
+    },
+    {
+      "view_id": "top",
+      "positive_stable_gaussians": 1095,
+      "negative_stable_gaussians": 0,
+      "positive_total_contribution_weight": 23302.68146021478,
+      "negative_total_contribution_weight": 0.0
+    },
+    {
+      "view_id": "oblique",
+      "positive_stable_gaussians": 1746,
+      "negative_stable_gaussians": 0,
+      "positive_total_contribution_weight": 21200.500348998234,
+      "negative_total_contribution_weight": 0.0
+    }
+  ],
+  "labels": {
+    "artifact": "ground-truth-draft.npz",
+    "artifact_sha256": "a5000105de4dcdbe5c1c6224d1bf651843e3dfe94c1f05f645c8cfda29fddf66",
+    "scope_stable_gaussians": 5258,
+    "selected_stable_gaussians": 1671,
+    "rejected_stable_gaussians": 1396,
+    "ambiguous_stable_gaussians": 2191
+  },
+  "evidence_provenance": {
+    "artifact": "evidence-provenance.npz",
+    "artifact_sha256": "f1ea3f1e1e06a00523c32d33d6f9ffbff50f775bc0e0fb72a6cf898f2bb590ab",
+    "description": "Per-scope Stable Gaussian positive/negative view counts and contribution totals; used to audit why a label is selected, rejected, or ambiguous."
+  },
+  "projection_review": {
+    "contact_sheet": "projection-overlay-contact-sheet.png",
+    "contact_sheet_sha256": "9bdbd86c8771475cd78ab4a1da6fc4aca354e5e39d3a3bd732a23127645fb67e",
+    "frames": [
+      {
+        "frame_index": 0,
+        "view_id": "anchor",
+        "visual_review_status": "usable",
+        "projection_status": "rendered",
+        "overlay": "projection-overlays/00-anchor.png",
+        "sha256": "13a846ed28ddf5182c97ffcb4f92f60af679e372548965cae6d2e3245022c18a"
+      },
+      {
+        "frame_index": 1,
+        "view_id": "opposite",
+        "visual_review_status": "insufficient",
+        "projection_status": "excluded_insufficient_view",
+        "reason": "This view is not reliable enough to visually validate Ground Truth and did not contribute annotation evidence."
+      },
+      {
+        "frame_index": 2,
+        "view_id": "left_orbit",
+        "visual_review_status": "usable",
+        "projection_status": "rendered",
+        "overlay": "projection-overlays/02-left_orbit.png",
+        "sha256": "b5ce9474003dd394768313fc1e06d79e03d97dcb93140ad4eba9d9313e505f1e"
+      },
+      {
+        "frame_index": 3,
+        "view_id": "right_orbit",
+        "visual_review_status": "partial",
+        "projection_status": "rendered",
+        "overlay": "projection-overlays/03-right_orbit.png",
+        "sha256": "62cff4a85db5fe0ae20179cb00c19aa2dcf1612781fb2e743699e6e54b6538bc"
+      },
+      {
+        "frame_index": 4,
+        "view_id": "top",
+        "visual_review_status": "partial",
+        "projection_status": "rendered",
+        "overlay": "projection-overlays/04-top.png",
+        "sha256": "8213fff5699305f28a7522501d61fe974884276fb27083c9a0279617f78e8180"
+      },
+      {
+        "frame_index": 5,
+        "view_id": "bottom",
+        "visual_review_status": "insufficient",
+        "projection_status": "excluded_insufficient_view",
+        "reason": "This view is not reliable enough to visually validate Ground Truth and did not contribute annotation evidence."
+      },
+      {
+        "frame_index": 6,
+        "view_id": "oblique",
+        "visual_review_status": "usable",
+        "projection_status": "rendered",
+        "overlay": "projection-overlays/06-oblique.png",
+        "sha256": "8716fdeaa8d0412b95e9e8f7d297f204f966c294dab74be020cca8d7bab06411"
+      }
+    ]
+  },
+  "freeze_requirement": "A reviewer must inspect the RGB annotation and projected Stable-ID overlays, then explicitly accept or revise this draft. A frozen revision must preserve this draft artifact rather than overwrite it.",
+  "timing": {
+    "contributor_analysis_and_projection_seconds": 1.635588214994641,
+    "peak_vram_bytes": 860227584
+  }
+}

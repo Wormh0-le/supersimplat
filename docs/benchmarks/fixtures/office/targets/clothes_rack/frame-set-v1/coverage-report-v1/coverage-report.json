@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "purpose": "reliable contributor-visibility facts; not Gaussian selection labels",
+  "coverage_report_version": "coverage-report-v1",
+  "target_id": "clothes_rack",
+  "source_ply": {
+    "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+    "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1",
+    "gaussian_count": 3680541
+  },
+  "frame_set": {
+    "path": "clothes_rack/frame-set-v1/frame-set.json",
+    "sha256": "e6a2f525a0c833a28a00c978549488a8ff7365a3dcb6223d73826351c23e8bba",
+    "version": "frame-set-v1"
+  },
+  "mask_set": {
+    "path": "clothes_rack/frame-set-v1/mask-set-v1/mask-set.json",
+    "sha256": "50fc52fb9bf4b34e0fa118e11a5002984e040a5ec9443d72c08fc7039f41814b",
+    "masks_sha256": "827ba53976d7c6c065592f5b18674f8ca18e5eb5a481c8b5a036c3e5affa5255",
+    "version": "mask-set-v1"
+  },
+  "contributor_rasterization": {
+    "backend": "gsplat",
+    "top_k": 8,
+    "near_plane": 0.01,
+    "far_plane": 1000.0,
+    "stable_id_mapping": "packed projection IDs are mapped through meta.gaussian_ids to immutable PLY-row Stable Gaussian IDs"
+  },
+  "attempted_views": 24,
+  "accepted_views": 4,
+  "not_found_views": [
+    {
+      "view_id": "ring-11",
+      "frame_index": 0,
+      "reason": "SAM3.1 produced no reliable target mask; this view contributes neutral evidence."
+    },
+    {
+      "view_id": "ring-03",
+      "frame_index": 5,
+      "reason": "SAM3.1 produced no reliable target mask; this view contributes neutral evidence."
+    },
+    {
+      "view_id": "upper-01",
+      "frame_index": 6,
+      "reason": "SAM3.1 produced no reliable target mask; this view contributes neutral evidence."
+    }
+  ],
+  "rejected_views": [
+    {
+      "view_id": "ring-04",
+      "stage": "quality_review",
+      "reason": "monitor and desk materially obscure the rack base"
+    },
+    {
+      "view_id": "ring-05",
+      "stage": "quality_review",
+      "reason": "target is materially occluded by desk/chair geometry"
+    },
+    {
+      "view_id": "ring-06",
+      "stage": "quality_review",
+      "reason": "target is not reliably visible"
+    },
+    {
+      "view_id": "ring-07",
+      "stage": "quality_review",
+      "reason": "target is not reliably visible"
+    },
+    {
+      "view_id": "ring-08",
+      "stage": "quality_review",
+      "reason": "person/chair background creates an ambiguous thin-structure boundary"
+    },
+    {
+      "view_id": "ring-09",
+      "stage": "quality_review",
+      "reason": "whiteboard support occludes or confuses the target identity"
+    },
+    {
+      "view_id": "ring-10",
+      "stage": "quality_review",
+      "reason": "target is materially occluded by the whiteboard"
+    },
+    {
+      "view_id": "upper-02",
+      "stage": "quality_review",
+      "reason": "target is materially occluded by desk and monitor geometry"
+    },
+    {
+      "view_id": "upper-03",
+      "stage": "quality_review",
+      "reason": "target is not reliably visible"
+    },
+    {
+      "view_id": "replacement-00",
+      "stage": "quality_review",
+      "reason": "chair and foreground desk obscure the rack base"
+    },
+    {
+      "view_id": "replacement-01",
+      "stage": "quality_review",
+      "reason": "redundant bearing with ring-02"
+    },
+    {
+      "view_id": "replacement-02",
+      "stage": "quality_review",
+      "reason": "edge-on rack silhouette is too weak for reliable association"
+    },
+    {
+      "view_id": "replacement-03",
+      "stage": "quality_review",
+      "reason": "redundant bearing with ring-03"
+    },
+    {
+      "view_id": "replacement-04",
+      "stage": "quality_review",
+      "reason": "foreground monitor/chair obscures the rack base"
+    },
+    {
+      "view_id": "replacement-05",
+      "stage": "quality_review",
+      "reason": "person/chair background creates an ambiguous thin-structure boundary"
+    },
+    {
+      "view_id": "replacement-06",
+      "stage": "quality_review",
+      "reason": "whiteboard edge materially occludes the rack"
+    },
+    {
+      "view_id": "replacement-07",
+      "stage": "quality_review",
+      "reason": "redundant bearing with ring-11"
+    }
+  ],
+  "candidate_selection": {
+    "path": "clothes_rack/frame-set-v1-selection.json",
+    "sha256": "4826f09b3e1b7a543a84964ec81d7652ff72e9119dc1c3cd58649c088c808707",
+    "candidate_manifest": "clothes_rack/generated-view-candidates-preview-512-v2-anchor-radius/candidates.json",
+    "candidate_manifest_sha256": "9878c033b5a0d982aa63e686785cd3d1d4251fa6f26c9e748cb5c48de45879b3"
+  },
+  "contributor_observation": {
+    "artifact": "observed-contributors.npz",
+    "artifact_sha256": "458d3c077c82c0d62e337117dcc0105f94f561f020149c8873e37a5acd9c3fe6",
+    "observed_stable_gaussians": 7493,
+    "total_contribution_weight": 38082.5561108797,
+    "seed_region_candidate_gaussians": 1658,
+    "observed_seed_region_gaussians": 1654,
+    "unobserved_seed_region_gaussians": 4,
+    "note": "The Seed Region is only a framing aid. Its observation fraction is reported but cannot by itself establish whole-object coverage."
+  },
+  "incremental_coverage_by_view": [
+    {
+      "view_id": "anchor",
+      "frame_index": 1,
+      "mask_area_pixels": 13030,
+      "contributing_stable_gaussians": 3367,
+      "new_stable_gaussians": 3367,
+      "new_contribution_weight": 10228.032509881305,
+      "cumulative_stable_gaussians": 3367,
+      "observed_seed_gaussians": 1648,
+      "azimuth_degrees": 253.70161117040016,
+      "elevation_degrees": 8.339685526359178
+    },
+    {
+      "view_id": "upper-00",
+      "frame_index": 2,
+      "mask_area_pixels": 9957,
+      "contributing_stable_gaussians": 4054,
+      "new_stable_gaussians": 1443,
+      "new_contribution_weight": 638.0162263517268,
+      "cumulative_stable_gaussians": 4810,
+      "observed_seed_gaussians": 1508,
+      "azimuth_degrees": 253.70161191972278,
+      "elevation_degrees": 30.000002070189687
+    },
+    {
+      "view_id": "ring-01",
+      "frame_index": 3,
+      "mask_area_pixels": 13427,
+      "contributing_stable_gaussians": 3542,
+      "new_stable_gaussians": 1189,
+      "new_contribution_weight": 981.3393230335787,
+      "cumulative_stable_gaussians": 5999,
+      "observed_seed_gaussians": 1361,
+      "azimuth_degrees": 283.70161202271765,
+      "elevation_degrees": 8.339684987557016
+    },
+    {
+      "view_id": "ring-02",
+      "frame_index": 4,
+      "mask_area_pixels": 13749,
+      "contributing_stable_gaussians": 4096,
+      "new_stable_gaussians": 1494,
+      "new_contribution_weight": 781.2020630683983,
+      "cumulative_stable_gaussians": 7493,
+      "observed_seed_gaussians": 1311,
+      "azimuth_degrees": 313.70160839580774,
+      "elevation_degrees": 8.339685929923684
+    }
+  ],
+  "effective_azimuth_elevation_coverage": {
+    "azimuth_degrees_in_frame_order": [
+      253.70161117040016, 253.70161191972278, 283.70161202271765,
+      313.70160839580774
+    ],
+    "elevation_degrees_in_frame_order": [
+      8.339685526359178, 30.000002070189687, 8.339684987557016,
+      8.339685929923684
+    ],
+    "circular_azimuth_span_degrees": 59.99999722540758,
+    "minimum_elevation_degrees": 8.339684987557016,
+    "maximum_elevation_degrees": 30.000002070189687
+  },
+  "status_value": "insufficient_coverage",
+  "status_reason": "4 accepted masks remain after quality rejection of 17 planned candidates and 3 not-found Frame Set views. They do not provide a reliable full-orbit observation, so unobserved object regions must remain uncertain.",
+  "timing": {
+    "contributor_analysis_seconds": 0.168025099002989,
+    "peak_vram_bytes": 355314688
+  }
+}

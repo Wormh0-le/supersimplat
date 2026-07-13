@@ -1,0 +1,12 @@
+{
+  "target_id": "gift_box",
+  "image": "gift_box/anchor-candidate/frames/office_overview_00.png",
+  "image_sha256": "c857d7c46a1158246e70b4d34f9bf35a373a10380d9da6dd5b1efba2bbeb0734",
+  "prompt_type": "positive_box",
+  "box_format": "relative_xywh",
+  "box": [0.4, 0.63, 0.3, 0.29],
+  "output_prob_threshold": 0.5,
+  "candidate_count": 1,
+  "candidate_areas_pixels": [57695],
+  "inference_seconds": 0.6809060199884698
+}

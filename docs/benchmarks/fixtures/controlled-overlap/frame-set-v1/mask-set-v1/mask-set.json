@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "purpose": "shared exact visible-target masks for controlled lifting comparison; not SAM output",
+  "mask_set_version": "mask-set-v1",
+  "frame_set": {
+    "path": "../frame-set.json",
+    "sha256": "1fbe6f5c26be7a88ab7054538532c546baf77ce8058f61d127d3017fb7e2bdee"
+  },
+  "ground_truth": {
+    "path": "../../controlled_front_back_overlap_ground_truth.npz",
+    "sha256": "7a04518c2f0f7c6cf68ae55ca6e46030cd5d96572bcdfcc73d2262df802c6ef0"
+  },
+  "mask_derivation": {
+    "kind": "same-renderer-top-contributor-instance-mask",
+    "target_stable_id_range": [0, 8191],
+    "top_k": 8,
+    "minimum_target_contribution_weight": 0.01,
+    "rule": "target contribution must be at least the distractor contribution at the pixel"
+  },
+  "masks": {
+    "path": "masks.npz",
+    "sha256": "fb117b62a0120dcab60f6ede886daab7d43c188eef5b04c1b08940e07416a261",
+    "shape": [4, 512, 512]
+  },
+  "frames": [
+    {
+      "candidate_id": "anchor-front",
+      "frame_index": 0,
+      "frame_sha256": "2f2e0c799b29d45260cc0333e3b47bc5dca5d1530623688314390afeb3f14d34",
+      "status": "accepted",
+      "binary_mask_index": 0,
+      "mask_area_pixels": 109334,
+      "mask_area_fraction": 0.41707611083984375,
+      "overlay": "overlays/000-anchor-front.png"
+    },
+    {
+      "candidate_id": "side-right",
+      "frame_index": 1,
+      "frame_sha256": "63b3bd934428046a2c667616383c756bab35de3acccb8eec8bfdebd29c7af8f8",
+      "status": "accepted",
+      "binary_mask_index": 1,
+      "mask_area_pixels": 58085,
+      "mask_area_fraction": 0.22157669067382812,
+      "overlay": "overlays/001-side-right.png"
+    },
+    {
+      "candidate_id": "side-left",
+      "frame_index": 2,
+      "frame_sha256": "216a885389f2874266363f380703d872ab7ada0be362783c441ad76c53eb8907",
+      "status": "accepted",
+      "binary_mask_index": 2,
+      "mask_area_pixels": 58451,
+      "mask_area_fraction": 0.22297286987304688,
+      "overlay": "overlays/002-side-left.png"
+    },
+    {
+      "candidate_id": "rear",
+      "frame_index": 3,
+      "frame_sha256": "fccffcb0dbe4473b24464e323f2398a1ba8eab97a852ccd9bf28485654498d68",
+      "status": "accepted",
+      "binary_mask_index": 3,
+      "mask_area_pixels": 0,
+      "mask_area_fraction": 0.0,
+      "overlay": "overlays/003-rear.png"
+    }
+  ],
+  "timing": {
+    "render_and_attribution_seconds": 0.1392059099744074,
+    "peak_vram_bytes": 74014720,
+    "runtime": {
+      "torch": "2.11.0+cu128",
+      "gpu": "NVIDIA GeForce RTX 4090 D"
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "purpose": "exact target-contributor observation facts for the controlled lifting fixture",
+  "coverage_report_version": "coverage-report-v1",
+  "scene": {
+    "ply": "../../controlled_front_back_overlap.ply",
+    "sha256": "cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e"
+  },
+  "frame_set": {
+    "path": "../frame-set.json",
+    "sha256": "1fbe6f5c26be7a88ab7054538532c546baf77ce8058f61d127d3017fb7e2bdee"
+  },
+  "mask_set": {
+    "path": "../mask-set-v1/mask-set.json",
+    "sha256": "9af076069eef0dfbf2ed95b94052fb5856f1c9ef8bc45485f642e1cf9dd3c72c"
+  },
+  "target_stable_id_range": [0, 8191],
+  "observed_target_contributors": {
+    "artifact": "observed-target-contributors.npz",
+    "sha256": "66e9d88bb9435df82e03f30364f3b2a799e4407c78185cd0e20062b28059df42",
+    "count": 7415,
+    "total_target_gaussians": 8192,
+    "fraction": 0.9051513671875
+  },
+  "status_value": "insufficient_coverage",
+  "timing": {
+    "render_and_attribution_seconds": 0.1392059099744074,
+    "peak_vram_bytes": 74014720,
+    "runtime": {
+      "torch": "2.11.0+cu128",
+      "gpu": "NVIDIA GeForce RTX 4090 D"
+    }
+  }
+}

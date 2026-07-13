@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "purpose": "complete reviewed Mask Set for generated-view lifting benchmark",
+  "mask_set_version": "mask-set-v1",
+  "target_id": "microwave",
+  "frame_set": {
+    "path": "microwave/frame-set-v1/frame-set.json",
+    "frame_set_version": "frame-set-v1",
+    "sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc",
+    "resolution": [1008, 1008]
+  },
+  "model_manifest": {
+    "adapter": "SAM3.1 visual prompt/video propagation",
+    "model": "facebook/sam3.1",
+    "checkpoint_sha256": "0567debeec80ba4ac6369540c6c248025283cb3ff2b92827509e57e2b3541cb6",
+    "sam3_source_commit": "5dd401d1c5c1d5c3eedff06d41b77af824517619",
+    "license": {
+      "name": "SAM License",
+      "url": "https://github.com/facebookresearch/sam3/blob/5dd401d1c5c1d5c3eedff06d41b77af824517619/LICENSE",
+      "weights_bundled": false
+    },
+    "runtime": {
+      "torch": "2.11.0+cu128",
+      "cuda": "12.8",
+      "gpu": "NVIDIA GeForce RTX 4090 D",
+      "offload_video_to_cpu": false,
+      "compile": false,
+      "warm_up": false,
+      "use_fa3": false,
+      "use_rope_real": true,
+      "async_loading_frames": false,
+      "max_num_objects": 16,
+      "multiplex_count": 16
+    }
+  },
+  "model_manifest_sha256": "d0ffc424bae360ca54adda8cb733baa5e149b604cc1c961986cdd4c409ec2c2b",
+  "prompt_script": {
+    "path": "microwave/sam31-tracking-prompt-v1.json",
+    "sha256": "3ad1890cd2d279a2bf633dc4fe469b0b17a7011066fbb5857232d7851c1b73b8",
+    "content": {
+      "schema_version": 1,
+      "purpose": "accepted SAM3.1 adapter prompt script for the microwave Frame Set",
+      "target_id": "microwave",
+      "frame_set_version": "frame-set-v1",
+      "frame_set_manifest_sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc",
+      "track_id": "primary-include",
+      "role": "include",
+      "anchor": {
+        "candidate_id": "anchor",
+        "frame_index": 2,
+        "image": "microwave/anchor-candidate/frames/office_overview_00.png",
+        "image_sha256": "0cbbd4989ac217f90331ff04877d78e8b78dcc315b5991aa94603dda9039c2b1"
+      },
+      "adapter_prompt": {
+        "prompt_type": "positive_box_and_text",
+        "box_format": "relative_xywh",
+        "box": [0.33, 0.39, 0.36, 0.23],
+        "text": "microwave oven",
+        "output_prob_threshold": 0.5
+      },
+      "source_anchor_mask_prompt_log": {
+        "path": "microwave/sam31-anchor-probe/prompt-log.json",
+        "sha256": "f9fdb86f9860c20614ad08f6e1ae330319f8dc6f7a33f02e33f1ac2b0e39b446"
+      },
+      "selection_evidence": {
+        "accepted_combination": {
+          "reason": "The Anchor box plus 'microwave oven' produced non-empty, non-border-touching masks on all six selected 1008px frames without including the adjacent counter objects.",
+          "artifact": "microwave/frame-set-v1/sam31-track-text-prompt-v1-diagnostic/tracking.json"
+        }
+      },
+      "scope_note": "This is an adapter-specific benchmark bootstrap prompt. The editor-facing point-only service contract remains separate from this fixture."
+    }
+  },
+  "acceptance_gate": {
+    "minimum_mask_area_fraction": 0.001,
+    "maximum_mask_area_fraction": 0.8,
+    "border_touch": "rejected",
+    "visual_review": {
+      "artifact": "overlay-contact-sheet.png",
+      "note": "All six overlays were visually reviewed: each mask covers the microwave body without including the counter, wooden display box, or adjacent appliances; all pass nonempty, area, and no-border-touch hard gates."
+    }
+  },
+  "source_tracking": {
+    "path": "microwave/frame-set-v1/sam31-track-mask-set-v1-final-candidate/tracking.json",
+    "sha256": "be4d79872899692d42500087c681005df15fdbccd27b8d03708b8c6e3db3a11c",
+    "masks_sha256": "17c765084871fbd6a93ae31515b09bc639faea47ed329602cb36dbfc53d783ea"
+  },
+  "outcome_counts": {
+    "accepted": 6,
+    "not_found": 0
+  },
+  "tracks": [
+    {
+      "track_id": "primary-include",
+      "role": "include",
+      "frames": [
+        {
+          "view_id": "replacement-07",
+          "frame_index": 0,
+          "frame_sha256": "77133c3bd8dcabfe0c8b705b9e1bb5718608f1832ec842e12fa7031beccb2ee1",
+          "status": "accepted",
+          "mask_area_pixels": 171273,
+          "mask_area_fraction": 0.16856516912320485,
+          "bbox_xyxy": [164, 338, 744, 684],
+          "border_touch": false,
+          "overlay": "overlays/000-replacement-07.png",
+          "binary_mask_ref": "masks.npz",
+          "binary_mask_index": 0
+        },
+        {
+          "view_id": "ring-11",
+          "frame_index": 1,
+          "frame_sha256": "2688a20420798021110ad73f4f248e6de79744c38218853510ec0d50c0daf4cb",
+          "status": "accepted",
+          "mask_area_pixels": 70156,
+          "mask_area_fraction": 0.06904683169564121,
+          "bbox_xyxy": [286, 404, 654, 610],
+          "border_touch": false,
+          "overlay": "overlays/001-ring-11.png",
+          "binary_mask_ref": "masks.npz",
+          "binary_mask_index": 1
+        },
+        {
+          "view_id": "anchor",
+          "frame_index": 2,
+          "frame_sha256": "0cbbd4989ac217f90331ff04877d78e8b78dcc315b5991aa94603dda9039c2b1",
+          "status": "accepted",
+          "mask_area_pixels": 66332,
+          "mask_area_fraction": 0.06528328924162258,
+          "bbox_xyxy": [349, 411, 684, 620],
+          "border_touch": false,
+          "overlay": "overlays/002-anchor.png",
+          "binary_mask_ref": "masks.npz",
+          "binary_mask_index": 2
+        },
+        {
+          "view_id": "upper-00",
+          "frame_index": 3,
+          "frame_sha256": "364c2d1923f6fab2d579a07e972b680310ce5ba95de4a73955c5a3ef353821d0",
+          "status": "accepted",
+          "mask_area_pixels": 59946,
+          "mask_area_fraction": 0.058998252078609224,
+          "bbox_xyxy": [358, 363, 651, 604],
+          "border_touch": false,
+          "overlay": "overlays/003-upper-00.png",
+          "binary_mask_ref": "masks.npz",
+          "binary_mask_index": 3
+        },
+        {
+          "view_id": "replacement-00",
+          "frame_index": 4,
+          "frame_sha256": "3dcfd6b28109ac97d58c4117fb23676be5cdcb0aa905e5c645411d386ef0eeb5",
+          "status": "accepted",
+          "mask_area_pixels": 164841,
+          "mask_area_fraction": 0.16223485922146635,
+          "bbox_xyxy": [237, 344, 802, 662],
+          "border_touch": false,
+          "overlay": "overlays/004-replacement-00.png",
+          "binary_mask_ref": "masks.npz",
+          "binary_mask_index": 4
+        },
+        {
+          "view_id": "ring-01",
+          "frame_index": 5,
+          "frame_sha256": "e3285727711a0d3fa55a5bc2369c63f5da9f61025fabd097cc1ef0bcf37b4e2a",
+          "status": "accepted",
+          "mask_area_pixels": 51829,
+          "mask_area_fraction": 0.05100958207357017,
+          "bbox_xyxy": [355, 399, 721, 599],
+          "border_touch": false,
+          "overlay": "overlays/005-ring-01.png",
+          "binary_mask_ref": "masks.npz",
+          "binary_mask_index": 5
+        }
+      ]
+    }
+  ]
+}

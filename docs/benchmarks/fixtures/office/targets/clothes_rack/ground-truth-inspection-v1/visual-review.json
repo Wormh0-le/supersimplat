@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "status": "reviewed-pending-ground-truth-annotation",
+  "purpose": "Visual quality review of the RGB-only Ground Truth inspection set; it is not a Gaussian label artifact.",
+  "target_id": "clothes_rack",
+  "inspection_set": "inspection-set.json",
+  "views": [
+    {
+      "view_id": "anchor",
+      "status": "usable",
+      "note": "The light-gray pole, arms, and feet are clear and distinct from the black whiteboard support."
+    },
+    {
+      "view_id": "opposite",
+      "status": "partial",
+      "note": "Desk and monitor geometry obscures the lower rack; it can only corroborate visible upper structure."
+    },
+    {
+      "view_id": "left_orbit",
+      "status": "usable",
+      "note": "The rack silhouette and feet are visible."
+    },
+    {
+      "view_id": "right_orbit",
+      "status": "usable",
+      "note": "The rack is visible with a different foreground relationship."
+    },
+    {
+      "view_id": "top",
+      "status": "partial",
+      "note": "The upper structure and foot placement are partially visible through desk occlusion."
+    },
+    {
+      "view_id": "bottom",
+      "status": "insufficient",
+      "note": "Severe reconstruction collapse prevents reliable ownership labels."
+    },
+    {
+      "view_id": "oblique",
+      "status": "usable",
+      "note": "The pole, arms, and feet are visible from an independent bearing."
+    }
+  ],
+  "annotation_rule": "Only usable or partial views may provide target evidence. Insufficient views remain neutral and must not become negative evidence."
+}

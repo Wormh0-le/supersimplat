@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "status": "reviewed-pending-ground-truth-annotation",
+  "purpose": "Visual quality review of the RGB-only Ground Truth inspection set; it is not a Gaussian label artifact.",
+  "target_id": "microwave",
+  "inspection_set": "inspection-set.json",
+  "views": [
+    {
+      "view_id": "anchor",
+      "status": "usable",
+      "note": "The microwave front, silver housing, and adjacent counter boundary are clear."
+    },
+    {
+      "view_id": "opposite",
+      "status": "insufficient",
+      "note": "The reconstruction is severely blurred and cannot establish rear ownership."
+    },
+    {
+      "view_id": "left_orbit",
+      "status": "insufficient",
+      "note": "The target is not reliably represented in this dark view."
+    },
+    {
+      "view_id": "right_orbit",
+      "status": "insufficient",
+      "note": "The target is materially obscured by scene geometry."
+    },
+    {
+      "view_id": "top",
+      "status": "insufficient",
+      "note": "The target is not reliably visible from this synthetic top view."
+    },
+    {
+      "view_id": "bottom",
+      "status": "insufficient",
+      "note": "Severe reconstruction collapse prevents reliable ownership labels."
+    },
+    {
+      "view_id": "oblique",
+      "status": "usable",
+      "note": "The front and right housing are clear; the counter-contact boundary remains a deliberate ambiguity candidate."
+    },
+    {
+      "view_id": "supplemental-upper-00",
+      "status": "usable",
+      "note": "A high-quality upper-front RGB view copied from the immutable Frame Set for inspection only. It clearly corroborates the microwave top without consuming its SAM mask."
+    }
+  ],
+  "annotation_rule": "Only usable views may provide target evidence. Insufficient views remain neutral and must not become negative evidence."
+}

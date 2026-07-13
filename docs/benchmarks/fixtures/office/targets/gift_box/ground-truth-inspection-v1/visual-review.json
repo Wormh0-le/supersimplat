@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "status": "reviewed-pending-ground-truth-annotation",
+  "purpose": "Visual quality review of the RGB-only Ground Truth inspection set; it is not a Gaussian label artifact.",
+  "target_id": "gift_box",
+  "inspection_set": "inspection-set.json",
+  "views": [
+    {
+      "view_id": "anchor",
+      "status": "usable",
+      "note": "The green gift box and its front face are clear."
+    },
+    {
+      "view_id": "opposite",
+      "status": "insufficient",
+      "note": "The reconstruction is washed out; it cannot support ownership labels."
+    },
+    {
+      "view_id": "left_orbit",
+      "status": "usable",
+      "note": "The box side is clear and spatially separated from the desk."
+    },
+    {
+      "view_id": "right_orbit",
+      "status": "partial",
+      "note": "The box is visible, but the clothes-rack pole occludes a narrow region."
+    },
+    {
+      "view_id": "top",
+      "status": "partial",
+      "note": "The top and handle are visible, while the desk occludes part of the silhouette."
+    },
+    {
+      "view_id": "bottom",
+      "status": "insufficient",
+      "note": "Severe reconstruction collapse prevents reliable ownership labels."
+    },
+    {
+      "view_id": "oblique",
+      "status": "usable",
+      "note": "The front and side faces are clear."
+    }
+  ],
+  "annotation_rule": "Only usable or partial views may provide target evidence. Insufficient views remain neutral and must not become negative evidence."
+}

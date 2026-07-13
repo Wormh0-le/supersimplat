@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "status": "draft-for-user-review-not-ground-truth",
+  "purpose": "Conservative RGB-only annotation specification for the black-and-silver microwave. It is independent of SAM masks and lifting outputs.",
+  "target_id": "microwave",
+  "inspection_set": {
+    "path": "microwave/ground-truth-inspection-v2/inspection-set.json",
+    "sha256": "ae92f006fc6d164a591d4db8e4c040129132370f63339c89736cd30371b42337"
+  },
+  "annotation_method": "Manually reviewed polygons isolate the microwave body. The supplementary upper-front RGB frame independently corroborates the top. Separate boxes mark the display case, counter, and cabinet as clear non-target evidence; the physical counter-contact edge is deliberately left unlabeled for later ambiguity handling.",
+  "local_candidate_region": {
+    "kind": "aabb",
+    "min": [13.33, -2.4, 0.75],
+    "max": [13.95, -1.45, 1.3],
+    "purpose": "Conservative local context; the counter-contact and unreliable rear remain ambiguous unless directly evidenced."
+  },
+  "views": [
+    {
+      "view_id": "anchor",
+      "positive_regions": [
+        {
+          "kind": "polygon",
+          "points": [
+            [345, 408],
+            [682, 408],
+            [686, 604],
+            [345, 604]
+          ]
+        }
+      ],
+      "negative_regions": [
+        { "kind": "box", "xyxy": [700, 445, 1008, 625] },
+        { "kind": "box", "xyxy": [0, 640, 1008, 1008] }
+      ]
+    },
+    {
+      "view_id": "oblique",
+      "positive_regions": [
+        {
+          "kind": "polygon",
+          "points": [
+            [378, 382],
+            [691, 403],
+            [733, 553],
+            [603, 605],
+            [383, 544]
+          ]
+        }
+      ],
+      "negative_regions": [
+        {
+          "kind": "polygon",
+          "points": [
+            [500, 618],
+            [746, 620],
+            [735, 810],
+            [495, 742]
+          ]
+        },
+        { "kind": "box", "xyxy": [0, 545, 350, 920] }
+      ]
+    },
+    {
+      "view_id": "supplemental-upper-00",
+      "positive_regions": [
+        {
+          "kind": "polygon",
+          "points": [
+            [360, 405],
+            [647, 405],
+            [650, 580],
+            [360, 580]
+          ]
+        }
+      ],
+      "negative_regions": [
+        { "kind": "box", "xyxy": [670, 510, 900, 690] },
+        { "kind": "box", "xyxy": [0, 610, 1008, 1008] }
+      ]
+    }
+  ]
+}

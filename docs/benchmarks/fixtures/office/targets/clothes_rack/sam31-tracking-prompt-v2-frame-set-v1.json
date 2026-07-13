@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "purpose": "accepted SAM3.1 adapter prompt script for the clothes-rack Frame Set with explicit neutral not-found outcomes",
+  "target_id": "clothes_rack",
+  "frame_set_version": "frame-set-v1",
+  "frame_set_manifest_sha256": "e6a2f525a0c833a28a00c978549488a8ff7365a3dcb6223d73826351c23e8bba",
+  "track_id": "primary-include",
+  "role": "include",
+  "anchor": {
+    "candidate_id": "anchor",
+    "frame_index": 1,
+    "image": "clothes_rack/anchor-candidate/frames/office_overview_00.png",
+    "image_sha256": "322399367cbfc3950b399604c48eed7b6f614305f9241f3b56def92be4f9fe7d"
+  },
+  "adapter_prompt": {
+    "prompt_type": "positive_box_and_text",
+    "box_format": "relative_xywh",
+    "box": [0.46, 0.14, 0.19, 0.72],
+    "text": "white freestanding clothes rack",
+    "output_prob_threshold": 0.5
+  },
+  "source_anchor_mask_prompt_log": {
+    "path": "clothes_rack/sam31-anchor-probe/prompt-log.json",
+    "sha256": "dd97a95739020f643580e026837a83cccc13d6890aca6b979dca960882a39e6a"
+  },
+  "selection_evidence": {
+    "rejected_alternative": {
+      "adapter_prompt_type": "positive_box_and_text",
+      "text": "clothes rack",
+      "reason": "The generic phrase consistently moved the Anchor mask to the left image edge instead of the target rack.",
+      "artifacts": [
+        "clothes_rack/frame-set-anchor-only-diagnostic/sam31-track-text-clothes-rack/tracking.json",
+        "clothes_rack/frame-set-v1/sam31-track-text-prompt-v1-diagnostic/tracking.json"
+      ]
+    },
+    "accepted_combination": {
+      "reason": "The specific phrase produces clean masks on anchor, upper-00, ring-01, and ring-02 in this exact Frame Set. ring-11, ring-03, and upper-01 remain explicit neutral not-found views rather than being converted into negative evidence.",
+      "artifacts": [
+        "clothes_rack/frame-set-anchor-only-diagnostic/sam31-track-text-white-freestanding-clothes-rack/tracking.json",
+        "clothes_rack/frame-set-v1/sam31-track-text-specific-v1-diagnostic/tracking.json"
+      ]
+    }
+  },
+  "scope_note": "This is an adapter-specific benchmark bootstrap prompt. The editor-facing point-only service contract remains separate from this fixture."
+}

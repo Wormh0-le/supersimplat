@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "purpose": "preview-only SAM3.1 tracking for Generated View quality gating",
+  "target_id": "gift_box",
+  "model": "facebook/sam3.1",
+  "checkpoint": "/home/ubuntu/.cache/modelscope/hub/models/facebook/sam3.1/sam3.1_multiplex.pt",
+  "resolution": [1008, 1008],
+  "anchor_prompt": {
+    "target_id": "gift_box",
+    "image": "gift_box/anchor-candidate/frames/office_overview_00.png",
+    "image_sha256": "c857d7c46a1158246e70b4d34f9bf35a373a10380d9da6dd5b1efba2bbeb0734",
+    "prompt_type": "positive_box",
+    "box_format": "relative_xywh",
+    "box": [0.4, 0.63, 0.3, 0.29],
+    "output_prob_threshold": 0.5,
+    "candidate_count": 1,
+    "candidate_areas_pixels": [57695],
+    "inference_seconds": 0.6809060199884698
+  },
+  "model_build_seconds": 8.317295460990863,
+  "tracking_seconds": 0.3342210069822613,
+  "peak_vram_bytes": 6610618368,
+  "frames": [
+    {
+      "frame_index": 0,
+      "candidate_id": "anchor",
+      "category": "anchor",
+      "source_file": "frames/000-anchor.png",
+      "mask_area_pixels": 57695,
+      "mask_area_fraction": 0.056782840450995214,
+      "bbox_xyxy": [421, 652, 682, 910],
+      "border_touch": false,
+      "overlay": "overlays/000-anchor.png"
+    },
+    {
+      "frame_index": 1,
+      "candidate_id": "ring-01",
+      "category": "ring",
+      "source_file": "frames/001-ring-01.png",
+      "mask_area_pixels": 0,
+      "mask_area_fraction": 0.0,
+      "bbox_xyxy": null,
+      "border_touch": false,
+      "overlay": "overlays/001-ring-01.png"
+    },
+    {
+      "frame_index": 2,
+      "candidate_id": "ring-02",
+      "category": "ring",
+      "source_file": "frames/002-ring-02.png",
+      "mask_area_pixels": 0,
+      "mask_area_fraction": 0.0,
+      "bbox_xyxy": null,
+      "border_touch": false,
+      "overlay": "overlays/002-ring-02.png"
+    }
+  ]
+}

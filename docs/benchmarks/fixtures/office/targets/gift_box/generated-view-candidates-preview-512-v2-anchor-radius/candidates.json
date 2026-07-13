@@ -1,0 +1,665 @@
+{
+  "schema_version": 1,
+  "purpose": "preview candidates; not an accepted Frame Set",
+  "policy_version": "generated-view-policy-v1",
+  "render_config_version": "preview-512-v2-anchor-radius",
+  "source_ply": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+  "target_id": "gift_box",
+  "resolution": [512, 512],
+  "horizontal_fov_degrees": 55.0,
+  "seed_region": {
+    "mask_pixels": 57695,
+    "contributing_gaussians": 1977,
+    "retained_gaussians": 957,
+    "center": [8.085037604946772, 0.671586678659277, 0.1310934230427878],
+    "weighted_q05": [
+      7.936089038848877, 0.6184977293014526, -0.01751401647925377
+    ],
+    "weighted_q95": [8.245327949523926, 0.767784833908081, 0.2624903917312622],
+    "extent": [0.30923891067504883, 0.14928710460662842, 0.280004408210516]
+  },
+  "candidates": [
+    {
+      "id": "anchor",
+      "category": "anchor",
+      "camera_to_world": [
+        [1.0, 0.0, 0.0, 8.017399787902832],
+        [-0.0, -0.09950371831655502, 0.9950371384620667, -0.7211899757385254],
+        [0.0, -0.9950371384620667, -0.09950371831655502, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": null,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9989550679205852,
+        "center_depth": 1.4773820376568576,
+        "camera_distance": 1.5355556011199951,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/anchor.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "ring-01",
+      "category": "ring",
+      "camera_to_world": [
+        [
+          0.8892589807510376, 0.17278818786144257, -0.42351242899894714,
+          8.72284984588623
+        ],
+        [
+          0.45740410685539246, -0.3359249234199524, 0.8233686685562134,
+          -0.5684120655059814
+        ],
+        [-0.0, -0.9259042739868164, -0.377758264541626, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 297.2197281965679,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 1.0,
+        "center_depth": 1.5313973929004483,
+        "camera_distance": 1.5316534042358398,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/ring-01.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "ring-02",
+      "category": "ring",
+      "camera_to_world": [
+        [
+          0.541418731212616, 0.31760141253471375, -0.7784568667411804,
+          9.25739860534668
+        ],
+        [
+          0.8407530784606934, -0.2045253962278366, 0.5013019442558289,
+          -0.0833774283528328
+        ],
+        [-0.0, -0.9259042739868164, -0.377758264541626, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 327.2197281965679,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9989550679205852,
+        "center_depth": 1.5195169760984744,
+        "camera_distance": 1.5199267864227295,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/ring-02.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "ring-03",
+      "category": "ring",
+      "camera_to_world": [
+        [
+          0.048505861312150955, 0.37731364369392395, -0.9248143434524536,
+          9.477813720703125
+        ],
+        [
+          0.9988228678703308, -0.018323492258787155, 0.04491178318858147,
+          0.603949248790741
+        ],
+        [-0.0, -0.9259042143821716, -0.37775832414627075, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 357.2197281965679,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9780564263322884,
+        "center_depth": 1.5029125862775796,
+        "camera_distance": 1.5033844709396362,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/ring-03.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "ring-04",
+      "category": "ring",
+      "camera_to_world": [
+        [
+          -0.45740413665771484, 0.33592489361763, -0.8233686089515686,
+          9.32503604888916
+        ],
+        [
+          0.8892589211463928, 0.17278817296028137, -0.42351242899894714,
+          1.3093993663787842
+        ],
+        [0.0, -0.9259042143821716, -0.3777582347393036, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 27.219728196567928,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9780564263322884,
+        "center_depth": 1.486034844551213,
+        "camera_distance": 1.4863805770874023,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/ring-04.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "ring-05",
+      "category": "ring",
+      "camera_to_world": [
+        [
+          -0.8407531380653381, 0.20452536642551422, -0.5013018250465393,
+          8.840001106262207
+        ],
+        [
+          0.5414186120033264, 0.3176014721393585, -0.7784569263458252,
+          1.8439480066299438
+        ],
+        [0.0, -0.9259042739868164, -0.37775829434394836, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 57.21972819656792,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9780564263322884,
+        "center_depth": 1.4734037853766324,
+        "camera_distance": 1.4735276699066162,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/ring-05.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "ring-06",
+      "category": "ring",
+      "camera_to_world": [
+        [
+          -0.9988229274749756, 0.018323490396142006, -0.04491177946329117,
+          8.152674674987793
+        ],
+        [
+          0.04850585758686066, 0.37731364369392395, -0.9248144030570984,
+          2.064363479614258
+        ],
+        [0.0, -0.9259043335914612, -0.37775829434394836, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 87.21972819656794,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9780564263322884,
+        "center_depth": 1.4684062512078846,
+        "camera_distance": 1.4684110879898071,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/ring-06.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "ring-07",
+      "category": "ring",
+      "camera_to_world": [
+        [
+          -0.8892589807510376, -0.17278818786144257, 0.42351242899894714,
+          7.4472246170043945
+        ],
+        [
+          -0.45740410685539246, 0.3359249234199524, -0.8233686685562134,
+          1.9115854501724243
+        ],
+        [0.0, -0.9259042739868164, -0.377758264541626, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 117.21972819656793,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9780564263322884,
+        "center_depth": 1.4723801345377971,
+        "camera_distance": 1.4724807739257812,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/ring-07.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "ring-08",
+      "category": "ring",
+      "camera_to_world": [
+        [
+          -0.541418731212616, -0.31760141253471375, 0.7784568667411804,
+          6.912675857543945
+        ],
+        [
+          -0.8407530784606934, 0.2045253962278366, -0.5013019442558289,
+          1.4265508651733398
+        ],
+        [0.0, -0.9259042739868164, -0.377758264541626, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 147.21972819656793,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9780564263322884,
+        "center_depth": 1.4842607982218698,
+        "camera_distance": 1.484582543373108,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/ring-08.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "ring-09",
+      "category": "ring",
+      "camera_to_world": [
+        [
+          -0.04850584641098976, -0.3773135840892792, 0.9248144030570984,
+          6.692260265350342
+        ],
+        [
+          -0.9988229274749756, 0.01832348294556141, -0.04491177201271057,
+          0.7392241358757019
+        ],
+        [0.0, -0.9259043335914612, -0.3777582347393036, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 177.21972819656793,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9780564263322884,
+        "center_depth": 1.500865195233013,
+        "camera_distance": 1.5013319253921509,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/ring-09.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "ring-10",
+      "category": "ring",
+      "camera_to_world": [
+        [
+          0.45740410685539246, -0.3359249234199524, 0.8233686685562134,
+          6.845038414001465
+        ],
+        [
+          -0.8892589807510376, -0.17278818786144257, 0.42351242899894714,
+          0.03377406299114227
+        ],
+        [0.0, -0.9259042739868164, -0.377758264541626, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 207.2197281965679,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9801462904911181,
+        "center_depth": 1.517743350849667,
+        "camera_distance": 1.5181684494018555,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/ring-10.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "ring-11",
+      "category": "ring",
+      "camera_to_world": [
+        [
+          0.8407530188560486, -0.20452545583248138, 0.5013020634651184,
+          7.33007287979126
+        ],
+        [
+          -0.5414189100265503, -0.31760138273239136, 0.7784568071365356,
+          -0.500774621963501
+        ],
+        [0.0, -0.925904393196106, -0.3777582347393036, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 237.2197281965679,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 1.0,
+        "center_depth": 1.5303738828156739,
+        "camera_distance": 1.5306463241577148,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/ring-11.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "upper-00",
+      "category": "upper",
+      "camera_to_world": [
+        [
+          0.9988229274749756, -0.02425292879343033, 0.04200730472803116,
+          8.017399787902832
+        ],
+        [
+          -0.04850585758686066, -0.4994114637374878, 0.8650060296058655,
+          -0.7211900353431702
+        ],
+        [0.0, -0.866025447845459, -0.5, 0.9361611008644104],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 267.2197281965679,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 1.0,
+        "center_depth": 1.6360021802419755,
+        "camera_distance": 1.6362340450286865,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/upper-00.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "upper-01",
+      "category": "upper",
+      "camera_to_world": [
+        [
+          0.048505861312150955, 0.4994114935398102, -0.8650059700012207,
+          9.477813720703125
+        ],
+        [
+          0.9988228678703308, -0.024252934381365776, 0.04200730845332146,
+          0.603949248790741
+        ],
+        [-0.0, -0.8660253286361694, -0.5000000596046448, 0.9361611008644104],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 357.2197281965679,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9780564263322884,
+        "center_depth": 1.605642766950341,
+        "camera_distance": 1.6060806512832642,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/upper-01.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "upper-02",
+      "category": "upper",
+      "camera_to_world": [
+        [
+          -0.9988229274749756, 0.02425292879343033, -0.04200730472803116,
+          8.152674674987793
+        ],
+        [
+          0.04850585758686066, 0.4994114637374878, -0.8650060296058655,
+          2.064363479614258
+        ],
+        [0.0, -0.866025447845459, -0.5, 0.9361611008644104],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 87.21972819656794,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9780564263322884,
+        "center_depth": 1.5733674876453723,
+        "camera_distance": 1.5733917951583862,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/upper-02.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "upper-03",
+      "category": "upper",
+      "camera_to_world": [
+        [
+          -0.04850585013628006, -0.499411404132843, 0.8650060296058655,
+          6.692260265350342
+        ],
+        [
+          -0.9988229274749756, 0.02425292134284973, -0.04200729727745056,
+          0.7392241358757019
+        ],
+        [0.0, -0.866025447845459, -0.4999999403953552, 0.9361611008644104],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 177.21972819656793,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9780564263322884,
+        "center_depth": 1.6037270843045786,
+        "camera_distance": 1.6041595935821533,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/upper-03.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "replacement-00",
+      "category": "replacement",
+      "camera_to_world": [
+        [
+          0.9773431420326233, 0.15067161619663239, -0.1486554741859436,
+          8.2351655960083
+        ],
+        [
+          0.21166101098060608, -0.6957250833511353, 0.6864155530929565,
+          -0.021629923954606056
+        ],
+        [-0.0, -0.702328085899353, -0.7118534445762634, 0.8499999642372131],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 282.2197281965679,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 1.0,
+        "center_depth": 1.0268815776390277,
+        "camera_distance": 1.027436375617981,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/replacement-00.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "replacement-01",
+      "category": "replacement",
+      "camera_to_world": [
+        [
+          0.5414186120033264, 0.5984929203987122, -0.5904846787452698,
+          8.68137264251709
+        ],
+        [
+          0.8407531976699829, -0.3854106068611145, 0.38025355339050293,
+          0.2875654697418213
+        ],
+        [-0.0, -0.7023282051086426, -0.7118532657623291, 0.8499999642372131],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 327.2197281965679,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9811912225705329,
+        "center_depth": 1.0155199194003046,
+        "camera_distance": 1.016207218170166,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/replacement-01.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "replacement-02",
+      "category": "replacement",
+      "camera_to_world": [
+        [
+          -0.2116614133119583, 0.6957250833511353, -0.6864153742790222,
+          8.778253555297852
+        ],
+        [
+          0.9773430824279785, 0.15067191421985626, -0.1486557275056839,
+          0.8217152953147888
+        ],
+        [0.0, -0.7023280262947083, -0.7118535041809082, 0.8499999642372131],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 12.219728196567944,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9770114942528736,
+        "center_depth": 0.9963252407668888,
+        "camera_distance": 0.9969487190246582,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/replacement-02.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "replacement-03",
+      "category": "replacement",
+      "camera_to_world": [
+        [
+          -0.8407533168792725, 0.3854105770587921, -0.38025328516960144,
+          8.4690580368042
+        ],
+        [
+          0.5414183735847473, 0.598493218421936, -0.590484619140625,
+          1.267921805381775
+        ],
+        [0.0, -0.7023280262947083, -0.7118535041809082, 0.8499999642372131],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 57.21972819656794,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9770114942528736,
+        "center_depth": 0.9805414464396094,
+        "camera_distance": 0.9808297157287598,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/replacement-03.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "replacement-04",
+      "category": "replacement",
+      "camera_to_world": [
+        [
+          -0.9773430228233337, -0.150672048330307, 0.1486559361219406,
+          7.934908390045166
+        ],
+        [
+          -0.21166165173053741, 0.6957249045372009, -0.6864154934883118,
+          1.3648033142089844
+        ],
+        [0.0, -0.7023281455039978, -0.7118533253669739, 0.8499999642372131],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 102.21972819656794,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9770114942528736,
+        "center_depth": 0.977415093654205,
+        "camera_distance": 0.9776052832603455,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/replacement-04.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "replacement-05",
+      "category": "replacement",
+      "camera_to_world": [
+        [
+          -0.5414188504219055, -0.5984929800033569, 0.5904844403266907,
+          7.488702297210693
+        ],
+        [
+          -0.8407530188560486, 0.3854109048843384, -0.3802536725997925,
+          1.0556079149246216
+        ],
+        [0.0, -0.702328085899353, -0.7118535041809082, 0.8499999642372131],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 147.21972819656793,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9770114942528736,
+        "center_depth": 0.988776779448262,
+        "camera_distance": 0.9892727732658386,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/replacement-05.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "replacement-06",
+      "category": "replacement",
+      "camera_to_world": [
+        [
+          0.21166127920150757, -0.6957249045372009, 0.6864156723022461,
+          7.391820430755615
+        ],
+        [
+          -0.9773430824279785, -0.15067178010940552, 0.1486556977033615,
+          0.521458089351654
+        ],
+        [0.0, -0.7023282647132874, -0.7118533253669739, 0.8499999642372131],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 192.21972819656793,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9780564263322884,
+        "center_depth": 1.0079712626046184,
+        "camera_distance": 1.0086777210235596,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/replacement-06.png",
+      "render_status": "rendered"
+    },
+    {
+      "id": "replacement-07",
+      "category": "replacement",
+      "camera_to_world": [
+        [
+          0.8407530188560486, -0.3854108452796936, 0.38025370240211487,
+          7.701015949249268
+        ],
+        [
+          -0.5414187908172607, -0.5984929203987122, 0.5904845595359802,
+          0.07525157183408737
+        ],
+        [0.0, -0.7023282051086426, -0.7118534445762634, 0.8499999642372131],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "azimuth_degrees": 237.2197281965679,
+      "preflight": {
+        "finite": true,
+        "visible_seed_fraction": 0.9968652037617555,
+        "center_depth": 1.0237547811030687,
+        "camera_distance": 1.0243585109710693,
+        "inside_seed_sphere": false,
+        "status": "pass"
+      },
+      "file": "frames/replacement-07.png",
+      "render_status": "rendered"
+    }
+  ]
+}

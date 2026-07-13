@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "target_id": "gift_box",
+  "source_candidate_config": "preview-512-v2-anchor-radius",
+  "status": "approved-for-1008-materialization-mask-validation-pending",
+  "selection_rationale": "Anchor-centered bidirectional tracking order. Only views with a complete or materially useful unobstructed gift-box silhouette are retained; the normal 16-view layout cannot be safely completed in this reconstruction.",
+  "ordered_candidate_ids": [
+    "ring-09",
+    "replacement-06",
+    "ring-10",
+    "ring-11",
+    "anchor",
+    "upper-00",
+    "replacement-00",
+    "ring-01",
+    "ring-02"
+  ],
+  "preliminary_rejections": {
+    "ring-03": "substantial right-edge clipping",
+    "ring-04": "table leg blocks a material part of the box",
+    "ring-05": "chair/desk occlusion",
+    "ring-06": "overexposed reconstruction collapse",
+    "ring-07": "near-empty dark reconstruction collapse",
+    "ring-08": "severe blur and occlusion",
+    "upper-01": "table leg occludes the target",
+    "upper-02": "overexposed reconstruction collapse",
+    "upper-03": "rack/desk leg occlusion",
+    "replacement-01": "redundant bearing with ring-02",
+    "replacement-02": "desk surface clips target context",
+    "replacement-03": "table leg occlusion",
+    "replacement-04": "near-empty reconstruction collapse",
+    "replacement-05": "severe blur/reconstruction collapse",
+    "replacement-07": "redundant bearing with ring-11"
+  },
+  "expected_coverage_status": "insufficient_coverage"
+}

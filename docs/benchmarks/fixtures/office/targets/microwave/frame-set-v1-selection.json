@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "target_id": "microwave",
+  "source_candidate_config": "preview-512-v2-anchor-radius",
+  "status": "approved-for-1008-materialization-mask-validation-pending",
+  "selection_rationale": "Anchor-centred bidirectional order over the only continuous, visually reliable front-side interval. Replacements preserve nearby camera steps where the counter-side reconstruction remains usable; rejected directions are neutral rather than fabricated as rear observations.",
+  "ordered_candidate_ids": [
+    "replacement-07",
+    "ring-11",
+    "anchor",
+    "upper-00",
+    "replacement-00",
+    "ring-01"
+  ],
+  "preliminary_rejections": {
+    "ring-02": "wooden display box materially occludes the microwave",
+    "ring-03": "counter corner and foreground objects obscure the target",
+    "ring-04": "reconstruction collapse",
+    "ring-05": "severe blur/reconstruction collapse",
+    "ring-06": "severe blur/reconstruction collapse",
+    "ring-07": "severe blur/reconstruction collapse",
+    "ring-08": "severe blur/reconstruction collapse",
+    "ring-09": "target not reliably visible",
+    "ring-10": "target is materially occluded by the cabinet partition",
+    "upper-01": "target is seen only as an unreliable rear/side reconstruction",
+    "upper-02": "severe blur/reconstruction collapse",
+    "upper-03": "severe blur/reconstruction collapse",
+    "replacement-01": "wooden display box materially occludes the microwave",
+    "replacement-02": "target not reliably visible",
+    "replacement-03": "severe blur/reconstruction collapse",
+    "replacement-04": "target not reliably visible",
+    "replacement-05": "severe blur/reconstruction collapse",
+    "replacement-06": "empty/unstable reconstruction"
+  },
+  "expected_coverage_status": "insufficient_coverage"
+}

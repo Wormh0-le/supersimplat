@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "generator": "scripts/benchmarks/generate_controlled_overlap.py",
+  "seed": 20260712,
+  "gaussianCount": 16384,
+  "targetCount": 8192,
+  "distractorCount": 8192,
+  "stableId": {
+    "dtype": "uint32",
+    "range": [0, 16383]
+  },
+  "groundTruth": {
+    "selected": [0, 8191],
+    "rejected": [8192, 16383],
+    "ambiguousCount": 0
+  },
+  "initialCamera": {
+    "position": [0.0, 0.0, -3.2],
+    "target": [0.0, 0.0, 0.25],
+    "up": [0.0, 1.0, 0.0],
+    "verticalFovDegrees": 42.0
+  },
+  "files": {
+    "controlled_front_back_overlap.ply": {
+      "sha256": "cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e",
+      "bytes": 999902
+    },
+    "controlled_front_back_overlap_ground_truth.npz": {
+      "sha256": "7a04518c2f0f7c6cf68ae55ca6e46030cd5d96572bcdfcc73d2262df802c6ef0",
+      "bytes": 23361
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "source": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+  "seed": 20260712,
+  "size": 1008,
+  "horizontal_fov_degrees": 55.0,
+  "robust_bounds_percentiles": [1.0, 99.0],
+  "camera_positions": [
+    [8.017399787902832, -0.7211899757385254, 0.699999988079071]
+  ],
+  "look_targets": [
+    [4.290702819824219, -2.0663809776306152, 2.7507920265197754]
+  ],
+  "frames": [
+    {
+      "file": "frames/office_overview_00.png",
+      "position_index": 0,
+      "camera_to_world": [
+        [1.0, 0.0, 0.0, 8.017399787902832],
+        [-0.0, -0.09950371831655502, 0.9950371384620667, -0.7211899757385254],
+        [0.0, -0.9950371384620667, -0.09950371831655502, 0.699999988079071],
+        [0.0, 0.0, 0.0, 1.0]
+      ]
+    }
+  ]
+}

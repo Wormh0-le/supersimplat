@@ -1,0 +1,256 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "purpose": "reliable contributor-visibility facts; not Gaussian selection labels",
+  "coverage_report_version": "coverage-report-v1",
+  "target_id": "gift_box",
+  "source_ply": {
+    "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+    "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1",
+    "gaussian_count": 3680541
+  },
+  "frame_set": {
+    "path": "gift_box/frame-set-v2/frame-set.json",
+    "sha256": "bdf0730e0dc21d3bfa9dfe6a7f1cf7ed1eb6831b95e7320f65f5de7f00537cb2",
+    "version": "frame-set-v2"
+  },
+  "mask_set": {
+    "path": "gift_box/frame-set-v2/mask-set-v1/mask-set.json",
+    "sha256": "6573b0c998a4cac049ff80ffc415de52a2848c9aa4fbca8cd713aaba4a047667",
+    "masks_sha256": "e4df9ac79b39e8f0359ee1c1884f36b8aa523fd333b9a5e6ba6f3b370eaf7217",
+    "version": "mask-set-v1"
+  },
+  "contributor_rasterization": {
+    "backend": "gsplat",
+    "top_k": 8,
+    "near_plane": 0.01,
+    "far_plane": 1000.0,
+    "stable_id_mapping": "packed projection IDs are mapped through meta.gaussian_ids to immutable PLY-row Stable Gaussian IDs"
+  },
+  "attempted_views": 24,
+  "accepted_views": 9,
+  "rejected_views": [
+    {
+      "view_id": "ring-03",
+      "stage": "quality_review",
+      "reason": "substantial right-edge clipping"
+    },
+    {
+      "view_id": "ring-04",
+      "stage": "quality_review",
+      "reason": "table leg blocks a material part of the box"
+    },
+    {
+      "view_id": "ring-05",
+      "stage": "quality_review",
+      "reason": "chair/desk occlusion"
+    },
+    {
+      "view_id": "ring-06",
+      "stage": "quality_review",
+      "reason": "overexposed reconstruction collapse"
+    },
+    {
+      "view_id": "ring-07",
+      "stage": "quality_review",
+      "reason": "near-empty dark reconstruction collapse"
+    },
+    {
+      "view_id": "ring-08",
+      "stage": "quality_review",
+      "reason": "severe blur and occlusion"
+    },
+    {
+      "view_id": "upper-01",
+      "stage": "quality_review",
+      "reason": "table leg occludes the target"
+    },
+    {
+      "view_id": "upper-02",
+      "stage": "quality_review",
+      "reason": "overexposed reconstruction collapse"
+    },
+    {
+      "view_id": "upper-03",
+      "stage": "quality_review",
+      "reason": "rack/desk leg occlusion"
+    },
+    {
+      "view_id": "replacement-01",
+      "stage": "quality_review",
+      "reason": "redundant bearing with ring-02"
+    },
+    {
+      "view_id": "replacement-02",
+      "stage": "quality_review",
+      "reason": "desk surface clips target context"
+    },
+    {
+      "view_id": "replacement-03",
+      "stage": "quality_review",
+      "reason": "table leg occlusion"
+    },
+    {
+      "view_id": "replacement-04",
+      "stage": "quality_review",
+      "reason": "near-empty reconstruction collapse"
+    },
+    {
+      "view_id": "replacement-05",
+      "stage": "quality_review",
+      "reason": "severe blur/reconstruction collapse"
+    },
+    {
+      "view_id": "replacement-07",
+      "stage": "quality_review",
+      "reason": "redundant bearing with ring-11"
+    }
+  ],
+  "candidate_selection": {
+    "path": "gift_box/frame-set-v2-selection.json",
+    "sha256": "8043c103c7bbc064f14e6a84572f9e787a1222afafe3e7b63c297562a426567c",
+    "candidate_manifest": "gift_box/generated-view-candidates-preview-512-v2-anchor-radius/candidates.json",
+    "candidate_manifest_sha256": "743af23fa70719507bb3b53d7313ce26d309372e374105aa8086379f24104b6b"
+  },
+  "contributor_observation": {
+    "artifact": "observed-contributors.npz",
+    "artifact_sha256": "65abf6ec72aba964886433fce3a1abc31b19128c12f3d2d266f81fd1f02d3ba5",
+    "observed_stable_gaussians": 3508,
+    "total_contribution_weight": 379638.93961890816,
+    "seed_region_candidate_gaussians": 957,
+    "observed_seed_region_gaussians": 957,
+    "unobserved_seed_region_gaussians": 0,
+    "note": "The Seed Region is only a framing aid. Its observation fraction is reported but cannot by itself establish whole-object coverage."
+  },
+  "incremental_coverage_by_view": [
+    {
+      "view_id": "ring-09",
+      "frame_index": 0,
+      "mask_area_pixels": 40061,
+      "contributing_stable_gaussians": 1363,
+      "new_stable_gaussians": 1363,
+      "new_contribution_weight": 29205.978135071608,
+      "cumulative_stable_gaussians": 1363,
+      "observed_seed_gaussians": 408,
+      "azimuth_degrees": 177.21972885497806,
+      "elevation_degrees": 22.194886430749072
+    },
+    {
+      "view_id": "replacement-06",
+      "frame_index": 1,
+      "mask_area_pixels": 91216,
+      "contributing_stable_gaussians": 1361,
+      "new_stable_gaussians": 357,
+      "new_contribution_weight": 2711.132611860521,
+      "cumulative_stable_gaussians": 1720,
+      "observed_seed_gaussians": 490,
+      "azimuth_degrees": 192.21971752503072,
+      "elevation_degrees": 45.38589066946694
+    },
+    {
+      "view_id": "ring-10",
+      "frame_index": 2,
+      "mask_area_pixels": 42941,
+      "contributing_stable_gaussians": 1732,
+      "new_stable_gaussians": 555,
+      "new_contribution_weight": 2414.9808489964344,
+      "cumulative_stable_gaussians": 2275,
+      "observed_seed_gaussians": 786,
+      "azimuth_degrees": 207.21971976492867,
+      "elevation_degrees": 22.194889610658674
+    },
+    {
+      "view_id": "ring-11",
+      "frame_index": 3,
+      "mask_area_pixels": 49900,
+      "contributing_stable_gaussians": 1921,
+      "new_stable_gaussians": 392,
+      "new_contribution_weight": 1447.3657364863902,
+      "cumulative_stable_gaussians": 2667,
+      "observed_seed_gaussians": 891,
+      "azimuth_degrees": 237.21970675898,
+      "elevation_degrees": 22.19489049096473
+    },
+    {
+      "view_id": "anchor",
+      "frame_index": 4,
+      "mask_area_pixels": 59969,
+      "contributing_stable_gaussians": 2012,
+      "new_stable_gaussians": 346,
+      "new_contribution_weight": 1718.899977509398,
+      "cumulative_stable_gaussians": 3013,
+      "observed_seed_gaussians": 957,
+      "azimuth_degrees": 267.2197127216379,
+      "elevation_degrees": 22.19489601581725
+    },
+    {
+      "view_id": "upper-00",
+      "frame_index": 5,
+      "mask_area_pixels": 43502,
+      "contributing_stable_gaussians": 1865,
+      "new_stable_gaussians": 62,
+      "new_contribution_weight": 87.25370807107538,
+      "cumulative_stable_gaussians": 3075,
+      "observed_seed_gaussians": 931,
+      "azimuth_degrees": 267.21971284043514,
+      "elevation_degrees": 30.000000307872533
+    },
+    {
+      "view_id": "replacement-00",
+      "frame_index": 6,
+      "mask_area_pixels": 108407,
+      "contributing_stable_gaussians": 1794,
+      "new_stable_gaussians": 142,
+      "new_contribution_weight": 527.747092702426,
+      "cumulative_stable_gaussians": 3217,
+      "observed_seed_gaussians": 865,
+      "azimuth_degrees": 282.2196800667198,
+      "elevation_degrees": 45.385918344092886
+    },
+    {
+      "view_id": "ring-01",
+      "frame_index": 7,
+      "mask_area_pixels": 49528,
+      "contributing_stable_gaussians": 1775,
+      "new_stable_gaussians": 167,
+      "new_contribution_weight": 511.3157270057127,
+      "cumulative_stable_gaussians": 3384,
+      "observed_seed_gaussians": 861,
+      "azimuth_degrees": 297.2197144696628,
+      "elevation_degrees": 22.1948977839529
+    },
+    {
+      "view_id": "ring-02",
+      "frame_index": 8,
+      "mask_area_pixels": 46600,
+      "contributing_stable_gaussians": 1732,
+      "new_stable_gaussians": 124,
+      "new_contribution_weight": 464.3956391373649,
+      "cumulative_stable_gaussians": 3508,
+      "observed_seed_gaussians": 842,
+      "azimuth_degrees": 327.2197214344444,
+      "elevation_degrees": 22.194898928444722
+    }
+  ],
+  "effective_azimuth_elevation_coverage": {
+    "azimuth_degrees_in_frame_order": [
+      177.21972885497806, 192.21971752503072, 207.21971976492867,
+      237.21970675898, 267.2197127216379, 267.21971284043514, 282.2196800667198,
+      297.2197144696628, 327.2197214344444
+    ],
+    "elevation_degrees_in_frame_order": [
+      22.194886430749072, 45.38589066946694, 22.194889610658674,
+      22.19489049096473, 22.19489601581725, 30.000000307872533,
+      45.385918344092886, 22.1948977839529, 22.194898928444722
+    ],
+    "circular_azimuth_span_degrees": 149.99999257946638,
+    "minimum_elevation_degrees": 22.194886430749072,
+    "maximum_elevation_degrees": 45.385918344092886
+  },
+  "status_value": "insufficient_coverage",
+  "status_reason": "Nine accepted views remain after quality rejection of fifteen of the twenty-four planned candidates. They do not provide a reliable full-orbit observation, so unobserved object regions must remain uncertain.",
+  "timing": {
+    "contributor_analysis_seconds": 0.3363917050010059,
+    "peak_vram_bytes": 352631296
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "status": "draft-for-user-review-not-ground-truth",
+  "purpose": "Conservative RGB-only annotation specification for the green gift box. It is independent of SAM and lifting outputs.",
+  "target_id": "gift_box",
+  "inspection_set": {
+    "path": "gift_box/ground-truth-inspection-v1/inspection-set.json",
+    "sha256": "c5e5fe9cc2a2a4d2d557b989632be447f7ec187544d7997d62b558b755c81f3e"
+  },
+  "annotation_method": "Color-assisted target regions are bounded to manually reviewed image-space boxes. Explicit negative regions mark clear non-target rack, desk-leg, and floor evidence. The desk-leg annotation excludes confirmed green target pixels; where a Gaussian contributes to both target and negative evidence, lifting must retain it as ambiguous rather than force ownership.",
+  "local_candidate_region": {
+    "kind": "aabb",
+    "min": [7.74, 0.38, -0.25],
+    "max": [8.45, 0.98, 0.52],
+    "purpose": "Conservative local context; IDs without sufficient direct evidence remain ambiguous."
+  },
+  "views": [
+    {
+      "view_id": "anchor",
+      "positive_regions": [
+        {
+          "kind": "green_threshold",
+          "xyxy": [400, 630, 710, 930],
+          "green_min": 0.38,
+          "green_over_red": 1.25,
+          "green_over_blue": 1.15
+        }
+      ],
+      "negative_regions": [
+        { "kind": "box", "xyxy": [690, 630, 720, 930] },
+        { "kind": "box", "xyxy": [400, 920, 710, 980] },
+        { "kind": "box", "xyxy": [342, 694, 390, 750] },
+        { "kind": "box", "xyxy": [376, 804, 425, 912] },
+        { "kind": "box", "xyxy": [646, 596, 681, 639] },
+        { "kind": "box", "xyxy": [675, 639, 681, 700] },
+        { "kind": "box", "xyxy": [514, 907, 612, 918] },
+        { "kind": "box", "xyxy": [390, 730, 422, 775] }
+      ]
+    },
+    {
+      "view_id": "left_orbit",
+      "positive_regions": [
+        {
+          "kind": "green_threshold",
+          "xyxy": [440, 350, 630, 680],
+          "green_min": 0.38,
+          "green_over_red": 1.25,
+          "green_over_blue": 1.15
+        }
+      ]
+    },
+    {
+      "view_id": "right_orbit",
+      "positive_regions": [
+        {
+          "kind": "green_threshold",
+          "xyxy": [350, 350, 590, 680],
+          "green_min": 0.38,
+          "green_over_red": 1.25,
+          "green_over_blue": 1.15
+        }
+      ]
+    },
+    {
+      "view_id": "top",
+      "positive_regions": [
+        {
+          "kind": "green_threshold",
+          "xyxy": [320, 340, 690, 590],
+          "green_min": 0.38,
+          "green_over_red": 1.25,
+          "green_over_blue": 1.15
+        }
+      ]
+    },
+    {
+      "view_id": "oblique",
+      "positive_regions": [
+        {
+          "kind": "green_threshold",
+          "xyxy": [400, 340, 670, 630],
+          "green_min": 0.38,
+          "green_over_red": 1.25,
+          "green_over_blue": 1.15
+        }
+      ]
+    }
+  ]
+}

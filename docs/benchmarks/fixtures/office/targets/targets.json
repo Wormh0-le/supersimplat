@@ -1,0 +1,288 @@
+{
+  "schema_version": 1,
+  "status": "shared-lifting-fixtures-frozen",
+  "shared_lifting_benchmark_manifest": {
+    "path": "../../shared-lifting-benchmark-v1.json",
+    "sha256": "3b52c0abf55097d0dfd48624b9187b2085a261411e9efac085ae4933c175514c",
+    "version": "shared-lifting-benchmark-v1"
+  },
+  "scene": {
+    "ply": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+    "ply_sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1"
+  },
+  "reference": {
+    "file": "user-marked-reference.png",
+    "sha256": "c7b7beb53775ae0ac92831361c5ba33e1eb9a9c467902b6530c826cc33339d4a",
+    "width": 1257,
+    "height": 1049,
+    "purpose": "User-confirmed object identity only; red annotations must not be used as segmentation input."
+  },
+  "anchor_camera": {
+    "status": "pending-user-calibration",
+    "coordinate_system": "PLY, Z-up",
+    "position": null,
+    "rotation": null,
+    "intrinsics": null,
+    "note": "The previously assumed position [9.5, 0.0, 1.2] and horizontal ring orientation do not match the user-marked reference screenshot and must not be used as the benchmark Anchor."
+  },
+  "camera_estimate_convention": {
+    "source": "Blender after PLY import with Forward +X and Up +Z",
+    "rotation_mode": "Blender Camera object Transform, XYZ Euler degrees",
+    "camera_local_axes": {
+      "forward": "-Z",
+      "up": "+Y"
+    },
+    "position_mapping": "PLY (x, y, z) = Blender (y, -x, z)",
+    "status": "position-mapping-user-confirmed",
+    "calibration_evidence": {
+      "file": "calibration/clothes-rack-blender-camera-transform.png",
+      "sha256": "d0247736e2b917581aed836e8ea9b59a2d4200ee5ef0396d3b76fd0852523f3d"
+    }
+  },
+  "anchor_framing_policy": {
+    "blender_transform_role": "search seed only",
+    "lens_source": "benchmark-selected, not inherited from Blender",
+    "target_resolution": [1008, 1008],
+    "candidate_horizontal_fov_degrees": [42.0, 55.0, 70.0, 90.0],
+    "acceptance": [
+      "entire target is visible without clipping",
+      "target boundary has image-space safety margin",
+      "target occupies enough pixels for promptable segmentation",
+      "view avoids obvious reconstruction collapse when an alternative exists"
+    ],
+    "status": "confirmed"
+  },
+  "seed_regions": {
+    "status": "frozen-for-generated-view-framing-only",
+    "method": "top-8 radiance contributors inside the frozen Anchor Mask; retain 95% cumulative contribution after packed projection IDs are mapped to Stable Gaussian IDs",
+    "manifest": "seed-regions.json",
+    "manifest_sha256": "3cf7a5206b61a9718f4a86d391cabd3727249acfffc622fa72ca91dae09c2fb6",
+    "files": {
+      "gift_box": [
+        "gift_box/seed-region.npz",
+        "4e0b5e639802eaf95bdd8551eacbb899d2a04fa47c6c250f819b0d811930e31b"
+      ],
+      "microwave": [
+        "microwave/seed-region.npz",
+        "8bec8df661233967cc82e5edca408b64b62374daf0b5bb46e7e7ae3b0bf37272"
+      ],
+      "clothes_rack": [
+        "clothes_rack/seed-region.npz",
+        "b6725824cf25f6da234f9d23184bd33e2c83796ab5f01a803e3374273338a10d"
+      ]
+    }
+  },
+  "targets": [
+    {
+      "id": "gift_box",
+      "display_name_zh": "礼品盒",
+      "benchmark_role": "simple",
+      "identity": "green rectangular gift box near the clothes rack",
+      "anchor_camera_estimate": {
+        "status": "estimated",
+        "blender_location": [0.27881, 8.0174, 0.17667],
+        "blender_rotation_xyz_degrees": [90.0, 0.0, 90.0],
+        "ply_location_candidate": [8.0174, -0.27881, 0.17667]
+      },
+      "anchor_candidate": {
+        "status": "accepted-anchor-and-mask-frozen",
+        "position": [8.0174, -0.72119, 0.7],
+        "forward": [0.0, 1.0, -0.1],
+        "horizontal_fov_degrees": 55.0,
+        "resolution": [1008, 1008],
+        "image": "gift_box/anchor-candidate/frames/office_overview_00.png",
+        "image_sha256": "c857d7c46a1158246e70b4d34f9bf35a373a10380d9da6dd5b1efba2bbeb0734",
+        "camera_manifest": "gift_box/anchor-candidate/cameras.json",
+        "camera_manifest_sha256": "3d3b1da9bcd8a797e006b7efb5e7dd9814a2b1b82df4bf949e99d5492029d3b0"
+      },
+      "anchor_mask": {
+        "review": "accepted",
+        "candidate_count": 1,
+        "area_pixels": 57695,
+        "mask_file": "gift_box/sam31-anchor-probe/mask-candidates.npz",
+        "mask_sha256": "e5efbfa58414cda6ec16aaa4a2866b6ee4e7c5c67d70748a9147f5e9bac2642b",
+        "overlay": "gift_box/sam31-anchor-probe/overlay.png",
+        "overlay_sha256": "4e3cdda6d0b5d6cbb91df095022078c7ffe58e56a4f31bbe32a73d52db12ad01",
+        "prompt_log": "gift_box/sam31-anchor-probe/prompt-log.json",
+        "prompt_log_sha256": "24c696ff8824411edf722fc49edb8c61a13a1b9f7cbf138d17d56b659158d599"
+      },
+      "tracking_prompt": {
+        "status": "accepted-for-frame-set-v2",
+        "adapter": "SAM3.1 visual prompt/video propagation",
+        "prompt_script": "gift_box/sam31-tracking-prompt-v1.json",
+        "prompt_script_sha256": "b9f9b6831a53ffb377f7a777c3bf16b1d7bb924d3bf0455c57cce8d685580c5a",
+        "prompt_type": "positive_box_and_text",
+        "note": "The Anchor mask remains independently frozen from its original positive-box calibration. This script is the replayable prompt used to produce the cross-view Mask Set."
+      },
+      "frame_set": {
+        "status": "accepted",
+        "version": "frame-set-v2",
+        "manifest": "gift_box/frame-set-v2/frame-set.json",
+        "manifest_sha256": "bdf0730e0dc21d3bfa9dfe6a7f1cf7ed1eb6831b95e7320f65f5de7f00537cb2",
+        "mask_set": "gift_box/frame-set-v2/mask-set-v1/mask-set.json",
+        "mask_set_sha256": "6573b0c998a4cac049ff80ffc415de52a2848c9aa4fbca8cd713aaba4a047667",
+        "mask_tensor_sha256": "e4df9ac79b39e8f0359ee1c1884f36b8aa523fd333b9a5e6ba6f3b370eaf7217",
+        "accepted_views": 9,
+        "coverage_status": "insufficient_coverage",
+        "coverage_report": "gift_box/frame-set-v2/coverage-report-v1/coverage-report.json",
+        "coverage_report_sha256": "84c6417e089dc77f07be3a79512049dc5122e0d45883caf7d2f18f69c8da940a",
+        "observed_contributors": "gift_box/frame-set-v2/coverage-report-v1/observed-contributors.npz",
+        "observed_contributors_sha256": "65abf6ec72aba964886433fce3a1abc31b19128c12f3d2d266f81fd1f02d3ba5"
+      },
+      "ground_truth": {
+        "status": "frozen",
+        "version": "ground-truth-v1",
+        "manifest": "gift_box/ground-truth-v1/ground-truth.json",
+        "manifest_sha256": "6c3ca524d3e84e5212a07892fbc86443d5c9eb482e946b8469d97bd8d412a16c",
+        "labels": "gift_box/ground-truth-v1/ground-truth.npz",
+        "labels_sha256": "a5000105de4dcdbe5c1c6224d1bf651843e3dfe94c1f05f645c8cfda29fddf66",
+        "scope_stable_gaussians": 5258,
+        "selected_stable_gaussians": 1671,
+        "rejected_stable_gaussians": 1396,
+        "ambiguous_stable_gaussians": 2191
+      }
+    },
+    {
+      "id": "microwave",
+      "display_name_zh": "微波炉",
+      "benchmark_role": "contact",
+      "identity": "black silver-trim microwave on the counter below the bulletin board",
+      "anchor_camera_estimate": {
+        "status": "estimated",
+        "blender_location": [1.9025, 11.773, 1.0],
+        "blender_rotation_xyz_degrees": [0.0, 0.0, 0.0],
+        "ply_location_candidate": [11.773, -1.9025, 1.0],
+        "ply_rotation_xyz_degrees_user_corrected": [90.0, 0.0, 0.0]
+      },
+      "anchor_candidate": {
+        "status": "accepted-anchor-and-mask-frozen",
+        "position": [11.773, -1.9025, 1.0],
+        "forward": [1.0, 0.0, 0.0],
+        "horizontal_fov_degrees": 42.0,
+        "resolution": [1008, 1008],
+        "image": "microwave/anchor-candidate/frames/office_overview_00.png",
+        "image_sha256": "0cbbd4989ac217f90331ff04877d78e8b78dcc315b5991aa94603dda9039c2b1",
+        "camera_manifest": "microwave/anchor-candidate/cameras.json",
+        "camera_manifest_sha256": "895fddc7b395a6fa4cea87b2248597f27be2155c298b3f139c261566374b34c5"
+      },
+      "anchor_mask": {
+        "review": "accepted",
+        "candidate_count": 1,
+        "area_pixels": 65026,
+        "mask_file": "microwave/sam31-anchor-probe/mask-candidates.npz",
+        "mask_sha256": "2e3efce0944b31d4e23ebb5d8a01e1a7077614fb2cc896e8032b6c75ae7d27be",
+        "overlay": "microwave/sam31-anchor-probe/overlay.png",
+        "overlay_sha256": "924d096fd87b13ef943e606b6385518d6ffa5b0c5e87346632416ca3a5d357f1",
+        "prompt_log": "microwave/sam31-anchor-probe/prompt-log.json",
+        "prompt_log_sha256": "f9fdb86f9860c20614ad08f6e1ae330319f8dc6f7a33f02e33f1ac2b0e39b446"
+      },
+      "tracking_prompt": {
+        "status": "accepted-for-frame-set-v1",
+        "adapter": "SAM3.1 visual prompt/video propagation",
+        "prompt_script": "microwave/sam31-tracking-prompt-v1.json",
+        "prompt_script_sha256": "3ad1890cd2d279a2bf633dc4fe469b0b17a7011066fbb5857232d7851c1b73b8",
+        "prompt_type": "positive_box_and_text",
+        "note": "The Anchor mask remains independently frozen from its original positive-box calibration. This script is the replayable prompt used to produce the cross-view Mask Set."
+      },
+      "frame_set": {
+        "status": "accepted",
+        "version": "frame-set-v1",
+        "manifest": "microwave/frame-set-v1/frame-set.json",
+        "manifest_sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc",
+        "mask_set": "microwave/frame-set-v1/mask-set-v1/mask-set.json",
+        "mask_set_sha256": "d6fb3d630751832e4151e0a015398e010259a1e734e882e6924c5b594835a4ee",
+        "mask_tensor_sha256": "17c765084871fbd6a93ae31515b09bc639faea47ed329602cb36dbfc53d783ea",
+        "accepted_views": 6,
+        "coverage_status": "insufficient_coverage",
+        "coverage_report": "microwave/frame-set-v1/coverage-report-v1/coverage-report.json",
+        "coverage_report_sha256": "37337b180b9f4240958516b8b8d50a69b5532c1ffdf2e2e540cc3d45647e1883",
+        "observed_contributors": "microwave/frame-set-v1/coverage-report-v1/observed-contributors.npz",
+        "observed_contributors_sha256": "630761d1a4dd0c9379fe441beef1f8b3344f374c1a22786ff2a913f40798f8c3"
+      },
+      "ground_truth": {
+        "status": "frozen",
+        "version": "ground-truth-v1",
+        "manifest": "microwave/ground-truth-v1/ground-truth.json",
+        "manifest_sha256": "bebda98158d5cfff7fedd2be9d62b0bc64f2d89478113211bbd6aa9c0817150c",
+        "labels": "microwave/ground-truth-v1/ground-truth.npz",
+        "labels_sha256": "3ff56f5541a0f1754a83a628db721aace7c340bdd380e22e76b5104061e5286d",
+        "scope_stable_gaussians": 23155,
+        "selected_stable_gaussians": 2753,
+        "rejected_stable_gaussians": 15012,
+        "ambiguous_stable_gaussians": 5390
+      }
+    },
+    {
+      "id": "clothes_rack",
+      "display_name_zh": "衣架",
+      "benchmark_role": "difficult",
+      "identity": "freestanding light-gray rack with thin vertical pole, arms, and feet",
+      "anchor_camera_estimate": {
+        "status": "estimated",
+        "blender_location": [0.90356, 7.0401, 1.2],
+        "blender_rotation_xyz_degrees": [90.0, 0.0, 90.0],
+        "ply_location_candidate": [7.0401, -0.90356, 1.2]
+      },
+      "anchor_candidate": {
+        "status": "accepted-anchor-and-mask-frozen",
+        "position": [6.43, -1.85, 1.2],
+        "forward": [0.61, 2.46, -0.35],
+        "horizontal_fov_degrees": 55.0,
+        "resolution": [1008, 1008],
+        "image": "clothes_rack/anchor-candidate/frames/office_overview_00.png",
+        "image_sha256": "322399367cbfc3950b399604c48eed7b6f614305f9241f3b56def92be4f9fe7d",
+        "camera_manifest": "clothes_rack/anchor-candidate/cameras.json",
+        "camera_manifest_sha256": "17d5ddbf82ffed59e5b0f7ab227f277ee93bec056bb103d1bed58ebd6ed8ff78",
+        "replaces": "anchor-candidate-rejected-overlap",
+        "replacement_reason": "A 90-degree left orbit separates the target clothes rack from the black support frame of a small whiteboard that the original mask incorrectly merged."
+      },
+      "anchor_mask": {
+        "review": "accepted",
+        "candidate_count": 1,
+        "area_pixels": 13458,
+        "mask_file": "clothes_rack/sam31-anchor-probe/mask-candidates.npz",
+        "mask_sha256": "052ee7b15db84fc4de40bc51a18278bdf11ee57fc429e19d4eec96439dd0367a",
+        "overlay": "clothes_rack/sam31-anchor-probe/overlay.png",
+        "overlay_sha256": "41ae819d5223a327fb6f6f546df69694217323ebfc88b15ab5a083785fb06b3b",
+        "prompt_log": "clothes_rack/sam31-anchor-probe/prompt-log.json",
+        "prompt_log_sha256": "dd97a95739020f643580e026837a83cccc13d6890aca6b979dca960882a39e6a"
+      },
+      "tracking_prompt": {
+        "status": "accepted-for-frame-set-v1",
+        "adapter": "SAM3.1 visual prompt/video propagation",
+        "prompt_script": "clothes_rack/sam31-tracking-prompt-v2-frame-set-v1.json",
+        "prompt_script_sha256": "cfda40cb547d337455ef5013b588e373721376dc18c506d9d18ff474a3aae5a8",
+        "prompt_type": "positive_box_and_text",
+        "note": "The more specific text prompt disambiguates the light-gray target rack from the black support of the small whiteboard. This script is the replayable prompt used to produce the cross-view Mask Set."
+      },
+      "frame_set": {
+        "status": "accepted-with-neutral-not-found-views",
+        "version": "frame-set-v1",
+        "manifest": "clothes_rack/frame-set-v1/frame-set.json",
+        "manifest_sha256": "e6a2f525a0c833a28a00c978549488a8ff7365a3dcb6223d73826351c23e8bba",
+        "mask_set": "clothes_rack/frame-set-v1/mask-set-v1/mask-set.json",
+        "mask_set_sha256": "50fc52fb9bf4b34e0fa118e11a5002984e040a5ec9443d72c08fc7039f41814b",
+        "mask_tensor_sha256": "827ba53976d7c6c065592f5b18674f8ca18e5eb5a481c8b5a036c3e5affa5255",
+        "accepted_views": 4,
+        "not_found_views": 3,
+        "coverage_status": "insufficient_coverage",
+        "coverage_report": "clothes_rack/frame-set-v1/coverage-report-v1/coverage-report.json",
+        "coverage_report_sha256": "e51aa98f8af99443a4521c84731cfe188e7c65ba1c21e340eeb985f4613c9d6b",
+        "observed_contributors": "clothes_rack/frame-set-v1/coverage-report-v1/observed-contributors.npz",
+        "observed_contributors_sha256": "458d3c077c82c0d62e337117dcc0105f94f561f020149c8873e37a5acd9c3fe6"
+      },
+      "ground_truth": {
+        "status": "frozen",
+        "version": "ground-truth-v1",
+        "manifest": "clothes_rack/ground-truth-v1/ground-truth.json",
+        "manifest_sha256": "1b5fc46e45ad7ba0ff272acbe8b51f1d72e90067a2402b120eefabc2ad186734",
+        "labels": "clothes_rack/ground-truth-v1/ground-truth.npz",
+        "labels_sha256": "f3aab5b494902606246d93f28684e314984633aab02f93b7c55181c2751c3b41",
+        "scope_stable_gaussians": 33123,
+        "selected_stable_gaussians": 2925,
+        "rejected_stable_gaussians": 15390,
+        "ambiguous_stable_gaussians": 14808
+      }
+    }
+  ]
+}

@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "status": "rendered-pending-independent-ground-truth-annotation",
+  "purpose": "RGB-only multi-direction inspection set for Benchmark Ground Truth annotation",
+  "inspection_layout_version": "office-ground-truth-inspection-v1",
+  "target_id": "microwave",
+  "source_ply": {
+    "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+    "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1",
+    "gaussian_count": 3680541
+  },
+  "resolution": [1008, 1008],
+  "horizontal_fov_degrees": 42.0,
+  "seed_region_framing": {
+    "seed_regions_manifest": "seed-regions.json",
+    "seed_regions_manifest_sha256": "3cf7a5206b61a9718f4a86d391cabd3727249acfffc622fa72ca91dae09c2fb6",
+    "stable_gaussian_id_count": 1326,
+    "center": [13.5682373046875, -1.9170266389846802, 0.9886173605918884],
+    "extent": [0.24451065063476562, 0.3708181381225586, 0.22695708274841309],
+    "scope_note": "Used only to frame inspection cameras. It is not a Benchmark Ground Truth label, candidate selection, or lifting result."
+  },
+  "independence": {
+    "sam_masks_loaded": false,
+    "lifting_results_loaded": false,
+    "required_next_step": "An independent annotation pass must classify relevant Stable Gaussian IDs as selected, rejected, or ambiguous before lifting outputs are evaluated."
+  },
+  "inspection_requirements": {
+    "required_roles": ["anchor", "opposite", "left", "right", "top", "bottom"],
+    "additional_roles": ["oblique"]
+  },
+  "frames": [
+    {
+      "frame_index": 0,
+      "view_id": "anchor",
+      "inspection_role": "anchor",
+      "file": "frames/00-anchor.png",
+      "sha256": "0cbbd4989ac217f90331ff04877d78e8b78dcc315b5991aa94603dda9039c2b1",
+      "camera_to_world": [
+        [0.0, 0.0, 1.0, 11.77299976348877],
+        [-1.0, 0.0, 0.0, -1.902500033378601],
+        [0.0, -1.0, 0.0, 1.0],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "frozen-anchor-image",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 1.0,
+        "seed_center_depth": 1.767947793006897
+      }
+    },
+    {
+      "frame_index": 1,
+      "view_id": "opposite",
+      "inspection_role": "opposite",
+      "file": "frames/01-opposite.png",
+      "sha256": "6ef2edab784749a6c32fe7e45e229e63fdf012a2b91d0126125ec4400880e1e7",
+      "camera_to_world": [
+        [
+          0.008091481402516365, 0.0063399216160178185, -0.999947190284729,
+          15.36347484588623
+        ],
+        [
+          0.9999672770500183, -5.1301038183737546e-5, 0.008091318421065807,
+          -1.9315532445907593
+        ],
+        [-0.0, -0.9999799132347107, -0.006340129300951958, 1.0],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "service-rendered-inspection-view",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 1.0,
+        "seed_center_depth": 1.8224077224731445
+      }
+    },
+    {
+      "frame_index": 2,
+      "view_id": "left_orbit",
+      "inspection_role": "left",
+      "file": "frames/02-left_orbit.png",
+      "sha256": "c64c9b65efe03df05e8e4784b3f6ba09623a5dc41f0b2dc5ddc0e4b9dde53989",
+      "camera_to_world": [
+        [
+          0.9999672770500183, -5.13001941726543e-5, 0.008091185241937637,
+          13.5537109375
+        ],
+        [
+          -0.008091348223388195, -0.0063399216160178185, 0.999947190284729,
+          -3.7122642993927
+        ],
+        [0.0, -0.9999799132347107, -0.006340129300951958, 1.0],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "service-rendered-inspection-view",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 1.0,
+        "seed_center_depth": 1.7719879150390625
+      }
+    },
+    {
+      "frame_index": 3,
+      "view_id": "right_orbit",
+      "inspection_role": "right",
+      "file": "frames/03-right_orbit.png",
+      "sha256": "b23ed70a19c452bf411f65b4fe35e99f52bc064b22aa50c1f48ca6e429110aaa",
+      "camera_to_world": [
+        [
+          -0.9999672770500183, 5.1300201448611915e-5, -0.008091186173260212,
+          13.582763671875
+        ],
+        [
+          0.00809134915471077, 0.0063399216160178185, -0.999947190284729,
+          -0.12178907543420792
+        ],
+        [0.0, -0.9999799132347107, -0.006340129300951958, 1.0],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "service-rendered-inspection-view",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 1.0,
+        "seed_center_depth": 1.8186237812042236
+      }
+    },
+    {
+      "frame_index": 4,
+      "view_id": "top",
+      "inspection_role": "top",
+      "file": "frames/04-top.png",
+      "sha256": "7a15ee85375d824fbf2f71cba250f5329636abfc47b83a047db2751c22e401c0",
+      "camera_to_world": [
+        [1.0, 0.0, 0.0, 13.5682373046875],
+        [-0.0, -1.0, 0.0, -1.9170266389846802],
+        [0.0, -0.0, -1.0, 2.7839136123657227],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "service-rendered-inspection-view",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 1.0,
+        "seed_center_depth": 1.7911072969436646
+      }
+    },
+    {
+      "frame_index": 5,
+      "view_id": "bottom",
+      "inspection_role": "bottom",
+      "file": "frames/05-bottom.png",
+      "sha256": "d59debf2cfbd4756abbfa7645e25fba3d8d172796a5d06ce439b74bd4c1c2f06",
+      "camera_to_world": [
+        [-1.0, 0.0, 0.0, 13.5682373046875],
+        [0.0, -1.0, 0.0, -1.9170266389846802],
+        [0.0, 0.0, 1.0, -0.8066789507865906],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "service-rendered-inspection-view",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 1.0,
+        "seed_center_depth": 1.7994850873947144
+      }
+    },
+    {
+      "frame_index": 6,
+      "view_id": "oblique",
+      "inspection_role": "oblique",
+      "file": "frames/06-oblique.png",
+      "sha256": "b1bfb401803dd4df99bdfa78c46fe4ef8210d77ab291dfdb44060f14c10c5edf",
+      "camera_to_world": [
+        [
+          0.7013620734214783, -0.2959251403808594, 0.6484747529029846,
+          12.288540840148926
+        ],
+        [
+          -0.7128051519393921, -0.2911744713783264, 0.6380643844604492,
+          -3.1761794090270996
+        ],
+        [0.0, -0.9097502827644348, -0.41515570878982544, 1.807883381843567],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "service-rendered-inspection-view",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 1.0,
+        "seed_center_depth": 1.939220905303955
+      }
+    },
+    {
+      "frame_index": 7,
+      "view_id": "supplemental-upper-00",
+      "inspection_role": "supplemental",
+      "file": "frames/07-supplemental-upper-00.png",
+      "sha256": "364c2d1923f6fab2d579a07e972b680310ce5ba95de4a73955c5a3ef353821d0",
+      "camera_to_world": [
+        [
+          -0.008091481402516365, -0.49998360872268677, 0.8659970760345459,
+          11.77299976348877
+        ],
+        [
+          -0.9999672174453735, 0.0040457407012581825, -0.00700742844492197,
+          -1.902500033378601
+        ],
+        [0.0, -0.8660253882408142, -0.5, 2.025132179260254],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source": "frozen-frame-set-rgb-for-inspection-only",
+      "seed_projection_preflight": {
+        "finite": true,
+        "visible_seed_fraction": 1.0,
+        "seed_center_depth": 2.0474636554718018
+      },
+      "source_frame_set": {
+        "path": "docs/benchmarks/fixtures/office/targets/microwave/frame-set-v1/frame-set.json",
+        "sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc",
+        "candidate_id": "upper-00",
+        "frame_sha256": "364c2d1923f6fab2d579a07e972b680310ce5ba95de4a73955c5a3ef353821d0"
+      }
+    }
+  ],
+  "contact_sheet": {
+    "file": "contact-sheet.png",
+    "sha256": "c885fd0ffd9680ed8e03ccc77fea5eb094eba2fce20630d842fadae3dabfd01e"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "target_id": "clothes_rack",
+  "image": "clothes_rack/anchor-candidate/frames/office_overview_00.png",
+  "image_sha256": "322399367cbfc3950b399604c48eed7b6f614305f9241f3b56def92be4f9fe7d",
+  "prompt_type": "positive_box",
+  "output_prob_threshold": 0.5,
+  "candidate_count": 1,
+  "candidate_areas_pixels": [13458],
+  "inference_seconds": 0.3137115329882363,
+  "box_format": "relative_xywh",
+  "box": [0.46, 0.14, 0.19, 0.72]
+}

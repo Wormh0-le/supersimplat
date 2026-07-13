@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "target_id": "clothes_rack",
+  "source_candidate_config": "preview-512-v2-anchor-radius",
+  "status": "approved-for-1008-materialization-mask-validation-pending",
+  "selection_rationale": "Anchor-centred bidirectional sequence retaining the continuous, fully visible rack interval. The selected views preserve thin pole, hooks, and feet without merging the nearby whiteboard support; bad or materially blocked directions are excluded instead of forcing a nominal orbit.",
+  "ordered_candidate_ids": [
+    "ring-11",
+    "anchor",
+    "upper-00",
+    "ring-01",
+    "ring-02",
+    "ring-03",
+    "upper-01"
+  ],
+  "preliminary_rejections": {
+    "ring-04": "monitor and desk materially obscure the rack base",
+    "ring-05": "target is materially occluded by desk/chair geometry",
+    "ring-06": "target is not reliably visible",
+    "ring-07": "target is not reliably visible",
+    "ring-08": "person/chair background creates an ambiguous thin-structure boundary",
+    "ring-09": "whiteboard support occludes or confuses the target identity",
+    "ring-10": "target is materially occluded by the whiteboard",
+    "upper-02": "target is materially occluded by desk and monitor geometry",
+    "upper-03": "target is not reliably visible",
+    "replacement-00": "chair and foreground desk obscure the rack base",
+    "replacement-01": "redundant bearing with ring-02",
+    "replacement-02": "edge-on rack silhouette is too weak for reliable association",
+    "replacement-03": "redundant bearing with ring-03",
+    "replacement-04": "foreground monitor/chair obscures the rack base",
+    "replacement-05": "person/chair background creates an ambiguous thin-structure boundary",
+    "replacement-06": "whiteboard edge materially occludes the rack",
+    "replacement-07": "redundant bearing with ring-11"
+  },
+  "expected_coverage_status": "insufficient_coverage"
+}

@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "purpose": "Method-independent Benchmark Ground Truth for a fixed office target and Scene Snapshot",
+  "ground_truth_version": "ground-truth-v1",
+  "target_id": "clothes_rack",
+  "source_ply": {
+    "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+    "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1",
+    "gaussian_count": 3680541
+  },
+  "labels": {
+    "artifact": "ground-truth.npz",
+    "artifact_sha256": "f3aab5b494902606246d93f28684e314984633aab02f93b7c55181c2751c3b41",
+    "scope_stable_gaussians": 33123,
+    "selected_stable_gaussians": 2925,
+    "rejected_stable_gaussians": 15390,
+    "ambiguous_stable_gaussians": 14808,
+    "metric_rule": "Compute accuracy only within scope_ids and exclude ambiguous_ids. Candidate uncertainty counts as not selected for selected truth IDs."
+  },
+  "source_draft": {
+    "path": "docs/benchmarks/fixtures/office/targets/clothes_rack/ground-truth-draft-v3",
+    "manifest": "source-ground-truth-draft.json",
+    "manifest_sha256": "b98ad2f1603831673974c4a0db58cdf0e3f7a31de6cf3dc47d699d20d49dc2a7",
+    "labels_sha256": "f3aab5b494902606246d93f28684e314984633aab02f93b7c55181c2751c3b41",
+    "annotation_spec": {
+      "path": "docs/benchmarks/fixtures/office/targets/clothes_rack/ground-truth-annotation-draft-v1.json",
+      "sha256": "d4e7c1d0917199ca952a3e5d58f265866e272ff08a9b2d53fb57dae2f0bc4e61"
+    },
+    "annotation_masks": {
+      "path": "docs/benchmarks/fixtures/office/targets/clothes_rack/ground-truth-inspection-v1/annotation-masks-draft-v2/annotation-masks.json",
+      "sha256": "0c8ad6748d4cc4c74b6702adb71af4aef354f0f4b52db9601418877677791835"
+    },
+    "inspection_set": {
+      "path": "docs/benchmarks/fixtures/office/targets/clothes_rack/ground-truth-inspection-v1/inspection-set.json",
+      "sha256": "e28cf81b7cd498af8574729aebac865956bbda61fa502a5905365680f4de2231"
+    },
+    "visual_review": {
+      "path": "docs/benchmarks/fixtures/office/targets/clothes_rack/ground-truth-inspection-v1/visual-review.json",
+      "sha256": "ad3e35e17e2a5bb2634383eb6cede64f1919743d63909d807175b70eb4851ef6"
+    },
+    "projection_review": {
+      "contact_sheet": "projection-overlay-contact-sheet.png",
+      "contact_sheet_sha256": "2e1a31b208f365e642f602bc23ce20b69c753a5011b8a4609c259cbb7522d218",
+      "frames": [
+        {
+          "frame_index": 0,
+          "view_id": "anchor",
+          "visual_review_status": "usable",
+          "projection_status": "rendered",
+          "overlay": "projection-overlays/00-anchor.png",
+          "sha256": "04ef14e79fe73e757b4de327d660860e06d9255db50c221f2f9f321a56eecd70"
+        },
+        {
+          "frame_index": 1,
+          "view_id": "opposite",
+          "visual_review_status": "partial",
+          "projection_status": "rendered",
+          "overlay": "projection-overlays/01-opposite.png",
+          "sha256": "10d34911ca6f626fe50d851dff518ebf57b9dd51f2961d3d0fa659a4a34a597a"
+        },
+        {
+          "frame_index": 2,
+          "view_id": "left_orbit",
+          "visual_review_status": "usable",
+          "projection_status": "rendered",
+          "overlay": "projection-overlays/02-left_orbit.png",
+          "sha256": "90e5ef982d0d97e3ab8a49fe92e99928189309f43a29fa875f179d06763e18ef"
+        },
+        {
+          "frame_index": 3,
+          "view_id": "right_orbit",
+          "visual_review_status": "usable",
+          "projection_status": "rendered",
+          "overlay": "projection-overlays/03-right_orbit.png",
+          "sha256": "530d89a9303ae3dca51ad9a022b388557e61a593376011f946b11a22241dce40"
+        },
+        {
+          "frame_index": 4,
+          "view_id": "top",
+          "visual_review_status": "partial",
+          "projection_status": "rendered",
+          "overlay": "projection-overlays/04-top.png",
+          "sha256": "470977835d8c251560c07b4750e72d032be985d8dcf43a3505165afd14dbb5cd"
+        },
+        {
+          "frame_index": 5,
+          "view_id": "bottom",
+          "visual_review_status": "insufficient",
+          "projection_status": "excluded_insufficient_view",
+          "reason": "This view is not reliable enough to visually validate Ground Truth and did not contribute annotation evidence."
+        },
+        {
+          "frame_index": 6,
+          "view_id": "oblique",
+          "visual_review_status": "usable",
+          "projection_status": "rendered",
+          "overlay": "projection-overlays/06-oblique.png",
+          "sha256": "93e8b8abd136ca448f9212a282130d279104cd2c730dfec40a9fc00b1dec2688"
+        }
+      ]
+    }
+  },
+  "review_acceptance": {
+    "reviewer": "workspace-user",
+    "note": "User accepted the clothes_rack Ground Truth after reviewing the narrow-rack projections; foot-edge uncertainty remains ambiguous rather than selected.",
+    "frozen_at_utc": "2026-07-13T09:28:08+00:00"
+  },
+  "immutability": "Later corrections require a new Ground Truth version. This artifact and the source draft are preserved unchanged for prior benchmark results."
+}

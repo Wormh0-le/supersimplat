@@ -1,0 +1,48 @@
+{
+  "frame_set": {
+    "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/office/targets/clothes_rack/frame-set-v1/frame-set.json",
+    "sha256": "e6a2f525a0c833a28a00c978549488a8ff7365a3dcb6223d73826351c23e8bba"
+  },
+  "mask_set": {
+    "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/office/targets/clothes_rack/frame-set-v1/mask-set-v1/mask-set.json",
+    "sha256": "50fc52fb9bf4b34e0fa118e11a5002984e040a5ec9443d72c08fc7039f41814b"
+  },
+  "methods": {
+    "contributor_three_state": {
+      "path": "clothes_rack/contributor_three_state.npz",
+      "rejected_count": 53636,
+      "selected_count": 2922,
+      "sha256": "6259572714026dc6cab4fe61fafe5908dd896499ab78b33474957a766a1f27f4",
+      "uncertain_count": 3623983
+    },
+    "current_top1_visibility": {
+      "path": "clothes_rack/current_top1_visibility.npz",
+      "rejected_count": 0,
+      "selected_count": 806,
+      "sha256": "c0a05b5609925075930b8a4177fe1e61a30438ce7b535895b8f50604429e7079",
+      "uncertain_count": 3679735
+    },
+    "hard_top1_vote": {
+      "path": "clothes_rack/hard_top1_vote.npz",
+      "rejected_count": 16912,
+      "selected_count": 1379,
+      "sha256": "83d0c5a85f38ab8f6bdc5b1af2350d63996e3d411c3361aebeb2b0ec27b07367",
+      "uncertain_count": 3662250
+    },
+    "soft_mask_fit": {
+      "path": "clothes_rack/soft_mask_fit.npz",
+      "rejected_count": 53387,
+      "selected_count": 3818,
+      "sha256": "e6be6edaa91048155198e162453cd873c8a82bf78ed8e1681cb1e0229cc2611c",
+      "uncertain_count": 3623336
+    }
+  },
+  "prediction_before_ground_truth_scoring": true,
+  "scenario_id": "clothes_rack",
+  "scene_snapshot": {
+    "gaussian_count": 3680541,
+    "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+    "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1"
+  },
+  "schema_version": 1
+}

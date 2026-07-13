@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "purpose": "Method-independent Benchmark Ground Truth for a fixed office target and Scene Snapshot",
+  "ground_truth_version": "ground-truth-v1",
+  "target_id": "microwave",
+  "source_ply": {
+    "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+    "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1",
+    "gaussian_count": 3680541
+  },
+  "labels": {
+    "artifact": "ground-truth.npz",
+    "artifact_sha256": "3ff56f5541a0f1754a83a628db721aace7c340bdd380e22e76b5104061e5286d",
+    "scope_stable_gaussians": 23155,
+    "selected_stable_gaussians": 2753,
+    "rejected_stable_gaussians": 15012,
+    "ambiguous_stable_gaussians": 5390,
+    "metric_rule": "Compute accuracy only within scope_ids and exclude ambiguous_ids. Candidate uncertainty counts as not selected for selected truth IDs."
+  },
+  "source_draft": {
+    "path": "docs/benchmarks/fixtures/office/targets/microwave/ground-truth-draft-v5",
+    "manifest": "source-ground-truth-draft.json",
+    "manifest_sha256": "54f1e5b280e9f6c78c88b039500769046faf4821e7c7fc5078c0a89d212af080",
+    "labels_sha256": "3ff56f5541a0f1754a83a628db721aace7c340bdd380e22e76b5104061e5286d",
+    "annotation_spec": {
+      "path": "docs/benchmarks/fixtures/office/targets/microwave/ground-truth-annotation-draft-v2.json",
+      "sha256": "26ba04157d61f2998d8bc97473d868d56ebf8a539d621de9ddffc1de47ac0213"
+    },
+    "annotation_masks": {
+      "path": "docs/benchmarks/fixtures/office/targets/microwave/ground-truth-inspection-v2/annotation-masks-draft-v1/annotation-masks.json",
+      "sha256": "781b03fb282c01543e0c6ce02110885fb6f340ce072687f6d3b738087a1ea404"
+    },
+    "inspection_set": {
+      "path": "docs/benchmarks/fixtures/office/targets/microwave/ground-truth-inspection-v2/inspection-set.json",
+      "sha256": "ae92f006fc6d164a591d4db8e4c040129132370f63339c89736cd30371b42337"
+    },
+    "visual_review": {
+      "path": "docs/benchmarks/fixtures/office/targets/microwave/ground-truth-inspection-v2/visual-review.json",
+      "sha256": "549f03ae6dc4d790c7ac31108e5f87bc5e1041937bf9519d32d7ac7c7837b8eb"
+    },
+    "projection_review": {
+      "contact_sheet": "projection-overlay-contact-sheet.png",
+      "contact_sheet_sha256": "222c8341a5f5d0e910604264d22265cccf3aac19580770459a240851861569c9",
+      "frames": [
+        {
+          "frame_index": 0,
+          "view_id": "anchor",
+          "visual_review_status": "usable",
+          "projection_status": "rendered",
+          "overlay": "projection-overlays/00-anchor.png",
+          "sha256": "5993c718bbad8999f123a713476e8908c118e9e4929f90a0c33304595d5cdf37"
+        },
+        {
+          "frame_index": 1,
+          "view_id": "opposite",
+          "visual_review_status": "insufficient",
+          "projection_status": "excluded_insufficient_view",
+          "reason": "This view is not reliable enough to visually validate Ground Truth and did not contribute annotation evidence."
+        },
+        {
+          "frame_index": 2,
+          "view_id": "left_orbit",
+          "visual_review_status": "insufficient",
+          "projection_status": "excluded_insufficient_view",
+          "reason": "This view is not reliable enough to visually validate Ground Truth and did not contribute annotation evidence."
+        },
+        {
+          "frame_index": 3,
+          "view_id": "right_orbit",
+          "visual_review_status": "insufficient",
+          "projection_status": "excluded_insufficient_view",
+          "reason": "This view is not reliable enough to visually validate Ground Truth and did not contribute annotation evidence."
+        },
+        {
+          "frame_index": 4,
+          "view_id": "top",
+          "visual_review_status": "insufficient",
+          "projection_status": "excluded_insufficient_view",
+          "reason": "This view is not reliable enough to visually validate Ground Truth and did not contribute annotation evidence."
+        },
+        {
+          "frame_index": 5,
+          "view_id": "bottom",
+          "visual_review_status": "insufficient",
+          "projection_status": "excluded_insufficient_view",
+          "reason": "This view is not reliable enough to visually validate Ground Truth and did not contribute annotation evidence."
+        },
+        {
+          "frame_index": 6,
+          "view_id": "oblique",
+          "visual_review_status": "usable",
+          "projection_status": "rendered",
+          "overlay": "projection-overlays/06-oblique.png",
+          "sha256": "3ff07afe83a39f523c0808d7b3758a32764f2ccaf9f592c9889fa71b115bbc37"
+        },
+        {
+          "frame_index": 7,
+          "view_id": "supplemental-upper-00",
+          "visual_review_status": "usable",
+          "projection_status": "rendered",
+          "overlay": "projection-overlays/07-supplemental-upper-00.png",
+          "sha256": "568cf4424a19782396472f2f1c7c3a6a8e85a8c8646796adcb5d32fa117dd9d2"
+        }
+      ]
+    }
+  },
+  "review_acceptance": {
+    "reviewer": "workspace-user",
+    "note": "User accepted the microwave Ground Truth after reviewing the supplemental upper view and conservative ambiguous regions.",
+    "frozen_at_utc": "2026-07-13T09:28:08+00:00"
+  },
+  "immutability": "Later corrections require a new Ground Truth version. This artifact and the source draft are preserved unchanged for prior benchmark results."
+}

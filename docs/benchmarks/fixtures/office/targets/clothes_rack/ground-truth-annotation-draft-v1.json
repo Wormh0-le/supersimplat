@@ -1,0 +1,286 @@
+{
+  "schema_version": 1,
+  "status": "draft-for-user-review-not-ground-truth",
+  "purpose": "Conservative RGB-only stroke annotation specification for the light-gray freestanding clothes rack. It is independent of SAM and lifting outputs.",
+  "target_id": "clothes_rack",
+  "inspection_set": {
+    "path": "clothes_rack/ground-truth-inspection-v1/inspection-set.json",
+    "sha256": "e28cf81b7cd498af8574729aebac865956bbda61fa502a5905365680f4de2231"
+  },
+  "annotation_method": "Narrow manually reviewed strokes follow the light-gray pole, arms, and feet across independent views. Clear green gift-box and black-support regions are negative evidence. Unmarked thin boundaries remain candidates for ambiguity rather than being forced into either class.",
+  "local_candidate_region": {
+    "kind": "aabb",
+    "min": [6.85, 0.25, -0.1],
+    "max": [7.45, 0.8, 1.8],
+    "purpose": "Conservative local context for the pole, arms, and feet; thin or occluded structure remains ambiguous without repeated evidence."
+  },
+  "views": [
+    {
+      "view_id": "anchor",
+      "positive_regions": [
+        {
+          "kind": "stroke",
+          "points": [
+            [538, 171],
+            [544, 751]
+          ],
+          "width_px": 21
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [538, 206],
+            [499, 183]
+          ],
+          "width_px": 17
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [540, 248],
+            [517, 235]
+          ],
+          "width_px": 16
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [541, 289],
+            [576, 266]
+          ],
+          "width_px": 17
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [542, 328],
+            [520, 304]
+          ],
+          "width_px": 17
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [543, 408],
+            [577, 384]
+          ],
+          "width_px": 17
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [544, 461],
+            [525, 432]
+          ],
+          "width_px": 17
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [543, 746],
+            [459, 844]
+          ],
+          "width_px": 19
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [543, 746],
+            [630, 850]
+          ],
+          "width_px": 19
+        }
+      ],
+      "negative_regions": [
+        { "kind": "box", "xyxy": [748, 640, 910, 810] },
+        { "kind": "box", "xyxy": [0, 360, 82, 950] }
+      ]
+    },
+    {
+      "view_id": "left_orbit",
+      "positive_regions": [
+        {
+          "kind": "stroke",
+          "points": [
+            [495, 168],
+            [499, 721]
+          ],
+          "width_px": 20
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [496, 207],
+            [466, 188]
+          ],
+          "width_px": 16
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [497, 247],
+            [471, 229]
+          ],
+          "width_px": 16
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [498, 289],
+            [526, 267]
+          ],
+          "width_px": 16
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [498, 490],
+            [472, 472]
+          ],
+          "width_px": 16
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [498, 716],
+            [416, 835]
+          ],
+          "width_px": 18
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [498, 716],
+            [536, 790]
+          ],
+          "width_px": 18
+        }
+      ],
+      "negative_regions": [{ "kind": "box", "xyxy": [610, 815, 850, 1008] }]
+    },
+    {
+      "view_id": "right_orbit",
+      "positive_regions": [
+        {
+          "kind": "stroke",
+          "points": [
+            [513, 161],
+            [519, 743]
+          ],
+          "width_px": 20
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [514, 202],
+            [486, 180]
+          ],
+          "width_px": 16
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [516, 244],
+            [486, 220]
+          ],
+          "width_px": 16
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [517, 288],
+            [546, 266]
+          ],
+          "width_px": 16
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [518, 420],
+            [546, 398]
+          ],
+          "width_px": 16
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [519, 744],
+            [461, 810]
+          ],
+          "width_px": 18
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [519, 744],
+            [575, 806]
+          ],
+          "width_px": 18
+        }
+      ],
+      "negative_regions": [{ "kind": "box", "xyxy": [820, 500, 1008, 1008] }]
+    },
+    {
+      "view_id": "oblique",
+      "positive_regions": [
+        {
+          "kind": "stroke",
+          "points": [
+            [498, 207],
+            [503, 744]
+          ],
+          "width_px": 20
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [499, 235],
+            [470, 215]
+          ],
+          "width_px": 16
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [500, 281],
+            [528, 258]
+          ],
+          "width_px": 16
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [501, 330],
+            [474, 307]
+          ],
+          "width_px": 16
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [502, 473],
+            [474, 447]
+          ],
+          "width_px": 16
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [503, 741],
+            [438, 773]
+          ],
+          "width_px": 18
+        },
+        {
+          "kind": "stroke",
+          "points": [
+            [503, 741],
+            [550, 758]
+          ],
+          "width_px": 18
+        }
+      ],
+      "negative_regions": [{ "kind": "box", "xyxy": [700, 680, 900, 830] }]
+    }
+  ]
+}

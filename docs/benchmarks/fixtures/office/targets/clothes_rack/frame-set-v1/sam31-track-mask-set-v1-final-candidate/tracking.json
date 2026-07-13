@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "purpose": "SAM3.1 tracking for Generated View quality gating",
+  "execution_kind": "prompt-script",
+  "target_id": "clothes_rack",
+  "model": "facebook/sam3.1",
+  "checkpoint": "/home/ubuntu/.cache/modelscope/hub/models/facebook/sam3.1/sam3.1_multiplex.pt",
+  "checkpoint_sha256": "0567debeec80ba4ac6369540c6c248025283cb3ff2b92827509e57e2b3541cb6",
+  "sam3_source_commit": "5dd401d1c5c1d5c3eedff06d41b77af824517619",
+  "license": {
+    "name": "SAM License",
+    "url": "https://github.com/facebookresearch/sam3/blob/5dd401d1c5c1d5c3eedff06d41b77af824517619/LICENSE",
+    "weights_bundled": false
+  },
+  "resolution": [1008, 1008],
+  "input_manifest": {
+    "kind": "frame_set",
+    "path": "clothes_rack/frame-set-v1/frame-set.json",
+    "sha256": "e6a2f525a0c833a28a00c978549488a8ff7365a3dcb6223d73826351c23e8bba",
+    "frame_set_version": "frame-set-v1"
+  },
+  "anchor_mask_prompt": {
+    "path": "clothes_rack/sam31-anchor-probe/prompt-log.json",
+    "sha256": "dd97a95739020f643580e026837a83cccc13d6890aca6b979dca960882a39e6a",
+    "content": {
+      "target_id": "clothes_rack",
+      "image": "clothes_rack/anchor-candidate/frames/office_overview_00.png",
+      "image_sha256": "322399367cbfc3950b399604c48eed7b6f614305f9241f3b56def92be4f9fe7d",
+      "prompt_type": "positive_box",
+      "output_prob_threshold": 0.5,
+      "candidate_count": 1,
+      "candidate_areas_pixels": [13458],
+      "inference_seconds": 0.3137115329882363,
+      "box_format": "relative_xywh",
+      "box": [0.46, 0.14, 0.19, 0.72]
+    }
+  },
+  "prompt_script": {
+    "path": "clothes_rack/sam31-tracking-prompt-v2-frame-set-v1.json",
+    "sha256": "cfda40cb547d337455ef5013b588e373721376dc18c506d9d18ff474a3aae5a8",
+    "content": {
+      "schema_version": 1,
+      "purpose": "accepted SAM3.1 adapter prompt script for the clothes-rack Frame Set with explicit neutral not-found outcomes",
+      "target_id": "clothes_rack",
+      "frame_set_version": "frame-set-v1",
+      "frame_set_manifest_sha256": "e6a2f525a0c833a28a00c978549488a8ff7365a3dcb6223d73826351c23e8bba",
+      "track_id": "primary-include",
+      "role": "include",
+      "anchor": {
+        "candidate_id": "anchor",
+        "frame_index": 1,
+        "image": "clothes_rack/anchor-candidate/frames/office_overview_00.png",
+        "image_sha256": "322399367cbfc3950b399604c48eed7b6f614305f9241f3b56def92be4f9fe7d"
+      },
+      "adapter_prompt": {
+        "prompt_type": "positive_box_and_text",
+        "box_format": "relative_xywh",
+        "box": [0.46, 0.14, 0.19, 0.72],
+        "text": "white freestanding clothes rack",
+        "output_prob_threshold": 0.5
+      },
+      "source_anchor_mask_prompt_log": {
+        "path": "clothes_rack/sam31-anchor-probe/prompt-log.json",
+        "sha256": "dd97a95739020f643580e026837a83cccc13d6890aca6b979dca960882a39e6a"
+      },
+      "selection_evidence": {
+        "rejected_alternative": {
+          "adapter_prompt_type": "positive_box_and_text",
+          "text": "clothes rack",
+          "reason": "The generic phrase consistently moved the Anchor mask to the left image edge instead of the target rack.",
+          "artifacts": [
+            "clothes_rack/frame-set-anchor-only-diagnostic/sam31-track-text-clothes-rack/tracking.json",
+            "clothes_rack/frame-set-v1/sam31-track-text-prompt-v1-diagnostic/tracking.json"
+          ]
+        },
+        "accepted_combination": {
+          "reason": "The specific phrase produces clean masks on anchor, upper-00, ring-01, and ring-02 in this exact Frame Set. ring-11, ring-03, and upper-01 remain explicit neutral not-found views rather than being converted into negative evidence.",
+          "artifacts": [
+            "clothes_rack/frame-set-anchor-only-diagnostic/sam31-track-text-white-freestanding-clothes-rack/tracking.json",
+            "clothes_rack/frame-set-v1/sam31-track-text-specific-v1-diagnostic/tracking.json"
+          ]
+        }
+      },
+      "scope_note": "This is an adapter-specific benchmark bootstrap prompt. The editor-facing point-only service contract remains separate from this fixture."
+    }
+  },
+  "effective_adapter_prompt": {
+    "prompt_type": "positive_box_and_text",
+    "box_format": "relative_xywh",
+    "box": [0.46, 0.14, 0.19, 0.72],
+    "text": "white freestanding clothes rack",
+    "output_prob_threshold": 0.5
+  },
+  "diagnostic_text_prompt": null,
+  "runtime": {
+    "torch": "2.11.0+cu128",
+    "cuda": "12.8",
+    "gpu": "NVIDIA GeForce RTX 4090 D",
+    "offload_video_to_cpu": false,
+    "compile": false,
+    "warm_up": false,
+    "use_fa3": false,
+    "use_rope_real": true,
+    "async_loading_frames": false,
+    "max_num_objects": 16,
+    "multiplex_count": 16
+  },
+  "model_build_seconds": 8.191261417989153,
+  "tracking_seconds": 0.8485573530197144,
+  "peak_vram_bytes": 9442921472,
+  "overlay_contact_sheet": "overlay-contact-sheet.png",
+  "frames": [
+    {
+      "frame_index": 0,
+      "candidate_id": "ring-11",
+      "category": "ring",
+      "source_file": "frames/000-ring-11.png",
+      "mask_area_pixels": 0,
+      "mask_area_fraction": 0.0,
+      "bbox_xyxy": null,
+      "border_touch": false,
+      "overlay": "overlays/000-ring-11.png"
+    },
+    {
+      "frame_index": 1,
+      "candidate_id": "anchor",
+      "category": "anchor",
+      "source_file": "frames/001-anchor.png",
+      "mask_area_pixels": 13030,
+      "mask_area_fraction": 0.012823995338876291,
+      "bbox_xyxy": [455, 168, 631, 850],
+      "border_touch": false,
+      "overlay": "overlays/001-anchor.png"
+    },
+    {
+      "frame_index": 2,
+      "candidate_id": "upper-00",
+      "category": "upper",
+      "source_file": "frames/002-upper-00.png",
+      "mask_area_pixels": 9957,
+      "mask_area_fraction": 0.00979957955404384,
+      "bbox_xyxy": [435, 213, 574, 761],
+      "border_touch": false,
+      "overlay": "overlays/002-upper-00.png"
+    },
+    {
+      "frame_index": 3,
+      "candidate_id": "ring-01",
+      "category": "ring",
+      "source_file": "frames/003-ring-01.png",
+      "mask_area_pixels": 13427,
+      "mask_area_fraction": 0.01321471875787352,
+      "bbox_xyxy": [416, 160, 557, 854],
+      "border_touch": false,
+      "overlay": "overlays/003-ring-01.png"
+    },
+    {
+      "frame_index": 4,
+      "candidate_id": "ring-02",
+      "category": "ring",
+      "source_file": "frames/004-ring-02.png",
+      "mask_area_pixels": 13749,
+      "mask_area_fraction": 0.013531627928949358,
+      "bbox_xyxy": [416, 161, 577, 854],
+      "border_touch": false,
+      "overlay": "overlays/004-ring-02.png"
+    },
+    {
+      "frame_index": 5,
+      "candidate_id": "ring-03",
+      "category": "ring",
+      "source_file": "frames/005-ring-03.png",
+      "mask_area_pixels": 0,
+      "mask_area_fraction": 0.0,
+      "bbox_xyxy": null,
+      "border_touch": false,
+      "overlay": "overlays/005-ring-03.png"
+    },
+    {
+      "frame_index": 6,
+      "candidate_id": "upper-01",
+      "category": "upper",
+      "source_file": "frames/006-upper-01.png",
+      "mask_area_pixels": 0,
+      "mask_area_fraction": 0.0,
+      "bbox_xyxy": null,
+      "border_touch": false,
+      "overlay": "overlays/006-upper-01.png"
+    }
+  ]
+}

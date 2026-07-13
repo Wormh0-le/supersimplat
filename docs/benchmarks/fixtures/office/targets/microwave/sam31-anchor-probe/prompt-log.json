@@ -1,0 +1,12 @@
+{
+  "target_id": "microwave",
+  "image": "microwave/anchor-candidate/frames/office_overview_00.png",
+  "image_sha256": "0cbbd4989ac217f90331ff04877d78e8b78dcc315b5991aa94603dda9039c2b1",
+  "prompt_type": "positive_box",
+  "box_format": "relative_xywh",
+  "box": [0.33, 0.39, 0.36, 0.23],
+  "output_prob_threshold": 0.5,
+  "candidate_count": 1,
+  "candidate_areas_pixels": [65026],
+  "inference_seconds": 0.11913358699530363
+}

@@ -1,0 +1,6 @@
+[submodule "thirdparty/splat_analyzer"]
+	path = thirdparty/splat_analyzer
+	url = https://github.com/Wormh0-le/splat_analyzer.git
+[submodule "thirdparty/sam3"]
+	path = thirdparty/sam3
+	url = https://github.com/facebookresearch/sam3.git

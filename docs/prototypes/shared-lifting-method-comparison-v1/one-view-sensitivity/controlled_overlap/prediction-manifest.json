@@ -1,0 +1,48 @@
+{
+  "frame_set": {
+    "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/controlled-overlap/frame-set-v1/frame-set.json",
+    "sha256": "1fbe6f5c26be7a88ab7054538532c546baf77ce8058f61d127d3017fb7e2bdee"
+  },
+  "mask_set": {
+    "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/controlled-overlap/frame-set-v1/mask-set-v1/mask-set.json",
+    "sha256": "9af076069eef0dfbf2ed95b94052fb5856f1c9ef8bc45485f642e1cf9dd3c72c"
+  },
+  "methods": {
+    "contributor_three_state": {
+      "path": "controlled_overlap/contributor_three_state.npz",
+      "rejected_count": 5551,
+      "selected_count": 7403,
+      "sha256": "8382f2cd46b04bc5a2ecd51717a2ce2bd935d3a3c1904bbea777579c3a932d2b",
+      "uncertain_count": 3430
+    },
+    "current_top1_visibility": {
+      "path": "controlled_overlap/current_top1_visibility.npz",
+      "rejected_count": 0,
+      "selected_count": 3314,
+      "sha256": "b015fe63da318cb7aa37e84074c4ccbf7655da115a85ea6bd0fead2e1bc89e2f",
+      "uncertain_count": 13070
+    },
+    "hard_top1_vote": {
+      "path": "controlled_overlap/hard_top1_vote.npz",
+      "rejected_count": 4549,
+      "selected_count": 6204,
+      "sha256": "4175f2341a7614e4bed8868a7801c66a9d91df1d0b898fa1c390d6af46e548ad",
+      "uncertain_count": 5631
+    },
+    "soft_mask_fit": {
+      "path": "controlled_overlap/soft_mask_fit.npz",
+      "rejected_count": 5498,
+      "selected_count": 7417,
+      "sha256": "3aaa1ab8fe0256ad0a6934a4d3a7c983318c596614c3477ace5a5cbcbca8e24c",
+      "uncertain_count": 3469
+    }
+  },
+  "prediction_before_ground_truth_scoring": true,
+  "scenario_id": "controlled_overlap",
+  "scene_snapshot": {
+    "gaussian_count": 16384,
+    "path": "/home/ubuntu/wormh01e/supersimplat/docs/benchmarks/fixtures/controlled-overlap/controlled_front_back_overlap.ply",
+    "sha256": "cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e"
+  },
+  "schema_version": 1
+}

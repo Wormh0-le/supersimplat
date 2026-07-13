@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "purpose": "SAM3.1 tracking for Generated View quality gating",
+  "execution_kind": "diagnostic-cli-prompt",
+  "target_id": "clothes_rack",
+  "model": "facebook/sam3.1",
+  "checkpoint": "/home/ubuntu/.cache/modelscope/hub/models/facebook/sam3.1/sam3.1_multiplex.pt",
+  "checkpoint_sha256": "0567debeec80ba4ac6369540c6c248025283cb3ff2b92827509e57e2b3541cb6",
+  "sam3_source_commit": "5dd401d1c5c1d5c3eedff06d41b77af824517619",
+  "license": {
+    "name": "SAM License",
+    "url": "https://github.com/facebookresearch/sam3/blob/5dd401d1c5c1d5c3eedff06d41b77af824517619/LICENSE",
+    "weights_bundled": false
+  },
+  "resolution": [1008, 1008],
+  "input_manifest": {
+    "kind": "frame_set",
+    "path": "clothes_rack/frame-set-anchor-only-diagnostic/frame-set.json",
+    "sha256": "f504d2a706455f1333ecfad899ffb0f7f63e6f882c62f73a896c1ef3ac0705d1",
+    "frame_set_version": "frame-set-anchor-only-diagnostic"
+  },
+  "anchor_mask_prompt": {
+    "path": "clothes_rack/sam31-anchor-probe/prompt-log.json",
+    "sha256": "dd97a95739020f643580e026837a83cccc13d6890aca6b979dca960882a39e6a",
+    "content": {
+      "target_id": "clothes_rack",
+      "image": "clothes_rack/anchor-candidate/frames/office_overview_00.png",
+      "image_sha256": "322399367cbfc3950b399604c48eed7b6f614305f9241f3b56def92be4f9fe7d",
+      "prompt_type": "positive_box",
+      "output_prob_threshold": 0.5,
+      "candidate_count": 1,
+      "candidate_areas_pixels": [13458],
+      "inference_seconds": 0.3137115329882363,
+      "box_format": "relative_xywh",
+      "box": [0.46, 0.14, 0.19, 0.72]
+    }
+  },
+  "prompt_script": null,
+  "effective_adapter_prompt": {
+    "target_id": "clothes_rack",
+    "image": "clothes_rack/anchor-candidate/frames/office_overview_00.png",
+    "image_sha256": "322399367cbfc3950b399604c48eed7b6f614305f9241f3b56def92be4f9fe7d",
+    "prompt_type": "positive_box_and_text",
+    "output_prob_threshold": 0.5,
+    "candidate_count": 1,
+    "candidate_areas_pixels": [13458],
+    "inference_seconds": 0.3137115329882363,
+    "box_format": "relative_xywh",
+    "box": [0.46, 0.14, 0.19, 0.72],
+    "text": "white freestanding clothes rack"
+  },
+  "diagnostic_text_prompt": "white freestanding clothes rack",
+  "runtime": {
+    "torch": "2.11.0+cu128",
+    "cuda": "12.8",
+    "gpu": "NVIDIA GeForce RTX 4090 D",
+    "offload_video_to_cpu": false,
+    "compile": false,
+    "warm_up": false,
+    "use_fa3": false,
+    "use_rope_real": true,
+    "async_loading_frames": false,
+    "max_num_objects": 16,
+    "multiplex_count": 16
+  },
+  "model_build_seconds": 8.168576296011452,
+  "tracking_seconds": 0.10873343297862448,
+  "peak_vram_bytes": 5113148416,
+  "overlay_contact_sheet": "overlay-contact-sheet.png",
+  "frames": [
+    {
+      "frame_index": 0,
+      "candidate_id": "anchor",
+      "category": "anchor",
+      "source_file": "frames/000-anchor.png",
+      "mask_area_pixels": 13022,
+      "mask_area_fraction": 0.01281612181909801,
+      "bbox_xyxy": [455, 167, 631, 851],
+      "border_touch": false,
+      "overlay": "overlays/000-anchor.png"
+    }
+  ]
+}

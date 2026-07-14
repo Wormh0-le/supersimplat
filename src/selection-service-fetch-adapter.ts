@@ -1,57 +1,67 @@
 import {
+    assertCompleteMaskSet,
     previewBindingsFromRequest,
     previewBindingsMatch,
+    type ObjectSelectionFrameSet,
     type ObjectSelectionPreviewBindings,
     type ObjectSelectionPreviewRequest,
     type ObjectSelectionServiceSessionStart,
     type SelectionServiceAdapter,
+    type SelectionServiceMaskFrame,
+    type SelectionServiceMaskSet,
+    type SelectionServiceMaskTrack,
     type SelectionServicePreviewResponse
 } from './object-selection-session';
 import { assertSceneSnapshot, type SceneSnapshot } from './scene-snapshot';
 import { SelectionServiceTransportError } from './selection-service-readiness';
 
 interface SelectionServiceTransportConfiguration {
-    endpoint: string;
-    modelManifestDigest: string | null;
+  endpoint: string;
+  modelManifestDigest: string | null;
 }
 
 interface FetchResponse {
-    readonly ok: boolean;
-    readonly status: number;
-    json(): Promise<unknown>;
+  readonly ok: boolean;
+  readonly status: number;
+  json(): Promise<unknown>;
 }
 
 interface SelectionServiceFetchInit {
-    method: 'POST' | 'PUT' | 'DELETE';
-    headers: Record<string, string>;
-    mode: 'cors';
-    credentials: 'omit';
-    cache: 'no-store';
-    body?: string;
+  method: 'POST' | 'PUT' | 'DELETE';
+  headers: Record<string, string>;
+  mode: 'cors';
+  credentials: 'omit';
+  cache: 'no-store';
+  body?: string;
 }
 
 type SelectionServiceFetch = (
-    url: string,
-    init: SelectionServiceFetchInit
+  url: string,
+  init: SelectionServiceFetchInit
 ) => Promise<FetchResponse>;
 
 interface FetchSelectionServiceAdapterOptions {
-    getConfiguration: () => SelectionServiceTransportConfiguration;
-    fetch?: SelectionServiceFetch;
+  getConfiguration: () => SelectionServiceTransportConfiguration;
+  fetch?: SelectionServiceFetch;
 }
 
 interface SceneCacheMissResponse extends ObjectSelectionPreviewBindings {
-    status: 'sceneCacheMiss';
+  status: 'sceneCacheMiss';
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
-    return typeof value === 'object' && value !== null;
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 };
 
 const isSelectionOperation = (
     value: unknown
 ): value is ObjectSelectionPreviewRequest['operation'] => {
-    return value === 'New' || value === 'Add' || value === 'Remove' || value === 'Refine';
+    return (
+        value === 'New' ||
+    value === 'Add' ||
+    value === 'Remove' ||
+    value === 'Refine'
+    );
 };
 
 const isNonNegativeInteger = (value: unknown): value is number => {
@@ -78,6 +88,7 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
     private getConfiguration: () => SelectionServiceTransportConfiguration;
     private fetch: SelectionServiceFetch;
     private registeredSnapshots = new Set<string>();
+    private nextOpenRequestSequence = 0;
 
     constructor(options: FetchSelectionServiceAdapterOptions) {
         this.getConfiguration = options.getConfiguration;
@@ -86,23 +97,27 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
 
     async openSession(start: ObjectSelectionServiceSessionStart) {
         assertSceneSnapshot(start.snapshot);
-        this.assertConfiguredModelManifest(start.requestContext.modelManifestDigest);
-        const result = await this.requestJson('/object-selection-sessions', 'POST', {
-            target: start.target,
-            prompt: start.prompt,
-            sceneId: start.snapshot.sceneId,
-            sceneVersion: start.snapshot.sceneVersion,
-            renderConfigVersion: start.snapshot.renderConfiguration.version,
-            modelManifestDigest: start.requestContext.modelManifestDigest
-        });
-        if (!isRecord(result) || typeof result.sessionId !== 'string' || !result.sessionId) {
-            throw transportError(
-                'invalidResponse',
-                'The Selection Service Companion did not return an Object Selection session ID.'
-            );
+        this.assertConfiguredModelManifest(
+            start.requestContext.modelManifestDigest
+        );
+        const openRequestId = this.openRequestId();
+        let sessionId: string;
+        try {
+            sessionId = await this.registerAndOpenSession(start, openRequestId);
+        } catch (firstError) {
+            try {
+                // A lost response can leave a successful admission on the
+                // Companion. Replaying the same request ID recovers its
+                // session rather than consuming a second model lease.
+                sessionId = await this.registerAndOpenSession(start, openRequestId);
+            } catch (cleanupError) {
+                await this.cleanupOpening(
+                    openRequestId,
+                    start.requestContext.frameSetVersion
+                );
+                throw firstError;
+            }
         }
-
-        const sessionId = result.sessionId;
         try {
             await this.registerSnapshot(start.snapshot);
         } catch (error) {
@@ -147,6 +162,10 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
             `/object-selection-sessions/${encodeURIComponent(sessionId)}`,
             'DELETE'
         );
+        // The Companion releases scene caches with its sole session lease, so
+        // a later session must re-register rather than trusting this adapter's
+        // process-local memory of an old snapshot.
+        this.registeredSnapshots.clear();
     }
 
     private async registerSnapshot(snapshot: SceneSnapshot, force = false) {
@@ -162,9 +181,9 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
         );
         if (
             !isRecord(result) ||
-            result.status !== 'registered' ||
-            result.sceneId !== snapshot.sceneId ||
-            result.sceneVersion !== snapshot.sceneVersion
+      result.status !== 'registered' ||
+      result.sceneId !== snapshot.sceneId ||
+      result.sceneVersion !== snapshot.sceneVersion
         ) {
             throw transportError(
                 'invalidResponse',
@@ -174,7 +193,86 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
         this.registeredSnapshots.add(key);
     }
 
-    private async sendPreview(request: ObjectSelectionPreviewRequest): Promise<SelectionServicePreviewResponse | SceneCacheMissResponse> {
+    private async registerFrameSet(frameSet: ObjectSelectionFrameSet) {
+        const result = await this.requestJson(
+            `/frame-sets/${encodeURIComponent(frameSet.frameSetVersion)}`,
+            'PUT',
+            frameSet
+        );
+        if (
+            !isRecord(result) ||
+      result.status !== 'registered' ||
+      result.frameSetVersion !== frameSet.frameSetVersion
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion did not acknowledge the registered Frame Set bindings.'
+            );
+        }
+    }
+
+    private async releaseFrameSet(frameSetVersion: string) {
+        await this.requestNoContent(
+            `/frame-sets/${encodeURIComponent(frameSetVersion)}`,
+            'DELETE'
+        );
+    }
+
+    private async registerAndOpenSession(
+        start: ObjectSelectionServiceSessionStart,
+        openRequestId: string
+    ): Promise<string> {
+        await this.registerFrameSet(start.requestContext.frameSet);
+        const result = await this.requestJson(
+            '/object-selection-sessions',
+            'POST',
+            {
+                target: start.target,
+                prompt: start.prompt,
+                sceneId: start.snapshot.sceneId,
+                sceneVersion: start.snapshot.sceneVersion,
+                renderConfigVersion: start.snapshot.renderConfiguration.version,
+                frameSetVersion: start.requestContext.frameSetVersion,
+                modelManifestDigest: start.requestContext.modelManifestDigest,
+                openRequestId
+            }
+        );
+        if (
+            !isRecord(result) ||
+      result.status !== 'accepted' ||
+      typeof result.sessionId !== 'string' ||
+      !result.sessionId ||
+      result.openRequestId !== openRequestId
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion did not return the requested Object Selection session ID.'
+            );
+        }
+        return result.sessionId;
+    }
+
+    private async cleanupOpening(openRequestId: string, frameSetVersion: string) {
+        try {
+            await this.requestNoContent(
+                `/object-selection-sessions/open-requests/${encodeURIComponent(openRequestId)}`,
+                'DELETE'
+            );
+        } catch (cleanupError) {
+            // Preserve the admission failure: this is a best-effort fallback
+            // for a response the browser never received.
+        }
+        try {
+            await this.releaseFrameSet(frameSetVersion);
+        } catch (cleanupError) {
+            // A closing inference can briefly retain its Frame Set lease; the
+            // server-side close has already made it drain and reclaimable.
+        }
+    }
+
+    private async sendPreview(
+        request: ObjectSelectionPreviewRequest
+    ): Promise<SelectionServicePreviewResponse | SceneCacheMissResponse> {
         this.assertConfiguredModelManifest(request.modelManifestDigest);
         const result = await this.requestJson(
             `/object-selection-sessions/${encodeURIComponent(request.sessionId)}/previews`,
@@ -202,32 +300,153 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
                 'The Selection Service Companion did not return a complete preview response.'
             );
         }
-        const complete = this.parseCompletePreview(result);
+        const complete = this.parseCompletePreview(result, request);
         this.assertPreviewBindings(complete, request, 'preview');
         return complete;
     }
 
-    private parseCacheMiss(value: Record<string, unknown>): SceneCacheMissResponse {
+    private parseCacheMiss(
+        value: Record<string, unknown>
+    ): SceneCacheMissResponse {
         return {
             status: 'sceneCacheMiss',
             ...this.parsePreviewBindings(value, 'cache-miss')
         };
     }
 
-    private parseCompletePreview(value: Record<string, unknown>): SelectionServicePreviewResponse {
+    private parseCompletePreview(
+        value: Record<string, unknown>,
+        request: ObjectSelectionPreviewRequest
+    ): SelectionServicePreviewResponse {
         if (
             !Array.isArray(value.selectedIds) ||
-            !Array.isArray(value.uncertainIds) ||
-            !Array.isArray(value.rejectedIds)
+      !Array.isArray(value.uncertainIds) ||
+      !Array.isArray(value.rejectedIds)
         ) {
-            throw transportError('invalidResponse', 'The Companion preview response is missing required result fields.');
+            throw transportError(
+                'invalidResponse',
+                'The Companion preview response is missing required result fields.'
+            );
         }
-        return {
+        const bindings = this.parsePreviewBindings(value, 'preview');
+        const complete: SelectionServicePreviewResponse = {
             status: 'complete',
-            ...this.parsePreviewBindings(value, 'preview'),
+            ...bindings,
             selectedIds: value.selectedIds,
             uncertainIds: value.uncertainIds,
-            rejectedIds: value.rejectedIds
+            rejectedIds: value.rejectedIds,
+            maskSet: this.parseMaskSet(value.maskSet, bindings)
+        };
+        try {
+            assertCompleteMaskSet(complete.maskSet, request);
+        } catch (error) {
+            throw transportError(
+                'invalidResponse',
+                'The Companion preview response is missing a complete, version-bound Mask Set.'
+            );
+        }
+        return complete;
+    }
+
+    private parseMaskSet(
+        value: unknown,
+        bindings: ObjectSelectionPreviewBindings
+    ): SelectionServiceMaskSet {
+        if (
+            !isRecord(value) ||
+      value.status !== 'complete' ||
+      value.requestId !== bindings.requestId ||
+      value.sessionId !== bindings.sessionId ||
+      value.promptLogRevision !== bindings.promptLogRevision ||
+      value.frameSetVersion !== bindings.frameSetVersion ||
+      value.modelManifestDigest !== bindings.modelManifestDigest ||
+      !Array.isArray(value.tracks) ||
+      value.tracks.length === 0
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Companion preview response is missing a complete, version-bound Mask Set.'
+            );
+        }
+        const threshold = value.threshold;
+        if (
+            typeof threshold !== 'number' ||
+      !Number.isFinite(threshold) ||
+      threshold < 0 ||
+      threshold > 1
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an invalid Mask Set threshold.'
+            );
+        }
+        const tracks = value.tracks.map(track => this.parseMaskTrack(track));
+        return {
+            status: 'complete',
+            requestId: bindings.requestId,
+            sessionId: bindings.sessionId,
+            promptLogRevision: bindings.promptLogRevision,
+            frameSetVersion: bindings.frameSetVersion,
+            modelManifestDigest: bindings.modelManifestDigest,
+            threshold,
+            tracks
+        };
+    }
+
+    private parseMaskTrack(value: unknown): SelectionServiceMaskTrack {
+        if (
+            !isRecord(value) ||
+      typeof value.trackId !== 'string' ||
+      !value.trackId ||
+      (value.role !== 'include' && value.role !== 'exclude') ||
+      !Array.isArray(value.frames) ||
+      value.frames.length === 0
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Companion Mask Set contains an invalid Mask Track.'
+            );
+        }
+        return {
+            trackId: value.trackId,
+            role: value.role,
+            frames: value.frames.map(frame => this.parseMaskFrame(frame))
+        };
+    }
+
+    private parseMaskFrame(value: unknown): SelectionServiceMaskFrame {
+        if (
+            !isRecord(value) ||
+      typeof value.viewId !== 'string' ||
+      !value.viewId ||
+      !['accepted', 'not_found', 'rejected', 'error'].includes(
+          String(value.status)
+      )
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Companion Mask Set contains an invalid frame outcome.'
+            );
+        }
+        if (value.status === 'accepted' && !isRecord(value.binaryMask)) {
+            throw transportError(
+                'invalidResponse',
+                'An accepted Companion Mask Set frame is missing its binary mask.'
+            );
+        }
+        if (value.status !== 'accepted' && value.binaryMask !== undefined) {
+            throw transportError(
+                'invalidResponse',
+                'A neutral Companion Mask Set frame must not encode a binary mask.'
+            );
+        }
+        return {
+            viewId: value.viewId,
+            status: value.status as SelectionServiceMaskFrame['status'],
+            ...(isRecord(value.binaryMask) ? { binaryMask: value.binaryMask } : {}),
+            ...(typeof value.rejectionReason === 'string' ?
+                { rejectionReason: value.rejectionReason } :
+                {})
         };
     }
 
@@ -250,17 +469,17 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
     ): ObjectSelectionPreviewBindings {
         if (
             typeof value.requestId !== 'string' ||
-            typeof value.sessionId !== 'string' ||
-            typeof value.targetSplatId !== 'string' ||
-            typeof value.sceneId !== 'string' ||
-            typeof value.sceneVersion !== 'string' ||
-            !isSelectionOperation(value.operation) ||
-            !isNonNegativeInteger(value.correctionRound) ||
-            typeof value.deterministicSeed !== 'string' ||
-            !isNonNegativeInteger(value.promptLogRevision) ||
-            typeof value.frameSetVersion !== 'string' ||
-            typeof value.renderConfigVersion !== 'string' ||
-            typeof value.modelManifestDigest !== 'string'
+      typeof value.sessionId !== 'string' ||
+      typeof value.targetSplatId !== 'string' ||
+      typeof value.sceneId !== 'string' ||
+      typeof value.sceneVersion !== 'string' ||
+      !isSelectionOperation(value.operation) ||
+      !isNonNegativeInteger(value.correctionRound) ||
+      typeof value.deterministicSeed !== 'string' ||
+      !isNonNegativeInteger(value.promptLogRevision) ||
+      typeof value.frameSetVersion !== 'string' ||
+      typeof value.renderConfigVersion !== 'string' ||
+      typeof value.modelManifestDigest !== 'string'
         ) {
             throw transportError(
                 'invalidResponse',
@@ -283,7 +502,11 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
         };
     }
 
-    private async requestJson(path: string, method: 'POST' | 'PUT', body: unknown) {
+    private async requestJson(
+        path: string,
+        method: 'POST' | 'PUT',
+        body: unknown
+    ) {
         const response = await this.request(path, method, JSON.stringify(body));
         if (!response.ok) {
             throw await this.httpError(response);
@@ -291,7 +514,10 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
         try {
             return await response.json();
         } catch (error) {
-            throw transportError('invalidResponse', 'The Selection Service Companion returned invalid JSON.');
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned invalid JSON.'
+            );
         }
     }
 
@@ -302,12 +528,19 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
         }
     }
 
-    private async request(path: string, method: SelectionServiceFetchInit['method'], body?: string) {
+    private async request(
+        path: string,
+        method: SelectionServiceFetchInit['method'],
+        body?: string
+    ) {
         let endpoint: URL;
         try {
             endpoint = new URL(this.getConfiguration().endpoint);
         } catch (error) {
-            throw transportError('browserTransport', 'The configured Selection Service endpoint is invalid.');
+            throw transportError(
+                'browserTransport',
+                'The configured Selection Service endpoint is invalid.'
+            );
         }
         const url = new URL(path, endpoint).toString();
         const init: SelectionServiceFetchInit = {
@@ -355,12 +588,23 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
         return `${snapshot.sceneId}\u0000${snapshot.sceneVersion}`;
     }
 
+    private openRequestId() {
+        this.nextOpenRequestSequence += 1;
+        if (typeof globalThis.crypto?.randomUUID === 'function') {
+            return `open:${globalThis.crypto.randomUUID()}`;
+        }
+        // Every browser supported by the editor provides Web Crypto. This
+        // fallback still distinguishes logical opens in constrained test or
+        // embedded contexts, while retries reuse the one value created above.
+        return `open:${Date.now().toString(36)}:${this.nextOpenRequestSequence}:${Math.random().toString(36).slice(2)}`;
+    }
+
     private assertConfiguredModelManifest(modelManifestDigest: string) {
         const configuration = this.getConfiguration();
         if (
             !modelManifestDigest ||
-            configuration.modelManifestDigest === null ||
-            configuration.modelManifestDigest !== modelManifestDigest
+      configuration.modelManifestDigest === null ||
+      configuration.modelManifestDigest !== modelManifestDigest
         ) {
             throw transportError(
                 'invalidResponse',

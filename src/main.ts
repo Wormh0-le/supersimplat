@@ -54,16 +54,16 @@ import { ObjectSelectionToolbar } from './ui/object-selection-toolbar';
 import { registerSelectCursor } from './ui/select-cursor';
 
 declare global {
-    interface LaunchParams {
-        readonly files: FileSystemFileHandle[];
-    }
+  interface LaunchParams {
+    readonly files: FileSystemFileHandle[];
+  }
 
-    interface Window {
-        launchQueue: {
-            setConsumer: (callback: (launchParams: LaunchParams) => void) => void;
-        };
-        scene: Scene;
-    }
+  interface Window {
+    launchQueue: {
+      setConsumer: (callback: (launchParams: LaunchParams) => void) => void;
+    };
+    scene: Scene;
+  }
 }
 
 const getURLArgs = () => {
@@ -108,13 +108,17 @@ const main = async () => {
 
     // expose the queue as an event for any module that needs to serialise async work
     // alongside history mutations.
-    events.function('queue', (fn: () => Promise<void> | void) => commandQueue.enqueue(fn));
+    events.function('queue', (fn: () => Promise<void> | void) => commandQueue.enqueue(fn)
+    );
 
     // init localization
     await i18n.init();
 
     // Configure WebP WASM for SOG format (used for both reading and writing)
-    WebPCodec.wasmUrl = new URL('static/lib/webp/webp.wasm', document.baseURI).toString();
+    WebPCodec.wasmUrl = new URL(
+        'static/lib/webp/webp.wasm',
+        document.baseURI
+    ).toString();
 
     // Run SOG writing inline rather than in worker threads. We don't ship
     // splat-transform's worker.mjs, so leaving the pool enabled makes it try to
@@ -141,9 +145,11 @@ const main = async () => {
     const selectionServiceAdapter = new ReadinessGatedSelectionServiceAdapter({
         readiness: selectionServiceReadiness
     });
-    selectionServiceAdapter.setAdapter(new FetchSelectionServiceAdapter({
-        getConfiguration: () => selectionServiceReadiness.state.configuration
-    }));
+    selectionServiceAdapter.setAdapter(
+        new FetchSelectionServiceAdapter({
+            getConfiguration: () => selectionServiceReadiness.state.configuration
+        })
+    );
     registerSelectionServiceReadinessEvents(events, selectionServiceReadiness);
     events.function('selectionService.adapter', () => selectionServiceAdapter);
 
@@ -172,7 +178,13 @@ const main = async () => {
     const sceneConfig = getSceneConfig(overrides);
 
     // construct the manager
-    const scene = new Scene(events, sceneConfig, editorUI.canvas, graphicsDevice, commandQueue);
+    const scene = new Scene(
+        events,
+        sceneConfig,
+        editorUI.canvas,
+        graphicsDevice,
+        commandQueue
+    );
 
     // colors
     const bgClr = new Color();
@@ -262,29 +274,65 @@ const main = async () => {
 
     // tool manager
     const toolManager = new ToolManager(events);
-    toolManager.register('rectSelection', new RectSelection(events, editorUI.toolsContainer.dom));
-    toolManager.register('brushSelection', new BrushSelection(events, editorUI.toolsContainer.dom, mask));
+    toolManager.register(
+        'rectSelection',
+        new RectSelection(events, editorUI.toolsContainer.dom)
+    );
+    toolManager.register(
+        'brushSelection',
+        new BrushSelection(events, editorUI.toolsContainer.dom, mask)
+    );
     toolManager.register(
         'floodSelection',
-        new FloodSelection(events, editorUI.toolsContainer.dom, mask, editorUI.canvasContainer)
+        new FloodSelection(
+            events,
+            editorUI.toolsContainer.dom,
+            mask,
+            editorUI.canvasContainer
+        )
     );
-    toolManager.register('polygonSelection', new PolygonSelection(events, editorUI.toolsContainer.dom, mask));
-    toolManager.register('lassoSelection', new LassoSelection(events, editorUI.toolsContainer.dom, mask));
-    toolManager.register('sphereSelection', new SphereSelection(events, scene, editorUI.canvasContainer));
-    toolManager.register('boxSelection', new BoxSelection(events, scene, editorUI.canvasContainer));
+    toolManager.register(
+        'polygonSelection',
+        new PolygonSelection(events, editorUI.toolsContainer.dom, mask)
+    );
+    toolManager.register(
+        'lassoSelection',
+        new LassoSelection(events, editorUI.toolsContainer.dom, mask)
+    );
+    toolManager.register(
+        'sphereSelection',
+        new SphereSelection(events, scene, editorUI.canvasContainer)
+    );
+    toolManager.register(
+        'boxSelection',
+        new BoxSelection(events, scene, editorUI.canvasContainer)
+    );
     toolManager.register(
         'eyedropperSelection',
-        new EyedropperSelection(events, editorUI.toolsContainer.dom, editorUI.canvasContainer)
+        new EyedropperSelection(
+            events,
+            editorUI.toolsContainer.dom,
+            editorUI.canvasContainer
+        )
     );
     toolManager.register('move', new MoveTool(events, scene));
     toolManager.register('rotate', new RotateTool(events, scene));
     toolManager.register('scale', new ScaleTool(events, scene));
     toolManager.register(
         'measure',
-        new MeasureTool(events, scene, editorUI.toolsContainer.dom, editorUI.canvasContainer)
+        new MeasureTool(
+            events,
+            scene,
+            editorUI.toolsContainer.dom,
+            editorUI.canvasContainer
+        )
     );
 
-    const boundDimensionsOverlay = new BoundDimensionsOverlay(events, scene, editorUI.canvasContainer);
+    const boundDimensionsOverlay = new BoundDimensionsOverlay(
+        events,
+        scene,
+        editorUI.canvasContainer
+    );
 
     editorUI.toolsContainer.dom.appendChild(maskCanvas);
 
@@ -312,7 +360,12 @@ const main = async () => {
             const background = events.invoke('bgClr') as Color;
             return {
                 version: 'supersplat-effective-rgb-v1',
-                backgroundRgba: [background.r, background.g, background.b, background.a],
+                backgroundRgba: [
+                    background.r,
+                    background.g,
+                    background.b,
+                    background.a
+                ],
                 alphaMode: 'opaque-background',
                 shBands: events.invoke('view.bands') as number,
                 rasterizer: 'playcanvas-gsplat-classic'
@@ -320,71 +373,171 @@ const main = async () => {
         }
     });
     events.function('objectSelection.createSession', (requestedSplat?: Splat) => {
-        const splat = requestedSplat ?? events.invoke('selection') as Splat | null;
+        const splat =
+      requestedSplat ?? (events.invoke('selection') as Splat | null);
         if (!splat || !splat.visible) {
-            throw new Error('Select one visible Target Splat before starting Object Selection.');
+            throw new Error(
+                'Select one visible Target Splat before starting Object Selection.'
+            );
         }
         return objectSelectionSessions.create(splat);
     });
 
-    let anchorPromptPoint: { xPx: number; yPx: number } | null = null;
+    const captureAnchorFrame = async (canvas: HTMLCanvasElement) => {
+        let imageUrl: string;
+        try {
+            imageUrl = canvas.toDataURL('image/png');
+        } catch (error) {
+            throw new Error(
+                'The visible Anchor View could not be captured for model inference.'
+            );
+        }
+        const prefix = 'data:image/png;base64,';
+        if (!imageUrl.startsWith(prefix)) {
+            throw new Error('The visible Anchor View could not be encoded as a PNG.');
+        }
+        if (globalThis.crypto?.subtle === undefined) {
+            throw new Error(
+                'This browser cannot hash the captured Anchor View for model inference.'
+            );
+        }
+        const imagePngBase64 = imageUrl.slice(prefix.length);
+        const imageBytes = Uint8Array.from(atob(imagePngBase64), character => character.charCodeAt(0)
+        );
+        const digest = await globalThis.crypto.subtle.digest('SHA-256', imageBytes);
+        const digestBytes = [...new Uint8Array(digest)];
+        const frameDigest = `sha256:${digestBytes.map(byte => byte.toString(16).padStart(2, '0')).join('')}`;
+        return {
+            frameDigest,
+            imagePngBase64,
+            frameWidth: canvas.width,
+            frameHeight: canvas.height
+        };
+    };
+
+    let anchorPromptPoint: {
+    xPx: number;
+    yPx: number;
+    frame: Promise<{
+      frameDigest: string;
+      imagePngBase64: string;
+      frameWidth: number;
+      frameHeight: number;
+    }>;
+  } | null = null;
     let anchorPromptCount = 0;
+    let awaitingAnchorPrompt = false;
     let objectSelectionHandle: ObjectSelectionSessionHandle | null = null;
     let objectSelectionToolbar: ObjectSelectionToolbar | null = null;
     let objectSelectionPanel: ObjectSelectionPanel | null = null;
-
-    editorUI.canvas.addEventListener('pointerdown', (event) => {
-        if (event.button !== 0) {
-            return;
-        }
-        const rect = editorUI.canvas.getBoundingClientRect();
-        anchorPromptPoint = {
-            xPx: Math.round((event.clientX - rect.left) * editorUI.canvas.width / rect.width),
-            yPx: Math.round((event.clientY - rect.top) * editorUI.canvas.height / rect.height)
-        };
-    });
+    let startObjectSelectionAtAnchor: (() => Promise<void>) | null = null;
 
     const reportObjectSelectionError = (error: unknown) => {
         console.error(error);
     };
 
+    editorUI.canvas.addEventListener('pointerdown', (event) => {
+        if (
+            event.button !== 0 ||
+      !awaitingAnchorPrompt ||
+      startObjectSelectionAtAnchor === null ||
+      objectSelectionHandle?.session.state.status !== 'idle'
+        ) {
+            return;
+        }
+        const rect = editorUI.canvas.getBoundingClientRect();
+        const frame = captureAnchorFrame(editorUI.canvas);
+        frame.catch((): undefined => undefined);
+        anchorPromptPoint = {
+            xPx: Math.max(
+                0,
+                Math.min(
+                    editorUI.canvas.width - 1,
+                    Math.round(
+                        ((event.clientX - rect.left) * editorUI.canvas.width) / rect.width
+                    )
+                )
+            ),
+            yPx: Math.max(
+                0,
+                Math.min(
+                    editorUI.canvas.height - 1,
+                    Math.round(
+                        ((event.clientY - rect.top) * editorUI.canvas.height) / rect.height
+                    )
+                )
+            ),
+            frame
+        };
+        awaitingAnchorPrompt = false;
+        startObjectSelectionAtAnchor().catch(reportObjectSelectionError);
+    });
+
     const mountObjectSelection = (splat: Splat | null) => {
-        // Keep an active Target Splat and its controls intact until the user
-        // confirms or cancels; a normal editor selection change cannot retarget
-        // a live Companion session.
+    // Keep an active Target Splat and its controls intact until the user
+    // confirms or cancels; a normal editor selection change cannot retarget
+    // a live Companion session.
         if (objectSelectionHandle?.session.state.status !== 'idle') {
             return;
         }
         if (!splat) {
             objectSelectionToolbar?.destroy();
             objectSelectionPanel?.destroy();
+            anchorPromptPoint = null;
+            awaitingAnchorPrompt = false;
             objectSelectionHandle = null;
             objectSelectionToolbar = null;
             objectSelectionPanel = null;
+            startObjectSelectionAtAnchor = null;
             return;
         }
-        if (objectSelectionHandle?.target.targetSplatId === `editor-splat:${splat.uid}`) {
+        if (
+            objectSelectionHandle?.target.targetSplatId ===
+      `editor-splat:${splat.uid}`
+        ) {
             return;
         }
 
         objectSelectionToolbar?.destroy();
         objectSelectionPanel?.destroy();
+        anchorPromptPoint = null;
+        awaitingAnchorPrompt = false;
         const handle = events.invoke(
-            'objectSelection.createSession', splat
+            'objectSelection.createSession',
+            splat
         ) as ObjectSelectionSessionHandle;
-        const startNew = () => {
+        const startNew = async () => {
             if (anchorPromptPoint === null) {
-                return Promise.reject(new Error('Click an Anchor View point before starting Object Selection.'));
+                // Capturing and hashing the canvas is intentionally armed only
+                // by New. Ordinary editor clicks never pay this full-frame cost.
+                awaitingAnchorPrompt = true;
+                return;
             }
+            const anchor = anchorPromptPoint;
+            anchorPromptPoint = null;
+            awaitingAnchorPrompt = false;
+            const capturedFrame = await anchor.frame;
+            if (
+                objectSelectionHandle !== handle ||
+        handle.session.state.status !== 'idle'
+            ) {
+                return;
+            }
+            const promptId = `anchor-prompt-${++anchorPromptCount}`;
             return handle.startNew({
-                promptId: `anchor-prompt-${++anchorPromptCount}`,
+                promptId,
                 viewId: 'anchor-view',
-                xPx: anchorPromptPoint.xPx,
-                yPx: anchorPromptPoint.yPx,
+                frameDigest: capturedFrame.frameDigest,
+                frameWidth: capturedFrame.frameWidth,
+                frameHeight: capturedFrame.frameHeight,
+                imagePngBase64: capturedFrame.imagePngBase64,
+                xPx: anchor.xPx,
+                yPx: anchor.yPx,
                 polarity: 'include'
             });
         };
         objectSelectionHandle = handle;
+        startObjectSelectionAtAnchor = startNew;
         objectSelectionToolbar = new ObjectSelectionToolbar(handle.session, {
             startNew,
             onError: reportObjectSelectionError
@@ -402,7 +555,8 @@ const main = async () => {
         });
     };
 
-    events.on('selection.changed', (splat: Splat | null) => mountObjectSelection(splat));
+    events.on('selection.changed', (splat: Splat | null) => mountObjectSelection(splat)
+    );
     mountObjectSelection(events.invoke('selection') as Splat | null);
 
     // apply stored user preferences and start capturing changes to them.
@@ -418,7 +572,10 @@ const main = async () => {
     const filenameList = url.searchParams.getAll('filename');
     for (const [i, value] of loadList.entries()) {
         const decoded = decodeURIComponent(value);
-        const filename = i < filenameList.length ? decodeURIComponent(filenameList[i]) : decoded.split('/').pop();
+        const filename =
+      i < filenameList.length ?
+          decodeURIComponent(filenameList[i]) :
+          decoded.split('/').pop();
 
         await events.invoke('import', [
             {

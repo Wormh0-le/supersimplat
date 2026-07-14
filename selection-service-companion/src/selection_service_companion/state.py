@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import hashlib
@@ -14,9 +16,29 @@ from threading import Lock
 from typing import Any
 
 from . import PACKAGE_VERSION, PROTOCOL_VERSION
+from .masking import (
+    MaskProduction,
+    MaskSessionError,
+    PromptableMaskAdapter,
+    RegisteredFrameSet,
+    SAM31_RUNTIME_CONFIG_DIGEST,
+    Sam3PointMaskAdapter,
+    register_frame_set,
+)
 
 
 DEFAULT_STATE_DIRECTORY = Path.home() / ".local" / "state" / "supersplat-selection-service"
+
+MODEL_MANIFEST_IDENTITY_FIELDS = (
+    "digest",
+    "adapterId",
+    "modelName",
+    "checkpointDigest",
+    "sourceCommit",
+    "licenseName",
+    "licenseUrl",
+    "runtimeConfigDigest",
+)
 
 
 @dataclass(frozen=True)
@@ -26,6 +48,22 @@ class RegisteredSceneSnapshot:
     canonical: str
     stable_ids: tuple[int, ...]
     render_config_version: str
+
+
+@dataclass
+class ActiveMaskSession:
+    """The rollback-safe, service-owned state for one mask-session lifetime."""
+
+    frame_set_version: str | None = None
+    model_manifest_digest: str | None = None
+    open_request_id: str | None = None
+    prompt_log_canonical: str = "[]"
+    prompt_log_revision: int = 0
+    completed_updates: dict[str, str] = field(default_factory=dict)
+    completed_update_fingerprints: dict[str, str] = field(default_factory=dict)
+    cancelled_request_ids: set[str] = field(default_factory=set)
+    in_flight_request_ids: set[str] = field(default_factory=set)
+    closing: bool = False
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -63,6 +101,8 @@ class CompanionState:
     directory: Path
     _session_lock: Lock = field(default_factory=Lock, init=False, repr=False)
     _scene_lock: Lock = field(default_factory=Lock, init=False, repr=False)
+    _frame_lock: Lock = field(default_factory=Lock, init=False, repr=False)
+    _mask_lock: Lock = field(default_factory=Lock, init=False, repr=False)
     _active_object_selection_session: str | None = field(
         default=None,
         init=False,
@@ -71,6 +111,22 @@ class CompanionState:
     _scene_snapshots: dict[tuple[str, str], RegisteredSceneSnapshot] = field(
         default_factory=dict,
         init=False,
+        repr=False,
+    )
+    _frame_sets: dict[str, RegisteredFrameSet] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _mask_sessions: dict[str, ActiveMaskSession] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    mask_adapters: dict[str, PromptableMaskAdapter] = field(
+        default_factory=lambda: {
+            "sam3.1": Sam3PointMaskAdapter(),
+        },
         repr=False,
     )
 
@@ -154,6 +210,13 @@ class CompanionState:
         missing = [key for key in required if not isinstance(manifest.get(key), str) or not manifest[key].strip()]
         if missing:
             raise ValueError(f"model manifest is missing required fields: {', '.join(missing)}")
+        if (
+            manifest["adapterId"] == "sam3.1"
+            and manifest["runtimeConfigDigest"] != SAM31_RUNTIME_CONFIG_DIGEST
+        ):
+            raise ValueError(
+                "the SAM 3.1 Model Manifest runtimeConfigDigest does not match the pinned Companion runtime configuration"
+            )
 
         expected_digest = _normalise_sha256(manifest["checkpointDigest"])
         actual_digest = _sha256(weights_path)
@@ -174,8 +237,33 @@ class CompanionState:
             "installedAt": datetime.now(UTC).isoformat(),
         }
         models = self.models()
-        models = [existing for existing in models if existing.get("digest") != model["digest"]]
-        models.append(model)
+        existing = next(
+            (available for available in models if available.get("digest") == model["digest"]),
+            None,
+        )
+        if existing is not None:
+            if any(
+                existing.get(field) != model[field]
+                for field in MODEL_MANIFEST_IDENTITY_FIELDS
+            ):
+                raise ValueError(
+                    "a Model Manifest digest is immutable and cannot be reinstalled with different content"
+                )
+            # A second verified copy of the same checkpoint may restore a
+            # missing artifact at a new path, but cannot alter the manifest
+            # identity pinned by active sessions.
+            model = {
+                **existing,
+                "weightsPath": model["weightsPath"],
+                "weightsBundled": False,
+                "installedAt": model["installedAt"],
+            }
+            models = [
+                model if available.get("digest") == model["digest"] else available
+                for available in models
+            ]
+        else:
+            models.append(model)
         _write_json(self.models_path, models)
         return model
 
@@ -186,21 +274,93 @@ class CompanionState:
         return [model for model in models if isinstance(model, dict)]
 
     def available_models(self) -> list[dict[str, Any]]:
-        return [model for model in self.models() if self._model_artifact_is_current(model)]
+        return [
+            model
+            for model in self.models()
+            if (
+                self._model_artifact_is_current(model)
+                and self._model_runtime_configuration_is_current(model)
+            )
+        ]
 
-    def open_object_selection_session(self) -> str | None:
+    def open_object_selection_session(
+        self,
+        *,
+        frame_set_version: str | None = None,
+        model_manifest_digest: str | None = None,
+        open_request_id: str | None = None,
+    ) -> str | None:
+        if (frame_set_version is None) != (model_manifest_digest is None):
+            raise MaskSessionError(
+                "invalidMaskSession",
+                "Object Selection mask sessions require both Frame Set and Model Manifest bindings.",
+            )
+        if open_request_id is not None and (
+            not isinstance(open_request_id, str) or not open_request_id.strip()
+        ):
+            raise MaskSessionError(
+                "invalidMaskSession",
+                "Object Selection session openRequestId must be a non-empty string.",
+            )
         with self._session_lock:
             if self._active_object_selection_session is not None:
+                session_id = self._active_object_selection_session
+                with self._mask_lock:
+                    session = self._mask_sessions.get(session_id)
+                    if (
+                        session is not None
+                        and not session.closing
+                        and open_request_id is not None
+                        and session.open_request_id == open_request_id
+                    ):
+                        if (
+                            session.frame_set_version != frame_set_version
+                            or session.model_manifest_digest != model_manifest_digest
+                        ):
+                            raise MaskSessionError(
+                                "openRequestIdConflict",
+                                "A repeated Object Selection openRequestId must replay its original Frame Set and Model Manifest bindings.",
+                            )
+                        return session_id
+                self._discard_unclaimed_frame_set(frame_set_version)
                 return None
-            self._active_object_selection_session = secrets.token_urlsafe(24)
-            return self._active_object_selection_session
+            try:
+                if frame_set_version is not None:
+                    self._require_frame_set(frame_set_version)
+                    self._require_mask_adapter(model_manifest_digest)
+            except MaskSessionError:
+                self._discard_unclaimed_frame_set(frame_set_version)
+                raise
+            session_id = secrets.token_urlsafe(24)
+            self._active_object_selection_session = session_id
+            with self._mask_lock:
+                self._mask_sessions[session_id] = ActiveMaskSession(
+                    frame_set_version=frame_set_version,
+                    model_manifest_digest=model_manifest_digest,
+                    open_request_id=open_request_id,
+                )
+        return session_id
 
     def close_object_selection_session(self, session_id: str) -> bool:
         with self._session_lock:
-            if self._active_object_selection_session != session_id:
+            return self._close_active_session_locked(session_id)
+
+    def close_object_selection_session_for_open_request(self, open_request_id: str) -> bool:
+        """Idempotently close the active session claimed by an open request.
+
+        The browser uses this recovery path when a successful admission response
+        is lost before it learns the generated session ID.
+        """
+
+        with self._session_lock:
+            session_id = self._active_object_selection_session
+            if session_id is None:
                 return False
-            self._active_object_selection_session = None
-            return True
+            with self._mask_lock:
+                session = self._mask_sessions.get(session_id)
+                if session is None or session.open_request_id != open_request_id:
+                    return False
+            return self._close_active_session_locked(session_id)
 
     def has_object_selection_session(self, session_id: str) -> bool:
         with self._session_lock:
@@ -234,9 +394,632 @@ class CompanionState:
         snapshot = self.scene_snapshot(scene_id, scene_version)
         return snapshot.stable_ids if snapshot is not None else None
 
+    def register_frame_set(self, payload: dict[str, Any]) -> RegisteredFrameSet:
+        """Cache one immutable Frame Set without exposing model-private handles."""
+
+        frame_set = register_frame_set(payload)
+        with self._frame_lock:
+            existing = self._frame_sets.get(frame_set.frame_set_version)
+            if existing is not None and existing.canonical != frame_set.canonical:
+                raise MaskSessionError(
+                    "immutableFrameSet",
+                    "A Frame Set version cannot be registered with different content.",
+                )
+            self._frame_sets[frame_set.frame_set_version] = frame_set
+        return frame_set
+
+    def release_frame_set(self, frame_set_version: str) -> bool:
+        """Idempotently release a Frame Set that no session has claimed."""
+
+        with self._session_lock:
+            with self._mask_lock:
+                if any(
+                    session.frame_set_version == frame_set_version
+                    for session in self._mask_sessions.values()
+                ):
+                    return False
+            with self._frame_lock:
+                self._frame_sets.pop(frame_set_version, None)
+        return True
+
+    def update_mask_session(
+        self,
+        *,
+        bindings: dict[str, Any],
+        prompt_log: Any,
+    ) -> dict[str, Any]:
+        """Atomically produce or replay one complete Mask Set.
+
+        Adapter work happens outside the state lock.  No accepted Prompt Log or
+        Mask Set is advanced until the adapter has produced every track/view
+        outcome and the request is still current.
+        """
+
+        request_id = self._mask_binding(bindings, "requestId")
+        session_id = self._mask_binding(bindings, "sessionId")
+        frame_set_version = self._mask_binding(bindings, "frameSetVersion")
+        model_manifest_digest = self._mask_binding(bindings, "modelManifestDigest")
+        prompt_log_revision = self._mask_binding_revision(bindings)
+        if not isinstance(prompt_log, list):
+            raise MaskSessionError(
+                "invalidPromptLog", "The Mask Set update must contain an ordered Prompt Log."
+            )
+        try:
+            prompt_log_canonical = json.dumps(
+                prompt_log, separators=(",", ":"), sort_keys=True
+            )
+        except (TypeError, ValueError) as error:
+            raise MaskSessionError(
+                "invalidPromptLog", "The Prompt Log must be JSON-compatible."
+            ) from error
+        try:
+            request_fingerprint = json.dumps(
+                {"bindings": bindings, "promptLog": prompt_log},
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        except (TypeError, ValueError) as error:
+            raise MaskSessionError(
+                "invalidMaskSession", "The Mask Set request bindings must be JSON-compatible."
+            ) from error
+
+        with self._mask_lock:
+            session = self._mask_sessions.get(session_id)
+            if session is None:
+                raise MaskSessionError(
+                    "unknownSession", "The Object Selection mask session is no longer active."
+                )
+            completed = session.completed_updates.get(request_id)
+            if completed is not None:
+                if session.completed_update_fingerprints.get(request_id) != request_fingerprint:
+                    raise MaskSessionError(
+                        "requestIdConflict",
+                        "A repeated Mask Set request ID must replay its original bindings and Prompt Log.",
+                    )
+                return json.loads(completed)
+            if session.closing:
+                raise MaskSessionError(
+                    "cancelled", "The Object Selection mask session is closing."
+                )
+            if request_id in session.cancelled_request_ids:
+                raise MaskSessionError(
+                    "cancelled", "The promptable-mask update was cancelled."
+                )
+            if session.in_flight_request_ids:
+                raise MaskSessionError(
+                    "updateInProgress", "Another promptable-mask update is still in progress."
+                )
+            self._validate_mask_session_bindings(
+                session,
+                frame_set_version=frame_set_version,
+                model_manifest_digest=model_manifest_digest,
+            )
+            self._validate_prompt_log_revision(
+                session,
+                prompt_log=prompt_log,
+                prompt_log_canonical=prompt_log_canonical,
+                prompt_log_revision=prompt_log_revision,
+            )
+            # Claim the singleton update before resolving model/frame assets.
+            # A concurrent close then retains its lease and cancels this
+            # pending work instead of clearing caches beneath a future model
+            # call or admitting another inference.
+            session.in_flight_request_ids.add(request_id)
+
+        try:
+            frame_set = self._require_frame_set(frame_set_version)
+            model, adapter = self._require_mask_adapter(model_manifest_digest)
+        except MaskSessionError:
+            self._finish_mask_update(session_id, request_id)
+            raise
+
+        cancelled_before_inference = False
+        with self._mask_lock:
+            session = self._mask_sessions.get(session_id)
+            if session is None or request_id in session.cancelled_request_ids:
+                cancelled_before_inference = True
+        if cancelled_before_inference:
+            self._finish_mask_update(session_id, request_id)
+            raise MaskSessionError(
+                "cancelled", "The promptable-mask update was cancelled."
+            )
+
+        def cancelled() -> bool:
+            with self._mask_lock:
+                current = self._mask_sessions.get(session_id)
+                return current is None or request_id in current.cancelled_request_ids
+
+        try:
+            production = adapter.produce_tracks(
+                model=model,
+                frame_set=frame_set,
+                prompt_log=prompt_log,
+                cancelled=cancelled,
+            )
+            tracks, diagnostics, threshold = self._normalise_mask_production(production)
+            self._validate_complete_tracks(frame_set, prompt_log, tracks)
+            mask_set = {
+                "status": "complete",
+                "requestId": request_id,
+                "sessionId": session_id,
+                "promptLogRevision": prompt_log_revision,
+                "frameSetVersion": frame_set_version,
+                "modelManifestDigest": model_manifest_digest,
+                "tracks": tracks,
+            }
+            if diagnostics is not None:
+                mask_set["diagnostics"] = diagnostics
+            mask_set["threshold"] = threshold
+            mask_set_canonical = json.dumps(
+                mask_set, separators=(",", ":"), sort_keys=True
+            )
+        except MaskSessionError:
+            self._finish_mask_update(session_id, request_id)
+            raise
+        except Exception as error:
+            self._finish_mask_update(session_id, request_id)
+            raise MaskSessionError(
+                "modelFailure",
+                "The promptable-mask adapter failed; verify the installed model runtime and retry.",
+            ) from error
+
+        cancelled_after_inference = False
+        with self._mask_lock:
+            current = self._mask_sessions.get(session_id)
+            if current is None or request_id in current.cancelled_request_ids:
+                if current is not None:
+                    current.in_flight_request_ids.discard(request_id)
+                cancelled_after_inference = True
+            else:
+                current.in_flight_request_ids.discard(request_id)
+                current.completed_updates[request_id] = mask_set_canonical
+                current.completed_update_fingerprints[request_id] = request_fingerprint
+                if prompt_log_revision > current.prompt_log_revision:
+                    current.prompt_log_canonical = prompt_log_canonical
+                    current.prompt_log_revision = prompt_log_revision
+                if current.frame_set_version is None:
+                    current.frame_set_version = frame_set_version
+                if current.model_manifest_digest is None:
+                    current.model_manifest_digest = model_manifest_digest
+        if cancelled_after_inference:
+            self._finish_closing_session_if_drained(session_id)
+            raise MaskSessionError(
+                "cancelled", "The promptable-mask update was cancelled."
+            )
+        self._finish_closing_session_if_drained(session_id)
+        return json.loads(mask_set_canonical)
+
+    def cancel_mask_update(self, session_id: str, request_id: str) -> bool:
+        """Mark a pending update cancelled without changing the last usable Mask Set."""
+
+        with self._mask_lock:
+            session = self._mask_sessions.get(session_id)
+            if session is None:
+                return False
+            if request_id in session.completed_updates:
+                return False
+            session.cancelled_request_ids.add(request_id)
+            return True
+
     def release_object_selection_sessions(self) -> None:
         with self._session_lock:
-            self._active_object_selection_session = None
+            session_id = self._active_object_selection_session
+            if session_id is None:
+                with self._mask_lock:
+                    self._mask_sessions.clear()
+                self._release_all_transient_caches_locked()
+                return
+            self._close_active_session_locked(session_id)
+
+    def _finish_mask_update(self, session_id: str, request_id: str) -> None:
+        with self._mask_lock:
+            current = self._mask_sessions.get(session_id)
+            if current is not None:
+                current.in_flight_request_ids.discard(request_id)
+        self._finish_closing_session_if_drained(session_id)
+
+    def _finish_closing_session_if_drained(self, session_id: str) -> None:
+        with self._session_lock:
+            if self._active_object_selection_session != session_id:
+                return
+            with self._mask_lock:
+                session = self._mask_sessions.get(session_id)
+                if (
+                    session is None
+                    or not session.closing
+                    or session.in_flight_request_ids
+                ):
+                    return
+            self._release_active_session_locked(session_id)
+
+    def _close_active_session_locked(self, session_id: str) -> bool:
+        """Close the active singleton while holding `_session_lock`."""
+
+        if self._active_object_selection_session != session_id:
+            return False
+        with self._mask_lock:
+            session = self._mask_sessions.get(session_id)
+            if session is not None:
+                session.closing = True
+                session.cancelled_request_ids.update(session.in_flight_request_ids)
+                if session.in_flight_request_ids:
+                    # Keep the single-session lease until the adapter has
+                    # observed cancellation and returned.  Otherwise a second
+                    # session could overlap the first GPU request.
+                    return True
+        self._release_active_session_locked(session_id)
+        return True
+
+    def _release_active_session_locked(self, session_id: str) -> None:
+        """Clear the singleton session and caches while holding `_session_lock`."""
+
+        if self._active_object_selection_session != session_id:
+            return
+        with self._mask_lock:
+            self._mask_sessions.pop(session_id, None)
+        self._release_all_transient_caches_locked()
+        self._active_object_selection_session = None
+
+    def _release_all_transient_caches_locked(self) -> None:
+        with self._frame_lock:
+            self._frame_sets.clear()
+        with self._scene_lock:
+            self._scene_snapshots.clear()
+
+    def _discard_unclaimed_frame_set(self, frame_set_version: str | None) -> None:
+        if frame_set_version is None:
+            return
+        with self._mask_lock:
+            if any(
+                session.frame_set_version == frame_set_version
+                for session in self._mask_sessions.values()
+            ):
+                return
+        with self._frame_lock:
+            self._frame_sets.pop(frame_set_version, None)
+
+    @staticmethod
+    def _normalise_mask_production(
+        production: Any,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, float]:
+        """Freeze generic diagnostics together with the complete tracks."""
+
+        if not isinstance(production, MaskProduction):
+            raise MaskSessionError(
+                "incompleteMaskSet",
+                "The promptable-mask adapter must bind a threshold with its complete Mask Set.",
+            )
+        tracks = production.tracks
+        diagnostics = production.diagnostics
+        threshold = production.threshold
+        if (
+            isinstance(threshold, bool)
+            or not isinstance(threshold, (int, float))
+            or not math.isfinite(threshold)
+            or threshold < 0
+            or threshold > 1
+        ):
+            raise MaskSessionError(
+                "invalidThreshold",
+                "Promptable-mask adapter threshold must be a finite probability from zero through one.",
+        )
+        if diagnostics is None:
+            return tracks, None, float(threshold)
+        if not isinstance(diagnostics, dict):
+            raise MaskSessionError(
+                "invalidDiagnostics",
+                "Promptable-mask adapter diagnostics must be a JSON object.",
+            )
+        try:
+            # JSON round-tripping rejects runtime handles and makes the cached
+            # diagnostic payload independent of any mutable adapter object.
+            return (
+                tracks,
+                json.loads(
+                    json.dumps(
+                        diagnostics,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                        allow_nan=False,
+                    )
+                ),
+                float(threshold),
+            )
+        except (TypeError, ValueError) as error:
+            raise MaskSessionError(
+                "invalidDiagnostics",
+                "Promptable-mask adapter diagnostics must be JSON-compatible.",
+            ) from error
+
+    @staticmethod
+    def _model_runtime_configuration_is_current(model: dict[str, Any]) -> bool:
+        return (
+            model.get("adapterId") != "sam3.1"
+            or model.get("runtimeConfigDigest") == SAM31_RUNTIME_CONFIG_DIGEST
+        )
+
+    def _require_frame_set(self, frame_set_version: str) -> RegisteredFrameSet:
+        with self._frame_lock:
+            frame_set = self._frame_sets.get(frame_set_version)
+        if frame_set is None:
+            raise MaskSessionError(
+                "frameSetUnavailable",
+                "The requested Frame Set is unavailable; register the immutable Anchor Frame Set and retry.",
+            )
+        return frame_set
+
+    def _require_mask_adapter(
+        self, model_manifest_digest: str | None
+    ) -> tuple[dict[str, Any], PromptableMaskAdapter]:
+        if not isinstance(model_manifest_digest, str) or not model_manifest_digest:
+            raise MaskSessionError(
+                "invalidManifest", "A non-empty Model Manifest digest is required."
+            )
+        model = next(
+            (
+                available
+                for available in self.available_models()
+                if available.get("digest") == model_manifest_digest
+            ),
+            None,
+        )
+        if model is None:
+            raise MaskSessionError(
+                "modelUnavailable",
+                "The requested Model Manifest is unavailable or its separately installed weights cannot be verified.",
+            )
+        adapter_id = model.get("adapterId")
+        adapter = self.mask_adapters.get(adapter_id)
+        if adapter is None:
+            raise MaskSessionError(
+                "incompatibleManifest",
+                "The installed Model Manifest selects a promptable-mask adapter that is unavailable in this Companion runtime.",
+            )
+        return model, adapter
+
+    @staticmethod
+    def _mask_binding(bindings: dict[str, Any], name: str) -> str:
+        value = bindings.get(name)
+        if not isinstance(value, str) or not value:
+            raise MaskSessionError(
+                "invalidMaskSession", f"Mask Set {name} must be a non-empty string."
+            )
+        return value
+
+    @staticmethod
+    def _mask_binding_revision(bindings: dict[str, Any]) -> int:
+        revision = bindings.get("promptLogRevision")
+        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+            raise MaskSessionError(
+                "invalidPromptLog", "Mask Set Prompt Log revision must be a non-negative integer."
+            )
+        return revision
+
+    @staticmethod
+    def _validate_mask_session_bindings(
+        session: ActiveMaskSession,
+        *,
+        frame_set_version: str,
+        model_manifest_digest: str,
+    ) -> None:
+        if (
+            session.frame_set_version is not None
+            and session.frame_set_version != frame_set_version
+        ):
+            raise MaskSessionError(
+                "staleFrameSet",
+                "The Mask Set request Frame Set version does not match this Object Selection session.",
+            )
+        if (
+            session.model_manifest_digest is not None
+            and session.model_manifest_digest != model_manifest_digest
+        ):
+            raise MaskSessionError(
+                "staleManifest",
+                "The Mask Set request Model Manifest does not match this Object Selection session.",
+            )
+
+    @staticmethod
+    def _validate_prompt_log_revision(
+        session: ActiveMaskSession,
+        *,
+        prompt_log: list[Any],
+        prompt_log_canonical: str,
+        prompt_log_revision: int,
+    ) -> None:
+        if prompt_log_revision != len(prompt_log):
+            raise MaskSessionError(
+                "invalidPromptLog",
+                "Prompt Log revision must equal the number of ordered point prompts.",
+            )
+        if prompt_log_revision < session.prompt_log_revision:
+            raise MaskSessionError(
+                "stalePromptLog", "The Mask Set request Prompt Log revision is stale."
+            )
+        if prompt_log_revision == session.prompt_log_revision:
+            if prompt_log_canonical != session.prompt_log_canonical:
+                raise MaskSessionError(
+                    "stalePromptLog",
+                    "The Mask Set request changes an already accepted Prompt Log revision.",
+                )
+            return
+        accepted_prompt_log = json.loads(session.prompt_log_canonical)
+        if prompt_log[: len(accepted_prompt_log)] != accepted_prompt_log:
+            raise MaskSessionError(
+                "stalePromptLog",
+                "The Mask Set request must replay the accepted Prompt Log before adding prompts.",
+            )
+
+    @staticmethod
+    def _is_nonnegative_integer(value: Any) -> bool:
+        return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+    @staticmethod
+    def _validate_binary_mask(
+        binary_mask: Any,
+        *,
+        width: int,
+        height: int,
+    ) -> None:
+        if (
+            not isinstance(binary_mask, dict)
+            or binary_mask.get("width") != width
+            or binary_mask.get("height") != height
+        ):
+            raise MaskSessionError(
+                "incompleteMaskSet",
+                "Accepted Mask Set frames require a mask with the registered Frame Set dimensions.",
+            )
+
+        encoding = binary_mask.get("encoding")
+        if encoding == "sparse-points-v1":
+            foreground_pixels = binary_mask.get("foregroundPixels")
+            if not isinstance(foreground_pixels, list) or not foreground_pixels:
+                raise MaskSessionError(
+                    "incompleteMaskSet",
+                    "Sparse Mask Set frames require one or more foreground pixels.",
+                )
+            previous_pixel = -1
+            for pixel in foreground_pixels:
+                if (
+                    not isinstance(pixel, list)
+                    or len(pixel) != 2
+                    or not CompanionState._is_nonnegative_integer(pixel[0])
+                    or not CompanionState._is_nonnegative_integer(pixel[1])
+                ):
+                    raise MaskSessionError(
+                        "incompleteMaskSet",
+                        "Sparse Mask Set foreground pixels must be in-bounds integer coordinates.",
+                    )
+                x_px, y_px = pixel
+                if x_px >= width or y_px >= height:
+                    raise MaskSessionError(
+                        "incompleteMaskSet",
+                        "Sparse Mask Set foreground pixels must be in-bounds integer coordinates.",
+                    )
+                pixel_index = y_px * width + x_px
+                if pixel_index <= previous_pixel:
+                    raise MaskSessionError(
+                        "incompleteMaskSet",
+                        "Sparse Mask Set foreground pixels must be sorted and unique.",
+                    )
+                previous_pixel = pixel_index
+            return
+
+        if encoding == "bitset-lsb-v1":
+            encoded_data = binary_mask.get("data")
+            if not isinstance(encoded_data, str) or not encoded_data:
+                raise MaskSessionError(
+                    "incompleteMaskSet", "Bitset Mask Set frames require base64 data."
+                )
+            try:
+                data = base64.b64decode(encoded_data, validate=True)
+            except (ValueError, binascii.Error) as error:
+                raise MaskSessionError(
+                    "incompleteMaskSet", "Bitset Mask Set data must be valid base64."
+                ) from error
+            pixel_count = width * height
+            if len(data) != (pixel_count + 7) // 8 or not any(data):
+                raise MaskSessionError(
+                    "incompleteMaskSet",
+                    "Bitset Mask Set data must contain every registered frame pixel and foreground.",
+                )
+            trailing_bits = pixel_count % 8
+            if trailing_bits and data[-1] & ~((1 << trailing_bits) - 1):
+                raise MaskSessionError(
+                    "incompleteMaskSet", "Bitset Mask Set data sets bits outside the registered frame."
+                )
+            return
+
+        raise MaskSessionError(
+            "incompleteMaskSet", "Accepted Mask Set frames use an unsupported binary mask encoding."
+        )
+
+    @staticmethod
+    def _validate_complete_tracks(
+        frame_set: RegisteredFrameSet,
+        prompt_log: list[Any],
+        tracks: Any,
+    ) -> None:
+        if not isinstance(tracks, list) or not tracks:
+            raise MaskSessionError(
+                "incompleteMaskSet", "The promptable-mask adapter did not return any Mask Tracks."
+            )
+        primary_frames: list[dict[str, Any]] | None = None
+        track_ids: set[str] = set()
+        for track in tracks:
+            if (
+                not isinstance(track, dict)
+                or not isinstance(track.get("trackId"), str)
+                or not track["trackId"]
+                or track["trackId"] in track_ids
+                or track.get("role") not in {"include", "exclude"}
+                or not isinstance(track.get("frames"), list)
+            ):
+                raise MaskSessionError(
+                    "incompleteMaskSet", "The promptable-mask adapter returned an invalid Mask Track."
+                )
+            track_ids.add(track["trackId"])
+            frames = track["frames"]
+            if len(frames) != len(frame_set.ordered_views):
+                raise MaskSessionError(
+                    "incompleteMaskSet",
+                    "The promptable-mask adapter must return every registered Frame Set view in order.",
+                )
+            for frame, expected_view in zip(frames, frame_set.ordered_views, strict=True):
+                if not isinstance(frame, dict) or frame.get("viewId") != expected_view.view_id:
+                    raise MaskSessionError(
+                        "incompleteMaskSet",
+                        "The promptable-mask adapter must return every registered Frame Set view in order.",
+                    )
+                status = frame.get("status")
+                if status not in {"accepted", "not_found", "rejected", "error"}:
+                    raise MaskSessionError(
+                        "incompleteMaskSet", "The promptable-mask adapter returned an unknown frame outcome."
+                    )
+                if status == "accepted":
+                    CompanionState._validate_binary_mask(
+                        frame.get("binaryMask"),
+                        width=expected_view.width,
+                        height=expected_view.height,
+                    )
+                elif "binaryMask" in frame or not isinstance(frame.get("rejectionReason"), str) or not frame["rejectionReason"].strip():
+                    raise MaskSessionError(
+                        "incompleteMaskSet",
+                        "Neutral Mask Set outcomes require an actionable reason and no binary mask.",
+                    )
+            if track["trackId"] == "primary":
+                if track["role"] != "include" or primary_frames is not None:
+                    raise MaskSessionError(
+                        "incompleteMaskSet", "A New Mask Set requires one primary include Mask Track."
+                    )
+                primary_frames = frames
+
+        if primary_frames is None:
+            raise MaskSessionError(
+                "incompleteMaskSet", "A New Mask Set requires its primary include Mask Track."
+            )
+        anchor_view_id = CompanionState._prompt_anchor_view(prompt_log)
+        anchor_frame = next(
+            (frame for frame in primary_frames if frame["viewId"] == anchor_view_id), None
+        )
+        if anchor_frame is None or anchor_frame["status"] != "accepted":
+            raise MaskSessionError(
+                "anchorMaskUnavailable",
+                "The Anchor View must have an accepted Mask Set outcome before preview can advance.",
+            )
+
+    @staticmethod
+    def _prompt_anchor_view(prompt_log: list[Any]) -> str:
+        for entry in prompt_log:
+            if not isinstance(entry, dict) or entry.get("operation") != "New":
+                continue
+            prompt = entry.get("prompt")
+            if isinstance(prompt, dict) and isinstance(prompt.get("viewId"), str):
+                return prompt["viewId"]
+        raise MaskSessionError(
+            "invalidPromptLog", "A New Mask Set requires an Anchor View prompt."
+        )
 
     def _model_artifact_is_current(self, model: dict[str, Any]) -> bool:
         try:
@@ -359,7 +1142,10 @@ class CompanionState:
                 "weightsBundled": False,
             }
             for model in self.available_models()
-            if all(key in model for key in ("digest", "adapterId", "modelName"))
+            if (
+                all(key in model for key in ("digest", "adapterId", "modelName"))
+                and model["adapterId"] in self.mask_adapters
+            )
         ]
         return {
             "protocolVersion": PROTOCOL_VERSION,

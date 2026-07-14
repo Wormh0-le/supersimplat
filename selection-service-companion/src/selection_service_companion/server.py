@@ -14,6 +14,7 @@ import ssl
 from typing import Iterable
 from urllib.parse import unquote, urlparse
 
+from .masking import MaskSessionError
 from .state import CompanionState
 
 
@@ -228,6 +229,11 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         if not self._origin_allowed():
             self.send_error(HTTPStatus.FORBIDDEN)
             return
+        frame_set_version = self._frame_set_version()
+        if frame_set_version is not None:
+            self._register_frame_set(frame_set_version)
+            return
+
         snapshot_key = self._snapshot_key()
         if snapshot_key is None:
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -257,15 +263,49 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         )
 
     def _open_object_selection_session(self) -> None:
-        self._discard_request_body()
-
         try:
+            request = self._read_json_body()
             self._state.require_release()
+            frame_set_version = request.get("frameSetVersion")
+            model_manifest_digest = request.get("modelManifestDigest")
+            open_request_id = request.get("openRequestId")
+            if open_request_id is not None and (
+                not isinstance(open_request_id, str) or not open_request_id.strip()
+            ):
+                raise MaskSessionError(
+                    "invalidMaskSession",
+                    "Object Selection session openRequestId must be a non-empty string.",
+                )
+            if frame_set_version is None and model_manifest_digest is None:
+                session_id = self._state.open_object_selection_session(
+                    open_request_id=open_request_id,
+                )
+            elif isinstance(frame_set_version, str) and isinstance(
+                model_manifest_digest, str
+            ):
+                session_id = self._state.open_object_selection_session(
+                    frame_set_version=frame_set_version,
+                    model_manifest_digest=model_manifest_digest,
+                    open_request_id=open_request_id,
+                )
+            else:
+                raise MaskSessionError(
+                    "invalidMaskSession",
+                    "Object Selection mask sessions require both Frame Set and Model Manifest bindings.",
+                )
+        except MaskSessionError as error:
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {
+                    "status": "maskSessionError",
+                    "code": error.code,
+                    "message": str(error),
+                },
+            )
+            return
         except ValueError as error:
             self._send_unavailable(str(error))
             return
-
-        session_id = self._state.open_object_selection_session()
         if session_id is None:
             self._send_json(
                 HTTPStatus.CONFLICT,
@@ -276,7 +316,16 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             )
             return
         self._send_json(
-            HTTPStatus.CREATED, {"status": "accepted", "sessionId": session_id}
+            HTTPStatus.CREATED,
+            {
+                "status": "accepted",
+                "sessionId": session_id,
+                **(
+                    {"openRequestId": open_request_id}
+                    if open_request_id is not None
+                    else {}
+                ),
+            },
         )
 
     def _preview_object_selection_session(self, session_id: str) -> None:
@@ -284,7 +333,8 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         try:
-            bindings = self._preview_bindings(self._read_json_body(), session_id)
+            request = self._read_json_body()
+            bindings = self._preview_bindings(request, session_id)
         except ValueError as error:
             self._send_json(
                 HTTPStatus.BAD_REQUEST,
@@ -311,9 +361,26 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             )
             return
 
-        # This control-plane PoC deliberately provides deterministic output. It
-        # proves the immutable scene/Stable ID transport before CUDA inference
-        # replaces this classifier behind the same protocol boundary.
+        try:
+            mask_set = self._state.update_mask_session(
+                bindings=bindings.response_fields(),
+                prompt_log=request.get("promptLog"),
+            )
+        except MaskSessionError as error:
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {
+                    "status": "maskSessionError",
+                    "code": error.code,
+                    "message": str(error),
+                    **bindings.response_fields(),
+                },
+            )
+            return
+
+        # Candidate ID lifting remains the deterministic bridge established by
+        # the Scene Snapshot slice.  It only runs after the complete, immutable
+        # Mask Set is published, so no partial mask can reach later selection.
         self._send_json(
             HTTPStatus.OK,
             {
@@ -322,6 +389,7 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
                 "selectedIds": list(snapshot.stable_ids[:1]),
                 "uncertainIds": list(snapshot.stable_ids[1:2]),
                 "rejectedIds": list(snapshot.stable_ids[2:]),
+                "maskSet": mask_set,
             },
         )
 
@@ -329,11 +397,52 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         if not self._origin_allowed():
             self.send_error(HTTPStatus.FORBIDDEN)
             return
+
+        frame_set_version = self._frame_set_version()
+        if frame_set_version is not None:
+            if not self._state.release_frame_set(frame_set_version):
+                self._send_json(
+                    HTTPStatus.CONFLICT,
+                    {
+                        "status": "frameSetInUse",
+                        "message": "The Frame Set belongs to an active Object Selection session.",
+                    },
+                )
+                return
+            self.send_response(HTTPStatus.NO_CONTENT)
+            self._send_cors_headers()
+            self.end_headers()
+            return
+
+        open_request_id = self._open_request_id()
+        if open_request_id is not None:
+            # This is deliberately idempotent: it is the last-resort cleanup
+            # path for a session whose successful open response was lost.
+            self._state.close_object_selection_session_for_open_request(
+                open_request_id
+            )
+            self.send_response(HTTPStatus.NO_CONTENT)
+            self._send_cors_headers()
+            self.end_headers()
+            return
+
         preview = self._cancel_preview_request()
         if preview is not None:
-            session_id, _request_id = preview
+            session_id, request_id = preview
             if not self._state.has_object_selection_session(session_id):
                 self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            if not self._state.cancel_mask_update(session_id, request_id):
+                self._send_json(
+                    HTTPStatus.CONFLICT,
+                    {
+                        "status": "maskSessionError",
+                        "code": "alreadyComplete",
+                        "message": "The Mask Set update already completed and cannot be cancelled.",
+                        "sessionId": session_id,
+                        "requestId": request_id,
+                    },
+                )
                 return
             self.send_response(HTTPStatus.NO_CONTENT)
             self._send_cors_headers()
@@ -385,6 +494,50 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             return None
         return unquote(parts[0]), unquote(parts[1])
 
+    def _frame_set_version(self) -> str | None:
+        parsed = urlparse(self.path)
+        prefix = "/frame-sets/"
+        if parsed.query or not parsed.path.startswith(prefix):
+            return None
+        frame_set_version = parsed.path[len(prefix):]
+        if not frame_set_version or "/" in frame_set_version:
+            return None
+        return unquote(frame_set_version)
+
+    def _open_request_id(self) -> str | None:
+        parsed = urlparse(self.path)
+        prefix = "/object-selection-sessions/open-requests/"
+        if parsed.query or not parsed.path.startswith(prefix):
+            return None
+        encoded_open_request_id = parsed.path[len(prefix):]
+        if not encoded_open_request_id or "/" in encoded_open_request_id:
+            return None
+        return unquote(encoded_open_request_id)
+
+    def _register_frame_set(self, frame_set_version: str) -> None:
+        try:
+            frame_set = self._read_json_body()
+            if frame_set.get("frameSetVersion") != frame_set_version:
+                raise MaskSessionError(
+                    "invalidFrameSet",
+                    "Frame Set route and body bindings must match.",
+                )
+            self._state.register_frame_set(frame_set)
+        except (MaskSessionError, ValueError) as error:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {
+                    "status": "invalidRequest",
+                    "code": error.code if isinstance(error, MaskSessionError) else "invalidFrameSet",
+                    "message": str(error),
+                },
+            )
+            return
+        self._send_json(
+            HTTPStatus.OK,
+            {"status": "registered", "frameSetVersion": frame_set_version},
+        )
+
     def _preview_bindings(
         self, request: dict[str, object], route_session_id: str
     ) -> PreviewBindings:
@@ -425,14 +578,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
     def _origin_allowed(self) -> bool:
         origin = self.headers.get("Origin")
         return origin in self._allowed_origins
-
-    def _discard_request_body(self) -> None:
-        try:
-            content_length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            content_length = 0
-        if content_length > 0:
-            self.rfile.read(content_length)
 
     def _read_json_body(self) -> dict[str, object]:
         try:

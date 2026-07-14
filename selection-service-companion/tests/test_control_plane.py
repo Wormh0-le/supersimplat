@@ -13,6 +13,10 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from selection_service_companion.cli import main
+from selection_service_companion.masking import (
+    PointMaskAdapter,
+    SAM31_RUNTIME_CONFIG_DIGEST,
+)
 from selection_service_companion.server import create_server
 from selection_service_companion.state import CompanionState
 
@@ -32,7 +36,13 @@ class CompanionControlPlaneTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
-    def install_model(self) -> str:
+    def install_model(
+        self,
+        *,
+        adapter_id: str = "sam3.1",
+        model_name: str = "SAM 3.1",
+        runtime_config_digest: str | None = None,
+    ) -> str:
         weights = self.directory / "sam31.pt"
         weights.write_bytes(b"separately acquired model weights")
         digest = hashlib.sha256(weights.read_bytes()).hexdigest()
@@ -40,15 +50,24 @@ class CompanionControlPlaneTests(unittest.TestCase):
         manifest.write_text(
             """{
   "digest": "sha256:model-v1",
-  "adapterId": "sam3.1",
-  "modelName": "SAM 3.1",
+  "adapterId": "%s",
+  "modelName": "%s",
   "checkpointDigest": "sha256:%s",
   "sourceCommit": "abc123",
   "licenseName": "SAM License",
   "licenseUrl": "https://example.test/license",
-  "runtimeConfigDigest": "sha256:runtime-v1"
+  "runtimeConfigDigest": "%s"
 }
-""" % digest,
+""" % (
+                adapter_id,
+                model_name,
+                digest,
+                runtime_config_digest or (
+                    SAM31_RUNTIME_CONFIG_DIGEST
+                    if adapter_id == "sam3.1"
+                    else "sha256:runtime-v1"
+                ),
+            ),
             encoding="utf-8",
         )
         return self.state.install_model(manifest, weights)["digest"]
@@ -67,6 +86,18 @@ class CompanionControlPlaneTests(unittest.TestCase):
             "weightsBundled": False,
         }])
         self.assertEqual(capabilities["renderer"]["status"], "unavailable")
+
+    def test_keeps_the_reference_point_adapter_out_of_production_capabilities(self) -> None:
+        self.install_model(adapter_id="point-mask-v1", model_name="Point Mask v1")
+
+        self.assertEqual(
+            self.state.capabilities([EDITOR_ORIGIN])["modelManifests"],
+            [],
+        )
+
+    def test_rejects_a_sam31_manifest_with_an_unpinned_runtime_configuration(self) -> None:
+        with self.assertRaisesRegex(ValueError, "runtimeConfigDigest"):
+            self.install_model(runtime_config_digest="sha256:runtime-v1")
 
     def test_records_the_actual_lock_file_digest_when_installing_a_release(self) -> None:
         data_directory = self.directory / "cli-state"
@@ -199,6 +230,12 @@ class CompanionControlPlaneTests(unittest.TestCase):
             thread.join()
 
     def test_exchanges_a_versioned_scene_snapshot_before_a_deterministic_preview(self) -> None:
+        # The sparse-point reference adapter is explicitly test-injected; the
+        # production Companion exposes only model-backed adapters.
+        self.state.mask_adapters["point-mask-v1"] = PointMaskAdapter()
+        model_manifest_digest = self.install_model(
+            adapter_id="point-mask-v1", model_name="Point Mask v1"
+        )
         server = create_server(
             state=self.state,
             endpoint="http://127.0.0.1:0",
@@ -208,6 +245,16 @@ class CompanionControlPlaneTests(unittest.TestCase):
         thread = Thread(target=server.serve_forever, daemon=True)
         thread.start()
         endpoint = f"http://127.0.0.1:{server.server_address[1]}"
+        frame_set = {
+            "frameSetId": "frames-1",
+            "frameSetVersion": "anchor:anchor-view",
+            "orderedViews": [{
+                "viewId": "anchor-view",
+                "frameDigest": "sha256:anchor-frame-v1",
+                "width": 64,
+                "height": 48,
+            }],
+        }
         snapshot = {
             "protocolVersion": "1",
             "sceneId": "scene-1",
@@ -239,8 +286,21 @@ class CompanionControlPlaneTests(unittest.TestCase):
         }
         try:
             with urlopen(Request(
+                f"{endpoint}/frame-sets/anchor%3Aanchor-view",
+                data=json.dumps(frame_set).encode(),
+                method="PUT",
+                headers={"Origin": EDITOR_ORIGIN, "Content-Type": "application/json"},
+            )) as response:
+                self.assertEqual(response.status, HTTPStatus.OK)
+                self.assertEqual(json.load(response)["status"], "registered")
+
+            with urlopen(Request(
                 f"{endpoint}/object-selection-sessions",
-                data=json.dumps({"target": {"targetSplatId": "splat-1"}}).encode(),
+                data=json.dumps({
+                    "target": {"targetSplatId": "splat-1"},
+                    "frameSetVersion": frame_set["frameSetVersion"],
+                    "modelManifestDigest": model_manifest_digest,
+                }).encode(),
                 method="POST",
                 headers={"Origin": EDITOR_ORIGIN, "Content-Type": "application/json"},
             )) as response:
@@ -258,12 +318,24 @@ class CompanionControlPlaneTests(unittest.TestCase):
                 "promptLogRevision": 1,
                 "frameSetVersion": "anchor:anchor-view",
                 "renderConfigVersion": snapshot["renderConfiguration"]["version"],
-                "modelManifestDigest": "sha256:model-v1",
+                "modelManifestDigest": model_manifest_digest,
             }
             preview = {
                 **preview_bindings,
                 "target": {"targetSplatId": "splat-1"},
-                "promptLog": [],
+                "promptLog": [{
+                    "operation": "New",
+                    "prompt": {
+                        "promptId": "prompt-1",
+                        "viewId": "anchor-view",
+                        "frameDigest": "sha256:anchor-frame-v1",
+                        "frameWidth": 64,
+                        "frameHeight": 48,
+                        "xPx": 10,
+                        "yPx": 20,
+                        "polarity": "include",
+                    },
+                }],
             }
             with urlopen(Request(
                 f"{endpoint}/object-selection-sessions/{session_id}/previews",
@@ -299,14 +371,45 @@ class CompanionControlPlaneTests(unittest.TestCase):
                 "selectedIds": [3],
                 "uncertainIds": [7],
                 "rejectedIds": [9],
+                "maskSet": {
+                    "status": "complete",
+                    "requestId": "request-1",
+                    "sessionId": session_id,
+                    "promptLogRevision": 1,
+                    "frameSetVersion": "anchor:anchor-view",
+                    "modelManifestDigest": model_manifest_digest,
+                    "threshold": 0.0,
+                    "tracks": [{
+                        "trackId": "primary",
+                        "role": "include",
+                        "frames": [{
+                            "viewId": "anchor-view",
+                            "status": "accepted",
+                            "binaryMask": {
+                                "encoding": "sparse-points-v1",
+                                "width": 64,
+                                "height": 48,
+                                "foregroundPixels": [[10, 20]],
+                            },
+                        }],
+                    }],
+                },
             })
 
-            with urlopen(Request(
-                f"{endpoint}/object-selection-sessions/{session_id}/previews/request-1",
-                method="DELETE",
-                headers={"Origin": EDITOR_ORIGIN},
-            )) as response:
-                self.assertEqual(response.status, HTTPStatus.NO_CONTENT)
+            with self.assertRaises(HTTPError) as error:
+                urlopen(Request(
+                    f"{endpoint}/object-selection-sessions/{session_id}/previews/request-1",
+                    method="DELETE",
+                    headers={"Origin": EDITOR_ORIGIN},
+                ))
+            self.assertEqual(error.exception.code, HTTPStatus.CONFLICT)
+            self.assertEqual(json.load(error.exception), {
+                "status": "maskSessionError",
+                "code": "alreadyComplete",
+                "message": "The Mask Set update already completed and cannot be cancelled.",
+                "sessionId": session_id,
+                "requestId": "request-1",
+            })
         finally:
             server.shutdown()
             server.server_close()

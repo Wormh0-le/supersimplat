@@ -3,6 +3,8 @@ const test = require("node:test");
 
 const {
   ObjectSelectionSession,
+  anchorFrameSetVersion,
+  assertCompleteMaskSet,
 } = require("../.test-dist/src/object-selection-session.js");
 
 const createSnapshot = (stableIds = [1, 2, 3, 7, 9, 11]) => ({
@@ -45,6 +47,9 @@ const newSessionInput = () => ({
   prompt: {
     promptId: "prompt-1",
     viewId: "anchor-view",
+    frameDigest: "sha256:anchor-frame-v1",
+    frameWidth: 64,
+    frameHeight: 48,
     xPx: 10,
     yPx: 20,
     polarity: "include",
@@ -53,6 +58,18 @@ const newSessionInput = () => ({
   requestContext: {
     deterministicSeed: "seed-1",
     frameSetVersion: "anchor:anchor-view",
+    frameSet: {
+      frameSetId: "frames-1",
+      frameSetVersion: "anchor:anchor-view",
+      orderedViews: [
+        {
+          viewId: "anchor-view",
+          frameDigest: "sha256:anchor-frame-v1",
+          width: 64,
+          height: 48,
+        },
+      ],
+    },
     modelManifestDigest: "sha256:model-v1",
   },
 });
@@ -60,6 +77,9 @@ const newSessionInput = () => ({
 const additionalPrompt = {
   promptId: "prompt-2",
   viewId: "anchor-view",
+  frameDigest: "sha256:anchor-frame-v1",
+  frameWidth: 64,
+  frameHeight: 48,
   xPx: 30,
   yPx: 40,
   polarity: "exclude",
@@ -68,6 +88,9 @@ const additionalPrompt = {
 const removalPrompt = {
   promptId: "prompt-3",
   viewId: "anchor-view",
+  frameDigest: "sha256:anchor-frame-v1",
+  frameWidth: 64,
+  frameHeight: 48,
   xPx: 50,
   yPx: 60,
   polarity: "exclude",
@@ -79,6 +102,32 @@ const candidate = {
   rejectedIds: [1, 2, 11],
   lockedIdsFiltered: 0,
 };
+
+const maskSetForRequest = (request) => ({
+  status: "complete",
+  requestId: request.requestId,
+  sessionId: request.sessionId,
+  promptLogRevision: request.promptLogRevision,
+  frameSetVersion: request.frameSetVersion,
+  modelManifestDigest: request.modelManifestDigest,
+  threshold: 0,
+  tracks: [
+    {
+      trackId: "primary",
+      role: "include",
+      frames: request.frameSet.orderedViews.map((view) => ({
+        viewId: view.viewId,
+        status: "accepted",
+        binaryMask: {
+          encoding: "sparse-points-v1",
+          width: view.width,
+          height: view.height,
+          foregroundPixels: [[0, 0]],
+        },
+      })),
+    },
+  ],
+});
 
 const previewResponse = (request, result = candidate) => ({
   status: "complete",
@@ -94,6 +143,7 @@ const previewResponse = (request, result = candidate) => ({
   frameSetVersion: request.frameSetVersion,
   renderConfigVersion: request.renderConfigVersion,
   modelManifestDigest: request.modelManifestDigest,
+  maskSet: maskSetForRequest(request),
   ...result,
 });
 
@@ -181,8 +231,10 @@ test("keeps a New preview transient until Confirm", async () => {
       deterministicSeed: start.requestContext.deterministicSeed,
       promptLogRevision: 3,
       frameSetVersion: start.requestContext.frameSetVersion,
-      renderConfigVersion: start.scene.getSnapshot().renderConfiguration.version,
+      renderConfigVersion:
+        start.scene.getSnapshot().renderConfiguration.version,
       modelManifestDigest: start.requestContext.modelManifestDigest,
+      frameSet: start.requestContext.frameSet,
       snapshot: start.scene.getSnapshot(),
       promptLog: [
         {
@@ -227,6 +279,51 @@ test("Cancel restores the entry selection without adding history", async () => {
   assert.equal(session.state.candidate, null);
   assert.deepEqual(editor.selection, [1, 2]);
   assert.deepEqual(editor.history, []);
+});
+
+test("pins Anchor PNG bytes in the immutable Frame Set without copying them into the Prompt Log", async () => {
+  const adapter = new DeterministicSelectionServiceAdapter();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor: new RecordingSelectionEditor(),
+  });
+  const start = newSessionInput();
+  start.requestContext.frameSet.orderedViews[0].imagePngBase64 = "iVBORw0KGgo=";
+
+  await session.startNew(start);
+  start.requestContext.frameSet.orderedViews[0].imagePngBase64 =
+    "changed-after-start";
+  await session.updatePreview();
+
+  assert.equal(
+    adapter.openRequests[0].requestContext.frameSet.orderedViews[0]
+      .imagePngBase64,
+    "iVBORw0KGgo="
+  );
+  assert.equal(
+    Object.hasOwn(adapter.openRequests[0].prompt, "imagePngBase64"),
+    false
+  );
+  assert.equal(
+    Object.hasOwn(
+      adapter.previewRequests[0].promptLog[0].prompt,
+      "imagePngBase64"
+    ),
+    false
+  );
+});
+
+test("derives target-scoped Frame Set versions for identical Anchor View bytes", () => {
+  const digest = "sha256:identical-anchor-png";
+
+  assert.equal(
+    anchorFrameSetVersion("editor-splat:1", digest),
+    "editor-splat:1:anchor:sha256:identical-anchor-png"
+  );
+  assert.notEqual(
+    anchorFrameSetVersion("editor-splat:1", digest),
+    anchorFrameSetVersion("editor-splat:2", digest)
+  );
 });
 
 test("starts a fresh New session after cleanup", async () => {
@@ -299,7 +396,7 @@ test("keeps the prior preview usable when cancellation races a completed request
       this.previewRequests.push(request);
       this.previewCount += 1;
       if (this.previewCount === 1) {
-    return previewResponse(request);
+        return previewResponse(request);
       }
       return new Promise((resolve) => {
         this.resolvePreview = resolve;
@@ -324,11 +421,13 @@ test("keeps the prior preview usable when cancellation races a completed request
   await session.updatePreview();
   const update = session.updatePreview();
   const cancel = session.cancelUpdate();
-  adapter.resolvePreview(previewResponse(adapter.previewRequests.at(-1), {
-    selectedIds: [11],
-    uncertainIds: [],
-    rejectedIds: [],
-  }));
+  adapter.resolvePreview(
+    previewResponse(adapter.previewRequests.at(-1), {
+      selectedIds: [11],
+      uncertainIds: [],
+      rejectedIds: [],
+    })
+  );
   await update;
   adapter.rejectCancellation(new Error("cancellation request failed"));
 
@@ -373,7 +472,7 @@ test("makes preview cancellation single-flight", async () => {
   assert.equal(session.state.status, "cancellingUpdate");
   await assert.rejects(
     session.cancelUpdate(),
-    /cannot run this command while cancellingUpdate/,
+    /cannot run this command while cancellingUpdate/
   );
   assert.equal(adapter.cancelledUpdates.length, 1);
 
@@ -426,24 +525,11 @@ test("accepts only a current, bound Companion result, filters locked IDs, and co
   class BoundSelectionServiceAdapter extends DeterministicSelectionServiceAdapter {
     async updatePreview(request) {
       this.previewRequests.push(request);
-      return {
-      status: "complete",
-      requestId: request.requestId,
-      sessionId: request.sessionId,
-      targetSplatId: request.target.targetSplatId,
-      sceneId: snapshot.sceneId,
-      sceneVersion: snapshot.sceneVersion,
-      operation: request.operation,
-      correctionRound: request.correctionRound,
-      deterministicSeed: request.deterministicSeed,
-      promptLogRevision: request.promptLogRevision,
-      frameSetVersion: request.frameSetVersion,
-      renderConfigVersion: request.renderConfigVersion,
-      modelManifestDigest: request.modelManifestDigest,
+      return previewResponse(request, {
         selectedIds: [3, 7],
         uncertainIds: [9],
         rejectedIds: [],
-      };
+      });
     }
   }
 
@@ -518,37 +604,146 @@ test("retains the prior Candidate Object Selection when scene, response bindings
     ...previewResponse(request, initialCandidate),
     sceneVersion: "snapshot-v0",
   });
-  await assert.rejects(session.updatePreview(), /stale Object Selection request bindings/);
+  await assert.rejects(
+    session.updatePreview(),
+    /stale Object Selection request bindings/
+  );
   assert.deepEqual(session.state.candidate, initialCandidate);
 
   responseFor = (request) => ({
     ...previewResponse(request, initialCandidate),
     deterministicSeed: "stale-seed",
   });
-  await assert.rejects(session.updatePreview(), /stale Object Selection request bindings/);
+  await assert.rejects(
+    session.updatePreview(),
+    /stale Object Selection request bindings/
+  );
   assert.deepEqual(session.state.candidate, initialCandidate);
 
-  responseFor = (request) => previewResponse(request, {
-    selectedIds: [3],
-    uncertainIds: [3],
-    rejectedIds: [],
-  });
-  await assert.rejects(session.updatePreview(), /overlapping Candidate Object Selection/);
+  responseFor = (request) =>
+    previewResponse(request, {
+      selectedIds: [3],
+      uncertainIds: [3],
+      rejectedIds: [],
+    });
+  await assert.rejects(
+    session.updatePreview(),
+    /overlapping Candidate Object Selection/
+  );
   assert.deepEqual(session.state.candidate, initialCandidate);
 
-  responseFor = (request) => previewResponse(request, {
-    selectedIds: [13],
-    uncertainIds: [],
-    rejectedIds: [],
-  });
-  await assert.rejects(session.updatePreview(), /unknown selected Stable Gaussian ID/);
+  responseFor = (request) =>
+    previewResponse(request, {
+      selectedIds: [13],
+      uncertainIds: [],
+      rejectedIds: [],
+    });
+  await assert.rejects(
+    session.updatePreview(),
+    /unknown selected Stable Gaussian ID/
+  );
   assert.deepEqual(session.state.candidate, initialCandidate);
 
-  responseFor = (request) => previewResponse(request, {
-    selectedIds: [3],
-    uncertainIds: [],
-    rejectedIds: [],
-  });
-  await assert.rejects(session.updatePreview(), /incomplete Candidate Object Selection/);
+  responseFor = (request) =>
+    previewResponse(request, {
+      selectedIds: [3],
+      uncertainIds: [],
+      rejectedIds: [],
+    });
+  await assert.rejects(
+    session.updatePreview(),
+    /incomplete Candidate Object Selection/
+  );
   assert.deepEqual(session.state.candidate, initialCandidate);
+});
+
+test("rejects a missing or malformed complete Mask Set before candidate lifting", async () => {
+  let responseFor = (request) => previewResponse(request);
+  class ValidatingSelectionServiceAdapter extends DeterministicSelectionServiceAdapter {
+    async updatePreview(request) {
+      this.previewRequests.push(request);
+      return responseFor(request);
+    }
+  }
+
+  const adapter = new ValidatingSelectionServiceAdapter();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor: new RecordingSelectionEditor(),
+  });
+
+  await session.startNew(newSessionInput());
+  await session.updatePreview();
+  assert.deepEqual(session.state.candidate, candidate);
+
+  responseFor = (request) => {
+    const response = previewResponse(request);
+    delete response.maskSet;
+    return response;
+  };
+  await assert.rejects(
+    session.updatePreview(),
+    /complete, version-bound Mask Set/
+  );
+  assert.deepEqual(session.state.candidate, candidate);
+
+  responseFor = (request) => ({
+    ...previewResponse(request),
+    maskSet: {
+      ...maskSetForRequest(request),
+      tracks: [
+        {
+          trackId: "primary",
+          role: "include",
+          frames: [
+            {
+              viewId: "anchor-view",
+              status: "accepted",
+              binaryMask: {
+                encoding: "sparse-points-v1",
+                width: 1,
+                height: 1,
+                foregroundPixels: [[0, 0]],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  await assert.rejects(
+    session.updatePreview(),
+    /complete, version-bound Mask Set/
+  );
+  assert.deepEqual(session.state.candidate, candidate);
+});
+
+test("rejects a whitespace-only neutral Mask Set reason", async () => {
+  const adapter = new DeterministicSelectionServiceAdapter();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor: new RecordingSelectionEditor(),
+  });
+  const start = newSessionInput();
+  start.requestContext.frameSet.orderedViews.push({
+    viewId: "detail-view",
+    frameDigest: "sha256:detail-frame-v1",
+    width: 64,
+    height: 48,
+  });
+
+  await session.startNew(start);
+  await session.updatePreview();
+  const request = adapter.previewRequests.at(-1);
+  const maskSet = maskSetForRequest(request);
+  maskSet.tracks[0].frames[1] = {
+    viewId: "detail-view",
+    status: "rejected",
+    rejectionReason: "   ",
+  };
+
+  assert.throws(
+    () => assertCompleteMaskSet(maskSet, request),
+    /complete, version-bound Mask Set/
+  );
 });

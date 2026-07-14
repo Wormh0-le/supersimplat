@@ -41,7 +41,7 @@ ModelManifest {
 }
 ```
 
-One Object Selection Session pins one manifest digest. A changed model, checkpoint, source revision, threshold, or material runtime setting requires a new mask session. Every completed Mask Set echoes the digest.
+One Object Selection Session pins one manifest digest. A changed model, checkpoint, source revision, threshold, or material runtime setting requires a new mask session. Every completed Mask Set echoes the digest. For the initial SAM 3.1 adapter, `runtimeConfigDigest` is the SHA-256 of the canonical fixed runtime settings below, rather than an operator-defined label.
 
 ## SAM 3.1 experimental baseline
 
@@ -53,14 +53,19 @@ checkpoint          = operator-supplied local sam3.1_multiplex.pt
 max_num_objects     = 8
 multiplex_count     = 16
 use_fa3             = false
+use_rope_real       = true
 compile             = false
 warm_up             = false
 output_prob_thresh  = 0.5
+full-frame masks    = rejected as too coarse
+session_expiration  = 1200 seconds
 video frames        = CPU-backed
 tracker state       = GPU-backed; CPU fallback only after measured OOM
 ```
 
 Keep `multiplex_count=16` aligned with the released multiplex checkpoint. Establish correctness and memory measurements in eager mode before separately testing compilation, FA3, or greater CPU offload.
+
+The canonical settings digest for this baseline is `sha256:39a47a6b641b55bf967b7b73fb7e76efa900ff69ecfed764bcce1a89683c3cba`. The Companion rejects a SAM 3.1 Model Manifest with another runtime digest instead of silently adopting an upstream default.
 
 The adapter and weights are governed by Meta's custom SAM License and gated access, not MIT or Apache. Operators obtain access and download weights separately; the application repository and distribution do not bundle them. The 4090D 24GB fit is an empirical test, not an assumed capability.
 
@@ -168,6 +173,12 @@ The official SAM cancellation primitive stops propagation but is not treated as 
 
 For `New`, the current prompting view is mandatory. If the model produces multiple candidates, the adapter chooses one using positive-point inclusion, negative-point exclusion, model quality score, and basic area validation. Candidate alternatives and scores are recorded as diagnostics but not exposed in the beginner UI.
 
+For SAM 3.1, `diagnostics.candidateSelection` records the selected candidate
+index, all candidate indexes, foreground-pixel counts, point-consistency,
+selection decision, and any `out_probs` score. Its `scoreSemantics` explicitly
+limits that score to ordering candidates within this adapter; it is not a
+cross-adapter confidence value and includes no raw tensors or logits.
+
 Failure to obtain an accepted current-view mask fails the complete update. The user edits prompts and retries; the adapter never propagates an invalid seed mask.
 
 ## Per-view outcome
@@ -208,7 +219,10 @@ MaskSet {
 }
 ```
 
-The canonical required output is a binary mask for every accepted track/view. Raw logits or model-specific scores are optional diagnostics with explicitly declared meaning; scores from different adapters are not presumed comparable.
+The canonical required output is a finite `threshold` in `[0, 1]` plus a binary
+mask for every accepted track/view. Raw logits or model-specific scores are
+optional diagnostics with explicitly declared meaning; scores from different
+adapters are not presumed comparable.
 
 The combination layer unions include tracks and subtracts exclude tracks only after preserving the original masks. All candidate lifting methods receive the same immutable Mask Set.
 

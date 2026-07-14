@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "supersplat-selection-service-companion"
+version = "0.1.0"
+description = "Operator-owned control plane for SuperSplat Object Selection"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "SuperSplat contributors" }]
+dependencies = []
+
+[project.scripts]
+selection-service = "selection_service_companion.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/selection_service_companion"]

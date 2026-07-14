@@ -6,5 +6,9 @@
     "outDir": ".test-dist",
     "rootDir": "."
   },
-  "include": ["src/object-selection-session.ts"]
+  "include": [
+    "src/object-selection-session.ts",
+    "src/selection-service-readiness.ts",
+    "src/selection-service-fetch-readiness-probe.ts"
+  ]
 }

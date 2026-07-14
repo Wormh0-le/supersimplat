@@ -74,4 +74,55 @@
             margin: 0 2px;
         }
     }
+
+    & > .selection-service-readiness-settings {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin: 8px 2px 4px;
+        padding: 6px 0 4px;
+        border-top: 1px solid $bcg-dark;
+
+        & > .selection-service-readiness-heading {
+            color: $clr-hilight;
+            font-weight: bold;
+        }
+
+        & > .selection-service-readiness-row {
+            display: flex;
+            align-items: center;
+            min-height: 24px;
+
+            & > .selection-service-readiness-label {
+                flex-grow: 1;
+            }
+
+            & > .selection-service-readiness-select,
+            & > .selection-service-readiness-endpoint {
+                box-sizing: border-box;
+                margin: 0;
+                width: 187px;
+            }
+        }
+
+        & > .selection-service-readiness-controls {
+            display: flex;
+
+            & > .selection-service-readiness-check {
+                flex-grow: 1;
+                margin: 2px 0;
+            }
+        }
+
+        & > .selection-service-readiness-status {
+            color: $text-primary;
+            font-weight: bold;
+        }
+
+        & > .selection-service-readiness-diagnostic {
+            color: $text-secondary;
+            line-height: 1.35;
+            white-space: normal;
+        }
+    }
 }

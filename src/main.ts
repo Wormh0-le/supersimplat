@@ -15,6 +15,9 @@ import { registerRenderEvents } from './render';
 import { Scene } from './scene';
 import { getSceneConfig } from './scene-config';
 import { registerSelectionEvents } from './selection';
+import { FetchSelectionServiceReadinessProbe } from './selection-service-fetch-readiness-probe';
+import { SelectionServiceReadiness } from './selection-service-readiness';
+import { registerSelectionServiceReadinessEvents } from './selection-service-readiness-events';
 import { registerSequenceEvents } from './sequence';
 import { ShortcutManager } from './shortcut-manager';
 import { registerTimelineEvents } from './timeline';
@@ -115,12 +118,19 @@ const main = async () => {
     registerPublishEvents(events);
     registerIframeApi(events);
 
+    // The editor reads the operator-configured Companion state but never owns
+    // its installation, model downloads, start, stop, or upgrade lifecycle.
+    const selectionServiceReadiness = new SelectionServiceReadiness({
+        probe: new FetchSelectionServiceReadinessProbe()
+    });
+    registerSelectionServiceReadinessEvents(events, selectionServiceReadiness);
+
     // initialize shortcuts
     const shortcutManager = new ShortcutManager(events);
     events.function('shortcutManager', () => shortcutManager);
 
     // editor ui
-    const editorUI = new EditorUI(events);
+    const editorUI = new EditorUI(events, selectionServiceReadiness);
 
     // create the graphics device
     const graphicsDevice = await createGraphicsDevice(editorUI.canvas, {
@@ -134,21 +144,13 @@ const main = async () => {
 
     const urlArgs = getURLArgs();
 
-    const overrides = [
-        urlArgs
-    ];
+    const overrides = [urlArgs];
 
     // resolve scene config
     const sceneConfig = getSceneConfig(overrides);
 
     // construct the manager
-    const scene = new Scene(
-        events,
-        sceneConfig,
-        editorUI.canvas,
-        graphicsDevice,
-        commandQueue
-    );
+    const scene = new Scene(events, sceneConfig, editorUI.canvas, graphicsDevice, commandQueue);
 
     // colors
     const bgClr = new Color();
@@ -203,7 +205,7 @@ const main = async () => {
     });
 
     events.on('bgClr', (clr: Color) => {
-        const cnv = (v: number) => `${Math.max(0, Math.min(255, (v * 255))).toFixed(0)}`;
+        const cnv = (v: number) => `${Math.max(0, Math.min(255, v * 255)).toFixed(0)}`;
         document.body.style.backgroundColor = `rgba(${cnv(clr.r)},${cnv(clr.g)},${cnv(clr.b)},1)`;
     });
     events.on('selectedClr', (clr: Color) => {
@@ -217,7 +219,7 @@ const main = async () => {
     });
 
     // initialize colors from application config
-    const toColor = (value: { r: number, g: number, b: number, a: number }) => {
+    const toColor = (value: { r: number; g: number; b: number; a: number }) => {
         return new Color(value.r, value.g, value.b, value.a);
     };
     setBgClr(toColor(sceneConfig.bgClr));
@@ -240,16 +242,25 @@ const main = async () => {
     const toolManager = new ToolManager(events);
     toolManager.register('rectSelection', new RectSelection(events, editorUI.toolsContainer.dom));
     toolManager.register('brushSelection', new BrushSelection(events, editorUI.toolsContainer.dom, mask));
-    toolManager.register('floodSelection', new FloodSelection(events, editorUI.toolsContainer.dom, mask, editorUI.canvasContainer));
+    toolManager.register(
+        'floodSelection',
+        new FloodSelection(events, editorUI.toolsContainer.dom, mask, editorUI.canvasContainer)
+    );
     toolManager.register('polygonSelection', new PolygonSelection(events, editorUI.toolsContainer.dom, mask));
     toolManager.register('lassoSelection', new LassoSelection(events, editorUI.toolsContainer.dom, mask));
     toolManager.register('sphereSelection', new SphereSelection(events, scene, editorUI.canvasContainer));
     toolManager.register('boxSelection', new BoxSelection(events, scene, editorUI.canvasContainer));
-    toolManager.register('eyedropperSelection', new EyedropperSelection(events, editorUI.toolsContainer.dom, editorUI.canvasContainer));
+    toolManager.register(
+        'eyedropperSelection',
+        new EyedropperSelection(events, editorUI.toolsContainer.dom, editorUI.canvasContainer)
+    );
     toolManager.register('move', new MoveTool(events, scene));
     toolManager.register('rotate', new RotateTool(events, scene));
     toolManager.register('scale', new ScaleTool(events, scene));
-    toolManager.register('measure', new MeasureTool(events, scene, editorUI.toolsContainer.dom, editorUI.canvasContainer));
+    toolManager.register(
+        'measure',
+        new MeasureTool(events, scene, editorUI.toolsContainer.dom, editorUI.canvasContainer)
+    );
 
     const boundDimensionsOverlay = new BoundDimensionsOverlay(events, scene, editorUI.canvasContainer);
 
@@ -281,25 +292,26 @@ const main = async () => {
     const filenameList = url.searchParams.getAll('filename');
     for (const [i, value] of loadList.entries()) {
         const decoded = decodeURIComponent(value);
-        const filename = i < filenameList.length ?
-            decodeURIComponent(filenameList[i]) :
-            decoded.split('/').pop();
+        const filename = i < filenameList.length ? decodeURIComponent(filenameList[i]) : decoded.split('/').pop();
 
-        await events.invoke('import', [{
-            filename,
-            url: decoded
-        }]);
+        await events.invoke('import', [
+            {
+                filename,
+                url: decoded
+            }
+        ]);
     }
-
 
     // handle OS-based file association in PWA mode
     if ('launchQueue' in window) {
         window.launchQueue.setConsumer(async (launchParams: LaunchParams) => {
             for (const file of launchParams.files) {
-                await events.invoke('import', [{
-                    filename: file.name,
-                    contents: await file.getFile()
-                }]);
+                await events.invoke('import', [
+                    {
+                        filename: file.name,
+                        contents: await file.getFile()
+                    }
+                ]);
             }
         });
     }

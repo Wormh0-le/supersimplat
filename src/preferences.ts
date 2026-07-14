@@ -54,18 +54,12 @@ const registerPreferences = (events: Events, config: SceneConfig, urlArgs: any) 
     };
 
     const isBool = (v: PrefValue) => typeof v === 'boolean';
-    const isNumber = (min: number, max: number) => (v: PrefValue) =>
-        typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
+    const isNumber = (min: number, max: number) => (v: PrefValue) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
     const isEnum = (options: string[]) => (v: PrefValue) => typeof v === 'string' && options.includes(v);
     const isNonEmptyString = (v: PrefValue) => typeof v === 'string' && v.trim().length > 0;
-    const isColor = (v: PrefValue) =>
-        Array.isArray(v) && v.length === 4 && v.every((c) => typeof c === 'number' && c >= 0 && c <= 1);
+    const isColor = (v: PrefValue) => Array.isArray(v) && v.length === 4 && v.every(c => typeof c === 'number' && c >= 0 && c <= 1);
 
-    const color = (
-        key: string,
-        setCommand: string,
-        getDefault: () => { r: number; g: number; b: number; a: number }
-    ): Descriptor => ({
+    const color = (key: string, setCommand: string, getDefault: () => { r: number, g: number, b: number, a: number }): Descriptor => ({
         key,
         setCommand,
         urlPath: key,
@@ -114,7 +108,7 @@ const registerPreferences = (events: Events, config: SceneConfig, urlArgs: any) 
             setCommand: 'view.setBands',
             urlPath: 'show.shBands',
             getDefault: () => config.show.shBands,
-            validate: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 3
+            validate: v => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 3
         },
         {
             key: 'camera.flySpeed',
@@ -278,11 +272,11 @@ const registerPreferences = (events: Events, config: SceneConfig, urlArgs: any) 
             for (const descriptor of descriptors) {
                 const stored = urlHas(descriptor.urlPath) ? undefined : values[descriptor.key];
                 const payload =
-                    stored !== undefined
-                        ? descriptor.toEvent
-                            ? descriptor.toEvent(stored)
-                            : stored
-                        : descriptor.getDefault();
+                    stored !== undefined ?
+                        descriptor.toEvent ?
+                            descriptor.toEvent(stored) :
+                            stored :
+                        descriptor.getDefault();
                 events.fire(descriptor.setCommand, payload);
             }
         } finally {

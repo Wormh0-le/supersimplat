@@ -22,7 +22,12 @@ def _parser() -> argparse.ArgumentParser:
 
     install = commands.add_parser("install", help="record a locked Companion release")
     install.add_argument("--release", required=True)
-    install.add_argument("--lock-digest", required=True)
+    install.add_argument(
+        "--lock-file",
+        type=Path,
+        required=True,
+        help="the uv.lock file used to create the isolated Companion environment",
+    )
 
     models = commands.add_parser("models", help="manage separately installed Model Manifests")
     model_commands = models.add_subparsers(dest="models_command", required=True)
@@ -44,8 +49,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     state = CompanionState(arguments.data_dir)
     try:
         if arguments.command == "install":
-            state.install_release(arguments.release, arguments.lock_digest)
-            print(f"recorded locked Companion release {arguments.release}")
+            state.install_release(arguments.release, arguments.lock_file)
+            print(f"recorded and verified locked Companion release {arguments.release}")
             return 0
 
         if arguments.command == "models" and arguments.models_command == "install":
@@ -69,6 +74,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             except KeyboardInterrupt:
                 print("Selection Service Companion stopped by operator")
             finally:
+                state.release_object_selection_sessions()
                 server.server_close()
             return 0
     except ValueError as error:

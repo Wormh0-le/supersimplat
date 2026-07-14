@@ -84,3 +84,29 @@ test("does not treat an insecure public editor origin as a local-network fallbac
       error.code === "insecureEditorContext"
   );
 });
+
+test("preserves a reachable Companion's structured HTTP diagnostic", async () => {
+  const probe = new FetchSelectionServiceReadinessProbe({
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          status: "unavailable",
+          message:
+            "The installed Companion release lock changed; run selection-service install again.",
+        }),
+        { status: 503 }
+      ),
+    localNetworkPermissions: {
+      query: async () => "granted",
+    },
+  });
+
+  await assert.rejects(
+    probe.getCapabilities(request),
+    (error) =>
+      error instanceof SelectionServiceTransportError &&
+      error.code === "http" &&
+      error.status === 503 &&
+      /release lock changed/i.test(error.serviceMessage)
+  );
+});

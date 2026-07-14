@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import redirect_stdout
 from http import HTTPStatus
+from io import StringIO
+import json
 from pathlib import Path
 import tempfile
 from threading import Thread
@@ -9,6 +12,7 @@ import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from selection_service_companion.cli import main
 from selection_service_companion.server import create_server
 from selection_service_companion.state import CompanionState
 
@@ -21,7 +25,9 @@ class CompanionControlPlaneTests(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.directory = Path(self.temporary_directory.name)
         self.state = CompanionState(self.directory / "state")
-        self.state.install_release("0.1.0", "sha256:locked-release")
+        self.lock_file = self.directory / "uv.lock"
+        self.lock_file.write_text("locked companion dependencies\n", encoding="utf-8")
+        self.state.install_release("0.1.0", self.lock_file)
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
@@ -62,6 +68,46 @@ class CompanionControlPlaneTests(unittest.TestCase):
         }])
         self.assertEqual(capabilities["renderer"]["status"], "unavailable")
 
+    def test_records_the_actual_lock_file_digest_when_installing_a_release(self) -> None:
+        data_directory = self.directory / "cli-state"
+
+        with redirect_stdout(StringIO()):
+            result = main([
+                "--data-dir", str(data_directory),
+                "install",
+                "--release", "0.1.0",
+                "--lock-file", str(self.lock_file),
+            ])
+
+        release = json.loads((data_directory / "release.json").read_text(encoding="utf-8"))
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            release["lockDigest"],
+            f"sha256:{hashlib.sha256(self.lock_file.read_bytes()).hexdigest()}",
+        )
+
+    def test_rejects_a_release_when_its_verified_lock_file_changes(self) -> None:
+        self.lock_file.write_text("changed locked companion dependencies\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "lock changed"):
+            self.state.require_release()
+
+    def test_excludes_a_changed_model_artifact_from_capabilities(self) -> None:
+        self.install_model()
+        (self.directory / "sam31.pt").write_bytes(b"changed after installation")
+
+        capabilities = self.state.capabilities([EDITOR_ORIGIN])
+
+        self.assertEqual(capabilities["modelManifests"], [])
+
+    def test_excludes_a_missing_model_artifact_from_capabilities(self) -> None:
+        self.install_model()
+        (self.directory / "sam31.pt").unlink()
+
+        capabilities = self.state.capabilities([EDITOR_ORIGIN])
+
+        self.assertEqual(capabilities["modelManifests"], [])
+
     def test_enforces_exact_editor_origin_cors_for_health_and_capabilities(self) -> None:
         server = create_server(
             state=self.state,
@@ -84,12 +130,69 @@ class CompanionControlPlaneTests(unittest.TestCase):
                 headers={"Origin": EDITOR_ORIGIN},
             )) as response:
                 self.assertEqual(response.status, HTTPStatus.NO_CONTENT)
-                self.assertEqual(response.headers["Access-Control-Allow-Methods"], "GET, OPTIONS")
+                self.assertEqual(response.headers["Access-Control-Allow-Methods"], "GET, POST, DELETE, OPTIONS")
                 self.assertEqual(response.headers["Access-Control-Allow-Headers"], "Content-Type")
 
             with self.assertRaises(HTTPError) as error:
                 urlopen(Request(f"{endpoint}/capabilities", headers={"Origin": "https://untrusted.example"}))
             self.assertEqual(error.exception.code, HTTPStatus.FORBIDDEN)
+
+            with self.assertRaises(HTTPError) as error:
+                urlopen(f"{endpoint}/capabilities")
+            self.assertEqual(error.exception.code, HTTPStatus.FORBIDDEN)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+    def test_admits_exactly_one_object_selection_session_and_releases_capacity_on_close(self) -> None:
+        server = create_server(
+            state=self.state,
+            endpoint="http://127.0.0.1:0",
+            profile="loopback",
+            allowed_origins=[EDITOR_ORIGIN],
+        )
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        endpoint = f"http://127.0.0.1:{server.server_address[1]}"
+        try:
+            with urlopen(Request(
+                f"{endpoint}/object-selection-sessions",
+                data=b"{}",
+                method="POST",
+                headers={"Origin": EDITOR_ORIGIN, "Content-Type": "application/json"},
+            )) as response:
+                self.assertEqual(response.status, HTTPStatus.CREATED)
+                session_id = json.load(response)["sessionId"]
+
+            with urlopen(Request(f"{endpoint}/capabilities", headers={"Origin": EDITOR_ORIGIN})) as response:
+                self.assertEqual(json.load(response)["capacity"], {
+                    "maximumActiveSessions": 1,
+                    "activeSessions": 1,
+                })
+
+            with self.assertRaises(HTTPError) as error:
+                urlopen(Request(
+                    f"{endpoint}/object-selection-sessions",
+                    data=b"{}",
+                    method="POST",
+                    headers={"Origin": EDITOR_ORIGIN, "Content-Type": "application/json"},
+                ))
+            self.assertEqual(error.exception.code, HTTPStatus.CONFLICT)
+            self.assertEqual(json.load(error.exception)["status"], "busy")
+
+            with urlopen(Request(
+                f"{endpoint}/object-selection-sessions/{session_id}",
+                method="DELETE",
+                headers={"Origin": EDITOR_ORIGIN},
+            )) as response:
+                self.assertEqual(response.status, HTTPStatus.NO_CONTENT)
+
+            with urlopen(Request(f"{endpoint}/capabilities", headers={"Origin": EDITOR_ORIGIN})) as response:
+                self.assertEqual(json.load(response)["capacity"], {
+                    "maximumActiveSessions": 1,
+                    "activeSessions": 0,
+                })
         finally:
             server.shutdown()
             server.server_close()
@@ -108,10 +211,23 @@ class CompanionControlPlaneTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "certificate"):
             create_server(
                 state=self.state,
-                endpoint="https://selection.lan:8787",
+                endpoint="https://192.168.1.20:8787",
                 profile="trusted-lan",
                 allowed_origins=[EDITOR_ORIGIN],
             )
+
+    def test_rejects_public_or_unspecified_trusted_lan_endpoints(self) -> None:
+        for endpoint in ("https://8.8.8.8:8787", "https://0.0.0.0:8787"):
+            with self.subTest(endpoint=endpoint):
+                with self.assertRaisesRegex(ValueError, "private-network"):
+                    create_server(
+                        state=self.state,
+                        endpoint=endpoint,
+                        profile="trusted-lan",
+                        allowed_origins=[EDITOR_ORIGIN],
+                        certificate=self.directory / "unused.pem",
+                        private_key=self.directory / "unused-key.pem",
+                    )
 
 
 if __name__ == "__main__":

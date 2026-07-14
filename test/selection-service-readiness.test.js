@@ -128,6 +128,36 @@ test("admits a Selection Service session only after compatible readiness succeed
   assert.equal(adapter.openRequests.length, 1);
 });
 
+test("keeps the production adapter gateway closed until its real transport is attached", async () => {
+  const readiness = new SelectionServiceReadiness({
+    probe: new DeterministicReadinessProbe(),
+    configuration: configuration(),
+  });
+  const gateway = new ReadinessGatedSelectionServiceAdapter({ readiness });
+
+  await readiness.refresh();
+
+  await assert.rejects(
+    gateway.openSession({ target: {}, prompt: {} }),
+    /transport is not configured/i
+  );
+});
+
+test("admits the attached transport only through the ready production gateway", async () => {
+  const readiness = new SelectionServiceReadiness({
+    probe: new DeterministicReadinessProbe(),
+    configuration: configuration(),
+  });
+  const adapter = new RecordingSelectionServiceAdapter();
+  const gateway = new ReadinessGatedSelectionServiceAdapter({ readiness });
+  gateway.setAdapter(adapter);
+
+  await readiness.refresh();
+  await gateway.openSession({ target: {}, prompt: {} });
+
+  assert.equal(adapter.openRequests.length, 1);
+});
+
 test("reports protocol, renderer, model, origin, and one-session capacity failures without opening a session", async (t) => {
   const cases = [
     ["protocol", capabilities({ protocolVersion: "2" }), "protocolMismatch"],
@@ -217,4 +247,50 @@ test("surfaces a Chromium local-network permission denial as a browser transport
   assert.equal(readiness.state.status, "unavailable");
   assert.equal(readiness.state.diagnostic.code, "localNetworkPermissionDenied");
   assert.match(readiness.state.diagnostic.action, /local network/i);
+});
+
+test("keeps a responding Companion reachable when its capability check returns an actionable HTTP error", async () => {
+  const readiness = new SelectionServiceReadiness({
+    probe: new DeterministicReadinessProbe({
+      capabilitiesError: new SelectionServiceTransportError(
+        "http",
+        "The Selection Service Companion returned HTTP 503.",
+        {
+          status: 503,
+          serviceMessage:
+            "The installed Companion release lock changed; run selection-service install again.",
+        }
+      ),
+    }),
+    configuration: configuration(),
+  });
+
+  await readiness.refresh();
+
+  assert.equal(readiness.state.status, "reachable");
+  assert.equal(readiness.state.diagnostic.code, "companionRejectedRequest");
+  assert.match(readiness.state.diagnostic.action, /release lock changed/i);
+});
+
+test("keeps a responding Companion reachable when health returns an actionable HTTP error", async () => {
+  const readiness = new SelectionServiceReadiness({
+    probe: new DeterministicReadinessProbe({
+      healthError: new SelectionServiceTransportError(
+        "http",
+        "The Selection Service Companion returned HTTP 503.",
+        {
+          status: 503,
+          serviceMessage:
+            "The installed Companion release lock changed; run selection-service install again.",
+        }
+      ),
+    }),
+    configuration: configuration(),
+  });
+
+  await readiness.refresh();
+
+  assert.equal(readiness.state.status, "reachable");
+  assert.equal(readiness.state.diagnostic.code, "companionRejectedRequest");
+  assert.match(readiness.state.diagnostic.action, /release lock changed/i);
 });

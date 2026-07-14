@@ -16,7 +16,10 @@ import { Scene } from './scene';
 import { getSceneConfig } from './scene-config';
 import { registerSelectionEvents } from './selection';
 import { FetchSelectionServiceReadinessProbe } from './selection-service-fetch-readiness-probe';
-import { SelectionServiceReadiness } from './selection-service-readiness';
+import {
+    ReadinessGatedSelectionServiceAdapter,
+    SelectionServiceReadiness
+} from './selection-service-readiness';
 import { registerSelectionServiceReadinessEvents } from './selection-service-readiness-events';
 import { registerSequenceEvents } from './sequence';
 import { ShortcutManager } from './shortcut-manager';
@@ -123,7 +126,15 @@ const main = async () => {
     const selectionServiceReadiness = new SelectionServiceReadiness({
         probe: new FetchSelectionServiceReadinessProbe()
     });
+    // ObjectSelectionSession is intentionally not wired into the live editor
+    // until the versioned Scene Snapshot transport arrives. Publish its one
+    // production Adapter now so that transport work must attach behind this
+    // readiness gate; no later session can bypass the operator-visible check.
+    const selectionServiceAdapter = new ReadinessGatedSelectionServiceAdapter({
+        readiness: selectionServiceReadiness
+    });
     registerSelectionServiceReadinessEvents(events, selectionServiceReadiness);
+    events.function('selectionService.adapter', () => selectionServiceAdapter);
 
     // initialize shortcuts
     const shortcutManager = new ShortcutManager(events);

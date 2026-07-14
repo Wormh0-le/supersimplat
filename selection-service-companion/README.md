@@ -10,12 +10,13 @@ Use `uv` to create an isolated environment from a tagged, locked release:
 
 ```sh
 uv tool install --python 3.12 --from ./selection-service-companion supersplat-selection-service-companion
-selection-service install --release 0.1.0 --lock-digest sha256:RELEASE_LOCK_DIGEST
+selection-service install --release 0.1.0 --lock-file ./selection-service-companion/uv.lock
 ```
 
-For a checked-out release, verify `uv.lock` before installing it. The `install`
-command records the selected release and lock digest in the operator's local
-Companion state; it does not download a model or modify the editor.
+The `install` command hashes the supplied `uv.lock` and re-verifies that exact
+file before the Companion starts. It records the selected release and lock
+digest in the operator's local Companion state; it does not download a model
+or modify the editor.
 
 ## Install a model separately
 
@@ -47,7 +48,7 @@ Trusted-LAN use must be explicit and HTTPS-only:
 ```sh
 selection-service start \
   --profile trusted-lan \
-  --endpoint https://selection.lan:8787 \
+  --endpoint https://192.168.1.20:8787 \
   --allow-origin https://editor.example \
   --cert /secure/certs/selection.lan.pem \
   --key /secure/certs/selection.lan-key.pem
@@ -55,9 +56,14 @@ selection-service start \
 
 The process stays in the operator's terminal and stops with `Ctrl+C`. The
 browser never starts, stops, upgrades, installs, or rolls back this process.
+Trusted-LAN hosts must resolve only to private-network addresses; public,
+unspecified, and loopback listeners are rejected.
 
-This release exposes only `/health` and `/capabilities`. It reports the
-renderer as unavailable until a later scene-transport release installs the
-actual gsplat/CUDA adapter; this is deliberate and prevents a false ready
-state. It still proves the locked-install, model-manifest, CORS, browser
-transport, and single-session readiness contract.
+This release exposes `/health`, `/capabilities`, and an Object Selection
+Session admission lease. It reports the renderer as unavailable until a later
+scene-transport release installs the actual gsplat/CUDA adapter; this is
+deliberate and prevents a false ready state. The control plane reserves
+exactly one Object Selection Session lease at a time and returns `busy` to a
+second opener; closing that lease restores capacity. It still proves the
+locked-install, model-manifest, CORS, browser transport, and single-session
+readiness contract.

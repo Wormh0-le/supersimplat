@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import secrets
@@ -16,6 +17,15 @@ from . import PACKAGE_VERSION, PROTOCOL_VERSION
 
 
 DEFAULT_STATE_DIRECTORY = Path.home() / ".local" / "state" / "supersplat-selection-service"
+
+
+@dataclass(frozen=True)
+class RegisteredSceneSnapshot:
+    """Immutable Scene Snapshot payload cached by its editor-owned version."""
+
+    canonical: str
+    stable_ids: tuple[int, ...]
+    render_config_version: str
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -52,8 +62,14 @@ def _normalise_sha256(value: str, field_name: str = "checkpointDigest") -> str:
 class CompanionState:
     directory: Path
     _session_lock: Lock = field(default_factory=Lock, init=False, repr=False)
+    _scene_lock: Lock = field(default_factory=Lock, init=False, repr=False)
     _active_object_selection_session: str | None = field(
         default=None,
+        init=False,
+        repr=False,
+    )
+    _scene_snapshots: dict[tuple[str, str], RegisteredSceneSnapshot] = field(
+        default_factory=dict,
         init=False,
         repr=False,
     )
@@ -186,6 +202,38 @@ class CompanionState:
             self._active_object_selection_session = None
             return True
 
+    def has_object_selection_session(self, session_id: str) -> bool:
+        with self._session_lock:
+            return self._active_object_selection_session == session_id
+
+    def register_scene_snapshot(self, snapshot: dict[str, Any]) -> None:
+        scene_id, scene_version, stable_ids, render_config_version = self._validate_scene_snapshot(snapshot)
+        canonical = json.dumps(snapshot, separators=(",", ":"), sort_keys=True)
+        key = (scene_id, scene_version)
+        with self._scene_lock:
+            existing = self._scene_snapshots.get(key)
+            if existing is not None and existing.canonical != canonical:
+                raise ValueError(
+                    "a Scene Snapshot version is immutable and cannot be registered with different content"
+                )
+            self._scene_snapshots[key] = RegisteredSceneSnapshot(
+                canonical=canonical,
+                stable_ids=tuple(sorted(stable_ids)),
+                render_config_version=render_config_version,
+            )
+
+    def scene_snapshot(
+        self, scene_id: str, scene_version: str
+    ) -> RegisteredSceneSnapshot | None:
+        with self._scene_lock:
+            return self._scene_snapshots.get((scene_id, scene_version))
+
+    def scene_snapshot_stable_ids(
+        self, scene_id: str, scene_version: str
+    ) -> tuple[int, ...] | None:
+        snapshot = self.scene_snapshot(scene_id, scene_version)
+        return snapshot.stable_ids if snapshot is not None else None
+
     def release_object_selection_sessions(self) -> None:
         with self._session_lock:
             self._active_object_selection_session = None
@@ -197,6 +245,100 @@ class CompanionState:
             return weights_path.is_file() and _sha256(weights_path) == expected_digest
         except (KeyError, OSError, TypeError, ValueError):
             return False
+
+    def _validate_scene_snapshot(
+        self, snapshot: dict[str, Any]
+    ) -> tuple[str, str, list[int], str]:
+        required_strings = (
+            "protocolVersion",
+            "sceneId",
+            "sceneVersion",
+            "coordinateConvention",
+            "attributeSchema",
+            "appearancePolicy",
+        )
+        for name in required_strings:
+            if not isinstance(snapshot.get(name), str) or not snapshot[name].strip():
+                raise ValueError(f"Scene Snapshot {name} must be a non-empty string")
+        if snapshot.get("stableIdSchema") != "uint32":
+            raise ValueError("Scene Snapshot Stable Gaussian IDs must use the uint32 schema")
+        render_configuration = snapshot.get("renderConfiguration")
+        if not isinstance(render_configuration, dict):
+            raise ValueError("Scene Snapshot render configuration must be an object")
+        render_config_version = render_configuration.get("version")
+        rasterizer = render_configuration.get("rasterizer")
+        if (
+            not isinstance(render_config_version, str)
+            or not render_config_version.strip()
+            or not isinstance(rasterizer, str)
+            or not rasterizer.strip()
+            or render_configuration.get("alphaMode") != "opaque-background"
+        ):
+            raise ValueError("Scene Snapshot render configuration is incomplete")
+        sh_bands = render_configuration.get("shBands")
+        if isinstance(sh_bands, bool) or not isinstance(sh_bands, int) or sh_bands < 0:
+            raise ValueError("Scene Snapshot render configuration shBands must be a non-negative integer")
+        self._validate_vector(
+            render_configuration.get("backgroundRgba"),
+            4,
+            "render configuration backgroundRgba",
+        )
+        gaussian_count = snapshot.get("gaussianCount")
+        gaussians = snapshot.get("gaussians")
+        if (
+            isinstance(gaussian_count, bool)
+            or not isinstance(gaussian_count, int)
+            or gaussian_count < 0
+            or not isinstance(gaussians, list)
+            or gaussian_count != len(gaussians)
+        ):
+            raise ValueError("Scene Snapshot Gaussian count must match its Gaussian records")
+
+        stable_ids: list[int] = []
+        for gaussian in gaussians:
+            if not isinstance(gaussian, dict):
+                raise ValueError("Scene Snapshot Gaussian records must be objects")
+            stable_id = gaussian.get("stableId")
+            if (
+                isinstance(stable_id, bool)
+                or not isinstance(stable_id, int)
+                or stable_id < 0
+                or stable_id > 0xFFFFFFFF
+                or stable_id in stable_ids
+            ):
+                raise ValueError(
+                    "Scene Snapshot Stable Gaussian IDs must be unique unsigned 32-bit integers"
+                )
+            stable_ids.append(stable_id)
+            self._validate_vector(gaussian.get("mean"), 3, "mean")
+            self._validate_vector(gaussian.get("rotation"), 4, "rotation")
+            self._validate_vector(gaussian.get("logScale"), 3, "logScale")
+            self._validate_scalar(gaussian.get("logitOpacity"), "logitOpacity")
+            self._validate_vector(gaussian.get("dc"), 3, "dc")
+            sh = gaussian.get("sh")
+            if not isinstance(sh, list):
+                raise ValueError("Scene Snapshot Gaussian sh must be a numeric array")
+            for value in sh:
+                self._validate_scalar(value, "sh")
+
+        return (
+            snapshot["sceneId"],
+            snapshot["sceneVersion"],
+            stable_ids,
+            render_config_version,
+        )
+
+    @staticmethod
+    def _validate_vector(value: Any, length: int, field_name: str) -> None:
+        if not isinstance(value, list) or len(value) != length:
+            raise ValueError(f"Scene Snapshot Gaussian {field_name} must have {length} numeric values")
+        for item in value:
+            CompanionState._validate_scalar(item, field_name)
+
+    @staticmethod
+    def _validate_scalar(value: Any, field_name: str) -> None:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(f"Scene Snapshot Gaussian {field_name} must contain finite numeric values")
 
     def _capacity(self) -> dict[str, int]:
         with self._session_lock:

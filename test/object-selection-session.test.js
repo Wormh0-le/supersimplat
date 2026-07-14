@@ -5,6 +5,39 @@ const {
   ObjectSelectionSession,
 } = require("../.test-dist/src/object-selection-session.js");
 
+const createSnapshot = (stableIds = [1, 2, 3, 7, 9, 11]) => ({
+  protocolVersion: "1",
+  sceneId: "scene-1",
+  sceneVersion: "snapshot-v1",
+  gaussianCount: stableIds.length,
+  coordinateConvention: "right-handed/world",
+  attributeSchema: "gaussian-v1",
+  stableIdSchema: "uint32",
+  appearancePolicy: "dc-sh-v1",
+  renderConfiguration: {
+    version: "effective-rgb-v1",
+    backgroundRgba: [0, 0, 0, 1],
+    alphaMode: "opaque-background",
+    shBands: 3,
+    rasterizer: "playcanvas-gsplat-classic",
+  },
+  gaussians: stableIds.map((stableId) => ({
+    stableId,
+    mean: [stableId, 0, 0],
+    rotation: [0, 0, 0, 1],
+    logScale: [0, 0, 0],
+    logitOpacity: 0,
+    dc: [0, 0, 0],
+    sh: [],
+  })),
+});
+
+const createScene = (snapshot = createSnapshot(), lockedIds = new Set()) => ({
+  getSnapshot: () => snapshot,
+  isCurrent: (value) => value === snapshot,
+  isLocked: (stableId) => lockedIds.has(stableId),
+});
+
 const newSessionInput = () => ({
   target: {
     targetSplatId: "splat-1",
@@ -15,6 +48,12 @@ const newSessionInput = () => ({
     xPx: 10,
     yPx: 20,
     polarity: "include",
+  },
+  scene: createScene(),
+  requestContext: {
+    deterministicSeed: "seed-1",
+    frameSetVersion: "anchor:anchor-view",
+    modelManifestDigest: "sha256:model-v1",
   },
 });
 
@@ -37,8 +76,26 @@ const removalPrompt = {
 const candidate = {
   selectedIds: [3, 7],
   uncertainIds: [9],
-  rejectedIds: [1, 2],
+  rejectedIds: [1, 2, 11],
+  lockedIdsFiltered: 0,
 };
+
+const previewResponse = (request, result = candidate) => ({
+  status: "complete",
+  requestId: request.requestId,
+  sessionId: request.sessionId,
+  targetSplatId: request.target.targetSplatId,
+  sceneId: request.snapshot.sceneId,
+  sceneVersion: request.snapshot.sceneVersion,
+  operation: request.operation,
+  correctionRound: request.correctionRound,
+  deterministicSeed: request.deterministicSeed,
+  promptLogRevision: request.promptLogRevision,
+  frameSetVersion: request.frameSetVersion,
+  renderConfigVersion: request.renderConfigVersion,
+  modelManifestDigest: request.modelManifestDigest,
+  ...result,
+});
 
 class DeterministicSelectionServiceAdapter {
   constructor() {
@@ -55,7 +112,7 @@ class DeterministicSelectionServiceAdapter {
 
   async updatePreview(request) {
     this.previewRequests.push(request);
-    return candidate;
+    return previewResponse(request);
   }
 
   async cancelUpdate(sessionId, requestId) {
@@ -103,13 +160,30 @@ test("keeps a New preview transient until Confirm", async () => {
   session.stagePrompt(removalPrompt);
   await session.updatePreview();
 
-  assert.deepEqual(adapter.openRequests, [start]);
+  assert.deepEqual(adapter.openRequests, [
+    {
+      target: start.target,
+      prompt: start.prompt,
+      snapshot: start.scene.getSnapshot(),
+      requestContext: start.requestContext,
+    },
+  ]);
   assert.deepEqual(adapter.previewRequests, [
     {
       sessionId: "deterministic-session",
       requestId: "request-1",
       target: start.target,
+      targetSplatId: start.target.targetSplatId,
+      sceneId: start.scene.getSnapshot().sceneId,
+      sceneVersion: start.scene.getSnapshot().sceneVersion,
       operation: "Remove",
+      correctionRound: 0,
+      deterministicSeed: start.requestContext.deterministicSeed,
+      promptLogRevision: 3,
+      frameSetVersion: start.requestContext.frameSetVersion,
+      renderConfigVersion: start.scene.getSnapshot().renderConfiguration.version,
+      modelManifestDigest: start.requestContext.modelManifestDigest,
+      snapshot: start.scene.getSnapshot(),
       promptLog: [
         {
           operation: "New",
@@ -187,7 +261,7 @@ test("cancels an in-flight preview without replacing the prior candidate", async
 
     async cancelUpdate(sessionId, requestId) {
       await super.cancelUpdate(sessionId, requestId);
-      this.resolvePreview(candidate);
+      this.resolvePreview(previewResponse(this.previewRequests.at(-1)));
     }
   }
 
@@ -225,7 +299,7 @@ test("keeps the prior preview usable when cancellation races a completed request
       this.previewRequests.push(request);
       this.previewCount += 1;
       if (this.previewCount === 1) {
-        return candidate;
+    return previewResponse(request);
       }
       return new Promise((resolve) => {
         this.resolvePreview = resolve;
@@ -250,11 +324,11 @@ test("keeps the prior preview usable when cancellation races a completed request
   await session.updatePreview();
   const update = session.updatePreview();
   const cancel = session.cancelUpdate();
-  adapter.resolvePreview({
+  adapter.resolvePreview(previewResponse(adapter.previewRequests.at(-1), {
     selectedIds: [11],
     uncertainIds: [],
     rejectedIds: [],
-  });
+  }));
   await update;
   adapter.rejectCancellation(new Error("cancellation request failed"));
 
@@ -305,7 +379,7 @@ test("makes preview cancellation single-flight", async () => {
 
   adapter.resolveCancellation();
   await firstCancel;
-  adapter.resolvePreview(candidate);
+  adapter.resolvePreview(previewResponse(adapter.previewRequests.at(-1)));
   await update;
 
   assert.equal(session.state.status, "ready");
@@ -343,4 +417,138 @@ test("retains a failed cleanup for retry without committing twice", async () => 
     "deterministic-session",
     "deterministic-session",
   ]);
+});
+
+test("accepts only a current, bound Companion result, filters locked IDs, and commits once", async () => {
+  const snapshot = createSnapshot([3, 7, 9]);
+  const lockedIds = new Set([7]);
+  const scene = createScene(snapshot, lockedIds);
+  class BoundSelectionServiceAdapter extends DeterministicSelectionServiceAdapter {
+    async updatePreview(request) {
+      this.previewRequests.push(request);
+      return {
+      status: "complete",
+      requestId: request.requestId,
+      sessionId: request.sessionId,
+      targetSplatId: request.target.targetSplatId,
+      sceneId: snapshot.sceneId,
+      sceneVersion: snapshot.sceneVersion,
+      operation: request.operation,
+      correctionRound: request.correctionRound,
+      deterministicSeed: request.deterministicSeed,
+      promptLogRevision: request.promptLogRevision,
+      frameSetVersion: request.frameSetVersion,
+      renderConfigVersion: request.renderConfigVersion,
+      modelManifestDigest: request.modelManifestDigest,
+        selectedIds: [3, 7],
+        uncertainIds: [9],
+        rejectedIds: [],
+      };
+    }
+  }
+
+  const adapter = new BoundSelectionServiceAdapter();
+  const editor = new RecordingSelectionEditor();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor,
+  });
+
+  await session.startNew({
+    ...newSessionInput(),
+    scene,
+  });
+  await session.updatePreview();
+
+  assert.deepEqual(adapter.previewRequests[0].snapshot, snapshot);
+  assert.deepEqual(session.state.candidate, {
+    selectedIds: [3],
+    uncertainIds: [9],
+    rejectedIds: [],
+    lockedIdsFiltered: 1,
+  });
+  assert.deepEqual(editor.history, []);
+
+  await session.confirm();
+
+  assert.deepEqual(editor.history, [[3]]);
+});
+
+test("retains the prior Candidate Object Selection when scene, response bindings, or result IDs are stale", async () => {
+  const snapshot = createSnapshot([3, 7, 9]);
+  let current = true;
+  const scene = {
+    getSnapshot: () => snapshot,
+    isCurrent: () => current,
+    isLocked: () => false,
+  };
+  const initialCandidate = {
+    selectedIds: [3],
+    uncertainIds: [7],
+    rejectedIds: [9],
+    lockedIdsFiltered: 0,
+  };
+  let responseFor = (request) => previewResponse(request, initialCandidate);
+  class ValidatingSelectionServiceAdapter extends DeterministicSelectionServiceAdapter {
+    async updatePreview(request) {
+      this.previewRequests.push(request);
+      return responseFor(request);
+    }
+  }
+  const adapter = new ValidatingSelectionServiceAdapter();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor: new RecordingSelectionEditor(),
+  });
+
+  await session.startNew({
+    ...newSessionInput(),
+    scene,
+  });
+  await session.updatePreview();
+  assert.deepEqual(session.state.candidate, initialCandidate);
+
+  current = false;
+  await assert.rejects(session.updatePreview(), /Target Splat changed/);
+  assert.equal(adapter.previewRequests.length, 1);
+  assert.deepEqual(session.state.candidate, initialCandidate);
+
+  current = true;
+  responseFor = (request) => ({
+    ...previewResponse(request, initialCandidate),
+    sceneVersion: "snapshot-v0",
+  });
+  await assert.rejects(session.updatePreview(), /stale Object Selection request bindings/);
+  assert.deepEqual(session.state.candidate, initialCandidate);
+
+  responseFor = (request) => ({
+    ...previewResponse(request, initialCandidate),
+    deterministicSeed: "stale-seed",
+  });
+  await assert.rejects(session.updatePreview(), /stale Object Selection request bindings/);
+  assert.deepEqual(session.state.candidate, initialCandidate);
+
+  responseFor = (request) => previewResponse(request, {
+    selectedIds: [3],
+    uncertainIds: [3],
+    rejectedIds: [],
+  });
+  await assert.rejects(session.updatePreview(), /overlapping Candidate Object Selection/);
+  assert.deepEqual(session.state.candidate, initialCandidate);
+
+  responseFor = (request) => previewResponse(request, {
+    selectedIds: [13],
+    uncertainIds: [],
+    rejectedIds: [],
+  });
+  await assert.rejects(session.updatePreview(), /unknown selected Stable Gaussian ID/);
+  assert.deepEqual(session.state.candidate, initialCandidate);
+
+  responseFor = (request) => previewResponse(request, {
+    selectedIds: [3],
+    uncertainIds: [],
+    rejectedIds: [],
+  });
+  await assert.rejects(session.updatePreview(), /incomplete Candidate Object Selection/);
+  assert.deepEqual(session.state.candidate, initialCandidate);
 });

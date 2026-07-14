@@ -130,7 +130,7 @@ class CompanionControlPlaneTests(unittest.TestCase):
                 headers={"Origin": EDITOR_ORIGIN},
             )) as response:
                 self.assertEqual(response.status, HTTPStatus.NO_CONTENT)
-                self.assertEqual(response.headers["Access-Control-Allow-Methods"], "GET, POST, DELETE, OPTIONS")
+                self.assertEqual(response.headers["Access-Control-Allow-Methods"], "GET, POST, PUT, DELETE, OPTIONS")
                 self.assertEqual(response.headers["Access-Control-Allow-Headers"], "Content-Type")
 
             with self.assertRaises(HTTPError) as error:
@@ -193,6 +193,120 @@ class CompanionControlPlaneTests(unittest.TestCase):
                     "maximumActiveSessions": 1,
                     "activeSessions": 0,
                 })
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+    def test_exchanges_a_versioned_scene_snapshot_before_a_deterministic_preview(self) -> None:
+        server = create_server(
+            state=self.state,
+            endpoint="http://127.0.0.1:0",
+            profile="loopback",
+            allowed_origins=[EDITOR_ORIGIN],
+        )
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        endpoint = f"http://127.0.0.1:{server.server_address[1]}"
+        snapshot = {
+            "protocolVersion": "1",
+            "sceneId": "scene-1",
+            "sceneVersion": "snapshot-v1",
+            "gaussianCount": 3,
+            "coordinateConvention": "right-handed/world",
+            "attributeSchema": "gaussian-v1",
+            "stableIdSchema": "uint32",
+            "appearancePolicy": "dc-sh-v1",
+            "renderConfiguration": {
+                "version": "effective-rgb-v1",
+                "backgroundRgba": [0, 0, 0, 1],
+                "alphaMode": "opaque-background",
+                "shBands": 3,
+                "rasterizer": "playcanvas-gsplat-classic",
+            },
+            "gaussians": [
+                {
+                    "stableId": stable_id,
+                    "mean": [stable_id, 0, 0],
+                    "rotation": [0, 0, 0, 1],
+                    "logScale": [0, 0, 0],
+                    "logitOpacity": 0,
+                    "dc": [0, 0, 0],
+                    "sh": [],
+                }
+                for stable_id in [3, 7, 9]
+            ],
+        }
+        try:
+            with urlopen(Request(
+                f"{endpoint}/object-selection-sessions",
+                data=json.dumps({"target": {"targetSplatId": "splat-1"}}).encode(),
+                method="POST",
+                headers={"Origin": EDITOR_ORIGIN, "Content-Type": "application/json"},
+            )) as response:
+                session_id = json.load(response)["sessionId"]
+
+            preview_bindings = {
+                "requestId": "request-1",
+                "sessionId": session_id,
+                "targetSplatId": "splat-1",
+                "sceneId": snapshot["sceneId"],
+                "sceneVersion": snapshot["sceneVersion"],
+                "operation": "New",
+                "correctionRound": 0,
+                "deterministicSeed": "seed-1",
+                "promptLogRevision": 1,
+                "frameSetVersion": "anchor:anchor-view",
+                "renderConfigVersion": snapshot["renderConfiguration"]["version"],
+                "modelManifestDigest": "sha256:model-v1",
+            }
+            preview = {
+                **preview_bindings,
+                "target": {"targetSplatId": "splat-1"},
+                "promptLog": [],
+            }
+            with urlopen(Request(
+                f"{endpoint}/object-selection-sessions/{session_id}/previews",
+                data=json.dumps(preview).encode(),
+                method="POST",
+                headers={"Origin": EDITOR_ORIGIN, "Content-Type": "application/json"},
+            )) as response:
+                cache_miss = json.load(response)
+            self.assertEqual(cache_miss, {
+                "status": "sceneCacheMiss",
+                **preview_bindings,
+            })
+
+            with urlopen(Request(
+                f"{endpoint}/scene-snapshots/scene-1/snapshot-v1",
+                data=json.dumps(snapshot).encode(),
+                method="PUT",
+                headers={"Origin": EDITOR_ORIGIN, "Content-Type": "application/json"},
+            )) as response:
+                self.assertEqual(response.status, HTTPStatus.OK)
+                self.assertEqual(json.load(response)["status"], "registered")
+
+            with urlopen(Request(
+                f"{endpoint}/object-selection-sessions/{session_id}/previews",
+                data=json.dumps(preview).encode(),
+                method="POST",
+                headers={"Origin": EDITOR_ORIGIN, "Content-Type": "application/json"},
+            )) as response:
+                result = json.load(response)
+            self.assertEqual(result, {
+                "status": "complete",
+                **preview_bindings,
+                "selectedIds": [3],
+                "uncertainIds": [7],
+                "rejectedIds": [9],
+            })
+
+            with urlopen(Request(
+                f"{endpoint}/object-selection-sessions/{session_id}/previews/request-1",
+                method="DELETE",
+                headers={"Origin": EDITOR_ORIGIN},
+            )) as response:
+                self.assertEqual(response.status, HTTPStatus.NO_CONTENT)
         finally:
             server.shutdown()
             server.server_close()

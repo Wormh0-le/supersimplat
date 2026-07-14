@@ -3,7 +3,10 @@ import { Button, Container } from '@playcanvas/pcui';
 import { ObjectSelectionSessionInterface, ObjectSelectionSessionStart } from '../object-selection-session';
 
 interface ObjectSelectionToolbarOptions {
-    getNewSessionStart: () => ObjectSelectionSessionStart | null;
+    // The production workflow owns Target Splat lookup and initial point
+    // capture, while tests/future callers may still provide a raw session start.
+    startNew?: () => Promise<void>;
+    getNewSessionStart?: () => ObjectSelectionSessionStart | null;
     onError?: (error: unknown) => void;
 }
 
@@ -28,7 +31,11 @@ class ObjectSelectionToolbar extends Container {
         this.append(startNew);
 
         startNew.on('click', () => {
-            const start = options.getNewSessionStart();
+            if (options.startNew) {
+                this.run(options.startNew, options);
+                return;
+            }
+            const start = options.getNewSessionStart?.();
             if (!start) {
                 return;
             }

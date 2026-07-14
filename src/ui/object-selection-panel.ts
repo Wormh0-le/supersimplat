@@ -33,6 +33,12 @@ class ObjectSelectionPanel extends Container {
         const status = new Label({
             id: 'object-selection-panel-status'
         });
+        const selectedPreview = new Label({
+            id: 'object-selection-panel-selected-preview'
+        });
+        const uncertainPreview = new Label({
+            id: 'object-selection-panel-uncertain-preview'
+        });
         const add = new Button({
             id: 'object-selection-panel-add',
             text: 'Add'
@@ -67,6 +73,8 @@ class ObjectSelectionPanel extends Container {
         });
 
         this.append(status);
+        this.append(selectedPreview);
+        this.append(uncertainPreview);
         this.append(add);
         this.append(remove);
         this.append(refine);
@@ -88,6 +96,8 @@ class ObjectSelectionPanel extends Container {
         session.subscribe((state) => {
             this.updateControls(state, {
                 status,
+                selectedPreview,
+                uncertainPreview,
                 add,
                 remove,
                 refine,
@@ -126,6 +136,8 @@ class ObjectSelectionPanel extends Container {
 
     private updateControls(state: ObjectSelectionSessionState, controls: {
         status: Label;
+        selectedPreview: Label;
+        uncertainPreview: Label;
         add: Button;
         remove: Button;
         refine: Button;
@@ -137,7 +149,11 @@ class ObjectSelectionPanel extends Container {
     }) {
         const canEdit = state.status === 'ready' || state.status === 'preview';
 
-        controls.status.text = `Object Selection: ${state.status}`;
+        controls.status.text = state.lockedIdsFiltered > 0 ?
+            `Object Selection: ${state.status} (${state.lockedIdsFiltered} locked IDs filtered)` :
+            `Object Selection: ${state.status}`;
+        controls.selectedPreview.text = this.previewLabel('Selected', state.candidate?.selectedIds);
+        controls.uncertainPreview.text = this.previewLabel('Uncertain', state.candidate?.uncertainIds);
         controls.add.enabled = canEdit;
         controls.remove.enabled = canEdit;
         controls.refine.enabled = canEdit;
@@ -146,6 +162,15 @@ class ObjectSelectionPanel extends Container {
         controls.confirm.enabled = state.status === 'preview';
         controls.cancel.enabled = canEdit || state.status === 'previewing';
         controls.retryCleanup.enabled = state.status === 'closeFailed';
+    }
+
+    private previewLabel(name: string, ids: readonly number[] | undefined) {
+        if (!ids) {
+            return `${name}: no preview`;
+        }
+        const visibleIds = ids.slice(0, 8).join(', ');
+        const suffix = ids.length > 8 ? ', …' : '';
+        return `${name}: ${ids.length} [${visibleIds}${suffix}]`;
     }
 }
 

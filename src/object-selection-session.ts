@@ -1,4 +1,10 @@
-type StableGaussianId = number;
+import {
+    assertSceneSnapshot,
+    isStableGaussianId,
+    type SceneSnapshot,
+    type SceneSnapshotBinding,
+    type StableGaussianId
+} from './scene-snapshot';
 
 type ObjectSelectionMode = 'New' | 'Add' | 'Remove' | 'Refine';
 type ObjectSelectionPromptPolarity = 'include' | 'exclude';
@@ -18,6 +24,24 @@ interface ObjectSelectionPrompt {
 interface ObjectSelectionSessionStart {
     target: ObjectSelectionTarget;
     prompt: ObjectSelectionPrompt;
+    scene: SceneSnapshotBinding;
+    requestContext: ObjectSelectionRequestContext;
+}
+
+interface ObjectSelectionServiceSessionStart {
+    target: ObjectSelectionTarget;
+    prompt: ObjectSelectionPrompt;
+    snapshot: SceneSnapshot;
+    requestContext: ObjectSelectionRequestContext;
+}
+
+// These values are fixed for one session before the first service request.
+// Keeping them in the editor-owned start input makes every later preview
+// independently checkable without granting the service editor authority.
+interface ObjectSelectionRequestContext {
+    deterministicSeed: string;
+    frameSetVersion: string;
+    modelManifestDigest: string;
 }
 
 interface ObjectSelectionPromptLogEntry {
@@ -25,23 +49,46 @@ interface ObjectSelectionPromptLogEntry {
     prompt: ObjectSelectionPrompt;
 }
 
-interface CandidateObjectSelection {
+interface SelectionResultIds {
     selectedIds: readonly StableGaussianId[];
     uncertainIds: readonly StableGaussianId[];
     rejectedIds: readonly StableGaussianId[];
 }
 
-interface ObjectSelectionPreviewRequest {
+interface CandidateObjectSelection extends SelectionResultIds {
+    lockedIdsFiltered: number;
+}
+
+// A single versioned identity tuple crosses the editor/Companion boundary.
+// Requests and every terminal/cache response use this exact structure.
+interface ObjectSelectionPreviewBindings {
     sessionId: string;
     requestId: string;
-    target: ObjectSelectionTarget;
+    targetSplatId: string;
+    sceneId: string;
+    sceneVersion: string;
     operation: ObjectSelectionMode;
+    correctionRound: number;
+    deterministicSeed: string;
+    promptLogRevision: number;
+    frameSetVersion: string;
+    renderConfigVersion: string;
+    modelManifestDigest: string;
+}
+
+interface ObjectSelectionPreviewRequest extends ObjectSelectionPreviewBindings {
+    target: ObjectSelectionTarget;
     promptLog: readonly ObjectSelectionPromptLogEntry[];
+    snapshot: SceneSnapshot;
+}
+
+interface SelectionServicePreviewResponse extends ObjectSelectionPreviewBindings, SelectionResultIds {
+    status: 'complete';
 }
 
 interface SelectionServiceAdapter {
-    openSession(start: ObjectSelectionSessionStart): Promise<string>;
-    updatePreview(request: ObjectSelectionPreviewRequest): Promise<CandidateObjectSelection>;
+    openSession(start: ObjectSelectionServiceSessionStart): Promise<string>;
+    updatePreview(request: ObjectSelectionPreviewRequest): Promise<SelectionServicePreviewResponse>;
     cancelUpdate(sessionId: string, requestId: string): Promise<void>;
     closeSession(sessionId: string): Promise<void>;
 }
@@ -75,6 +122,7 @@ interface ObjectSelectionSessionState {
     candidate: CandidateObjectSelection | null;
     mode: ObjectSelectionMode;
     promptCount: number;
+    lockedIdsFiltered: number;
 }
 
 type ObjectSelectionSessionListener = (state: ObjectSelectionSessionState) => void;
@@ -107,6 +155,50 @@ const copyTarget = (target: ObjectSelectionTarget): ObjectSelectionTarget => {
     };
 };
 
+const copyPreviewBindings = (
+    bindings: ObjectSelectionPreviewBindings
+): ObjectSelectionPreviewBindings => {
+    return {
+        sessionId: bindings.sessionId,
+        requestId: bindings.requestId,
+        targetSplatId: bindings.targetSplatId,
+        sceneId: bindings.sceneId,
+        sceneVersion: bindings.sceneVersion,
+        operation: bindings.operation,
+        correctionRound: bindings.correctionRound,
+        deterministicSeed: bindings.deterministicSeed,
+        promptLogRevision: bindings.promptLogRevision,
+        frameSetVersion: bindings.frameSetVersion,
+        renderConfigVersion: bindings.renderConfigVersion,
+        modelManifestDigest: bindings.modelManifestDigest
+    };
+};
+
+const previewBindingsFromRequest = (
+    request: ObjectSelectionPreviewRequest
+): ObjectSelectionPreviewBindings => copyPreviewBindings(request);
+
+const previewBindingsMatch = (
+    bindings: ObjectSelectionPreviewBindings,
+    request: ObjectSelectionPreviewRequest
+) => {
+    const expected = previewBindingsFromRequest(request);
+    return (
+        bindings.sessionId === expected.sessionId &&
+        bindings.requestId === expected.requestId &&
+        bindings.targetSplatId === expected.targetSplatId &&
+        bindings.sceneId === expected.sceneId &&
+        bindings.sceneVersion === expected.sceneVersion &&
+        bindings.operation === expected.operation &&
+        bindings.correctionRound === expected.correctionRound &&
+        bindings.deterministicSeed === expected.deterministicSeed &&
+        bindings.promptLogRevision === expected.promptLogRevision &&
+        bindings.frameSetVersion === expected.frameSetVersion &&
+        bindings.renderConfigVersion === expected.renderConfigVersion &&
+        bindings.modelManifestDigest === expected.modelManifestDigest
+    );
+};
+
 const copyPrompt = (prompt: ObjectSelectionPrompt): ObjectSelectionPrompt => {
     return {
         promptId: prompt.promptId,
@@ -117,10 +209,31 @@ const copyPrompt = (prompt: ObjectSelectionPrompt): ObjectSelectionPrompt => {
     };
 };
 
+const copyRequestContext = (
+    requestContext: ObjectSelectionRequestContext
+): ObjectSelectionRequestContext => {
+    return {
+        deterministicSeed: requestContext.deterministicSeed,
+        frameSetVersion: requestContext.frameSetVersion,
+        modelManifestDigest: requestContext.modelManifestDigest
+    };
+};
+
 const copyStart = (start: ObjectSelectionSessionStart): ObjectSelectionSessionStart => {
     return {
         target: copyTarget(start.target),
-        prompt: copyPrompt(start.prompt)
+        prompt: copyPrompt(start.prompt),
+        scene: start.scene,
+        requestContext: copyRequestContext(start.requestContext)
+    };
+};
+
+const copyServiceStart = (start: ObjectSelectionServiceSessionStart): ObjectSelectionServiceSessionStart => {
+    return {
+        target: copyTarget(start.target),
+        prompt: copyPrompt(start.prompt),
+        snapshot: start.snapshot,
+        requestContext: copyRequestContext(start.requestContext)
     };
 };
 
@@ -135,7 +248,8 @@ const copyCandidate = (candidate: CandidateObjectSelection): CandidateObjectSele
     return {
         selectedIds: [...candidate.selectedIds],
         uncertainIds: [...candidate.uncertainIds],
-        rejectedIds: [...candidate.rejectedIds]
+        rejectedIds: [...candidate.rejectedIds],
+        lockedIdsFiltered: candidate.lockedIdsFiltered
     };
 };
 
@@ -145,11 +259,15 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
     private sessionId: string | null = null;
     private entrySelection: StableGaussianId[] | null = null;
     private target: ObjectSelectionTarget | null = null;
+    private scene: SceneSnapshotBinding | null = null;
+    private snapshot: SceneSnapshot | null = null;
+    private requestContext: ObjectSelectionRequestContext | null = null;
     private promptLog: ObjectSelectionPromptLogEntry[] = [];
     private candidateSelection: CandidateObjectSelection | null = null;
     private sessionStatus: ObjectSelectionSessionStatus = 'idle';
     private mode: ObjectSelectionMode = 'New';
     private requestCount = 0;
+    private successfulPreviewCount = 0;
     private activePreview: ActivePreview | null = null;
     private listeners = new Set<ObjectSelectionSessionListener>();
 
@@ -166,7 +284,8 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
             status: this.sessionStatus,
             candidate: this.candidateSelection ? copyCandidate(this.candidateSelection) : null,
             mode: this.mode,
-            promptCount: this.promptLog.length
+            promptCount: this.promptLog.length,
+            lockedIdsFiltered: this.candidateSelection?.lockedIdsFiltered ?? 0
         };
     }
 
@@ -183,18 +302,30 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
         this.requireStatus('idle');
 
         const copiedStart = copyStart(start);
+        const snapshot = copiedStart.scene.getSnapshot();
+        assertSceneSnapshot(snapshot);
+        this.assertRequestContext(copiedStart.requestContext);
         this.entrySelection = [...this.editor.captureSelection()];
         this.target = copiedStart.target;
+        this.scene = copiedStart.scene;
+        this.snapshot = snapshot;
+        this.requestContext = copiedStart.requestContext;
         this.promptLog = [{
             operation: 'New',
             prompt: copiedStart.prompt
         }];
         this.mode = 'New';
         this.requestCount = 0;
+        this.successfulPreviewCount = 0;
         this.setStatus('opening');
 
         try {
-            this.sessionId = await this.selectionService.openSession(copyStart(copiedStart));
+            this.sessionId = await this.selectionService.openSession(copyServiceStart({
+                target: copiedStart.target,
+                prompt: copiedStart.prompt,
+                snapshot,
+                requestContext: copiedStart.requestContext
+            }));
             this.setStatus('ready');
         } catch (error) {
             this.clearSessionState();
@@ -220,6 +351,7 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
 
     async updatePreview() {
         const previousStatus = this.requirePreviewStatus();
+        this.requireCurrentSnapshot();
 
         const activePreview: ActivePreview = {
             requestId: `request-${++this.requestCount}`,
@@ -233,17 +365,30 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
             sessionId: this.requireSessionId(),
             requestId: activePreview.requestId,
             target: copyTarget(this.requireTarget()),
+            targetSplatId: this.requireTarget().targetSplatId,
+            sceneId: this.requireSnapshot().sceneId,
+            sceneVersion: this.requireSnapshot().sceneVersion,
             operation: this.mode,
-            promptLog: this.promptLog.map(copyPromptLogEntry)
+            correctionRound: this.successfulPreviewCount,
+            deterministicSeed: this.requireRequestContext().deterministicSeed,
+            promptLogRevision: this.promptLog.length,
+            frameSetVersion: this.requireRequestContext().frameSetVersion,
+            renderConfigVersion: this.requireSnapshot().renderConfiguration.version,
+            modelManifestDigest: this.requireRequestContext().modelManifestDigest,
+            promptLog: this.promptLog.map(copyPromptLogEntry),
+            snapshot: this.requireSnapshot()
         };
 
         try {
-            const candidate = await this.selectionService.updatePreview(request);
+            const response = await this.selectionService.updatePreview(request);
             if (this.activePreview !== activePreview || activePreview.cancelled) {
                 return;
             }
 
-            this.candidateSelection = copyCandidate(candidate);
+            this.requireCurrentSnapshot();
+            this.validatePreviewResponse(response, request);
+            this.candidateSelection = copyCandidate(this.filterLockedIds(response));
+            this.successfulPreviewCount += 1;
             this.setStatus('preview');
         } catch (error) {
             if (!activePreview.cancelled) {
@@ -292,10 +437,12 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
         this.requireStatus('preview');
 
         const candidate = this.requireCandidate();
+        this.requireCurrentSnapshot();
+        const selectedIds = this.filterLockedIds(candidate).selectedIds;
         this.setStatus('confirming');
 
         try {
-            await this.editor.commitSelection([...candidate.selectedIds]);
+            await this.editor.commitSelection([...selectedIds]);
         } catch (error) {
             this.setStatus('preview');
             throw error;
@@ -355,6 +502,36 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
         return this.target;
     }
 
+    private requireSnapshot() {
+        if (this.snapshot === null) {
+            throw new Error('Object Selection Session has no Scene Snapshot.');
+        }
+        return this.snapshot;
+    }
+
+    private requireRequestContext() {
+        if (this.requestContext === null) {
+            throw new Error('Object Selection Session has no immutable request context.');
+        }
+        return this.requestContext;
+    }
+
+    private requireCurrentSnapshot() {
+        const scene = this.requireScene();
+        const snapshot = this.requireSnapshot();
+        if (!scene.isCurrent(snapshot)) {
+            throw new Error('The Target Splat changed while this Object Selection Session was active. Start a new session for its current Scene Snapshot.');
+        }
+        return snapshot;
+    }
+
+    private requireScene() {
+        if (this.scene === null) {
+            throw new Error('Object Selection Session has no editor Scene Snapshot binding.');
+        }
+        return this.scene;
+    }
+
     private requireCandidate() {
         if (this.candidateSelection === null) {
             throw new Error('Object Selection Session has no Candidate Object Selection to confirm.');
@@ -395,9 +572,13 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
         this.sessionId = null;
         this.entrySelection = null;
         this.target = null;
+        this.scene = null;
+        this.snapshot = null;
+        this.requestContext = null;
         this.promptLog = [];
         this.candidateSelection = null;
         this.mode = 'New';
+        this.successfulPreviewCount = 0;
         this.activePreview = null;
     }
 
@@ -410,17 +591,95 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
         const state = this.state;
         this.listeners.forEach(listener => listener(state));
     }
+
+    private assertRequestContext(context: ObjectSelectionRequestContext) {
+        if (
+            !context.deterministicSeed ||
+            !context.frameSetVersion ||
+            !context.modelManifestDigest
+        ) {
+            throw new Error('Object Selection Session requires deterministic seed, Frame Set, and Model Manifest bindings.');
+        }
+    }
+
+    private validatePreviewResponse(
+        response: SelectionServicePreviewResponse,
+        request: ObjectSelectionPreviewRequest
+    ) {
+        if (response.status !== 'complete') {
+            throw new Error('The Selection Service Companion did not return a complete preview result.');
+        }
+        if (!previewBindingsMatch(response, request)) {
+            throw new Error('The Selection Service Companion returned stale Object Selection request bindings.');
+        }
+
+        const knownIds = new Set(request.snapshot.gaussians.map(gaussian => gaussian.stableId));
+        const returnedIds = new Set<StableGaussianId>();
+        const sets: Array<[string, readonly StableGaussianId[]]> = [
+            ['selected', response.selectedIds],
+            ['uncertain', response.uncertainIds],
+            ['rejected', response.rejectedIds]
+        ];
+
+        sets.forEach(([name, ids]) => {
+            let previous = -1;
+            ids.forEach((id) => {
+                if (!isStableGaussianId(id) || !knownIds.has(id)) {
+                    throw new Error(`The Selection Service Companion returned an unknown ${name} Stable Gaussian ID.`);
+                }
+                if (id <= previous) {
+                    throw new Error(`The Selection Service Companion must return sorted unique ${name} Stable Gaussian IDs.`);
+                }
+                if (returnedIds.has(id)) {
+                    throw new Error('The Selection Service Companion returned overlapping Candidate Object Selection ID sets.');
+                }
+                previous = id;
+                returnedIds.add(id);
+            });
+        });
+        if (returnedIds.size !== knownIds.size) {
+            throw new Error('The Selection Service Companion returned an incomplete Candidate Object Selection.');
+        }
+    }
+
+    private filterLockedIds(
+        candidate: SelectionResultIds & Partial<Pick<CandidateObjectSelection, 'lockedIdsFiltered'>>
+    ): CandidateObjectSelection {
+        const scene = this.requireScene();
+        let lockedIdsFiltered = candidate.lockedIdsFiltered ?? 0;
+        const filter = (ids: readonly StableGaussianId[]) => ids.filter((id) => {
+            const locked = scene.isLocked(id);
+            if (locked) {
+                lockedIdsFiltered += 1;
+            }
+            return !locked;
+        });
+        return {
+            selectedIds: filter(candidate.selectedIds),
+            uncertainIds: filter(candidate.uncertainIds),
+            rejectedIds: filter(candidate.rejectedIds),
+            lockedIdsFiltered
+        };
+    }
 }
 
-export { ObjectSelectionSession };
+export {
+    ObjectSelectionSession,
+    copyPreviewBindings,
+    previewBindingsFromRequest,
+    previewBindingsMatch
+};
 
 export type {
     CandidateObjectSelection,
     ObjectSelectionMode,
+    ObjectSelectionPreviewBindings,
     ObjectSelectionPreviewRequest,
     ObjectSelectionPrompt,
     ObjectSelectionPromptLogEntry,
     ObjectSelectionPromptPolarity,
+    ObjectSelectionRequestContext,
+    ObjectSelectionServiceSessionStart,
     ObjectSelectionSessionEditor,
     ObjectSelectionSessionInterface,
     ObjectSelectionSessionListener,
@@ -429,5 +688,7 @@ export type {
     ObjectSelectionSessionStatus,
     ObjectSelectionTarget,
     SelectionServiceAdapter,
+    SelectionServicePreviewResponse,
+    SelectionResultIds,
     StableGaussianId
 };

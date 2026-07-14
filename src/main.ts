@@ -9,12 +9,18 @@ import { registerEditorEvents } from './editor';
 import { Events } from './events';
 import { initFileHandler } from './file-handler';
 import { registerIframeApi } from './iframe-api';
+import {
+    ObjectSelectionSessionFactory,
+    type ObjectSelectionSessionHandle
+} from './object-selection-session-factory';
 import { registerPreferences } from './preferences';
 import { registerPublishEvents } from './publish';
 import { registerRenderEvents } from './render';
 import { Scene } from './scene';
 import { getSceneConfig } from './scene-config';
+import type { SceneSnapshotRenderConfiguration } from './scene-snapshot';
 import { registerSelectionEvents } from './selection';
+import { FetchSelectionServiceAdapter } from './selection-service-fetch-adapter';
 import { FetchSelectionServiceReadinessProbe } from './selection-service-fetch-readiness-probe';
 import {
     ReadinessGatedSelectionServiceAdapter,
@@ -23,6 +29,7 @@ import {
 import { registerSelectionServiceReadinessEvents } from './selection-service-readiness-events';
 import { registerSequenceEvents } from './sequence';
 import { ShortcutManager } from './shortcut-manager';
+import type { Splat } from './splat';
 import { registerTimelineEvents } from './timeline';
 import { BoxSelection } from './tools/box-selection';
 import { BrushSelection } from './tools/brush-selection';
@@ -42,6 +49,8 @@ import { registerTransformHandlerEvents } from './transform-handler';
 import { BoundDimensionsOverlay } from './ui/bound-dimensions-overlay';
 import { EditorUI } from './ui/editor';
 import { i18n } from './ui/localization';
+import { ObjectSelectionPanel } from './ui/object-selection-panel';
+import { ObjectSelectionToolbar } from './ui/object-selection-toolbar';
 import { registerSelectCursor } from './ui/select-cursor';
 
 declare global {
@@ -126,13 +135,15 @@ const main = async () => {
     const selectionServiceReadiness = new SelectionServiceReadiness({
         probe: new FetchSelectionServiceReadinessProbe()
     });
-    // ObjectSelectionSession is intentionally not wired into the live editor
-    // until the versioned Scene Snapshot transport arrives. Publish its one
-    // production Adapter now so that transport work must attach behind this
-    // readiness gate; no later session can bypass the operator-visible check.
+    // The concrete scene/session transport is attached only through the
+    // readiness gate, so no ObjectSelectionSession can bypass the
+    // operator-visible Companion compatibility decision.
     const selectionServiceAdapter = new ReadinessGatedSelectionServiceAdapter({
         readiness: selectionServiceReadiness
     });
+    selectionServiceAdapter.setAdapter(new FetchSelectionServiceAdapter({
+        getConfiguration: () => selectionServiceReadiness.state.configuration
+    }));
     registerSelectionServiceReadinessEvents(events, selectionServiceReadiness);
     events.function('selectionService.adapter', () => selectionServiceAdapter);
 
@@ -289,6 +300,110 @@ const main = async () => {
     registerDocEvents(scene, events);
     registerRenderEvents(scene, events);
     initFileHandler(scene, events, editorUI.appContainer.dom);
+
+    // UI workflows obtain a fresh handle for their one selected Target Splat.
+    // The handle owns the real Scene Snapshot/Stable-ID/SelectOp bridge; its
+    // session still uses the readiness-gated transport published above.
+    const objectSelectionSessions = new ObjectSelectionSessionFactory({
+        selectionService: selectionServiceAdapter,
+        editHistory,
+        getModelManifestDigest: () => selectionServiceReadiness.state.configuration.modelManifestDigest,
+        getRenderConfiguration: (): SceneSnapshotRenderConfiguration => {
+            const background = events.invoke('bgClr') as Color;
+            return {
+                version: 'supersplat-effective-rgb-v1',
+                backgroundRgba: [background.r, background.g, background.b, background.a],
+                alphaMode: 'opaque-background',
+                shBands: events.invoke('view.bands') as number,
+                rasterizer: 'playcanvas-gsplat-classic'
+            };
+        }
+    });
+    events.function('objectSelection.createSession', (requestedSplat?: Splat) => {
+        const splat = requestedSplat ?? events.invoke('selection') as Splat | null;
+        if (!splat || !splat.visible) {
+            throw new Error('Select one visible Target Splat before starting Object Selection.');
+        }
+        return objectSelectionSessions.create(splat);
+    });
+
+    let anchorPromptPoint: { xPx: number; yPx: number } | null = null;
+    let anchorPromptCount = 0;
+    let objectSelectionHandle: ObjectSelectionSessionHandle | null = null;
+    let objectSelectionToolbar: ObjectSelectionToolbar | null = null;
+    let objectSelectionPanel: ObjectSelectionPanel | null = null;
+
+    editorUI.canvas.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) {
+            return;
+        }
+        const rect = editorUI.canvas.getBoundingClientRect();
+        anchorPromptPoint = {
+            xPx: Math.round((event.clientX - rect.left) * editorUI.canvas.width / rect.width),
+            yPx: Math.round((event.clientY - rect.top) * editorUI.canvas.height / rect.height)
+        };
+    });
+
+    const reportObjectSelectionError = (error: unknown) => {
+        console.error(error);
+    };
+
+    const mountObjectSelection = (splat: Splat | null) => {
+        // Keep an active Target Splat and its controls intact until the user
+        // confirms or cancels; a normal editor selection change cannot retarget
+        // a live Companion session.
+        if (objectSelectionHandle?.session.state.status !== 'idle') {
+            return;
+        }
+        if (!splat) {
+            objectSelectionToolbar?.destroy();
+            objectSelectionPanel?.destroy();
+            objectSelectionHandle = null;
+            objectSelectionToolbar = null;
+            objectSelectionPanel = null;
+            return;
+        }
+        if (objectSelectionHandle?.target.targetSplatId === `editor-splat:${splat.uid}`) {
+            return;
+        }
+
+        objectSelectionToolbar?.destroy();
+        objectSelectionPanel?.destroy();
+        const handle = events.invoke(
+            'objectSelection.createSession', splat
+        ) as ObjectSelectionSessionHandle;
+        const startNew = () => {
+            if (anchorPromptPoint === null) {
+                return Promise.reject(new Error('Click an Anchor View point before starting Object Selection.'));
+            }
+            return handle.startNew({
+                promptId: `anchor-prompt-${++anchorPromptCount}`,
+                viewId: 'anchor-view',
+                xPx: anchorPromptPoint.xPx,
+                yPx: anchorPromptPoint.yPx,
+                polarity: 'include'
+            });
+        };
+        objectSelectionHandle = handle;
+        objectSelectionToolbar = new ObjectSelectionToolbar(handle.session, {
+            startNew,
+            onError: reportObjectSelectionError
+        });
+        objectSelectionPanel = new ObjectSelectionPanel(handle.session, {
+            onError: reportObjectSelectionError
+        });
+        editorUI.canvasContainer.append(objectSelectionToolbar);
+        editorUI.canvasContainer.append(objectSelectionPanel);
+
+        handle.session.subscribe((state) => {
+            if (state.status === 'idle') {
+                mountObjectSelection(events.invoke('selection') as Splat | null);
+            }
+        });
+    };
+
+    events.on('selection.changed', (splat: Splat | null) => mountObjectSelection(splat));
+    mountObjectSelection(events.invoke('selection') as Splat | null);
 
     // apply stored user preferences and start capturing changes to them.
     // registered after the boot-time initialization events above so they are

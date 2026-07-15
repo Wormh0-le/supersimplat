@@ -465,6 +465,16 @@ class Sam3PointMaskAdapter:
             },
         )
 
+    def discard_attempt(self) -> None:
+        """Release cached CUDA allocations after the active SAM session closes."""
+
+        try:
+            import torch
+        except ImportError:
+            return
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
     def _infer_frame_set(
         self,
         *,

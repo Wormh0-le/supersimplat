@@ -359,7 +359,7 @@ class GeneratedViewPolicyTests(unittest.TestCase):
             policy.public_coverage_report(report),
             {
                 "frameSetVersion": selected.frame_set.frame_set_version,
-                "renderConfigVersion": "generated-1008-v1",
+                "renderConfigVersion": "generated-1008-v1+generated-8x8-v1",
                 "attemptedViews": 4,
                 "acceptedViews": 3,
                 "rejectedViewCount": 1,

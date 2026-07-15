@@ -21,6 +21,7 @@ from .generated_views import (
     GENERATED_VIEW_RESOLUTIONS,
     GeneratedViewPolicy,
     frame_set_payload,
+    generated_render_config_version,
     public_frame_set_payload,
     quality_gate_tracks,
 )
@@ -80,6 +81,7 @@ class GeneratedFrameSetResolution:
 
     source_frame_set_version: str
     frame_set_version: str
+    render_config_version: str
     preliminary_rejections: tuple[dict[str, object], ...]
     attempted_view_ids: tuple[str, ...]
 
@@ -671,6 +673,7 @@ class CompanionState:
                 bindings={
                     **bindings,
                     "frameSetVersion": generated_resolution.frame_set_version,
+                    "renderConfigVersion": generated_resolution.render_config_version,
                 },
                 frame_set=frame_set,
                 preliminary_rejections=generated_resolution.preliminary_rejections,
@@ -737,6 +740,10 @@ class CompanionState:
             anchor_mask_set = {"tracks": preliminary_tracks}
             scene_snapshot = json.loads(snapshot.canonical)
             selected = None
+            selected_render_config_version = None
+            base_render_config_version = self._mask_binding(
+                bindings, "renderConfigVersion"
+            )
             for resolution in GENERATED_VIEW_RESOLUTIONS:
                 try:
                     prepared = self.generated_view_policy.prepare(
@@ -746,9 +753,10 @@ class CompanionState:
                         renderer=renderer,
                         resolution=resolution,
                     )
-                    if prepared.plan.render_config_version != self._mask_binding(
-                        bindings, "renderConfigVersion"
-                    ):
+                    attempt_render_config_version = generated_render_config_version(
+                        base_render_config_version, resolution
+                    )
+                    if prepared.plan.render_config_version != attempt_render_config_version:
                         raise MaskSessionError(
                             "renderConfigMismatch",
                             "Generated Views must use the immutable render configuration bound to this preview trial.",
@@ -775,6 +783,7 @@ class CompanionState:
                         renderer=renderer,
                         prompt_log=prompt_log if isinstance(prompt_log, list) else (),
                     )
+                    selected_render_config_version = attempt_render_config_version
                     break
                 except Exception as error:
                     if not _is_torch_out_of_memory(error):
@@ -782,12 +791,16 @@ class CompanionState:
                     discard_attempt = getattr(renderer, "discard_attempt", None)
                     if callable(discard_attempt):
                         discard_attempt()
+                    discard_tracking_attempt = getattr(adapter, "discard_attempt", None)
+                    if callable(discard_tracking_attempt):
+                        discard_tracking_attempt()
                     if resolution == GENERATED_VIEW_RESOLUTIONS[-1]:
                         raise MaskSessionError(
                             "rendererOutOfMemory",
                             "The Generated View attempt exhausted CUDA memory at the minimum resolution.",
                         ) from error
             assert selected is not None
+            assert selected_render_config_version is not None
             self.register_frame_set(frame_set_payload(selected.frame_set))
             with self._mask_lock:
                 session = self._mask_sessions.get(session_id)
@@ -803,6 +816,7 @@ class CompanionState:
                 session.generated_resolution = GeneratedFrameSetResolution(
                     source_frame_set_version=requested_frame_set_version,
                     frame_set_version=selected.frame_set.frame_set_version,
+                    render_config_version=selected_render_config_version,
                     preliminary_rejections=selected.rejected_views,
                     attempted_view_ids=selected.attempted_view_ids,
                 )
@@ -810,6 +824,7 @@ class CompanionState:
                 bindings={
                     **bindings,
                     "frameSetVersion": selected.frame_set.frame_set_version,
+                    "renderConfigVersion": selected_render_config_version,
                 },
                 frame_set=selected.frame_set,
                 preliminary_rejections=selected.rejected_views,

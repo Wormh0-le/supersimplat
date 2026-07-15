@@ -192,6 +192,33 @@ class GeneratedPointMaskAdapter(PointMaskAdapter):
                 )
         return production
 
+
+class OomGeneratedPointMaskAdapter(GeneratedPointMaskAdapter):
+    def __init__(self):
+        self.generated_attempts = []
+        self.attempt_artifacts = []
+        self.discarded_attempts = 0
+
+    def produce_tracks(self, *, model, frame_set, prompt_log, cancelled):
+        if len(frame_set.ordered_views) > 1:
+            resolution = frame_set.ordered_views[1].width
+            self.generated_attempts.append(resolution)
+            self.attempt_artifacts.append(resolution)
+            if resolution == 1008:
+                import torch
+
+                raise torch.OutOfMemoryError("injected SAM OOM after generated rendering")
+        return super().produce_tracks(
+            model=model,
+            frame_set=frame_set,
+            prompt_log=prompt_log,
+            cancelled=cancelled,
+        )
+
+    def discard_attempt(self):
+        self.discarded_attempts += 1
+        self.attempt_artifacts.clear()
+
 class MaskSessionContractTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
@@ -470,6 +497,10 @@ class MaskSessionContractTests(unittest.TestCase):
         generated = publication.frame_set["orderedViews"][1]
         self.assertEqual((generated["width"], generated["height"]), (512, 512))
         self.assertEqual(
+            publication.bindings["renderConfigVersion"],
+            "supersplat-effective-rgb-v1+generated-512x512-v1",
+        )
+        self.assertEqual(
             self.state._mask_sessions[session_id].frame_set_version,
             publication.bindings["frameSetVersion"],
         )
@@ -494,6 +525,32 @@ class MaskSessionContractTests(unittest.TestCase):
         self.assertEqual(session.frame_set_version, prior_version)
         self.assertIsNone(session.generated_resolution)
         self.assertEqual(session.completed_preview_publications, prior_publications)
+
+    def test_discards_render_and_tracking_state_after_sam_oom(self) -> None:
+        renderer = OomGeneratedPointFixtureContributorRenderer(set())
+        adapter = OomGeneratedPointMaskAdapter()
+        session_id, bindings, prompt_log = self.generated_preview_context(renderer)
+        self.state.mask_adapters["point-mask-v1"] = adapter
+
+        publication = self.state.update_preview_publication(
+            bindings=bindings,
+            prompt_log=prompt_log,
+        )
+
+        self.assertEqual(renderer.attempt_resolutions, [1008, 768])
+        self.assertEqual(renderer.discarded_attempts, 1)
+        self.assertEqual(renderer.attempt_artifacts, [768])
+        self.assertEqual(adapter.generated_attempts, [1008, 768, 768])
+        self.assertEqual(adapter.discarded_attempts, 1)
+        self.assertEqual(adapter.attempt_artifacts, [768, 768])
+        self.assertEqual(
+            publication.bindings["renderConfigVersion"],
+            "supersplat-effective-rgb-v1+generated-768x768-v1",
+        )
+        self.assertEqual(
+            self.state._mask_sessions[session_id].frame_set_version,
+            publication.bindings["frameSetVersion"],
+        )
 
     def test_non_oom_renderer_failure_does_not_lower_resolution_or_publish(self) -> None:
         renderer = FailedGeneratedPointFixtureContributorRenderer()

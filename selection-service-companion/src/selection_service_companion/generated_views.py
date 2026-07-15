@@ -29,6 +29,12 @@ REPLACEMENT_BUDGET = 8
 TOTAL_VIEW_BUDGET = INITIAL_VIEW_BUDGET + REPLACEMENT_BUDGET
 
 
+def generated_render_config_version(base_version: str, resolution: int) -> str:
+    """Bind one full attempt to a unique immutable square render configuration."""
+
+    return f"{base_version}+generated-{resolution}x{resolution}-v1"
+
+
 @dataclass(frozen=True)
 class SeedRegion:
     """A robust framing hint, never a Gaussian Selection or object boundary."""
@@ -224,14 +230,16 @@ class GeneratedViewPolicy:
             )
 
         render_configuration = scene_snapshot.get("renderConfiguration")
-        render_config_version = (
+        base_render_config_version = (
             render_configuration.get("version")
             if isinstance(render_configuration, Mapping)
             else getattr(renderer, "render_config_version", "generated-view-render-v1")
         )
         plan = GeneratedViewPlan(
             frame_set_id=camera_plan.frame_set_id,
-            render_config_version=str(render_config_version),
+            render_config_version=generated_render_config_version(
+                str(base_render_config_version), resolution
+            ),
             primary=tuple(
                 rendered[candidate.view_id]
                 for candidate in camera_plan.primary
@@ -270,7 +278,6 @@ class GeneratedViewPolicy:
             replacements=plan.replacements,
             preflight_diagnostics=tuple(diagnostics),
         )
-
     def select_frame_set(
         self,
         *,

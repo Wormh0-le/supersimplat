@@ -388,13 +388,16 @@ class GsplatContributorRendererTests(unittest.TestCase):
 
 
 class LockedGsplatGpuGoldenTests(unittest.TestCase):
-    def test_complete_contributor_mass_matches_same_rasterization_alpha(self) -> None:
+    def require_cuda(self) -> None:
         try:
             import torch
         except ImportError:
             self.skipTest("locked renderer extra is not installed")
         if not torch.cuda.is_available():
             self.skipTest("CUDA is unavailable")
+
+    def test_complete_contributor_mass_matches_same_rasterization_alpha(self) -> None:
+        self.require_cuda()
 
         renderer = GsplatContributorRenderer(backend=LockedGsplatBackend())
         rendered = renderer.render(
@@ -409,12 +412,7 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
         self.assertGreater(renderer.last_peak_vram_bytes or 0, 0)
 
     def test_normal_1008_generated_view_records_measured_peak_vram(self) -> None:
-        try:
-            import torch
-        except ImportError:
-            self.skipTest("locked renderer extra is not installed")
-        if not torch.cuda.is_available():
-            self.skipTest("CUDA is unavailable")
+        self.require_cuda()
 
         renderer = GsplatContributorRenderer(backend=LockedGsplatBackend())
         snapshot = supported_snapshot()

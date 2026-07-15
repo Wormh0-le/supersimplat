@@ -1,0 +1,3 @@
+# Separate camera planning, rendering, and tracking in Generated Views
+
+Generated View policy will produce bounded, unrendered camera candidates rather than completed frames. The gsplat/CUDA renderer owns candidate preflight plus the same-rasterization RGB and contributor support, while the SAM3 adapter consumes only an internal ordered frame sequence to produce masks. The orchestrator coordinates replacement, OOM retry, prefix replay, coverage, and final atomic publication. This separation makes attempt-saving stopping and renderer safety independently testable without changing the editor-facing Selection Service contract.

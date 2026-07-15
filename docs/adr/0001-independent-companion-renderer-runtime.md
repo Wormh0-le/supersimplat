@@ -1,0 +1,3 @@
+# Keep the Companion renderer runtime independent from SAM3's development environment
+
+The Selection Service Companion will own a separately installable, locked Python runtime for its gsplat/CUDA renderer. `thirdparty/sam3/.venv` is a development and integration-test reference, not a production startup dependency; the Companion must not resolve or rely on that nested environment. The first renderer release supports only one verified Linux dependency lock, including an exact source-built gsplat commit and its Python, PyTorch, and CUDA versions; other combinations report unsupported rather than silently varying behavior. This preserves the Companion's operator-owned deployment boundary and makes its rendering behavior reproducible even when the SAM3 checkout changes.

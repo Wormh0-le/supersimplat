@@ -1,0 +1,3 @@
+# Use versioned gsplat probes for Generated View camera preflight
+
+Before full RGB rendering and SAM3 tracking, the gsplat renderer will run a low-cost, versioned geometry/alpha probe for each planned Generated View camera. It rejects non-finite cameras or projections, cameras inside geometry, near-plane cuts through the Seed Region, substantial clipping or out-of-frame targets, missing Seed Region support, and low-transmittance blocked directions. The renderer may move outward or make a small safe angular substitution within the attempt budget; it records the measured metrics and reason internally rather than exposing diagnostics in the editor UI.

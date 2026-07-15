@@ -1,0 +1,3 @@
+# Use prefix replay for attempt-saving generated-view early stopping
+
+The first SAM3 Generated View adapter will render and track candidates incrementally. It builds an internal temporary sequence from the Anchor and attempted prefix, replays the authoritative Prompt Log through SAM3 video tracking, and stops rendering later candidates after three consecutive accepted views each add less than two percent new contributor coverage. The temporary frames and tracker state never publish; only the final immutable Frame Set is replayed into the complete Mask Set. This preserves real attempt savings without mutating SAM3's private inference state, accepting repeated prefix tracking as the initial performance trade-off.

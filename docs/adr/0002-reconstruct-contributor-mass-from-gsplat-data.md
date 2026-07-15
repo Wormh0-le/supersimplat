@@ -1,0 +1,3 @@
+# Use gsplat's full contributor-ID rasterization for Selection Evidence
+
+The first Companion renderer will call gsplat's full contributor-ID rasterization from the same projection and tile data as its RGB render. It retains every valid per-pixel Stable Gaussian ID and alpha-times-transmittance weight for Evidence; the top-contributor operation is diagnostic or preflight-only and never truncates Evidence support. A GPU golden fixture proves that the complete per-pixel weight sum matches the same rasterization's alpha, and the renderer fails rather than substituting visible or nearest-Gaussian attribution.

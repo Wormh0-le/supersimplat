@@ -1,0 +1,3 @@
+# Pin the source-built gsplat renderer by exact commit
+
+The first production renderer will use the source-built gsplat snapshot that exposes the required Gaussian-ID rasterization and faster rasterization capabilities, but will identify it by an exact upstream commit SHA in the Companion dependency lock rather than by the floating `main` branch. The verified baseline is `77ab983ffe43420b2131669cb35776b883ca4c3c` (package metadata `1.5.3`), Python 3.12.12, `torch 2.11.0+cu128`, and CUDA 12.8; its direct Gaussian-ID GPU smoke test passed. The SAM3 virtual environment remains a validation reference until that same lock is installed independently for the Companion.

@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 from unittest.mock import patch
 
 from selection_service_companion.server import create_server
+from selection_service_companion.evidence import ContributorSample, RenderedContributorView
 from selection_service_companion.masking import (
     MaskProduction,
     MaskSessionError,
@@ -31,6 +32,36 @@ from selection_service_companion.state import CompanionState
 EDITOR_ORIGIN = "https://editor.example"
 
 
+class PointFixtureContributorRenderer:
+    """Deterministic same-RGB contributor fixture for mask-session contracts."""
+
+    renderer_id = "gsplat"
+
+    def render(self, *, scene_snapshot, frame):
+        stable_ids = sorted(gaussian["stableId"] for gaussian in scene_snapshot["gaussians"])
+        contributors = []
+        if stable_ids:
+            contributors.append(
+                ContributorSample(
+                    stable_id=stable_ids[0],
+                    x_px=min(10, frame.width - 1),
+                    y_px=min(20, frame.height - 1),
+                    mass=3.0,
+                )
+            )
+        if len(stable_ids) >= 3:
+            contributors.append(
+                ContributorSample(stable_id=stable_ids[2], x_px=0, y_px=0, mass=3.0)
+            )
+        return RenderedContributorView(
+            view_id=frame.view_id,
+            rgb_frame_digest=frame.frame_digest,
+            width=frame.width,
+            height=frame.height,
+            support_bounds=(0, 0, frame.width, frame.height),
+            contributors=tuple(contributors),
+        )
+
 class MaskSessionContractTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
@@ -39,6 +70,7 @@ class MaskSessionContractTests(unittest.TestCase):
         # The sparse-point adapter is a deterministic reference fixture.  It
         # is injected only in these contract tests, never enabled by default.
         self.state.mask_adapters["point-mask-v1"] = PointMaskAdapter()
+        self.state.contributor_renderer = PointFixtureContributorRenderer()
         self.lock_file = self.directory / "uv.lock"
         self.lock_file.write_text("locked companion dependencies\n", encoding="utf-8")
         self.state.install_release("0.1.0", self.lock_file)
@@ -477,7 +509,98 @@ class MaskSessionContractTests(unittest.TestCase):
         self.assertEqual(outcome["status"], "rejected")
         self.assertIn("area validation", outcome["rejectionReason"])
 
-    def test_cancellation_discards_only_the_pending_mask_update(self) -> None:
+    def test_deduplicates_concurrent_preview_lifting_for_one_request_id(self) -> None:
+        frame_set = {
+            "frameSetId": "frames-1",
+            "frameSetVersion": "anchor-v1",
+            "orderedViews": [{
+                "viewId": "anchor-view",
+                "frameDigest": "sha256:anchor-frame-v1",
+                "width": 64,
+                "height": 48,
+            }],
+        }
+        self.state.register_frame_set(frame_set)
+        self.state.register_scene_snapshot(self.snapshot())
+        session_id = self.state.open_object_selection_session(
+            frame_set_version="anchor-v1",
+            model_manifest_digest=self.model_manifest_digest,
+        )
+        self.assertIsNotNone(session_id)
+        assert session_id is not None
+        bindings = {
+            "requestId": "request-1",
+            "sessionId": session_id,
+            "targetSplatId": "splat-1",
+            "sceneId": "scene-1",
+            "sceneVersion": "snapshot-v1",
+            "operation": "New",
+            "correctionRound": 0,
+            "deterministicSeed": "seed-1",
+            "promptLogRevision": 1,
+            "frameSetVersion": "anchor-v1",
+            "renderConfigVersion": "effective-rgb-v1",
+            "modelManifestDigest": self.model_manifest_digest,
+        }
+        prompt_log = [{
+            "operation": "New",
+            "prompt": {
+                "promptId": "prompt-1",
+                "viewId": "anchor-view",
+                "frameDigest": "sha256:anchor-frame-v1",
+                "frameWidth": 64,
+                "frameHeight": 48,
+                "xPx": 10,
+                "yPx": 20,
+                "polarity": "include",
+            },
+        }]
+        started = Event()
+        release = Event()
+
+        class BlockingContributorRenderer:
+            renderer_id = "gsplat"
+
+            def render(self, *, scene_snapshot, frame):
+                started.set()
+                release.wait(timeout=2)
+                return PointFixtureContributorRenderer().render(
+                    scene_snapshot=scene_snapshot,
+                    frame=frame,
+                )
+
+        self.state.contributor_renderer = BlockingContributorRenderer()
+        results: list[tuple[dict[str, object], dict[str, object]]] = []
+        failures: list[BaseException] = []
+
+        def update_preview() -> None:
+            try:
+                results.append(
+                    self.state.update_preview(
+                        bindings=bindings,
+                        prompt_log=prompt_log,
+                    )
+                )
+            except BaseException as error:
+                failures.append(error)
+
+        update_thread = Thread(target=update_preview)
+        update_thread.start()
+        self.assertTrue(started.wait(timeout=2))
+        with self.assertRaises(MaskSessionError) as duplicate_error:
+            self.state.update_preview(bindings=bindings, prompt_log=prompt_log)
+        self.assertEqual(duplicate_error.exception.code, "updateInProgress")
+        release.set()
+        update_thread.join(timeout=2)
+
+        self.assertEqual(failures, [])
+        self.assertEqual(len(results), 1)
+        mask_set, evidence_snapshot = results[0]
+        self.assertEqual(mask_set["status"], "complete")
+        self.assertEqual(evidence_snapshot["requestId"], "request-1")
+        self.assertFalse(self.state.cancel_mask_update(session_id, "request-1"))
+
+    def test_cancellation_and_close_hold_the_preview_lease_until_evidence_is_settled(self) -> None:
         frame_set = {
             "frameSetId": "frames-1",
             "frameSetVersion": "anchor-v1",
@@ -526,6 +649,10 @@ class MaskSessionContractTests(unittest.TestCase):
         prior = self.state.update_mask_session(
             bindings={**bindings, "requestId": "request-0"},
             prompt_log=prompt_log,
+        )
+        self.state.build_evidence_snapshot(
+            bindings={**bindings, "requestId": "request-0"},
+            mask_set=prior,
         )
 
         started = Event()
@@ -576,7 +703,92 @@ class MaskSessionContractTests(unittest.TestCase):
             ),
             prior,
         )
+
+        contributor_started = Event()
+        contributor_release = Event()
+
+        class BlockingContributorRenderer:
+            renderer_id = "gsplat"
+
+            def render(self, *, scene_snapshot, frame):
+                contributor_started.set()
+                contributor_release.wait(timeout=2)
+                return PointFixtureContributorRenderer().render(
+                    scene_snapshot=scene_snapshot,
+                    frame=frame,
+                )
+
+        self.state.contributor_renderer = BlockingContributorRenderer()
+        evidence_failures: list[BaseException] = []
+
+        def lift_evidence() -> None:
+            try:
+                self.state.build_evidence_snapshot(
+                    bindings={**bindings, "requestId": "request-2"},
+                    mask_set=recovered,
+                )
+            except BaseException as error:
+                evidence_failures.append(error)
+
+        evidence_thread = Thread(target=lift_evidence)
+        evidence_thread.start()
+        self.assertTrue(contributor_started.wait(timeout=2))
+        self.assertTrue(self.state.cancel_mask_update(session_id, "request-2"))
+        contributor_release.set()
+        evidence_thread.join(timeout=2)
+
+        self.assertEqual(len(evidence_failures), 1)
+        self.assertIsInstance(evidence_failures[0], MaskSessionError)
+        self.assertEqual(evidence_failures[0].code, "cancelled")
+        active = self.state._mask_sessions[session_id]
+        self.assertNotIn("request-2", active.completed_evidence_snapshots)
         self.assertFalse(self.state.cancel_mask_update(session_id, "request-0"))
+
+        closing_mask_set = self.state.update_mask_session(
+            bindings={**bindings, "requestId": "request-3"},
+            prompt_log=prompt_log,
+        )
+        closing_started = Event()
+        closing_release = Event()
+
+        class ClosingContributorRenderer:
+            renderer_id = "gsplat"
+
+            def render(self, *, scene_snapshot, frame):
+                closing_started.set()
+                closing_release.wait(timeout=2)
+                return PointFixtureContributorRenderer().render(
+                    scene_snapshot=scene_snapshot,
+                    frame=frame,
+                )
+
+        self.state.contributor_renderer = ClosingContributorRenderer()
+        closing_failures: list[BaseException] = []
+
+        def lift_while_closing() -> None:
+            try:
+                self.state.build_evidence_snapshot(
+                    bindings={**bindings, "requestId": "request-3"},
+                    mask_set=closing_mask_set,
+                )
+            except BaseException as error:
+                closing_failures.append(error)
+
+        closing_thread = Thread(target=lift_while_closing)
+        closing_thread.start()
+        self.assertTrue(closing_started.wait(timeout=2))
+        self.assertTrue(self.state.close_object_selection_session(session_id))
+        self.assertTrue(self.state.has_object_selection_session(session_id))
+        self.assertEqual(
+            self.state.capabilities([EDITOR_ORIGIN])["capacity"]["activeSessions"], 1
+        )
+        closing_release.set()
+        closing_thread.join(timeout=2)
+
+        self.assertEqual(len(closing_failures), 1)
+        self.assertIsInstance(closing_failures[0], MaskSessionError)
+        self.assertEqual(closing_failures[0].code, "cancelled")
+        self.assertFalse(self.state.has_object_selection_session(session_id))
 
     def test_closing_a_session_drains_inference_before_releasing_capacity(self) -> None:
         anchor_frame_set = {

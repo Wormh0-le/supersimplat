@@ -126,6 +126,50 @@ const maskSet = (bindings) => ({
   ],
 });
 
+const evidenceSnapshot = (bindings) => ({
+  ...bindings,
+  frameSetId: start.requestContext.frameSet.frameSetId,
+  policy: {
+    id: "selection-evidence-policy/v1",
+    renderConfigVersion: bindings.renderConfigVersion,
+    contributorSemantics: "alpha-times-transmittance/v1",
+    evidenceScale: "contributor-mass/v1",
+    betaPrior: { alpha: 1, beta: 1 },
+    minimumEffectiveObservation: 0.1,
+    selectedPosteriorThreshold: 0.8,
+    rejectedPosteriorThreshold: 0.2,
+  },
+  records: [
+    {
+      stableId: 3,
+      positiveEvidence: 3,
+      negativeEvidence: 0,
+      effectiveObservation: 3,
+      posterior: 0.8,
+      uncertaintyReason: null,
+      classification: "selected",
+    },
+    {
+      stableId: 7,
+      positiveEvidence: 0,
+      negativeEvidence: 0,
+      effectiveObservation: 0,
+      posterior: 0.5,
+      uncertaintyReason: "unobserved",
+      classification: "uncertain",
+    },
+    {
+      stableId: 9,
+      positiveEvidence: 0,
+      negativeEvidence: 3,
+      effectiveObservation: 3,
+      posterior: 0.2,
+      uncertaintyReason: null,
+      classification: "rejected",
+    },
+  ],
+});
+
 test("registers one immutable Scene Snapshot, resends it after a cache miss, and retries the bound preview", async () => {
   const calls = [];
   const replies = [
@@ -155,6 +199,7 @@ test("registers one immutable Scene Snapshot, resends it after a cache miss, and
       uncertainIds: [7],
       rejectedIds: [9],
       maskSet: maskSet(previewBindings("request-1")),
+      evidenceSnapshot: evidenceSnapshot(previewBindings("request-1")),
     },
     {
       status: "complete",
@@ -163,6 +208,7 @@ test("registers one immutable Scene Snapshot, resends it after a cache miss, and
       uncertainIds: [7],
       rejectedIds: [9],
       maskSet: maskSet(previewBindings("request-2")),
+      evidenceSnapshot: evidenceSnapshot(previewBindings("request-2")),
     },
   ];
   const adapter = new FetchSelectionServiceAdapter({
@@ -476,6 +522,7 @@ test("rejects a preview response that omits its complete Mask Set", async () => 
           selectedIds: [3],
           uncertainIds: [7],
           rejectedIds: [9],
+          evidenceSnapshot: evidenceSnapshot(previewBindings("request-1")),
         }),
         { status: 200 }
       ),
@@ -484,6 +531,33 @@ test("rejects a preview response that omits its complete Mask Set", async () => 
   await assert.rejects(
     adapter.updatePreview(previewRequest()),
     /complete, version-bound Mask Set/
+  );
+});
+
+test("rejects a preview response that omits its complete Evidence Snapshot", async () => {
+  const bindings = previewBindings("request-1");
+  const adapter = new FetchSelectionServiceAdapter({
+    getConfiguration: () => ({
+      endpoint: "https://companion.example:8787",
+      modelManifestDigest: "sha256:model-v1",
+    }),
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          status: "complete",
+          ...bindings,
+          selectedIds: [3],
+          uncertainIds: [7],
+          rejectedIds: [9],
+          maskSet: maskSet(bindings),
+        }),
+        { status: 200 }
+      ),
+  });
+
+  await assert.rejects(
+    adapter.updatePreview(previewRequest()),
+    /complete, version-bound Evidence Snapshot/
   );
 });
 
@@ -505,6 +579,7 @@ test("rejects a complete Mask Set that omits its threshold", async () => {
           uncertainIds: [7],
           rejectedIds: [9],
           maskSet: noThresholdMaskSet,
+          evidenceSnapshot: evidenceSnapshot(bindings),
         }),
         { status: 200 }
       ),
@@ -539,6 +614,7 @@ test("rejects a Mask Set with a malformed accepted binary mask", async () => {
           uncertainIds: [7],
           rejectedIds: [9],
           maskSet: malformedMaskSet,
+          evidenceSnapshot: evidenceSnapshot(bindings),
         }),
         { status: 200 }
       ),

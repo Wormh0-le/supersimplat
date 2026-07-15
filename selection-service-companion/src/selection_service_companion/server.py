@@ -15,6 +15,7 @@ from typing import Iterable
 from urllib.parse import unquote, urlparse
 
 from .masking import MaskSessionError
+from .evidence import selection_result_ids
 from .state import CompanionState
 
 
@@ -362,7 +363,7 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            mask_set = self._state.update_mask_session(
+            mask_set, evidence_snapshot = self._state.update_preview(
                 bindings=bindings.response_fields(),
                 prompt_log=request.get("promptLog"),
             )
@@ -378,18 +379,19 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             )
             return
 
-        # Candidate ID lifting remains the deterministic bridge established by
-        # the Scene Snapshot slice.  It only runs after the complete, immutable
-        # Mask Set is published, so no partial mask can reach later selection.
+        selected_ids, uncertain_ids, rejected_ids = selection_result_ids(
+            evidence_snapshot
+        )
         self._send_json(
             HTTPStatus.OK,
             {
                 "status": "complete",
                 **bindings.response_fields(),
-                "selectedIds": list(snapshot.stable_ids[:1]),
-                "uncertainIds": list(snapshot.stable_ids[1:2]),
-                "rejectedIds": list(snapshot.stable_ids[2:]),
+                "selectedIds": selected_ids,
+                "uncertainIds": uncertain_ids,
+                "rejectedIds": rejected_ids,
                 "maskSet": mask_set,
+                "evidenceSnapshot": evidence_snapshot,
             },
         )
 

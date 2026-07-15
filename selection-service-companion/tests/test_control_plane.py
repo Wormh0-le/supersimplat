@@ -13,6 +13,11 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from selection_service_companion.cli import main
+from selection_service_companion.evidence import (
+    ContributorSample,
+    RenderedContributorView,
+    StaticContributorRenderer,
+)
 from selection_service_companion.masking import (
     PointMaskAdapter,
     SAM31_RUNTIME_CONFIG_DIGEST,
@@ -233,6 +238,21 @@ class CompanionControlPlaneTests(unittest.TestCase):
         # The sparse-point reference adapter is explicitly test-injected; the
         # production Companion exposes only model-backed adapters.
         self.state.mask_adapters["point-mask-v1"] = PointMaskAdapter()
+        self.state.contributor_renderer = StaticContributorRenderer(
+            {
+                "anchor-view": RenderedContributorView(
+                    view_id="anchor-view",
+                    rgb_frame_digest="sha256:anchor-frame-v1",
+                    width=64,
+                    height=48,
+                    support_bounds=(0, 0, 11, 21),
+                    contributors=(
+                        ContributorSample(stable_id=3, x_px=10, y_px=20, mass=3.0),
+                        ContributorSample(stable_id=9, x_px=0, y_px=0, mass=3.0),
+                    ),
+                )
+            }
+        )
         model_manifest_digest = self.install_model(
             adapter_id="point-mask-v1", model_name="Point Mask v1"
         )
@@ -393,6 +413,59 @@ class CompanionControlPlaneTests(unittest.TestCase):
                             },
                         }],
                     }],
+                },
+                "evidenceSnapshot": {
+                    **preview_bindings,
+                    "frameSetId": "frames-1",
+                    "policy": {
+                        "id": "selection-evidence-policy/v1",
+                        "renderConfigVersion": "effective-rgb-v1",
+                        "contributorSemantics": "alpha-times-transmittance/v1",
+                        "evidenceScale": "contributor-mass/v1",
+                        "betaPrior": {"alpha": 1, "beta": 1},
+                        "minimumEffectiveObservation": 0.1,
+                        "selectedPosteriorThreshold": 0.8,
+                        "rejectedPosteriorThreshold": 0.2,
+                    },
+                    "records": [
+                        {
+                            "stableId": 3,
+                            "positiveEvidence": 3.0,
+                            "negativeEvidence": 0.0,
+                            "effectiveObservation": 3.0,
+                            "posterior": 0.8,
+                            "uncertaintyReason": None,
+                            "classification": "selected",
+                        },
+                        {
+                            "stableId": 7,
+                            "positiveEvidence": 0.0,
+                            "negativeEvidence": 0.0,
+                            "effectiveObservation": 0.0,
+                            "posterior": 0.5,
+                            "uncertaintyReason": "unobserved",
+                            "classification": "uncertain",
+                        },
+                        {
+                            "stableId": 9,
+                            "positiveEvidence": 0.0,
+                            "negativeEvidence": 3.0,
+                            "effectiveObservation": 3.0,
+                            "posterior": 0.2,
+                            "uncertaintyReason": None,
+                            "classification": "rejected",
+                        },
+                    ],
+                    "views": [
+                        {
+                            "viewId": "anchor-view",
+                            "status": "accepted",
+                            "rendererId": "gsplat",
+                            "rgbFrameDigest": "sha256:anchor-frame-v1",
+                            "supportBounds": {"x0": 0, "y0": 0, "x1": 11, "y1": 21},
+                            "contributorCount": 2,
+                        }
+                    ],
                 },
             })
 

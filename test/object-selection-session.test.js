@@ -129,6 +129,60 @@ const maskSetForRequest = (request) => ({
   ],
 });
 
+const evidenceSnapshotForRequest = (request, result = candidate) => {
+  const selectedIds = new Set(result.selectedIds);
+  const rejectedIds = new Set(result.rejectedIds);
+  return {
+    sessionId: request.sessionId,
+    requestId: request.requestId,
+    targetSplatId: request.targetSplatId,
+    sceneId: request.sceneId,
+    sceneVersion: request.sceneVersion,
+    operation: request.operation,
+    correctionRound: request.correctionRound,
+    deterministicSeed: request.deterministicSeed,
+    promptLogRevision: request.promptLogRevision,
+    frameSetVersion: request.frameSetVersion,
+    renderConfigVersion: request.renderConfigVersion,
+    modelManifestDigest: request.modelManifestDigest,
+    frameSetId: request.frameSet.frameSetId,
+    policy: {
+      id: "selection-evidence-policy/v1",
+      renderConfigVersion: request.renderConfigVersion,
+      contributorSemantics: "alpha-times-transmittance/v1",
+      evidenceScale: "contributor-mass/v1",
+      betaPrior: { alpha: 1, beta: 1 },
+      minimumEffectiveObservation: 0.1,
+      selectedPosteriorThreshold: 0.8,
+      rejectedPosteriorThreshold: 0.2,
+    },
+    records: request.snapshot.gaussians
+      .map(({ stableId }) => {
+        const positiveEvidence = selectedIds.has(stableId) ? 3 : 0;
+        const negativeEvidence = rejectedIds.has(stableId) ? 3 : 0;
+        const effectiveObservation = positiveEvidence + negativeEvidence;
+        const posterior =
+          (1 + positiveEvidence) / (2 + positiveEvidence + negativeEvidence);
+        const classification = selectedIds.has(stableId)
+          ? "selected"
+          : rejectedIds.has(stableId)
+            ? "rejected"
+            : "uncertain";
+        return {
+          stableId,
+          positiveEvidence,
+          negativeEvidence,
+          effectiveObservation,
+          posterior,
+          uncertaintyReason:
+            classification === "uncertain" ? "unobserved" : null,
+          classification,
+        };
+      })
+      .sort((left, right) => left.stableId - right.stableId),
+  };
+};
+
 const previewResponse = (request, result = candidate) => ({
   status: "complete",
   requestId: request.requestId,
@@ -144,6 +198,7 @@ const previewResponse = (request, result = candidate) => ({
   renderConfigVersion: request.renderConfigVersion,
   modelManifestDigest: request.modelManifestDigest,
   maskSet: maskSetForRequest(request),
+  evidenceSnapshot: evidenceSnapshotForRequest(request, result),
   ...result,
 });
 
@@ -261,6 +316,36 @@ test("keeps a New preview transient until Confirm", async () => {
   assert.deepEqual(editor.selection, [3, 7]);
   assert.deepEqual(editor.history, [[3, 7]]);
   assert.deepEqual(adapter.closedSessions, ["deterministic-session"]);
+});
+
+test("rejects a preview without a complete Evidence Snapshot without touching history", async () => {
+  class MissingEvidenceSnapshotAdapter extends DeterministicSelectionServiceAdapter {
+    async updatePreview(request) {
+      this.previewRequests.push(request);
+      const response = previewResponse(request);
+      delete response.evidenceSnapshot;
+      return response;
+    }
+  }
+
+  const adapter = new MissingEvidenceSnapshotAdapter();
+  const editor = new RecordingSelectionEditor();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor,
+  });
+
+  await session.startNew(newSessionInput());
+
+  await assert.rejects(
+    session.updatePreview(),
+    /complete, version-bound Evidence Snapshot/
+  );
+
+  assert.equal(session.state.status, "ready");
+  assert.equal(session.state.candidate, null);
+  assert.deepEqual(editor.selection, [1, 2]);
+  assert.deepEqual(editor.history, []);
 });
 
 test("Cancel restores the entry selection without adding history", async () => {

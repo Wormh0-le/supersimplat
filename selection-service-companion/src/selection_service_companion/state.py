@@ -16,6 +16,7 @@ from threading import Lock
 from typing import Any
 
 from . import PACKAGE_VERSION, PROTOCOL_VERSION
+from .evidence import ContributorRenderer, build_evidence_snapshot
 from .masking import (
     MaskProduction,
     MaskSessionError,
@@ -61,6 +62,7 @@ class ActiveMaskSession:
     prompt_log_revision: int = 0
     completed_updates: dict[str, str] = field(default_factory=dict)
     completed_update_fingerprints: dict[str, str] = field(default_factory=dict)
+    completed_evidence_snapshots: dict[str, str] = field(default_factory=dict)
     cancelled_request_ids: set[str] = field(default_factory=set)
     in_flight_request_ids: set[str] = field(default_factory=set)
     closing: bool = False
@@ -129,6 +131,7 @@ class CompanionState:
         },
         repr=False,
     )
+    contributor_renderer: ContributorRenderer | None = field(default=None, repr=False)
 
     @property
     def release_path(self) -> Path:
@@ -428,6 +431,47 @@ class CompanionState:
         bindings: dict[str, Any],
         prompt_log: Any,
     ) -> dict[str, Any]:
+        """Atomically produce or replay one complete Mask Set."""
+
+        mask_set, _ = self._update_mask_session(
+            bindings=bindings,
+            prompt_log=prompt_log,
+            retain_evidence_lease=False,
+        )
+        return mask_set
+
+    def update_preview(
+        self,
+        *,
+        bindings: dict[str, Any],
+        prompt_log: Any,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Publish one Mask Set and its Evidence Snapshot under one lease.
+
+        A preview must not make the complete Mask Set observable as idle before
+        its renderer-derived evidence has settled.  Holding the lease across
+        both stages prevents a same-request retry from racing that handoff.
+        """
+
+        mask_set, evidence_lease_claimed = self._update_mask_session(
+            bindings=bindings,
+            prompt_log=prompt_log,
+            retain_evidence_lease=True,
+        )
+        evidence_snapshot = self._build_evidence_snapshot(
+            bindings=bindings,
+            mask_set=mask_set,
+            evidence_lease_claimed=evidence_lease_claimed,
+        )
+        return mask_set, evidence_snapshot
+
+    def _update_mask_session(
+        self,
+        *,
+        bindings: dict[str, Any],
+        prompt_log: Any,
+        retain_evidence_lease: bool,
+    ) -> tuple[dict[str, Any], bool]:
         """Atomically produce or replay one complete Mask Set.
 
         Adapter work happens outside the state lock.  No accepted Prompt Log or
@@ -476,7 +520,21 @@ class CompanionState:
                         "requestIdConflict",
                         "A repeated Mask Set request ID must replay its original bindings and Prompt Log.",
                     )
-                return json.loads(completed)
+                if retain_evidence_lease:
+                    if session.closing or request_id in session.cancelled_request_ids:
+                        raise MaskSessionError(
+                            "cancelled",
+                            "The Object Selection mask session is closing.",
+                        )
+                    if request_id not in session.completed_evidence_snapshots:
+                        if session.in_flight_request_ids:
+                            raise MaskSessionError(
+                                "updateInProgress",
+                                "Another Object Selection preview update is still in progress.",
+                            )
+                        session.in_flight_request_ids.add(request_id)
+                        return json.loads(completed), True
+                return json.loads(completed), False
             if session.closing:
                 raise MaskSessionError(
                     "cancelled", "The Object Selection mask session is closing."
@@ -500,17 +558,17 @@ class CompanionState:
                 prompt_log_canonical=prompt_log_canonical,
                 prompt_log_revision=prompt_log_revision,
             )
-            # Claim the singleton update before resolving model/frame assets.
-            # A concurrent close then retains its lease and cancels this
-            # pending work instead of clearing caches beneath a future model
-            # call or admitting another inference.
+            # Claim the singleton preview pipeline before resolving model/frame
+            # assets. A concurrent close then retains its lease and cancels
+            # this pending work instead of clearing caches beneath a future
+            # model or contributor-renderer call or admitting another update.
             session.in_flight_request_ids.add(request_id)
 
         try:
             frame_set = self._require_frame_set(frame_set_version)
             model, adapter = self._require_mask_adapter(model_manifest_digest)
         except MaskSessionError:
-            self._finish_mask_update(session_id, request_id)
+            self._finish_preview_work(session_id, request_id)
             raise
 
         cancelled_before_inference = False
@@ -519,7 +577,7 @@ class CompanionState:
             if session is None or request_id in session.cancelled_request_ids:
                 cancelled_before_inference = True
         if cancelled_before_inference:
-            self._finish_mask_update(session_id, request_id)
+            self._finish_preview_work(session_id, request_id)
             raise MaskSessionError(
                 "cancelled", "The promptable-mask update was cancelled."
             )
@@ -554,10 +612,10 @@ class CompanionState:
                 mask_set, separators=(",", ":"), sort_keys=True
             )
         except MaskSessionError:
-            self._finish_mask_update(session_id, request_id)
+            self._finish_preview_work(session_id, request_id)
             raise
         except Exception as error:
-            self._finish_mask_update(session_id, request_id)
+            self._finish_preview_work(session_id, request_id)
             raise MaskSessionError(
                 "modelFailure",
                 "The promptable-mask adapter failed; verify the installed model runtime and retry.",
@@ -571,7 +629,8 @@ class CompanionState:
                     current.in_flight_request_ids.discard(request_id)
                 cancelled_after_inference = True
             else:
-                current.in_flight_request_ids.discard(request_id)
+                if not retain_evidence_lease:
+                    current.in_flight_request_ids.discard(request_id)
                 current.completed_updates[request_id] = mask_set_canonical
                 current.completed_update_fingerprints[request_id] = request_fingerprint
                 if prompt_log_revision > current.prompt_log_revision:
@@ -587,7 +646,176 @@ class CompanionState:
                 "cancelled", "The promptable-mask update was cancelled."
             )
         self._finish_closing_session_if_drained(session_id)
-        return json.loads(mask_set_canonical)
+        return json.loads(mask_set_canonical), retain_evidence_lease
+
+    def build_evidence_snapshot(
+        self,
+        *,
+        bindings: dict[str, Any],
+        mask_set: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Lift a complete Mask Set into its immutable Evidence Snapshot."""
+
+        return self._build_evidence_snapshot(
+            bindings=bindings,
+            mask_set=mask_set,
+            evidence_lease_claimed=False,
+        )
+
+    def _build_evidence_snapshot(
+        self,
+        *,
+        bindings: dict[str, Any],
+        mask_set: dict[str, Any],
+        evidence_lease_claimed: bool,
+    ) -> dict[str, Any]:
+        """Lift one complete Mask Set into its immutable Evidence Snapshot.
+
+        The completed Mask Set remains the only input accepted from the mask
+        stage.  The renderer is invoked outside service locks, while a
+        canonical snapshot is cached under the request ID so retries cannot
+        reinterpret the same request with a later renderer result.
+        """
+
+        request_id = self._mask_binding(bindings, "requestId")
+        session_id = self._mask_binding(bindings, "sessionId")
+        scene_id = self._mask_binding(bindings, "sceneId")
+        scene_version = self._mask_binding(bindings, "sceneVersion")
+        frame_set_version = self._mask_binding(bindings, "frameSetVersion")
+        lease_owned = False
+        try:
+            with self._mask_lock:
+                session = self._mask_sessions.get(session_id)
+                if (
+                    evidence_lease_claimed
+                    and session is not None
+                    and request_id in session.in_flight_request_ids
+                ):
+                    lease_owned = True
+                if (
+                    session is None
+                    or session.closing
+                    or request_id in session.cancelled_request_ids
+                ):
+                    raise MaskSessionError(
+                        "cancelled",
+                        "The Object Selection session closed before Evidence Snapshot publication.",
+                    )
+                completed = session.completed_evidence_snapshots.get(request_id)
+                if completed is not None:
+                    if lease_owned:
+                        session.in_flight_request_ids.discard(request_id)
+                    return json.loads(completed)
+                completed_mask_set = session.completed_updates.get(request_id)
+                canonical_mask_set = json.dumps(
+                    mask_set, separators=(",", ":"), sort_keys=True
+                )
+                if completed_mask_set != canonical_mask_set:
+                    raise MaskSessionError(
+                        "invalidEvidenceSnapshot",
+                        "Evidence Policy must lift the complete immutable Mask Set for this request.",
+                    )
+                if evidence_lease_claimed:
+                    if session.in_flight_request_ids != {request_id}:
+                        raise MaskSessionError(
+                            "updateInProgress",
+                            "Another Object Selection preview update is still in progress.",
+                        )
+                else:
+                    if session.in_flight_request_ids:
+                        raise MaskSessionError(
+                            "updateInProgress",
+                            "Another Object Selection preview update is still in progress.",
+                        )
+                    # Rendering contributor support is part of the same preview
+                    # transaction as mask production. Keep capacity and cancellation
+                    # ownership until the immutable Evidence Snapshot is published.
+                    session.in_flight_request_ids.add(request_id)
+                    lease_owned = True
+        except MaskSessionError:
+            if lease_owned:
+                self._finish_preview_work(session_id, request_id)
+            raise
+
+        try:
+            snapshot = self.scene_snapshot(scene_id, scene_version)
+            if snapshot is None:
+                raise MaskSessionError(
+                    "sceneCacheMiss",
+                    "The Scene Snapshot is unavailable for Evidence Policy lifting.",
+                )
+            frame_set = self._require_frame_set(frame_set_version)
+            renderer = self.contributor_renderer
+            if renderer is None:
+                raise MaskSessionError(
+                    "rendererUnavailable",
+                    "The gsplat/CUDA Contributor renderer is unavailable for Anchor Evidence.",
+                )
+            with self._mask_lock:
+                current = self._mask_sessions.get(session_id)
+                if (
+                    current is None
+                    or current.closing
+                    or request_id in current.cancelled_request_ids
+                ):
+                    raise MaskSessionError(
+                        "cancelled",
+                        "The Object Selection session closed before Evidence Snapshot publication.",
+                    )
+
+            evidence_snapshot = build_evidence_snapshot(
+                bindings=bindings,
+                scene_snapshot=json.loads(snapshot.canonical),
+                frame_set=frame_set,
+                mask_set=mask_set,
+                renderer=renderer,
+            )
+            canonical_evidence_snapshot = json.dumps(
+                evidence_snapshot, separators=(",", ":"), sort_keys=True
+            )
+        except MaskSessionError:
+            if lease_owned:
+                self._finish_preview_work(session_id, request_id)
+            raise
+        except Exception as error:
+            if lease_owned:
+                self._finish_preview_work(session_id, request_id)
+            raise MaskSessionError(
+                "rendererFailure",
+                "The Contributor renderer failed; verify the gsplat/CUDA runtime and retry.",
+            ) from error
+
+        cancelled_after_lifting = False
+        completed_evidence_snapshot: str | None = None
+        with self._mask_lock:
+            current = self._mask_sessions.get(session_id)
+            if (
+                current is None
+                or current.closing
+                or request_id in current.cancelled_request_ids
+            ):
+                if current is not None:
+                    current.in_flight_request_ids.discard(request_id)
+                cancelled_after_lifting = True
+            else:
+                completed_evidence_snapshot = current.completed_evidence_snapshots.get(
+                    request_id
+                )
+                if completed_evidence_snapshot is None:
+                    completed_evidence_snapshot = canonical_evidence_snapshot
+                    current.completed_evidence_snapshots[request_id] = (
+                        completed_evidence_snapshot
+                    )
+                current.in_flight_request_ids.discard(request_id)
+        if cancelled_after_lifting:
+            self._finish_closing_session_if_drained(session_id)
+            raise MaskSessionError(
+                "cancelled",
+                "The Object Selection session closed before Evidence Snapshot publication.",
+            )
+        self._finish_closing_session_if_drained(session_id)
+        assert completed_evidence_snapshot is not None
+        return json.loads(completed_evidence_snapshot)
 
     def cancel_mask_update(self, session_id: str, request_id: str) -> bool:
         """Mark a pending update cancelled without changing the last usable Mask Set."""
@@ -596,7 +824,7 @@ class CompanionState:
             session = self._mask_sessions.get(session_id)
             if session is None:
                 return False
-            if request_id in session.completed_updates:
+            if request_id in session.completed_evidence_snapshots:
                 return False
             session.cancelled_request_ids.add(request_id)
             return True
@@ -611,7 +839,7 @@ class CompanionState:
                 return
             self._close_active_session_locked(session_id)
 
-    def _finish_mask_update(self, session_id: str, request_id: str) -> None:
+    def _finish_preview_work(self, session_id: str, request_id: str) -> None:
         with self._mask_lock:
             current = self._mask_sessions.get(session_id)
             if current is not None:
@@ -1147,14 +1375,23 @@ class CompanionState:
                 and model["adapterId"] in self.mask_adapters
             )
         ]
-        return {
-            "protocolVersion": PROTOCOL_VERSION,
-            "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}+{release['release']}",
-            "renderer": {
+        renderer = self.contributor_renderer
+        renderer_capability: dict[str, Any]
+        if renderer is None:
+            renderer_capability = {
                 "id": "gsplat",
                 "status": "unavailable",
                 "message": "The gsplat/CUDA adapter is not installed in this Companion control-plane release.",
-            },
+            }
+        else:
+            renderer_capability = {
+                "id": renderer.renderer_id,
+                "status": "ready",
+            }
+        return {
+            "protocolVersion": PROTOCOL_VERSION,
+            "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}+{release['release']}",
+            "renderer": renderer_capability,
             "supportedPromptKinds": ["point"],
             "modelManifests": manifests,
             "capacity": self._capacity(),

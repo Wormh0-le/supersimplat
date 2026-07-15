@@ -128,10 +128,45 @@ interface SelectionServiceMaskSet {
   tracks: readonly SelectionServiceMaskTrack[];
 }
 
+type SelectionEvidenceClassification = 'selected' | 'rejected' | 'uncertain';
+type SelectionEvidenceUncertaintyReason =
+  'unobserved' | 'insufficient_observation' | 'undecided_or_conflicting';
+
+interface SelectionEvidencePolicy {
+  id: 'selection-evidence-policy/v1';
+  renderConfigVersion: string;
+  contributorSemantics: 'alpha-times-transmittance/v1';
+  evidenceScale: 'contributor-mass/v1';
+  betaPrior: {
+    alpha: number;
+    beta: number;
+  };
+  minimumEffectiveObservation: number;
+  selectedPosteriorThreshold: number;
+  rejectedPosteriorThreshold: number;
+}
+
+interface SelectionEvidenceRecord {
+  stableId: StableGaussianId;
+  positiveEvidence: number;
+  negativeEvidence: number;
+  effectiveObservation: number;
+  posterior: number;
+  uncertaintyReason: SelectionEvidenceUncertaintyReason | null;
+  classification: SelectionEvidenceClassification;
+}
+
+interface SelectionServiceEvidenceSnapshot extends ObjectSelectionPreviewBindings {
+  frameSetId: string;
+  policy: SelectionEvidencePolicy;
+  records: readonly SelectionEvidenceRecord[];
+}
+
 interface SelectionServicePreviewResponse
   extends ObjectSelectionPreviewBindings, SelectionResultIds {
   status: 'complete';
   maskSet: SelectionServiceMaskSet;
+  evidenceSnapshot: SelectionServiceEvidenceSnapshot;
 }
 
 interface SelectionServiceAdapter {
@@ -270,6 +305,175 @@ const incompleteMaskSet = () => {
         'The Selection Service Companion returned an incomplete, version-bound Mask Set.'
     );
 };
+
+const selectionEvidencePolicyV1 = {
+    id: 'selection-evidence-policy/v1',
+    contributorSemantics: 'alpha-times-transmittance/v1',
+    evidenceScale: 'contributor-mass/v1',
+    betaPrior: {
+        alpha: 1,
+        beta: 1
+    },
+    minimumEffectiveObservation: 0.1,
+    selectedPosteriorThreshold: 0.8,
+    rejectedPosteriorThreshold: 0.2
+} as const;
+
+const incompleteEvidenceSnapshot = () => {
+    return new Error(
+        'The Selection Service Companion returned an incomplete, version-bound Evidence Snapshot.'
+    );
+};
+
+const sameFiniteNumber = (actual: unknown, expected: number) => {
+    return (
+        typeof actual === 'number' &&
+    Number.isFinite(actual) &&
+    Math.abs(actual - expected) <= 1e-12
+    );
+};
+
+const evidenceClassification = (
+    positiveEvidence: number,
+    negativeEvidence: number
+): SelectionEvidenceClassification => {
+    const effectiveObservation = positiveEvidence + negativeEvidence;
+    const posterior =
+    (1 + positiveEvidence) / (2 + positiveEvidence + negativeEvidence);
+    if (
+        effectiveObservation >=
+      selectionEvidencePolicyV1.minimumEffectiveObservation &&
+    posterior >= selectionEvidencePolicyV1.selectedPosteriorThreshold
+    ) {
+        return 'selected';
+    }
+    if (
+        effectiveObservation >=
+      selectionEvidencePolicyV1.minimumEffectiveObservation &&
+    posterior <= selectionEvidencePolicyV1.rejectedPosteriorThreshold
+    ) {
+        return 'rejected';
+    }
+    return 'uncertain';
+};
+
+const evidenceUncertaintyReason = (
+    positiveEvidence: number,
+    negativeEvidence: number,
+    classification: SelectionEvidenceClassification
+): SelectionEvidenceUncertaintyReason | null => {
+    if (classification !== 'uncertain') {
+        return null;
+    }
+    const effectiveObservation = positiveEvidence + negativeEvidence;
+    if (effectiveObservation === 0) {
+        return 'unobserved';
+    }
+    if (
+        effectiveObservation < selectionEvidencePolicyV1.minimumEffectiveObservation
+    ) {
+        return 'insufficient_observation';
+    }
+    return 'undecided_or_conflicting';
+};
+
+function assertEvidenceSnapshot(
+    value: unknown,
+    request: ObjectSelectionPreviewRequest
+): asserts value is SelectionServiceEvidenceSnapshot {
+    if (
+        !isRecord(value) ||
+    value.frameSetId !== request.frameSet.frameSetId ||
+    !previewBindingsMatch(
+      value as unknown as ObjectSelectionPreviewBindings,
+      request
+    ) ||
+    !isRecord(value.policy) ||
+    value.policy.id !== selectionEvidencePolicyV1.id ||
+    value.policy.renderConfigVersion !== request.renderConfigVersion ||
+    value.policy.contributorSemantics !==
+      selectionEvidencePolicyV1.contributorSemantics ||
+    value.policy.evidenceScale !== selectionEvidencePolicyV1.evidenceScale ||
+    !isRecord(value.policy.betaPrior) ||
+    !sameFiniteNumber(
+        value.policy.betaPrior.alpha,
+        selectionEvidencePolicyV1.betaPrior.alpha
+    ) ||
+    !sameFiniteNumber(
+        value.policy.betaPrior.beta,
+        selectionEvidencePolicyV1.betaPrior.beta
+    ) ||
+    !sameFiniteNumber(
+        value.policy.minimumEffectiveObservation,
+        selectionEvidencePolicyV1.minimumEffectiveObservation
+    ) ||
+    !sameFiniteNumber(
+        value.policy.selectedPosteriorThreshold,
+        selectionEvidencePolicyV1.selectedPosteriorThreshold
+    ) ||
+    !sameFiniteNumber(
+        value.policy.rejectedPosteriorThreshold,
+        selectionEvidencePolicyV1.rejectedPosteriorThreshold
+    ) ||
+    !Array.isArray(value.records)
+    ) {
+        throw incompleteEvidenceSnapshot();
+    }
+
+    const knownIds = new Set(
+        request.snapshot.gaussians.map(gaussian => gaussian.stableId)
+    );
+    if (value.records.length !== knownIds.size) {
+        throw incompleteEvidenceSnapshot();
+    }
+    let previousId = -1;
+    value.records.forEach((record) => {
+        if (
+            !isRecord(record) ||
+      !isStableGaussianId(record.stableId) ||
+      !knownIds.has(record.stableId) ||
+      record.stableId <= previousId ||
+      typeof record.positiveEvidence !== 'number' ||
+      !Number.isFinite(record.positiveEvidence) ||
+      record.positiveEvidence < 0 ||
+      typeof record.negativeEvidence !== 'number' ||
+      !Number.isFinite(record.negativeEvidence) ||
+      record.negativeEvidence < 0 ||
+      typeof record.effectiveObservation !== 'number' ||
+      !Number.isFinite(record.effectiveObservation) ||
+      typeof record.posterior !== 'number' ||
+      !Number.isFinite(record.posterior) ||
+      !['selected', 'rejected', 'uncertain'].includes(
+          String(record.classification)
+      )
+        ) {
+            throw incompleteEvidenceSnapshot();
+        }
+        const positiveEvidence = record.positiveEvidence;
+        const negativeEvidence = record.negativeEvidence;
+        const effectiveObservation = positiveEvidence + negativeEvidence;
+        const posterior =
+      (1 + positiveEvidence) / (2 + positiveEvidence + negativeEvidence);
+        const classification = evidenceClassification(
+            positiveEvidence,
+            negativeEvidence
+        );
+        const uncertaintyReason = evidenceUncertaintyReason(
+            positiveEvidence,
+            negativeEvidence,
+            classification
+        );
+        if (
+            !sameFiniteNumber(record.effectiveObservation, effectiveObservation) ||
+      !sameFiniteNumber(record.posterior, posterior) ||
+      record.classification !== classification ||
+      record.uncertaintyReason !== uncertaintyReason
+        ) {
+            throw incompleteEvidenceSnapshot();
+        }
+        previousId = record.stableId;
+    });
+}
 
 const assertSparsePointMask = (
     value: Record<string, unknown>,
@@ -940,11 +1144,13 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
             );
         }
         assertCompleteMaskSet(response.maskSet, request);
+        assertEvidenceSnapshot(response.evidenceSnapshot, request);
 
         const knownIds = new Set(
             request.snapshot.gaussians.map(gaussian => gaussian.stableId)
         );
         const returnedIds = new Set<StableGaussianId>();
+        const classifications = new Map<StableGaussianId, string>();
         const sets: Array<[string, readonly StableGaussianId[]]> = [
             ['selected', response.selectedIds],
             ['uncertain', response.uncertainIds],
@@ -971,6 +1177,7 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
                 }
                 previous = id;
                 returnedIds.add(id);
+                classifications.set(id, name);
             });
         });
         if (returnedIds.size !== knownIds.size) {
@@ -978,6 +1185,13 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
                 'The Selection Service Companion returned an incomplete Candidate Object Selection.'
             );
         }
+        response.evidenceSnapshot.records.forEach((record) => {
+            if (classifications.get(record.stableId) !== record.classification) {
+                throw new Error(
+                    'The Selection Service Companion returned Candidate Object Selection IDs that disagree with its Evidence Snapshot.'
+                );
+            }
+        });
     }
 
     private filterLockedIds(
@@ -1007,9 +1221,11 @@ export {
     anchorFrameSetId,
     anchorFrameSetVersion,
     assertCompleteMaskSet,
+    assertEvidenceSnapshot,
     copyPreviewBindings,
     previewBindingsFromRequest,
-    previewBindingsMatch
+    previewBindingsMatch,
+    selectionEvidencePolicyV1
 };
 
 export type {
@@ -1032,6 +1248,11 @@ export type {
     ObjectSelectionSessionStatus,
     ObjectSelectionTarget,
     SelectionServiceAdapter,
+    SelectionEvidenceClassification,
+    SelectionEvidencePolicy,
+    SelectionEvidenceRecord,
+    SelectionEvidenceUncertaintyReason,
+    SelectionServiceEvidenceSnapshot,
     SelectionServiceMaskFrame,
     SelectionServiceMaskFrameStatus,
     SelectionServiceMaskSet,

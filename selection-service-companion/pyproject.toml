@@ -17,6 +17,14 @@ renderer = [
     "gsplat==1.5.3",
     "torch==2.11.0+cu128",
 ]
+sam3 = [
+    "einops==0.8.2",
+    "pycocotools==2.0.11",
+    "psutil==7.2.2",
+    "sam3==0.1.0",
+    "torch==2.11.0+cu128",
+    "torchvision==0.26.0+cu128",
+]
 
 [project.scripts]
 selection-service = "selection_service_companion.cli:main"
@@ -26,7 +34,9 @@ packages = ["src/selection_service_companion"]
 
 [tool.uv.sources]
 gsplat = { git = "https://github.com/nerfstudio-project/gsplat.git", rev = "77ab983ffe43420b2131669cb35776b883ca4c3c" }
+sam3 = { git = "https://github.com/facebookresearch/sam3.git", rev = "5dd401d1c5c1d5c3eedff06d41b77af824517619" }
 torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
 
 [tool.uv.extra-build-dependencies]
 gsplat = [{ requirement = "torch", match-runtime = true }]

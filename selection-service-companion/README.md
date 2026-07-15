@@ -7,13 +7,13 @@ its npm distribution. It intentionally contains no model weights.
 ## Install a locked release
 
 Use `uv` to create an isolated environment from a tagged, locked release. The
-renderer extra is installed into this Companion-owned `.venv`; do not activate
-or search `thirdparty/sam3/.venv`:
+renderer and SAM3 extras are installed into this Companion-owned `.venv`; do
+not activate or search `thirdparty/sam3/.venv`:
 
 ```sh
 cd selection-service-companion
-uv sync --python 3.12.12 --locked --extra renderer
-uv run --locked --extra renderer selection-service install \
+uv sync --python 3.12.12 --locked --extra renderer --extra sam3
+uv run --locked --extra renderer --extra sam3 selection-service install \
   --release 0.1.0 \
   --lock-file ./uv.lock
 ```
@@ -32,7 +32,7 @@ The operator supplies an already acquired checkpoint and a Model Manifest. The
 manifest's `checkpointDigest` must match the checkpoint's SHA-256 digest.
 
 ```sh
-uv run --locked --extra renderer selection-service models install \
+uv run --locked --extra renderer --extra sam3 selection-service models install \
   --manifest /secure/manifests/sam31.json \
   --weights /secure/models/sam31_multiplex.pt
 ```
@@ -48,15 +48,15 @@ threshold, rejection of degenerate full-frame candidates, CPU-backed frame
 storage, and GPU-backed tracker state. A changed runtime configuration needs a
 new adapter baseline and Model Manifest digest.
 
-## Produce an Anchor View mask
+## Produce a complete Frame Set Mask Track
 
-For the model-backed Anchor View slice, install a compatible SAM 3.1 runtime
-into the operator-owned Companion environment separately, then use a manifest
-whose `adapterId` is `sam3.1`. The browser registers the exact Anchor PNG with
-its SHA-256 Frame Set digest; the Companion gives that PNG, the replayed point
-Prompt Log, and only the verified external checkpoint path to SAM 3.1. The
-returned mask is converted to a generic immutable bitset before it crosses the
-service boundary. Its completed Mask Set records generic SAM candidate
+The locked `sam3` extra installs the compatible SAM 3.1 runtime into the same
+operator-owned Companion environment. Use a manifest whose `adapterId` is
+`sam3.1`. The browser registers every ordered Frame Set PNG with its SHA-256
+digest; the Companion materializes a temporary sequence, replays the point
+Prompt Log, and gives only the verified external checkpoint path to SAM 3.1.
+Returned masks are converted to generic immutable bitsets before they cross
+the service boundary. The completed Mask Set records generic SAM candidate
 selection diagnostics (candidate index, score where supplied, foreground area,
 point consistency, and the selected candidate); it never exposes raw tensors
 or treats model scores as cross-adapter confidence.
@@ -80,7 +80,7 @@ The default profile listens only on loopback. The editor must be configured
 with the same endpoint and exact origin shown here.
 
 ```sh
-uv run --locked --extra renderer selection-service start \
+uv run --locked --extra renderer --extra sam3 selection-service start \
   --endpoint http://127.0.0.1:8787 \
   --allow-origin https://editor.example
 ```
@@ -88,7 +88,7 @@ uv run --locked --extra renderer selection-service start \
 Trusted-LAN use must be explicit and HTTPS-only:
 
 ```sh
-uv run --locked --extra renderer selection-service start \
+uv run --locked --extra renderer --extra sam3 selection-service start \
   --profile trusted-lan \
   --endpoint https://192.168.1.20:8787 \
   --allow-origin https://editor.example \

@@ -356,12 +356,13 @@ class PointMaskAdapter:
 
 
 class Sam3PointMaskAdapter:
-    """Run SAM 3.1 point inference over a registered Anchor PNG.
+    """Track SAM 3.1 point prompts across an ordered Frame Set.
 
     SAM and its checkpoint remain separately installed by the operator.  This
     adapter imports that runtime only when selected, passes the verified
-    checkpoint path to it, and releases the model's temporary session before
-    returning generic, immutable mask bytes to the Companion state machine.
+    checkpoint path to it, materializes immutable PNGs into a temporary video
+    sequence, and releases the model session before returning generic mask
+    bytes to the Companion state machine.
     """
 
     def __init__(
@@ -431,19 +432,21 @@ class Sam3PointMaskAdapter:
             raise MaskSessionError(
                 "invalidPromptLog", "A New Mask Set requires an Anchor View prompt."
             )
-        if anchor_view.image_png is None:
+        if any(view.image_png is None for view in frame_set.ordered_views):
             raise MaskSessionError(
                 "frameDataUnavailable",
-                "The SAM 3.1 adapter requires the registered Anchor View PNG bytes.",
+                "The SAM 3.1 adapter requires PNG bytes for every Frame Set view.",
             )
 
-        anchor_outcome, candidate_diagnostics = self._infer_anchor_mask(
+        outcomes, candidate_diagnostics = self._infer_frame_set(
             model=model,
-            view=anchor_view,
+            frame_set=frame_set,
+            anchor_view=anchor_view,
             points=points,
             point_labels=point_labels,
             cancelled=cancelled,
         )
+        anchor_outcome = outcomes[anchor_view.view_id]
         if anchor_outcome["status"] != "accepted":
             raise MaskSessionError(
                 "anchorMaskUnavailable",
@@ -453,14 +456,7 @@ class Sam3PointMaskAdapter:
             tracks=[{
                 "trackId": "primary",
                 "role": "include",
-                "frames": [
-                    anchor_outcome if view.view_id == anchor_view.view_id else {
-                        "viewId": view.view_id,
-                        "status": "error",
-                        "rejectionReason": "SAM 3.1 Anchor Mask inference does not cover this Generated View.",
-                    }
-                    for view in frame_set.ordered_views
-                ],
+                "frames": [outcomes[view.view_id] for view in frame_set.ordered_views],
             }],
             threshold=float(SAM31_RUNTIME_CONFIG["default_output_prob_thresh"]),
             diagnostics={
@@ -469,22 +465,26 @@ class Sam3PointMaskAdapter:
             },
         )
 
-    def _infer_anchor_mask(
+    def _infer_frame_set(
         self,
         *,
         model: Mapping[str, Any],
-        view: RegisteredFrame,
+        frame_set: RegisteredFrameSet,
+        anchor_view: RegisteredFrame,
         points: list[list[int]],
         point_labels: list[int],
         cancelled: Callable[[], bool],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         predictor = self._build_predictor(model)
         with tempfile.TemporaryDirectory(prefix="supersplat-sam3-") as directory:
-            image_path = Path(directory) / "0.png"
-            image_path.write_bytes(view.image_png or b"")
+            frame_directory = Path(directory)
+            for index, view in enumerate(frame_set.ordered_views):
+                (frame_directory / f"{index:06d}.png").write_bytes(
+                    view.image_png or b""
+                )
             started = predictor.handle_request({
                 "type": "start_session",
-                "resource_path": str(image_path),
+                "resource_path": str(frame_directory),
                 "offload_video_to_cpu": SAM31_RUNTIME_CONFIG["offload_video_to_cpu"],
                 "offload_state_to_cpu": SAM31_RUNTIME_CONFIG["offload_state_to_cpu"],
             })
@@ -498,10 +498,11 @@ class Sam3PointMaskAdapter:
                     raise MaskSessionError(
                         "cancelled", "The promptable-mask update was cancelled."
                     )
+                anchor_index = frame_set.ordered_views.index(anchor_view)
                 response = predictor.handle_request({
                     "type": "add_prompt",
                     "session_id": session_id,
-                    "frame_index": 0,
+                    "frame_index": anchor_index,
                     "points": points,
                     "point_labels": point_labels,
                     "clear_old_points": True,
@@ -515,12 +516,22 @@ class Sam3PointMaskAdapter:
                     raise MaskSessionError(
                         "cancelled", "The promptable-mask update was cancelled."
                     )
-                return self._mask_outcome_and_diagnostics_from_response(
+                anchor_outcome, diagnostics = self._mask_outcome_and_diagnostics_from_response(
                     response,
-                    view,
+                    anchor_view,
                     points=points,
                     point_labels=point_labels,
                 )
+                outcomes = {anchor_view.view_id: anchor_outcome}
+                self._collect_propagated_outcomes(
+                    predictor=predictor,
+                    session_id=session_id,
+                    frame_set=frame_set,
+                    anchor_index=anchor_index,
+                    outcomes=outcomes,
+                    cancelled=cancelled,
+                )
+                return outcomes, diagnostics
             finally:
                 try:
                     predictor.handle_request({
@@ -532,6 +543,96 @@ class Sam3PointMaskAdapter:
                     # The completed output remains immutable; an optional runtime
                     # cleanup failure must not publish a different partial result.
                     pass
+
+    def _collect_propagated_outcomes(
+        self,
+        *,
+        predictor: Any,
+        session_id: str,
+        frame_set: RegisteredFrameSet,
+        anchor_index: int,
+        outcomes: dict[str, dict[str, Any]],
+        cancelled: Callable[[], bool],
+    ) -> None:
+        propagation_failure = "missing frame result"
+        if len(frame_set.ordered_views) > 1:
+            try:
+                responses = predictor.handle_stream_request({
+                    "type": "propagate_in_video",
+                    "session_id": session_id,
+                    "propagation_direction": "both",
+                    "start_frame_index": anchor_index,
+                    "max_frame_num_to_track": len(frame_set.ordered_views),
+                    "output_prob_thresh": SAM31_RUNTIME_CONFIG[
+                        "default_output_prob_thresh"
+                    ],
+                })
+                for tracked in responses:
+                    self._cancel_propagation_if_requested(
+                        predictor, session_id, cancelled
+                    )
+                    if not isinstance(tracked, Mapping):
+                        continue
+                    frame_index = tracked.get("frame_index")
+                    if (
+                        isinstance(frame_index, bool)
+                        or not isinstance(frame_index, int)
+                        or not 0 <= frame_index < len(frame_set.ordered_views)
+                        or frame_index == anchor_index
+                    ):
+                        continue
+                    view = frame_set.ordered_views[frame_index]
+                    if view.view_id in outcomes:
+                        continue
+                    try:
+                        outcome, _ = self._mask_outcome_and_diagnostics_from_response(
+                            tracked,
+                            view,
+                            points=(),
+                            point_labels=(),
+                        )
+                    except MaskSessionError as error:
+                        outcome = {
+                            "viewId": view.view_id,
+                            "status": "error",
+                            "rejectionReason": str(error),
+                        }
+                    outcomes[view.view_id] = outcome
+                self._cancel_propagation_if_requested(
+                    predictor, session_id, cancelled
+                )
+            except MaskSessionError:
+                raise
+            except Exception as error:
+                propagation_failure = type(error).__name__
+        for view in frame_set.ordered_views:
+            outcomes.setdefault(
+                view.view_id,
+                {
+                    "viewId": view.view_id,
+                    "status": "error",
+                    "rejectionReason": f"SAM 3.1 tracking did not produce this frame ({propagation_failure}).",
+                },
+            )
+
+    @staticmethod
+    def _cancel_propagation_if_requested(
+        predictor: Any,
+        session_id: str,
+        cancelled: Callable[[], bool],
+    ) -> None:
+        if not cancelled():
+            return
+        try:
+            predictor.handle_request({
+                "type": "cancel_propagation",
+                "session_id": session_id,
+            })
+        finally:
+            raise MaskSessionError(
+                "cancelled",
+                "The promptable-mask update was cancelled.",
+            )
 
     @staticmethod
     def _mask_outcome_from_response(

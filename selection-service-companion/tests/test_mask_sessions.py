@@ -25,6 +25,7 @@ from selection_service_companion.masking import (
     MaskSessionError,
     PointMaskAdapter,
     RegisteredFrame,
+    RegisteredFrameSet,
     SAM31_RUNTIME_CONFIG_DIGEST,
     Sam3PointMaskAdapter,
     _build_sam3_predictor,
@@ -1251,7 +1252,8 @@ class MaskSessionContractTests(unittest.TestCase):
                 calls.append(request)
                 if request["type"] == "start_session":
                     test_case.assertEqual(
-                        Path(str(request["resource_path"])).read_bytes(), image_png
+                        (Path(str(request["resource_path"])) / "000000.png").read_bytes(),
+                        image_png,
                     )
                     return {"session_id": "sam-session"}
                 if request["type"] == "add_prompt":
@@ -1383,6 +1385,161 @@ class MaskSessionContractTests(unittest.TestCase):
                 "run_gc_collect": False,
             },
         ])
+
+    def test_sam31_tracks_every_ordered_frame_through_the_public_video_api(self) -> None:
+        images = [
+            b"\x89PNG\r\n\x1a\nanchor",
+            b"\x89PNG\r\n\x1a\ngenerated-1",
+            b"\x89PNG\r\n\x1a\ngenerated-2",
+        ]
+        frame_set = register_frame_set({
+            "frameSetId": "frames-1",
+            "frameSetVersion": "multi-view-v1",
+            "orderedViews": [
+                {
+                    "viewId": view_id,
+                    "frameDigest": f"sha256:{hashlib.sha256(images[index]).hexdigest()}",
+                    "width": 2,
+                    "height": 2,
+                    "imagePngBase64": base64.b64encode(images[index]).decode(),
+                }
+                for index, view_id in enumerate(("anchor", "generated-1", "generated-2"))
+            ],
+        })
+        stream_requests: list[dict[str, object]] = []
+
+        class FakeSam3Predictor:
+            def handle_request(self, request: dict[str, object]) -> dict[str, object]:
+                if request["type"] == "start_session":
+                    directory = Path(str(request["resource_path"]))
+                    self.assert_materialized(directory)
+                    return {"session_id": "sam-session"}
+                if request["type"] == "add_prompt":
+                    return {"outputs": {"out_binary_masks": [[[True, False], [False, False]]]}}
+                return {"is_success": True}
+
+            @staticmethod
+            def assert_materialized(directory: Path) -> None:
+                test_case.assertEqual(
+                    [(path.name, path.read_bytes()) for path in sorted(directory.iterdir())],
+                    [("000000.png", images[0]), ("000001.png", images[1]), ("000002.png", images[2])],
+                )
+
+            def handle_stream_request(self, request: dict[str, object]):
+                stream_requests.append(request)
+                yield {"frame_index": 1, "outputs": {"out_binary_masks": [[[False, True], [False, False]]]}}
+                yield {"frame_index": 2, "outputs": {}}
+
+        test_case = self
+        production = Sam3PointMaskAdapter(
+            build_predictor=lambda model: FakeSam3Predictor()
+        ).produce_tracks(
+            model={
+                "adapterId": "sam3.1",
+                "runtimeConfigDigest": SAM31_RUNTIME_CONFIG_DIGEST,
+                "weightsPath": "/models/sam31.pt",
+            },
+            frame_set=frame_set,
+            prompt_log=[{
+                "operation": "New",
+                "prompt": {
+                    "promptId": "prompt-1",
+                    "viewId": "anchor",
+                    "frameDigest": f"sha256:{hashlib.sha256(images[0]).hexdigest()}",
+                    "frameWidth": 2,
+                    "frameHeight": 2,
+                    "xPx": 0,
+                    "yPx": 0,
+                    "polarity": "include",
+                },
+            }],
+            cancelled=lambda: False,
+        )
+
+        self.assertEqual(
+            [frame["viewId"] for frame in production.tracks[0]["frames"]],
+            ["anchor", "generated-1", "generated-2"],
+        )
+        self.assertEqual(
+            [frame["status"] for frame in production.tracks[0]["frames"]],
+            ["accepted", "accepted", "error"],
+        )
+        self.assertIn(
+            "no binary Anchor View mask",
+            production.tracks[0]["frames"][2]["rejectionReason"],
+        )
+        self.assertEqual(stream_requests, [{
+            "type": "propagate_in_video",
+            "session_id": "sam-session",
+            "propagation_direction": "both",
+            "start_frame_index": 0,
+            "max_frame_num_to_track": 3,
+            "output_prob_thresh": 0.5,
+        }])
+
+    def test_sam31_cancels_public_propagation_without_returning_a_partial_track(self) -> None:
+        frame_set = RegisteredFrameSet(
+            canonical="frames",
+            frame_set_id="frames-1",
+            frame_set_version="cancel-v1",
+            ordered_views=(
+                RegisteredFrame("anchor", "sha256:a", 2, 2, b"anchor"),
+                RegisteredFrame("generated", "sha256:b", 2, 2, b"generated"),
+            ),
+        )
+        requests: list[str] = []
+
+        class FakeSam3Predictor:
+            def handle_request(self, request):
+                requests.append(request["type"])
+                if request["type"] == "start_session":
+                    return {"session_id": "sam-session"}
+                if request["type"] == "add_prompt":
+                    return {"outputs": {"out_binary_masks": [[[True, False], [False, False]]]}}
+                return {"is_success": True}
+
+            def handle_stream_request(self, request):
+                requests.append(request["type"])
+                if False:
+                    yield request
+
+        cancellation_checks = 0
+
+        def cancelled() -> bool:
+            nonlocal cancellation_checks
+            cancellation_checks += 1
+            return cancellation_checks >= 5
+
+        with self.assertRaises(MaskSessionError) as error:
+            Sam3PointMaskAdapter(
+                build_predictor=lambda model: FakeSam3Predictor()
+            ).produce_tracks(
+                model={
+                    "adapterId": "sam3.1",
+                    "runtimeConfigDigest": SAM31_RUNTIME_CONFIG_DIGEST,
+                },
+                frame_set=frame_set,
+                prompt_log=[{
+                    "operation": "New",
+                    "prompt": {
+                        "promptId": "prompt-1",
+                        "viewId": "anchor",
+                        "frameDigest": "sha256:a",
+                        "frameWidth": 2,
+                        "frameHeight": 2,
+                        "xPx": 0,
+                        "yPx": 0,
+                        "polarity": "include",
+                    },
+                }],
+                cancelled=cancelled,
+            )
+
+        self.assertEqual(error.exception.code, "cancelled")
+        self.assertEqual(
+            requests,
+            ["start_session", "add_prompt", "propagate_in_video", "cancel_propagation", "close_session"],
+        )
 
     def test_sam31_builder_uses_the_pinned_runtime_configuration(self) -> None:
         weights = self.directory / "sam31-runtime.pt"

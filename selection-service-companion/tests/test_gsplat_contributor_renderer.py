@@ -408,6 +408,52 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
         self.assertIsNotNone(renderer.last_peak_vram_bytes)
         self.assertGreater(renderer.last_peak_vram_bytes or 0, 0)
 
+    def test_normal_1008_generated_view_records_measured_peak_vram(self) -> None:
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("locked renderer extra is not installed")
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA is unavailable")
+
+        renderer = GsplatContributorRenderer(backend=LockedGsplatBackend())
+        snapshot = supported_snapshot()
+        seed_region = SeedRegion(
+            center=(0.0, 0.0, 2.0),
+            radius=0.2,
+            source="anchor_contributors",
+            stable_ids=(41,),
+        )
+        plan = renderer.plan_views(
+            scene_snapshot=snapshot,
+            anchor_frame=anchor_frame(width=1008, height=1008),
+            seed_region=seed_region,
+            initial_budget=2,
+            replacement_budget=0,
+            resolution=1008,
+        )
+        candidate = plan.primary[0]
+        preflight = renderer.preflight(
+            scene_snapshot=snapshot,
+            candidate=candidate,
+            seed_region=seed_region,
+            resolution=1008,
+        )
+        self.assertTrue(preflight.accepted, preflight.diagnostics)
+
+        frame = renderer.render_generated(
+            scene_snapshot=snapshot,
+            candidate=candidate,
+            preflight=preflight,
+            resolution=1008,
+        )
+        rendered = renderer.render(scene_snapshot=snapshot, frame=frame)
+
+        self.assertEqual((frame.width, frame.height), (1008, 1008))
+        self.assertGreater(len(rendered.contributors), 0)
+        self.assertIsNotNone(renderer.last_peak_vram_bytes)
+        self.assertGreater(renderer.last_peak_vram_bytes or 0, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

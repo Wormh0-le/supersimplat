@@ -1,0 +1,229 @@
+from __future__ import annotations
+
+from dataclasses import replace
+from pathlib import Path
+import tempfile
+import unittest
+
+from selection_service_companion.evidence import ContributorSample
+from selection_service_companion.gsplat_renderer import (
+    GsplatContributorRenderer,
+    GsplatRasterization,
+    LockedGsplatBackend,
+    MASS_CONSERVATION_ATOL,
+)
+from selection_service_companion.masking import MaskSessionError, RegisteredFrame
+from selection_service_companion.state import CompanionState
+
+
+def supported_snapshot() -> dict[str, object]:
+    return {
+        "protocolVersion": "1",
+        "sceneId": "scene-1",
+        "sceneVersion": "snapshot-v1",
+        "gaussianCount": 2,
+        "coordinateConvention": "right-handed world coordinates; quaternion xyzw",
+        "attributeSchema": (
+            "mean:f32x3;rotation:f32x4;logScale:f32x3;"
+            "logitOpacity:f32;dc:f32x3;sh:f32x0"
+        ),
+        "stableIdSchema": "uint32",
+        "appearancePolicy": "effective-editor-dc-sh-bands-0",
+        "renderConfiguration": {
+            "version": "supersplat-effective-rgb-v1",
+            "backgroundRgba": [0.0, 0.0, 0.0, 1.0],
+            "alphaMode": "opaque-background",
+            "shBands": 0,
+            "rasterizer": "playcanvas-gsplat-classic",
+        },
+        "gaussians": [
+            {
+                "stableId": 41,
+                "mean": [0.0, 0.0, 2.0],
+                "rotation": [0.0, 0.0, 0.0, 1.0],
+                "logScale": [-1.6, -1.6, -1.6],
+                "logitOpacity": 0.0,
+                "dc": [0.0, 0.0, 0.0],
+                "sh": [],
+            },
+            {
+                "stableId": 99,
+                "mean": [0.2, 0.0, 2.5],
+                "rotation": [0.0, 0.0, 0.0, 1.0],
+                "logScale": [-1.6, -1.6, -1.6],
+                "logitOpacity": -0.5,
+                "dc": [0.0, 0.0, 0.0],
+                "sh": [],
+            },
+        ],
+    }
+
+
+def anchor_frame(*, width: int = 2, height: int = 2) -> RegisteredFrame:
+    return RegisteredFrame(
+        view_id="anchor-view",
+        frame_digest="sha256:editor-anchor-rgb",
+        width=width,
+        height=height,
+        source="anchor",
+        camera={
+            "model": "pinhole",
+            "convention": "opencv-world-to-camera",
+            "worldToCamera": [
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ],
+            "intrinsics": [
+                20.0, 0.0, width / 2,
+                0.0, 20.0, height / 2,
+                0.0, 0.0, 1.0,
+            ],
+            "nearPlane": 0.01,
+            "farPlane": 100.0,
+        },
+    )
+
+
+class StaticGsplatBackend:
+    def __init__(self, rasterization: GsplatRasterization) -> None:
+        self.rasterization = rasterization
+        self.calls = 0
+
+    def rasterize(self, *, snapshot, camera, width, height):
+        del snapshot, camera, width, height
+        self.calls += 1
+        return self.rasterization
+
+
+def valid_rasterization() -> GsplatRasterization:
+    return GsplatRasterization(
+        service_rgb_digest="sha256:service-rgb",
+        alpha=((0.5, 0.0), (0.0, 0.25)),
+        contributor_ids=(((0, 1), (-1, -1)), ((-1, -1), (1, -1))),
+        contributor_weights=(((0.3, 0.2), (0.0, 0.0)), ((0.0, 0.0), (0.25, 0.0))),
+    )
+
+
+class GsplatContributorRendererTests(unittest.TestCase):
+    def test_companion_rejects_unsupported_v1_semantics_before_caching(self) -> None:
+        snapshot = supported_snapshot()
+        snapshot["coordinateConvention"] = "left-handed"
+        with tempfile.TemporaryDirectory() as directory:
+            state = CompanionState(Path(directory) / "state")
+
+            with self.assertRaisesRegex(ValueError, "coordinate"):
+                state.register_scene_snapshot(snapshot)
+
+            self.assertIsNone(state.scene_snapshot("scene-1", "snapshot-v1"))
+
+    def test_maps_every_valid_tensor_row_to_stable_ids_and_preserves_mass(self) -> None:
+        backend = StaticGsplatBackend(valid_rasterization())
+        rendered = GsplatContributorRenderer(backend=backend).render(
+            scene_snapshot=supported_snapshot(),
+            frame=anchor_frame(),
+        )
+
+        self.assertEqual(backend.calls, 1)
+        self.assertEqual(rendered.rgb_frame_digest, "sha256:editor-anchor-rgb")
+        self.assertEqual(rendered.service_rgb_digest, "sha256:service-rgb")
+        self.assertEqual(rendered.support_bounds, (0, 0, 2, 2))
+        self.assertEqual(
+            rendered.contributors,
+            (
+                ContributorSample(stable_id=41, x_px=0, y_px=0, mass=0.3),
+                ContributorSample(stable_id=99, x_px=0, y_px=0, mass=0.2),
+                ContributorSample(stable_id=99, x_px=1, y_px=1, mass=0.25),
+            ),
+        )
+        self.assertLessEqual(rendered.mass_conservation_max_error, MASS_CONSERVATION_ATOL)
+
+    def test_rejects_mass_mismatch_without_attribution_fallback(self) -> None:
+        backend = StaticGsplatBackend(
+            replace(
+                valid_rasterization(),
+                contributor_weights=(
+                    ((0.3, 0.1), (0.0, 0.0)),
+                    ((0.0, 0.0), (0.25, 0.0)),
+                ),
+            )
+        )
+
+        with self.assertRaises(MaskSessionError) as raised:
+            GsplatContributorRenderer(backend=backend).render(
+                scene_snapshot=supported_snapshot(),
+                frame=anchor_frame(),
+            )
+
+        self.assertEqual(raised.exception.code, "rendererMassMismatch")
+
+    def test_rejects_invalid_contributor_ids_without_visible_or_nearest_fallback(self) -> None:
+        backend = StaticGsplatBackend(
+            replace(
+                valid_rasterization(),
+                contributor_ids=(((0, 2), (-1, -1)), ((-1, -1), (1, -1))),
+            )
+        )
+
+        with self.assertRaises(MaskSessionError) as raised:
+            GsplatContributorRenderer(backend=backend).render(
+                scene_snapshot=supported_snapshot(),
+                frame=anchor_frame(),
+            )
+
+        self.assertEqual(raised.exception.code, "rendererInvalidContributor")
+
+    def test_rejects_unsupported_snapshot_before_calling_gsplat(self) -> None:
+        backend = StaticGsplatBackend(valid_rasterization())
+        snapshot = supported_snapshot()
+        snapshot["protocolVersion"] = "2"
+
+        with self.assertRaisesRegex(ValueError, "protocol version 1"):
+            GsplatContributorRenderer(backend=backend).render(
+                scene_snapshot=snapshot,
+                frame=anchor_frame(),
+            )
+
+        self.assertEqual(backend.calls, 0)
+
+    def test_rejects_absent_contributor_support(self) -> None:
+        backend = StaticGsplatBackend(
+            GsplatRasterization(
+                service_rgb_digest="sha256:service-rgb",
+                alpha=((0.0, 0.0), (0.0, 0.0)),
+                contributor_ids=(((), ()), ((), ())),
+                contributor_weights=(((), ()), ((), ())),
+            )
+        )
+
+        with self.assertRaises(MaskSessionError) as raised:
+            GsplatContributorRenderer(backend=backend).render(
+                scene_snapshot=supported_snapshot(),
+                frame=anchor_frame(),
+            )
+
+        self.assertEqual(raised.exception.code, "rendererUnavailable")
+
+
+class LockedGsplatGpuGoldenTests(unittest.TestCase):
+    def test_complete_contributor_mass_matches_same_rasterization_alpha(self) -> None:
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("locked renderer extra is not installed")
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA is unavailable")
+
+        rendered = GsplatContributorRenderer(backend=LockedGsplatBackend()).render(
+            scene_snapshot=supported_snapshot(),
+            frame=anchor_frame(width=8, height=8),
+        )
+
+        self.assertGreater(len(rendered.contributors), 0)
+        self.assertEqual({sample.stable_id for sample in rendered.contributors}, {41, 99})
+        self.assertLessEqual(rendered.mass_conservation_max_error, MASS_CONSERVATION_ATOL)
+
+
+if __name__ == "__main__":
+    unittest.main()

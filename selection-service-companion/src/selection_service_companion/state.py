@@ -23,6 +23,7 @@ from .generated_views import (
     public_frame_set_payload,
     quality_gate_tracks,
 )
+from .gsplat_renderer import production_gsplat_renderer, validate_supported_snapshot
 from .masking import (
     MaskProduction,
     MaskSessionError,
@@ -175,7 +176,10 @@ class CompanionState:
         },
         repr=False,
     )
-    contributor_renderer: ContributorRenderer | None = field(default=None, repr=False)
+    contributor_renderer: ContributorRenderer | None = field(
+        default_factory=production_gsplat_renderer,
+        repr=False,
+    )
     renderer_runtime: RendererRuntime = field(
         default_factory=current_renderer_runtime,
         repr=False,
@@ -1625,6 +1629,10 @@ class CompanionState:
     def _validate_scene_snapshot(
         self, snapshot: dict[str, Any]
     ) -> tuple[str, str, list[int], str]:
+        # Registration is the attribution trust boundary. Reject unsupported
+        # SuperSplat semantics before the immutable cache can be observed by a
+        # mask/evidence request.
+        validate_supported_snapshot(snapshot)
         required_strings = (
             "protocolVersion",
             "sceneId",

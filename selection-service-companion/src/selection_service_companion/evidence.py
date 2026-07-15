@@ -48,6 +48,10 @@ class RenderedContributorView:
     height: int
     support_bounds: tuple[int, int, int, int]
     contributors: tuple[ContributorSample, ...]
+    # Internal same-rasterization diagnostics. The public Evidence Snapshot
+    # continues to bind the editor-owned frame digest above.
+    service_rgb_digest: str | None = None
+    mass_conservation_max_error: float = 0.0
     # The service computes this only for the editor-owned Anchor camera. A
     # moderate appearance difference preserves positive support but makes
     # outside-mask samples neutral; a severe geometry/projection difference

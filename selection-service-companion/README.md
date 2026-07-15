@@ -26,6 +26,28 @@ process reports Python 3.12.12, PyTorch 2.11.0+cu128, CUDA 12.8, and gsplat
 1.5.3 installed from source commit
 `77ab983ffe43420b2131669cb35776b883ca4c3c`.
 
+## Render complete Anchor contributor evidence
+
+The production Companion registers its locked gsplat Contributor renderer by
+default, but advertises it as ready only after the release lock and current
+process pass the checks above. The renderer accepts only protocol-1 SuperSplat
+snapshots using `playcanvas-gsplat-classic`, opaque background, right-handed
+world coordinates, XYZW quaternions, and the declared effective DC/SH schema.
+Malformed or unsupported values fail before the snapshot enters the immutable
+service cache.
+
+Renderer-owned Frame Set entries bind a pinhole camera with
+`convention: "opencv-world-to-camera"`, a row-major 4x4 `worldToCamera`
+matrix, a row-major 3x3 `intrinsics` matrix, and finite `nearPlane` and
+`farPlane` values. One gsplat call produces service RGB and raster alpha, then
+the complete contributor-ID operation consumes that call's projection and tile
+data. Tensor row IDs map directly through the immutable Scene Snapshot order to
+Stable Gaussian IDs; padded `-1`/zero entries are discarded. Every pixel must
+conserve contributor mass against raster alpha within
+`2e-6 + 1e-5 * abs(alpha)`. Missing support, invalid IDs or weights, and mass
+mismatch abort the preview; there is no nearest, visible-only, top-k, or custom
+backend attribution fallback.
+
 ## Install a model separately
 
 The operator supplies an already acquired checkpoint and a Model Manifest. The
@@ -103,9 +125,9 @@ unspecified, and loopback listeners are rejected.
 
 This release exposes `/health`, `/capabilities`, and an Object Selection
 Session admission lease. It verifies the locked gsplat/CUDA runtime from the
-current Companion process only. Until the production Contributor renderer is
-installed, or whenever the runtime identity does not match, renderer status
-remains unavailable with an operator-facing diagnostic. The control plane reserves
+current Companion process only. Whenever the release lock or runtime identity
+does not match, renderer status remains unavailable with an operator-facing
+diagnostic. The control plane reserves
 exactly one Object Selection Session lease at a time and returns `busy` to a
 second opener; closing that lease restores capacity. It still proves the
 locked-install, model-manifest, CORS, browser transport, and single-session

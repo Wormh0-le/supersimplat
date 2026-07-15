@@ -196,7 +196,6 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
         ):
             state = CompanionState(
                 Path(directory) / "state",
-                contributor_renderer=StaticContributorRenderer({}),
             )
             self.install_canonical_release(state)
 

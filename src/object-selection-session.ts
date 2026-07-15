@@ -162,11 +162,27 @@ interface SelectionServiceEvidenceSnapshot extends ObjectSelectionPreviewBinding
   records: readonly SelectionEvidenceRecord[];
 }
 
+type SelectionCoverageStatus = 'sufficient' | 'insufficient_coverage';
+
+// Deliberately limited to user-actionable facts. The Companion retains camera,
+// mask, and quality diagnostics in its run artifact rather than displaying
+// them in the editor.
+interface SelectionServiceCoverageReport {
+  frameSetVersion: string;
+  renderConfigVersion: string;
+  attemptedViews: number;
+  acceptedViews: number;
+  rejectedViewCount: number;
+  status: SelectionCoverageStatus;
+}
+
 interface SelectionServicePreviewResponse
   extends ObjectSelectionPreviewBindings, SelectionResultIds {
   status: 'complete';
+  frameSet: ObjectSelectionFrameSet;
   maskSet: SelectionServiceMaskSet;
   evidenceSnapshot: SelectionServiceEvidenceSnapshot;
+  coverageReport: SelectionServiceCoverageReport;
 }
 
 interface SelectionServiceAdapter {
@@ -205,6 +221,7 @@ type ObjectSelectionSessionStatus =
 interface ObjectSelectionSessionState {
   status: ObjectSelectionSessionStatus;
   candidate: CandidateObjectSelection | null;
+  coverage: SelectionServiceCoverageReport | null;
   mode: ObjectSelectionMode;
   promptCount: number;
   lockedIdsFiltered: number;
@@ -299,6 +316,99 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 const isNonNegativeInteger = (value: unknown): value is number => {
     return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 };
+
+const isFrameDigest = (value: unknown): value is string => {
+    return (
+        typeof value === 'string' && value.startsWith('sha256:') && value.length > 7
+    );
+};
+
+const incompleteFrameSet = () => {
+    return new Error(
+        'The Selection Service Companion returned an incomplete, version-bound Frame Set.'
+    );
+};
+
+function assertPreviewFrameSet(
+    value: unknown,
+    request: ObjectSelectionPreviewRequest
+): asserts value is ObjectSelectionFrameSet {
+    if (
+        !isRecord(value) ||
+    typeof value.frameSetId !== 'string' ||
+    !value.frameSetId ||
+    typeof value.frameSetVersion !== 'string' ||
+    !value.frameSetVersion ||
+    !Array.isArray(value.orderedViews) ||
+    value.orderedViews.length === 0
+    ) {
+        throw incompleteFrameSet();
+    }
+    const viewIds = new Set<string>();
+    value.orderedViews.forEach((view) => {
+        if (
+            !isRecord(view) ||
+      typeof view.viewId !== 'string' ||
+      !view.viewId ||
+      viewIds.has(view.viewId) ||
+      !isFrameDigest(view.frameDigest) ||
+      !isNonNegativeInteger(view.width) ||
+      view.width === 0 ||
+      !isNonNegativeInteger(view.height) ||
+      view.height === 0
+        ) {
+            throw incompleteFrameSet();
+        }
+        viewIds.add(view.viewId);
+    });
+    const anchor = request.promptLog.find(
+        entry => entry.operation === 'New'
+    )?.prompt;
+    const returnedAnchor =
+    anchor === undefined ? undefined : value.orderedViews[0];
+    if (
+        anchor === undefined ||
+    !isRecord(returnedAnchor) ||
+    returnedAnchor.viewId !== anchor.viewId ||
+    returnedAnchor.frameDigest !== anchor.frameDigest ||
+    returnedAnchor.width !== anchor.frameWidth ||
+    returnedAnchor.height !== anchor.frameHeight
+    ) {
+        throw incompleteFrameSet();
+    }
+}
+
+const copyCoverageReport = (
+    coverage: SelectionServiceCoverageReport
+): SelectionServiceCoverageReport => ({
+    frameSetVersion: coverage.frameSetVersion,
+    renderConfigVersion: coverage.renderConfigVersion,
+    attemptedViews: coverage.attemptedViews,
+    acceptedViews: coverage.acceptedViews,
+    rejectedViewCount: coverage.rejectedViewCount,
+    status: coverage.status
+});
+
+function assertCoverageReport(
+    value: unknown,
+    request: ObjectSelectionPreviewRequest
+): asserts value is SelectionServiceCoverageReport {
+    if (
+        !isRecord(value) ||
+    value.frameSetVersion !== request.frameSetVersion ||
+    value.renderConfigVersion !== request.renderConfigVersion ||
+    !isNonNegativeInteger(value.attemptedViews) ||
+    !isNonNegativeInteger(value.acceptedViews) ||
+    !isNonNegativeInteger(value.rejectedViewCount) ||
+    value.acceptedViews > value.attemptedViews ||
+    value.rejectedViewCount > value.attemptedViews ||
+    (value.status !== 'sufficient' && value.status !== 'insufficient_coverage')
+    ) {
+        throw new Error(
+            'The Selection Service Companion returned an incomplete, version-bound Coverage Report.'
+        );
+    }
+}
 
 const incompleteMaskSet = () => {
     return new Error(
@@ -672,6 +782,18 @@ const copyFrameSet = (
     };
 };
 
+const requestWithFrameSet = (
+    request: ObjectSelectionPreviewRequest,
+    frameSet: ObjectSelectionFrameSet
+): ObjectSelectionPreviewRequest => {
+    const copiedFrameSet = copyFrameSet(frameSet);
+    return {
+        ...request,
+        frameSetVersion: copiedFrameSet.frameSetVersion,
+        frameSet: copiedFrameSet
+    };
+};
+
 const copyRequestContext = (
     requestContext: ObjectSelectionRequestContext
 ): ObjectSelectionRequestContext => {
@@ -736,6 +858,7 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
     private requestContext: ObjectSelectionRequestContext | null = null;
     private promptLog: ObjectSelectionPromptLogEntry[] = [];
     private candidateSelection: CandidateObjectSelection | null = null;
+    private coverageReport: SelectionServiceCoverageReport | null = null;
     private sessionStatus: ObjectSelectionSessionStatus = 'idle';
     private mode: ObjectSelectionMode = 'New';
     private requestCount = 0;
@@ -756,6 +879,9 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
             status: this.sessionStatus,
             candidate: this.candidateSelection ?
                 copyCandidate(this.candidateSelection) :
+                null,
+            coverage: this.coverageReport ?
+                copyCoverageReport(this.coverageReport) :
                 null,
             mode: this.mode,
             promptCount: this.promptLog.length,
@@ -791,6 +917,7 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
                 prompt: copiedStart.prompt
             }
         ];
+        this.coverageReport = null;
         this.mode = 'New';
         this.requestCount = 0;
         this.successfulPreviewCount = 0;
@@ -867,8 +994,15 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
             }
 
             this.requireCurrentSnapshot();
-            this.validatePreviewResponse(response, request);
+            const effectiveRequest = this.validatePreviewResponse(response, request);
             this.candidateSelection = copyCandidate(this.filterLockedIds(response));
+            this.requestContext = {
+                deterministicSeed: this.requireRequestContext().deterministicSeed,
+                frameSetVersion: effectiveRequest.frameSetVersion,
+                frameSet: copyFrameSet(effectiveRequest.frameSet),
+                modelManifestDigest: this.requireRequestContext().modelManifestDigest
+            };
+            this.coverageReport = copyCoverageReport(response.coverageReport);
             this.successfulPreviewCount += 1;
             this.setStatus('preview');
         } catch (error) {
@@ -1079,6 +1213,7 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
         this.requestContext = null;
         this.promptLog = [];
         this.candidateSelection = null;
+        this.coverageReport = null;
         this.mode = 'New';
         this.successfulPreviewCount = 0;
         this.activePreview = null;
@@ -1132,22 +1267,25 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
     private validatePreviewResponse(
         response: SelectionServicePreviewResponse,
         request: ObjectSelectionPreviewRequest
-    ) {
+    ): ObjectSelectionPreviewRequest {
         if (response.status !== 'complete') {
             throw new Error(
                 'The Selection Service Companion did not return a complete preview result.'
             );
         }
-        if (!previewBindingsMatch(response, request)) {
+        assertPreviewFrameSet(response.frameSet, request);
+        const effectiveRequest = requestWithFrameSet(request, response.frameSet);
+        if (!previewBindingsMatch(response, effectiveRequest)) {
             throw new Error(
                 'The Selection Service Companion returned stale Object Selection request bindings.'
             );
         }
-        assertCompleteMaskSet(response.maskSet, request);
-        assertEvidenceSnapshot(response.evidenceSnapshot, request);
+        assertCompleteMaskSet(response.maskSet, effectiveRequest);
+        assertEvidenceSnapshot(response.evidenceSnapshot, effectiveRequest);
+        assertCoverageReport(response.coverageReport, effectiveRequest);
 
         const knownIds = new Set(
-            request.snapshot.gaussians.map(gaussian => gaussian.stableId)
+            effectiveRequest.snapshot.gaussians.map(gaussian => gaussian.stableId)
         );
         const returnedIds = new Set<StableGaussianId>();
         const classifications = new Map<StableGaussianId, string>();
@@ -1192,6 +1330,7 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
                 );
             }
         });
+        return effectiveRequest;
     }
 
     private filterLockedIds(
@@ -1221,10 +1360,13 @@ export {
     anchorFrameSetId,
     anchorFrameSetVersion,
     assertCompleteMaskSet,
+    assertCoverageReport,
     assertEvidenceSnapshot,
+    assertPreviewFrameSet,
     copyPreviewBindings,
     previewBindingsFromRequest,
     previewBindingsMatch,
+    requestWithFrameSet,
     selectionEvidencePolicyV1
 };
 
@@ -1252,6 +1394,8 @@ export type {
     SelectionEvidencePolicy,
     SelectionEvidenceRecord,
     SelectionEvidenceUncertaintyReason,
+    SelectionCoverageStatus,
+    SelectionServiceCoverageReport,
     SelectionServiceEvidenceSnapshot,
     SelectionServiceMaskFrame,
     SelectionServiceMaskFrameStatus,

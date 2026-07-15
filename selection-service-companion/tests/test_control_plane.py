@@ -391,6 +391,7 @@ class CompanionControlPlaneTests(unittest.TestCase):
                 "selectedIds": [3],
                 "uncertainIds": [7],
                 "rejectedIds": [9],
+                "frameSet": frame_set,
                 "maskSet": {
                     "status": "complete",
                     "requestId": "request-1",
@@ -464,8 +465,18 @@ class CompanionControlPlaneTests(unittest.TestCase):
                             "rgbFrameDigest": "sha256:anchor-frame-v1",
                             "supportBounds": {"x0": 0, "y0": 0, "x1": 11, "y1": 21},
                             "contributorCount": 2,
+                            "anchorParity": "normal",
+                            "negativeEvidenceAllowed": True,
                         }
                     ],
+                },
+                "coverageReport": {
+                    "frameSetVersion": "anchor:anchor-view",
+                    "renderConfigVersion": "effective-rgb-v1",
+                    "attemptedViews": 1,
+                    "acceptedViews": 1,
+                    "rejectedViewCount": 0,
+                    "status": "insufficient_coverage",
                 },
             })
 

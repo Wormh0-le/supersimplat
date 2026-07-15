@@ -11,7 +11,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass, field
 import math
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Literal, Mapping, Protocol, Sequence
 
 from .masking import MaskSessionError, RegisteredFrame, RegisteredFrameSet
 
@@ -24,6 +24,8 @@ PRIOR_BETA = 1.0
 MINIMUM_EFFECTIVE_OBSERVATION = 0.10
 SELECTED_POSTERIOR_THRESHOLD = 0.80
 REJECTED_POSTERIOR_THRESHOLD = 0.20
+
+AnchorParity = Literal["normal", "moderate", "severe"]
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,11 @@ class RenderedContributorView:
     height: int
     support_bounds: tuple[int, int, int, int]
     contributors: tuple[ContributorSample, ...]
+    # The service computes this only for the editor-owned Anchor camera. A
+    # moderate appearance difference preserves positive support but makes
+    # outside-mask samples neutral; a severe geometry/projection difference
+    # fails before the editor's mask can be mapped to Stable Gaussian IDs.
+    anchor_parity: AnchorParity = "normal"
 
 
 class ContributorRenderer(Protocol):
@@ -157,11 +164,14 @@ def build_evidence_snapshot(
             continue
 
         rendered = renderer.render(scene_snapshot=scene_snapshot, frame=frame)
-        _validate_rendered_view(rendered, frame, stable_ids)
+        validate_rendered_view(rendered, frame, stable_ids)
+        negative_evidence_allowed = not (
+            frame.source == "anchor" and rendered.anchor_parity == "moderate"
+        )
         for contribution in rendered.contributors:
             if composite_mask.contains(contribution.x_px, contribution.y_px):
                 positive[contribution.stable_id] += contribution.mass
-            else:
+            elif negative_evidence_allowed:
                 negative[contribution.stable_id] += contribution.mass
         x0, y0, x1, y1 = rendered.support_bounds
         view_evidence.append(
@@ -172,6 +182,8 @@ def build_evidence_snapshot(
                 "rgbFrameDigest": rendered.rgb_frame_digest,
                 "supportBounds": {"x0": x0, "y0": y0, "x1": x1, "y1": y1},
                 "contributorCount": len(rendered.contributors),
+                "anchorParity": rendered.anchor_parity,
+                "negativeEvidenceAllowed": negative_evidence_allowed,
             }
         )
 
@@ -393,7 +405,7 @@ def _pixel_coordinate(value: object, size: int) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and 0 <= value < size
 
 
-def _validate_rendered_view(
+def validate_rendered_view(
     rendered: RenderedContributorView,
     frame: RegisteredFrame,
     stable_ids: Sequence[int],
@@ -412,6 +424,16 @@ def _validate_rendered_view(
         raise MaskSessionError(
             "anchorParityMismatch",
             "The Contributor renderer did not return support for the exact Anchor RGB frame.",
+        )
+    if rendered.anchor_parity not in {"normal", "moderate", "severe"}:
+        raise MaskSessionError(
+            "invalidEvidenceSnapshot",
+            "The Contributor renderer returned an invalid Anchor parity result.",
+        )
+    if frame.source == "anchor" and rendered.anchor_parity == "severe":
+        raise MaskSessionError(
+            "anchorParityMismatch",
+            "The Contributor renderer found a severe Anchor parity geometry or projection mismatch.",
         )
     x0, y0, x1, y1 = rendered.support_bounds
     if (

@@ -16,6 +16,10 @@ from unittest.mock import patch
 
 from selection_service_companion.server import create_server
 from selection_service_companion.evidence import ContributorSample, RenderedContributorView
+from selection_service_companion.generated_views import (
+    GeneratedViewCandidate,
+    GeneratedViewPlan,
+)
 from selection_service_companion.masking import (
     MaskProduction,
     MaskSessionError,
@@ -61,6 +65,76 @@ class PointFixtureContributorRenderer:
             support_bounds=(0, 0, frame.width, frame.height),
             contributors=tuple(contributors),
         )
+
+
+class GeneratedPointFixtureContributorRenderer(PointFixtureContributorRenderer):
+    """A service-owned generated frame fixture for the preview publication seam."""
+
+    def __init__(self) -> None:
+        self.seed_regions = []
+
+    def generate_views(
+        self,
+        *,
+        scene_snapshot,
+        anchor_frame,
+        seed_region,
+        initial_budget,
+        replacement_budget,
+    ):
+        del scene_snapshot, anchor_frame
+        self.seed_regions.append(seed_region)
+        self.asserted_budgets = (initial_budget, replacement_budget)
+        png = b"\x89PNG\r\n\x1a\n generated-view-png"
+        digest = f"sha256:{hashlib.sha256(png).hexdigest()}"
+        return GeneratedViewPlan(
+            frame_set_id="frames-1",
+            render_config_version="effective-rgb-v1",
+            primary=(
+                GeneratedViewCandidate(
+                    frame=RegisteredFrame(
+                        view_id="generated-right",
+                        frame_digest=digest,
+                        width=64,
+                        height=48,
+                        image_png=png,
+                        source="generated",
+                        camera={"azimuthDegrees": 30.0, "elevationDegrees": 0.0},
+                    ),
+                    category="ring",
+                    azimuth_degrees=30.0,
+                ),
+            ),
+            replacements=(),
+        )
+
+
+class GeneratedPointMaskAdapter(PointMaskAdapter):
+    """The deterministic mask seam accepts the hidden service-rendered frame."""
+
+    def produce_tracks(self, *, model, frame_set, prompt_log, cancelled):
+        production = super().produce_tracks(
+            model=model,
+            frame_set=frame_set,
+            prompt_log=prompt_log,
+            cancelled=cancelled,
+        )
+        for frame in production.tracks[0]["frames"]:
+            if frame["viewId"] == "generated-right":
+                frame.clear()
+                frame.update(
+                    {
+                        "viewId": "generated-right",
+                        "status": "accepted",
+                        "binaryMask": {
+                            "encoding": "sparse-points-v1",
+                            "width": 64,
+                            "height": 48,
+                            "foregroundPixels": [[10, 20]],
+                        },
+                    }
+                )
+        return production
 
 class MaskSessionContractTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -269,6 +343,83 @@ class MaskSessionContractTests(unittest.TestCase):
             f"/object-selection-sessions/{session_id}/previews", "POST", preview
         )
         self.assertEqual(repeated, result)
+
+    def test_expands_an_anchor_preview_to_a_bound_generated_frame_set(self) -> None:
+        self.state.mask_adapters["point-mask-v1"] = GeneratedPointMaskAdapter()
+        renderer = GeneratedPointFixtureContributorRenderer()
+        self.state.contributor_renderer = renderer
+        frame_set = {
+            "frameSetId": "frames-1",
+            "frameSetVersion": "anchor-v1",
+            "orderedViews": [
+                {
+                    "viewId": "anchor-view",
+                    "frameDigest": "sha256:anchor-frame-v1",
+                    "width": 64,
+                    "height": 48,
+                    "source": "anchor",
+                }
+            ],
+        }
+        self.state.register_frame_set(frame_set)
+        self.state.register_scene_snapshot(self.snapshot())
+        session_id = self.state.open_object_selection_session(
+            frame_set_version="anchor-v1",
+            model_manifest_digest=self.model_manifest_digest,
+        )
+        assert session_id is not None
+        bindings = {
+            "requestId": "request-generated-1",
+            "sessionId": session_id,
+            "targetSplatId": "splat-1",
+            "sceneId": "scene-1",
+            "sceneVersion": "snapshot-v1",
+            "operation": "New",
+            "correctionRound": 0,
+            "deterministicSeed": "seed-1",
+            "promptLogRevision": 1,
+            "frameSetVersion": "anchor-v1",
+            "renderConfigVersion": "effective-rgb-v1",
+            "modelManifestDigest": self.model_manifest_digest,
+        }
+        prompt_log = [
+            {
+                "operation": "New",
+                "prompt": {
+                    "promptId": "prompt-1",
+                    "viewId": "anchor-view",
+                    "frameDigest": "sha256:anchor-frame-v1",
+                    "frameWidth": 64,
+                    "frameHeight": 48,
+                    "xPx": 10,
+                    "yPx": 20,
+                    "polarity": "include",
+                },
+            }
+        ]
+
+        publication = self.state.update_preview_publication(
+            bindings=bindings,
+            prompt_log=prompt_log,
+        )
+
+        self.assertEqual(renderer.asserted_budgets, (16, 8))
+        self.assertEqual(publication.bindings["requestId"], "request-generated-1")
+        self.assertNotEqual(publication.bindings["frameSetVersion"], "anchor-v1")
+        self.assertEqual(
+            [frame["viewId"] for frame in publication.frame_set["orderedViews"]],
+            ["anchor-view", "generated-right"],
+        )
+        self.assertEqual(publication.mask_set["frameSetVersion"], publication.bindings["frameSetVersion"])
+        self.assertEqual(
+            [frame["viewId"] for frame in publication.mask_set["tracks"][0]["frames"]],
+            ["anchor-view", "generated-right"],
+        )
+        self.assertEqual(publication.coverage_report["status"], "insufficient_coverage")
+        self.assertEqual(
+            self.state._mask_sessions[session_id].frame_set_version,
+            publication.bindings["frameSetVersion"],
+        )
 
     def test_rejects_a_malformed_frame_set_with_a_structured_error(self) -> None:
         with self.assertRaises(HTTPError) as error:

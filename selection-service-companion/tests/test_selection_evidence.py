@@ -12,10 +12,182 @@ from selection_service_companion.evidence import (
     build_evidence_snapshot,
     selection_result_ids,
 )
-from selection_service_companion.masking import register_frame_set
+from selection_service_companion.masking import MaskSessionError, register_frame_set
 
 
 class SelectionEvidenceTests(unittest.TestCase):
+    def test_moderate_anchor_parity_disables_only_negative_evidence(self) -> None:
+        frame_set = register_frame_set(
+            {
+                "frameSetId": "frames-1",
+                "frameSetVersion": "anchor-v1",
+                "orderedViews": [
+                    {
+                        "viewId": "anchor-view",
+                        "frameDigest": "sha256:anchor-rgb-v1",
+                        "width": 4,
+                        "height": 3,
+                    }
+                ],
+            }
+        )
+        bindings = {
+            "requestId": "request-1",
+            "sessionId": "session-1",
+            "targetSplatId": "splat-1",
+            "sceneId": "scene-1",
+            "sceneVersion": "snapshot-v1",
+            "operation": "New",
+            "correctionRound": 0,
+            "deterministicSeed": "seed-1",
+            "promptLogRevision": 1,
+            "frameSetVersion": "anchor-v1",
+            "renderConfigVersion": "effective-rgb-v1",
+            "modelManifestDigest": "sha256:model-v1",
+        }
+        mask_set = {
+            "status": "complete",
+            "requestId": "request-1",
+            "sessionId": "session-1",
+            "promptLogRevision": 1,
+            "frameSetVersion": "anchor-v1",
+            "modelManifestDigest": "sha256:model-v1",
+            "threshold": 0.0,
+            "tracks": [
+                {
+                    "trackId": "primary",
+                    "role": "include",
+                    "frames": [
+                        {
+                            "viewId": "anchor-view",
+                            "status": "accepted",
+                            "binaryMask": {
+                                "encoding": "sparse-points-v1",
+                                "width": 4,
+                                "height": 3,
+                                "foregroundPixels": [[1, 1]],
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+        renderer = StaticContributorRenderer(
+            {
+                "anchor-view": RenderedContributorView(
+                    view_id="anchor-view",
+                    rgb_frame_digest="sha256:anchor-rgb-v1",
+                    width=4,
+                    height=3,
+                    support_bounds=(0, 0, 2, 2),
+                    contributors=(
+                        ContributorSample(stable_id=10, x_px=1, y_px=1, mass=3.0),
+                        ContributorSample(stable_id=20, x_px=0, y_px=0, mass=3.0),
+                    ),
+                    anchor_parity="moderate",
+                )
+            }
+        )
+
+        evidence = build_evidence_snapshot(
+            bindings=bindings,
+            scene_snapshot={"gaussians": [{"stableId": 10}, {"stableId": 20}]},
+            frame_set=frame_set,
+            mask_set=mask_set,
+            renderer=renderer,
+        )
+
+        self.assertEqual(evidence["records"][0]["classification"], "selected")
+        self.assertEqual(evidence["records"][1], {
+            "stableId": 20,
+            "positiveEvidence": 0.0,
+            "negativeEvidence": 0.0,
+            "effectiveObservation": 0.0,
+            "posterior": 0.5,
+            "uncertaintyReason": "unobserved",
+            "classification": "uncertain",
+        })
+        self.assertFalse(evidence["views"][0]["negativeEvidenceAllowed"])
+
+    def test_severe_anchor_parity_fails_before_evidence_is_lifted(self) -> None:
+        frame_set = register_frame_set(
+            {
+                "frameSetId": "frames-1",
+                "frameSetVersion": "anchor-v1",
+                "orderedViews": [
+                    {
+                        "viewId": "anchor-view",
+                        "frameDigest": "sha256:anchor-rgb-v1",
+                        "width": 2,
+                        "height": 2,
+                    }
+                ],
+            }
+        )
+        renderer = StaticContributorRenderer(
+            {
+                "anchor-view": RenderedContributorView(
+                    view_id="anchor-view",
+                    rgb_frame_digest="sha256:anchor-rgb-v1",
+                    width=2,
+                    height=2,
+                    support_bounds=(0, 0, 2, 2),
+                    contributors=(
+                        ContributorSample(stable_id=10, x_px=0, y_px=0, mass=1.0),
+                    ),
+                    anchor_parity="severe",
+                )
+            }
+        )
+
+        with self.assertRaisesRegex(MaskSessionError, "parity"):
+            build_evidence_snapshot(
+                bindings={
+                    "requestId": "request-1",
+                    "sessionId": "session-1",
+                    "targetSplatId": "splat-1",
+                    "sceneId": "scene-1",
+                    "sceneVersion": "snapshot-v1",
+                    "operation": "New",
+                    "correctionRound": 0,
+                    "deterministicSeed": "seed-1",
+                    "promptLogRevision": 1,
+                    "frameSetVersion": "anchor-v1",
+                    "renderConfigVersion": "effective-rgb-v1",
+                    "modelManifestDigest": "sha256:model-v1",
+                },
+                scene_snapshot={"gaussians": [{"stableId": 10}]},
+                frame_set=frame_set,
+                mask_set={
+                    "status": "complete",
+                    "requestId": "request-1",
+                    "sessionId": "session-1",
+                    "promptLogRevision": 1,
+                    "frameSetVersion": "anchor-v1",
+                    "modelManifestDigest": "sha256:model-v1",
+                    "threshold": 0.0,
+                    "tracks": [
+                        {
+                            "trackId": "primary",
+                            "role": "include",
+                            "frames": [
+                                {
+                                    "viewId": "anchor-view",
+                                    "status": "accepted",
+                                    "binaryMask": {
+                                        "encoding": "sparse-points-v1",
+                                        "width": 2,
+                                        "height": 2,
+                                        "foregroundPixels": [[0, 0]],
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                },
+                renderer=renderer,
+            )
+
     def test_uses_only_bounded_anchor_contributor_support_for_three_state_evidence(self) -> None:
         frame_set = register_frame_set(
             {

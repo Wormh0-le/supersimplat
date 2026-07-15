@@ -363,7 +363,7 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            mask_set, evidence_snapshot = self._state.update_preview(
+            publication = self._state.update_preview_publication(
                 bindings=bindings.response_fields(),
                 prompt_log=request.get("promptLog"),
             )
@@ -380,18 +380,22 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             return
 
         selected_ids, uncertain_ids, rejected_ids = selection_result_ids(
-            evidence_snapshot
+            publication.evidence_snapshot
         )
         self._send_json(
             HTTPStatus.OK,
             {
                 "status": "complete",
-                **bindings.response_fields(),
+                **publication.bindings,
                 "selectedIds": selected_ids,
                 "uncertainIds": uncertain_ids,
                 "rejectedIds": rejected_ids,
-                "maskSet": mask_set,
-                "evidenceSnapshot": evidence_snapshot,
+                "frameSet": publication.frame_set,
+                "maskSet": publication.mask_set,
+                "evidenceSnapshot": publication.evidence_snapshot,
+                "coverageReport": self._state.generated_view_policy.public_coverage_report(
+                    publication.coverage_report
+                ),
             },
         )
 

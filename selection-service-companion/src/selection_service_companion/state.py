@@ -17,6 +17,12 @@ from typing import Any
 
 from . import PACKAGE_VERSION, PROTOCOL_VERSION
 from .evidence import ContributorRenderer, build_evidence_snapshot
+from .generated_views import (
+    GeneratedViewPolicy,
+    frame_set_payload,
+    public_frame_set_payload,
+    quality_gate_tracks,
+)
 from .masking import (
     MaskProduction,
     MaskSessionError,
@@ -51,6 +57,16 @@ class RegisteredSceneSnapshot:
     render_config_version: str
 
 
+@dataclass(frozen=True)
+class GeneratedFrameSetResolution:
+    """The cached one-rebuild result for a Generated View preview session."""
+
+    source_frame_set_version: str
+    frame_set_version: str
+    preliminary_rejections: tuple[dict[str, object], ...]
+    attempted_view_ids: tuple[str, ...]
+
+
 @dataclass
 class ActiveMaskSession:
     """The rollback-safe, service-owned state for one mask-session lifetime."""
@@ -63,9 +79,32 @@ class ActiveMaskSession:
     completed_updates: dict[str, str] = field(default_factory=dict)
     completed_update_fingerprints: dict[str, str] = field(default_factory=dict)
     completed_evidence_snapshots: dict[str, str] = field(default_factory=dict)
+    completed_preview_publications: dict[str, str] = field(default_factory=dict)
     cancelled_request_ids: set[str] = field(default_factory=set)
     in_flight_request_ids: set[str] = field(default_factory=set)
+    generated_resolution: GeneratedFrameSetResolution | None = None
     closing: bool = False
+
+
+@dataclass(frozen=True)
+class PreviewPublication:
+    """The sole atomically published preview result for one request."""
+
+    bindings: dict[str, Any]
+    frame_set: dict[str, object]
+    mask_set: dict[str, Any]
+    evidence_snapshot: dict[str, Any]
+    coverage_report: dict[str, object]
+
+
+@dataclass(frozen=True)
+class ResolvedPreviewFrameSet:
+    """The version-bound inputs used for one atomic preview publication."""
+
+    bindings: dict[str, Any]
+    frame_set: RegisteredFrameSet
+    preliminary_rejections: tuple[dict[str, object], ...]
+    attempted_view_ids: tuple[str, ...]
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -132,6 +171,10 @@ class CompanionState:
         repr=False,
     )
     contributor_renderer: ContributorRenderer | None = field(default=None, repr=False)
+    generated_view_policy: GeneratedViewPolicy = field(
+        default_factory=GeneratedViewPolicy,
+        repr=False,
+    )
 
     @property
     def release_path(self) -> Path:
@@ -446,24 +489,315 @@ class CompanionState:
         bindings: dict[str, Any],
         prompt_log: Any,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Publish one Mask Set and its Evidence Snapshot under one lease.
+        """Compatibility view of one complete preview publication."""
 
-        A preview must not make the complete Mask Set observable as idle before
-        its renderer-derived evidence has settled.  Holding the lease across
-        both stages prevents a same-request retry from racing that handoff.
-        """
-
-        mask_set, evidence_lease_claimed = self._update_mask_session(
+        publication = self.update_preview_publication(
             bindings=bindings,
             prompt_log=prompt_log,
+        )
+        return publication.mask_set, publication.evidence_snapshot
+
+    def update_preview_publication(
+        self,
+        *,
+        bindings: dict[str, Any],
+        prompt_log: Any,
+    ) -> PreviewPublication:
+        """Atomically publish Frame Set, Mask Set, Evidence, and coverage.
+
+        Generated View planning is an internal pre-publication step.  The
+        editor sees only the final immutable Frame Set and one complete
+        Candidate Object Selection result; an Anchor-only intermediate mask is
+        never exposed as a candidate.
+        """
+
+        resolved = self._effective_preview_frame_set(
+            bindings=bindings,
+            prompt_log=prompt_log,
+        )
+        effective_bindings = resolved.bindings
+        request_id = self._mask_binding(effective_bindings, "requestId")
+        session_id = self._mask_binding(effective_bindings, "sessionId")
+        with self._mask_lock:
+            session = self._mask_sessions.get(session_id)
+            if session is not None:
+                completed = session.completed_preview_publications.get(request_id)
+                if completed is not None:
+                    return self._preview_publication_from_canonical(completed)
+
+        mask_set, evidence_lease_claimed = self._update_mask_session(
+            bindings=effective_bindings,
+            prompt_log=prompt_log,
             retain_evidence_lease=True,
+            quality_gate=True,
         )
         evidence_snapshot = self._build_evidence_snapshot(
-            bindings=bindings,
+            bindings=effective_bindings,
             mask_set=mask_set,
             evidence_lease_claimed=evidence_lease_claimed,
         )
-        return mask_set, evidence_snapshot
+        renderer = self.contributor_renderer
+        if renderer is None:
+            # _build_evidence_snapshot has already returned rendererUnavailable,
+            # but keep this explicit for future alternate evidence providers.
+            raise MaskSessionError(
+                "rendererUnavailable",
+                "The gsplat/CUDA Contributor renderer is unavailable for Generated View coverage.",
+            )
+        snapshot = self.scene_snapshot(
+            self._mask_binding(effective_bindings, "sceneId"),
+            self._mask_binding(effective_bindings, "sceneVersion"),
+        )
+        if snapshot is None:
+            raise MaskSessionError(
+                "sceneCacheMiss",
+                "The Scene Snapshot is unavailable for Generated View coverage.",
+            )
+        coverage_report = self.generated_view_policy.coverage_report(
+            scene_snapshot=json.loads(snapshot.canonical),
+            frame_set=resolved.frame_set,
+            mask_set=mask_set,
+            renderer=renderer,
+            render_config_version=self._mask_binding(
+                effective_bindings, "renderConfigVersion"
+            ),
+            preliminary_rejections=resolved.preliminary_rejections,
+            attempted_view_ids=resolved.attempted_view_ids,
+            prompt_log=prompt_log if isinstance(prompt_log, list) else (),
+        )
+        publication = PreviewPublication(
+            bindings=dict(effective_bindings),
+            frame_set=public_frame_set_payload(resolved.frame_set),
+            mask_set=mask_set,
+            evidence_snapshot=evidence_snapshot,
+            coverage_report=coverage_report,
+        )
+        canonical = json.dumps(
+            {
+                "bindings": publication.bindings,
+                "frameSet": publication.frame_set,
+                "maskSet": publication.mask_set,
+                "evidenceSnapshot": publication.evidence_snapshot,
+                "coverageReport": publication.coverage_report,
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        with self._mask_lock:
+            current = self._mask_sessions.get(session_id)
+            if (
+                current is None
+                or current.closing
+                or request_id in current.cancelled_request_ids
+            ):
+                raise MaskSessionError(
+                    "cancelled",
+                    "The Object Selection session closed before preview publication.",
+                )
+            existing = current.completed_preview_publications.get(request_id)
+            if existing is not None:
+                return self._preview_publication_from_canonical(existing)
+            current.completed_preview_publications[request_id] = canonical
+        return publication
+
+    def _effective_preview_frame_set(
+        self,
+        *,
+        bindings: dict[str, Any],
+        prompt_log: Any,
+    ) -> ResolvedPreviewFrameSet:
+        """Resolve an existing or newly planned Generated View Frame Set.
+
+        The initial Anchor Frame Set remains a cache key for retry recovery.
+        Once a generated version has been prepared, a retry may still carry the
+        original version and is deterministically upgraded to the cached final
+        version before mask publication.
+        """
+
+        request_id = self._mask_binding(bindings, "requestId")
+        session_id = self._mask_binding(bindings, "sessionId")
+        requested_frame_set_version = self._mask_binding(bindings, "frameSetVersion")
+        model_manifest_digest = self._mask_binding(bindings, "modelManifestDigest")
+        with self._mask_lock:
+            session = self._mask_sessions.get(session_id)
+            if session is None:
+                raise MaskSessionError(
+                    "unknownSession", "The Object Selection mask session is no longer active."
+                )
+            if session.closing or request_id in session.cancelled_request_ids:
+                raise MaskSessionError(
+                    "cancelled", "The Object Selection session is closing."
+                )
+            if session.model_manifest_digest != model_manifest_digest:
+                raise MaskSessionError(
+                    "staleManifest", "The Model Manifest does not match this Object Selection session."
+                )
+            generated_resolution = session.generated_resolution
+            current_version = session.frame_set_version
+        if generated_resolution is not None:
+            if requested_frame_set_version not in {
+                generated_resolution.frame_set_version,
+                generated_resolution.source_frame_set_version,
+            }:
+                raise MaskSessionError(
+                    "staleFrameSet", "The preview request does not match this Generated View Frame Set."
+                )
+            frame_set = self._require_frame_set(generated_resolution.frame_set_version)
+            return ResolvedPreviewFrameSet(
+                bindings={
+                    **bindings,
+                    "frameSetVersion": generated_resolution.frame_set_version,
+                },
+                frame_set=frame_set,
+                preliminary_rejections=generated_resolution.preliminary_rejections,
+                attempted_view_ids=generated_resolution.attempted_view_ids or tuple(
+                    frame.view_id for frame in frame_set.ordered_views
+                ),
+            )
+        if current_version != requested_frame_set_version:
+            raise MaskSessionError(
+                "staleFrameSet", "The preview request Frame Set version does not match this Object Selection session."
+            )
+        anchor_frame_set = self._require_frame_set(requested_frame_set_version)
+        renderer = self.contributor_renderer
+        if (
+            renderer is None
+            or not callable(getattr(renderer, "generate_views", None))
+            or len(anchor_frame_set.ordered_views) != 1
+        ):
+            return ResolvedPreviewFrameSet(
+                bindings=dict(bindings),
+                frame_set=anchor_frame_set,
+                preliminary_rejections=(),
+                attempted_view_ids=tuple(
+                    frame.view_id for frame in anchor_frame_set.ordered_views
+                ),
+            )
+
+        planning_id = f"{request_id}:generated-view-plan"
+        with self._mask_lock:
+            session = self._mask_sessions.get(session_id)
+            if session is None or session.closing or request_id in session.cancelled_request_ids:
+                raise MaskSessionError(
+                    "cancelled", "The Object Selection session is closing."
+                )
+            if session.in_flight_request_ids:
+                raise MaskSessionError(
+                    "updateInProgress", "Another Object Selection preview update is still in progress."
+                )
+            session.in_flight_request_ids.add(planning_id)
+        try:
+            model, adapter = self._require_mask_adapter(model_manifest_digest)
+            cancelled = lambda: self._preview_work_cancelled(session_id, request_id)
+            production = adapter.produce_tracks(
+                model=model,
+                frame_set=anchor_frame_set,
+                prompt_log=prompt_log,
+                cancelled=cancelled,
+            )
+            preliminary_tracks, _, _ = self._normalise_mask_production(production)
+            self._validate_complete_tracks(
+                anchor_frame_set,
+                prompt_log if isinstance(prompt_log, list) else [],
+                preliminary_tracks,
+            )
+            scene_id = self._mask_binding(bindings, "sceneId")
+            scene_version = self._mask_binding(bindings, "sceneVersion")
+            snapshot = self.scene_snapshot(scene_id, scene_version)
+            if snapshot is None:
+                raise MaskSessionError(
+                    "sceneCacheMiss", "The Scene Snapshot is unavailable for Generated View planning."
+                )
+            anchor_mask_set = {"tracks": preliminary_tracks}
+            prepared = self.generated_view_policy.prepare(
+                scene_snapshot=json.loads(snapshot.canonical),
+                anchor_frame_set=anchor_frame_set,
+                anchor_mask_set=anchor_mask_set,
+                renderer=renderer,
+            )
+            if prepared.plan.render_config_version != self._mask_binding(
+                bindings, "renderConfigVersion"
+            ):
+                raise MaskSessionError(
+                    "renderConfigMismatch",
+                    "Generated Views must use the immutable render configuration bound to this preview trial.",
+                )
+            preliminary_production = adapter.produce_tracks(
+                model=model,
+                frame_set=prepared.initial_frame_set,
+                prompt_log=prompt_log,
+                cancelled=cancelled,
+            )
+            preliminary_tracks, _, _ = self._normalise_mask_production(
+                preliminary_production
+            )
+            self._validate_complete_tracks(
+                prepared.initial_frame_set,
+                prompt_log if isinstance(prompt_log, list) else [],
+                preliminary_tracks,
+            )
+            preliminary_mask_set = {"tracks": preliminary_tracks}
+            selected = self.generated_view_policy.select_frame_set(
+                prepared=prepared,
+                scene_snapshot=json.loads(snapshot.canonical),
+                preliminary_mask_set=preliminary_mask_set,
+                renderer=renderer,
+                prompt_log=prompt_log if isinstance(prompt_log, list) else (),
+            )
+            self.register_frame_set(frame_set_payload(selected.frame_set))
+            with self._mask_lock:
+                session = self._mask_sessions.get(session_id)
+                if (
+                    session is None
+                    or session.closing
+                    or request_id in session.cancelled_request_ids
+                ):
+                    raise MaskSessionError(
+                        "cancelled", "The Object Selection session closed during Generated View planning."
+                    )
+                session.frame_set_version = selected.frame_set.frame_set_version
+                session.generated_resolution = GeneratedFrameSetResolution(
+                    source_frame_set_version=requested_frame_set_version,
+                    frame_set_version=selected.frame_set.frame_set_version,
+                    preliminary_rejections=selected.rejected_views,
+                    attempted_view_ids=selected.attempted_view_ids,
+                )
+            return ResolvedPreviewFrameSet(
+                bindings={
+                    **bindings,
+                    "frameSetVersion": selected.frame_set.frame_set_version,
+                },
+                frame_set=selected.frame_set,
+                preliminary_rejections=selected.rejected_views,
+                attempted_view_ids=selected.attempted_view_ids,
+            )
+        finally:
+            self._finish_preview_work(session_id, planning_id)
+
+    def _preview_work_cancelled(self, session_id: str, request_id: str) -> bool:
+        with self._mask_lock:
+            current = self._mask_sessions.get(session_id)
+            return (
+                current is None
+                or current.closing
+                or request_id in current.cancelled_request_ids
+            )
+
+    @staticmethod
+    def _preview_publication_from_canonical(canonical: str) -> PreviewPublication:
+        try:
+            value = json.loads(canonical)
+            return PreviewPublication(
+                bindings=value["bindings"],
+                frame_set=value["frameSet"],
+                mask_set=value["maskSet"],
+                evidence_snapshot=value["evidenceSnapshot"],
+                coverage_report=value["coverageReport"],
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise MaskSessionError(
+                "invalidPreviewPublication", "The cached preview publication is invalid."
+            ) from error
 
     def _update_mask_session(
         self,
@@ -471,6 +805,7 @@ class CompanionState:
         bindings: dict[str, Any],
         prompt_log: Any,
         retain_evidence_lease: bool,
+        quality_gate: bool = False,
     ) -> tuple[dict[str, Any], bool]:
         """Atomically produce or replay one complete Mask Set.
 
@@ -596,6 +931,27 @@ class CompanionState:
             )
             tracks, diagnostics, threshold = self._normalise_mask_production(production)
             self._validate_complete_tracks(frame_set, prompt_log, tracks)
+            if quality_gate and self.contributor_renderer is not None:
+                scene_id = self._mask_binding(bindings, "sceneId")
+                scene_version = self._mask_binding(bindings, "sceneVersion")
+                snapshot = self.scene_snapshot(scene_id, scene_version)
+                if snapshot is None:
+                    raise MaskSessionError(
+                        "sceneCacheMiss",
+                        "The Scene Snapshot is unavailable for Generated View quality gating.",
+                    )
+                tracks, quality_rejections = quality_gate_tracks(
+                    scene_snapshot=json.loads(snapshot.canonical),
+                    frame_set=frame_set,
+                    tracks=tracks,
+                    renderer=self.contributor_renderer,
+                    prompt_log=prompt_log,
+                )
+                if quality_rejections:
+                    diagnostics = {
+                        **(diagnostics or {}),
+                        "generatedViewQualityRejections": list(quality_rejections),
+                    }
             mask_set = {
                 "status": "complete",
                 "requestId": request_id,

@@ -98,7 +98,24 @@ const previewBindings = (requestId) => ({
   modelManifestDigest: start.requestContext.modelManifestDigest,
 });
 
-const maskSet = (bindings) => ({
+const frameSetForBindings = (bindings) => ({
+  ...start.requestContext.frameSet,
+  frameSetVersion: bindings.frameSetVersion,
+});
+
+const coverageReport = (
+  bindings,
+  frameSet = frameSetForBindings(bindings)
+) => ({
+  frameSetVersion: bindings.frameSetVersion,
+  renderConfigVersion: bindings.renderConfigVersion,
+  attemptedViews: frameSet.orderedViews.length,
+  acceptedViews: frameSet.orderedViews.length,
+  rejectedViewCount: 0,
+  status: "insufficient_coverage",
+});
+
+const maskSet = (bindings, frameSet = frameSetForBindings(bindings)) => ({
   status: "complete",
   requestId: bindings.requestId,
   sessionId: bindings.sessionId,
@@ -110,25 +127,26 @@ const maskSet = (bindings) => ({
     {
       trackId: "primary",
       role: "include",
-      frames: [
-        {
-          viewId: "anchor-view",
-          status: "accepted",
-          binaryMask: {
-            encoding: "sparse-points-v1",
-            width: 64,
-            height: 48,
-            foregroundPixels: [[10, 20]],
-          },
+      frames: frameSet.orderedViews.map((view) => ({
+        viewId: view.viewId,
+        status: "accepted",
+        binaryMask: {
+          encoding: "sparse-points-v1",
+          width: view.width,
+          height: view.height,
+          foregroundPixels: [[0, 0]],
         },
-      ],
+      })),
     },
   ],
 });
 
-const evidenceSnapshot = (bindings) => ({
+const evidenceSnapshot = (
+  bindings,
+  frameSet = frameSetForBindings(bindings)
+) => ({
   ...bindings,
-  frameSetId: start.requestContext.frameSet.frameSetId,
+  frameSetId: frameSet.frameSetId,
   policy: {
     id: "selection-evidence-policy/v1",
     renderConfigVersion: bindings.renderConfigVersion,
@@ -198,8 +216,10 @@ test("registers one immutable Scene Snapshot, resends it after a cache miss, and
       selectedIds: [3],
       uncertainIds: [7],
       rejectedIds: [9],
+      frameSet: frameSetForBindings(previewBindings("request-1")),
       maskSet: maskSet(previewBindings("request-1")),
       evidenceSnapshot: evidenceSnapshot(previewBindings("request-1")),
+      coverageReport: coverageReport(previewBindings("request-1")),
     },
     {
       status: "complete",
@@ -207,8 +227,10 @@ test("registers one immutable Scene Snapshot, resends it after a cache miss, and
       selectedIds: [3],
       uncertainIds: [7],
       rejectedIds: [9],
+      frameSet: frameSetForBindings(previewBindings("request-2")),
       maskSet: maskSet(previewBindings("request-2")),
       evidenceSnapshot: evidenceSnapshot(previewBindings("request-2")),
+      coverageReport: coverageReport(previewBindings("request-2")),
     },
   ];
   const adapter = new FetchSelectionServiceAdapter({
@@ -258,6 +280,62 @@ test("registers one immutable Scene Snapshot, resends it after a cache miss, and
     assert.equal(call.init.credentials, "omit");
     assert.equal(call.init.cache, "no-store");
   }
+});
+
+test("accepts a complete preview bound to the Companion's generated Frame Set", async () => {
+  const request = previewRequest();
+  const bindings = {
+    ...previewBindings(request.requestId),
+    frameSetVersion: "generated-frames-1:sha256:frame-set-v1",
+  };
+  const frameSet = {
+    frameSetId: "generated-frames-1",
+    frameSetVersion: bindings.frameSetVersion,
+    orderedViews: [
+      ...start.requestContext.frameSet.orderedViews,
+      {
+        viewId: "generated-ring-01",
+        frameDigest: "sha256:generated-ring-01-v1",
+        width: 64,
+        height: 48,
+      },
+    ],
+  };
+  const adapter = new FetchSelectionServiceAdapter({
+    getConfiguration: () => ({
+      endpoint: "https://companion.example:8787",
+      modelManifestDigest: "sha256:model-v1",
+    }),
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          status: "complete",
+          ...bindings,
+          selectedIds: [3],
+          uncertainIds: [7],
+          rejectedIds: [9],
+          frameSet,
+          maskSet: maskSet(bindings, frameSet),
+          evidenceSnapshot: evidenceSnapshot(bindings, frameSet),
+          coverageReport: coverageReport(bindings, frameSet),
+        }),
+        { status: 200 }
+      ),
+  });
+
+  const response = await adapter.updatePreview(request);
+
+  assert.equal(response.frameSetVersion, frameSet.frameSetVersion);
+  assert.deepEqual(
+    response.frameSet.orderedViews.map((view) => view.viewId),
+    ["anchor-view", "generated-ring-01"]
+  );
+  assert.equal(response.maskSet.frameSetVersion, frameSet.frameSetVersion);
+  assert.equal(response.evidenceSnapshot.frameSetId, frameSet.frameSetId);
+  assert.equal(
+    response.coverageReport.frameSetVersion,
+    frameSet.frameSetVersion
+  );
 });
 
 test("re-registers the Scene Snapshot after closing the Companion session lease", async () => {
@@ -522,7 +600,9 @@ test("rejects a preview response that omits its complete Mask Set", async () => 
           selectedIds: [3],
           uncertainIds: [7],
           rejectedIds: [9],
+          frameSet: frameSetForBindings(previewBindings("request-1")),
           evidenceSnapshot: evidenceSnapshot(previewBindings("request-1")),
+          coverageReport: coverageReport(previewBindings("request-1")),
         }),
         { status: 200 }
       ),
@@ -549,7 +629,9 @@ test("rejects a preview response that omits its complete Evidence Snapshot", asy
           selectedIds: [3],
           uncertainIds: [7],
           rejectedIds: [9],
+          frameSet: frameSetForBindings(bindings),
           maskSet: maskSet(bindings),
+          coverageReport: coverageReport(bindings),
         }),
         { status: 200 }
       ),
@@ -578,8 +660,10 @@ test("rejects a complete Mask Set that omits its threshold", async () => {
           selectedIds: [3],
           uncertainIds: [7],
           rejectedIds: [9],
+          frameSet: frameSetForBindings(bindings),
           maskSet: noThresholdMaskSet,
           evidenceSnapshot: evidenceSnapshot(bindings),
+          coverageReport: coverageReport(bindings),
         }),
         { status: 200 }
       ),
@@ -613,8 +697,10 @@ test("rejects a Mask Set with a malformed accepted binary mask", async () => {
           selectedIds: [3],
           uncertainIds: [7],
           rejectedIds: [9],
+          frameSet: frameSetForBindings(bindings),
           maskSet: malformedMaskSet,
           evidenceSnapshot: evidenceSnapshot(bindings),
+          coverageReport: coverageReport(bindings),
         }),
         { status: 200 }
       ),

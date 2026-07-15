@@ -1,8 +1,11 @@
 import {
     assertCompleteMaskSet,
+    assertCoverageReport,
     assertEvidenceSnapshot,
+    assertPreviewFrameSet,
     previewBindingsFromRequest,
     previewBindingsMatch,
+    requestWithFrameSet,
     type ObjectSelectionFrameSet,
     type ObjectSelectionPreviewBindings,
     type ObjectSelectionPreviewRequest,
@@ -12,6 +15,7 @@ import {
     type SelectionServiceMaskFrame,
     type SelectionServiceMaskSet,
     type SelectionServiceMaskTrack,
+    type SelectionServiceCoverageReport,
     type SelectionServicePreviewResponse
 } from './object-selection-session';
 import { assertSceneSnapshot, type SceneSnapshot } from './scene-snapshot';
@@ -302,9 +306,7 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
                 'The Selection Service Companion did not return a complete preview response.'
             );
         }
-        const complete = this.parseCompletePreview(result, request);
-        this.assertPreviewBindings(complete, request, 'preview');
-        return complete;
+        return this.parseCompletePreview(result, request);
     }
 
     private parseCacheMiss(
@@ -330,15 +332,38 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
                 'The Companion preview response is missing required result fields.'
             );
         }
+        let frameSet: ObjectSelectionFrameSet;
+        let effectiveRequest: ObjectSelectionPreviewRequest;
+        try {
+            assertPreviewFrameSet(value.frameSet, request);
+            frameSet = value.frameSet;
+            effectiveRequest = requestWithFrameSet(request, frameSet);
+        } catch (error) {
+            throw transportError(
+                'invalidResponse',
+                'The Companion preview response is missing a complete, version-bound Frame Set.'
+            );
+        }
         const bindings = this.parsePreviewBindings(value, 'preview');
+        this.assertPreviewBindings(bindings, effectiveRequest, 'preview');
         let evidenceSnapshot: SelectionServiceEvidenceSnapshot;
         try {
-            assertEvidenceSnapshot(value.evidenceSnapshot, request);
+            assertEvidenceSnapshot(value.evidenceSnapshot, effectiveRequest);
             evidenceSnapshot = value.evidenceSnapshot;
         } catch (error) {
             throw transportError(
                 'invalidResponse',
                 'The Companion preview response is missing a complete, version-bound Evidence Snapshot.'
+            );
+        }
+        let coverageReport: SelectionServiceCoverageReport;
+        try {
+            assertCoverageReport(value.coverageReport, effectiveRequest);
+            coverageReport = value.coverageReport;
+        } catch (error) {
+            throw transportError(
+                'invalidResponse',
+                'The Companion preview response is missing a complete, version-bound Coverage Report.'
             );
         }
         const complete: SelectionServicePreviewResponse = {
@@ -347,11 +372,13 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
             selectedIds: value.selectedIds,
             uncertainIds: value.uncertainIds,
             rejectedIds: value.rejectedIds,
+            frameSet,
             maskSet: this.parseMaskSet(value.maskSet, bindings),
-            evidenceSnapshot
+            evidenceSnapshot,
+            coverageReport
         };
         try {
-            assertCompleteMaskSet(complete.maskSet, request);
+            assertCompleteMaskSet(complete.maskSet, effectiveRequest);
         } catch (error) {
             throw transportError(
                 'invalidResponse',

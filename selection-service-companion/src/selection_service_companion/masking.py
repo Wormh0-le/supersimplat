@@ -54,6 +54,11 @@ class RegisteredFrame:
     width: int
     height: int
     image_png: bytes | None = None
+    # The Anchor is editor-owned RGB; Generated Views are Companion-rendered.
+    # Camera values are opaque to mask adapters and are interpreted only by a
+    # service-owned Generated View renderer.
+    source: str = "anchor"
+    camera: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -127,6 +132,34 @@ def register_frame_set(payload: dict[str, Any]) -> RegisteredFrameSet:
         width = _require_dimension(value, "width")
         height = _require_dimension(value, "height")
         image_png = _optional_png(value)
+        source = value.get("source", "anchor")
+        if source not in {"anchor", "generated"}:
+            raise MaskSessionError(
+                "invalidFrameSet",
+                "Frame Set view source must be anchor or generated.",
+            )
+        camera = value.get("camera")
+        if camera is not None:
+            if not isinstance(camera, dict):
+                raise MaskSessionError(
+                    "invalidFrameSet", "Frame Set view camera must be an object."
+                )
+            try:
+                # Reject non-JSON camera metadata before it becomes part of an
+                # immutable cache key. Detailed camera semantics remain owned
+                # by the Generated View renderer.
+                camera = json.loads(
+                    json.dumps(
+                        camera,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                        allow_nan=False,
+                    )
+                )
+            except (TypeError, ValueError) as error:
+                raise MaskSessionError(
+                    "invalidFrameSet", "Frame Set view camera must be JSON-compatible."
+                ) from error
         if image_png is not None:
             expected_digest = f"sha256:{hashlib.sha256(image_png).hexdigest()}"
             if frame_digest != expected_digest:
@@ -134,10 +167,22 @@ def register_frame_set(payload: dict[str, Any]) -> RegisteredFrameSet:
                     "invalidFrameSet",
                     "Frame Set imagePngBase64 does not match its Frame Set digest.",
                 )
-        views.append(RegisteredFrame(view_id, frame_digest, width, height, image_png))
+        views.append(
+            RegisteredFrame(
+                view_id,
+                frame_digest,
+                width,
+                height,
+                image_png,
+                source,
+                camera,
+            )
+        )
 
     return RegisteredFrameSet(
-        canonical=json.dumps(payload, separators=(",", ":"), sort_keys=True),
+        canonical=json.dumps(
+            payload, separators=(",", ":"), sort_keys=True, allow_nan=False
+        ),
         frame_set_id=frame_set_id,
         frame_set_version=frame_set_version,
         ordered_views=tuple(views),

@@ -8,14 +8,18 @@ import {
 } from '../object-selection-session';
 
 interface ObjectSelectionPanelOptions {
-    onError?: (error: unknown) => void;
+  onError?: (error: unknown) => void;
 }
 
 class ObjectSelectionPanel extends Container {
     private session: ObjectSelectionSessionInterface;
     private options: ObjectSelectionPanelOptions;
 
-    constructor(session: ObjectSelectionSessionInterface, options: ObjectSelectionPanelOptions = {}, args = {}) {
+    constructor(
+        session: ObjectSelectionSessionInterface,
+        options: ObjectSelectionPanelOptions = {},
+        args = {}
+    ) {
         args = {
             ...args,
             id: 'object-selection-panel'
@@ -38,6 +42,9 @@ class ObjectSelectionPanel extends Container {
         });
         const uncertainPreview = new Label({
             id: 'object-selection-panel-uncertain-preview'
+        });
+        const coverage = new Label({
+            id: 'object-selection-panel-coverage'
         });
         const add = new Button({
             id: 'object-selection-panel-add',
@@ -75,6 +82,7 @@ class ObjectSelectionPanel extends Container {
         this.append(status);
         this.append(selectedPreview);
         this.append(uncertainPreview);
+        this.append(coverage);
         this.append(add);
         this.append(remove);
         this.append(refine);
@@ -98,6 +106,7 @@ class ObjectSelectionPanel extends Container {
                 status,
                 selectedPreview,
                 uncertainPreview,
+                coverage,
                 add,
                 remove,
                 refine,
@@ -134,26 +143,38 @@ class ObjectSelectionPanel extends Container {
         }
     }
 
-    private updateControls(state: ObjectSelectionSessionState, controls: {
-        status: Label;
-        selectedPreview: Label;
-        uncertainPreview: Label;
-        add: Button;
-        remove: Button;
-        refine: Button;
-        update: Button;
-        cancelUpdate: Button;
-        confirm: Button;
-        cancel: Button;
-        retryCleanup: Button;
-    }) {
+    private updateControls(
+        state: ObjectSelectionSessionState,
+        controls: {
+      status: Label;
+      selectedPreview: Label;
+      uncertainPreview: Label;
+      coverage: Label;
+      add: Button;
+      remove: Button;
+      refine: Button;
+      update: Button;
+      cancelUpdate: Button;
+      confirm: Button;
+      cancel: Button;
+      retryCleanup: Button;
+    }
+    ) {
         const canEdit = state.status === 'ready' || state.status === 'preview';
 
-        controls.status.text = state.lockedIdsFiltered > 0 ?
-            `Object Selection: ${state.status} (${state.lockedIdsFiltered} locked IDs filtered)` :
-            `Object Selection: ${state.status}`;
-        controls.selectedPreview.text = this.previewLabel('Selected', state.candidate?.selectedIds);
-        controls.uncertainPreview.text = this.previewLabel('Uncertain', state.candidate?.uncertainIds);
+        controls.status.text =
+      state.lockedIdsFiltered > 0 ?
+          `Object Selection: ${state.status} (${state.lockedIdsFiltered} locked IDs filtered)` :
+          `Object Selection: ${state.status}`;
+        controls.selectedPreview.text = this.previewLabel(
+            'Selected',
+            state.candidate?.selectedIds
+        );
+        controls.uncertainPreview.text = this.previewLabel(
+            'Uncertain',
+            state.candidate?.uncertainIds
+        );
+        controls.coverage.text = this.coverageLabel(state);
         controls.add.enabled = canEdit;
         controls.remove.enabled = canEdit;
         controls.refine.enabled = canEdit;
@@ -171,6 +192,16 @@ class ObjectSelectionPanel extends Container {
         const visibleIds = ids.slice(0, 8).join(', ');
         const suffix = ids.length > 8 ? ', …' : '';
         return `${name}: ${ids.length} [${visibleIds}${suffix}]`;
+    }
+
+    private coverageLabel(state: ObjectSelectionSessionState) {
+        if (!state.coverage) {
+            return 'Coverage: no preview';
+        }
+        if (state.coverage.status === 'insufficient_coverage') {
+            return 'Coverage is limited. Some Gaussians could not be observed reliably and remain uncertain. Try rotating to another visible side and use Refine.';
+        }
+        return `Coverage: sufficient across ${state.coverage.acceptedViews} accepted views.`;
     }
 }
 

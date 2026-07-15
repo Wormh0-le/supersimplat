@@ -183,6 +183,15 @@ const evidenceSnapshotForRequest = (request, result = candidate) => {
   };
 };
 
+const coverageReportForRequest = (request) => ({
+  frameSetVersion: request.frameSetVersion,
+  renderConfigVersion: request.renderConfigVersion,
+  attemptedViews: request.frameSet.orderedViews.length,
+  acceptedViews: request.frameSet.orderedViews.length,
+  rejectedViewCount: 0,
+  status: "insufficient_coverage",
+});
+
 const previewResponse = (request, result = candidate) => ({
   status: "complete",
   requestId: request.requestId,
@@ -197,10 +206,43 @@ const previewResponse = (request, result = candidate) => ({
   frameSetVersion: request.frameSetVersion,
   renderConfigVersion: request.renderConfigVersion,
   modelManifestDigest: request.modelManifestDigest,
+  frameSet: request.frameSet,
   maskSet: maskSetForRequest(request),
   evidenceSnapshot: evidenceSnapshotForRequest(request, result),
+  coverageReport: coverageReportForRequest(request),
   ...result,
 });
+
+const generatedFrameSet = () => ({
+  frameSetId: "generated-frames-1",
+  frameSetVersion: "generated-frames-1:sha256:frame-set-v1",
+  orderedViews: [
+    {
+      viewId: "anchor-view",
+      frameDigest: "sha256:anchor-frame-v1",
+      width: 64,
+      height: 48,
+    },
+    {
+      viewId: "generated-ring-01",
+      frameDigest: "sha256:generated-ring-01-v1",
+      width: 64,
+      height: 48,
+    },
+  ],
+});
+
+const generatedPreviewResponse = (request, result = candidate) => {
+  const frameSet = generatedFrameSet();
+  return previewResponse(
+    {
+      ...request,
+      frameSetVersion: frameSet.frameSetVersion,
+      frameSet,
+    },
+    result
+  );
+};
 
 class DeterministicSelectionServiceAdapter {
   constructor() {
@@ -228,6 +270,70 @@ class DeterministicSelectionServiceAdapter {
     this.closedSessions.push(sessionId);
   }
 }
+
+test("atomically adopts a generated Frame Set and its limited coverage disclosure", async () => {
+  class GeneratedFrameSetAdapter extends DeterministicSelectionServiceAdapter {
+    constructor() {
+      super();
+      this.previewNumber = 0;
+    }
+
+    async updatePreview(request) {
+      this.previewRequests.push(request);
+      this.previewNumber += 1;
+      if (this.previewNumber === 1) {
+        return generatedPreviewResponse(request);
+      }
+      const malformed = generatedPreviewResponse(request, {
+        selectedIds: [11],
+        uncertainIds: [],
+        rejectedIds: [1, 2, 3, 7, 9],
+      });
+      delete malformed.coverageReport;
+      return malformed;
+    }
+  }
+
+  const adapter = new GeneratedFrameSetAdapter();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor: new RecordingSelectionEditor(),
+  });
+
+  await session.startNew(newSessionInput());
+  await session.updatePreview();
+
+  assert.equal(
+    session.state.coverage.frameSetVersion,
+    "generated-frames-1:sha256:frame-set-v1"
+  );
+  assert.equal(session.state.coverage.status, "insufficient_coverage");
+  assert.deepEqual(
+    adapter.previewRequests[0].frameSet.orderedViews.map((view) => view.viewId),
+    ["anchor-view"]
+  );
+  assert.deepEqual(session.state.candidate, {
+    ...candidate,
+    lockedIdsFiltered: 0,
+  });
+
+  await assert.rejects(
+    session.updatePreview(),
+    /complete, version-bound Coverage Report/
+  );
+  assert.equal(
+    adapter.previewRequests[1].frameSetVersion,
+    "generated-frames-1:sha256:frame-set-v1"
+  );
+  assert.deepEqual(session.state.candidate, {
+    ...candidate,
+    lockedIdsFiltered: 0,
+  });
+  assert.equal(
+    session.state.coverage.frameSetVersion,
+    "generated-frames-1:sha256:frame-set-v1"
+  );
+});
 
 class RecordingSelectionEditor {
   constructor() {

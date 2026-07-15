@@ -1,0 +1,1031 @@
+"""Bounded Generated View planning for complete Object Selection previews.
+
+The module deliberately contains policy and validation rather than renderer
+code.  A renderer supplies service-owned RGB frames and contributor support;
+this module derives a Seed Region from the accepted Anchor mask, keeps the
+candidate budget finite, and exposes only a safe public Frame Set shape to the
+editor.  It never classifies Stable Gaussian IDs.
+"""
+
+from __future__ import annotations
+
+import base64
+import copy
+from dataclasses import dataclass
+import hashlib
+import json
+import math
+from typing import Any, Mapping, Protocol, Sequence
+
+from .evidence import ContributorRenderer, RenderedContributorView, validate_rendered_view
+from .masking import MaskSessionError, RegisteredFrame, RegisteredFrameSet
+
+
+POLICY_ID = "generated-view-policy/v1"
+INITIAL_VIEW_BUDGET = 16
+REPLACEMENT_BUDGET = 8
+TOTAL_VIEW_BUDGET = INITIAL_VIEW_BUDGET + REPLACEMENT_BUDGET
+
+
+@dataclass(frozen=True)
+class SeedRegion:
+    """A robust framing hint, never a Gaussian Selection or object boundary."""
+
+    center: tuple[float, float, float]
+    radius: float
+    source: str
+    stable_ids: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class GeneratedViewCandidate:
+    """One service-rendered candidate plus its policy-facing camera facts."""
+
+    frame: RegisteredFrame
+    category: str
+    azimuth_degrees: float | None = None
+    elevation_degrees: float | None = None
+    replacement_of: str | None = None
+
+
+@dataclass(frozen=True)
+class GeneratedViewPlan:
+    """The renderer proposal before mask quality gating chooses a Frame Set."""
+
+    frame_set_id: str
+    render_config_version: str
+    primary: tuple[GeneratedViewCandidate, ...]
+    replacements: tuple[GeneratedViewCandidate, ...]
+
+
+class GeneratedViewRenderer(ContributorRenderer, Protocol):
+    """Contributor renderer capability needed for service-owned hidden views."""
+
+    def generate_views(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        anchor_frame: RegisteredFrame,
+        seed_region: SeedRegion,
+        initial_budget: int,
+        replacement_budget: int,
+    ) -> GeneratedViewPlan:
+        """Return bounded, rendered candidate frames for one immutable plan."""
+
+
+@dataclass(frozen=True)
+class PreparedGeneratedViews:
+    """A validated initial Frame Set and retained bounded replacements."""
+
+    seed_region: SeedRegion
+    plan: GeneratedViewPlan
+    initial_frame_set: RegisteredFrameSet
+    replacements: tuple[GeneratedViewCandidate, ...]
+
+    def public_frame_set(self) -> dict[str, object]:
+        """Return metadata the editor needs without hidden image/camera details."""
+
+        return public_frame_set_payload(self.initial_frame_set)
+
+
+@dataclass(frozen=True)
+class SelectedGeneratedViews:
+    """The one bounded quality-driven Frame Set rebuild, if one is needed."""
+
+    frame_set: RegisteredFrameSet
+    rejected_views: tuple[dict[str, object], ...]
+    attempted_view_ids: tuple[str, ...]
+
+
+class GeneratedViewPolicy:
+    """Policy boundary for Seed Region framing and bounded candidate planning."""
+
+    def prepare(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        anchor_frame_set: RegisteredFrameSet,
+        anchor_mask_set: Mapping[str, Any],
+        renderer: GeneratedViewRenderer,
+    ) -> PreparedGeneratedViews:
+        anchor_frame = _anchor_frame(anchor_frame_set)
+        seed_region = derive_seed_region(
+            scene_snapshot=scene_snapshot,
+            anchor_frame=anchor_frame,
+            anchor_mask_set=anchor_mask_set,
+            renderer=renderer,
+        )
+        plan = renderer.generate_views(
+            scene_snapshot=scene_snapshot,
+            anchor_frame=anchor_frame,
+            seed_region=seed_region,
+            initial_budget=INITIAL_VIEW_BUDGET,
+            replacement_budget=REPLACEMENT_BUDGET,
+        )
+        _validate_plan(plan, anchor_frame)
+        ordered_views = (anchor_frame,) + tuple(
+            candidate.frame for candidate in plan.primary
+        )
+        frame_set_version = _generated_frame_set_version(
+            anchor_frame_set.frame_set_version,
+            plan,
+            ordered_views,
+        )
+        payload = {
+            "frameSetId": plan.frame_set_id,
+            "frameSetVersion": frame_set_version,
+            "orderedViews": [_frame_payload(frame) for frame in ordered_views],
+        }
+        return PreparedGeneratedViews(
+            seed_region=seed_region,
+            plan=plan,
+            initial_frame_set=RegisteredFrameSet(
+                canonical=json.dumps(payload, separators=(",", ":"), sort_keys=True),
+                frame_set_id=plan.frame_set_id,
+                frame_set_version=frame_set_version,
+                ordered_views=ordered_views,
+            ),
+            replacements=plan.replacements,
+        )
+
+    def select_frame_set(
+        self,
+        *,
+        prepared: PreparedGeneratedViews,
+        scene_snapshot: Mapping[str, Any],
+        preliminary_mask_set: Mapping[str, Any],
+        renderer: ContributorRenderer,
+        prompt_log: Sequence[Mapping[str, Any]] = (),
+    ) -> SelectedGeneratedViews:
+        """Apply the one bounded replacement pass after preliminary quality.
+
+        The preliminary Mask Set is never published.  It exists only to decide
+        whether failed primary candidates should be replaced before the final,
+        immutable Frame Set is replayed from the Prompt Log.
+        """
+
+        mask_frames = _primary_frame_outcomes(preliminary_mask_set)
+        stable_ids = set(_scene_means(scene_snapshot))
+        accepted_ids: set[int] = set()
+        low_increment_streak = 0
+        replacement_by_failed = {
+            candidate.replacement_of: candidate
+            for candidate in prepared.replacements
+        }
+        selected: list[RegisteredFrame] = []
+        rejected: list[dict[str, object]] = []
+        # The initial Frame Set is rendered and mask-propagated as one
+        # unpublished quality pass. It therefore counts every planned primary
+        # as an attempt, including views omitted by later early stopping.
+        attempted_view_ids = [
+            frame.view_id for frame in prepared.initial_frame_set.ordered_views
+        ]
+
+        anchor = prepared.initial_frame_set.ordered_views[0]
+        anchor_outcome = mask_frames.get(anchor.view_id)
+        anchor_quality = _quality_outcome(
+            frame=anchor,
+            outcome=anchor_outcome,
+            scene_snapshot=scene_snapshot,
+            renderer=renderer,
+            prompt_log=prompt_log,
+        )
+        if not anchor_quality[0]:
+            raise MaskSessionError(
+                "anchorMaskUnavailable",
+                "The Anchor View failed Generated View quality gating; adjust the prompt and retry.",
+            )
+        selected.append(anchor)
+        accepted_ids.update(anchor_quality[2])
+
+        for candidate in prepared.plan.primary:
+            outcome = mask_frames.get(candidate.frame.view_id)
+            accepted, reason, contributor_ids = _quality_outcome(
+                frame=candidate.frame,
+                outcome=outcome,
+                scene_snapshot=scene_snapshot,
+                renderer=renderer,
+                prompt_log=prompt_log,
+            )
+            if accepted:
+                incremental = len(contributor_ids - accepted_ids) / max(1, len(stable_ids))
+                accepted_ids.update(contributor_ids)
+                selected.append(candidate.frame)
+                low_increment_streak = (
+                    low_increment_streak + 1 if incremental < 0.02 else 0
+                )
+                if low_increment_streak >= 3:
+                    break
+                continue
+
+            replacement = replacement_by_failed.get(candidate.frame.view_id)
+            rejected.append(
+                {
+                    "viewId": candidate.frame.view_id,
+                    "stage": "quality_gate",
+                    "reason": reason,
+                    "replacementOf": candidate.frame.view_id
+                    if replacement is not None
+                    else None,
+                }
+            )
+            if replacement is not None:
+                selected.append(replacement.frame)
+                attempted_view_ids.append(replacement.frame.view_id)
+
+        if len(selected) > INITIAL_VIEW_BUDGET:
+            raise MaskSessionError(
+                "generatedViewBudgetExceeded",
+                "Generated View replacement exceeded the immutable 16-view Frame Set budget.",
+            )
+        if tuple(selected) == prepared.initial_frame_set.ordered_views:
+            frame_set = prepared.initial_frame_set
+        else:
+            version = _generated_frame_set_version(
+                prepared.initial_frame_set.frame_set_version,
+                prepared.plan,
+                selected,
+            )
+            payload = {
+                "frameSetId": prepared.plan.frame_set_id,
+                "frameSetVersion": version,
+                "orderedViews": [_frame_payload(frame) for frame in selected],
+            }
+            frame_set = RegisteredFrameSet(
+                canonical=json.dumps(payload, separators=(",", ":"), sort_keys=True),
+                frame_set_id=prepared.plan.frame_set_id,
+                frame_set_version=version,
+                ordered_views=tuple(selected),
+            )
+        return SelectedGeneratedViews(
+            frame_set=frame_set,
+            rejected_views=tuple(rejected),
+            attempted_view_ids=tuple(dict.fromkeys(attempted_view_ids)),
+        )
+
+    def coverage_report(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        frame_set: RegisteredFrameSet,
+        mask_set: Mapping[str, Any],
+        renderer: ContributorRenderer,
+        render_config_version: str,
+        preliminary_rejections: Sequence[Mapping[str, object]] = (),
+        attempted_view_ids: Sequence[str] | None = None,
+        prompt_log: Sequence[Mapping[str, Any]] = (),
+    ) -> dict[str, object]:
+        """Report reliable contributor visibility without classifying IDs.
+
+        Full rejection details remain an internal artifact.  The separate
+        ``public_coverage_report`` intentionally exposes only user-actionable
+        counts and status for the editor UI.
+        """
+
+        outcomes = _primary_frame_outcomes(mask_set)
+        known_ids = set(_scene_means(scene_snapshot))
+        covered: set[int] = set()
+        accepted = 0
+        rejections = [dict(rejection) for rejection in preliminary_rejections]
+        increments: list[dict[str, object]] = []
+        accepted_frames: list[RegisteredFrame] = []
+        for frame in frame_set.ordered_views:
+            valid, reason, contributor_ids = _quality_outcome(
+                frame=frame,
+                outcome=outcomes.get(frame.view_id),
+                scene_snapshot=scene_snapshot,
+                renderer=renderer,
+                prompt_log=prompt_log,
+            )
+            if not valid:
+                rejections.append(
+                    {
+                        "viewId": frame.view_id,
+                        "stage": "quality_gate",
+                        "reason": reason,
+                        "replacementOf": None,
+                    }
+                )
+                continue
+            new_ids = contributor_ids - covered
+            covered.update(contributor_ids)
+            accepted += 1
+            accepted_frames.append(frame)
+            increments.append(
+                {
+                    "viewId": frame.view_id,
+                    "newContributorCount": len(new_ids),
+                    "newContributorFraction": len(new_ids) / max(1, len(known_ids)),
+                }
+            )
+        unseen = sorted(known_ids - covered)
+        hidden_accepted = sum(frame.source == "generated" for frame in accepted_frames)
+        status = (
+            "sufficient"
+            if hidden_accepted > 0 and not unseen
+            else "insufficient_coverage"
+        )
+        attempted = (
+            len(set(attempted_view_ids))
+            if attempted_view_ids is not None
+            else len(frame_set.ordered_views) + len(preliminary_rejections)
+        )
+        return {
+            "policyId": POLICY_ID,
+            "frameSetVersion": frame_set.frame_set_version,
+            "renderConfigVersion": render_config_version,
+            "attemptedViews": attempted,
+            "acceptedViews": accepted,
+            "rejectedViews": rejections,
+            "coveredContributorIds": sorted(covered),
+            "unseenCandidateIds": unseen,
+            "incrementalCoverageByView": increments,
+            "effectiveAzimuthElevationCoverage": _angular_coverage(accepted_frames),
+            "status": status,
+        }
+
+    @staticmethod
+    def public_coverage_report(report: Mapping[str, object]) -> dict[str, object]:
+        """The beginner-facing contract: no camera, mask, or model diagnostics."""
+
+        rejected = report.get("rejectedViews")
+        if not isinstance(rejected, Sequence):
+            raise MaskSessionError(
+                "invalidCoverageReport", "Coverage Report rejection details are incomplete."
+            )
+        return {
+            "frameSetVersion": report.get("frameSetVersion"),
+            "renderConfigVersion": report.get("renderConfigVersion"),
+            "attemptedViews": report.get("attemptedViews"),
+            "acceptedViews": report.get("acceptedViews"),
+            "rejectedViewCount": len(rejected),
+            "status": report.get("status"),
+        }
+
+
+def quality_gate_tracks(
+    *,
+    scene_snapshot: Mapping[str, Any],
+    frame_set: RegisteredFrameSet,
+    tracks: Sequence[Mapping[str, Any]],
+    renderer: ContributorRenderer,
+    prompt_log: Sequence[Mapping[str, Any]] = (),
+) -> tuple[list[dict[str, Any]], tuple[dict[str, object], ...]]:
+    """Turn structurally unsafe primary outcomes into neutral rejections.
+
+    This runs before a Mask Set is published, so a rejected hidden view cannot
+    become all-zero negative evidence.  The Anchor remains required: its
+    rejection fails the update rather than silently changing the prompt's
+    semantic frame.
+    """
+
+    gated = copy.deepcopy(list(tracks))
+    primary = next(
+        (
+            track
+            for track in gated
+            if isinstance(track, dict)
+            and track.get("trackId") == "primary"
+            and track.get("role") == "include"
+        ),
+        None,
+    )
+    if primary is None or not isinstance(primary.get("frames"), list):
+        raise MaskSessionError(
+            "incompleteMaskSet", "Generated View quality gating needs a primary include Mask Track."
+        )
+    if len(primary["frames"]) != len(frame_set.ordered_views):
+        raise MaskSessionError(
+            "incompleteMaskSet", "Generated View quality gating received an incomplete Frame Set."
+        )
+    rejections: list[dict[str, object]] = []
+    for index, frame in enumerate(frame_set.ordered_views):
+        outcome = primary["frames"][index]
+        if not isinstance(outcome, dict):
+            raise MaskSessionError(
+                "incompleteMaskSet", "Generated View quality gating received an invalid frame outcome."
+            )
+        valid, reason, _ = _quality_outcome(
+            frame=frame,
+            outcome=outcome,
+            scene_snapshot=scene_snapshot,
+            renderer=renderer,
+            prompt_log=prompt_log,
+        )
+        if valid:
+            continue
+        if frame.source == "anchor":
+            raise MaskSessionError(
+                "anchorMaskUnavailable",
+                "The Anchor View failed quality gating; adjust the point prompt and retry.",
+            )
+        if outcome.get("status") == "accepted":
+            primary["frames"][index] = {
+                "viewId": frame.view_id,
+                "status": "rejected",
+                "rejectionReason": reason,
+            }
+        rejections.append(
+            {
+                "viewId": frame.view_id,
+                "stage": "quality_gate",
+                "reason": reason,
+                "replacementOf": None,
+            }
+        )
+    return gated, tuple(rejections)
+
+
+def frame_set_payload(frame_set: RegisteredFrameSet) -> dict[str, object]:
+    """Serialize one service-owned immutable Frame Set for cache registration."""
+
+    return {
+        "frameSetId": frame_set.frame_set_id,
+        "frameSetVersion": frame_set.frame_set_version,
+        "orderedViews": [_frame_payload(frame) for frame in frame_set.ordered_views],
+    }
+
+
+def public_frame_set_payload(frame_set: RegisteredFrameSet) -> dict[str, object]:
+    """Return Frame Set bindings without hidden service-rendered image data."""
+
+    return {
+        "frameSetId": frame_set.frame_set_id,
+        "frameSetVersion": frame_set.frame_set_version,
+        "orderedViews": [
+            {
+                "viewId": frame.view_id,
+                "frameDigest": frame.frame_digest,
+                "width": frame.width,
+                "height": frame.height,
+            }
+            for frame in frame_set.ordered_views
+        ],
+    }
+
+
+def derive_seed_region(
+    *,
+    scene_snapshot: Mapping[str, Any],
+    anchor_frame: RegisteredFrame,
+    anchor_mask_set: Mapping[str, Any],
+    renderer: ContributorRenderer,
+) -> SeedRegion:
+    """Estimate a robust Seed Region from accepted Anchor contributors.
+
+    Contributors outside the accepted Anchor mask never enter the region.  If
+    there are no usable contributors, an explicit prompt-ray fallback carried
+    with the Anchor metadata is used; otherwise planning fails safely.
+    """
+
+    mask = _accepted_primary_mask(anchor_mask_set, anchor_frame.view_id)
+    rendered = renderer.render(scene_snapshot=scene_snapshot, frame=anchor_frame)
+    means = _scene_means(scene_snapshot)
+    _validate_anchor_render(rendered, anchor_frame, tuple(means))
+    weighted: list[tuple[int, tuple[float, float, float], float]] = []
+    for contribution in rendered.contributors:
+        if (
+            contribution.stable_id in means
+            and _finite_positive(contribution.mass)
+            and mask.contains(contribution.x_px, contribution.y_px)
+        ):
+            weighted.append(
+                (contribution.stable_id, means[contribution.stable_id], contribution.mass)
+            )
+    if weighted:
+        return _contributor_seed_region(weighted)
+    return _prompt_ray_fallback(anchor_frame)
+
+
+@dataclass(frozen=True)
+class _BinaryMask:
+    width: int
+    height: int
+    sparse_pixels: frozenset[tuple[int, int]] | None = None
+    bitset: bytes | None = None
+
+    def contains(self, x_px: int, y_px: int) -> bool:
+        if not (0 <= x_px < self.width and 0 <= y_px < self.height):
+            return False
+        if self.sparse_pixels is not None:
+            return (x_px, y_px) in self.sparse_pixels
+        if self.bitset is None:
+            return False
+        index = y_px * self.width + x_px
+        return (self.bitset[index // 8] & (1 << (index % 8))) != 0
+
+    @property
+    def pixel_count(self) -> int:
+        if self.sparse_pixels is not None:
+            return len(self.sparse_pixels)
+        return sum(byte.bit_count() for byte in self.bitset or b"")
+
+
+def _accepted_primary_mask(mask_set: Mapping[str, Any], view_id: str) -> _BinaryMask:
+    tracks = mask_set.get("tracks")
+    if not isinstance(tracks, Sequence):
+        raise MaskSessionError("invalidSeedRegion", "The Anchor Mask Set has no Mask Tracks.")
+    for track in tracks:
+        if not isinstance(track, Mapping) or track.get("trackId") != "primary":
+            continue
+        if track.get("role") != "include" or not isinstance(track.get("frames"), Sequence):
+            break
+        for frame in track["frames"]:
+            if not isinstance(frame, Mapping) or frame.get("viewId") != view_id:
+                continue
+            if frame.get("status") != "accepted":
+                break
+            return _decode_mask(frame.get("binaryMask"))
+    raise MaskSessionError(
+        "anchorMaskUnavailable",
+        "The Anchor View needs an accepted Mask Set before Generated Views can be planned.",
+    )
+
+
+def _decode_mask(value: object) -> _BinaryMask:
+    if not isinstance(value, Mapping):
+        raise MaskSessionError("invalidSeedRegion", "The Anchor mask is missing binary pixels.")
+    width = value.get("width")
+    height = value.get("height")
+    if not _dimension(width) or not _dimension(height):
+        raise MaskSessionError("invalidSeedRegion", "The Anchor mask dimensions are invalid.")
+    if value.get("encoding") == "sparse-points-v1":
+        pixels = value.get("foregroundPixels")
+        if not isinstance(pixels, Sequence):
+            raise MaskSessionError("invalidSeedRegion", "The Anchor sparse mask has no pixels.")
+        parsed: set[tuple[int, int]] = set()
+        for pixel in pixels:
+            if (
+                not isinstance(pixel, Sequence)
+                or len(pixel) != 2
+                or not _integer(pixel[0])
+                or not _integer(pixel[1])
+                or not (0 <= pixel[0] < width and 0 <= pixel[1] < height)
+            ):
+                raise MaskSessionError("invalidSeedRegion", "The Anchor sparse mask has an invalid pixel.")
+            parsed.add((pixel[0], pixel[1]))
+        if not parsed:
+            raise MaskSessionError("invalidSeedRegion", "The Anchor sparse mask has no pixels.")
+        return _BinaryMask(width=width, height=height, sparse_pixels=frozenset(parsed))
+    if value.get("encoding") == "bitset-lsb-v1" and isinstance(value.get("data"), str):
+        try:
+            data = base64.b64decode(value["data"], validate=True)
+        except ValueError as error:
+            raise MaskSessionError("invalidSeedRegion", "The Anchor bitset mask is invalid.") from error
+        if len(data) != math.ceil(width * height / 8):
+            raise MaskSessionError("invalidSeedRegion", "The Anchor bitset mask has invalid dimensions.")
+        return _BinaryMask(width=width, height=height, bitset=data)
+    raise MaskSessionError("invalidSeedRegion", "The Anchor mask uses an unsupported encoding.")
+
+
+def _contributor_seed_region(
+    weighted: Sequence[tuple[int, tuple[float, float, float], float]],
+) -> SeedRegion:
+    # A point selected through the Anchor mask can still be a background
+    # contributor through a transparent/overlapping splat. Start with a
+    # mass-weighted coordinate median, discard only clearly separated support,
+    # then compute the framing center from the retained contributor region.
+    provisional_center = tuple(
+        _weighted_median(
+            [(point[axis], mass) for _, point, mass in weighted]
+        )
+        for axis in range(3)
+    )
+    provisional_distances = [
+        math.dist(point, provisional_center)
+        for _, point, _ in weighted
+    ]
+    robust_distance = _weighted_median(
+        [
+            (distance, mass)
+            for distance, (_, _, mass) in zip(provisional_distances, weighted, strict=True)
+        ]
+    )
+    # A conservative floor preserves the single-Gaussian framing case. A
+    # broad, coherently observed object keeps all of its support because its
+    # weighted median distance scales with the object rather than one outlier.
+    outlier_limit = max(0.05, robust_distance * 3.0)
+    retained = [
+        item
+        for item, distance in zip(weighted, provisional_distances, strict=True)
+        if distance <= outlier_limit
+    ]
+    if not retained:
+        retained = list(weighted)
+    total_mass = sum(mass for _, _, mass in retained)
+    center = tuple(
+        sum(point[axis] * mass for _, point, mass in retained) / total_mass
+        for axis in range(3)
+    )
+    distances = [
+        math.dist(point, center)
+        for _, point, _ in retained
+    ]
+    # The contributor cloud can collapse to one Gaussian. Keep a conservative
+    # radius so generated cameras do not frame an individual splat as an object.
+    radius = max(0.05, _median(distances) * 2.5)
+    return SeedRegion(
+        center=(float(center[0]), float(center[1]), float(center[2])),
+        radius=radius,
+        source="anchor_contributors",
+        stable_ids=tuple(sorted({stable_id for stable_id, _, _ in retained})),
+    )
+
+
+def _prompt_ray_fallback(anchor_frame: RegisteredFrame) -> SeedRegion:
+    camera = anchor_frame.camera
+    if not isinstance(camera, Mapping):
+        raise MaskSessionError(
+            "seedUnavailable",
+            "The Anchor has no contributor seed or prompt-ray fallback for Generated View framing.",
+        )
+    origin = _vector(camera.get("rayOrigin"))
+    direction = _vector(camera.get("rayDirection"))
+    distance = camera.get("seedDistance")
+    if origin is None or direction is None or not _finite_positive(distance):
+        raise MaskSessionError(
+            "seedUnavailable",
+            "The Anchor prompt-ray fallback is incomplete for Generated View framing.",
+        )
+    length = math.sqrt(sum(value * value for value in direction))
+    if length <= 1e-12:
+        raise MaskSessionError(
+            "seedUnavailable",
+            "The Anchor prompt ray has no usable direction for Generated View framing.",
+        )
+    center = tuple(origin[index] + direction[index] * distance / length for index in range(3))
+    return SeedRegion(
+        center=(float(center[0]), float(center[1]), float(center[2])),
+        radius=max(0.05, float(camera.get("minimumSeedRadius", 0.1))),
+        source="prompt_ray_fallback",
+        stable_ids=(),
+    )
+
+
+def _anchor_frame(frame_set: RegisteredFrameSet) -> RegisteredFrame:
+    anchors = [frame for frame in frame_set.ordered_views if frame.source == "anchor"]
+    if len(anchors) == 1:
+        return anchors[0]
+    if len(frame_set.ordered_views) == 1:
+        return frame_set.ordered_views[0]
+    raise MaskSessionError(
+        "invalidFrameSet", "Generated View planning needs exactly one Anchor View.")
+
+
+def _validate_anchor_render(
+    rendered: RenderedContributorView,
+    frame: RegisteredFrame,
+    stable_ids: Sequence[int],
+) -> None:
+    """Preserve the planning-stage error context around shared evidence checks."""
+
+    try:
+        validate_rendered_view(rendered, frame, stable_ids)
+    except MaskSessionError as error:
+        raise MaskSessionError("anchorParityFailure", str(error)) from error
+
+
+def _scene_means(scene_snapshot: Mapping[str, Any]) -> dict[int, tuple[float, float, float]]:
+    gaussians = scene_snapshot.get("gaussians")
+    if not isinstance(gaussians, Sequence):
+        raise MaskSessionError("invalidSeedRegion", "The Scene Snapshot has no Gaussian means.")
+    result: dict[int, tuple[float, float, float]] = {}
+    for gaussian in gaussians:
+        if not isinstance(gaussian, Mapping) or not _integer(gaussian.get("stableId")):
+            raise MaskSessionError("invalidSeedRegion", "The Scene Snapshot has an invalid Stable Gaussian ID.")
+        mean = _vector(gaussian.get("mean"))
+        if mean is None:
+            raise MaskSessionError("invalidSeedRegion", "The Scene Snapshot has an invalid Gaussian mean.")
+        result[gaussian["stableId"]] = mean
+    return result
+
+
+def _validate_plan(plan: GeneratedViewPlan, anchor_frame: RegisteredFrame) -> None:
+    if not isinstance(plan, GeneratedViewPlan):
+        raise MaskSessionError(
+            "invalidGeneratedViews", "The Generated View renderer did not return a bounded plan."
+        )
+    if not plan.frame_set_id or not plan.render_config_version:
+        raise MaskSessionError(
+            "invalidGeneratedViews", "The Generated View plan has incomplete immutable bindings."
+        )
+    if len(plan.primary) + 1 > INITIAL_VIEW_BUDGET:
+        raise MaskSessionError(
+            "generatedViewBudgetExceeded", "The Generated View plan exceeds the initial 16-view budget."
+        )
+    if len(plan.replacements) > REPLACEMENT_BUDGET:
+        raise MaskSessionError(
+            "generatedViewBudgetExceeded", "The Generated View plan exceeds the eight replacement budget."
+        )
+    if len(plan.primary) + len(plan.replacements) + 1 > TOTAL_VIEW_BUDGET:
+        raise MaskSessionError(
+            "generatedViewBudgetExceeded", "The Generated View plan exceeds the 24-view total budget."
+        )
+    seen = {anchor_frame.view_id}
+    primary_ids: set[str] = set()
+    replacement_targets: set[str] = set()
+    generated_resolutions: set[tuple[int, int]] = set()
+    for candidate in plan.primary:
+        if candidate.category == "replacement":
+            raise MaskSessionError(
+                "invalidGeneratedViews",
+                "A primary Generated View cannot be classified as a replacement.",
+            )
+        _validate_candidate_frame(candidate, seen, generated_resolutions)
+        primary_ids.add(candidate.frame.view_id)
+    for candidate in plan.replacements:
+        if candidate.category != "replacement" or not candidate.replacement_of:
+            raise MaskSessionError(
+                "invalidGeneratedViews", "A replacement view must identify its failed primary candidate."
+            )
+        if candidate.replacement_of not in primary_ids:
+            raise MaskSessionError(
+                "invalidGeneratedViews", "A replacement view must replace a planned primary candidate."
+            )
+        if candidate.replacement_of in replacement_targets:
+            raise MaskSessionError(
+                "invalidGeneratedViews", "Each failed primary candidate may have at most one replacement."
+            )
+        replacement_targets.add(candidate.replacement_of)
+        _validate_candidate_frame(candidate, seen, generated_resolutions)
+    if len(generated_resolutions) > 1:
+        raise MaskSessionError(
+            "invalidGeneratedViews",
+            "Generated Views may not mix render resolutions within one Frame Set plan.",
+        )
+
+
+def _validate_candidate_frame(
+    candidate: GeneratedViewCandidate,
+    seen: set[str],
+    generated_resolutions: set[tuple[int, int]],
+) -> None:
+    if candidate.category not in {"ring", "upper", "replacement"}:
+        raise MaskSessionError("invalidGeneratedViews", "A Generated View candidate has an unknown category.")
+    frame = candidate.frame
+    if (
+        frame.source != "generated"
+        or not frame.view_id
+        or frame.view_id in seen
+        or frame.image_png is None
+        or not _dimension(frame.width)
+        or not _dimension(frame.height)
+        or _digest(frame.image_png) != frame.frame_digest
+    ):
+        raise MaskSessionError("invalidGeneratedViews", "A Generated View candidate is not an immutable rendered frame.")
+    if not _finite_json(frame.camera):
+        raise MaskSessionError(
+            "invalidGeneratedViews", "A Generated View camera contains non-finite metadata."
+        )
+    if (
+        isinstance(frame.camera, Mapping)
+        and "preflightStatus" in frame.camera
+        and frame.camera["preflightStatus"] != "accepted"
+    ):
+        raise MaskSessionError(
+            "invalidGeneratedViews", "A Generated View camera did not pass service-side preflight."
+        )
+    seen.add(frame.view_id)
+    generated_resolutions.add((frame.width, frame.height))
+
+
+def _generated_frame_set_version(
+    anchor_version: str,
+    plan: GeneratedViewPlan,
+    ordered_views: Sequence[RegisteredFrame],
+) -> str:
+    canonical = json.dumps(
+        {
+            "policy": POLICY_ID,
+            "anchorVersion": anchor_version,
+            "renderConfigVersion": plan.render_config_version,
+            "views": [
+                {
+                    "viewId": frame.view_id,
+                    "frameDigest": frame.frame_digest,
+                    "width": frame.width,
+                    "height": frame.height,
+                }
+                for frame in ordered_views
+            ],
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return f"{anchor_version}:generated:{hashlib.sha256(canonical).hexdigest()[:16]}"
+
+
+def _primary_frame_outcomes(mask_set: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    tracks = mask_set.get("tracks")
+    if not isinstance(tracks, Sequence):
+        raise MaskSessionError("invalidCoverageReport", "The Mask Set has no primary Mask Track.")
+    for track in tracks:
+        if (
+            isinstance(track, Mapping)
+            and track.get("trackId") == "primary"
+            and track.get("role") == "include"
+            and isinstance(track.get("frames"), Sequence)
+        ):
+            return {
+                frame["viewId"]: frame
+                for frame in track["frames"]
+                if isinstance(frame, Mapping) and isinstance(frame.get("viewId"), str)
+            }
+    raise MaskSessionError("invalidCoverageReport", "The Mask Set has no primary include Mask Track.")
+
+
+def _quality_outcome(
+    *,
+    frame: RegisteredFrame,
+    outcome: Mapping[str, Any] | None,
+    scene_snapshot: Mapping[str, Any],
+    renderer: ContributorRenderer,
+    prompt_log: Sequence[Mapping[str, Any]] = (),
+) -> tuple[bool, str, set[int]]:
+    if outcome is None:
+        return False, "The view was not present in the complete Mask Set.", set()
+    if outcome.get("status") != "accepted":
+        reason = outcome.get("rejectionReason")
+        return (
+            False,
+            reason
+            if isinstance(reason, str) and reason.strip()
+            else "The mask adapter did not accept this view.",
+            set(),
+        )
+    try:
+        mask = _decode_mask(outcome.get("binaryMask"))
+    except MaskSessionError as error:
+        return False, str(error), set()
+    if mask.width != frame.width or mask.height != frame.height:
+        return False, "The accepted mask dimensions do not match its immutable frame.", set()
+    if mask.pixel_count == 0:
+        return False, "The accepted mask has no foreground pixels.", set()
+    if mask.pixel_count / (frame.width * frame.height) >= 0.95:
+        return False, "The accepted mask covers nearly the whole generated frame.", set()
+    prompt_reason = _prompt_mask_reason(mask, frame, prompt_log)
+    if prompt_reason is not None:
+        return False, prompt_reason, set()
+    try:
+        rendered = renderer.render(scene_snapshot=scene_snapshot, frame=frame)
+        known_ids = set(_scene_means(scene_snapshot))
+        validate_rendered_view(rendered, frame, tuple(known_ids))
+    except (MaskSessionError, ValueError) as error:
+        return False, str(error), set()
+    contributor_ids: set[int] = set()
+    contributor_under_mask = False
+    for contribution in rendered.contributors:
+        if (
+            not _integer(contribution.stable_id)
+            or contribution.stable_id not in known_ids
+        ):
+            return False, "The Contributor renderer returned invalid view support.", set()
+        contributor_ids.add(contribution.stable_id)
+        contributor_under_mask = contributor_under_mask or mask.contains(
+            contribution.x_px, contribution.y_px
+        )
+    if not contributor_ids:
+        return False, "The view has no contributor support.", set()
+    if not contributor_under_mask:
+        return False, "The accepted mask has no contributor support beneath it.", set()
+    return True, "", contributor_ids
+
+
+def _prompt_mask_reason(
+    mask: _BinaryMask,
+    frame: RegisteredFrame,
+    prompt_log: Sequence[Mapping[str, Any]],
+) -> str | None:
+    """Reject masks that contradict an explicit point on this frame.
+
+    Prompt semantics remain owned by the mask adapter. This gate only checks
+    the two universally safe invariants: an include point must stay inside its
+    accepted primary mask and an exclude point must stay outside it.
+    """
+
+    for entry in prompt_log:
+        if not isinstance(entry, Mapping):
+            continue
+        prompt = entry.get("prompt")
+        if not isinstance(prompt, Mapping) or prompt.get("viewId") != frame.view_id:
+            continue
+        x_px = prompt.get("xPx")
+        y_px = prompt.get("yPx")
+        polarity = prompt.get("polarity")
+        if not _integer(x_px) or not _integer(y_px):
+            return "The point prompt coordinates are invalid for this accepted mask."
+        if not (0 <= x_px < frame.width and 0 <= y_px < frame.height):
+            return "The point prompt lies outside its immutable frame."
+        if polarity == "include" and not mask.contains(x_px, y_px):
+            return "The accepted mask excludes an include point prompt."
+        if polarity == "exclude" and mask.contains(x_px, y_px):
+            return "The accepted mask includes an exclude point prompt."
+    return None
+
+
+def _angular_coverage(frames: Sequence[RegisteredFrame]) -> dict[str, object]:
+    azimuths: list[float] = []
+    elevations: list[float] = []
+    for frame in frames:
+        if not isinstance(frame.camera, Mapping):
+            continue
+        azimuth = frame.camera.get("azimuthDegrees")
+        elevation = frame.camera.get("elevationDegrees")
+        if isinstance(azimuth, (int, float)) and math.isfinite(azimuth):
+            azimuths.append(float(azimuth) % 360.0)
+        if isinstance(elevation, (int, float)) and math.isfinite(elevation):
+            elevations.append(float(elevation))
+    return {
+        "azimuthDegreesInFrameOrder": azimuths,
+        "elevationDegreesInFrameOrder": elevations,
+        "circularAzimuthSpanDegrees": _circular_span(azimuths),
+        "minimumElevationDegrees": min(elevations) if elevations else None,
+        "maximumElevationDegrees": max(elevations) if elevations else None,
+    }
+
+
+def _circular_span(values: Sequence[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    ordered = sorted(values)
+    gaps = [
+        right - left
+        for left, right in zip(ordered, (*ordered[1:], ordered[0] + 360.0), strict=True)
+    ]
+    return 360.0 - max(gaps)
+
+
+def _frame_payload(frame: RegisteredFrame) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "viewId": frame.view_id,
+        "frameDigest": frame.frame_digest,
+        "width": frame.width,
+        "height": frame.height,
+        "source": frame.source,
+    }
+    if frame.image_png is not None:
+        payload["imagePngBase64"] = base64.b64encode(frame.image_png).decode("ascii")
+    if frame.camera is not None:
+        payload["camera"] = dict(frame.camera)
+    return payload
+
+
+def _digest(data: bytes) -> str:
+    return f"sha256:{hashlib.sha256(data).hexdigest()}"
+
+
+def _dimension(value: object) -> bool:
+    return _integer(value) and value > 0
+
+
+def _integer(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _finite_positive(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
+
+
+def _finite_json(value: object) -> bool:
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, (str, int, bool)) or value is None:
+        return True
+    if isinstance(value, Mapping):
+        return all(isinstance(key, str) and _finite_json(item) for key, item in value.items())
+    if isinstance(value, Sequence):
+        return all(_finite_json(item) for item in value)
+    return False
+
+
+def _vector(value: object) -> tuple[float, float, float] | None:
+    if not isinstance(value, Sequence) or len(value) != 3:
+        return None
+    values = tuple(float(item) for item in value if isinstance(item, (int, float)) and not isinstance(item, bool))
+    if len(values) != 3 or not all(math.isfinite(item) for item in values):
+        return None
+    return values[0], values[1], values[2]
+
+
+def _median(values: Sequence[float]) -> float:
+    ordered = sorted(values)
+    if not ordered:
+        return 0.0
+    middle = len(ordered) // 2
+    return ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def _weighted_median(values: Sequence[tuple[float, float]]) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values, key=lambda value: value[0])
+    total = sum(weight for _, weight in ordered)
+    midpoint = total / 2.0
+    accumulated = 0.0
+    for index, (value, weight) in enumerate(ordered):
+        accumulated += weight
+        if accumulated > midpoint:
+            return value
+        if accumulated == midpoint and index + 1 < len(ordered):
+            return (value + ordered[index + 1][0]) / 2.0
+    return ordered[-1][0]

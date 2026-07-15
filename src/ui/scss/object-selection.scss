@@ -1,39 +1,46 @@
-@use 'colors.scss' as *;
+@use "colors.scss" as *;
 
 #object-selection-toolbar {
-    position: absolute;
-    left: 50%;
-    bottom: 92px;
-    transform: translate(-50%, 0);
-    padding: 8px;
-    border-radius: 8px;
-    background-color: $bcg-primary;
+  position: absolute;
+  left: 50%;
+  bottom: 92px;
+  transform: translate(-50%, 0);
+  padding: 8px;
+  border-radius: 8px;
+  background-color: $bcg-primary;
 }
 
 #object-selection-panel {
-    position: absolute;
-    top: 16px;
-    right: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 180px;
-    padding: 8px;
-    border-radius: 8px;
-    background-color: $bcg-primary;
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+  padding: 8px;
+  border-radius: 8px;
+  background-color: $bcg-primary;
 }
 
 #object-selection-panel-status {
-    margin-bottom: 4px;
-    color: $text-primary;
+  margin-bottom: 4px;
+  color: $text-primary;
 }
 
 #object-selection-panel-selected-preview {
-    color: $clr-hilight;
+  color: $clr-hilight;
 }
 
 #object-selection-panel-uncertain-preview {
-    color: $text-secondary;
-    border-left: 2px dashed $text-secondary;
-    padding-left: 4px;
+  color: $text-secondary;
+  border-left: 2px dashed $text-secondary;
+  padding-left: 4px;
+}
+
+#object-selection-panel-coverage {
+  max-width: 320px;
+  color: $text-secondary;
+  white-space: normal;
+  word-wrap: break-word;
 }

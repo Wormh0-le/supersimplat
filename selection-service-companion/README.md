@@ -6,17 +6,25 @@ its npm distribution. It intentionally contains no model weights.
 
 ## Install a locked release
 
-Use `uv` to create an isolated environment from a tagged, locked release:
+Use `uv` to create an isolated environment from a tagged, locked release. The
+renderer extra is installed into this Companion-owned `.venv`; do not activate
+or search `thirdparty/sam3/.venv`:
 
 ```sh
-uv tool install --python 3.12 --from ./selection-service-companion supersplat-selection-service-companion
-selection-service install --release 0.1.0 --lock-file ./selection-service-companion/uv.lock
+cd selection-service-companion
+uv sync --python 3.12.12 --locked --extra renderer
+uv run --locked --extra renderer selection-service install \
+  --release 0.1.0 \
+  --lock-file ./uv.lock
 ```
 
 The `install` command hashes the supplied `uv.lock` and re-verifies that exact
 file before the Companion starts. It records the selected release and lock
 digest in the operator's local Companion state; it does not download a model
-or modify the editor.
+or modify the editor. The renderer runtime is accepted only when the running
+process reports Python 3.12.12, PyTorch 2.11.0+cu128, CUDA 12.8, and gsplat
+1.5.3 installed from source commit
+`77ab983ffe43420b2131669cb35776b883ca4c3c`.
 
 ## Install a model separately
 
@@ -24,7 +32,7 @@ The operator supplies an already acquired checkpoint and a Model Manifest. The
 manifest's `checkpointDigest` must match the checkpoint's SHA-256 digest.
 
 ```sh
-selection-service models install \
+uv run --locked --extra renderer selection-service models install \
   --manifest /secure/manifests/sam31.json \
   --weights /secure/models/sam31_multiplex.pt
 ```
@@ -72,7 +80,7 @@ The default profile listens only on loopback. The editor must be configured
 with the same endpoint and exact origin shown here.
 
 ```sh
-selection-service start \
+uv run --locked --extra renderer selection-service start \
   --endpoint http://127.0.0.1:8787 \
   --allow-origin https://editor.example
 ```
@@ -80,7 +88,7 @@ selection-service start \
 Trusted-LAN use must be explicit and HTTPS-only:
 
 ```sh
-selection-service start \
+uv run --locked --extra renderer selection-service start \
   --profile trusted-lan \
   --endpoint https://192.168.1.20:8787 \
   --allow-origin https://editor.example \
@@ -94,9 +102,10 @@ Trusted-LAN hosts must resolve only to private-network addresses; public,
 unspecified, and loopback listeners are rejected.
 
 This release exposes `/health`, `/capabilities`, and an Object Selection
-Session admission lease. It reports the renderer as unavailable until a later
-scene-transport release installs the actual gsplat/CUDA adapter; this is
-deliberate and prevents a false ready state. The control plane reserves
+Session admission lease. It verifies the locked gsplat/CUDA runtime from the
+current Companion process only. Until the production Contributor renderer is
+installed, or whenever the runtime identity does not match, renderer status
+remains unavailable with an operator-facing diagnostic. The control plane reserves
 exactly one Object Selection Session lease at a time and returns `busy` to a
 second opener; closing that lease restores capacity. It still proves the
 locked-install, model-manifest, CORS, browser transport, and single-session

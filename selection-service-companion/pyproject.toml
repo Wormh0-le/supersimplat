@@ -7,13 +7,31 @@ name = "supersplat-selection-service-companion"
 version = "0.1.0"
 description = "Operator-owned control plane for SuperSplat Object Selection"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = "==3.12.12"
 license = { text = "MIT" }
 authors = [{ name = "SuperSplat contributors" }]
 dependencies = []
+
+[project.optional-dependencies]
+renderer = [
+    "gsplat==1.5.3",
+    "torch==2.11.0+cu128",
+]
 
 [project.scripts]
 selection-service = "selection_service_companion.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/selection_service_companion"]
+
+[tool.uv.sources]
+gsplat = { git = "https://github.com/nerfstudio-project/gsplat.git", rev = "77ab983ffe43420b2131669cb35776b883ca4c3c" }
+torch = { index = "pytorch-cu128" }
+
+[tool.uv.extra-build-dependencies]
+gsplat = [{ requirement = "torch", match-runtime = true }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

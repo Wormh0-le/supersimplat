@@ -32,6 +32,11 @@ from .masking import (
     Sam3PointMaskAdapter,
     register_frame_set,
 )
+from .renderer_runtime import (
+    EXPECTED_RENDERER_LOCK_DIGEST,
+    RendererRuntime,
+    current_renderer_runtime,
+)
 
 
 DEFAULT_STATE_DIRECTORY = Path.home() / ".local" / "state" / "supersplat-selection-service"
@@ -171,6 +176,10 @@ class CompanionState:
         repr=False,
     )
     contributor_renderer: ContributorRenderer | None = field(default=None, repr=False)
+    renderer_runtime: RendererRuntime = field(
+        default_factory=current_renderer_runtime,
+        repr=False,
+    )
     generated_view_policy: GeneratedViewPolicy = field(
         default_factory=GeneratedViewPolicy,
         repr=False,
@@ -1731,18 +1740,37 @@ class CompanionState:
                 and model["adapterId"] in self.mask_adapters
             )
         ]
+        lock_identity_matches = release["lockDigest"] == EXPECTED_RENDERER_LOCK_DIGEST
+        runtime = self.renderer_runtime.status()
         renderer = self.contributor_renderer
         renderer_capability: dict[str, Any]
-        if renderer is None:
+        if not lock_identity_matches:
             renderer_capability = {
                 "id": "gsplat",
                 "status": "unavailable",
-                "message": "The gsplat/CUDA adapter is not installed in this Companion control-plane release.",
+                "message": "The installed release does not use the canonical Companion lock for this renderer baseline.",
+            }
+        elif runtime.status != "ready":
+            renderer_capability = {
+                "id": "gsplat",
+                "status": "unavailable",
+                "message": runtime.message
+                or "The gsplat/CUDA runtime is unavailable in this Companion environment.",
+            }
+            if runtime.cuda_version is not None:
+                renderer_capability["cudaVersion"] = runtime.cuda_version
+        elif renderer is None:
+            renderer_capability = {
+                "id": "gsplat",
+                "status": "unavailable",
+                "cudaVersion": runtime.cuda_version,
+                "message": "The locked gsplat/CUDA runtime is verified, but this Companion release has no production Contributor renderer.",
             }
         else:
             renderer_capability = {
                 "id": renderer.renderer_id,
                 "status": "ready",
+                "cudaVersion": runtime.cuda_version,
             }
         return {
             "protocolVersion": PROTOCOL_VERSION,

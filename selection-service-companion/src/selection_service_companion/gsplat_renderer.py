@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+from io import BytesIO
 import math
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, ClassVar, Mapping, Protocol, Sequence
 
 from .evidence import ContributorSample, RenderedContributorView
 from .masking import MaskSessionError, RegisteredFrame
@@ -23,6 +24,9 @@ SUPPORTED_COORDINATE_CONVENTION = (
 )
 SUPPORTED_RASTERIZER = "playcanvas-gsplat-classic"
 SUPPORTED_CAMERA_CONVENTION = "opencv-world-to-camera"
+SUPPORTED_RENDER_CONFIG_VERSION = "supersplat-effective-rgb-v1"
+ANCHOR_PARITY_NORMAL_MAE = 2.0 / 255.0
+ANCHOR_PARITY_SEVERE_MAE = 0.25
 
 
 @dataclass(frozen=True)
@@ -30,6 +34,7 @@ class GsplatRasterization:
     """One atomic backend result from shared projection/tile preparation."""
 
     service_rgb_digest: str
+    service_rgb_bytes: bytes
     alpha: Sequence[Sequence[float]]
     contributor_ids: Sequence[Sequence[Sequence[int]]]
     contributor_weights: Sequence[Sequence[Sequence[float]]]
@@ -206,6 +211,7 @@ class LockedGsplatBackend:
         )
         return GsplatRasterization(
             service_rgb_digest=f"sha256:{hashlib.sha256(rgb_bytes).hexdigest()}",
+            service_rgb_bytes=rgb_bytes,
             alpha=raster_alpha[0, ..., 0].detach().cpu().tolist(),
             contributor_ids=contributor_ids[0].detach().cpu().tolist(),
             contributor_weights=contributor_weights[0].detach().cpu().tolist(),
@@ -218,6 +224,7 @@ class GsplatContributorRenderer:
 
     backend: GsplatBackend
     renderer_id: str = "gsplat"
+    requires_locked_runtime: ClassVar[bool] = True
 
     def render(
         self,
@@ -249,6 +256,15 @@ def production_gsplat_renderer() -> GsplatContributorRenderer:
 
 def validate_supported_snapshot(snapshot: Mapping[str, Any]) -> tuple[int, ...]:
     """Fail closed unless the snapshot has the approved SuperSplat v1 semantics."""
+    for field_name in (
+        "sceneId",
+        "sceneVersion",
+        "attributeSchema",
+        "appearancePolicy",
+    ):
+        value = snapshot.get(field_name)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Scene Snapshot {field_name} must be a non-empty string")
     if snapshot.get("protocolVersion") != "1":
         raise ValueError("The gsplat renderer supports Scene Snapshot protocol version 1 only")
     if snapshot.get("coordinateConvention") != SUPPORTED_COORDINATE_CONVENTION:
@@ -259,6 +275,8 @@ def validate_supported_snapshot(snapshot: Mapping[str, Any]) -> tuple[int, ...]:
     render_configuration = snapshot.get("renderConfiguration")
     if not isinstance(render_configuration, Mapping):
         raise ValueError("The Scene Snapshot render configuration is missing")
+    if render_configuration.get("version") != SUPPORTED_RENDER_CONFIG_VERSION:
+        raise ValueError("The Scene Snapshot render configuration version is unsupported")
     if (
         render_configuration.get("rasterizer") != SUPPORTED_RASTERIZER
         or render_configuration.get("alphaMode") != "opaque-background"
@@ -287,6 +305,7 @@ def validate_supported_snapshot(snapshot: Mapping[str, Any]) -> tuple[int, ...]:
 
     sh_length: int | None = None
     stable_ids: list[int] = []
+    seen_stable_ids: set[int] = set()
     for gaussian in gaussians:
         if not isinstance(gaussian, Mapping):
             raise ValueError("Scene Snapshot Gaussian records must be objects")
@@ -295,10 +314,11 @@ def validate_supported_snapshot(snapshot: Mapping[str, Any]) -> tuple[int, ...]:
             isinstance(stable_id, bool)
             or not isinstance(stable_id, int)
             or not 0 <= stable_id <= 0xFFFFFFFF
-            or stable_id in stable_ids
+            or stable_id in seen_stable_ids
         ):
             raise ValueError("Scene Snapshot Stable Gaussian IDs must be unique uint32 values")
         stable_ids.append(stable_id)
+        seen_stable_ids.add(stable_id)
         _finite_sequence(gaussian.get("mean"), 3, "mean")
         rotation = _finite_sequence(gaussian.get("rotation"), 4, "rotation")
         if sum(value * value for value in rotation) <= 0.0:
@@ -380,6 +400,8 @@ def _validated_rendered_view(
     if (
         not isinstance(rasterized.service_rgb_digest, str)
         or not rasterized.service_rgb_digest.startswith("sha256:")
+        or not isinstance(rasterized.service_rgb_bytes, bytes)
+        or len(rasterized.service_rgb_bytes) != frame.width * frame.height * 3
     ):
         raise MaskSessionError("rendererFailure", "gsplat returned invalid service RGB identity.")
     _validate_raster_shape(rasterized.alpha, frame.width, frame.height, "alpha")
@@ -463,7 +485,44 @@ def _validated_rendered_view(
         contributors=tuple(contributors),
         service_rgb_digest=rasterized.service_rgb_digest,
         mass_conservation_max_error=maximum_error,
+        anchor_parity=_anchor_parity(rasterized, frame),
     )
+
+
+def _anchor_parity(
+    rasterized: GsplatRasterization, frame: RegisteredFrame
+) -> str:
+    """Compare service RGB with the exact editor Anchor while failing safely.
+
+    Exact/small 8-bit differences are normal. Material appearance differences
+    are moderate and therefore cannot create Anchor negative evidence. A major
+    whole-frame displacement is severe and is rejected by Evidence Policy.
+    """
+
+    if frame.source != "anchor":
+        return "normal"
+    if frame.image_png is None:
+        return "severe"
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(frame.image_png)) as image:
+            if image.size != (frame.width, frame.height):
+                return "severe"
+            editor_rgb = image.convert("RGB").tobytes()
+    except Exception:
+        return "severe"
+    mean_absolute_error = sum(
+        abs(service - editor)
+        for service, editor in zip(
+            rasterized.service_rgb_bytes, editor_rgb, strict=True
+        )
+    ) / (len(editor_rgb) * 255.0)
+    if mean_absolute_error <= ANCHOR_PARITY_NORMAL_MAE:
+        return "normal"
+    if mean_absolute_error <= ANCHOR_PARITY_SEVERE_MAE:
+        return "moderate"
+    return "severe"
 
 
 def _validate_raster_shape(

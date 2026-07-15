@@ -1114,12 +1114,7 @@ class CompanionState:
                     "The Scene Snapshot is unavailable for Evidence Policy lifting.",
                 )
             frame_set = self._require_frame_set(frame_set_version)
-            renderer = self.contributor_renderer
-            if renderer is None:
-                raise MaskSessionError(
-                    "rendererUnavailable",
-                    "The gsplat/CUDA Contributor renderer is unavailable for Anchor Evidence.",
-                )
+            renderer = self._require_contributor_renderer()
             with self._mask_lock:
                 current = self._mask_sessions.get(session_id)
                 if (
@@ -1632,97 +1627,14 @@ class CompanionState:
         # Registration is the attribution trust boundary. Reject unsupported
         # SuperSplat semantics before the immutable cache can be observed by a
         # mask/evidence request.
-        validate_supported_snapshot(snapshot)
-        required_strings = (
-            "protocolVersion",
-            "sceneId",
-            "sceneVersion",
-            "coordinateConvention",
-            "attributeSchema",
-            "appearancePolicy",
-        )
-        for name in required_strings:
-            if not isinstance(snapshot.get(name), str) or not snapshot[name].strip():
-                raise ValueError(f"Scene Snapshot {name} must be a non-empty string")
-        if snapshot.get("stableIdSchema") != "uint32":
-            raise ValueError("Scene Snapshot Stable Gaussian IDs must use the uint32 schema")
-        render_configuration = snapshot.get("renderConfiguration")
-        if not isinstance(render_configuration, dict):
-            raise ValueError("Scene Snapshot render configuration must be an object")
-        render_config_version = render_configuration.get("version")
-        rasterizer = render_configuration.get("rasterizer")
-        if (
-            not isinstance(render_config_version, str)
-            or not render_config_version.strip()
-            or not isinstance(rasterizer, str)
-            or not rasterizer.strip()
-            or render_configuration.get("alphaMode") != "opaque-background"
-        ):
-            raise ValueError("Scene Snapshot render configuration is incomplete")
-        sh_bands = render_configuration.get("shBands")
-        if isinstance(sh_bands, bool) or not isinstance(sh_bands, int) or sh_bands < 0:
-            raise ValueError("Scene Snapshot render configuration shBands must be a non-negative integer")
-        self._validate_vector(
-            render_configuration.get("backgroundRgba"),
-            4,
-            "render configuration backgroundRgba",
-        )
-        gaussian_count = snapshot.get("gaussianCount")
-        gaussians = snapshot.get("gaussians")
-        if (
-            isinstance(gaussian_count, bool)
-            or not isinstance(gaussian_count, int)
-            or gaussian_count < 0
-            or not isinstance(gaussians, list)
-            or gaussian_count != len(gaussians)
-        ):
-            raise ValueError("Scene Snapshot Gaussian count must match its Gaussian records")
-
-        stable_ids: list[int] = []
-        for gaussian in gaussians:
-            if not isinstance(gaussian, dict):
-                raise ValueError("Scene Snapshot Gaussian records must be objects")
-            stable_id = gaussian.get("stableId")
-            if (
-                isinstance(stable_id, bool)
-                or not isinstance(stable_id, int)
-                or stable_id < 0
-                or stable_id > 0xFFFFFFFF
-                or stable_id in stable_ids
-            ):
-                raise ValueError(
-                    "Scene Snapshot Stable Gaussian IDs must be unique unsigned 32-bit integers"
-                )
-            stable_ids.append(stable_id)
-            self._validate_vector(gaussian.get("mean"), 3, "mean")
-            self._validate_vector(gaussian.get("rotation"), 4, "rotation")
-            self._validate_vector(gaussian.get("logScale"), 3, "logScale")
-            self._validate_scalar(gaussian.get("logitOpacity"), "logitOpacity")
-            self._validate_vector(gaussian.get("dc"), 3, "dc")
-            sh = gaussian.get("sh")
-            if not isinstance(sh, list):
-                raise ValueError("Scene Snapshot Gaussian sh must be a numeric array")
-            for value in sh:
-                self._validate_scalar(value, "sh")
-
+        stable_ids = list(validate_supported_snapshot(snapshot))
+        render_configuration = snapshot["renderConfiguration"]
         return (
             snapshot["sceneId"],
             snapshot["sceneVersion"],
             stable_ids,
-            render_config_version,
+            render_configuration["version"],
         )
-
-    @staticmethod
-    def _validate_vector(value: Any, length: int, field_name: str) -> None:
-        if not isinstance(value, list) or len(value) != length:
-            raise ValueError(f"Scene Snapshot Gaussian {field_name} must have {length} numeric values")
-        for item in value:
-            CompanionState._validate_scalar(item, field_name)
-
-    @staticmethod
-    def _validate_scalar(value: Any, field_name: str) -> None:
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-            raise ValueError(f"Scene Snapshot Gaussian {field_name} must contain finite numeric values")
 
     def _capacity(self) -> dict[str, int]:
         with self._session_lock:
@@ -1748,6 +1660,18 @@ class CompanionState:
                 and model["adapterId"] in self.mask_adapters
             )
         ]
+        renderer_capability = self._renderer_capability(release)
+        return {
+            "protocolVersion": PROTOCOL_VERSION,
+            "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}+{release['release']}",
+            "renderer": renderer_capability,
+            "supportedPromptKinds": ["point"],
+            "modelManifests": manifests,
+            "capacity": self._capacity(),
+            "allowedEditorOrigins": allowed_editor_origins,
+        }
+
+    def _renderer_capability(self, release: dict[str, str]) -> dict[str, Any]:
         lock_identity_matches = release["lockDigest"] == EXPECTED_RENDERER_LOCK_DIGEST
         runtime = self.renderer_runtime.status()
         renderer = self.contributor_renderer
@@ -1780,12 +1704,25 @@ class CompanionState:
                 "status": "ready",
                 "cudaVersion": runtime.cuda_version,
             }
-        return {
-            "protocolVersion": PROTOCOL_VERSION,
-            "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}+{release['release']}",
-            "renderer": renderer_capability,
-            "supportedPromptKinds": ["point"],
-            "modelManifests": manifests,
-            "capacity": self._capacity(),
-            "allowedEditorOrigins": allowed_editor_origins,
-        }
+        return renderer_capability
+
+    def _require_contributor_renderer(self) -> ContributorRenderer:
+        renderer = self.contributor_renderer
+        if renderer is None:
+            raise MaskSessionError(
+                "rendererUnavailable",
+                "The gsplat/CUDA Contributor renderer is unavailable for Anchor Evidence.",
+            )
+        if not getattr(renderer, "requires_locked_runtime", False):
+            return renderer
+        try:
+            release = self.require_release()
+        except ValueError as error:
+            raise MaskSessionError("rendererUnavailable", str(error)) from error
+        capability = self._renderer_capability(release)
+        if capability["status"] != "ready":
+            raise MaskSessionError(
+                "rendererUnavailable",
+                str(capability.get("message") or "The locked gsplat/CUDA renderer is unavailable."),
+            )
+        return renderer

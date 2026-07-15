@@ -90,7 +90,7 @@ class GeneratedPointFixtureContributorRenderer(PointFixtureContributorRenderer):
         digest = f"sha256:{hashlib.sha256(png).hexdigest()}"
         return GeneratedViewPlan(
             frame_set_id="frames-1",
-            render_config_version="effective-rgb-v1",
+            render_config_version="supersplat-effective-rgb-v1",
             primary=(
                 GeneratedViewCandidate(
                     frame=RegisteredFrame(
@@ -212,7 +212,7 @@ class MaskSessionContractTests(unittest.TestCase):
             "stableIdSchema": "uint32",
             "appearancePolicy": "effective-editor-dc-sh-bands-0",
             "renderConfiguration": {
-                "version": "effective-rgb-v1",
+                "version": "supersplat-effective-rgb-v1",
                 "backgroundRgba": [0, 0, 0, 1],
                 "alphaMode": "opaque-background",
                 "shBands": 0,
@@ -281,7 +281,7 @@ class MaskSessionContractTests(unittest.TestCase):
             "deterministicSeed": "seed-1",
             "promptLogRevision": 1,
             "frameSetVersion": "anchor-v1",
-            "renderConfigVersion": "effective-rgb-v1",
+            "renderConfigVersion": "supersplat-effective-rgb-v1",
             "modelManifestDigest": self.model_manifest_digest,
         }
         preview = {
@@ -380,7 +380,7 @@ class MaskSessionContractTests(unittest.TestCase):
             "deterministicSeed": "seed-1",
             "promptLogRevision": 1,
             "frameSetVersion": "anchor-v1",
-            "renderConfigVersion": "effective-rgb-v1",
+            "renderConfigVersion": "supersplat-effective-rgb-v1",
             "modelManifestDigest": self.model_manifest_digest,
         }
         prompt_log = [
@@ -691,7 +691,7 @@ class MaskSessionContractTests(unittest.TestCase):
             "deterministicSeed": "seed-1",
             "promptLogRevision": 1,
             "frameSetVersion": "anchor-v1",
-            "renderConfigVersion": "effective-rgb-v1",
+            "renderConfigVersion": "supersplat-effective-rgb-v1",
             "modelManifestDigest": self.model_manifest_digest,
         }
         prompt_log = [{
@@ -782,7 +782,7 @@ class MaskSessionContractTests(unittest.TestCase):
             "deterministicSeed": "seed-1",
             "promptLogRevision": 1,
             "frameSetVersion": "anchor-v1",
-            "renderConfigVersion": "effective-rgb-v1",
+            "renderConfigVersion": "supersplat-effective-rgb-v1",
             "modelManifestDigest": self.model_manifest_digest,
         }
         prompt_log = [{
@@ -971,7 +971,7 @@ class MaskSessionContractTests(unittest.TestCase):
             "deterministicSeed": "seed-1",
             "promptLogRevision": 1,
             "frameSetVersion": "anchor-v1",
-            "renderConfigVersion": "effective-rgb-v1",
+            "renderConfigVersion": "supersplat-effective-rgb-v1",
             "modelManifestDigest": self.model_manifest_digest,
         }
         prompt_log = [{
@@ -1083,7 +1083,7 @@ class MaskSessionContractTests(unittest.TestCase):
             "deterministicSeed": "seed-1",
             "promptLogRevision": 1,
             "frameSetVersion": "anchor-v1",
-            "renderConfigVersion": "effective-rgb-v1",
+            "renderConfigVersion": "supersplat-effective-rgb-v1",
             "modelManifestDigest": self.model_manifest_digest,
         }
         prompt_log = [{
@@ -1169,7 +1169,7 @@ class MaskSessionContractTests(unittest.TestCase):
             "deterministicSeed": "seed-1",
             "promptLogRevision": 1,
             "frameSetVersion": "anchor-v1",
-            "renderConfigVersion": "effective-rgb-v1",
+            "renderConfigVersion": "supersplat-effective-rgb-v1",
             "modelManifestDigest": self.model_manifest_digest,
         }
         preview = {
@@ -1300,7 +1300,7 @@ class MaskSessionContractTests(unittest.TestCase):
                 "deterministicSeed": "seed-1",
                 "promptLogRevision": 1,
                 "frameSetVersion": "anchor-v1",
-                "renderConfigVersion": "effective-rgb-v1",
+                "renderConfigVersion": "supersplat-effective-rgb-v1",
                 "modelManifestDigest": model_manifest_digest,
             },
             prompt_log=[{
@@ -1645,7 +1645,7 @@ class MaskSessionContractTests(unittest.TestCase):
             "deterministicSeed": "seed-1",
             "promptLogRevision": 1,
             "frameSetVersion": "anchor-v1",
-            "renderConfigVersion": "effective-rgb-v1",
+            "renderConfigVersion": "supersplat-effective-rgb-v1",
             "modelManifestDigest": self.model_manifest_digest,
         }
         prompt_log = [{

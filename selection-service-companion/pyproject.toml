@@ -15,6 +15,7 @@ dependencies = []
 [project.optional-dependencies]
 renderer = [
     "gsplat==1.5.3",
+    "pillow==12.3.0",
     "torch==2.11.0+cu128",
 ]
 sam3 = [

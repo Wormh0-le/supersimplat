@@ -285,7 +285,7 @@ class CompanionControlPlaneTests(unittest.TestCase):
             "stableIdSchema": "uint32",
             "appearancePolicy": "effective-editor-dc-sh-bands-0",
             "renderConfiguration": {
-                "version": "effective-rgb-v1",
+                "version": "supersplat-effective-rgb-v1",
                 "backgroundRgba": [0, 0, 0, 1],
                 "alphaMode": "opaque-background",
                 "shBands": 0,
@@ -420,7 +420,7 @@ class CompanionControlPlaneTests(unittest.TestCase):
                     "frameSetId": "frames-1",
                     "policy": {
                         "id": "selection-evidence-policy/v1",
-                        "renderConfigVersion": "effective-rgb-v1",
+                        "renderConfigVersion": "supersplat-effective-rgb-v1",
                         "contributorSemantics": "alpha-times-transmittance/v1",
                         "evidenceScale": "contributor-mass/v1",
                         "betaPrior": {"alpha": 1, "beta": 1},
@@ -472,7 +472,7 @@ class CompanionControlPlaneTests(unittest.TestCase):
                 },
                 "coverageReport": {
                     "frameSetVersion": "anchor:anchor-view",
-                    "renderConfigVersion": "effective-rgb-v1",
+                    "renderConfigVersion": "supersplat-effective-rgb-v1",
                     "attemptedViews": 1,
                     "acceptedViews": 1,
                     "rejectedViewCount": 0,

@@ -32,7 +32,8 @@ The production Companion registers its locked gsplat Contributor renderer by
 default, but advertises it as ready only after the release lock and current
 process pass the checks above. The renderer accepts only protocol-1 SuperSplat
 snapshots using `playcanvas-gsplat-classic`, opaque background, right-handed
-world coordinates, XYZW quaternions, and the declared effective DC/SH schema.
+world coordinates, XYZW quaternions, the declared effective DC/SH schema, and
+render configuration `supersplat-effective-rgb-v1`.
 Malformed or unsupported values fail before the snapshot enters the immutable
 service cache.
 
@@ -47,6 +48,13 @@ conserve contributor mass against raster alpha within
 `2e-6 + 1e-5 * abs(alpha)`. Missing support, invalid IDs or weights, and mass
 mismatch abort the preview; there is no nearest, visible-only, top-k, or custom
 backend attribution fallback.
+
+For the editor-owned Anchor, the renderer compares its 8-bit service RGB with
+the registered PNG. A mean absolute channel error of at most `2/255` is normal;
+an error through `0.25` is moderate and disables outside-mask negative
+evidence; a larger error, missing/invalid PNG, or dimension mismatch is severe
+and aborts Evidence lifting. These thresholds are part of the first locked
+renderer policy and must change with its render-configuration revision.
 
 ## Install a model separately
 

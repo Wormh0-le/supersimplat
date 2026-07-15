@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from io import BytesIO
 from pathlib import Path
 import tempfile
 import unittest
+
+from PIL import Image
 
 from selection_service_companion.evidence import ContributorSample
 from selection_service_companion.gsplat_renderer import (
@@ -59,12 +62,23 @@ def supported_snapshot() -> dict[str, object]:
     }
 
 
-def anchor_frame(*, width: int = 2, height: int = 2) -> RegisteredFrame:
+def png_bytes(width: int, height: int, value: int = 0) -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (width, height), color=(value, value, value)).save(
+        output, format="PNG"
+    )
+    return output.getvalue()
+
+
+def anchor_frame(
+    *, width: int = 2, height: int = 2, image_value: int = 0
+) -> RegisteredFrame:
     return RegisteredFrame(
         view_id="anchor-view",
         frame_digest="sha256:editor-anchor-rgb",
         width=width,
         height=height,
+        image_png=png_bytes(width, height, image_value),
         source="anchor",
         camera={
             "model": "pinhole",
@@ -100,6 +114,7 @@ class StaticGsplatBackend:
 def valid_rasterization() -> GsplatRasterization:
     return GsplatRasterization(
         service_rgb_digest="sha256:service-rgb",
+        service_rgb_bytes=bytes(2 * 2 * 3),
         alpha=((0.5, 0.0), (0.0, 0.25)),
         contributor_ids=(((0, 1), (-1, -1)), ((-1, -1), (1, -1))),
         contributor_weights=(((0.3, 0.2), (0.0, 0.0)), ((0.0, 0.0), (0.25, 0.0))),
@@ -128,6 +143,7 @@ class GsplatContributorRendererTests(unittest.TestCase):
         self.assertEqual(backend.calls, 1)
         self.assertEqual(rendered.rgb_frame_digest, "sha256:editor-anchor-rgb")
         self.assertEqual(rendered.service_rgb_digest, "sha256:service-rgb")
+        self.assertEqual(rendered.anchor_parity, "normal")
         self.assertEqual(rendered.support_bounds, (0, 0, 2, 2))
         self.assertEqual(
             rendered.contributors,
@@ -187,10 +203,34 @@ class GsplatContributorRendererTests(unittest.TestCase):
 
         self.assertEqual(backend.calls, 0)
 
+    def test_rejects_unknown_render_configuration_before_calling_gsplat(self) -> None:
+        backend = StaticGsplatBackend(valid_rasterization())
+        snapshot = supported_snapshot()
+        snapshot["renderConfiguration"]["version"] = "unknown-rgb-v2"
+
+        with self.assertRaisesRegex(ValueError, "render configuration version"):
+            GsplatContributorRenderer(backend=backend).render(
+                scene_snapshot=snapshot,
+                frame=anchor_frame(),
+            )
+
+        self.assertEqual(backend.calls, 0)
+
+    def test_classifies_major_anchor_rgb_displacement_as_severe(self) -> None:
+        rendered = GsplatContributorRenderer(
+            backend=StaticGsplatBackend(valid_rasterization())
+        ).render(
+            scene_snapshot=supported_snapshot(),
+            frame=anchor_frame(image_value=255),
+        )
+
+        self.assertEqual(rendered.anchor_parity, "severe")
+
     def test_rejects_absent_contributor_support(self) -> None:
         backend = StaticGsplatBackend(
             GsplatRasterization(
                 service_rgb_digest="sha256:service-rgb",
+                service_rgb_bytes=bytes(2 * 2 * 3),
                 alpha=((0.0, 0.0), (0.0, 0.0)),
                 contributor_ids=(((), ()), ((), ())),
                 contributor_weights=(((), ()), ((), ())),

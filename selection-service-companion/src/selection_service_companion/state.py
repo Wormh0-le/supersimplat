@@ -18,6 +18,7 @@ from typing import Any
 from . import PACKAGE_VERSION, PROTOCOL_VERSION
 from .evidence import ContributorRenderer, build_evidence_snapshot
 from .generated_views import (
+    GENERATED_VIEW_RESOLUTIONS,
     GeneratedViewPolicy,
     frame_set_payload,
     public_frame_set_payload,
@@ -41,6 +42,16 @@ from .renderer_runtime import (
 
 
 DEFAULT_STATE_DIRECTORY = Path.home() / ".local" / "state" / "supersplat-selection-service"
+
+
+def _is_torch_out_of_memory(error: BaseException) -> bool:
+    """Recognize only PyTorch's measured CUDA OOM signal."""
+
+    try:
+        import torch
+    except ImportError:
+        return False
+    return isinstance(error, torch.OutOfMemoryError)
 
 MODEL_MANIFEST_IDENTITY_FIELDS = (
     "digest",
@@ -675,7 +686,9 @@ class CompanionState:
         renderer = self.contributor_renderer
         if (
             renderer is None
-            or not callable(getattr(renderer, "generate_views", None))
+            or not callable(getattr(renderer, "plan_views", None))
+            or not callable(getattr(renderer, "preflight", None))
+            or not callable(getattr(renderer, "render_generated", None))
             or len(anchor_frame_set.ordered_views) != 1
         ):
             return ResolvedPreviewFrameSet(
@@ -722,41 +735,59 @@ class CompanionState:
                     "sceneCacheMiss", "The Scene Snapshot is unavailable for Generated View planning."
                 )
             anchor_mask_set = {"tracks": preliminary_tracks}
-            prepared = self.generated_view_policy.prepare(
-                scene_snapshot=json.loads(snapshot.canonical),
-                anchor_frame_set=anchor_frame_set,
-                anchor_mask_set=anchor_mask_set,
-                renderer=renderer,
-            )
-            if prepared.plan.render_config_version != self._mask_binding(
-                bindings, "renderConfigVersion"
-            ):
-                raise MaskSessionError(
-                    "renderConfigMismatch",
-                    "Generated Views must use the immutable render configuration bound to this preview trial.",
-                )
-            preliminary_production = adapter.produce_tracks(
-                model=model,
-                frame_set=prepared.initial_frame_set,
-                prompt_log=prompt_log,
-                cancelled=cancelled,
-            )
-            preliminary_tracks, _, _ = self._normalise_mask_production(
-                preliminary_production
-            )
-            self._validate_complete_tracks(
-                prepared.initial_frame_set,
-                prompt_log if isinstance(prompt_log, list) else [],
-                preliminary_tracks,
-            )
-            preliminary_mask_set = {"tracks": preliminary_tracks}
-            selected = self.generated_view_policy.select_frame_set(
-                prepared=prepared,
-                scene_snapshot=json.loads(snapshot.canonical),
-                preliminary_mask_set=preliminary_mask_set,
-                renderer=renderer,
-                prompt_log=prompt_log if isinstance(prompt_log, list) else (),
-            )
+            scene_snapshot = json.loads(snapshot.canonical)
+            selected = None
+            for resolution in GENERATED_VIEW_RESOLUTIONS:
+                try:
+                    prepared = self.generated_view_policy.prepare(
+                        scene_snapshot=scene_snapshot,
+                        anchor_frame_set=anchor_frame_set,
+                        anchor_mask_set=anchor_mask_set,
+                        renderer=renderer,
+                        resolution=resolution,
+                    )
+                    if prepared.plan.render_config_version != self._mask_binding(
+                        bindings, "renderConfigVersion"
+                    ):
+                        raise MaskSessionError(
+                            "renderConfigMismatch",
+                            "Generated Views must use the immutable render configuration bound to this preview trial.",
+                        )
+                    preliminary_production = adapter.produce_tracks(
+                        model=model,
+                        frame_set=prepared.initial_frame_set,
+                        prompt_log=prompt_log,
+                        cancelled=cancelled,
+                    )
+                    preliminary_tracks, _, _ = self._normalise_mask_production(
+                        preliminary_production
+                    )
+                    self._validate_complete_tracks(
+                        prepared.initial_frame_set,
+                        prompt_log if isinstance(prompt_log, list) else [],
+                        preliminary_tracks,
+                    )
+                    preliminary_mask_set = {"tracks": preliminary_tracks}
+                    selected = self.generated_view_policy.select_frame_set(
+                        prepared=prepared,
+                        scene_snapshot=scene_snapshot,
+                        preliminary_mask_set=preliminary_mask_set,
+                        renderer=renderer,
+                        prompt_log=prompt_log if isinstance(prompt_log, list) else (),
+                    )
+                    break
+                except Exception as error:
+                    if not _is_torch_out_of_memory(error):
+                        raise
+                    discard_attempt = getattr(renderer, "discard_attempt", None)
+                    if callable(discard_attempt):
+                        discard_attempt()
+                    if resolution == GENERATED_VIEW_RESOLUTIONS[-1]:
+                        raise MaskSessionError(
+                            "rendererOutOfMemory",
+                            "The Generated View attempt exhausted CUDA memory at the minimum resolution.",
+                        ) from error
+            assert selected is not None
             self.register_frame_set(frame_set_payload(selected.frame_set))
             with self._mask_lock:
                 session = self._mask_sessions.get(session_id)

@@ -8,9 +8,12 @@ from selection_service_companion.evidence import (
     RenderedContributorView,
 )
 from selection_service_companion.generated_views import (
+    CameraPreflightResult,
     GeneratedViewCandidate,
+    GeneratedViewCameraPlan,
     GeneratedViewPlan,
     GeneratedViewPolicy,
+    PlannedGeneratedViewCandidate,
     quality_gate_tracks,
 )
 from selection_service_companion.masking import MaskSessionError, RegisteredFrame, RegisteredFrameSet
@@ -24,6 +27,7 @@ class GeneratedViewFixtureRenderer:
     """Small same-renderer fixture with a pre-rendered generated orbit."""
 
     renderer_id = "gsplat"
+    render_config_version = "generated-1008-v1"
 
     def __init__(self) -> None:
         self.seed_regions = []
@@ -52,7 +56,7 @@ class GeneratedViewFixtureRenderer:
             contributors=contributors,
         )
 
-    def generate_views(
+    def plan_views(
         self,
         *,
         scene_snapshot,
@@ -60,38 +64,44 @@ class GeneratedViewFixtureRenderer:
         seed_region,
         initial_budget,
         replacement_budget,
+        resolution,
     ):
-        del scene_snapshot, anchor_frame
+        del scene_snapshot, anchor_frame, resolution
         self.seed_regions.append(seed_region)
         self.asserted_budgets = (initial_budget, replacement_budget)
-        frame = lambda view_id: RegisteredFrame(
+        candidate = lambda view_id, category, azimuth, elevation=None, replacement_of=None: PlannedGeneratedViewCandidate(
             view_id=view_id,
-            frame_digest=digest(self._generated_png),
-            width=8,
-            height=8,
-            image_png=self._generated_png,
-            source="generated",
-            camera={"azimuthDegrees": 30.0, "elevationDegrees": 0.0},
+            camera={"azimuthDegrees": azimuth, "elevationDegrees": elevation or 0.0},
+            category=category,
+            azimuth_degrees=azimuth,
+            elevation_degrees=elevation,
+            replacement_of=replacement_of,
         )
-        return GeneratedViewPlan(
+        return GeneratedViewCameraPlan(
             frame_set_id="frames-1",
-            render_config_version="generated-1008-v1",
             primary=(
-                GeneratedViewCandidate(
-                    frame=frame("ring-01"), category="ring", azimuth_degrees=30.0
-                ),
-                GeneratedViewCandidate(
-                    frame=frame("upper-00"), category="upper", azimuth_degrees=0.0, elevation_degrees=30.0
-                ),
+                candidate("ring-01", "ring", 30.0),
+                candidate("upper-00", "upper", 0.0, 30.0),
             ),
             replacements=(
-                GeneratedViewCandidate(
-                    frame=frame("replacement-00"),
-                    category="replacement",
-                    azimuth_degrees=15.0,
-                    replacement_of="ring-01",
-                ),
+                candidate("replacement-00", "replacement", 15.0, replacement_of="ring-01"),
             ),
+        )
+
+    def preflight(self, *, scene_snapshot, candidate, seed_region, resolution):
+        del scene_snapshot, seed_region, resolution
+        return CameraPreflightResult(True, candidate.camera, {"policyVersion": "fixture-v1"})
+
+    def render_generated(self, *, scene_snapshot, candidate, preflight, resolution):
+        del scene_snapshot, preflight
+        return RegisteredFrame(
+            view_id=candidate.view_id,
+            frame_digest=digest(self._generated_png),
+            width=resolution,
+            height=resolution,
+            image_png=self._generated_png,
+            source="generated",
+            camera=candidate.camera,
         )
 
 
@@ -111,7 +121,7 @@ class LowIncrementFixtureRenderer(GeneratedViewFixtureRenderer):
             contributors=(ContributorSample(stable_id=1, x_px=4, y_px=4, mass=3.0),),
         )
 
-    def generate_views(
+    def plan_views(
         self,
         *,
         scene_snapshot,
@@ -119,29 +129,22 @@ class LowIncrementFixtureRenderer(GeneratedViewFixtureRenderer):
         seed_region,
         initial_budget,
         replacement_budget,
+        resolution,
     ):
-        del scene_snapshot, anchor_frame
+        del scene_snapshot, anchor_frame, resolution
         self.seed_regions.append(seed_region)
         self.asserted_budgets = (initial_budget, replacement_budget)
 
-        def candidate(index: int) -> GeneratedViewCandidate:
-            return GeneratedViewCandidate(
-                frame=RegisteredFrame(
-                    view_id=f"low-{index}",
-                    frame_digest=digest(self._generated_png),
-                    width=8,
-                    height=8,
-                    image_png=self._generated_png,
-                    source="generated",
-                    camera={"azimuthDegrees": float(index * 30)},
-                ),
+        def candidate(index: int) -> PlannedGeneratedViewCandidate:
+            return PlannedGeneratedViewCandidate(
+                view_id=f"low-{index}",
+                camera={"azimuthDegrees": float(index * 30)},
                 category="ring",
                 azimuth_degrees=float(index * 30),
             )
 
-        return GeneratedViewPlan(
+        return GeneratedViewCameraPlan(
             frame_set_id="frames-1",
-            render_config_version="generated-1008-v1",
             primary=tuple(candidate(index) for index in range(1, 5)),
             replacements=(),
         )
@@ -207,6 +210,7 @@ class GeneratedViewPolicyTests(unittest.TestCase):
             anchor_frame_set=self.frame_set,
             anchor_mask_set=self.mask_set,
             renderer=renderer,
+            resolution=8,
         )
 
         self.assertEqual(renderer.asserted_budgets, (16, 8))
@@ -252,6 +256,7 @@ class GeneratedViewPolicyTests(unittest.TestCase):
             anchor_frame_set=self.frame_set,
             anchor_mask_set=outlier_mask_set,
             renderer=renderer,
+            resolution=8,
         )
 
         self.assertEqual(prepared.seed_region.stable_ids, (1,))
@@ -265,6 +270,7 @@ class GeneratedViewPolicyTests(unittest.TestCase):
             anchor_frame_set=self.frame_set,
             anchor_mask_set=self.mask_set,
             renderer=renderer,
+            resolution=8,
         )
         preliminary_mask_set = {
             "tracks": [
@@ -369,6 +375,7 @@ class GeneratedViewPolicyTests(unittest.TestCase):
             anchor_frame_set=self.frame_set,
             anchor_mask_set=self.mask_set,
             renderer=renderer,
+            resolution=8,
         )
 
         def accepted(view_id: str) -> dict[str, object]:

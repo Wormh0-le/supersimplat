@@ -22,6 +22,8 @@ from .masking import MaskSessionError, RegisteredFrame, RegisteredFrameSet
 
 
 POLICY_ID = "generated-view-policy/v1"
+PREFLIGHT_POLICY_ID = "gsplat-camera-preflight/v1"
+GENERATED_VIEW_RESOLUTIONS = (1008, 768, 512)
 INITIAL_VIEW_BUDGET = 16
 REPLACEMENT_BUDGET = 8
 TOTAL_VIEW_BUDGET = INITIAL_VIEW_BUDGET + REPLACEMENT_BUDGET
@@ -49,6 +51,36 @@ class GeneratedViewCandidate:
 
 
 @dataclass(frozen=True)
+class PlannedGeneratedViewCandidate:
+    """An unrendered camera candidate produced before any RGB/SAM work."""
+
+    view_id: str
+    camera: Mapping[str, Any]
+    category: str
+    azimuth_degrees: float | None = None
+    elevation_degrees: float | None = None
+    replacement_of: str | None = None
+
+
+@dataclass(frozen=True)
+class GeneratedViewCameraPlan:
+    """A bounded camera-only plan that is safe to preflight as one batch."""
+
+    frame_set_id: str
+    primary: tuple[PlannedGeneratedViewCandidate, ...]
+    replacements: tuple[PlannedGeneratedViewCandidate, ...]
+
+
+@dataclass(frozen=True)
+class CameraPreflightResult:
+    """Internal measured camera outcome; diagnostics never enter public payloads."""
+
+    accepted: bool
+    camera: Mapping[str, Any] | None
+    diagnostics: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
 class GeneratedViewPlan:
     """The renderer proposal before mask quality gating chooses a Frame Set."""
 
@@ -61,7 +93,7 @@ class GeneratedViewPlan:
 class GeneratedViewRenderer(ContributorRenderer, Protocol):
     """Contributor renderer capability needed for service-owned hidden views."""
 
-    def generate_views(
+    def plan_views(
         self,
         *,
         scene_snapshot: Mapping[str, Any],
@@ -69,8 +101,29 @@ class GeneratedViewRenderer(ContributorRenderer, Protocol):
         seed_region: SeedRegion,
         initial_budget: int,
         replacement_budget: int,
-    ) -> GeneratedViewPlan:
-        """Return bounded, rendered candidate frames for one immutable plan."""
+        resolution: int,
+    ) -> GeneratedViewCameraPlan:
+        """Return bounded camera candidates without rendering RGB or contributors."""
+
+    def preflight(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        candidate: PlannedGeneratedViewCandidate,
+        seed_region: SeedRegion,
+        resolution: int,
+    ) -> CameraPreflightResult:
+        """Probe one camera before full-resolution rendering or SAM work."""
+
+    def render_generated(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        candidate: PlannedGeneratedViewCandidate,
+        preflight: CameraPreflightResult,
+        resolution: int,
+    ) -> RegisteredFrame:
+        """Render immutable RGB and cache its same-rasterization contributors."""
 
 
 @dataclass(frozen=True)
@@ -81,6 +134,7 @@ class PreparedGeneratedViews:
     plan: GeneratedViewPlan
     initial_frame_set: RegisteredFrameSet
     replacements: tuple[GeneratedViewCandidate, ...]
+    preflight_diagnostics: tuple[Mapping[str, Any], ...] = ()
 
     def public_frame_set(self) -> dict[str, object]:
         """Return metadata the editor needs without hidden image/camera details."""
@@ -107,7 +161,13 @@ class GeneratedViewPolicy:
         anchor_frame_set: RegisteredFrameSet,
         anchor_mask_set: Mapping[str, Any],
         renderer: GeneratedViewRenderer,
+        resolution: int = GENERATED_VIEW_RESOLUTIONS[0],
     ) -> PreparedGeneratedViews:
+        if not _dimension(resolution):
+            raise MaskSessionError(
+                "renderConfigMismatch",
+                "Generated View resolution must be a positive pixel dimension.",
+            )
         anchor_frame = _anchor_frame(anchor_frame_set)
         seed_region = derive_seed_region(
             scene_snapshot=scene_snapshot,
@@ -115,12 +175,74 @@ class GeneratedViewPolicy:
             anchor_mask_set=anchor_mask_set,
             renderer=renderer,
         )
-        plan = renderer.generate_views(
+        camera_plan = renderer.plan_views(
             scene_snapshot=scene_snapshot,
             anchor_frame=anchor_frame,
             seed_region=seed_region,
             initial_budget=INITIAL_VIEW_BUDGET,
             replacement_budget=REPLACEMENT_BUDGET,
+            resolution=resolution,
+        )
+        _validate_camera_plan(camera_plan, anchor_frame)
+        preflighted: list[
+            tuple[PlannedGeneratedViewCandidate, CameraPreflightResult]
+        ] = []
+        diagnostics: list[Mapping[str, Any]] = []
+        for candidate in camera_plan.primary + camera_plan.replacements:
+            outcome = renderer.preflight(
+                scene_snapshot=scene_snapshot,
+                candidate=candidate,
+                seed_region=seed_region,
+                resolution=resolution,
+            )
+            _validate_preflight(outcome, candidate)
+            diagnostics.append(
+                {
+                    "viewId": candidate.view_id,
+                    "accepted": outcome.accepted,
+                    **dict(outcome.diagnostics),
+                }
+            )
+            if outcome.accepted:
+                preflighted.append((candidate, outcome))
+
+        rendered: dict[str, GeneratedViewCandidate] = {}
+        for candidate, outcome in preflighted:
+            frame = renderer.render_generated(
+                scene_snapshot=scene_snapshot,
+                candidate=candidate,
+                preflight=outcome,
+                resolution=resolution,
+            )
+            _validate_rendered_candidate(frame, candidate, resolution)
+            rendered[candidate.view_id] = GeneratedViewCandidate(
+                frame=frame,
+                category=candidate.category,
+                azimuth_degrees=candidate.azimuth_degrees,
+                elevation_degrees=candidate.elevation_degrees,
+                replacement_of=candidate.replacement_of,
+            )
+
+        render_configuration = scene_snapshot.get("renderConfiguration")
+        render_config_version = (
+            render_configuration.get("version")
+            if isinstance(render_configuration, Mapping)
+            else getattr(renderer, "render_config_version", "generated-view-render-v1")
+        )
+        plan = GeneratedViewPlan(
+            frame_set_id=camera_plan.frame_set_id,
+            render_config_version=str(render_config_version),
+            primary=tuple(
+                rendered[candidate.view_id]
+                for candidate in camera_plan.primary
+                if candidate.view_id in rendered
+            ),
+            replacements=tuple(
+                rendered[candidate.view_id]
+                for candidate in camera_plan.replacements
+                if candidate.view_id in rendered
+                and candidate.replacement_of in rendered
+            ),
         )
         _validate_plan(plan, anchor_frame)
         ordered_views = (anchor_frame,) + tuple(
@@ -146,6 +268,7 @@ class GeneratedViewPolicy:
                 ordered_views=ordered_views,
             ),
             replacements=plan.replacements,
+            preflight_diagnostics=tuple(diagnostics),
         )
 
     def select_frame_set(
@@ -698,6 +821,101 @@ def _scene_means(scene_snapshot: Mapping[str, Any]) -> dict[int, tuple[float, fl
             raise MaskSessionError("invalidSeedRegion", "The Scene Snapshot has an invalid Gaussian mean.")
         result[gaussian["stableId"]] = mean
     return result
+
+
+def _validate_camera_plan(
+    plan: GeneratedViewCameraPlan, anchor_frame: RegisteredFrame
+) -> None:
+    if not isinstance(plan, GeneratedViewCameraPlan) or not plan.frame_set_id:
+        raise MaskSessionError(
+            "invalidGeneratedViews",
+            "The Generated View planner did not return a bounded camera plan.",
+        )
+    if len(plan.primary) + 1 > INITIAL_VIEW_BUDGET:
+        raise MaskSessionError(
+            "generatedViewBudgetExceeded",
+            "The Generated View camera plan exceeds the initial 16-view budget.",
+        )
+    if len(plan.replacements) > REPLACEMENT_BUDGET:
+        raise MaskSessionError(
+            "generatedViewBudgetExceeded",
+            "The Generated View camera plan exceeds the eight replacement budget.",
+        )
+    if len(plan.primary) + len(plan.replacements) + 1 > TOTAL_VIEW_BUDGET:
+        raise MaskSessionError(
+            "generatedViewBudgetExceeded",
+            "The Generated View camera plan exceeds the 24-view total budget.",
+        )
+    seen = {anchor_frame.view_id}
+    primary_ids: set[str] = set()
+    replacement_targets: set[str] = set()
+    for candidate in plan.primary:
+        if (
+            not isinstance(candidate, PlannedGeneratedViewCandidate)
+            or candidate.category not in {"ring", "upper"}
+            or not candidate.view_id
+            or candidate.view_id in seen
+            or not _finite_json(candidate.camera)
+        ):
+            raise MaskSessionError(
+                "invalidGeneratedViews",
+                "A primary Generated View camera candidate is invalid.",
+            )
+        seen.add(candidate.view_id)
+        primary_ids.add(candidate.view_id)
+    for candidate in plan.replacements:
+        if (
+            not isinstance(candidate, PlannedGeneratedViewCandidate)
+            or candidate.category != "replacement"
+            or not candidate.replacement_of
+            or candidate.replacement_of not in primary_ids
+            or candidate.replacement_of in replacement_targets
+            or not candidate.view_id
+            or candidate.view_id in seen
+            or not _finite_json(candidate.camera)
+        ):
+            raise MaskSessionError(
+                "invalidGeneratedViews",
+                "A replacement Generated View camera candidate is invalid.",
+            )
+        seen.add(candidate.view_id)
+        replacement_targets.add(candidate.replacement_of)
+
+
+def _validate_preflight(
+    outcome: CameraPreflightResult, candidate: PlannedGeneratedViewCandidate
+) -> None:
+    if (
+        not isinstance(outcome, CameraPreflightResult)
+        or not isinstance(outcome.accepted, bool)
+        or not _finite_json(outcome.diagnostics)
+        or (outcome.accepted and not _finite_json(outcome.camera))
+        or (outcome.accepted and outcome.camera is None)
+    ):
+        raise MaskSessionError(
+            "invalidGeneratedViews",
+            f"Generated View preflight returned an invalid outcome for {candidate.view_id}.",
+        )
+
+
+def _validate_rendered_candidate(
+    frame: RegisteredFrame,
+    candidate: PlannedGeneratedViewCandidate,
+    resolution: int,
+) -> None:
+    if (
+        not isinstance(frame, RegisteredFrame)
+        or frame.view_id != candidate.view_id
+        or frame.source != "generated"
+        or frame.width != resolution
+        or frame.height != resolution
+        or frame.image_png is None
+        or _digest(frame.image_png) != frame.frame_digest
+    ):
+        raise MaskSessionError(
+            "invalidGeneratedViews",
+            "Generated RGB is not an immutable frame at the active render resolution.",
+        )
 
 
 def _validate_plan(plan: GeneratedViewPlan, anchor_frame: RegisteredFrame) -> None:

@@ -17,8 +17,11 @@ from unittest.mock import patch
 from selection_service_companion.server import create_server
 from selection_service_companion.evidence import ContributorSample, RenderedContributorView
 from selection_service_companion.generated_views import (
+    CameraPreflightResult,
     GeneratedViewCandidate,
+    GeneratedViewCameraPlan,
     GeneratedViewPlan,
+    PlannedGeneratedViewCandidate,
 )
 from selection_service_companion.masking import (
     MaskProduction,
@@ -73,8 +76,9 @@ class GeneratedPointFixtureContributorRenderer(PointFixtureContributorRenderer):
 
     def __init__(self) -> None:
         self.seed_regions = []
+        self.attempt_resolutions = []
 
-    def generate_views(
+    def plan_views(
         self,
         *,
         scene_snapshot,
@@ -82,32 +86,81 @@ class GeneratedPointFixtureContributorRenderer(PointFixtureContributorRenderer):
         seed_region,
         initial_budget,
         replacement_budget,
+        resolution,
     ):
         del scene_snapshot, anchor_frame
         self.seed_regions.append(seed_region)
+        self.attempt_resolutions.append(resolution)
         self.asserted_budgets = (initial_budget, replacement_budget)
-        png = b"\x89PNG\r\n\x1a\n generated-view-png"
-        digest = f"sha256:{hashlib.sha256(png).hexdigest()}"
-        return GeneratedViewPlan(
+        return GeneratedViewCameraPlan(
             frame_set_id="frames-1",
-            render_config_version="supersplat-effective-rgb-v1",
             primary=(
-                GeneratedViewCandidate(
-                    frame=RegisteredFrame(
-                        view_id="generated-right",
-                        frame_digest=digest,
-                        width=64,
-                        height=48,
-                        image_png=png,
-                        source="generated",
-                        camera={"azimuthDegrees": 30.0, "elevationDegrees": 0.0},
-                    ),
+                PlannedGeneratedViewCandidate(
+                    view_id="generated-right",
+                    camera={"azimuthDegrees": 30.0, "elevationDegrees": 0.0},
                     category="ring",
                     azimuth_degrees=30.0,
                 ),
             ),
             replacements=(),
         )
+
+    def preflight(self, *, scene_snapshot, candidate, seed_region, resolution):
+        del scene_snapshot, seed_region, resolution
+        return CameraPreflightResult(
+            accepted=True,
+            camera=candidate.camera,
+            diagnostics={"policyVersion": "fixture-preflight-v1"},
+        )
+
+    def render_generated(self, *, scene_snapshot, candidate, preflight, resolution):
+        del scene_snapshot, preflight
+        png = b"\x89PNG\r\n\x1a\n generated-view-png"
+        digest = f"sha256:{hashlib.sha256(png).hexdigest()}"
+        return RegisteredFrame(
+            view_id=candidate.view_id,
+            frame_digest=digest,
+            width=resolution,
+            height=resolution,
+            image_png=png,
+            source="generated",
+            camera=candidate.camera,
+        )
+
+
+class OomGeneratedPointFixtureContributorRenderer(
+    GeneratedPointFixtureContributorRenderer
+):
+    def __init__(self, oom_resolutions):
+        super().__init__()
+        self.oom_resolutions = set(oom_resolutions)
+        self.attempt_artifacts = []
+        self.discarded_attempts = 0
+
+    def render_generated(self, *, scene_snapshot, candidate, preflight, resolution):
+        self.attempt_artifacts.append(resolution)
+        if resolution in self.oom_resolutions:
+            import torch
+
+            raise torch.OutOfMemoryError(f"injected OOM at {resolution}")
+        return super().render_generated(
+            scene_snapshot=scene_snapshot,
+            candidate=candidate,
+            preflight=preflight,
+            resolution=resolution,
+        )
+
+    def discard_attempt(self):
+        self.discarded_attempts += 1
+        self.attempt_artifacts.clear()
+
+
+class FailedGeneratedPointFixtureContributorRenderer(
+    GeneratedPointFixtureContributorRenderer
+):
+    def render_generated(self, *, scene_snapshot, candidate, preflight, resolution):
+        del scene_snapshot, candidate, preflight, resolution
+        raise RuntimeError("injected non-OOM renderer failure")
 
 
 class GeneratedPointMaskAdapter(PointMaskAdapter):
@@ -122,6 +175,8 @@ class GeneratedPointMaskAdapter(PointMaskAdapter):
         )
         for frame in production.tracks[0]["frames"]:
             if frame["viewId"] == "generated-right":
+                generated = frame_set.view("generated-right")
+                assert generated is not None
                 frame.clear()
                 frame.update(
                     {
@@ -129,8 +184,8 @@ class GeneratedPointMaskAdapter(PointMaskAdapter):
                         "status": "accepted",
                         "binaryMask": {
                             "encoding": "sparse-points-v1",
-                            "width": 64,
-                            "height": 48,
+                            "width": generated.width,
+                            "height": generated.height,
                             "foregroundPixels": [[10, 20]],
                         },
                     }
@@ -344,6 +399,118 @@ class MaskSessionContractTests(unittest.TestCase):
             f"/object-selection-sessions/{session_id}/previews", "POST", preview
         )
         self.assertEqual(repeated, result)
+
+    def generated_preview_context(self, renderer, request_id="request-generated-oom"):
+        self.state.mask_adapters["point-mask-v1"] = GeneratedPointMaskAdapter()
+        self.state.contributor_renderer = renderer
+        self.state.register_frame_set(
+            {
+                "frameSetId": "frames-1",
+                "frameSetVersion": "anchor-oom-v1",
+                "orderedViews": [
+                    {
+                        "viewId": "anchor-view",
+                        "frameDigest": "sha256:anchor-frame-v1",
+                        "width": 64,
+                        "height": 48,
+                        "source": "anchor",
+                    }
+                ],
+            }
+        )
+        self.state.register_scene_snapshot(self.snapshot())
+        session_id = self.state.open_object_selection_session(
+            frame_set_version="anchor-oom-v1",
+            model_manifest_digest=self.model_manifest_digest,
+        )
+        assert session_id is not None
+        bindings = {
+            "requestId": request_id,
+            "sessionId": session_id,
+            "targetSplatId": "splat-1",
+            "sceneId": "scene-1",
+            "sceneVersion": "snapshot-v1",
+            "operation": "New",
+            "correctionRound": 0,
+            "deterministicSeed": "seed-1",
+            "promptLogRevision": 1,
+            "frameSetVersion": "anchor-oom-v1",
+            "renderConfigVersion": "supersplat-effective-rgb-v1",
+            "modelManifestDigest": self.model_manifest_digest,
+        }
+        prompt_log = [
+            {
+                "operation": "New",
+                "prompt": {
+                    "promptId": "prompt-1",
+                    "viewId": "anchor-view",
+                    "frameDigest": "sha256:anchor-frame-v1",
+                    "frameWidth": 64,
+                    "frameHeight": 48,
+                    "xPx": 10,
+                    "yPx": 20,
+                    "polarity": "include",
+                },
+            }
+        ]
+        return session_id, bindings, prompt_log
+
+    def test_restarts_the_whole_generated_view_attempt_after_measured_oom(self) -> None:
+        renderer = OomGeneratedPointFixtureContributorRenderer({1008, 768})
+        session_id, bindings, prompt_log = self.generated_preview_context(renderer)
+
+        publication = self.state.update_preview_publication(
+            bindings=bindings,
+            prompt_log=prompt_log,
+        )
+
+        self.assertEqual(renderer.attempt_resolutions, [1008, 768, 512])
+        self.assertEqual(renderer.discarded_attempts, 2)
+        self.assertEqual(renderer.attempt_artifacts, [512])
+        generated = publication.frame_set["orderedViews"][1]
+        self.assertEqual((generated["width"], generated["height"]), (512, 512))
+        self.assertEqual(
+            self.state._mask_sessions[session_id].frame_set_version,
+            publication.bindings["frameSetVersion"],
+        )
+
+    def test_terminal_oom_preserves_the_prior_candidate_publication(self) -> None:
+        renderer = OomGeneratedPointFixtureContributorRenderer({1008, 768, 512})
+        session_id, bindings, prompt_log = self.generated_preview_context(renderer)
+        session = self.state._mask_sessions[session_id]
+        prior_version = session.frame_set_version
+        prior_publications = dict(session.completed_preview_publications)
+
+        with self.assertRaises(MaskSessionError) as raised:
+            self.state.update_preview_publication(
+                bindings=bindings,
+                prompt_log=prompt_log,
+            )
+
+        self.assertEqual(raised.exception.code, "rendererOutOfMemory")
+        self.assertEqual(renderer.attempt_resolutions, [1008, 768, 512])
+        self.assertEqual(renderer.discarded_attempts, 3)
+        self.assertEqual(renderer.attempt_artifacts, [])
+        self.assertEqual(session.frame_set_version, prior_version)
+        self.assertIsNone(session.generated_resolution)
+        self.assertEqual(session.completed_preview_publications, prior_publications)
+
+    def test_non_oom_renderer_failure_does_not_lower_resolution_or_publish(self) -> None:
+        renderer = FailedGeneratedPointFixtureContributorRenderer()
+        session_id, bindings, prompt_log = self.generated_preview_context(renderer)
+        session = self.state._mask_sessions[session_id]
+        prior_version = session.frame_set_version
+
+        with self.assertRaisesRegex(RuntimeError, "non-OOM"):
+            self.state.update_preview_publication(
+                bindings=bindings,
+                prompt_log=prompt_log,
+            )
+
+        self.assertEqual(renderer.attempt_resolutions, [1008])
+        self.assertEqual(session.frame_set_version, prior_version)
+        self.assertIsNone(session.generated_resolution)
+        self.assertEqual(session.completed_preview_publications, {})
 
     def test_expands_an_anchor_preview_to_a_bound_generated_frame_set(self) -> None:
         self.state.mask_adapters["point-mask-v1"] = GeneratedPointMaskAdapter()

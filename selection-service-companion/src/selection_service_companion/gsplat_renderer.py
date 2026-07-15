@@ -7,13 +7,20 @@ visibility, distance, or a bounded top-k diagnostic.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 from io import BytesIO
 import math
 from typing import Any, ClassVar, Mapping, Protocol, Sequence
 
 from .evidence import ContributorSample, RenderedContributorView
+from .generated_views import (
+    CameraPreflightResult,
+    GeneratedViewCameraPlan,
+    PlannedGeneratedViewCandidate,
+    PREFLIGHT_POLICY_ID,
+    SeedRegion,
+)
 from .masking import MaskSessionError, RegisteredFrame
 
 
@@ -38,6 +45,16 @@ class GsplatRasterization:
     alpha: Sequence[Sequence[float]]
     contributor_ids: Sequence[Sequence[Sequence[int]]]
     contributor_weights: Sequence[Sequence[Sequence[float]]]
+    peak_vram_bytes: int | None = None
+
+
+@dataclass(frozen=True)
+class GsplatProbe:
+    """Low-resolution alpha and bounded top-contributor camera diagnostics."""
+
+    alpha: Sequence[Sequence[float]]
+    contributor_ids: Sequence[Sequence[Sequence[int]]]
+    contributor_weights: Sequence[Sequence[Sequence[float]]]
 
 
 class GsplatBackend(Protocol):
@@ -52,6 +69,16 @@ class GsplatBackend(Protocol):
         height: int,
     ) -> GsplatRasterization:
         """Return RGB, alpha, IDs, and weights from one gsplat preparation."""
+
+    def probe(
+        self,
+        *,
+        snapshot: Mapping[str, Any],
+        camera: Mapping[str, Any],
+        width: int,
+        height: int,
+    ) -> GsplatProbe:
+        """Return low-cost alpha and bounded top contributors for preflight only."""
 
 
 class LockedGsplatBackend:
@@ -73,85 +100,25 @@ class LockedGsplatBackend:
         from gsplat.rendering import rasterization
 
         device = torch.device("cuda")
-        gaussians = snapshot["gaussians"]
-        render_configuration = snapshot["renderConfiguration"]
-        sh_degree = render_configuration["shBands"]
-        sh_basis_count = (sh_degree + 1) ** 2
-
-        means = torch.tensor(
-            [gaussian["mean"] for gaussian in gaussians],
-            dtype=torch.float32,
-            device=device,
-        )
-        # Scene Snapshot rotations are editor-owned XYZW; gsplat accepts WXYZ.
-        quats = torch.tensor(
-            [
-                [
-                    gaussian["rotation"][3],
-                    gaussian["rotation"][0],
-                    gaussian["rotation"][1],
-                    gaussian["rotation"][2],
-                ]
-                for gaussian in gaussians
-            ],
-            dtype=torch.float32,
-            device=device,
-        )
-        scales = torch.tensor(
-            [gaussian["logScale"] for gaussian in gaussians],
-            dtype=torch.float32,
-            device=device,
-        ).exp()
-        opacities = torch.tensor(
-            [gaussian["logitOpacity"] for gaussian in gaussians],
-            dtype=torch.float32,
-            device=device,
-        ).sigmoid()
-        colors = torch.empty(
-            (len(gaussians), sh_basis_count, 3),
-            dtype=torch.float32,
-            device=device,
-        )
-        for tensor_index, gaussian in enumerate(gaussians):
-            colors[tensor_index, 0] = torch.tensor(
-                gaussian["dc"], dtype=torch.float32, device=device
-            )
-            active_coefficients_per_channel = sh_basis_count - 1
-            available_coefficients_per_channel = len(gaussian["sh"]) // 3
-            for coefficient in range(active_coefficients_per_channel):
-                for channel in range(3):
-                    colors[tensor_index, coefficient + 1, channel] = gaussian["sh"][
-                        channel * available_coefficients_per_channel + coefficient
-                    ]
-
-        viewmats = torch.tensor(
-            camera["worldToCamera"], dtype=torch.float32, device=device
-        ).reshape(1, 4, 4)
-        intrinsics = torch.tensor(
-            camera["intrinsics"], dtype=torch.float32, device=device
-        ).reshape(1, 3, 3)
-        background = torch.tensor(
-            [render_configuration["backgroundRgba"][:3]],
-            dtype=torch.float32,
-            device=device,
-        )
+        torch.cuda.reset_peak_memory_stats(device)
+        inputs = _locked_inputs(snapshot, camera, device)
 
         service_rgb, raster_alpha, meta = rasterization(
-            means,
-            quats,
-            scales,
-            opacities,
-            colors,
-            viewmats,
-            intrinsics,
+            inputs["means"],
+            inputs["quats"],
+            inputs["scales"],
+            inputs["opacities"],
+            inputs["colors"],
+            inputs["viewmats"],
+            inputs["intrinsics"],
             width,
             height,
             near_plane=camera["nearPlane"],
             far_plane=camera["farPlane"],
-            sh_degree=sh_degree,
+            sh_degree=inputs["sh_degree"],
             packed=False,
             tile_size=16,
-            backgrounds=background,
+            backgrounds=inputs["background"],
             render_mode="RGB",
             rasterize_mode="classic",
         )
@@ -215,16 +182,147 @@ class LockedGsplatBackend:
             alpha=raster_alpha[0, ..., 0].detach().cpu().tolist(),
             contributor_ids=contributor_ids[0].detach().cpu().tolist(),
             contributor_weights=contributor_weights[0].detach().cpu().tolist(),
+            peak_vram_bytes=int(torch.cuda.max_memory_allocated(device)),
+        )
+
+    def probe(
+        self,
+        *,
+        snapshot: Mapping[str, Any],
+        camera: Mapping[str, Any],
+        width: int,
+        height: int,
+    ) -> GsplatProbe:
+        import torch
+        from gsplat.cuda._wrapper import rasterize_top_contributing_gaussian_ids
+        from gsplat.rendering import rasterization
+
+        device = torch.device("cuda")
+        inputs = _locked_inputs(snapshot, camera, device)
+        _, raster_alpha, meta = rasterization(
+            inputs["means"],
+            inputs["quats"],
+            inputs["scales"],
+            inputs["opacities"],
+            inputs["colors"],
+            inputs["viewmats"],
+            inputs["intrinsics"],
+            width,
+            height,
+            near_plane=camera["nearPlane"],
+            far_plane=camera["farPlane"],
+            sh_degree=inputs["sh_degree"],
+            packed=False,
+            tile_size=16,
+            backgrounds=inputs["background"],
+            render_mode="RGB",
+            rasterize_mode="classic",
+        )
+        contributor_ids, contributor_weights = rasterize_top_contributing_gaussian_ids(
+            meta["means2d"],
+            meta["conics"],
+            meta["opacities"],
+            meta["isect_offsets"],
+            meta["flatten_ids"],
+            width,
+            height,
+            meta["tile_size"],
+            4,
+        )
+        return GsplatProbe(
+            alpha=raster_alpha[0, ..., 0].detach().cpu().tolist(),
+            contributor_ids=contributor_ids[0].detach().cpu().tolist(),
+            contributor_weights=contributor_weights[0].detach().cpu().tolist(),
         )
 
 
-@dataclass(frozen=True)
+def _locked_inputs(
+    snapshot: Mapping[str, Any], camera: Mapping[str, Any], device: Any
+) -> dict[str, Any]:
+    """Build the shared locked-revision projection inputs for probe or render."""
+
+    import torch
+
+    gaussians = snapshot["gaussians"]
+    render_configuration = snapshot["renderConfiguration"]
+    sh_degree = render_configuration["shBands"]
+    sh_basis_count = (sh_degree + 1) ** 2
+    means = torch.tensor(
+        [gaussian["mean"] for gaussian in gaussians],
+        dtype=torch.float32,
+        device=device,
+    )
+    quats = torch.tensor(
+        [
+            [
+                gaussian["rotation"][3],
+                gaussian["rotation"][0],
+                gaussian["rotation"][1],
+                gaussian["rotation"][2],
+            ]
+            for gaussian in gaussians
+        ],
+        dtype=torch.float32,
+        device=device,
+    )
+    scales = torch.tensor(
+        [gaussian["logScale"] for gaussian in gaussians],
+        dtype=torch.float32,
+        device=device,
+    ).exp()
+    opacities = torch.tensor(
+        [gaussian["logitOpacity"] for gaussian in gaussians],
+        dtype=torch.float32,
+        device=device,
+    ).sigmoid()
+    colors = torch.empty(
+        (len(gaussians), sh_basis_count, 3),
+        dtype=torch.float32,
+        device=device,
+    )
+    for tensor_index, gaussian in enumerate(gaussians):
+        colors[tensor_index, 0] = torch.tensor(
+            gaussian["dc"], dtype=torch.float32, device=device
+        )
+        active_coefficients_per_channel = sh_basis_count - 1
+        available_coefficients_per_channel = len(gaussian["sh"]) // 3
+        for coefficient in range(active_coefficients_per_channel):
+            for channel in range(3):
+                colors[tensor_index, coefficient + 1, channel] = gaussian["sh"][
+                    channel * available_coefficients_per_channel + coefficient
+                ]
+    return {
+        "means": means,
+        "quats": quats,
+        "scales": scales,
+        "opacities": opacities,
+        "colors": colors,
+        "viewmats": torch.tensor(
+            camera["worldToCamera"], dtype=torch.float32, device=device
+        ).reshape(1, 4, 4),
+        "intrinsics": torch.tensor(
+            camera["intrinsics"], dtype=torch.float32, device=device
+        ).reshape(1, 3, 3),
+        "background": torch.tensor(
+            [render_configuration["backgroundRgba"][:3]],
+            dtype=torch.float32,
+            device=device,
+        ),
+        "sh_degree": sh_degree,
+    }
+
+
+@dataclass
 class GsplatContributorRenderer:
     """Production same-rasterization renderer for Stable Gaussian Evidence."""
 
     backend: GsplatBackend
     renderer_id: str = "gsplat"
     requires_locked_runtime: ClassVar[bool] = True
+    _generated_cache: dict[tuple[str, str], RenderedContributorView] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    last_peak_vram_bytes: int | None = field(default=None, init=False)
 
     def render(
         self,
@@ -233,6 +331,10 @@ class GsplatContributorRenderer:
         frame: RegisteredFrame,
     ) -> RenderedContributorView:
         stable_ids = validate_supported_snapshot(scene_snapshot)
+        cache_key = (str(scene_snapshot["sceneVersion"]), frame.frame_digest)
+        cached = self._generated_cache.get(cache_key)
+        if cached is not None:
+            return cached
         camera = _validate_camera(frame)
         rasterized = self.backend.rasterize(
             snapshot=scene_snapshot,
@@ -240,6 +342,7 @@ class GsplatContributorRenderer:
             width=frame.width,
             height=frame.height,
         )
+        self.last_peak_vram_bytes = rasterized.peak_vram_bytes
         return _validated_rendered_view(
             rasterized=rasterized,
             stable_ids=stable_ids,
@@ -247,11 +350,473 @@ class GsplatContributorRenderer:
             renderer_id=self.renderer_id,
         )
 
+    def plan_views(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        anchor_frame: RegisteredFrame,
+        seed_region: SeedRegion,
+        initial_budget: int,
+        replacement_budget: int,
+        resolution: int,
+    ) -> GeneratedViewCameraPlan:
+        """Produce a deterministic camera orbit without rasterizing any candidate."""
+
+        validate_supported_snapshot(scene_snapshot)
+        anchor_camera = _validate_camera(anchor_frame)
+        anchor_position = _camera_position(anchor_camera)
+        target = seed_region.center
+        distance = max(
+            math.dist(anchor_position, target),
+            seed_region.radius * 4.0,
+            float(anchor_camera["nearPlane"]) * 4.0,
+        )
+        base_direction = _normalise(
+            tuple(anchor_position[index] - target[index] for index in range(3))
+        )
+        if abs(base_direction[0]) + abs(base_direction[1]) < 1e-8:
+            base_azimuth = 0.0
+        else:
+            base_azimuth = math.degrees(math.atan2(base_direction[1], base_direction[0]))
+        base_elevation = math.degrees(math.asin(max(-1.0, min(1.0, base_direction[2]))))
+        orbit_offsets = (
+            (45.0, 0.0, "ring"),
+            (-45.0, 0.0, "ring"),
+            (90.0, 0.0, "ring"),
+            (-90.0, 0.0, "ring"),
+            (135.0, 0.0, "ring"),
+            (-135.0, 0.0, "ring"),
+            (180.0, 0.0, "ring"),
+            (0.0, 30.0, "upper"),
+            (90.0, 30.0, "upper"),
+            (-90.0, 30.0, "upper"),
+        )
+        primary: list[PlannedGeneratedViewCandidate] = []
+        for index, (azimuth_offset, elevation_offset, category) in enumerate(
+            orbit_offsets[: max(0, initial_budget - 1)]
+        ):
+            azimuth = base_azimuth + azimuth_offset
+            elevation = max(-75.0, min(75.0, base_elevation + elevation_offset))
+            position = _orbit_position(target, distance, azimuth, elevation)
+            primary.append(
+                PlannedGeneratedViewCandidate(
+                    view_id=f"generated-{index:02d}",
+                    camera=_generated_camera(
+                        position=position,
+                        target=target,
+                        anchor_camera=anchor_camera,
+                        anchor_frame=anchor_frame,
+                        resolution=resolution,
+                    ),
+                    category=category,
+                    azimuth_degrees=azimuth,
+                    elevation_degrees=elevation,
+                )
+            )
+        replacements: list[PlannedGeneratedViewCandidate] = []
+        for index, candidate in enumerate(primary[:replacement_budget]):
+            azimuth = float(candidate.azimuth_degrees or 0.0) + 10.0
+            elevation = float(candidate.elevation_degrees or 0.0)
+            position = _orbit_position(target, distance * 1.1, azimuth, elevation)
+            replacements.append(
+                PlannedGeneratedViewCandidate(
+                    view_id=f"generated-replacement-{index:02d}",
+                    camera=_generated_camera(
+                        position=position,
+                        target=target,
+                        anchor_camera=anchor_camera,
+                        anchor_frame=anchor_frame,
+                        resolution=resolution,
+                    ),
+                    category="replacement",
+                    azimuth_degrees=azimuth,
+                    elevation_degrees=elevation,
+                    replacement_of=candidate.view_id,
+                )
+            )
+        identity = (
+            f"{scene_snapshot['sceneVersion']}:{seed_region.center}:"
+            f"{seed_region.radius}:{resolution}"
+        ).encode("utf-8")
+        return GeneratedViewCameraPlan(
+            frame_set_id=f"generated-{hashlib.sha256(identity).hexdigest()[:20]}",
+            primary=tuple(primary),
+            replacements=tuple(replacements),
+        )
+
+    def preflight(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        candidate: PlannedGeneratedViewCandidate,
+        seed_region: SeedRegion,
+        resolution: int,
+    ) -> CameraPreflightResult:
+        """Run versioned geometry checks and a low-resolution alpha probe."""
+
+        try:
+            stable_ids = validate_supported_snapshot(scene_snapshot)
+            camera = _validated_candidate_camera(candidate.camera, resolution)
+        except (ValueError, MaskSessionError, OverflowError):
+            return CameraPreflightResult(
+                False,
+                None,
+                {"policyVersion": PREFLIGHT_POLICY_ID, "reason": "non_finite"},
+            )
+        attempts: list[dict[str, Any]] = []
+        for adjustment in ("none", "outward"):
+            adjusted = camera if adjustment == "none" else _outward_camera(camera, seed_region)
+            geometry_reason, geometry_metrics = _geometry_preflight(
+                adjusted, seed_region, scene_snapshot, resolution
+            )
+            if geometry_reason is not None:
+                attempts.append(
+                    {"adjustment": adjustment, "reason": geometry_reason, **geometry_metrics}
+                )
+                if geometry_reason not in {"inside_geometry", "near_plane_cut", "clipped"}:
+                    break
+                continue
+            probe_size = min(64, resolution)
+            probe_camera = _scaled_camera(adjusted, resolution, probe_size)
+            probe = getattr(self.backend, "probe", None)
+            if callable(probe):
+                rasterized = probe(
+                    snapshot=scene_snapshot,
+                    camera=probe_camera,
+                    width=probe_size,
+                    height=probe_size,
+                )
+            else:
+                # Deterministic injected test backends may reuse their complete
+                # fixture; the production LockedGsplatBackend always uses the
+                # bounded top-contributor probe above.
+                rasterized = self.backend.rasterize(
+                    snapshot=scene_snapshot,
+                    camera=probe_camera,
+                    width=probe_size,
+                    height=probe_size,
+                )
+            probe_reason, probe_metrics = _probe_preflight(
+                rasterized, stable_ids, seed_region
+            )
+            attempts.append(
+                {"adjustment": adjustment, "reason": probe_reason, **probe_metrics}
+            )
+            if probe_reason is None:
+                return CameraPreflightResult(
+                    True,
+                    adjusted,
+                    {
+                        "policyVersion": PREFLIGHT_POLICY_ID,
+                        "reason": "accepted",
+                        "attempts": attempts,
+                    },
+                )
+            if probe_reason not in {"low_transmittance", "seed_unsupported"}:
+                break
+        return CameraPreflightResult(
+            False,
+            None,
+            {
+                "policyVersion": PREFLIGHT_POLICY_ID,
+                "reason": attempts[-1]["reason"] if attempts else "invalid_camera",
+                "attempts": attempts,
+            },
+        )
+
+    def render_generated(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        candidate: PlannedGeneratedViewCandidate,
+        preflight: CameraPreflightResult,
+        resolution: int,
+    ) -> RegisteredFrame:
+        if not preflight.accepted or preflight.camera is None:
+            raise MaskSessionError(
+                "rendererFailure", "A rejected camera cannot be rendered as a Generated View."
+            )
+        stable_ids = validate_supported_snapshot(scene_snapshot)
+        camera = _validated_candidate_camera(preflight.camera, resolution)
+        rasterized = self.backend.rasterize(
+            snapshot=scene_snapshot,
+            camera=camera,
+            width=resolution,
+            height=resolution,
+        )
+        self.last_peak_vram_bytes = rasterized.peak_vram_bytes
+        image_png = _rgb_png(rasterized.service_rgb_bytes, resolution, resolution)
+        frame = RegisteredFrame(
+            view_id=candidate.view_id,
+            frame_digest=f"sha256:{hashlib.sha256(image_png).hexdigest()}",
+            width=resolution,
+            height=resolution,
+            image_png=image_png,
+            source="generated",
+            camera=camera,
+        )
+        rendered = _validated_rendered_view(
+            rasterized=rasterized,
+            stable_ids=stable_ids,
+            frame=frame,
+            renderer_id=self.renderer_id,
+        )
+        self._generated_cache[(str(scene_snapshot["sceneVersion"]), frame.frame_digest)] = rendered
+        return frame
+
+    def discard_attempt(self) -> None:
+        """Dispose every generated raster retained by a failed resolution attempt."""
+
+        self._generated_cache.clear()
+
 
 def production_gsplat_renderer() -> GsplatContributorRenderer:
     """Construct the lazy-importing production renderer."""
 
     return GsplatContributorRenderer(backend=LockedGsplatBackend())
+
+
+def _normalise(vector: Sequence[float]) -> tuple[float, float, float]:
+    length = math.sqrt(sum(float(value) * float(value) for value in vector))
+    if not math.isfinite(length) or length <= 1e-12:
+        raise MaskSessionError("rendererUnavailable", "Generated View direction is degenerate.")
+    return tuple(float(value) / length for value in vector)  # type: ignore[return-value]
+
+
+def _cross(
+    left: Sequence[float], right: Sequence[float]
+) -> tuple[float, float, float]:
+    return (
+        left[1] * right[2] - left[2] * right[1],
+        left[2] * right[0] - left[0] * right[2],
+        left[0] * right[1] - left[1] * right[0],
+    )
+
+
+def _dot(left: Sequence[float], right: Sequence[float]) -> float:
+    return sum(left[index] * right[index] for index in range(3))
+
+
+def _camera_position(camera: Mapping[str, Any]) -> tuple[float, float, float]:
+    matrix = tuple(float(value) for value in camera["worldToCamera"])
+    translation = (matrix[3], matrix[7], matrix[11])
+    return tuple(
+        -sum(matrix[row * 4 + axis] * translation[row] for row in range(3))
+        for axis in range(3)
+    )  # type: ignore[return-value]
+
+
+def _orbit_position(
+    target: Sequence[float], distance: float, azimuth: float, elevation: float
+) -> tuple[float, float, float]:
+    azimuth_radians = math.radians(azimuth)
+    elevation_radians = math.radians(elevation)
+    horizontal = distance * math.cos(elevation_radians)
+    return (
+        float(target[0]) + horizontal * math.cos(azimuth_radians),
+        float(target[1]) + horizontal * math.sin(azimuth_radians),
+        float(target[2]) + distance * math.sin(elevation_radians),
+    )
+
+
+def _generated_camera(
+    *,
+    position: Sequence[float],
+    target: Sequence[float],
+    anchor_camera: Mapping[str, Any],
+    anchor_frame: RegisteredFrame,
+    resolution: int,
+) -> dict[str, Any]:
+    forward = _normalise(tuple(target[index] - position[index] for index in range(3)))
+    world_up = (0.0, 0.0, 1.0)
+    if abs(_dot(forward, world_up)) > 0.98:
+        world_up = (0.0, 1.0, 0.0)
+    right = _normalise(_cross(forward, world_up))
+    down = _normalise(_cross(forward, right))
+    rows = (right, down, forward)
+    world_to_camera = [
+        rows[0][0], rows[0][1], rows[0][2], -_dot(rows[0], position),
+        rows[1][0], rows[1][1], rows[1][2], -_dot(rows[1], position),
+        rows[2][0], rows[2][1], rows[2][2], -_dot(rows[2], position),
+        0.0, 0.0, 0.0, 1.0,
+    ]
+    intrinsics = tuple(float(value) for value in anchor_camera["intrinsics"])
+    scale_x = resolution / anchor_frame.width
+    scale_y = resolution / anchor_frame.height
+    return {
+        "model": "pinhole",
+        "convention": SUPPORTED_CAMERA_CONVENTION,
+        "worldToCamera": world_to_camera,
+        "intrinsics": [
+            intrinsics[0] * scale_x, 0.0, resolution / 2.0,
+            0.0, intrinsics[4] * scale_y, resolution / 2.0,
+            0.0, 0.0, 1.0,
+        ],
+        "nearPlane": float(anchor_camera["nearPlane"]),
+        "farPlane": float(anchor_camera["farPlane"]),
+    }
+
+
+def _validated_candidate_camera(
+    camera: Mapping[str, Any], resolution: int
+) -> Mapping[str, Any]:
+    if not isinstance(resolution, int) or isinstance(resolution, bool) or resolution <= 0:
+        raise MaskSessionError("rendererUnavailable", "Generated View resolution is invalid.")
+    return _validate_camera(
+        RegisteredFrame(
+            view_id="preflight",
+            frame_digest="sha256:preflight",
+            width=resolution,
+            height=resolution,
+            source="generated",
+            camera=camera,
+        )
+    )
+
+
+def _scaled_camera(
+    camera: Mapping[str, Any], source_resolution: int, target_resolution: int
+) -> dict[str, Any]:
+    scaled = dict(camera)
+    intrinsics = [float(value) for value in camera["intrinsics"]]
+    scale = target_resolution / source_resolution
+    intrinsics[0] *= scale
+    intrinsics[2] *= scale
+    intrinsics[4] *= scale
+    intrinsics[5] *= scale
+    scaled["intrinsics"] = intrinsics
+    return scaled
+
+
+def _outward_camera(
+    camera: Mapping[str, Any], seed_region: SeedRegion
+) -> Mapping[str, Any]:
+    position = _camera_position(camera)
+    offset = tuple(position[index] - seed_region.center[index] for index in range(3))
+    outward_position = tuple(
+        seed_region.center[index] + offset[index] * 1.25 for index in range(3)
+    )
+    matrix = tuple(float(value) for value in camera["worldToCamera"])
+    rows = tuple(tuple(matrix[row * 4 + axis] for axis in range(3)) for row in range(3))
+    adjusted = dict(camera)
+    adjusted["worldToCamera"] = [
+        rows[0][0], rows[0][1], rows[0][2], -_dot(rows[0], outward_position),
+        rows[1][0], rows[1][1], rows[1][2], -_dot(rows[1], outward_position),
+        rows[2][0], rows[2][1], rows[2][2], -_dot(rows[2], outward_position),
+        0.0, 0.0, 0.0, 1.0,
+    ]
+    return adjusted
+
+
+def _geometry_preflight(
+    camera: Mapping[str, Any],
+    seed_region: SeedRegion,
+    scene_snapshot: Mapping[str, Any],
+    resolution: int,
+) -> tuple[str | None, dict[str, float]]:
+    position = _camera_position(camera)
+    camera_distance = math.dist(position, seed_region.center)
+    means = [gaussian["mean"] for gaussian in scene_snapshot["gaussians"]]
+    nearest_geometry = min(math.dist(position, mean) for mean in means)
+    metrics = {
+        "cameraDistance": camera_distance,
+        "nearestGeometryDistance": nearest_geometry,
+    }
+    if nearest_geometry <= max(seed_region.radius * 0.5, float(camera["nearPlane"]) * 2.0):
+        return "inside_geometry", metrics
+    matrix = tuple(float(value) for value in camera["worldToCamera"])
+    center = seed_region.center
+    camera_x = _dot(matrix[0:3], center) + matrix[3]
+    camera_y = _dot(matrix[4:7], center) + matrix[7]
+    camera_z = _dot(matrix[8:11], center) + matrix[11]
+    metrics["seedDepth"] = camera_z
+    if camera_z - seed_region.radius <= float(camera["nearPlane"]):
+        return "near_plane_cut", metrics
+    if camera_z + seed_region.radius >= float(camera["farPlane"]):
+        return "clipped", metrics
+    intrinsics = tuple(float(value) for value in camera["intrinsics"])
+    projected_x = intrinsics[0] * camera_x / camera_z + intrinsics[2]
+    projected_y = intrinsics[4] * camera_y / camera_z + intrinsics[5]
+    projected_radius = max(intrinsics[0], intrinsics[4]) * seed_region.radius / camera_z
+    metrics.update(
+        projectedCenterX=projected_x,
+        projectedCenterY=projected_y,
+        projectedRadius=projected_radius,
+    )
+    margin = resolution * 0.1
+    if (
+        projected_x + projected_radius < -margin
+        or projected_y + projected_radius < -margin
+        or projected_x - projected_radius > resolution + margin
+        or projected_y - projected_radius > resolution + margin
+        or projected_x - projected_radius < -margin
+        or projected_y - projected_radius < -margin
+        or projected_x + projected_radius > resolution + margin
+        or projected_y + projected_radius > resolution + margin
+    ):
+        return "clipped", metrics
+    return None, metrics
+
+
+def _probe_preflight(
+    rasterized: GsplatRasterization | GsplatProbe,
+    stable_ids: Sequence[int],
+    seed_region: SeedRegion,
+) -> tuple[str | None, dict[str, float]]:
+    if not isinstance(rasterized, (GsplatRasterization, GsplatProbe)):
+        return "invalid_probe", {}
+    seed_tensor_ids = {
+        index for index, stable_id in enumerate(stable_ids) if stable_id in seed_region.stable_ids
+    }
+    total_alpha = 0.0
+    seed_mass = 0.0
+    total_mass = 0.0
+    for alpha_row, id_row, weight_row in zip(
+        rasterized.alpha,
+        rasterized.contributor_ids,
+        rasterized.contributor_weights,
+        strict=True,
+    ):
+        for alpha, ids, weights in zip(alpha_row, id_row, weight_row, strict=True):
+            alpha_value = float(alpha)
+            if not math.isfinite(alpha_value):
+                return "non_finite", {}
+            total_alpha += max(0.0, alpha_value)
+            for tensor_id, weight in zip(ids, weights, strict=True):
+                weight_value = float(weight)
+                if tensor_id < 0 or weight_value <= 0.0:
+                    continue
+                total_mass += weight_value
+                if tensor_id in seed_tensor_ids:
+                    seed_mass += weight_value
+    metrics = {
+        "probeAlpha": total_alpha,
+        "seedContributorMass": seed_mass,
+        "seedMassRatio": seed_mass / max(total_mass, 1e-12),
+    }
+    if total_alpha <= 1e-4:
+        return "low_transmittance", metrics
+    if seed_region.stable_ids and seed_mass <= 1e-6:
+        return "seed_unsupported", metrics
+    if seed_region.stable_ids and seed_mass / max(total_mass, 1e-12) < 0.05:
+        return "low_transmittance", metrics
+    return None, metrics
+
+
+def _rgb_png(rgb_bytes: bytes, width: int, height: int) -> bytes:
+    if len(rgb_bytes) != width * height * 3:
+        raise MaskSessionError("rendererFailure", "gsplat returned invalid service RGB bytes.")
+    try:
+        from PIL import Image
+
+        image = Image.frombytes("RGB", (width, height), rgb_bytes)
+        encoded = BytesIO()
+        image.save(encoded, format="PNG")
+        return encoded.getvalue()
+    except Exception as error:
+        raise MaskSessionError(
+            "rendererFailure", "Generated View RGB could not be encoded as PNG."
+        ) from error
 
 
 def validate_supported_snapshot(snapshot: Mapping[str, Any]) -> tuple[int, ...]:

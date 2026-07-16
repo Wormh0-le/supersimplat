@@ -160,9 +160,15 @@ class LockedGsplatBackend:
             rtol=MASS_CONSERVATION_RTOL,
             atol=MASS_CONSERVATION_ATOL,
         ):
+            difference = torch.abs(contributor_alpha - raster_alpha[..., 0])
+            tolerance = MASS_CONSERVATION_ATOL + MASS_CONSERVATION_RTOL * torch.abs(
+                raster_alpha[..., 0]
+            )
             raise MaskSessionError(
                 "rendererMassMismatch",
-                "gsplat contributor alpha does not match the corresponding RGB raster alpha.",
+                "gsplat contributor alpha does not match the corresponding RGB raster alpha "
+                f"(max absolute difference {float(difference.max().item()):.9g}; "
+                f"pixels over tolerance {int((difference > tolerance).sum().item())}).",
             )
 
         rgb_bytes = (

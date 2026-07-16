@@ -136,6 +136,7 @@ def main() -> None:
     fixture = make_fixture()
     ply_path = args.output_dir / "controlled_front_back_overlap.ply"
     truth_path = args.output_dir / "controlled_front_back_overlap_ground_truth.npz"
+    truth_json_path = args.output_dir / "controlled_front_back_overlap_ground_truth.json"
     manifest_path = args.output_dir / "controlled_front_back_overlap.json"
 
     write_ply(ply_path, fixture)
@@ -144,6 +145,30 @@ def main() -> None:
         selected_ids=fixture["stable_id"][:PER_OBJECT],
         rejected_ids=fixture["stable_id"][PER_OBJECT:],
         ambiguous_ids=np.empty(0, dtype=np.uint32),
+    )
+    rear_surface_ids = fixture["stable_id"][:PER_OBJECT][
+        fixture["means"][:PER_OBJECT, 2] > 0.0
+    ]
+    truth_json_path.write_text(
+        json.dumps(
+            {
+                "selectedStableGaussianIds": {"inclusiveRange": [0, PER_OBJECT - 1]},
+                "rejectedStableGaussianIds": {
+                    "inclusiveRange": [PER_OBJECT, int(fixture["means"].shape[0] - 1)]
+                },
+                "ambiguousStableGaussianIds": [],
+                "rearSurfaceStableGaussianIds": [
+                    int(stable_id) for stable_id in rear_surface_ids
+                ],
+                "distractorStableGaussianIds": {
+                    "inclusiveRange": [PER_OBJECT, int(fixture["means"].shape[0] - 1)]
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
     )
 
     manifest = {
@@ -168,6 +193,10 @@ def main() -> None:
         "files": {
             ply_path.name: {"sha256": sha256(ply_path), "bytes": ply_path.stat().st_size},
             truth_path.name: {"sha256": sha256(truth_path), "bytes": truth_path.stat().st_size},
+            truth_json_path.name: {
+                "sha256": sha256(truth_json_path),
+                "bytes": truth_json_path.stat().st_size,
+            },
         },
     }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

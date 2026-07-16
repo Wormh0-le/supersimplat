@@ -28,6 +28,10 @@
     "controlled_front_back_overlap_ground_truth.npz": {
       "sha256": "7a04518c2f0f7c6cf68ae55ca6e46030cd5d96572bcdfcc73d2262df802c6ef0",
       "bytes": 23361
+    },
+    "controlled_front_back_overlap_ground_truth.json": {
+      "sha256": "ca8e50cfa74fa972adefeeac9c6a0875fa071df873704cc8848e4d830e3bead9",
+      "bytes": 40747
     }
   }
 }

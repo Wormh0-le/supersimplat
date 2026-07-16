@@ -743,6 +743,13 @@ class MaskSessionContractTests(unittest.TestCase):
             "supersplat-effective-rgb-v1+generated-512x512-v1",
         )
         self.assertEqual(
+            publication.coverage_report["qualityDiagnostics"]["oomRetries"],
+            [
+                {"resolution": 1008, "nextResolution": 768},
+                {"resolution": 768, "nextResolution": 512},
+            ],
+        )
+        self.assertEqual(
             self.state._mask_sessions[session_id].frame_set_version,
             publication.bindings["frameSetVersion"],
         )

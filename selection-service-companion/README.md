@@ -140,3 +140,31 @@ exactly one Object Selection Session lease at a time and returns `busy` to a
 second opener; closing that lease restores capacity. It still proves the
 locked-install, model-manifest, CORS, browser transport, and single-session
 readiness contract.
+
+## Run the controlled-overlap production trial
+
+Run prediction without giving the process a Ground Truth path. The command
+uses the installed locked release and SAM3.1 Model Manifest, executes the real
+gsplat/CUDA Generated View path, and atomically publishes a hashed PoC Run
+Record only after all required artifacts are complete:
+
+```sh
+uv run --locked --extra renderer --extra sam3 python \
+  ../scripts/benchmarks/run_controlled_overlap_trial.py predict \
+  --output /secure/poc-runs/controlled-overlap-seed-1
+```
+
+Only after prediction is sealed, invoke the independent scorer with the
+frozen Ground Truth:
+
+```sh
+uv run --locked --extra renderer --extra sam3 python \
+  ../scripts/benchmarks/run_controlled_overlap_trial.py score \
+  --prediction /secure/poc-runs/controlled-overlap-seed-1 \
+  --ground-truth ../docs/benchmarks/fixtures/controlled-overlap/controlled_front_back_overlap_ground_truth.json \
+  --output /secure/poc-scores/controlled-overlap-seed-1.json
+```
+
+The scorer verifies the prediction seal and every artifact hash before it
+opens Ground Truth. The older deterministic one/two-view fixture outputs are
+diagnostic lifting evidence; they are not production acceptance records.

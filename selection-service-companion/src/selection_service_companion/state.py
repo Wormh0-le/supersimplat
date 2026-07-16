@@ -859,7 +859,8 @@ class CompanionState:
             base_render_config_version = self._mask_binding(
                 bindings, "renderConfigVersion"
             )
-            for resolution in GENERATED_VIEW_RESOLUTIONS:
+            oom_retries: list[dict[str, int]] = []
+            for resolution_index, resolution in enumerate(GENERATED_VIEW_RESOLUTIONS):
                 try:
                     prepared = self.generated_view_policy.prepare(
                         scene_snapshot=scene_snapshot,
@@ -921,6 +922,14 @@ class CompanionState:
                             "rendererOutOfMemory",
                             "The Generated View attempt exhausted CUDA memory at the minimum resolution.",
                         ) from error
+                    oom_retries.append(
+                        {
+                            "resolution": resolution,
+                            "nextResolution": GENERATED_VIEW_RESOLUTIONS[
+                                resolution_index + 1
+                            ],
+                        }
+                    )
             assert selected is not None
             assert selected_render_config_version is not None
             staged_generated_resolution = GeneratedFrameSetResolution(
@@ -929,7 +938,10 @@ class CompanionState:
                 render_config_version=selected_render_config_version,
                 preliminary_rejections=selected.rejected_views,
                 attempted_view_ids=selected.attempted_view_ids,
-                quality_diagnostics=dict(selected.quality_diagnostics),
+                quality_diagnostics={
+                    **dict(selected.quality_diagnostics),
+                    "oomRetries": oom_retries,
+                },
             )
             # Cache the selected immutable Frame Set only so the final replay
             # can consume it. Session ownership is promoted with the complete
@@ -955,7 +967,9 @@ class CompanionState:
                     frame_set=selected.frame_set,
                     preliminary_rejections=selected.rejected_views,
                     attempted_view_ids=selected.attempted_view_ids,
-                    quality_diagnostics=dict(selected.quality_diagnostics),
+                    quality_diagnostics=dict(
+                        staged_generated_resolution.quality_diagnostics
+                    ),
                     staged_generated_preview=staged_generated_preview,
                 )
             except Exception:

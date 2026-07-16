@@ -2858,11 +2858,32 @@ class MaskSessionContractTests(unittest.TestCase):
                 })
                 return {}
 
+            @staticmethod
+            def _build_sam2_output(
+                inference_state: dict[str, object],
+                frame_idx: int,
+                refined_obj_id_to_mask: dict[int, object] | None = None,
+            ) -> dict[int, object]:
+                cached_outputs = inference_state["cached_frame_outputs"]
+                if frame_idx not in cached_outputs:
+                    return {}
+                output = dict(cached_outputs[frame_idx])
+                output.update(refined_obj_id_to_mask or {})
+                return output
+
         class FakeSam3Predictor:
             def __init__(self) -> None:
                 self.model = FakeMultiplexModel()
 
             def handle_request(self, request: dict[str, object]) -> dict[str, object]:
+                if request["type"] == "add_prompt":
+                    return {
+                        "outputs": self.model._build_sam2_output(
+                            {"cached_frame_outputs": {}},
+                            0,
+                            {1: "point-mask"},
+                        )
+                    }
                 self.model.init_state(
                     resource_path=request["resource_path"],
                     offload_video_to_cpu=request.get("offload_video_to_cpu", False),
@@ -2910,6 +2931,10 @@ class MaskSessionContractTests(unittest.TestCase):
             "offload_video_to_cpu": True,
             "async_loading_frames": False,
         }])
+        self.assertEqual(
+            predictor.handle_request({"type": "add_prompt"}),
+            {"outputs": {1: "point-mask"}},
+        )
 
     def test_rejects_an_installed_manifest_without_a_compatible_adapter(self) -> None:
         weights = self.directory / "unsupported-adapter.bin"

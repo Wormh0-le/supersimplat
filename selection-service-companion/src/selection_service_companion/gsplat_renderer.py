@@ -500,7 +500,12 @@ class GsplatContributorRenderer:
                 rasterized, stable_ids, seed_region
             )
             attempts.append(
-                {"adjustment": adjustment, "reason": probe_reason, **probe_metrics}
+                {
+                    "adjustment": adjustment,
+                    "reason": probe_reason,
+                    **geometry_metrics,
+                    **probe_metrics,
+                }
             )
             if probe_reason is None:
                 return CameraPreflightResult(

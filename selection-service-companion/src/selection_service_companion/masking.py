@@ -1010,6 +1010,28 @@ def _build_sam3_predictor(model: Mapping[str, Any]) -> Any:
             return init_state(*args, **kwargs)
 
         multiplex_model.init_state = compatible_init_state
+    build_sam2_output = getattr(multiplex_model, "_build_sam2_output", None)
+    if callable(build_sam2_output):
+        # The pinned multiplex implementation returns before merging the first
+        # point mask when the frame cache is still empty. Preserve the upstream
+        # merge semantics so a fresh point prompt can initialize its object.
+        def compatible_build_sam2_output(
+            inference_state: Mapping[str, Any],
+            frame_idx: int,
+            refined_obj_id_to_mask: Mapping[int, Any] | None = None,
+        ) -> dict[int, Any]:
+            output = dict(
+                build_sam2_output(
+                    inference_state,
+                    frame_idx,
+                    refined_obj_id_to_mask,
+                )
+            )
+            if refined_obj_id_to_mask is not None:
+                output.update(refined_obj_id_to_mask)
+            return output
+
+        multiplex_model._build_sam2_output = compatible_build_sam2_output
     return predictor
 
 

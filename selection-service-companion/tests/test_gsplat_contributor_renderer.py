@@ -187,6 +187,10 @@ class GsplatContributorRendererTests(unittest.TestCase):
             resolution=2,
         )
         self.assertTrue(preflight.accepted, preflight.diagnostics)
+        accepted_attempt = preflight.diagnostics["attempts"][-1]
+        self.assertIn("projectedCenterX", accepted_attempt)
+        self.assertIn("projectedCenterY", accepted_attempt)
+        self.assertIn("projectedRadius", accepted_attempt)
         self.assertEqual(backend.calls, 0)
         self.assertEqual(backend.probe_calls, 1)
 

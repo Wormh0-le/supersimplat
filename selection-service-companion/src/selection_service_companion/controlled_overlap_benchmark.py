@@ -226,6 +226,9 @@ def run_controlled_overlap_prediction(
             memory_sampler=memory_sampler,
         )
     except Exception as error:
+        peak_vram_bytes = (
+            memory_sampler.observe() if memory_sampler is not None else None
+        )
         return _seal_failed_controlled_overlap_prediction(
             output_directory,
             fixture_ply=fixture_ply,
@@ -233,7 +236,7 @@ def run_controlled_overlap_prediction(
             deterministic_seed=deterministic_seed,
             elapsed_seconds=time.perf_counter() - started,
             error=error,
-            peak_vram_bytes=(memory_sampler.peak_bytes if memory_sampler else None),
+            peak_vram_bytes=peak_vram_bytes,
         )
     finally:
         if memory_sampler is not None:
@@ -408,7 +411,7 @@ def _run_controlled_overlap_prediction(
         int(rasterized.peak_vram_bytes or 0),
         int(getattr(renderer, "peak_vram_bytes", 0) or 0),
         int(torch.cuda.memory_reserved(0)),
-        memory_sampler.peak_bytes,
+        memory_sampler.observe(),
     )
     return seal_preview_prediction(
         output_directory,
@@ -545,16 +548,40 @@ def _seal_failed_controlled_overlap_prediction(
             "status": "unavailable",
             "reason": "no verified installed release lock",
         }
+    failure_bindings = {
+        "trialId": f"controlled-overlap:{deterministic_seed}",
+        "protocolVersion": PROTOCOL_VERSION,
+        "deterministicSeed": deterministic_seed,
+        "terminalState": error_code,
+        "requestId": f"controlled-overlap-preview:{deterministic_seed}",
+        "sessionId": "not-admitted",
+        "targetSplatId": "controlled-overlap",
+        "sceneId": (
+            snapshot.get("sceneId") or "unavailable"
+            if isinstance(snapshot, dict)
+            else "unavailable"
+        ),
+        "sceneVersion": (
+            snapshot.get("sceneVersion") or "unavailable"
+            if isinstance(snapshot, dict)
+            else "unavailable"
+        ),
+        "operation": "New",
+        "correctionRound": 0,
+        "promptLogRevision": 1,
+        "frameSetVersion": "not-produced",
+        "renderConfigVersion": "supersplat-effective-rgb-v1",
+        "modelManifestDigest": (
+            model_manifest.get("digest") or "unavailable"
+            if isinstance(model_manifest, dict)
+            else "unavailable"
+        ),
+    }
     return _materialize_and_seal(
         output_directory,
         values=values,
         dependency_lock=dependency_lock,
-        bindings={
-            "trialId": f"controlled-overlap:{deterministic_seed}",
-            "protocolVersion": PROTOCOL_VERSION,
-            "deterministicSeed": deterministic_seed,
-            "terminalState": error_code,
-        },
+        bindings=failure_bindings,
     )
 
 
@@ -585,7 +612,11 @@ class _CudaMemorySampler:
     def stop(self) -> None:
         self._stopped.set()
         self._thread.join()
+        self.observe()
+
+    def observe(self) -> int:
         self._observe()
+        return self.peak_bytes
 
     def _sample(self) -> None:
         while not self._stopped.wait(0.002):
@@ -615,6 +646,8 @@ def _materialize_and_seal(
         root = Path(temporary)
         artifacts: dict[str, Path] = {}
         for name, value in values.items():
+            if isinstance(value, dict) and name != "dependencyLock":
+                value = {**value, "recordBindings": dict(bindings)}
             path = root / f"{name}.json"
             path.write_text(
                 json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + "\n",

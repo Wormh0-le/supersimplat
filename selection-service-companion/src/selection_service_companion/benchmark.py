@@ -81,13 +81,10 @@ def seal_prediction(
             "prediction artifacts must match the required set; "
             f"missing={missing_artifacts}, unexpected={unexpected_artifacts}"
         )
-    required_bindings = (
-        COMPLETE_REQUIRED_BINDINGS
-        if bindings.get("terminalState") == "complete"
-        else REQUIRED_BINDINGS
-    )
     missing_bindings = [
-        name for name in required_bindings if not _nonempty_binding(bindings.get(name))
+        name
+        for name in COMPLETE_REQUIRED_BINDINGS
+        if not _nonempty_binding(bindings.get(name))
     ]
     if missing_bindings:
         raise PocRunRecordError(

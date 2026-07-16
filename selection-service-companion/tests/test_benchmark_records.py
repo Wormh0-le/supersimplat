@@ -152,12 +152,11 @@ class PocRunRecordTests(unittest.TestCase):
             record = seal_prediction(
                 root / "failed-trial",
                 artifacts=self.complete_artifacts(root),
-                bindings={
-                    "trialId": "failed-trial",
-                    "protocolVersion": "1",
-                    "deterministicSeed": "seed-1",
-                    "terminalState": "rendererMassMismatch",
-                },
+                bindings=self.complete_bindings(
+                    trialId="failed-trial",
+                    deterministicSeed="seed-1",
+                    terminalState="rendererMassMismatch",
+                ),
             )
             manifest = json.loads(record.manifest_path.read_text(encoding="utf-8"))
             ground_truth = root / "ground-truth.json"

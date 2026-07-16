@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 import hashlib
+import inspect
 import json
 import math
 from pathlib import Path
@@ -503,11 +504,12 @@ class Sam3PointMaskAdapter:
                 (frame_directory / f"{index:06d}.png").write_bytes(
                     view.image_png or b""
                 )
+            # The pinned multiplex model does not accept offload_state_to_cpu;
+            # the builder compatibility shim removes its false upstream default.
             started = predictor.handle_request({
                 "type": "start_session",
                 "resource_path": str(frame_directory),
                 "offload_video_to_cpu": SAM31_RUNTIME_CONFIG["offload_video_to_cpu"],
-                "offload_state_to_cpu": SAM31_RUNTIME_CONFIG["offload_state_to_cpu"],
             })
             if not isinstance(started, Mapping) or not isinstance(started.get("session_id"), str):
                 raise MaskSessionError(
@@ -973,7 +975,7 @@ def _build_sam3_predictor(model: Mapping[str, Any]) -> Any:
             "modelRuntimeUnavailable",
             "SAM 3.1 is not installed in this Companion environment; install the matching runtime and retry.",
         ) from error
-    return build_sam3_multiplex_video_predictor(
+    predictor = build_sam3_multiplex_video_predictor(
         checkpoint_path=weights_path,
         max_num_objects=SAM31_RUNTIME_CONFIG["max_num_objects"],
         multiplex_count=SAM31_RUNTIME_CONFIG["multiplex_count"],
@@ -987,6 +989,28 @@ def _build_sam3_predictor(model: Mapping[str, Any]) -> Any:
         ],
         async_loading_frames=SAM31_RUNTIME_CONFIG["async_loading_frames"],
     )
+    multiplex_model = getattr(predictor, "model", None)
+    init_state = getattr(multiplex_model, "init_state", None)
+    if callable(init_state) and "offload_state_to_cpu" not in inspect.signature(
+        init_state
+    ).parameters:
+        # The pinned base predictor always forwards this SAM2-era option, while
+        # the pinned multiplex model removed it. Its configured false value is
+        # equivalent to omitting it and retaining GPU-backed tracker state.
+        def compatible_init_state(
+            *args: Any,
+            offload_state_to_cpu: bool = False,
+            **kwargs: Any,
+        ) -> Any:
+            if offload_state_to_cpu:
+                raise MaskSessionError(
+                    "incompatibleRuntime",
+                    "The pinned SAM 3.1 multiplex model cannot offload tracker state to CPU.",
+                )
+            return init_state(*args, **kwargs)
+
+        multiplex_model.init_state = compatible_init_state
+    return predictor
 
 
 def _require_string(payload: dict[str, Any], name: str, subject: str) -> str:

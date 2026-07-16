@@ -2644,7 +2644,6 @@ class MaskSessionContractTests(unittest.TestCase):
                 "type": "start_session",
                 "resource_path": calls[0]["resource_path"],
                 "offload_video_to_cpu": True,
-                "offload_state_to_cpu": False,
             },
             {
                 "type": "add_prompt",
@@ -2839,13 +2838,42 @@ class MaskSessionContractTests(unittest.TestCase):
         weights = self.directory / "sam31-runtime.pt"
         weights.write_bytes(b"separately acquired sam3.1 weights")
         calls: list[dict[str, object]] = []
+        init_calls: list[dict[str, object]] = []
         sam3_module = ModuleType("sam3")
         sam3_module.__path__ = []
         model_builder_module = ModuleType("sam3.model_builder")
 
+        class FakeMultiplexModel:
+            def init_state(
+                self,
+                *,
+                resource_path: str,
+                offload_video_to_cpu: bool = False,
+                async_loading_frames: bool = False,
+            ) -> dict[str, object]:
+                init_calls.append({
+                    "resource_path": resource_path,
+                    "offload_video_to_cpu": offload_video_to_cpu,
+                    "async_loading_frames": async_loading_frames,
+                })
+                return {}
+
+        class FakeSam3Predictor:
+            def __init__(self) -> None:
+                self.model = FakeMultiplexModel()
+
+            def handle_request(self, request: dict[str, object]) -> dict[str, object]:
+                self.model.init_state(
+                    resource_path=request["resource_path"],
+                    offload_video_to_cpu=request.get("offload_video_to_cpu", False),
+                    offload_state_to_cpu=request.get("offload_state_to_cpu", False),
+                    async_loading_frames=False,
+                )
+                return {"session_id": "sam-session"}
+
         def build_sam3_multiplex_video_predictor(**kwargs: object) -> object:
             calls.append(kwargs)
-            return object()
+            return FakeSam3Predictor()
 
         model_builder_module.build_sam3_multiplex_video_predictor = (
             build_sam3_multiplex_video_predictor
@@ -2867,6 +2895,19 @@ class MaskSessionContractTests(unittest.TestCase):
             "warm_up": False,
             "session_expiration_sec": 1200,
             "default_output_prob_thresh": 0.5,
+            "async_loading_frames": False,
+        }])
+        self.assertEqual(
+            predictor.handle_request({
+                "type": "start_session",
+                "resource_path": "/tmp/sam-frames",
+                "offload_video_to_cpu": True,
+            }),
+            {"session_id": "sam-session"},
+        )
+        self.assertEqual(init_calls, [{
+            "resource_path": "/tmp/sam-frames",
+            "offload_video_to_cpu": True,
             "async_loading_frames": False,
         }])
 

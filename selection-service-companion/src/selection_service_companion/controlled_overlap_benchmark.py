@@ -11,6 +11,7 @@ from pathlib import Path
 import platform
 import struct
 import tempfile
+from threading import Event, Thread
 import time
 from typing import Any, Mapping, Sequence
 
@@ -36,12 +37,20 @@ _EXPECTED_PROPERTIES = (
     "property uchar benchmark_class",
 )
 _VERTEX = struct.Struct("<14fIB")
+_CONTROLLED_OVERLAP_PLY_SHA256 = (
+    "cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e"
+)
 
 
 def build_controlled_overlap_snapshot(ply_path: Path) -> dict[str, object]:
     """Read the exact frozen PLY into supported SuperSplat-v1 semantics."""
 
     source = ply_path.read_bytes()
+    digest = hashlib.sha256(source).hexdigest()
+    if digest != _CONTROLLED_OVERLAP_PLY_SHA256:
+        raise PocRunRecordError(
+            "controlled-overlap PLY does not match the frozen fixture digest"
+        )
     marker = b"end_header\n"
     header_end = source.find(marker)
     if header_end < 0:
@@ -84,7 +93,6 @@ def build_controlled_overlap_snapshot(ply_path: Path) -> dict[str, object]:
                 "sh": [],
             }
         )
-    digest = hashlib.sha256(source).hexdigest()
     return {
         "protocolVersion": "1",
         "sceneId": "controlled-overlap",
@@ -147,53 +155,49 @@ def seal_preview_prediction(
         ):
             raise PocRunRecordError("Evidence Snapshot classification is malformed")
         classifications[classification].append(stable_id)
+    record_bindings = dict(bindings)
     candidate = {
         "selectedStableGaussianIds": sorted(classifications["selected"]),
         "rejectedStableGaussianIds": sorted(classifications["rejected"]),
         "uncertainStableGaussianIds": sorted(classifications["uncertain"]),
+        "recordBindings": record_bindings,
     }
 
-    output_directory.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(
-        prefix="poc-prediction-artifacts-", dir=output_directory.parent
-    ) as temporary:
-        artifact_root = Path(temporary)
-        values: dict[str, object] = {
-            "sceneSnapshot": scene_snapshot,
-            "benchmarkPromptLog": list(prompt_log),
-            "frameSet": publication.frame_set,
-            "maskSet": publication.mask_set,
+    def bound(value: Mapping[str, object]) -> dict[str, object]:
+        return {**dict(value), "recordBindings": record_bindings}
+
+    return _materialize_and_seal(
+        output_directory,
+        values={
+            "sceneSnapshot": bound(scene_snapshot),
+            "benchmarkPromptLog": {
+                "entries": list(prompt_log),
+                "recordBindings": record_bindings,
+            },
+            "frameSet": bound(publication.frame_set),
+            "maskSet": bound(publication.mask_set),
             "candidateObjectSelection": candidate,
-            "evidenceSnapshot": publication.evidence_snapshot,
-            "coverageReport": publication.coverage_report,
-            "modelManifest": model_manifest,
-            "runtimeManifest": runtime_manifest,
-            "renderPolicy": render_policy,
-            "correctionOutcomes": list(correction_outcomes),
-            "timingAndVram": timing_and_vram,
-            "internalDiagnostics": internal_diagnostics,
-        }
-        artifacts: dict[str, Path] = {}
-        for name, value in values.items():
-            path = artifact_root / f"{name}.json"
-            path.write_text(
-                json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + "\n",
-                encoding="utf-8",
-            )
-            artifacts[name] = path
-        artifacts["dependencyLock"] = dependency_lock
-        return seal_prediction(
-            output_directory,
-            artifacts=artifacts,
-            bindings=bindings,
-        )
+            "evidenceSnapshot": bound(publication.evidence_snapshot),
+            "coverageReport": bound(publication.coverage_report),
+            "modelManifest": bound(model_manifest),
+            "runtimeManifest": bound(runtime_manifest),
+            "renderPolicy": bound(render_policy),
+            "correctionOutcomes": {
+                "outcomes": list(correction_outcomes),
+                "recordBindings": record_bindings,
+            },
+            "timingAndVram": bound(timing_and_vram),
+            "internalDiagnostics": bound(internal_diagnostics),
+        },
+        dependency_lock=dependency_lock,
+        bindings=bindings,
+    )
 
 
 def run_controlled_overlap_prediction(
     output_directory: Path,
     *,
     fixture_ply: Path,
-    dependency_lock: Path,
     state_directory: Path,
     model_manifest_digest: str | None = None,
     image_size: int = 1008,
@@ -206,37 +210,45 @@ def run_controlled_overlap_prediction(
             f"refusing to overwrite an existing PoC Run Record: {output_directory}"
         )
     started = time.perf_counter()
+    memory_sampler: _CudaMemorySampler | None = None
     try:
+        import torch
+
+        memory_sampler = _CudaMemorySampler(torch)
+        memory_sampler.start()
         return _run_controlled_overlap_prediction(
             output_directory,
             fixture_ply=fixture_ply,
-            dependency_lock=dependency_lock,
             state_directory=state_directory,
             model_manifest_digest=model_manifest_digest,
             image_size=image_size,
             deterministic_seed=deterministic_seed,
+            memory_sampler=memory_sampler,
         )
     except Exception as error:
         return _seal_failed_controlled_overlap_prediction(
             output_directory,
             fixture_ply=fixture_ply,
-            dependency_lock=dependency_lock,
             state_directory=state_directory,
             deterministic_seed=deterministic_seed,
             elapsed_seconds=time.perf_counter() - started,
             error=error,
+            peak_vram_bytes=(memory_sampler.peak_bytes if memory_sampler else None),
         )
+    finally:
+        if memory_sampler is not None:
+            memory_sampler.stop()
 
 
 def _run_controlled_overlap_prediction(
     output_directory: Path,
     *,
     fixture_ply: Path,
-    dependency_lock: Path,
     state_directory: Path,
     model_manifest_digest: str | None,
     image_size: int,
     deterministic_seed: str,
+    memory_sampler: _CudaMemorySampler,
 ) -> SealedPrediction:
     """Execute and seal the real gsplat/CUDA and SAM3 Generated View path."""
 
@@ -258,6 +270,7 @@ def _run_controlled_overlap_prediction(
 
     state = CompanionState(state_directory)
     release = state.require_release()
+    dependency_lock = _verified_release_lock(release)
     available_models = [
         model
         for model in state.available_models()
@@ -322,6 +335,7 @@ def _run_controlled_overlap_prediction(
             "the Companion is busy with another Object Selection Session"
         )
     bindings = {
+        "protocolVersion": PROTOCOL_VERSION,
         "requestId": f"controlled-overlap-preview:{deterministic_seed}",
         "sessionId": session_id,
         "targetSplatId": "controlled-overlap",
@@ -350,19 +364,22 @@ def _run_controlled_overlap_prediction(
             },
         }
     ]
+    stage_seconds: dict[str, float] = {}
     preview_started = time.perf_counter()
     try:
         publication = state.update_preview_publication(
             bindings=bindings,
             prompt_log=prompt_log,
+            stage_observer=stage_seconds.__setitem__,
         )
     finally:
         state.close_object_selection_session(session_id)
     preview_seconds = time.perf_counter() - preview_started
 
-    capabilities = state.capabilities()
+    capabilities = state.capabilities([])
     runtime_manifest = {
         "companionVersion": PACKAGE_VERSION,
+        "serviceBuild": capabilities.get("serviceBuild"),
         "protocolVersion": PROTOCOL_VERSION,
         "release": release,
         "renderer": capabilities.get("renderer"),
@@ -370,6 +387,10 @@ def _run_controlled_overlap_prediction(
         "torch": torch.__version__,
         "cudaRuntime": torch.version.cuda,
         "gpu": torch.cuda.get_device_name(0),
+        "executionProfile": {
+            "browser": "not-applicable (standalone CLI benchmark)",
+            "transport": "in-process CompanionState; no network transport",
+        },
     }
     public_model_manifest = {
         key: value
@@ -385,7 +406,9 @@ def _run_controlled_overlap_prediction(
     }
     peak_vram_bytes = max(
         int(rasterized.peak_vram_bytes or 0),
-        int(getattr(renderer, "last_peak_vram_bytes", 0) or 0),
+        int(getattr(renderer, "peak_vram_bytes", 0) or 0),
+        int(torch.cuda.memory_reserved(0)),
+        memory_sampler.peak_bytes,
     )
     return seal_preview_prediction(
         output_directory,
@@ -411,9 +434,16 @@ def _run_controlled_overlap_prediction(
             }
         ],
         timing_and_vram={
-            "anchorRenderSeconds": anchor_seconds,
-            "previewSeconds": preview_seconds,
+            "stageSeconds": {
+                "anchorRenderSeconds": anchor_seconds,
+                **stage_seconds,
+                "previewPublicationSeconds": preview_seconds,
+            },
             "peakVramBytes": peak_vram_bytes,
+            "peakVramMeasurement": (
+                "maximum of a whole-trial CUDA allocation/reservation sampler, "
+                "per-raster CUDA allocation peaks, and final reservation"
+            ),
         },
         internal_diagnostics=internal_diagnostics,
         bindings={
@@ -430,11 +460,11 @@ def _seal_failed_controlled_overlap_prediction(
     output_directory: Path,
     *,
     fixture_ply: Path,
-    dependency_lock: Path,
     state_directory: Path,
     deterministic_seed: str,
     elapsed_seconds: float,
     error: Exception,
+    peak_vram_bytes: int | None,
 ) -> SealedPrediction:
     from . import PACKAGE_VERSION, PROTOCOL_VERSION
     from .masking import MaskSessionError
@@ -462,8 +492,10 @@ def _seal_failed_controlled_overlap_prediction(
         if len(models) == 1
         else {"status": "unavailable", "modelCount": len(models)}
     )
+    dependency_lock: Path | None = None
     try:
         release: object = state.require_release()
+        dependency_lock = _verified_release_lock(release)
     except ValueError as release_error:
         release = {"status": "unavailable", "message": str(release_error)}
     unavailable = {
@@ -499,7 +531,8 @@ def _seal_failed_controlled_overlap_prediction(
         ],
         "timingAndVram": {
             "elapsedSeconds": elapsed_seconds,
-            "peakVramBytes": None,
+            "peakVramBytes": peak_vram_bytes,
+            "peakVramMeasurement": "whole-trial CUDA allocation/reservation sampler",
         },
         "internalDiagnostics": {
             "errorCode": error_code,
@@ -507,9 +540,77 @@ def _seal_failed_controlled_overlap_prediction(
             "message": str(error),
         },
     }
+    if dependency_lock is None:
+        values["dependencyLock"] = {
+            "status": "unavailable",
+            "reason": "no verified installed release lock",
+        }
+    return _materialize_and_seal(
+        output_directory,
+        values=values,
+        dependency_lock=dependency_lock,
+        bindings={
+            "trialId": f"controlled-overlap:{deterministic_seed}",
+            "protocolVersion": PROTOCOL_VERSION,
+            "deterministicSeed": deterministic_seed,
+            "terminalState": error_code,
+        },
+    )
+
+
+def _verified_release_lock(release: Mapping[str, object]) -> Path:
+    lock_file = release.get("lockFile")
+    lock_digest = release.get("lockDigest")
+    if not isinstance(lock_file, str) or not isinstance(lock_digest, str):
+        raise PocRunRecordError("installed release lock identity is incomplete")
+    path = Path(lock_file)
+    actual = f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+    if actual != lock_digest:
+        raise PocRunRecordError("installed release lock digest does not match")
+    return path
+
+
+class _CudaMemorySampler:
+    """Sample process-owned PyTorch CUDA memory across renderer resets and SAM3."""
+
+    def __init__(self, torch_module: Any) -> None:
+        self._torch = torch_module
+        self._stopped = Event()
+        self._thread = Thread(target=self._sample, daemon=True)
+        self.peak_bytes = 0
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stopped.set()
+        self._thread.join()
+        self._observe()
+
+    def _sample(self) -> None:
+        while not self._stopped.wait(0.002):
+            self._observe()
+
+    def _observe(self) -> None:
+        if not self._torch.cuda.is_available():
+            return
+        self.peak_bytes = max(
+            self.peak_bytes,
+            int(self._torch.cuda.memory_allocated(0)),
+            int(self._torch.cuda.memory_reserved(0)),
+        )
+
+
+def _materialize_and_seal(
+    output_directory: Path,
+    *,
+    values: Mapping[str, object],
+    dependency_lock: Path | None,
+    bindings: Mapping[str, object],
+) -> SealedPrediction:
     output_directory.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
-        prefix="poc-failed-prediction-", dir=output_directory.parent
+        prefix="poc-prediction-artifacts-", dir=output_directory.parent
     ) as temporary:
         root = Path(temporary)
         artifacts: dict[str, Path] = {}
@@ -520,16 +621,12 @@ def _seal_failed_controlled_overlap_prediction(
                 encoding="utf-8",
             )
             artifacts[name] = path
-        artifacts["dependencyLock"] = dependency_lock
+        if dependency_lock is not None:
+            artifacts["dependencyLock"] = dependency_lock
         return seal_prediction(
             output_directory,
             artifacts=artifacts,
-            bindings={
-                "trialId": f"controlled-overlap:{deterministic_seed}",
-                "protocolVersion": PROTOCOL_VERSION,
-                "deterministicSeed": deterministic_seed,
-                "terminalState": error_code,
-            },
+            bindings=bindings,
         )
 
 

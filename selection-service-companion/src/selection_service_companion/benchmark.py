@@ -39,6 +39,19 @@ REQUIRED_BINDINGS = (
     "deterministicSeed",
     "terminalState",
 )
+COMPLETE_REQUIRED_BINDINGS = REQUIRED_BINDINGS + (
+    "requestId",
+    "sessionId",
+    "targetSplatId",
+    "sceneId",
+    "sceneVersion",
+    "operation",
+    "correctionRound",
+    "promptLogRevision",
+    "frameSetVersion",
+    "renderConfigVersion",
+    "modelManifestDigest",
+)
 
 
 class PocRunRecordError(ValueError):
@@ -68,8 +81,13 @@ def seal_prediction(
             "prediction artifacts must match the required set; "
             f"missing={missing_artifacts}, unexpected={unexpected_artifacts}"
         )
+    required_bindings = (
+        COMPLETE_REQUIRED_BINDINGS
+        if bindings.get("terminalState") == "complete"
+        else REQUIRED_BINDINGS
+    )
     missing_bindings = [
-        name for name in REQUIRED_BINDINGS if not _nonempty_binding(bindings.get(name))
+        name for name in required_bindings if not _nonempty_binding(bindings.get(name))
     ]
     if missing_bindings:
         raise PocRunRecordError(
@@ -274,7 +292,85 @@ def _verified_manifest(prediction_directory: Path) -> tuple[dict[str, object], s
             raise PocRunRecordError(f"prediction artifact escapes its record: {name}")
         if f"sha256:{_sha256(artifact_path)}" != expected_sha256:
             raise PocRunRecordError(f"prediction artifact hash mismatch: {name}")
+    _validate_complete_identity(prediction_directory, manifest)
     return manifest, actual_manifest_sha256
+
+
+def _validate_complete_identity(
+    prediction_directory: Path, manifest: Mapping[str, object]
+) -> None:
+    bindings = manifest.get("bindings")
+    if not isinstance(bindings, dict):
+        raise PocRunRecordError("prediction manifest bindings are malformed")
+    missing = [
+        name
+        for name in COMPLETE_REQUIRED_BINDINGS
+        if not _nonempty_binding(bindings.get(name))
+    ]
+    if missing:
+        raise PocRunRecordError(
+            f"prediction bindings are missing required fields: {', '.join(missing)}"
+        )
+    artifacts = manifest["artifacts"]
+
+    def artifact(name: str) -> dict[str, object]:
+        record = artifacts[name]
+        return _read_json_object(
+            prediction_directory / record["path"], f"{name} artifact"
+        )
+
+    scene = artifact("sceneSnapshot")
+    frame_set = artifact("frameSet")
+    mask_set = artifact("maskSet")
+    evidence = artifact("evidenceSnapshot")
+    model = artifact("modelManifest")
+    runtime = artifact("runtimeManifest")
+    expected = {
+        "sceneId": scene.get("sceneId"),
+        "sceneVersion": scene.get("sceneVersion"),
+        "frameSetVersion": frame_set.get("frameSetVersion"),
+        "modelManifestDigest": model.get("digest"),
+    }
+    for name, artifact_value in expected.items():
+        if artifact_value != bindings.get(name):
+            raise PocRunRecordError(
+                f"prediction binding does not match its artifact: {name}"
+            )
+    for name in (
+        "requestId",
+        "sessionId",
+        "promptLogRevision",
+        "frameSetVersion",
+        "modelManifestDigest",
+    ):
+        if mask_set.get(name) != bindings.get(name):
+            raise PocRunRecordError(
+                f"prediction binding does not match Mask Set: {name}"
+            )
+    for name in COMPLETE_REQUIRED_BINDINGS:
+        if name in {"trialId", "terminalState"}:
+            continue
+        if evidence.get(name) != bindings.get(name):
+            raise PocRunRecordError(
+                f"prediction binding does not match Evidence Snapshot: {name}"
+            )
+    for name in REQUIRED_PREDICTION_ARTIFACTS:
+        if name == "dependencyLock":
+            continue
+        value = artifact(name)
+        if value.get("recordBindings") != bindings:
+            raise PocRunRecordError(
+                f"prediction artifact is not bound to the manifest identity: {name}"
+            )
+    release = runtime.get("release")
+    lock_record = artifacts["dependencyLock"]
+    if (
+        not isinstance(release, dict)
+        or release.get("lockDigest") != lock_record.get("sha256")
+    ):
+        raise PocRunRecordError(
+            "dependency lock does not match the runtime release identity"
+        )
 
 
 def _classification_sets(

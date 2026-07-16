@@ -30,8 +30,8 @@
       "bytes": 23361
     },
     "controlled_front_back_overlap_ground_truth.json": {
-      "sha256": "ca8e50cfa74fa972adefeeac9c6a0875fa071df873704cc8848e4d830e3bead9",
-      "bytes": 40747
+      "sha256": "7e54957a93f80a0790befebb3ac0666588b70763351f76017095214dba1b000c",
+      "bytes": 25645
     }
   }
 }

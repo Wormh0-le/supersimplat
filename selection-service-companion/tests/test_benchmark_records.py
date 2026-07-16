@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -19,6 +20,27 @@ from selection_service_companion.controlled_overlap_benchmark import (
 
 
 class PocRunRecordTests(unittest.TestCase):
+    def complete_bindings(self, **overrides: object) -> dict[str, object]:
+        bindings: dict[str, object] = {
+            "trialId": "controlled-overlap-seed-1",
+            "protocolVersion": "1",
+            "deterministicSeed": "controlled-seed-1",
+            "terminalState": "complete",
+            "requestId": "request-1",
+            "sessionId": "session-1",
+            "targetSplatId": "controlled-overlap",
+            "sceneId": "controlled-overlap",
+            "sceneVersion": "sha256:scene",
+            "operation": "New",
+            "correctionRound": 0,
+            "promptLogRevision": 1,
+            "frameSetVersion": "frames-final",
+            "renderConfigVersion": "render-v1",
+            "modelManifestDigest": "sha256:model",
+        }
+        bindings.update(overrides)
+        return bindings
+
     def complete_artifacts(self, root: Path) -> dict[str, Path]:
         inputs = root / "inputs"
         inputs.mkdir()
@@ -32,8 +54,41 @@ class PocRunRecordTests(unittest.TestCase):
                     "rejectedStableGaussianIds": [3, 5],
                     "uncertainStableGaussianIds": [],
                 }
+            elif name == "sceneSnapshot":
+                value = {
+                    "sceneId": "controlled-overlap",
+                    "sceneVersion": "sha256:scene",
+                }
+            elif name == "frameSet":
+                value = {"frameSetVersion": "frames-final"}
+            elif name == "maskSet":
+                value = {
+                    "requestId": "request-1",
+                    "sessionId": "session-1",
+                    "promptLogRevision": 1,
+                    "frameSetVersion": "frames-final",
+                    "modelManifestDigest": "sha256:model",
+                }
+            elif name == "evidenceSnapshot":
+                value = {
+                    name: value
+                    for name, value in self.complete_bindings().items()
+                    if name not in {"trialId", "terminalState"}
+                }
+            elif name == "modelManifest":
+                value = {"digest": "sha256:model"}
+            if isinstance(value, dict):
+                value = {**value, "recordBindings": self.complete_bindings()}
             artifact.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
             artifacts[name] = artifact
+        lock_digest = "sha256:" + hashlib.sha256(
+            artifacts["dependencyLock"].read_bytes()
+        ).hexdigest()
+        runtime = json.loads(artifacts["runtimeManifest"].read_text(encoding="utf-8"))
+        runtime["release"] = {"lockDigest": lock_digest}
+        artifacts["runtimeManifest"].write_text(
+            json.dumps(runtime, sort_keys=True), encoding="utf-8"
+        )
         return artifacts
 
     def test_seals_a_complete_prediction_before_ground_truth_is_available(self) -> None:
@@ -44,12 +99,7 @@ class PocRunRecordTests(unittest.TestCase):
             record = seal_prediction(
                 root / "trial-1",
                 artifacts=artifacts,
-                bindings={
-                    "trialId": "controlled-overlap-seed-1",
-                    "protocolVersion": "1",
-                    "deterministicSeed": "controlled-seed-1",
-                    "terminalState": "complete",
-                },
+                bindings=self.complete_bindings(),
             )
 
             manifest = json.loads(record.manifest_path.read_text(encoding="utf-8"))
@@ -78,12 +128,22 @@ class PocRunRecordTests(unittest.TestCase):
                 seal_prediction(
                     root / "trial-1",
                     artifacts=artifacts,
-                    bindings={
-                        "trialId": "trial-1",
-                        "protocolVersion": "1",
-                        "deterministicSeed": "seed-1",
-                        "terminalState": "complete",
-                    },
+                    bindings=self.complete_bindings(trialId="trial-1"),
+                )
+
+    def test_refuses_to_seal_a_complete_prediction_without_identity_bindings(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bindings = self.complete_bindings()
+            del bindings["sceneVersion"]
+
+            with self.assertRaisesRegex(PocRunRecordError, "sceneVersion"):
+                seal_prediction(
+                    root / "trial-1",
+                    artifacts=self.complete_artifacts(root),
+                    bindings=bindings,
                 )
 
     def test_seals_but_does_not_score_a_terminally_failed_prediction(self) -> None:
@@ -117,12 +177,7 @@ class PocRunRecordTests(unittest.TestCase):
             record = seal_prediction(
                 root / "trial-1",
                 artifacts=self.complete_artifacts(root),
-                bindings={
-                    "trialId": "controlled-overlap-seed-1",
-                    "protocolVersion": "1",
-                    "deterministicSeed": "controlled-seed-1",
-                    "terminalState": "complete",
-                },
+                bindings=self.complete_bindings(),
             )
             ground_truth = root / "controlled-overlap-ground-truth.json"
             ground_truth.write_text(
@@ -158,12 +213,9 @@ class PocRunRecordTests(unittest.TestCase):
             record = seal_prediction(
                 root / "trial-1",
                 artifacts=self.complete_artifacts(root),
-                bindings={
-                    "trialId": "trial-1",
-                    "protocolVersion": "1",
-                    "deterministicSeed": "seed-1",
-                    "terminalState": "complete",
-                },
+                bindings=self.complete_bindings(
+                    trialId="trial-1", deterministicSeed="seed-1"
+                ),
             )
             candidate = record.directory / "artifacts" / "candidateObjectSelection.json"
             candidate.write_text("{}", encoding="utf-8")
@@ -182,6 +234,24 @@ class PocRunRecordTests(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(PocRunRecordError, "hash mismatch"):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=root / "score.json",
+                )
+
+    def test_invalidates_a_trial_if_identity_does_not_match_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=self.complete_artifacts(root),
+                bindings=self.complete_bindings(sceneVersion="sha256:other-scene"),
+            )
+            ground_truth = root / "ground-truth.json"
+            ground_truth.write_text("{}", encoding="utf-8")
+
+            with self.assertRaisesRegex(PocRunRecordError, "sceneVersion"):
                 score_prediction(
                     record.directory,
                     ground_truth_path=ground_truth,
@@ -212,6 +282,24 @@ class PocRunRecordTests(unittest.TestCase):
             "playcanvas-gsplat-classic",
         )
 
+    def test_rejects_a_modified_controlled_overlap_fixture(self) -> None:
+        fixture = (
+            Path(__file__).resolve().parents[2]
+            / "docs"
+            / "benchmarks"
+            / "fixtures"
+            / "controlled-overlap"
+            / "controlled_front_back_overlap.ply"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            modified = Path(directory) / fixture.name
+            payload = bytearray(fixture.read_bytes())
+            payload[-1] ^= 1
+            modified.write_bytes(payload)
+
+            with self.assertRaisesRegex(PocRunRecordError, "frozen fixture digest"):
+                build_controlled_overlap_snapshot(modified)
+
     def test_seals_a_preview_with_internal_generated_view_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -220,8 +308,20 @@ class PocRunRecordTests(unittest.TestCase):
             publication = SimpleNamespace(
                 bindings={"requestId": "request-1", "frameSetVersion": "frames-final"},
                 frame_set={"frameSetVersion": "frames-final"},
-                mask_set={"status": "complete"},
+                mask_set={
+                    "status": "complete",
+                    "requestId": "request-1",
+                    "sessionId": "session-1",
+                    "promptLogRevision": 1,
+                    "frameSetVersion": "frames-final",
+                    "modelManifestDigest": "sha256:model",
+                },
                 evidence_snapshot={
+                    **{
+                        name: value
+                        for name, value in self.complete_bindings().items()
+                        if name not in {"trialId", "terminalState"}
+                    },
                     "records": [
                         {"stableId": 1, "classification": "selected"},
                         {"stableId": 2, "classification": "rejected"},
@@ -237,7 +337,10 @@ class PocRunRecordTests(unittest.TestCase):
             record = seal_preview_prediction(
                 root / "trial",
                 publication=publication,
-                scene_snapshot={"sceneId": "controlled-overlap"},
+                scene_snapshot={
+                    "sceneId": "controlled-overlap",
+                    "sceneVersion": "sha256:scene",
+                },
                 prompt_log=[{"operation": "New"}],
                 model_manifest={"digest": "sha256:model"},
                 runtime_manifest={"gpu": "locked-gpu"},
@@ -249,12 +352,7 @@ class PocRunRecordTests(unittest.TestCase):
                     "oomRetries": [],
                     "attempts": [{"viewId": "generated-00"}],
                 },
-                bindings={
-                    "trialId": "controlled-overlap-seed-1",
-                    "protocolVersion": "1",
-                    "deterministicSeed": "controlled-seed-1",
-                    "terminalState": "complete",
-                },
+                bindings=self.complete_bindings(),
             )
 
             candidate = json.loads(

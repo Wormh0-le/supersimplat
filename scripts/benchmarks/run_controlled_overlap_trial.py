@@ -34,11 +34,6 @@ def parser() -> argparse.ArgumentParser:
             / "docs/benchmarks/fixtures/controlled-overlap/controlled_front_back_overlap.ply"
         ),
     )
-    predict.add_argument(
-        "--lock-file",
-        type=Path,
-        default=REPOSITORY_ROOT / "selection-service-companion/uv.lock",
-    )
     predict.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIRECTORY)
     predict.add_argument("--model-manifest-digest")
     predict.add_argument("--image-size", type=int, default=1008)
@@ -57,7 +52,6 @@ def main() -> int:
         record = run_controlled_overlap_prediction(
             arguments.output,
             fixture_ply=arguments.fixture_ply,
-            dependency_lock=arguments.lock_file,
             state_directory=arguments.state_dir,
             model_manifest_digest=arguments.model_manifest_digest,
             image_size=arguments.image_size,

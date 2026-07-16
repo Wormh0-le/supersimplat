@@ -329,6 +329,7 @@ class GsplatContributorRenderer:
         default_factory=dict, init=False, repr=False
     )
     last_peak_vram_bytes: int | None = field(default=None, init=False)
+    peak_vram_bytes: int = field(default=0, init=False)
 
     def render(
         self,
@@ -349,6 +350,9 @@ class GsplatContributorRenderer:
             height=frame.height,
         )
         self.last_peak_vram_bytes = rasterized.peak_vram_bytes
+        self.peak_vram_bytes = max(
+            self.peak_vram_bytes, int(rasterized.peak_vram_bytes or 0)
+        )
         return _validated_rendered_view(
             rasterized=rasterized,
             stable_ids=stable_ids,
@@ -556,6 +560,9 @@ class GsplatContributorRenderer:
             height=resolution,
         )
         self.last_peak_vram_bytes = rasterized.peak_vram_bytes
+        self.peak_vram_bytes = max(
+            self.peak_vram_bytes, int(rasterized.peak_vram_bytes or 0)
+        )
         image_png = _rgb_png(rasterized.service_rgb_bytes, resolution, resolution)
         frame = RegisteredFrame(
             view_id=candidate.view_id,

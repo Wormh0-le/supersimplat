@@ -13,7 +13,8 @@ import os
 from pathlib import Path
 import secrets
 from threading import Lock
-from typing import Any
+import time
+from typing import Any, Callable
 
 from . import PACKAGE_VERSION, PROTOCOL_VERSION
 from .evidence import ContributorRenderer, build_evidence_snapshot
@@ -549,6 +550,7 @@ class CompanionState:
         *,
         bindings: dict[str, Any],
         prompt_log: Any,
+        stage_observer: Callable[[str, float], None] | None = None,
     ) -> PreviewPublication:
         """Atomically publish Frame Set, Mask Set, Evidence, and coverage.
 
@@ -569,10 +571,15 @@ class CompanionState:
                 if completed is not None:
                     return self._preview_publication_from_canonical(completed)
 
+        stage_started = time.perf_counter()
         resolved = self._effective_preview_frame_set(
             bindings=bindings,
             prompt_log=prompt_log,
         )
+        if stage_observer is not None:
+            stage_observer(
+                "generatedViewPlanningSeconds", time.perf_counter() - stage_started
+            )
         effective_bindings = resolved.bindings
         request_id = self._mask_binding(effective_bindings, "requestId")
         session_id = self._mask_binding(effective_bindings, "sessionId")
@@ -601,6 +608,7 @@ class CompanionState:
             else None
         )
         try:
+            stage_started = time.perf_counter()
             mask_set, evidence_lease_claimed = self._update_mask_session(
                 bindings=effective_bindings,
                 prompt_log=prompt_log,
@@ -617,11 +625,20 @@ class CompanionState:
                     else None
                 ),
             )
+            if stage_observer is not None:
+                stage_observer(
+                    "maskProductionSeconds", time.perf_counter() - stage_started
+                )
+            stage_started = time.perf_counter()
             evidence_snapshot = self._build_evidence_snapshot(
                 bindings=effective_bindings,
                 mask_set=mask_set,
                 evidence_lease_claimed=evidence_lease_claimed,
             )
+            if stage_observer is not None:
+                stage_observer(
+                    "evidenceConstructionSeconds", time.perf_counter() - stage_started
+                )
             renderer = self.contributor_renderer
             if renderer is None:
                 # _build_evidence_snapshot has already returned rendererUnavailable,
@@ -639,6 +656,7 @@ class CompanionState:
                     "sceneCacheMiss",
                     "The Scene Snapshot is unavailable for Generated View coverage.",
                 )
+            stage_started = time.perf_counter()
             coverage_report = self.generated_view_policy.coverage_report(
                 scene_snapshot=json.loads(snapshot.canonical),
                 frame_set=resolved.frame_set,
@@ -652,6 +670,10 @@ class CompanionState:
                 quality_diagnostics=resolved.quality_diagnostics,
                 prompt_log=prompt_log if isinstance(prompt_log, list) else (),
             )
+            if stage_observer is not None:
+                stage_observer(
+                    "coverageReportSeconds", time.perf_counter() - stage_started
+                )
             publication = PreviewPublication(
                 bindings=dict(effective_bindings),
                 frame_set=public_frame_set_payload(resolved.frame_set),

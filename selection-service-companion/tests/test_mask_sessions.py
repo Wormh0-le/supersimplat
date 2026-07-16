@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import Callable, Mapping, Sequence
 import hashlib
 from http import HTTPStatus
 import json
@@ -9,6 +10,7 @@ import sys
 import tempfile
 from threading import Event, Thread
 from types import ModuleType
+from typing import Any
 import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -18,10 +20,9 @@ from selection_service_companion.server import create_server
 from selection_service_companion.evidence import ContributorSample, RenderedContributorView
 from selection_service_companion.generated_views import (
     CameraPreflightResult,
-    GeneratedViewCandidate,
     GeneratedViewCameraPlan,
-    GeneratedViewPlan,
     PlannedGeneratedViewCandidate,
+    SeedRegion,
 )
 from selection_service_companion.masking import (
     MaskProduction,
@@ -45,7 +46,12 @@ class PointFixtureContributorRenderer:
 
     renderer_id = "gsplat"
 
-    def render(self, *, scene_snapshot, frame):
+    def render(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        frame: RegisteredFrame,
+    ) -> RenderedContributorView:
         stable_ids = sorted(gaussian["stableId"] for gaussian in scene_snapshot["gaussians"])
         contributors = []
         if stable_ids:
@@ -75,19 +81,19 @@ class GeneratedPointFixtureContributorRenderer(PointFixtureContributorRenderer):
     """A service-owned generated frame fixture for the preview publication seam."""
 
     def __init__(self) -> None:
-        self.seed_regions = []
-        self.attempt_resolutions = []
+        self.seed_regions: list[SeedRegion] = []
+        self.attempt_resolutions: list[int] = []
 
     def plan_views(
         self,
         *,
-        scene_snapshot,
-        anchor_frame,
-        seed_region,
-        initial_budget,
-        replacement_budget,
-        resolution,
-    ):
+        scene_snapshot: Mapping[str, Any],
+        anchor_frame: RegisteredFrame,
+        seed_region: SeedRegion,
+        initial_budget: int,
+        replacement_budget: int,
+        resolution: int,
+    ) -> GeneratedViewCameraPlan:
         del scene_snapshot, anchor_frame
         self.seed_regions.append(seed_region)
         self.attempt_resolutions.append(resolution)
@@ -105,15 +111,36 @@ class GeneratedPointFixtureContributorRenderer(PointFixtureContributorRenderer):
             replacements=(),
         )
 
-    def preflight(self, *, scene_snapshot, candidate, seed_region, resolution):
+    def preflight(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        candidate: PlannedGeneratedViewCandidate,
+        seed_region: SeedRegion,
+        resolution: int,
+    ) -> CameraPreflightResult:
         del scene_snapshot, seed_region, resolution
         return CameraPreflightResult(
             accepted=True,
             camera=candidate.camera,
-            diagnostics={"policyVersion": "fixture-preflight-v1"},
+            diagnostics={
+                "policyVersion": "fixture-preflight-v1",
+                "attempts": [{
+                    "projectedCenterX": 10.0,
+                    "projectedCenterY": 20.0,
+                    "projectedRadius": 32.0,
+                }],
+            },
         )
 
-    def render_generated(self, *, scene_snapshot, candidate, preflight, resolution):
+    def render_generated(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        candidate: PlannedGeneratedViewCandidate,
+        preflight: CameraPreflightResult,
+        resolution: int,
+    ) -> RegisteredFrame:
         del scene_snapshot, preflight
         png = b"\x89PNG\r\n\x1a\n generated-view-png"
         digest = f"sha256:{hashlib.sha256(png).hexdigest()}"
@@ -131,13 +158,20 @@ class GeneratedPointFixtureContributorRenderer(PointFixtureContributorRenderer):
 class OomGeneratedPointFixtureContributorRenderer(
     GeneratedPointFixtureContributorRenderer
 ):
-    def __init__(self, oom_resolutions):
+    def __init__(self, oom_resolutions: set[int]) -> None:
         super().__init__()
         self.oom_resolutions = set(oom_resolutions)
-        self.attempt_artifacts = []
+        self.attempt_artifacts: list[int] = []
         self.discarded_attempts = 0
 
-    def render_generated(self, *, scene_snapshot, candidate, preflight, resolution):
+    def render_generated(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        candidate: PlannedGeneratedViewCandidate,
+        preflight: CameraPreflightResult,
+        resolution: int,
+    ) -> RegisteredFrame:
         self.attempt_artifacts.append(resolution)
         if resolution in self.oom_resolutions:
             import torch
@@ -150,7 +184,7 @@ class OomGeneratedPointFixtureContributorRenderer(
             resolution=resolution,
         )
 
-    def discard_attempt(self):
+    def discard_attempt(self) -> None:
         self.discarded_attempts += 1
         self.attempt_artifacts.clear()
 
@@ -158,7 +192,14 @@ class OomGeneratedPointFixtureContributorRenderer(
 class FailedGeneratedPointFixtureContributorRenderer(
     GeneratedPointFixtureContributorRenderer
 ):
-    def render_generated(self, *, scene_snapshot, candidate, preflight, resolution):
+    def render_generated(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        candidate: PlannedGeneratedViewCandidate,
+        preflight: CameraPreflightResult,
+        resolution: int,
+    ) -> RegisteredFrame:
         del scene_snapshot, candidate, preflight, resolution
         raise RuntimeError("injected non-OOM renderer failure")
 
@@ -166,7 +207,14 @@ class FailedGeneratedPointFixtureContributorRenderer(
 class GeneratedPointMaskAdapter(PointMaskAdapter):
     """The deterministic mask seam accepts the hidden service-rendered frame."""
 
-    def produce_tracks(self, *, model, frame_set, prompt_log, cancelled):
+    def produce_tracks(
+        self,
+        *,
+        model: Mapping[str, Any],
+        frame_set: RegisteredFrameSet,
+        prompt_log: Sequence[dict[str, Any]],
+        cancelled: Callable[[], bool],
+    ) -> MaskProduction:
         production = super().produce_tracks(
             model=model,
             frame_set=frame_set,
@@ -190,7 +238,196 @@ class GeneratedPointMaskAdapter(PointMaskAdapter):
                         },
                     }
                 )
-        return production
+        return MaskProduction(
+            tracks=production.tracks,
+            threshold=production.threshold,
+            diagnostics={
+                "adapterId": "point-mask-v1",
+                "trackingConfidenceByView": {
+                    view.view_id: 0.9 for view in frame_set.ordered_views
+                },
+            },
+        )
+
+
+class IncrementalGeneratedPointFixtureContributorRenderer(
+    GeneratedPointFixtureContributorRenderer
+):
+    """Records every service-rendered candidate for incremental preview tests."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.preflighted_view_ids: list[str] = []
+        self.rendered_view_ids: list[str] = []
+
+    def plan_views(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        anchor_frame: RegisteredFrame,
+        seed_region: SeedRegion,
+        initial_budget: int,
+        replacement_budget: int,
+        resolution: int,
+    ) -> GeneratedViewCameraPlan:
+        del scene_snapshot, anchor_frame
+        self.seed_regions.append(seed_region)
+        self.attempt_resolutions.append(resolution)
+        self.asserted_budgets = (initial_budget, replacement_budget)
+        camera = {"azimuthDegrees": 30.0, "elevationDegrees": 0.0}
+        return GeneratedViewCameraPlan(
+            frame_set_id="frames-1",
+            primary=tuple(
+                PlannedGeneratedViewCandidate(
+                    view_id=view_id,
+                    camera=camera,
+                    category="ring",
+                    azimuth_degrees=30.0,
+                )
+                for view_id in ("candidate-1", "candidate-2", "candidate-3", "candidate-4")
+            ),
+            replacements=(
+                PlannedGeneratedViewCandidate(
+                    view_id="replacement-2",
+                    camera=camera,
+                    category="replacement",
+                    azimuth_degrees=30.0,
+                    replacement_of="candidate-2",
+                ),
+            ),
+        )
+
+    def preflight(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        candidate: PlannedGeneratedViewCandidate,
+        seed_region: SeedRegion,
+        resolution: int,
+    ) -> CameraPreflightResult:
+        del scene_snapshot, seed_region, resolution
+        self.preflighted_view_ids.append(candidate.view_id)
+        return CameraPreflightResult(
+            accepted=True,
+            camera=candidate.camera,
+            diagnostics={
+                "policyVersion": "fixture-preflight-v1",
+                "reason": "accepted",
+                "attempts": [
+                    {
+                        "projectedCenterX": 10.0,
+                        "projectedCenterY": 20.0,
+                        "projectedRadius": 32.0,
+                    }
+                ],
+            },
+        )
+
+    def render_generated(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        candidate: PlannedGeneratedViewCandidate,
+        preflight: CameraPreflightResult,
+        resolution: int,
+    ) -> RegisteredFrame:
+        self.rendered_view_ids.append(candidate.view_id)
+        return super().render_generated(
+            scene_snapshot=scene_snapshot,
+            candidate=candidate,
+            preflight=preflight,
+            resolution=resolution,
+        )
+
+    def render(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        frame: RegisteredFrame,
+    ) -> RenderedContributorView:
+        stable_id = min(gaussian["stableId"] for gaussian in scene_snapshot["gaussians"])
+        x_px, y_px = (
+            (900, 900) if frame.view_id == "candidate-2" else (10, 20)
+        )
+        return RenderedContributorView(
+            view_id=frame.view_id,
+            rgb_frame_digest=frame.frame_digest,
+            width=frame.width,
+            height=frame.height,
+            support_bounds=(0, 0, frame.width, frame.height),
+            contributors=(
+                ContributorSample(
+                    stable_id=stable_id,
+                    x_px=min(x_px, frame.width - 1),
+                    y_px=min(y_px, frame.height - 1),
+                    mass=3.0,
+                ),
+            ),
+        )
+
+
+class IncrementalGeneratedPointMaskAdapter(PointMaskAdapter):
+    """Returns fixture tracks while exposing each temporary prefix replay."""
+
+    def __init__(self) -> None:
+        self.prefixes: list[tuple[str, ...]] = []
+
+    def produce_tracks(
+        self,
+        *,
+        model: Mapping[str, Any],
+        frame_set: RegisteredFrameSet,
+        prompt_log: Sequence[dict[str, Any]],
+        cancelled: Callable[[], bool],
+    ) -> MaskProduction:
+        self.prefixes.append(tuple(view.view_id for view in frame_set.ordered_views))
+        production = super().produce_tracks(
+            model=model,
+            frame_set=frame_set,
+            prompt_log=prompt_log,
+            cancelled=cancelled,
+        )
+        for frame in production.tracks[0]["frames"]:
+            if frame["viewId"] == "candidate-2":
+                frame.clear()
+                frame.update(
+                    {
+                        "viewId": "candidate-2",
+                        "status": "accepted",
+                        "binaryMask": {
+                            "encoding": "sparse-points-v1",
+                            "width": 1008,
+                            "height": 1008,
+                            "foregroundPixels": [[900, 900]],
+                        },
+                    }
+                )
+            elif frame["viewId"] != "anchor-view":
+                generated = frame_set.view(frame["viewId"])
+                assert generated is not None
+                frame.clear()
+                frame.update(
+                    {
+                        "viewId": generated.view_id,
+                        "status": "accepted",
+                        "binaryMask": {
+                            "encoding": "sparse-points-v1",
+                            "width": generated.width,
+                            "height": generated.height,
+                            "foregroundPixels": [[10, 20]],
+                        },
+                    }
+                )
+        return MaskProduction(
+            tracks=production.tracks,
+            threshold=production.threshold,
+            diagnostics={
+                "adapterId": "point-mask-v1",
+                "trackingConfidenceByView": {
+                    view.view_id: 0.9 for view in frame_set.ordered_views
+                },
+            },
+        )
 
 
 class OomGeneratedPointMaskAdapter(GeneratedPointMaskAdapter):
@@ -427,8 +664,13 @@ class MaskSessionContractTests(unittest.TestCase):
         )
         self.assertEqual(repeated, result)
 
-    def generated_preview_context(self, renderer, request_id="request-generated-oom"):
-        self.state.mask_adapters["point-mask-v1"] = GeneratedPointMaskAdapter()
+    def generated_preview_context(
+        self,
+        renderer: PointFixtureContributorRenderer,
+        request_id: str = "request-generated-oom",
+        adapter: PointMaskAdapter | None = None,
+    ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
+        self.state.mask_adapters["point-mask-v1"] = adapter or GeneratedPointMaskAdapter()
         self.state.contributor_renderer = renderer
         self.state.register_frame_set(
             {
@@ -438,8 +680,8 @@ class MaskSessionContractTests(unittest.TestCase):
                     {
                         "viewId": "anchor-view",
                         "frameDigest": "sha256:anchor-frame-v1",
-                        "width": 64,
-                        "height": 48,
+                        "width": 1008,
+                        "height": 1008,
                         "source": "anchor",
                     }
                 ],
@@ -472,8 +714,8 @@ class MaskSessionContractTests(unittest.TestCase):
                     "promptId": "prompt-1",
                     "viewId": "anchor-view",
                     "frameDigest": "sha256:anchor-frame-v1",
-                    "frameWidth": 64,
-                    "frameHeight": 48,
+                    "frameWidth": 1008,
+                    "frameHeight": 1008,
                     "xPx": 10,
                     "yPx": 20,
                     "polarity": "include",
@@ -580,8 +822,8 @@ class MaskSessionContractTests(unittest.TestCase):
                 {
                     "viewId": "anchor-view",
                     "frameDigest": "sha256:anchor-frame-v1",
-                    "width": 64,
-                    "height": 48,
+                    "width": 1008,
+                    "height": 1008,
                     "source": "anchor",
                 }
             ],
@@ -614,8 +856,8 @@ class MaskSessionContractTests(unittest.TestCase):
                     "promptId": "prompt-1",
                     "viewId": "anchor-view",
                     "frameDigest": "sha256:anchor-frame-v1",
-                    "frameWidth": 64,
-                    "frameHeight": 48,
+                    "frameWidth": 1008,
+                    "frameHeight": 1008,
                     "xPx": 10,
                     "yPx": 20,
                     "polarity": "include",
@@ -644,6 +886,812 @@ class MaskSessionContractTests(unittest.TestCase):
         self.assertEqual(
             self.state._mask_sessions[session_id].frame_set_version,
             publication.bindings["frameSetVersion"],
+        )
+
+    def test_stops_incremental_rendering_after_three_low_gain_candidates(self) -> None:
+        renderer = IncrementalGeneratedPointFixtureContributorRenderer()
+        adapter = IncrementalGeneratedPointMaskAdapter()
+        _, bindings, prompt_log = self.generated_preview_context(
+            renderer,
+            request_id="request-incremental-generated-1",
+            adapter=adapter,
+        )
+
+        publication = self.state.update_preview_publication(
+            bindings=bindings,
+            prompt_log=prompt_log,
+        )
+
+        self.assertEqual(
+            renderer.rendered_view_ids,
+            ["candidate-1", "candidate-2", "replacement-2", "candidate-3"],
+        )
+        self.assertEqual(renderer.preflighted_view_ids, renderer.rendered_view_ids)
+        self.assertEqual(
+            adapter.prefixes,
+            [
+                ("anchor-view",),
+                ("anchor-view", "candidate-1"),
+                ("anchor-view", "candidate-1", "candidate-2"),
+                ("anchor-view", "candidate-1", "replacement-2"),
+                ("anchor-view", "candidate-1", "replacement-2", "candidate-3"),
+                ("anchor-view", "candidate-1", "replacement-2", "candidate-3"),
+            ],
+        )
+        self.assertEqual(
+            [frame["viewId"] for frame in publication.frame_set["orderedViews"]],
+            ["anchor-view", "candidate-1", "replacement-2", "candidate-3"],
+        )
+        self.assertEqual(publication.coverage_report["attemptedViews"], 5)
+        self.assertEqual(
+            publication.coverage_report["rejectedViews"][0]["viewId"],
+            "candidate-2",
+        )
+        quality = publication.coverage_report["qualityDiagnostics"]
+        self.assertEqual(quality["policyId"], "generated-view-neighbor-anomaly/v1")
+        self.assertEqual(quality["thresholds"]["minimumProjectedSeedOverlap"], 0.05)
+        self.assertEqual(quality["rejections"][0]["reason"], "projected_seed_overlap")
+        self.assertNotIn("diagnostics", publication.mask_set)
+        self.assertNotIn("qualityDiagnostics", self.state.generated_view_policy.public_coverage_report(
+            publication.coverage_report
+        ))
+
+        repeated = self.state.update_preview_publication(
+            bindings=bindings,
+            prompt_log=prompt_log,
+        )
+        self.assertEqual(repeated, publication)
+        self.assertEqual(
+            renderer.rendered_view_ids,
+            ["candidate-1", "candidate-2", "replacement-2", "candidate-3"],
+        )
+
+    def test_cancelling_a_generated_prefix_discards_staged_selection_and_recovers(self) -> None:
+        started = Event()
+        release = Event()
+
+        class BlockingGeneratedPrefixMaskAdapter(GeneratedPointMaskAdapter):
+            def __init__(self) -> None:
+                self.block_next_generated_prefix = True
+
+            def produce_tracks(
+                self,
+                *,
+                model: Mapping[str, Any],
+                frame_set: RegisteredFrameSet,
+                prompt_log: Sequence[dict[str, Any]],
+                cancelled: Callable[[], bool],
+            ) -> MaskProduction:
+                if (
+                    self.block_next_generated_prefix
+                    and len(frame_set.ordered_views) > 1
+                ):
+                    self.block_next_generated_prefix = False
+                    started.set()
+                    release.wait(timeout=2)
+                return super().produce_tracks(
+                    model=model,
+                    frame_set=frame_set,
+                    prompt_log=prompt_log,
+                    cancelled=cancelled,
+                )
+
+        renderer = GeneratedPointFixtureContributorRenderer()
+        adapter = BlockingGeneratedPrefixMaskAdapter()
+        session_id, bindings, prompt_log = self.generated_preview_context(
+            renderer,
+            request_id="request-generated-cancel",
+            adapter=adapter,
+        )
+        failures: list[BaseException] = []
+
+        def publish() -> None:
+            try:
+                self.state.update_preview_publication(
+                    bindings=bindings,
+                    prompt_log=prompt_log,
+                )
+            except BaseException as error:
+                failures.append(error)
+
+        thread = Thread(target=publish)
+        thread.start()
+        self.assertTrue(started.wait(timeout=2))
+        self.assertTrue(self.state.cancel_mask_update(session_id, bindings["requestId"]))
+        release.set()
+        thread.join(timeout=2)
+
+        self.assertEqual(len(failures), 1)
+        self.assertIsInstance(failures[0], MaskSessionError)
+        self.assertEqual(failures[0].code, "cancelled")
+        session = self.state._mask_sessions[session_id]
+        self.assertEqual(session.frame_set_version, "anchor-oom-v1")
+        self.assertIsNone(session.generated_resolution)
+        self.assertEqual(session.completed_preview_publications, {})
+
+        recovered = self.state.update_preview_publication(
+            bindings={**bindings, "requestId": "request-generated-recovered"},
+            prompt_log=prompt_log,
+        )
+        self.assertNotEqual(recovered.bindings["frameSetVersion"], "anchor-oom-v1")
+        self.assertEqual(
+            [frame["viewId"] for frame in recovered.frame_set["orderedViews"]],
+            ["anchor-view", "generated-right"],
+        )
+
+    def test_cancelling_after_final_evidence_discards_the_staged_publication(self) -> None:
+        renderer = GeneratedPointFixtureContributorRenderer()
+        session_id, bindings, prompt_log = self.generated_preview_context(
+            renderer,
+            request_id="request-final-evidence-cancel",
+        )
+        self.state.contributor_renderer = PointFixtureContributorRenderer()
+        prior = self.state.update_preview_publication(
+            bindings={**bindings, "requestId": "request-final-evidence-prior"},
+            prompt_log=prompt_log,
+        )
+        self.state.contributor_renderer = renderer
+
+        coverage_started = Event()
+        allow_coverage = Event()
+        failures: list[BaseException] = []
+        original_coverage_report = self.state.generated_view_policy.coverage_report
+
+        def blocking_coverage_report(*args: Any, **kwargs: Any) -> dict[str, object]:
+            coverage_started.set()
+            allow_coverage.wait(timeout=2)
+            return original_coverage_report(*args, **kwargs)
+
+        def publish() -> None:
+            try:
+                self.state.update_preview_publication(
+                    bindings=bindings,
+                    prompt_log=prompt_log,
+                )
+            except BaseException as error:
+                failures.append(error)
+
+        with patch.object(
+            self.state.generated_view_policy,
+            "coverage_report",
+            side_effect=blocking_coverage_report,
+        ):
+            thread = Thread(target=publish)
+            thread.start()
+            self.assertTrue(coverage_started.wait(timeout=2))
+            session = self.state._mask_sessions[session_id]
+            self.assertIn(bindings["requestId"], session.completed_evidence_snapshots)
+            self.assertTrue(
+                self.state.cancel_mask_update(session_id, bindings["requestId"])
+            )
+            allow_coverage.set()
+            thread.join(timeout=2)
+
+        self.assertEqual(len(failures), 1)
+        self.assertIsInstance(failures[0], MaskSessionError)
+        self.assertEqual(failures[0].code, "cancelled")
+        session = self.state._mask_sessions[session_id]
+        self.assertEqual(session.frame_set_version, prior.bindings["frameSetVersion"])
+        self.assertIsNone(session.generated_resolution)
+        self.assertNotIn(bindings["requestId"], session.completed_updates)
+        self.assertNotIn(bindings["requestId"], session.completed_evidence_snapshots)
+        self.assertNotIn(bindings["requestId"], session.completed_preview_publications)
+        self.assertEqual(set(self.state._frame_sets), {"anchor-oom-v1"})
+
+        recovered = self.state.update_preview_publication(
+            bindings={**bindings, "requestId": "request-final-evidence-recovered"},
+            prompt_log=prompt_log,
+        )
+        self.assertNotEqual(
+            recovered.bindings["frameSetVersion"], prior.bindings["frameSetVersion"]
+        )
+
+    def test_cancelling_a_cached_generated_replay_after_evidence_is_atomic(self) -> None:
+        renderer = GeneratedPointFixtureContributorRenderer()
+        session_id, bindings, prompt_log = self.generated_preview_context(
+            renderer,
+            request_id="request-cached-generated-original",
+        )
+        original = self.state.update_preview_publication(
+            bindings=bindings,
+            prompt_log=prompt_log,
+        )
+        replay_bindings = {
+            **bindings,
+            "requestId": "request-cached-generated-cancel",
+        }
+        coverage_started = Event()
+        allow_coverage = Event()
+        failures: list[BaseException] = []
+        original_coverage_report = self.state.generated_view_policy.coverage_report
+
+        def blocking_coverage_report(*args: Any, **kwargs: Any) -> dict[str, object]:
+            coverage_started.set()
+            allow_coverage.wait(timeout=2)
+            return original_coverage_report(*args, **kwargs)
+
+        def replay() -> None:
+            try:
+                self.state.update_preview_publication(
+                    bindings=replay_bindings,
+                    prompt_log=prompt_log,
+                )
+            except BaseException as error:
+                failures.append(error)
+
+        with patch.object(
+            self.state.generated_view_policy,
+            "coverage_report",
+            side_effect=blocking_coverage_report,
+        ):
+            thread = Thread(target=replay)
+            thread.start()
+            self.assertTrue(coverage_started.wait(timeout=2))
+            session = self.state._mask_sessions[session_id]
+            self.assertIn(
+                replay_bindings["requestId"], session.completed_evidence_snapshots
+            )
+            self.assertTrue(
+                self.state.cancel_mask_update(
+                    session_id, replay_bindings["requestId"]
+                )
+            )
+            allow_coverage.set()
+            thread.join(timeout=2)
+
+        self.assertEqual(len(failures), 1)
+        self.assertIsInstance(failures[0], MaskSessionError)
+        self.assertEqual(failures[0].code, "cancelled")
+        session = self.state._mask_sessions[session_id]
+        self.assertEqual(
+            session.frame_set_version, original.bindings["frameSetVersion"]
+        )
+        self.assertIsNotNone(session.generated_resolution)
+        self.assertNotIn(replay_bindings["requestId"], session.completed_updates)
+        self.assertNotIn(
+            replay_bindings["requestId"], session.completed_evidence_snapshots
+        )
+        self.assertNotIn(
+            replay_bindings["requestId"], session.completed_preview_publications
+        )
+
+        recovered = self.state.update_preview_publication(
+            bindings={**bindings, "requestId": "request-cached-generated-recovered"},
+            prompt_log=prompt_log,
+        )
+        self.assertEqual(
+            recovered.bindings["frameSetVersion"], original.bindings["frameSetVersion"]
+        )
+
+    def test_cached_generated_duplicate_retry_clears_its_staged_token(self) -> None:
+        renderer = GeneratedPointFixtureContributorRenderer()
+        session_id, bindings, prompt_log = self.generated_preview_context(
+            renderer,
+            request_id="request-cached-duplicate-original",
+        )
+        self.state.update_preview_publication(bindings=bindings, prompt_log=prompt_log)
+        replay_bindings = {
+            **bindings,
+            "requestId": "request-cached-duplicate-replay",
+        }
+        stage_started = Event()
+        allow_stage = Event()
+        first_results: list[object] = []
+        first_failures: list[BaseException] = []
+        original_stage = self.state._stage_generated_preview
+
+        def block_first_stage(*args: Any, **kwargs: Any) -> Any:
+            if not stage_started.is_set():
+                stage_started.set()
+                allow_stage.wait(timeout=2)
+            return original_stage(*args, **kwargs)
+
+        def first_retry() -> None:
+            try:
+                first_results.append(
+                    self.state.update_preview_publication(
+                        bindings=replay_bindings,
+                        prompt_log=prompt_log,
+                    )
+                )
+            except BaseException as error:
+                first_failures.append(error)
+
+        with patch.object(
+            self.state,
+            "_stage_generated_preview",
+            side_effect=block_first_stage,
+        ):
+            first = Thread(target=first_retry)
+            first.start()
+            self.assertTrue(stage_started.wait(timeout=2))
+            second = self.state.update_preview_publication(
+                bindings=replay_bindings,
+                prompt_log=prompt_log,
+            )
+            allow_stage.set()
+            first.join(timeout=2)
+
+        self.assertEqual(first_failures, [])
+        self.assertEqual(len(first_results), 1)
+        self.assertEqual(first_results[0], second)
+        session = self.state._mask_sessions[session_id]
+        self.assertIsNone(session.staged_generated_preview_token)
+        self.assertIsNone(session.staged_generated_preview_request_id)
+        self.assertTrue(self.state.close_object_selection_session(session_id))
+        self.assertFalse(self.state.has_object_selection_session(session_id))
+
+    def test_cached_generated_duplicate_retry_drains_a_pending_close(self) -> None:
+        renderer = GeneratedPointFixtureContributorRenderer()
+        session_id, bindings, prompt_log = self.generated_preview_context(
+            renderer,
+            request_id="request-cached-close-original",
+        )
+        self.state.update_preview_publication(bindings=bindings, prompt_log=prompt_log)
+        replay_bindings = {
+            **bindings,
+            "requestId": "request-cached-close-replay",
+        }
+        first_stage_started = Event()
+        allow_first_stage = Event()
+        first_stage_completed = Event()
+        allow_first_return = Event()
+        first_results: list[object] = []
+        first_failures: list[BaseException] = []
+        original_stage = self.state._stage_generated_preview
+
+        def block_first_stage(*args: Any, **kwargs: Any) -> Any:
+            if not first_stage_started.is_set():
+                first_stage_started.set()
+                allow_first_stage.wait(timeout=2)
+                staged = original_stage(*args, **kwargs)
+                first_stage_completed.set()
+                allow_first_return.wait(timeout=2)
+                return staged
+            return original_stage(*args, **kwargs)
+
+        def first_retry() -> None:
+            try:
+                first_results.append(
+                    self.state.update_preview_publication(
+                        bindings=replay_bindings,
+                        prompt_log=prompt_log,
+                    )
+                )
+            except BaseException as error:
+                first_failures.append(error)
+
+        with patch.object(
+            self.state,
+            "_stage_generated_preview",
+            side_effect=block_first_stage,
+        ):
+            first = Thread(target=first_retry)
+            first.start()
+            self.assertTrue(first_stage_started.wait(timeout=2))
+            second = self.state.update_preview_publication(
+                bindings=replay_bindings,
+                prompt_log=prompt_log,
+            )
+            allow_first_stage.set()
+            self.assertTrue(first_stage_completed.wait(timeout=2))
+            self.assertTrue(self.state.close_object_selection_session(session_id))
+            self.assertTrue(self.state.has_object_selection_session(session_id))
+            allow_first_return.set()
+            first.join(timeout=2)
+
+        self.assertEqual(first_failures, [])
+        self.assertEqual(len(first_results), 1)
+        self.assertEqual(first_results[0], second)
+        self.assertFalse(self.state.has_object_selection_session(session_id))
+
+    def test_planning_admission_rechecks_a_finalizing_generated_preview(self) -> None:
+        renderer = GeneratedPointFixtureContributorRenderer()
+        session_id, bindings, prompt_log = self.generated_preview_context(
+            renderer,
+            request_id="request-planning-admission-race",
+        )
+        anchor_lookup_started = Event()
+        allow_anchor_lookup = Event()
+        coverage_started = Event()
+        allow_coverage = Event()
+        first_failures: list[BaseException] = []
+        second_results: list[object] = []
+        second_failures: list[BaseException] = []
+        original_require_frame_set = self.state._require_frame_set
+        original_coverage_report = self.state.generated_view_policy.coverage_report
+
+        def blocking_require_frame_set(frame_set_version: str) -> RegisteredFrameSet:
+            if (
+                frame_set_version == "anchor-oom-v1"
+                and not anchor_lookup_started.is_set()
+            ):
+                anchor_lookup_started.set()
+                allow_anchor_lookup.wait(timeout=2)
+            return original_require_frame_set(frame_set_version)
+
+        def blocking_coverage_report(*args: Any, **kwargs: Any) -> dict[str, object]:
+            coverage_started.set()
+            allow_coverage.wait(timeout=2)
+            return original_coverage_report(*args, **kwargs)
+
+        def first_preview() -> None:
+            try:
+                self.state.update_preview_publication(
+                    bindings=bindings,
+                    prompt_log=prompt_log,
+                )
+            except BaseException as error:
+                first_failures.append(error)
+
+        def second_preview() -> None:
+            try:
+                second_results.append(
+                    self.state.update_preview_publication(
+                        bindings=bindings,
+                        prompt_log=prompt_log,
+                    )
+                )
+            except BaseException as error:
+                second_failures.append(error)
+
+        with patch.object(
+            self.state,
+            "_require_frame_set",
+            side_effect=blocking_require_frame_set,
+        ), patch.object(
+            self.state.generated_view_policy,
+            "coverage_report",
+            side_effect=blocking_coverage_report,
+        ):
+            first = Thread(target=first_preview)
+            second = Thread(target=second_preview)
+            first.start()
+            self.assertTrue(anchor_lookup_started.wait(timeout=2))
+            second.start()
+            self.assertTrue(coverage_started.wait(timeout=2))
+            allow_anchor_lookup.set()
+            first.join(timeout=2)
+            self.assertEqual(len(first_failures), 1)
+            self.assertIsInstance(first_failures[0], MaskSessionError)
+            self.assertEqual(first_failures[0].code, "updateInProgress")
+            self.assertEqual(len(renderer.seed_regions), 1)
+            allow_coverage.set()
+            second.join(timeout=2)
+
+        self.assertEqual(second_failures, [])
+        self.assertEqual(len(second_results), 1)
+        self.assertEqual(
+            self.state._mask_sessions[session_id].frame_set_version,
+            second_results[0].bindings["frameSetVersion"],
+        )
+
+    def test_final_generated_replay_failure_discards_the_staged_frame_set(self) -> None:
+        class FinalReplayFailingMaskAdapter(GeneratedPointMaskAdapter):
+            def __init__(self) -> None:
+                self.generated_replays = 0
+
+            def produce_tracks(
+                self,
+                *,
+                model: Mapping[str, Any],
+                frame_set: RegisteredFrameSet,
+                prompt_log: Sequence[dict[str, Any]],
+                cancelled: Callable[[], bool],
+            ) -> MaskProduction:
+                if len(frame_set.ordered_views) > 1:
+                    self.generated_replays += 1
+                    if self.generated_replays == 2:
+                        raise RuntimeError("injected final generated replay failure")
+                return super().produce_tracks(
+                    model=model,
+                    frame_set=frame_set,
+                    prompt_log=prompt_log,
+                    cancelled=cancelled,
+                )
+
+        adapter = FinalReplayFailingMaskAdapter()
+        session_id, bindings, prompt_log = self.generated_preview_context(
+            PointFixtureContributorRenderer(),
+            request_id="request-final-replay-prior",
+            adapter=adapter,
+        )
+        prior = self.state.update_preview_publication(
+            bindings=bindings,
+            prompt_log=prompt_log,
+        )
+        session = self.state._mask_sessions[session_id]
+        prior_updates = dict(session.completed_updates)
+        prior_evidence = dict(session.completed_evidence_snapshots)
+        prior_publications = dict(session.completed_preview_publications)
+        prior_prompt_log = (session.prompt_log_canonical, session.prompt_log_revision)
+
+        self.state.contributor_renderer = GeneratedPointFixtureContributorRenderer()
+        with self.assertRaises(MaskSessionError) as raised:
+            self.state.update_preview_publication(
+                bindings={**bindings, "requestId": "request-final-replay-failure"},
+                prompt_log=prompt_log,
+            )
+
+        self.assertEqual(raised.exception.code, "modelFailure")
+        self.assertEqual(adapter.generated_replays, 2)
+        self.assertEqual(session.frame_set_version, "anchor-oom-v1")
+        self.assertIsNone(session.generated_resolution)
+        self.assertEqual(session.completed_updates, prior_updates)
+        self.assertEqual(session.completed_evidence_snapshots, prior_evidence)
+        self.assertEqual(session.completed_preview_publications, prior_publications)
+        self.assertEqual(
+            (session.prompt_log_canonical, session.prompt_log_revision), prior_prompt_log
+        )
+        self.assertEqual(set(self.state._frame_sets), {"anchor-oom-v1"})
+
+        recovered = self.state.update_preview_publication(
+            bindings={**bindings, "requestId": "request-final-replay-recovered"},
+            prompt_log=prompt_log,
+        )
+        self.assertNotEqual(recovered.bindings["frameSetVersion"], "anchor-oom-v1")
+        self.assertEqual(prior.frame_set["frameSetVersion"], "anchor-oom-v1")
+
+    def test_final_replay_rollback_blocks_a_racing_new_preview(self) -> None:
+        class FinalReplayFailingMaskAdapter(GeneratedPointMaskAdapter):
+            def __init__(self) -> None:
+                self.generated_replays = 0
+
+            def produce_tracks(
+                self,
+                *,
+                model: Mapping[str, Any],
+                frame_set: RegisteredFrameSet,
+                prompt_log: Sequence[dict[str, Any]],
+                cancelled: Callable[[], bool],
+            ) -> MaskProduction:
+                if len(frame_set.ordered_views) > 1:
+                    self.generated_replays += 1
+                    if self.generated_replays == 2:
+                        raise RuntimeError("injected final generated replay failure")
+                return super().produce_tracks(
+                    model=model,
+                    frame_set=frame_set,
+                    prompt_log=prompt_log,
+                    cancelled=cancelled,
+                )
+
+        adapter = FinalReplayFailingMaskAdapter()
+        session_id, bindings, prompt_log = self.generated_preview_context(
+            PointFixtureContributorRenderer(),
+            request_id="request-rollback-race-prior",
+            adapter=adapter,
+        )
+        self.state.update_preview_publication(bindings=bindings, prompt_log=prompt_log)
+        self.state.contributor_renderer = GeneratedPointFixtureContributorRenderer()
+
+        discard_started = Event()
+        allow_discard = Event()
+        failures: list[BaseException] = []
+        original_discard = self.state._discard_staged_generated_preview
+
+        def blocking_discard(*args: Any, **kwargs: Any) -> None:
+            discard_started.set()
+            allow_discard.wait(timeout=2)
+            original_discard(*args, **kwargs)
+
+        def fail_publication() -> None:
+            try:
+                self.state.update_preview_publication(
+                    bindings={**bindings, "requestId": "request-rollback-race-failure"},
+                    prompt_log=prompt_log,
+                )
+            except BaseException as error:
+                failures.append(error)
+
+        with patch.object(
+            self.state,
+            "_discard_staged_generated_preview",
+            side_effect=blocking_discard,
+        ):
+            failed = Thread(target=fail_publication)
+            failed.start()
+            self.assertTrue(discard_started.wait(timeout=2))
+            with self.assertRaises(MaskSessionError) as raised:
+                self.state.update_preview_publication(
+                    bindings={**bindings, "requestId": "request-rollback-race-new"},
+                    prompt_log=prompt_log,
+                )
+            self.assertEqual(raised.exception.code, "updateInProgress")
+            self.assertEqual(adapter.generated_replays, 2)
+            allow_discard.set()
+            failed.join(timeout=2)
+
+        self.assertEqual(len(failures), 1)
+        self.assertIsInstance(failures[0], MaskSessionError)
+        self.assertEqual(failures[0].code, "modelFailure")
+        session = self.state._mask_sessions[session_id]
+        self.assertEqual(session.frame_set_version, "anchor-oom-v1")
+        self.assertIsNone(session.generated_resolution)
+
+        recovered = self.state.update_preview_publication(
+            bindings={**bindings, "requestId": "request-rollback-race-recovered"},
+            prompt_log=prompt_log,
+        )
+        self.assertNotEqual(recovered.bindings["frameSetVersion"], "anchor-oom-v1")
+
+    def test_rollback_holds_its_token_through_staged_frame_set_release(self) -> None:
+        class FinalReplayFailingMaskAdapter(GeneratedPointMaskAdapter):
+            def __init__(self) -> None:
+                self.generated_replays = 0
+
+            def produce_tracks(
+                self,
+                *,
+                model: Mapping[str, Any],
+                frame_set: RegisteredFrameSet,
+                prompt_log: Sequence[dict[str, Any]],
+                cancelled: Callable[[], bool],
+            ) -> MaskProduction:
+                if len(frame_set.ordered_views) > 1:
+                    self.generated_replays += 1
+                    if self.generated_replays == 2:
+                        raise RuntimeError("injected final generated replay failure")
+                return super().produce_tracks(
+                    model=model,
+                    frame_set=frame_set,
+                    prompt_log=prompt_log,
+                    cancelled=cancelled,
+                )
+
+        adapter = FinalReplayFailingMaskAdapter()
+        session_id, bindings, prompt_log = self.generated_preview_context(
+            PointFixtureContributorRenderer(),
+            request_id="request-release-race-prior",
+            adapter=adapter,
+        )
+        self.state.update_preview_publication(bindings=bindings, prompt_log=prompt_log)
+        self.state.contributor_renderer = GeneratedPointFixtureContributorRenderer()
+
+        release_started = Event()
+        allow_release = Event()
+        failed_errors: list[BaseException] = []
+        retry_errors: list[BaseException] = []
+        retry_done = Event()
+        original_release = self.state.release_frame_set
+
+        def blocking_release(frame_set_version: str) -> bool:
+            if frame_set_version != "anchor-oom-v1":
+                release_started.set()
+                allow_release.wait(timeout=2)
+            return original_release(frame_set_version)
+
+        def fail_publication() -> None:
+            try:
+                self.state.update_preview_publication(
+                    bindings={**bindings, "requestId": "request-release-race-failure"},
+                    prompt_log=prompt_log,
+                )
+            except BaseException as error:
+                failed_errors.append(error)
+
+        def retry_publication() -> None:
+            try:
+                self.state.update_preview_publication(
+                    bindings={**bindings, "requestId": "request-release-race-retry"},
+                    prompt_log=prompt_log,
+                )
+            except BaseException as error:
+                retry_errors.append(error)
+            finally:
+                retry_done.set()
+
+        with patch.object(
+            self.state,
+            "release_frame_set",
+            side_effect=blocking_release,
+        ):
+            failed = Thread(target=fail_publication)
+            retry = Thread(target=retry_publication)
+            failed.start()
+            self.assertTrue(release_started.wait(timeout=2))
+            retry.start()
+            try:
+                self.assertTrue(retry_done.wait(timeout=2))
+                self.assertEqual(len(retry_errors), 1)
+                self.assertIsInstance(retry_errors[0], MaskSessionError)
+                self.assertEqual(retry_errors[0].code, "updateInProgress")
+                self.assertEqual(adapter.generated_replays, 2)
+            finally:
+                allow_release.set()
+                failed.join(timeout=2)
+                retry.join(timeout=2)
+
+        self.assertEqual(len(failed_errors), 1)
+        self.assertIsInstance(failed_errors[0], MaskSessionError)
+        self.assertEqual(failed_errors[0].code, "modelFailure")
+        session = self.state._mask_sessions[session_id]
+        self.assertEqual(session.frame_set_version, "anchor-oom-v1")
+        self.assertIsNone(session.generated_resolution)
+
+    def test_recovers_a_stale_anchor_retry_with_the_cached_generated_frame_set(self) -> None:
+        renderer = GeneratedPointFixtureContributorRenderer()
+        _, bindings, prompt_log = self.generated_preview_context(
+            renderer,
+            request_id="request-generated-original",
+        )
+
+        original = self.state.update_preview_publication(
+            bindings=bindings,
+            prompt_log=prompt_log,
+        )
+        recovered = self.state.update_preview_publication(
+            bindings={
+                **bindings,
+                "requestId": "request-generated-stale-retry",
+                "frameSetVersion": "anchor-oom-v1",
+            },
+            prompt_log=prompt_log,
+        )
+
+        self.assertEqual(renderer.attempt_resolutions, [1008])
+        self.assertEqual(
+            recovered.bindings["frameSetVersion"], original.bindings["frameSetVersion"]
+        )
+        self.assertEqual(recovered.frame_set, original.frame_set)
+        self.assertEqual(
+            [frame["viewId"] for frame in recovered.mask_set["tracks"][0]["frames"]],
+            ["anchor-view", "generated-right"],
+        )
+
+    def test_anchor_quality_failure_preserves_the_prior_candidate_publication(self) -> None:
+        _, bindings, prompt_log = self.generated_preview_context(
+            PointFixtureContributorRenderer(),
+            request_id="request-anchor-prior",
+        )
+        prior = self.state.update_preview_publication(
+            bindings=bindings,
+            prompt_log=prompt_log,
+        )
+
+        class AnchorParityFailingRenderer(GeneratedPointFixtureContributorRenderer):
+            def render(
+                self,
+                *,
+                scene_snapshot: Mapping[str, Any],
+                frame: RegisteredFrame,
+            ) -> RenderedContributorView:
+                rendered = super().render(
+                    scene_snapshot=scene_snapshot,
+                    frame=frame,
+                )
+                if frame.source != "anchor":
+                    return rendered
+                return RenderedContributorView(
+                    view_id=rendered.view_id,
+                    rgb_frame_digest="sha256:wrong-anchor-raster",
+                    width=rendered.width,
+                    height=rendered.height,
+                    support_bounds=rendered.support_bounds,
+                    contributors=rendered.contributors,
+                )
+
+        renderer = AnchorParityFailingRenderer()
+        self.state.contributor_renderer = renderer
+        with self.assertRaises(MaskSessionError) as raised:
+            self.state.update_preview_publication(
+                bindings={**bindings, "requestId": "request-anchor-failure"},
+                prompt_log=prompt_log,
+            )
+
+        self.assertEqual(raised.exception.code, "anchorParityFailure")
+        self.assertEqual(renderer.attempt_resolutions, [])
+        session_id = bindings["sessionId"]
+        session = self.state._mask_sessions[session_id]
+        self.assertEqual(session.frame_set_version, "anchor-oom-v1")
+        self.assertIsNone(session.generated_resolution)
+        self.state.contributor_renderer = PointFixtureContributorRenderer()
+        self.assertEqual(
+            self.state.update_preview_publication(
+                bindings=bindings,
+                prompt_log=prompt_log,
+            ),
+            prior,
         )
 
     def test_rejects_a_malformed_frame_set_with_a_structured_error(self) -> None:
@@ -1557,34 +2605,40 @@ class MaskSessionContractTests(unittest.TestCase):
             }],
         }])
         self.assertEqual(result["threshold"], 0.5)
-        self.assertEqual(result["diagnostics"], {
-            "adapterId": "sam3.1",
-            "candidateSelection": {
-                "scoreSemantics": (
-                    "sam3.1.out_probs is an adapter-local candidate quality score "
-                    "used only to order candidates that satisfy point and area validation."
-                ),
-                "selectedCandidateIndex": 1,
-                "alternatives": [
-                    {
-                        "candidateIndex": 0,
-                        "foregroundPixelCount": 1,
-                        "areaValid": True,
-                        "pointConsistent": False,
-                        "selected": False,
-                        "qualityScore": 0.1,
-                    },
-                    {
-                        "candidateIndex": 1,
-                        "foregroundPixelCount": 1,
-                        "areaValid": True,
-                        "pointConsistent": True,
-                        "selected": True,
-                        "qualityScore": 0.9,
-                    },
-                ],
-            },
+        self.assertEqual(result["diagnostics"]["adapterId"], "sam3.1")
+        self.assertEqual(result["diagnostics"]["candidateSelection"], {
+            "scoreSemantics": (
+                "sam3.1.out_probs is an adapter-local candidate quality score "
+                "used only to order candidates that satisfy point and area validation."
+            ),
+            "selectedCandidateIndex": 1,
+            "alternatives": [
+                {
+                    "candidateIndex": 0,
+                    "foregroundPixelCount": 1,
+                    "areaValid": True,
+                    "pointConsistent": False,
+                    "selected": False,
+                    "qualityScore": 0.1,
+                },
+                {
+                    "candidateIndex": 1,
+                    "foregroundPixelCount": 1,
+                    "areaValid": True,
+                    "pointConsistent": True,
+                    "selected": True,
+                    "qualityScore": 0.9,
+                },
+            ],
         })
+        self.assertEqual(
+            result["diagnostics"]["trackingConfidenceSemantics"],
+            "sigmoid-normalized selected sam3.1.out_probs candidate quality score; unavailable when no candidate is selected.",
+        )
+        self.assertAlmostEqual(
+            result["diagnostics"]["trackingConfidenceByView"]["anchor-view"],
+            0.710949502625,
+        )
         self.assertEqual(calls, [
             {
                 "type": "start_session",
@@ -1639,7 +2693,12 @@ class MaskSessionContractTests(unittest.TestCase):
                     self.assert_materialized(directory)
                     return {"session_id": "sam-session"}
                 if request["type"] == "add_prompt":
-                    return {"outputs": {"out_binary_masks": [[[True, False], [False, False]]]}}
+                    return {
+                        "outputs": {
+                            "out_binary_masks": [[[True, False], [False, False]]],
+                            "out_probs": [0.9],
+                        }
+                    }
                 return {"is_success": True}
 
             @staticmethod
@@ -1651,7 +2710,13 @@ class MaskSessionContractTests(unittest.TestCase):
 
             def handle_stream_request(self, request: dict[str, object]):
                 stream_requests.append(request)
-                yield {"frame_index": 1, "outputs": {"out_binary_masks": [[[False, True], [False, False]]]}}
+                yield {
+                    "frame_index": 1,
+                    "outputs": {
+                        "out_binary_masks": [[[False, True], [False, False]]],
+                        "out_probs": [0.4],
+                    },
+                }
                 yield {"frame_index": 2, "outputs": {}}
 
         test_case = self
@@ -1692,6 +2757,11 @@ class MaskSessionContractTests(unittest.TestCase):
             "no binary Anchor View mask",
             production.tracks[0]["frames"][2]["rejectionReason"],
         )
+        assert production.diagnostics is not None
+        confidences = production.diagnostics["trackingConfidenceByView"]
+        self.assertAlmostEqual(confidences["anchor"], 0.710949502625)
+        self.assertAlmostEqual(confidences["generated-1"], 0.598687660112)
+        self.assertIsNone(confidences["generated-2"])
         self.assertEqual(stream_requests, [{
             "type": "propagate_in_video",
             "session_id": "sam-session",

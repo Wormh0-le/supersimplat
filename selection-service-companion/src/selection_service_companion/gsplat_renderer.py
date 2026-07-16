@@ -393,7 +393,7 @@ class GsplatContributorRenderer:
         )
         primary: list[PlannedGeneratedViewCandidate] = []
         for index, (azimuth_offset, elevation_offset, category) in enumerate(
-            orbit_offsets[: max(0, initial_budget - 1)]
+            orbit_offsets[: max(0, initial_budget)]
         ):
             azimuth = base_azimuth + azimuth_offset
             elevation = max(-75.0, min(75.0, base_elevation + elevation_offset))

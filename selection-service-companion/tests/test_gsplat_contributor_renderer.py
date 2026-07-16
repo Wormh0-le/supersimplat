@@ -137,6 +137,26 @@ def valid_rasterization() -> GsplatRasterization:
 
 
 class GsplatContributorRendererTests(unittest.TestCase):
+    def test_planning_budget_counts_hidden_camera_candidates_not_the_anchor(self) -> None:
+        renderer = GsplatContributorRenderer(backend=StaticGsplatBackend(valid_rasterization()))
+        seed_region = SeedRegion(
+            center=(0.0, 0.0, 2.0),
+            radius=0.01,
+            source="anchor_contributors",
+            stable_ids=(41,),
+        )
+
+        plan = renderer.plan_views(
+            scene_snapshot=supported_snapshot(),
+            anchor_frame=anchor_frame(),
+            seed_region=seed_region,
+            initial_budget=2,
+            replacement_budget=0,
+            resolution=2,
+        )
+
+        self.assertEqual(len(plan.primary), 2)
+
     def test_plans_and_preflights_cameras_before_coherent_generated_rendering(self) -> None:
         backend = StaticGsplatBackend(valid_rasterization())
         renderer = GsplatContributorRenderer(backend=backend)

@@ -21,13 +21,13 @@ The camera must remain outside the Seed Region sphere and its near plane must no
 
 ## Initial candidate layout
 
-The normal candidate budget is 16 views:
+The standard orbit aims for 16 views:
 
 - the current Anchor View;
 - 11 same-elevation views that complete an approximately 30-degree full azimuth orbit together with the Anchor View;
 - 4 upper oblique views at approximately +30 degrees near cardinal azimuths.
 
-Do not generate below-floor or through-ground views by default. Lower views are candidates only when camera preflight proves usable free space. Sixteen is an ideal candidate layout, not a requirement that all 16 masks be accepted.
+Do not generate below-floor or through-ground views by default. Lower views are candidates only when camera preflight proves usable free space. Sixteen is an ideal candidate layout, not a requirement that all 16 masks be accepted. The incremental attempt envelope separately permits up to 16 planned hidden cameras and eight replacements (24 camera attempts total); the required Anchor is a replay input and does not consume a hidden-camera attempt.
 
 ## Resolution
 
@@ -97,6 +97,8 @@ For otherwise valid views, compare robustly with adjacent accepted views:
 - adapter-declared tracking confidence.
 
 Use versioned, benchmark-calibrated robust thresholds rather than one universal model confidence cutoff. Record every metric and rejection reason.
+
+The first executable revision is `generated-view-neighbor-anomaly/v1`. It compares a candidate with its immediately preceding accepted neighbor, beginning with the Anchor. Projected Seed Region overlap must clear both an absolute floor and a relative minimum/maximum versus that neighbor; the Anchor baseline is `1.0` because the Seed Region comes from its accepted mask. A missing projected Seed Region or adapter-declared tracking-confidence metric rejects the hidden candidate neutrally. Threshold values, measured inputs, and rejection reasons remain internal/benchmark artifacts in [`generated-view-neighbor-anomaly-v1.json`](../benchmarks/fixtures/generated-view-neighbor-anomaly-v1.json) and require a new policy revision with fixture evidence when calibration changes.
 
 An accepted view may contribute observed positive and negative evidence. A `not_found`, `rejected`, blocked, or technically invalid view remains neutral; it is never converted into an all-zero negative mask.
 

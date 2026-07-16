@@ -438,7 +438,7 @@ class Sam3PointMaskAdapter:
                 "The SAM 3.1 adapter requires PNG bytes for every Frame Set view.",
             )
 
-        outcomes, candidate_diagnostics = self._infer_frame_set(
+        outcomes, candidate_diagnostics_by_view = self._infer_frame_set(
             model=model,
             frame_set=frame_set,
             anchor_view=anchor_view,
@@ -452,6 +452,12 @@ class Sam3PointMaskAdapter:
                 "anchorMaskUnavailable",
                 "The Anchor View did not produce an accepted SAM 3.1 mask; adjust the point prompts and retry.",
             )
+        tracking_confidence_by_view = {
+            view.view_id: self._tracking_confidence_from_candidate_diagnostics(
+                candidate_diagnostics_by_view.get(view.view_id)
+            )
+            for view in frame_set.ordered_views
+        }
         return MaskProduction(
             tracks=[{
                 "trackId": "primary",
@@ -461,7 +467,12 @@ class Sam3PointMaskAdapter:
             threshold=float(SAM31_RUNTIME_CONFIG["default_output_prob_thresh"]),
             diagnostics={
                 "adapterId": "sam3.1",
-                "candidateSelection": candidate_diagnostics,
+                "candidateSelection": candidate_diagnostics_by_view[anchor_view.view_id],
+                "trackingConfidenceSemantics": (
+                    "sigmoid-normalized selected sam3.1.out_probs candidate quality "
+                    "score; unavailable when no candidate is selected."
+                ),
+                "trackingConfidenceByView": tracking_confidence_by_view,
             },
         )
 
@@ -484,7 +495,7 @@ class Sam3PointMaskAdapter:
         points: list[list[int]],
         point_labels: list[int],
         cancelled: Callable[[], bool],
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
         predictor = self._build_predictor(model)
         with tempfile.TemporaryDirectory(prefix="supersplat-sam3-") as directory:
             frame_directory = Path(directory)
@@ -526,22 +537,28 @@ class Sam3PointMaskAdapter:
                     raise MaskSessionError(
                         "cancelled", "The promptable-mask update was cancelled."
                     )
-                anchor_outcome, diagnostics = self._mask_outcome_and_diagnostics_from_response(
-                    response,
-                    anchor_view,
-                    points=points,
-                    point_labels=point_labels,
+                anchor_outcome, anchor_diagnostics = (
+                    self._mask_outcome_and_diagnostics_from_response(
+                        response,
+                        anchor_view,
+                        points=points,
+                        point_labels=point_labels,
+                    )
                 )
                 outcomes = {anchor_view.view_id: anchor_outcome}
+                candidate_diagnostics_by_view = {
+                    anchor_view.view_id: anchor_diagnostics,
+                }
                 self._collect_propagated_outcomes(
                     predictor=predictor,
                     session_id=session_id,
                     frame_set=frame_set,
                     anchor_index=anchor_index,
                     outcomes=outcomes,
+                    candidate_diagnostics_by_view=candidate_diagnostics_by_view,
                     cancelled=cancelled,
                 )
-                return outcomes, diagnostics
+                return outcomes, candidate_diagnostics_by_view
             finally:
                 try:
                     predictor.handle_request({
@@ -562,6 +579,7 @@ class Sam3PointMaskAdapter:
         frame_set: RegisteredFrameSet,
         anchor_index: int,
         outcomes: dict[str, dict[str, Any]],
+        candidate_diagnostics_by_view: dict[str, dict[str, Any]],
         cancelled: Callable[[], bool],
     ) -> None:
         propagation_failure = "missing frame result"
@@ -594,12 +612,15 @@ class Sam3PointMaskAdapter:
                     view = frame_set.ordered_views[frame_index]
                     if view.view_id in outcomes:
                         continue
+                    candidate_diagnostics: dict[str, Any] | None = None
                     try:
-                        outcome, _ = self._mask_outcome_and_diagnostics_from_response(
-                            tracked,
-                            view,
-                            points=(),
-                            point_labels=(),
+                        outcome, candidate_diagnostics = (
+                            self._mask_outcome_and_diagnostics_from_response(
+                                tracked,
+                                view,
+                                points=(),
+                                point_labels=(),
+                            )
                         )
                     except MaskSessionError as error:
                         outcome = {
@@ -608,6 +629,10 @@ class Sam3PointMaskAdapter:
                             "rejectionReason": str(error),
                         }
                     outcomes[view.view_id] = outcome
+                    if candidate_diagnostics is not None:
+                        candidate_diagnostics_by_view[view.view_id] = (
+                            candidate_diagnostics
+                        )
                 self._cancel_propagation_if_requested(
                     predictor, session_id, cancelled
                 )
@@ -774,6 +799,40 @@ class Sam3PointMaskAdapter:
             "selectedCandidateIndex": selected_candidate_index,
             "alternatives": alternatives,
         }
+
+    @staticmethod
+    def _tracking_confidence_from_candidate_diagnostics(
+        diagnostics: Mapping[str, Any] | None,
+    ) -> float | None:
+        """Return a bounded, adapter-declared confidence for one selected mask."""
+
+        if not isinstance(diagnostics, Mapping):
+            return None
+        selected_index = diagnostics.get("selectedCandidateIndex")
+        alternatives = diagnostics.get("alternatives")
+        if (
+            isinstance(selected_index, bool)
+            or not isinstance(selected_index, int)
+            or not isinstance(alternatives, Sequence)
+        ):
+            return None
+        for alternative in alternatives:
+            if not isinstance(alternative, Mapping):
+                continue
+            if alternative.get("candidateIndex") != selected_index:
+                continue
+            score = alternative.get("qualityScore")
+            if (
+                isinstance(score, bool)
+                or not isinstance(score, (int, float))
+                or not math.isfinite(score)
+            ):
+                return None
+            if score >= 0:
+                return 1.0 / (1.0 + math.exp(-score))
+            exponent = math.exp(score)
+            return exponent / (1.0 + exponent)
+        return None
 
     @staticmethod
     def _mask_candidates(value: Any) -> list[list[list[Any]]]:

@@ -426,7 +426,9 @@ def _run_controlled_overlap_prediction(
             "cameraPreflightPolicy": PREFLIGHT_POLICY_ID,
             "neighborAnomalyPolicy": NEIGHBOR_ANOMALY_POLICY_ID,
             "neighborAnomalyThresholds": NEIGHBOR_ANOMALY_THRESHOLDS,
-            "evidencePolicy": evidence_policy(),
+            "evidencePolicy": evidence_policy(
+                str(publication.bindings.get("renderConfigVersion"))
+            ),
         },
         correction_outcomes=[
             {

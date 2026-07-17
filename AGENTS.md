@@ -583,3 +583,7 @@ In addition to the global reporting requirements, state:
 - any project-specific invariant that remains unverified.
 
 Do not describe a mocked, partial, reference-only, or unverified GPU path as production-complete.
+
+@.codex/codebase-memory-mcp.md
+
+@.codex/RTK.md

@@ -194,6 +194,37 @@ def seal_preview_prediction(
     )
 
 
+def _preview_render_policy(render_config_version: object) -> dict[str, object]:
+    """Build the sealed Render Policy with its bound Evidence Policy unit.
+
+    The sealed Evidence Policy must carry the same render configuration
+    version as the rest of the record; a missing version fails sealing
+    instead of binding the policy to a stringified null.
+    """
+
+    if not isinstance(render_config_version, str) or not render_config_version:
+        raise PocRunRecordError(
+            "publication bindings are missing a render config version"
+        )
+    from .evidence import evidence_policy
+    from .generated_views import (
+        NEIGHBOR_ANOMALY_POLICY_ID,
+        NEIGHBOR_ANOMALY_THRESHOLDS,
+        PREFLIGHT_POLICY_ID,
+    )
+    from .gsplat_renderer import CONTRIBUTOR_RECONCILIATION_POLICY_ID
+
+    return {
+        "renderConfigVersion": render_config_version,
+        "generatedViewResolutionBaseline": 1008,
+        "contributorReconciliationPolicy": CONTRIBUTOR_RECONCILIATION_POLICY_ID,
+        "cameraPreflightPolicy": PREFLIGHT_POLICY_ID,
+        "neighborAnomalyPolicy": NEIGHBOR_ANOMALY_POLICY_ID,
+        "neighborAnomalyThresholds": NEIGHBOR_ANOMALY_THRESHOLDS,
+        "evidencePolicy": evidence_policy(render_config_version),
+    }
+
+
 def run_controlled_overlap_prediction(
     output_directory: Path,
     *,
@@ -263,12 +294,6 @@ def _run_controlled_overlap_prediction(
     import torch
 
     from . import PACKAGE_VERSION, PROTOCOL_VERSION
-    from .evidence import evidence_policy
-    from .generated_views import (
-        NEIGHBOR_ANOMALY_POLICY_ID,
-        NEIGHBOR_ANOMALY_THRESHOLDS,
-        PREFLIGHT_POLICY_ID,
-    )
     from .state import CompanionState
 
     state = CompanionState(state_directory)
@@ -421,15 +446,9 @@ def _run_controlled_overlap_prediction(
         model_manifest=public_model_manifest,
         runtime_manifest=runtime_manifest,
         dependency_lock=dependency_lock,
-        render_policy={
-            "renderConfigVersion": publication.bindings.get("renderConfigVersion"),
-            "cameraPreflightPolicy": PREFLIGHT_POLICY_ID,
-            "neighborAnomalyPolicy": NEIGHBOR_ANOMALY_POLICY_ID,
-            "neighborAnomalyThresholds": NEIGHBOR_ANOMALY_THRESHOLDS,
-            "evidencePolicy": evidence_policy(
-                str(publication.bindings.get("renderConfigVersion"))
-            ),
-        },
+        render_policy=_preview_render_policy(
+            publication.bindings.get("renderConfigVersion")
+        ),
         correction_outcomes=[
             {
                 "operation": "New",
@@ -527,10 +546,7 @@ def _seal_failed_controlled_overlap_prediction(
             "release": release,
             "python": platform.python_version(),
         },
-        "renderPolicy": {
-            "renderConfigVersion": "supersplat-effective-rgb-v1",
-            "generatedViewResolutionBaseline": 1008,
-        },
+        "renderPolicy": _preview_render_policy("supersplat-effective-rgb-v1"),
         "correctionOutcomes": [
             {"operation": "New", "correctionRound": 0, "terminalState": error_code}
         ],

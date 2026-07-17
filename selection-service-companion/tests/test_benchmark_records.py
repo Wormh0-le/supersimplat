@@ -14,6 +14,7 @@ from selection_service_companion.benchmark import (
     seal_prediction,
 )
 from selection_service_companion.controlled_overlap_benchmark import (
+    _preview_render_policy,
     build_controlled_overlap_snapshot,
     seal_preview_prediction,
 )
@@ -41,7 +42,20 @@ class PocRunRecordTests(unittest.TestCase):
         bindings.update(overrides)
         return bindings
 
-    def complete_artifacts(self, root: Path) -> dict[str, Path]:
+    def complete_artifacts(
+        self,
+        root: Path,
+        *,
+        render_policy: dict[str, object] | None = None,
+        evidence_snapshot_policy: dict[str, object] | None = None,
+    ) -> dict[str, Path]:
+        if render_policy is None:
+            render_policy = {
+                "renderConfigVersion": "render-v1",
+                "evidencePolicy": {"renderConfigVersion": "render-v1"},
+            }
+        if evidence_snapshot_policy is None:
+            evidence_snapshot_policy = {"renderConfigVersion": "render-v1"}
         inputs = root / "inputs"
         inputs.mkdir()
         artifacts: dict[str, Path] = {}
@@ -69,11 +83,16 @@ class PocRunRecordTests(unittest.TestCase):
                     "frameSetVersion": "frames-final",
                     "modelManifestDigest": "sha256:model",
                 }
+            elif name == "renderPolicy":
+                value = render_policy
             elif name == "evidenceSnapshot":
                 value = {
-                    name: value
-                    for name, value in self.complete_bindings().items()
-                    if name not in {"trialId", "terminalState"}
+                    **{
+                        name: value
+                        for name, value in self.complete_bindings().items()
+                        if name not in {"trialId", "terminalState"}
+                    },
+                    "policy": evidence_snapshot_policy,
                 }
             elif name == "modelManifest":
                 value = {"digest": "sha256:model"}
@@ -256,6 +275,111 @@ class PocRunRecordTests(unittest.TestCase):
                     ground_truth_path=ground_truth,
                     output_path=root / "score.json",
                 )
+
+    def test_invalidates_a_trial_if_the_sealed_evidence_policy_drifts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=self.complete_artifacts(
+                    root,
+                    render_policy={
+                        "renderConfigVersion": "render-v1",
+                        "evidencePolicy": {"renderConfigVersion": "render-v0"},
+                    },
+                ),
+                bindings=self.complete_bindings(),
+            )
+            ground_truth = root / "ground-truth.json"
+            ground_truth.write_text("{}", encoding="utf-8")
+
+            with self.assertRaisesRegex(PocRunRecordError, "evidencePolicy"):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=root / "score.json",
+                )
+
+    def test_invalidates_a_trial_if_the_evidence_snapshot_policy_drifts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=self.complete_artifacts(
+                    root,
+                    evidence_snapshot_policy={"renderConfigVersion": "render-v0"},
+                ),
+                bindings=self.complete_bindings(),
+            )
+            ground_truth = root / "ground-truth.json"
+            ground_truth.write_text("{}", encoding="utf-8")
+
+            with self.assertRaisesRegex(PocRunRecordError, "Evidence Snapshot policy"):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=root / "score.json",
+                )
+
+    def test_refuses_to_seal_a_failed_trial_without_evidence_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            with self.assertRaisesRegex(PocRunRecordError, "evidencePolicy"):
+                seal_prediction(
+                    root / "failed-trial",
+                    artifacts=self.complete_artifacts(
+                        root,
+                        render_policy={"renderConfigVersion": "render-v1"},
+                    ),
+                    bindings=self.complete_bindings(
+                        trialId="failed-trial",
+                        terminalState="rendererMassMismatch",
+                    ),
+                )
+
+    def test_refuses_a_non_string_failed_trial_render_config_version(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            with self.assertRaisesRegex(PocRunRecordError, "renderConfigVersion"):
+                seal_prediction(
+                    root / "failed-trial",
+                    artifacts=self.complete_artifacts(
+                        root,
+                        render_policy={
+                            "renderConfigVersion": 1,
+                            "evidencePolicy": {"renderConfigVersion": 1},
+                        },
+                    ),
+                    bindings=self.complete_bindings(
+                        trialId="failed-trial",
+                        terminalState="rendererMassMismatch",
+                        renderConfigVersion=1,
+                    ),
+                )
+
+    def test_binds_the_sealed_render_policy_to_the_render_config_version(self) -> None:
+        policy = _preview_render_policy("supersplat-effective-rgb-v1")
+
+        self.assertEqual(policy["renderConfigVersion"], "supersplat-effective-rgb-v1")
+        self.assertEqual(policy["generatedViewResolutionBaseline"], 1008)
+        self.assertEqual(
+            policy["contributorReconciliationPolicy"],
+            "gsplat-boundary-contributor-reconciliation/v2",
+        )
+        evidence_policy = policy["evidencePolicy"]
+        self.assertIsInstance(evidence_policy, dict)
+        self.assertEqual(
+            evidence_policy["renderConfigVersion"],
+            "supersplat-effective-rgb-v1",
+        )
+
+    def test_refuses_to_seal_a_render_policy_without_a_render_config_version(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(PocRunRecordError, "render config version"):
+            _preview_render_policy(None)
 
     def test_builds_a_supported_snapshot_from_the_exact_controlled_overlap_ply(
         self,

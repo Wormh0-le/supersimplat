@@ -97,6 +97,16 @@ def seal_prediction(
             )
         if not source.is_file():
             raise PocRunRecordError(f"prediction artifact does not exist: {source}")
+    # A complete record's nested policy identities are checked again by the
+    # independent scorer.  Failed and cancelled records are never scored, so
+    # require their sealed Render Policy to retain the same binding here.
+    if bindings.get("terminalState") != "complete":
+        _validate_policy_bindings(
+            bindings,
+            render_policy=_read_json_object(
+                artifacts["renderPolicy"], "renderPolicy artifact"
+            ),
+        )
     if output_directory.exists():
         raise PocRunRecordError(
             f"refusing to overwrite an existing PoC Run Record: {output_directory}"
@@ -359,6 +369,11 @@ def _validate_complete_identity(
             raise PocRunRecordError(
                 f"prediction artifact is not bound to the manifest identity: {name}"
             )
+    _validate_policy_bindings(
+        bindings,
+        render_policy=artifact("renderPolicy"),
+        evidence_snapshot=evidence,
+    )
     release = runtime.get("release")
     lock_record = artifacts["dependencyLock"]
     if (
@@ -368,6 +383,37 @@ def _validate_complete_identity(
         raise PocRunRecordError(
             "dependency lock does not match the runtime release identity"
         )
+
+
+def _validate_policy_bindings(
+    bindings: Mapping[str, object],
+    *,
+    render_policy: Mapping[str, object],
+    evidence_snapshot: Mapping[str, object] | None = None,
+) -> None:
+    """Require policy revisions to stay bound on every terminal record."""
+
+    expected_version = bindings.get("renderConfigVersion")
+    if not isinstance(expected_version, str) or not expected_version.strip():
+        raise PocRunRecordError(
+            "prediction binding renderConfigVersion must be a non-empty string"
+        )
+    policy_records: list[tuple[str, object]] = [
+        ("renderPolicy", render_policy),
+        ("renderPolicy evidencePolicy", render_policy.get("evidencePolicy")),
+    ]
+    if evidence_snapshot is not None:
+        policy_records.append(("Evidence Snapshot policy", evidence_snapshot.get("policy")))
+    for label, container in policy_records:
+        version = (
+            container.get("renderConfigVersion")
+            if isinstance(container, Mapping)
+            else None
+        )
+        if version != expected_version:
+            raise PocRunRecordError(
+                f"prediction binding does not match {label} renderConfigVersion"
+            )
 
 
 def _classification_sets(

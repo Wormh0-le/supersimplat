@@ -445,7 +445,7 @@ class BoundaryContributorReconciliationTests(unittest.TestCase):
         return math.log(opacity / alpha)
 
     @staticmethod
-    def chain(
+    def replay_contributor_chain(
         gaussians: list[TileGaussian], *, force_exclude: set[int] | None = None
     ) -> tuple[list[int], list[float], float]:
         """Independent float64 replay of the shared kernel semantics."""
@@ -485,17 +485,18 @@ class BoundaryContributorReconciliationTests(unittest.TestCase):
         # the contributor kernel's fp32 evaluation accepted the Gaussian.
         borderline = self.gaussian(4, sigma=5.50044204404077)
         gaussians = [*self.front_gaussians(), borderline]
-        _, accepted_weights, _ = self.chain(gaussians)
+        _, accepted_weights, _ = self.replay_contributor_chain(gaussians)
         borderline_weight = borderline.opacity * math.exp(-5.50044204404077) * 0.28
         kernel_ids = [1, 2, 3, 4]
         kernel_weights = [*accepted_weights, borderline_weight]
-        _, _, raster_alpha = self.chain(gaussians, force_exclude={4})
+        _, _, raster_alpha = self.replay_contributor_chain(gaussians, force_exclude={4})
 
         repaired = reconcile_boundary_contributors(
             ordered_gaussians=gaussians,
             pixel_x=8,
             pixel_y=8,
             raster_alpha=raster_alpha,
+            kernel_alpha=raster_alpha + borderline_weight,
             kernel_ids=kernel_ids,
             kernel_weights=kernel_weights,
         )
@@ -510,14 +511,17 @@ class BoundaryContributorReconciliationTests(unittest.TestCase):
         alpha_target = 1.0 / 255.0 + 1.5e-9
         borderline = self.gaussian(4, sigma=self.sigma_for_alpha(alpha_target))
         gaussians = [*self.front_gaussians(), borderline]
-        kernel_ids, kernel_weights, _ = self.chain(gaussians, force_exclude={4})
-        _, _, raster_alpha = self.chain(gaussians)
+        kernel_ids, kernel_weights, kernel_alpha = self.replay_contributor_chain(
+            gaussians, force_exclude={4}
+        )
+        _, _, raster_alpha = self.replay_contributor_chain(gaussians)
 
         repaired = reconcile_boundary_contributors(
             ordered_gaussians=gaussians,
             pixel_x=8,
             pixel_y=8,
             raster_alpha=raster_alpha,
+            kernel_alpha=kernel_alpha,
             kernel_ids=kernel_ids,
             kernel_weights=kernel_weights,
         )
@@ -533,14 +537,17 @@ class BoundaryContributorReconciliationTests(unittest.TestCase):
         borderline = self.gaussian(4, sigma=self.sigma_for_alpha(alpha_target))
         front = self.front_gaussians()
         gaussians = [front[0], borderline, front[1], front[2]]
-        kernel_ids, kernel_weights, _ = self.chain(gaussians, force_exclude={4})
-        expected_ids, expected_weights, raster_alpha = self.chain(gaussians)
+        kernel_ids, kernel_weights, kernel_alpha = self.replay_contributor_chain(
+            gaussians, force_exclude={4}
+        )
+        expected_ids, expected_weights, raster_alpha = self.replay_contributor_chain(gaussians)
 
         repaired = reconcile_boundary_contributors(
             ordered_gaussians=gaussians,
             pixel_x=8,
             pixel_y=8,
             raster_alpha=raster_alpha,
+            kernel_alpha=kernel_alpha,
             kernel_ids=kernel_ids,
             kernel_weights=kernel_weights,
         )
@@ -558,14 +565,17 @@ class BoundaryContributorReconciliationTests(unittest.TestCase):
             self.gaussian(2, sigma=0.001, opacity=1.0),
             self.gaussian(3, sigma=self.sigma_for_alpha(0.8999995)),
         ]
-        kernel_ids, kernel_weights, _ = self.chain(gaussians)
-        _, _, raster_alpha = self.chain(gaussians, force_exclude={3})
+        kernel_ids, kernel_weights, kernel_alpha = self.replay_contributor_chain(
+            gaussians
+        )
+        _, _, raster_alpha = self.replay_contributor_chain(gaussians, force_exclude={3})
 
         repaired = reconcile_boundary_contributors(
             ordered_gaussians=gaussians,
             pixel_x=8,
             pixel_y=8,
             raster_alpha=raster_alpha,
+            kernel_alpha=kernel_alpha,
             kernel_ids=kernel_ids,
             kernel_weights=kernel_weights,
         )
@@ -575,15 +585,40 @@ class BoundaryContributorReconciliationTests(unittest.TestCase):
         self.assertEqual(ids, (1, 2))
         self.assertAlmostEqual(alpha, raster_alpha, delta=1e-6)
 
+    def test_rejects_a_synthetic_chain_below_the_termination_cut(self) -> None:
+        # The locked kernels exclude the Gaussian that drops T to the cut;
+        # a replay must not force it into a synthetic chain and continue.
+        gaussians = [
+            self.gaussian(1, sigma=self.sigma_for_alpha(0.9)),
+            self.gaussian(2, sigma=0.001, opacity=1.0),
+            self.gaussian(3, sigma=self.sigma_for_alpha(0.9000005)),
+        ]
+        kernel_ids, kernel_weights, kernel_alpha = self.replay_contributor_chain(
+            gaussians
+        )
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=0.9999000005,
+            kernel_alpha=kernel_alpha,
+            kernel_ids=kernel_ids,
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNone(repaired)
+
     def test_rejects_unexplained_missing_contributor(self) -> None:
         gaussians = self.front_gaussians()
-        _, _, raster_alpha = self.chain(gaussians)
+        _, _, raster_alpha = self.replay_contributor_chain(gaussians)
 
         repaired = reconcile_boundary_contributors(
             ordered_gaussians=gaussians,
             pixel_x=8,
             pixel_y=8,
             raster_alpha=raster_alpha,
+            kernel_alpha=0.57,
             kernel_ids=[1, 3],
             kernel_weights=[0.5, 0.07],
         )
@@ -591,14 +626,18 @@ class BoundaryContributorReconciliationTests(unittest.TestCase):
         self.assertIsNone(repaired)
 
     def test_rejects_mismatch_no_variant_explains(self) -> None:
-        gaussians = self.front_gaussians()
-        kernel_ids, kernel_weights, _ = self.chain(gaussians)
+        borderline = self.gaussian(4, sigma=5.50044204404077)
+        gaussians = [*self.front_gaussians(), borderline]
+        kernel_ids, kernel_weights, kernel_alpha = self.replay_contributor_chain(
+            gaussians
+        )
 
         repaired = reconcile_boundary_contributors(
             ordered_gaussians=gaussians,
             pixel_x=8,
             pixel_y=8,
             raster_alpha=0.9,
+            kernel_alpha=kernel_alpha,
             kernel_ids=kernel_ids,
             kernel_weights=kernel_weights,
         )
@@ -620,7 +659,7 @@ class BoundaryContributorReconciliationTests(unittest.TestCase):
         for _ in range(5):
             kernel_weights.append(alpha_target * transmittance)
             transmittance *= 1.0 - alpha_target
-        _, _, raster_alpha = self.chain(
+        _, _, raster_alpha = self.replay_contributor_chain(
             gaussians, force_exclude={10, 11, 12, 13, 14}
         )
 
@@ -629,6 +668,188 @@ class BoundaryContributorReconciliationTests(unittest.TestCase):
             pixel_x=8,
             pixel_y=8,
             raster_alpha=raster_alpha,
+            kernel_alpha=sum(kernel_weights),
+            kernel_ids=kernel_ids,
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNone(repaired)
+
+    def test_rejects_an_unflipped_kernel_chain(self) -> None:
+        # The kernel stream is itself the unique matching variant: no boundary
+        # flip is proven, so the mismatch stays unexplained and fails closed.
+        alpha_target = 1.0 / 255.0 - 1.5e-9
+        borderline = self.gaussian(4, sigma=self.sigma_for_alpha(alpha_target))
+        gaussians = [*self.front_gaussians(), borderline]
+        kernel_ids, kernel_weights, kernel_alpha = self.replay_contributor_chain(
+            gaussians
+        )
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=kernel_alpha,
+            kernel_alpha=kernel_alpha,
+            kernel_ids=kernel_ids,
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNone(repaired)
+
+    def test_rejects_non_finite_kernel_weights(self) -> None:
+        gaussians = self.front_gaussians()
+        _, _, raster_alpha = self.replay_contributor_chain(gaussians)
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_alpha=raster_alpha,
+            kernel_ids=[1, 2, 3],
+            kernel_weights=[0.5, float("nan"), 0.07],
+        )
+
+        self.assertIsNone(repaired)
+
+    def test_rejects_kernel_weights_inconsistent_with_kernel_alpha(self) -> None:
+        gaussians = self.front_gaussians()
+        kernel_ids, kernel_weights, _ = self.replay_contributor_chain(gaussians)
+        _, _, raster_alpha = self.replay_contributor_chain(gaussians)
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_alpha=0.5,
+            kernel_ids=kernel_ids,
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNone(repaired)
+
+    def test_rejects_a_weight_defect_ahead_of_the_flip(self) -> None:
+        # A 1e-3 error in the first contributor's weight is upstream of the
+        # flipped borderline Gaussian, so it cannot be a boundary effect.
+        borderline = self.gaussian(4, sigma=5.50044204404077)
+        gaussians = [*self.front_gaussians(), borderline]
+        _, accepted_weights, _ = self.replay_contributor_chain(gaussians)
+        borderline_weight = borderline.opacity * math.exp(-5.50044204404077) * 0.28
+        kernel_weights = [*accepted_weights, borderline_weight]
+        kernel_weights[0] += 1e-3
+        _, _, raster_alpha = self.replay_contributor_chain(gaussians, force_exclude={4})
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_alpha=raster_alpha + borderline_weight + 1e-3,
+            kernel_ids=[1, 2, 3, 4],
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNone(repaired)
+
+    def test_rejects_a_balanced_tail_weight_defect_after_a_flip(self) -> None:
+        # A real mid-chain flip legitimately changes tail weights, but it must
+        # not authorize an unrelated pair of offsetting tail-weight defects.
+        alpha_target = 1.0 / 255.0 + 1.5e-9
+        borderline = self.gaussian(4, sigma=self.sigma_for_alpha(alpha_target))
+        front = self.front_gaussians()
+        gaussians = [front[0], borderline, front[1], front[2]]
+        kernel_ids, kernel_weights, kernel_alpha = self.replay_contributor_chain(
+            gaussians, force_exclude={4}
+        )
+        kernel_weights[1] += 1e-4
+        kernel_weights[2] -= 1e-4
+        _, _, raster_alpha = self.replay_contributor_chain(gaussians)
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_alpha=kernel_alpha,
+            kernel_ids=kernel_ids,
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNone(repaired)
+
+    def test_rejects_a_prefix_weight_defect_beyond_f32_proof(self) -> None:
+        # Aggregate mass tolerance is too broad to establish that an untouched
+        # prefix contributor came from the same rasterization.
+        borderline = self.gaussian(4, sigma=5.50044204404077)
+        gaussians = [*self.front_gaussians(), borderline]
+        _, accepted_weights, _ = self.replay_contributor_chain(gaussians)
+        borderline_weight = borderline.opacity * math.exp(-5.50044204404077) * 0.28
+        kernel_weights = [*accepted_weights, borderline_weight]
+        kernel_weights[0] += 1e-6
+        _, _, raster_alpha = self.replay_contributor_chain(gaussians, force_exclude={4})
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_alpha=raster_alpha + borderline_weight + 1e-6,
+            kernel_ids=[1, 2, 3, 4],
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNone(repaired)
+
+    def test_tolerates_kernel_weight_noise_within_evaluation_tolerance(self) -> None:
+        borderline = self.gaussian(4, sigma=5.50044204404077)
+        gaussians = [*self.front_gaussians(), borderline]
+        _, accepted_weights, _ = self.replay_contributor_chain(gaussians)
+        borderline_weight = borderline.opacity * math.exp(-5.50044204404077) * 0.28
+        kernel_weights = [*accepted_weights, borderline_weight]
+        kernel_weights[0] += 1e-7
+        _, _, raster_alpha = self.replay_contributor_chain(gaussians, force_exclude={4})
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_alpha=raster_alpha + borderline_weight + 1e-7,
+            kernel_ids=[1, 2, 3, 4],
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNotNone(repaired)
+        ids, _, _ = repaired
+        self.assertEqual(ids, (1, 2, 3))
+
+    def test_rejects_multiple_matching_variants(self) -> None:
+        # Two identical borderline Gaussians deep in the chain: excluding
+        # either one, or both, stays within match tolerance of the raster
+        # alpha, so no unique variant exists and the pixel fails closed.
+        front = [
+            self.gaussian(index + 1, sigma=self.sigma_for_alpha(0.89))
+            for index in range(4)
+        ]
+        alpha_target = 1.0 / 255.0 + 1.5e-9
+        borderline = [
+            self.gaussian(5, sigma=self.sigma_for_alpha(alpha_target)),
+            self.gaussian(6, sigma=self.sigma_for_alpha(alpha_target)),
+        ]
+        gaussians = [*front, *borderline]
+        kernel_ids, kernel_weights, kernel_alpha = self.replay_contributor_chain(
+            gaussians
+        )
+        raster_alpha = 1.0 - 0.11**4
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_alpha=kernel_alpha,
             kernel_ids=kernel_ids,
             kernel_weights=kernel_weights,
         )

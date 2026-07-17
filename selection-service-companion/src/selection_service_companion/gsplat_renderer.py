@@ -12,6 +12,7 @@ any other mismatch fails closed.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 import hashlib
 from io import BytesIO
 import math
@@ -37,17 +38,34 @@ _GAUSSIAN_VALIDITY_CUT = 1.0 / 255.0
 _GAUSSIAN_MAX_ALPHA = 0.99
 _TRANSMITTANCE_CUT = 1e-4
 # Boundary reconciliation windows. A contributor is ambiguous only when its
-# exact alpha sits within float32 evaluation noise of the validity cut, its
-# transmittance update at the termination cut, or its sigma at zero; anything
-# else is a real defect and fails closed. At most four ambiguous contributors
-# per pixel are enumerated, and a reconciled chain must reproduce the RGB
-# raster alpha within float32 evaluation noise, far inside mass tolerance.
-_VALIDITY_BOUNDARY_WINDOW = 1e-7
+# exact (float64) evaluation sits within float32 evaluation noise of a kernel
+# decision boundary; anything else is a real defect and fails closed. Noise
+# budget at the validity cut (~21 ulps): the measured locked-build flip was
+# 1.78e-9 (~4 ulps, ADR 0010); __expf's documented worst case at the cut's
+# sigma (~5.5) is ~8 ulps of vis (~4e-9 in alpha), and float32 sigma
+# evaluation adds a few ulps more. A wider window would let reconciliation
+# mask defects that are not float evaluation noise; a genuine flip beyond it
+# fails closed, which costs a preview but never silently rewrites evidence.
+# The sigma-zero and termination windows stay narrow even though accumulated
+# chain noise can exceed them: a missed flip there also only ever fails
+# closed. At most four ambiguous contributors per pixel are enumerated, and a
+# reconciled chain must reproduce the RGB raster alpha within float32
+# evaluation noise, far inside mass tolerance.
+_VALIDITY_BOUNDARY_WINDOW = 1e-8
 _SIGMA_BOUNDARY_WINDOW = 1e-9
 _TERMINATION_BOUNDARY_WINDOW = 1e-9
 _MAX_BOUNDARY_CANDIDATES = 4
 _BOUNDARY_MATCH_ATOL = 1e-6
+# Per-contributor validation is a proof of an unchanged kernel decision chain,
+# not a second mass-conservation check. The locked-build validity budget is
+# eight __expf ulps plus float32 arithmetic noise, so 16 float32 ulps leaves a
+# deterministic margin without accepting a material contributor rewrite.
+_KERNEL_WEIGHT_PROOF_ULPS = 16
+_KERNEL_WEIGHT_PROOF_ATOL = 1e-8
 _MAX_RECONCILED_PIXELS = 4096
+CONTRIBUTOR_RECONCILIATION_POLICY_ID = (
+    "gsplat-boundary-contributor-reconciliation/v2"
+)
 SUPPORTED_COORDINATE_CONVENTION = (
     "right-handed world coordinates; quaternion xyzw"
 )
@@ -56,6 +74,39 @@ SUPPORTED_CAMERA_CONVENTION = "opencv-world-to-camera"
 SUPPORTED_RENDER_CONFIG_VERSION = "supersplat-effective-rgb-v1"
 ANCHOR_PARITY_NORMAL_MAE = 2.0 / 255.0
 ANCHOR_PARITY_SEVERE_MAE = 0.25
+
+
+def _mass_conservation_tolerance(reference: Any) -> Any:
+    """Absolute mass-conservation tolerance for one alpha or weight value."""
+
+    return MASS_CONSERVATION_ATOL + MASS_CONSERVATION_RTOL * abs(reference)
+
+
+def _f32_ulp(value: float) -> float:
+    """Return the spacing of the positive float32 value nearest to ``value``."""
+
+    value32 = _f32(abs(value))
+    bits = struct.unpack("!I", struct.pack("!f", value32))[0]
+    if bits >= 0x7F7FFFFF:
+        return math.inf
+    next_value = struct.unpack("!f", struct.pack("!I", bits + 1))[0]
+    return next_value - value32
+
+
+def _kernel_weight_proof_tolerance(reference: float) -> float:
+    """Bound ordinary float32 evaluation noise for one contributor weight."""
+
+    return max(
+        _KERNEL_WEIGHT_PROOF_ATOL,
+        _KERNEL_WEIGHT_PROOF_ULPS * _f32_ulp(reference),
+    )
+
+
+class _BoundaryAmbiguity(Enum):
+    """The kernel decision boundary one ambiguous contributor sits at."""
+
+    VALIDITY = "validity"
+    TERMINATION = "termination"
 
 
 @dataclass(frozen=True)
@@ -96,6 +147,69 @@ def _f32(value: float) -> float:
     """Round a Python float to the nearest IEEE-754 binary32 value."""
 
     return struct.unpack("f", struct.pack("f", value))[0]
+
+
+def _f32_add(left: float, right: float) -> float:
+    """Evaluate one non-fused binary32 addition deterministically."""
+
+    return _f32(_f32(left) + _f32(right))
+
+
+def _f32_mul(left: float, right: float) -> float:
+    """Evaluate one non-fused binary32 multiplication deterministically."""
+
+    return _f32(_f32(left) * _f32(right))
+
+
+def _f32_sub(left: float, right: float) -> float:
+    """Evaluate one non-fused binary32 subtraction deterministically."""
+
+    return _f32(_f32(left) - _f32(right))
+
+
+def _reference_sigma32(
+    gaussian: TileGaussian, *, center_x: float, center_y: float
+) -> float:
+    """Use gsplat's source grouping with explicit, uncontracted binary32 steps."""
+
+    dx = _f32_sub(gaussian.mean_x, center_x)
+    dy = _f32_sub(gaussian.mean_y, center_y)
+    diagonal = _f32_add(
+        _f32_mul(_f32_mul(gaussian.conic_a, dx), dx),
+        _f32_mul(_f32_mul(gaussian.conic_c, dy), dy),
+    )
+    return _f32_add(
+        _f32_mul(0.5, diagonal),
+        _f32_mul(_f32_mul(gaussian.conic_b, dx), dy),
+    )
+
+
+def _reference_alpha32(opacity: float, sigma32: float) -> float:
+    """Use the binary32 alpha path apart from CUDA's intrinsic expf choice.
+
+    Python cannot reproduce the locked CUDA translation unit's ``__expf``
+    implementation. Its correctly rounded binary32 reference is used only to
+    enumerate declared boundary decisions; any intrinsic-specific divergence
+    that does not produce a unique boundary explanation remains fail-closed.
+    """
+
+    try:
+        visibility = _f32(math.exp(-sigma32))
+    except OverflowError:
+        # CUDA's expf reaches infinity here and the subsequent alpha clamp
+        # makes the result finite; preserve that fail-closed scalar shape.
+        visibility = math.inf
+    return min(_f32(_GAUSSIAN_MAX_ALPHA), _f32_mul(opacity, visibility))
+
+
+def _reference_alpha64(opacity: float, sigma64: float) -> float:
+    """Evaluate the high-precision boundary diagnostic without overflow."""
+
+    try:
+        visibility = math.exp(-sigma64)
+    except OverflowError:
+        visibility = math.inf
+    return min(_GAUSSIAN_MAX_ALPHA, opacity * visibility)
 
 
 class GsplatBackend(Protocol):
@@ -201,9 +315,7 @@ class LockedGsplatBackend:
         # only those proven boundary flips against the RGB rasterization's own
         # alpha and fail closed on any other mismatch.
         difference = torch.abs(contributor_alpha - raster_alpha[..., 0])
-        tolerance = MASS_CONSERVATION_ATOL + MASS_CONSERVATION_RTOL * torch.abs(
-            raster_alpha[..., 0]
-        )
+        tolerance = _mass_conservation_tolerance(raster_alpha[..., 0])
         if bool((difference > tolerance).any().item()):
             reconciled = _reconcile_boundary_flips(
                 difference=difference,
@@ -223,9 +335,7 @@ class LockedGsplatBackend:
             atol=MASS_CONSERVATION_ATOL,
         ):
             difference = torch.abs(contributor_alpha - raster_alpha[..., 0])
-            tolerance = MASS_CONSERVATION_ATOL + MASS_CONSERVATION_RTOL * torch.abs(
-                raster_alpha[..., 0]
-            )
+            tolerance = _mass_conservation_tolerance(raster_alpha[..., 0])
             raise MaskSessionError(
                 "rendererMassMismatch",
                 "gsplat contributor alpha does not match the corresponding RGB raster alpha "
@@ -389,12 +499,23 @@ class _EvaluatedGaussian:
     invalid32: bool
 
 
+@dataclass(frozen=True)
+class _ReplayedContributorChain:
+    """One deterministic decision variant for one pixel's contributor chain."""
+
+    decisions: tuple[bool, ...]
+    ids: tuple[int, ...]
+    weights: tuple[float, ...]
+    alpha: float
+
+
 def reconcile_boundary_contributors(
     *,
     ordered_gaussians: Sequence[TileGaussian],
     pixel_x: int,
     pixel_y: int,
     raster_alpha: float,
+    kernel_alpha: float,
     kernel_ids: Sequence[int],
     kernel_weights: Sequence[float],
 ) -> tuple[tuple[int, ...], tuple[float, ...], float] | None:
@@ -409,9 +530,14 @@ def reconcile_boundary_contributors(
     rasterization is the same-rasterization authority: enumerate the
     ambiguous contributor decisions, keep the unique variant whose
     recomputed alpha matches the raster alpha, and rebuild the pixel's
-    contributor IDs and weights from the matched chain. Return None whenever
-    the mismatch cannot be explained by boundary flips alone so callers keep
-    failing closed.
+    contributor IDs and weights from the matched chain.
+
+    The repair is confined to proven boundary flips: the kernel stream must
+    be internally consistent (finite weights reproducing the contributor
+    kernels' own alpha), the matched variant must exercise at least one
+    flip, and every kernel-chain weight must agree with its replayed value
+    inside the float32 proof budget. Return None whenever the mismatch cannot
+    be explained by boundary flips alone so callers keep failing closed.
     """
 
     threshold32 = _f32(_GAUSSIAN_VALIDITY_CUT)
@@ -420,57 +546,75 @@ def reconcile_boundary_contributors(
     center_y = pixel_y + 0.5
 
     kernel_id_list = [int(value) for value in kernel_ids]
+    kernel_weight_list = [float(value) for value in kernel_weights]
     if (
-        len(kernel_id_list) != len(kernel_weights)
+        len(kernel_id_list) != len(kernel_weight_list)
         or len(set(kernel_id_list)) != len(kernel_id_list)
         or any(value < 0 for value in kernel_id_list)
+        or any(not math.isfinite(value) for value in kernel_weight_list)
+        or not math.isfinite(kernel_alpha)
+        or not math.isfinite(raster_alpha)
     ):
+        return None
+    if abs(
+        sum(kernel_weight_list) - kernel_alpha
+    ) > _mass_conservation_tolerance(kernel_alpha):
         return None
 
     evaluations: list[_EvaluatedGaussian] = []
-    ambiguous: dict[int, str] = {}
-    transmittance64 = 1.0
+    ambiguous: dict[int, _BoundaryAmbiguity] = {}
+    reference_transmittance32 = 1.0
     terminated = False
     for position, gaussian in enumerate(ordered_gaussians):
-        dx = gaussian.mean_x - center_x
-        dy = gaussian.mean_y - center_y
-        sigma = (
-            0.5 * (gaussian.conic_a * dx * dx + gaussian.conic_c * dy * dy)
-            + gaussian.conic_b * dx * dy
+        dx64 = gaussian.mean_x - center_x
+        dy64 = gaussian.mean_y - center_y
+        sigma64 = (
+            0.5
+            * (
+                gaussian.conic_a * dx64 * dx64
+                + gaussian.conic_c * dy64 * dy64
+            )
+            + gaussian.conic_b * dx64 * dy64
         )
-        alpha64 = min(_GAUSSIAN_MAX_ALPHA, gaussian.opacity * math.exp(-sigma))
-        alpha32 = _f32(
-            min(_GAUSSIAN_MAX_ALPHA, gaussian.opacity * _f32(math.exp(-sigma)))
+        sigma32 = _reference_sigma32(
+            gaussian, center_x=center_x, center_y=center_y
         )
+        alpha64 = _reference_alpha64(gaussian.opacity, sigma64)
+        alpha32 = _reference_alpha32(gaussian.opacity, sigma32)
         if (
             abs(alpha64 - _GAUSSIAN_VALIDITY_CUT) <= _VALIDITY_BOUNDARY_WINDOW
-            or abs(sigma) <= _SIGMA_BOUNDARY_WINDOW
+            or abs(sigma64) <= _SIGMA_BOUNDARY_WINDOW
         ):
-            ambiguous[position] = "validity"
+            ambiguous[position] = _BoundaryAmbiguity.VALIDITY
         evaluations.append(
             _EvaluatedGaussian(
                 tensor_id=gaussian.tensor_id,
                 alpha32=alpha32,
-                invalid32=sigma < 0.0 or alpha32 < threshold32,
+                invalid32=sigma32 < 0.0 or alpha32 < threshold32,
             )
         )
-        if terminated or sigma < 0.0 or alpha64 < _GAUSSIAN_VALIDITY_CUT:
+        if terminated or sigma32 < 0.0 or alpha32 < threshold32:
             continue
-        next_transmittance = transmittance64 * (1.0 - alpha64)
-        if abs(next_transmittance - _TRANSMITTANCE_CUT) <= _TERMINATION_BOUNDARY_WINDOW:
+        next_transmittance32 = _f32_mul(
+            reference_transmittance32, _f32_sub(1.0, alpha32)
+        )
+        if (
+            abs(next_transmittance32 - termination32)
+            <= _TERMINATION_BOUNDARY_WINDOW
+        ):
             if position in ambiguous:
                 return None
-            ambiguous[position] = "termination"
-        if next_transmittance <= _TRANSMITTANCE_CUT:
+            ambiguous[position] = _BoundaryAmbiguity.TERMINATION
+        if next_transmittance32 <= termination32:
             terminated = True
             continue
-        transmittance64 = next_transmittance
+        reference_transmittance32 = next_transmittance32
 
-    if len(ambiguous) > _MAX_BOUNDARY_CANDIDATES:
+    if not ambiguous or len(ambiguous) > _MAX_BOUNDARY_CANDIDATES:
         return None
 
     flags = sorted(ambiguous)
-    matched: dict[tuple[int, ...], tuple[tuple[float, ...], float]] = {}
+    replayed_chains: list[_ReplayedContributorChain] = []
     for mask in range(1 << len(flags)):
         forced = {
             position: bool(mask & (1 << bit)) for bit, position in enumerate(flags)
@@ -481,64 +625,89 @@ def reconcile_boundary_contributors(
         if replay is None:
             continue
         ids, weights, alpha = replay
-        if abs(alpha - raster_alpha) <= _BOUNDARY_MATCH_ATOL:
-            matched.setdefault(ids, (weights, alpha))
-    if len(matched) != 1:
+        replayed_chains.append(
+            _ReplayedContributorChain(
+                decisions=tuple(forced[position] for position in flags),
+                ids=ids,
+                weights=weights,
+                alpha=alpha,
+            )
+        )
+    rgb_matches = [
+        chain
+        for chain in replayed_chains
+        if abs(chain.alpha - raster_alpha) <= _BOUNDARY_MATCH_ATOL
+    ]
+    if len(rgb_matches) != 1:
         return None
-    ids, (weights, alpha) = next(iter(matched.items()))
+    rgb_chain = rgb_matches[0]
 
-    evaluated_ids = {evaluation.tensor_id for evaluation in evaluations}
-    if any(tensor_id not in evaluated_ids for tensor_id in kernel_id_list):
-        return None
-    ambiguous_ids = {evaluations[position].tensor_id for position in flags}
-    variant_common = [
-        tensor_id for tensor_id in ids if tensor_id not in ambiguous_ids
+    kernel_matches = [
+        chain for chain in replayed_chains if list(chain.ids) == kernel_id_list
     ]
-    kernel_common = [
-        tensor_id for tensor_id in kernel_id_list if tensor_id not in ambiguous_ids
-    ]
-    if variant_common != kernel_common:
+    if len(kernel_matches) != 1:
         return None
-    return ids, weights, alpha
+    kernel_chain = kernel_matches[0]
+    if (
+        rgb_chain.decisions == kernel_chain.decisions
+        or rgb_chain.ids == kernel_chain.ids
+    ):
+        # The unique matching variant is the kernel stream itself: no
+        # boundary flip is proven, so the mass mismatch is unexplained and
+        # fails closed rather than having its weights silently rewritten.
+        return None
+    # Verify the entire kernel-decision chain before applying the distinct
+    # RGB-matching chain. This permits the legitimate tail shift caused by a
+    # boundary decision while rejecting an independent contributor defect.
+    for kernel_weight, replayed_weight in zip(
+        kernel_weight_list, kernel_chain.weights, strict=True
+    ):
+        proof_reference = max(abs(kernel_weight), abs(replayed_weight))
+        if abs(kernel_weight - replayed_weight) > _kernel_weight_proof_tolerance(
+            proof_reference
+        ):
+            return None
+    return rgb_chain.ids, rgb_chain.weights, rgb_chain.alpha
 
 
 def _replay_boundary_chain(
     evaluations: Sequence[_EvaluatedGaussian],
-    ambiguous: Mapping[int, str],
+    ambiguous: Mapping[int, _BoundaryAmbiguity],
     forced: Mapping[int, bool],
     termination32: float,
 ) -> tuple[tuple[int, ...], tuple[float, ...], float] | None:
-    """Replay one boundary-decision variant with exact float32 rounding."""
+    """Replay one source-faithful boundary-decision variant in binary32."""
 
     transmittance = 1.0
     ids: list[int] = []
     weights: list[float] = []
     for position, evaluation in enumerate(evaluations):
         kind = ambiguous.get(position)
-        if kind == "termination":
+        if kind is _BoundaryAmbiguity.TERMINATION:
             if not forced[position]:
                 break
-        elif kind == "validity":
+        elif kind is _BoundaryAmbiguity.VALIDITY:
             if not forced[position]:
                 continue
         elif evaluation.invalid32:
             continue
-        next_transmittance = _f32(
-            transmittance * _f32(1.0 - evaluation.alpha32)
+        next_transmittance = _f32_mul(
+            transmittance, _f32_sub(1.0, evaluation.alpha32)
         )
         if next_transmittance <= termination32:
-            if kind != "termination" and abs(
-                next_transmittance - _TRANSMITTANCE_CUT
-            ) <= _TERMINATION_BOUNDARY_WINDOW:
+            if kind is _BoundaryAmbiguity.TERMINATION:
+                # A forced "not terminated" outcome here would write a
+                # Gaussian that the locked kernel excludes before on_hit.
+                # Without the alternate kernel's above-cut T value, no
+                # source-faithful tail can be reconstructed, so fail closed.
                 return None
-            if kind == "termination":
-                ids.append(evaluation.tensor_id)
-                weights.append(_f32(evaluation.alpha32 * transmittance))
-                transmittance = next_transmittance
-                continue
+            if abs(next_transmittance - _TRANSMITTANCE_CUT) <= (
+                _TERMINATION_BOUNDARY_WINDOW
+            ):
+                return None
             break
         ids.append(evaluation.tensor_id)
-        weights.append(_f32(evaluation.alpha32 * transmittance))
+        weights.append(_f32_mul(evaluation.alpha32, transmittance))
         transmittance = next_transmittance
     return tuple(ids), tuple(weights), _f32(1.0 - transmittance)
 
@@ -628,6 +797,7 @@ def _reconcile_boundary_flips(
             pixel_x=x,
             pixel_y=y,
             raster_alpha=float(raster_cpu[image_id, y, x, 0]),
+            kernel_alpha=float(new_alpha[image_id, y, x].item()),
             kernel_ids=kernel_ids,
             kernel_weights=kernel_weights,
         )
@@ -1393,7 +1563,7 @@ def _validated_rendered_view(
                 )
             error = abs(pixel_mass - alpha)
             maximum_error = max(maximum_error, error)
-            if error > MASS_CONSERVATION_ATOL + MASS_CONSERVATION_RTOL * abs(alpha):
+            if error > _mass_conservation_tolerance(alpha):
                 raise MaskSessionError(
                     "rendererMassMismatch",
                     "Complete gsplat contributor mass does not match raster alpha.",

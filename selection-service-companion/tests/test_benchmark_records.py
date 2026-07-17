@@ -16,8 +16,127 @@ from selection_service_companion.benchmark import (
 from selection_service_companion.controlled_overlap_benchmark import (
     _preview_render_policy,
     build_controlled_overlap_snapshot,
+    load_frozen_benchmark_prompt_log,
     seal_preview_prediction,
 )
+
+
+FROZEN_PROMPT_LOG = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "benchmarks"
+    / "fixtures"
+    / "controlled-overlap"
+    / "benchmark-prompt-log-v1.json"
+)
+
+
+class FrozenBenchmarkPromptLogTests(unittest.TestCase):
+    def write_variant(self, directory: Path, mutate) -> Path:
+        document = json.loads(FROZEN_PROMPT_LOG.read_text(encoding="utf-8"))
+        mutate(document)
+        variant = directory / "benchmark-prompt-log-variant.json"
+        variant.write_text(json.dumps(document), encoding="utf-8")
+        return variant
+
+    def test_loads_the_repository_frozen_prompt_log(self) -> None:
+        entries = load_frozen_benchmark_prompt_log(FROZEN_PROMPT_LOG, image_size=1008)
+
+        self.assertEqual(len(entries), 5)
+        self.assertEqual(
+            [entry["prompt"]["promptId"] for entry in entries],
+            [
+                "controlled-overlap-center",
+                "controlled-overlap-north",
+                "controlled-overlap-south",
+                "controlled-overlap-west",
+                "controlled-overlap-east",
+            ],
+        )
+        self.assertEqual(
+            [(entry["prompt"]["xPx"], entry["prompt"]["yPx"]) for entry in entries],
+            [(504, 504), (504, 300), (504, 700), (320, 504), (688, 504)],
+        )
+        for entry in entries:
+            self.assertEqual(entry["operation"], "New")
+            self.assertEqual(entry["prompt"]["viewId"], "anchor-view")
+            self.assertEqual(entry["prompt"]["polarity"], "include")
+
+    def test_rejects_a_missing_prompt_log(self) -> None:
+        with self.assertRaisesRegex(PocRunRecordError, "unavailable or invalid JSON"):
+            load_frozen_benchmark_prompt_log(
+                FROZEN_PROMPT_LOG.parent / "does-not-exist.json", image_size=1008
+            )
+
+    def test_rejects_anchor_camera_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            variant = self.write_variant(
+                Path(directory),
+                lambda document: document["anchorView"]["camera"].__setitem__(
+                    "nearPlane", 0.02
+                ),
+            )
+            with self.assertRaisesRegex(PocRunRecordError, "camera does not match"):
+                load_frozen_benchmark_prompt_log(variant, image_size=1008)
+
+    def test_rejects_a_frame_size_mismatch(self) -> None:
+        with self.assertRaisesRegex(PocRunRecordError, "does not match the trial frame"):
+            load_frozen_benchmark_prompt_log(FROZEN_PROMPT_LOG, image_size=768)
+
+    def test_rejects_a_non_new_operation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            variant = self.write_variant(
+                Path(directory),
+                lambda document: document["entries"][0].__setitem__(
+                    "operation", "Add"
+                ),
+            )
+            with self.assertRaisesRegex(PocRunRecordError, "New point prompts only"):
+                load_frozen_benchmark_prompt_log(variant, image_size=1008)
+
+    def test_rejects_a_duplicate_prompt_id(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            variant = self.write_variant(
+                Path(directory),
+                lambda document: document["entries"][1]["prompt"].__setitem__(
+                    "promptId", "controlled-overlap-center"
+                ),
+            )
+            with self.assertRaisesRegex(PocRunRecordError, "unique non-empty"):
+                load_frozen_benchmark_prompt_log(variant, image_size=1008)
+
+    def test_rejects_an_out_of_frame_point(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            variant = self.write_variant(
+                Path(directory),
+                lambda document: document["entries"][0]["prompt"].__setitem__(
+                    "xPx", 1008
+                ),
+            )
+            with self.assertRaisesRegex(PocRunRecordError, "inside the Anchor frame"):
+                load_frozen_benchmark_prompt_log(variant, image_size=1008)
+
+    def test_rejects_an_unsupported_polarity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            variant = self.write_variant(
+                Path(directory),
+                lambda document: document["entries"][0]["prompt"].__setitem__(
+                    "polarity", "emphasize"
+                ),
+            )
+            with self.assertRaisesRegex(PocRunRecordError, "include or exclude"):
+                load_frozen_benchmark_prompt_log(variant, image_size=1008)
+
+    def test_rejects_declared_correction_rounds(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            variant = self.write_variant(
+                Path(directory),
+                lambda document: document.__setitem__(
+                    "correctionSequence", [{"operation": "Add"}]
+                ),
+            )
+            with self.assertRaisesRegex(PocRunRecordError, "correction rounds"):
+                load_frozen_benchmark_prompt_log(variant, image_size=1008)
 
 
 class PocRunRecordTests(unittest.TestCase):
@@ -465,6 +584,10 @@ class PocRunRecordTests(unittest.TestCase):
                     "sceneVersion": "sha256:scene",
                 },
                 prompt_log=[{"operation": "New"}],
+                prompt_log_source={
+                    "file": "benchmark-prompt-log-v1.json",
+                    "sha256": "sha256:prompt-log",
+                },
                 model_manifest={"digest": "sha256:model"},
                 runtime_manifest={"gpu": "locked-gpu"},
                 dependency_lock=lock_file,
@@ -492,6 +615,18 @@ class PocRunRecordTests(unittest.TestCase):
             self.assertEqual(candidate["rejectedStableGaussianIds"], [2])
             self.assertEqual(candidate["uncertainStableGaussianIds"], [3])
             self.assertEqual(diagnostics["attempts"][0]["viewId"], "generated-00")
+            sealed_prompt_log = json.loads(
+                (record.directory / "artifacts" / "benchmarkPromptLog.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                sealed_prompt_log["frozenSource"],
+                {
+                    "file": "benchmark-prompt-log-v1.json",
+                    "sha256": "sha256:prompt-log",
+                },
+            )
 
 
 if __name__ == "__main__":

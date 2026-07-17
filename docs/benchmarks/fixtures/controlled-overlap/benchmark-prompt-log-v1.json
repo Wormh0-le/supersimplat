@@ -1,0 +1,77 @@
+{
+  "anchorView": {
+    "camera": {
+      "convention": "opencv-world-to-camera",
+      "farPlane": 20.0,
+      "intrinsics": [
+        1312.9648886056762, 0.0, 504.0, 0.0, 1312.9648886056762, 504.0, 0.0,
+        0.0, 1.0
+      ],
+      "model": "pinhole",
+      "nearPlane": 0.01,
+      "worldToCamera": [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 3.2, 0.0, 0.0,
+        0.0, 1.0
+      ]
+    },
+    "frameHeight": 1008,
+    "frameWidth": 1008,
+    "viewId": "anchor-view"
+  },
+  "correctionSequence": [],
+  "derivation": "Points were placed on the visibly uniform target projection in the service-rendered 1008x1008 Anchor frame, the same information a benchmark operator sees. Benchmark Ground Truth was never consulted when choosing point count, order, or coordinates. With the pinned SAM 3.1 runtime a single center point yields only a 1.87% sub-part mask on this textureless anchor, while this five-point constellation returns the complete target projection (~39.9% of frame); that behavior was validated on the locked runtime before freezing.",
+  "entries": [
+    {
+      "operation": "New",
+      "prompt": {
+        "polarity": "include",
+        "promptId": "controlled-overlap-center",
+        "viewId": "anchor-view",
+        "xPx": 504,
+        "yPx": 504
+      }
+    },
+    {
+      "operation": "New",
+      "prompt": {
+        "polarity": "include",
+        "promptId": "controlled-overlap-north",
+        "viewId": "anchor-view",
+        "xPx": 504,
+        "yPx": 300
+      }
+    },
+    {
+      "operation": "New",
+      "prompt": {
+        "polarity": "include",
+        "promptId": "controlled-overlap-south",
+        "viewId": "anchor-view",
+        "xPx": 504,
+        "yPx": 700
+      }
+    },
+    {
+      "operation": "New",
+      "prompt": {
+        "polarity": "include",
+        "promptId": "controlled-overlap-west",
+        "viewId": "anchor-view",
+        "xPx": 320,
+        "yPx": 504
+      }
+    },
+    {
+      "operation": "New",
+      "prompt": {
+        "polarity": "include",
+        "promptId": "controlled-overlap-east",
+        "viewId": "anchor-view",
+        "xPx": 688,
+        "yPx": 504
+      }
+    }
+  ],
+  "purpose": "Frozen blind Benchmark Prompt Log for the exact controlled front/back-overlap PoC Trial (operation New, Anchor View point prompts).",
+  "schemaVersion": 1
+}

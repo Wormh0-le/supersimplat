@@ -40,6 +40,9 @@ _VERTEX = struct.Struct("<14fIB")
 _CONTROLLED_OVERLAP_PLY_SHA256 = (
     "cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e"
 )
+FROZEN_BENCHMARK_PROMPT_LOG_NAME = "benchmark-prompt-log-v1.json"
+_ANCHOR_VIEW_ID = "anchor-view"
+_POINT_POLARITIES = ("include", "exclude")
 
 
 def build_controlled_overlap_snapshot(ply_path: Path) -> dict[str, object]:
@@ -122,6 +125,7 @@ def seal_preview_prediction(
     publication: Any,
     scene_snapshot: Mapping[str, object],
     prompt_log: Sequence[Mapping[str, object]],
+    prompt_log_source: Mapping[str, object],
     model_manifest: Mapping[str, object],
     runtime_manifest: Mapping[str, object],
     dependency_lock: Path,
@@ -172,6 +176,7 @@ def seal_preview_prediction(
             "sceneSnapshot": bound(scene_snapshot),
             "benchmarkPromptLog": {
                 "entries": list(prompt_log),
+                "frozenSource": dict(prompt_log_source),
                 "recordBindings": record_bindings,
             },
             "frameSet": bound(publication.frame_set),
@@ -225,6 +230,120 @@ def _preview_render_policy(render_config_version: object) -> dict[str, object]:
     }
 
 
+def load_frozen_benchmark_prompt_log(
+    prompt_log_path: Path,
+    *,
+    image_size: int,
+) -> list[dict[str, object]]:
+    """Read and validate the frozen blind Benchmark Prompt Log.
+
+    The frozen log is a benchmark input captured before any trial.  It binds
+    the Anchor camera it was derived against so a camera drift fails sealing
+    instead of silently prompting a different frame.  Ground Truth never
+    enters this boundary: the log carries operator-visible point prompts only.
+    """
+
+    try:
+        document = json.loads(prompt_log_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise PocRunRecordError(
+            "the frozen Benchmark Prompt Log is unavailable or invalid JSON"
+        ) from error
+    if not isinstance(document, dict) or document.get("schemaVersion") != 1:
+        raise PocRunRecordError("the frozen Benchmark Prompt Log schema is unsupported")
+
+    anchor = document.get("anchorView")
+    if not isinstance(anchor, dict):
+        raise PocRunRecordError("the frozen Benchmark Prompt Log has no Anchor View")
+    if (
+        anchor.get("viewId") != _ANCHOR_VIEW_ID
+        or anchor.get("frameWidth") != image_size
+        or anchor.get("frameHeight") != image_size
+    ):
+        raise PocRunRecordError(
+            "the frozen Benchmark Prompt Log Anchor View does not match the trial frame"
+        )
+    if anchor.get("camera") != _anchor_camera(image_size):
+        raise PocRunRecordError(
+            "the frozen Benchmark Prompt Log camera does not match the trial Anchor camera"
+        )
+    correction_sequence = document.get("correctionSequence", [])
+    if not isinstance(correction_sequence, list) or correction_sequence:
+        raise PocRunRecordError(
+            "the frozen Benchmark Prompt Log declares unsupported correction rounds"
+        )
+
+    entries = document.get("entries")
+    if not isinstance(entries, list) or not entries:
+        raise PocRunRecordError("the frozen Benchmark Prompt Log has no entries")
+    known_prompt_ids: set[str] = set()
+    validated: list[dict[str, object]] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("operation") != "New":
+            raise PocRunRecordError(
+                "the frozen Benchmark Prompt Log accepts New point prompts only"
+            )
+        prompt = entry.get("prompt")
+        if not isinstance(prompt, dict):
+            raise PocRunRecordError("a frozen Benchmark Prompt entry is malformed")
+        prompt_id = prompt.get("promptId")
+        x_px = prompt.get("xPx")
+        y_px = prompt.get("yPx")
+        polarity = prompt.get("polarity")
+        if (
+            not isinstance(prompt_id, str)
+            or not prompt_id
+            or prompt_id in known_prompt_ids
+        ):
+            raise PocRunRecordError(
+                "frozen Benchmark Prompt IDs must be unique non-empty strings"
+            )
+        if prompt.get("viewId") != _ANCHOR_VIEW_ID:
+            raise PocRunRecordError(
+                "frozen Benchmark Prompts must target the Anchor View"
+            )
+        if (
+            not isinstance(x_px, int)
+            or isinstance(x_px, bool)
+            or not isinstance(y_px, int)
+            or isinstance(y_px, bool)
+            or not 0 <= x_px < image_size
+            or not 0 <= y_px < image_size
+        ):
+            raise PocRunRecordError(
+                "frozen Benchmark Prompt points must stay inside the Anchor frame"
+            )
+        if polarity not in _POINT_POLARITIES:
+            raise PocRunRecordError(
+                "frozen Benchmark Prompt polarity must be include or exclude"
+            )
+        known_prompt_ids.add(prompt_id)
+        validated.append(
+            {
+                "operation": "New",
+                "prompt": {
+                    "promptId": prompt_id,
+                    "viewId": _ANCHOR_VIEW_ID,
+                    "xPx": x_px,
+                    "yPx": y_px,
+                    "polarity": polarity,
+                },
+            }
+        )
+    return validated
+
+
+def _frozen_prompt_log_source(prompt_log_path: Path) -> dict[str, object]:
+    """Identify the frozen prompt input without disclosing trial outputs."""
+
+    return {
+        "file": prompt_log_path.name,
+        "sha256": (
+            "sha256:" + hashlib.sha256(prompt_log_path.read_bytes()).hexdigest()
+        ),
+    }
+
+
 def run_controlled_overlap_prediction(
     output_directory: Path,
     *,
@@ -233,6 +352,7 @@ def run_controlled_overlap_prediction(
     model_manifest_digest: str | None = None,
     image_size: int = 1008,
     deterministic_seed: str = "controlled-overlap-seed-1",
+    prompt_log_path: Path | None = None,
 ) -> SealedPrediction:
     """Execute the production path and seal either completion or failure."""
 
@@ -240,6 +360,8 @@ def run_controlled_overlap_prediction(
         raise PocRunRecordError(
             f"refusing to overwrite an existing PoC Run Record: {output_directory}"
         )
+    if prompt_log_path is None:
+        prompt_log_path = fixture_ply.parent / FROZEN_BENCHMARK_PROMPT_LOG_NAME
     started = time.perf_counter()
     memory_sampler: _CudaMemorySampler | None = None
     try:
@@ -255,6 +377,7 @@ def run_controlled_overlap_prediction(
             image_size=image_size,
             deterministic_seed=deterministic_seed,
             memory_sampler=memory_sampler,
+            prompt_log_path=prompt_log_path,
         )
     except Exception as error:
         peak_vram_bytes = (
@@ -268,6 +391,7 @@ def run_controlled_overlap_prediction(
             elapsed_seconds=time.perf_counter() - started,
             error=error,
             peak_vram_bytes=peak_vram_bytes,
+            prompt_log_path=prompt_log_path,
         )
     finally:
         if memory_sampler is not None:
@@ -283,6 +407,7 @@ def _run_controlled_overlap_prediction(
     image_size: int,
     deterministic_seed: str,
     memory_sampler: _CudaMemorySampler,
+    prompt_log_path: Path,
 ) -> SealedPrediction:
     """Execute and seal the real gsplat/CUDA and SAM3 Generated View path."""
 
@@ -296,6 +421,10 @@ def _run_controlled_overlap_prediction(
     from . import PACKAGE_VERSION, PROTOCOL_VERSION
     from .state import CompanionState
 
+    frozen_entries = load_frozen_benchmark_prompt_log(
+        prompt_log_path, image_size=image_size
+    )
+    frozen_source = _frozen_prompt_log_source(prompt_log_path)
     state = CompanionState(state_directory)
     release = state.require_release()
     dependency_lock = _verified_release_lock(release)
@@ -372,7 +501,7 @@ def _run_controlled_overlap_prediction(
         "operation": "New",
         "correctionRound": 0,
         "deterministicSeed": deterministic_seed,
-        "promptLogRevision": 1,
+        "promptLogRevision": len(frozen_entries),
         "frameSetVersion": frame_set_version,
         "renderConfigVersion": "supersplat-effective-rgb-v1",
         "modelManifestDigest": model["digest"],
@@ -381,16 +510,13 @@ def _run_controlled_overlap_prediction(
         {
             "operation": "New",
             "prompt": {
-                "promptId": "controlled-overlap-center",
-                "viewId": "anchor-view",
+                **entry["prompt"],
                 "frameDigest": anchor_digest,
                 "frameWidth": image_size,
                 "frameHeight": image_size,
-                "xPx": image_size // 2,
-                "yPx": image_size // 2,
-                "polarity": "include",
             },
         }
+        for entry in frozen_entries
     ]
     stage_seconds: dict[str, float] = {}
     preview_started = time.perf_counter()
@@ -443,6 +569,7 @@ def _run_controlled_overlap_prediction(
         publication=publication,
         scene_snapshot=snapshot,
         prompt_log=prompt_log,
+        prompt_log_source=frozen_source,
         model_manifest=public_model_manifest,
         runtime_manifest=runtime_manifest,
         dependency_lock=dependency_lock,
@@ -489,6 +616,7 @@ def _seal_failed_controlled_overlap_prediction(
     elapsed_seconds: float,
     error: Exception,
     peak_vram_bytes: int | None,
+    prompt_log_path: Path,
 ) -> SealedPrediction:
     from . import PACKAGE_VERSION, PROTOCOL_VERSION
     from .masking import MaskSessionError
@@ -505,6 +633,17 @@ def _seal_failed_controlled_overlap_prediction(
             "reason": type(snapshot_error).__name__,
             "message": str(snapshot_error),
         }
+    try:
+        frozen_source: object = _frozen_prompt_log_source(prompt_log_path)
+        frozen_revision: object = len(
+            load_frozen_benchmark_prompt_log(prompt_log_path, image_size=1008)
+        )
+    except (OSError, PocRunRecordError) as prompt_log_error:
+        frozen_source = {
+            "status": "unavailable",
+            "reason": type(prompt_log_error).__name__,
+        }
+        frozen_revision = 1
     state = CompanionState(state_directory)
     models = state.models()
     model_manifest: object = (
@@ -532,7 +671,7 @@ def _seal_failed_controlled_overlap_prediction(
         "benchmarkPromptLog": {
             "status": "not-published",
             "intendedOperation": "New",
-            "anchorPoint": [504, 504],
+            "frozenSource": frozen_source,
         },
         "frameSet": unavailable,
         "maskSet": unavailable,
@@ -586,7 +725,7 @@ def _seal_failed_controlled_overlap_prediction(
         ),
         "operation": "New",
         "correctionRound": 0,
-        "promptLogRevision": 1,
+        "promptLogRevision": frozen_revision,
         "frameSetVersion": "not-produced",
         "renderConfigVersion": "supersplat-effective-rgb-v1",
         "modelManifestDigest": (

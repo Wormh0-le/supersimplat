@@ -38,6 +38,15 @@ def parser() -> argparse.ArgumentParser:
     predict.add_argument("--model-manifest-digest")
     predict.add_argument("--image-size", type=int, default=1008)
     predict.add_argument("--seed", default="controlled-overlap-seed-1")
+    predict.add_argument(
+        "--prompt-log",
+        type=Path,
+        default=None,
+        help=(
+            "frozen blind Benchmark Prompt Log; defaults to the fixture's "
+            "benchmark-prompt-log-v1.json"
+        ),
+    )
 
     score = commands.add_parser("score")
     score.add_argument("--prediction", type=Path, required=True)
@@ -56,6 +65,7 @@ def main() -> int:
             model_manifest_digest=arguments.model_manifest_digest,
             image_size=arguments.image_size,
             deterministic_seed=arguments.seed,
+            prompt_log_path=arguments.prompt_log,
         )
         manifest = json.loads(record.manifest_path.read_text(encoding="utf-8"))
         print(

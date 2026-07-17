@@ -21,6 +21,10 @@
     "verticalFovDegrees": 42.0
   },
   "files": {
+    "benchmark-prompt-log-v1.json": {
+      "sha256": "8cce1991dea0e5bdf7a3ee7a32fe720daa5bb47d486a298849cbf0541bbd082b",
+      "bytes": 2341
+    },
     "controlled_front_back_overlap.ply": {
       "sha256": "cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e",
       "bytes": 999902

@@ -161,6 +161,176 @@ class GsplatContributorRendererTests(unittest.TestCase):
 
         self.assertEqual(len(plan.primary), 2)
 
+    @staticmethod
+    def _direction_from(camera: dict[str, object], target: tuple[float, float, float]) -> tuple[float, float, float]:
+        matrix = [float(value) for value in camera["worldToCamera"]]  # type: ignore[arg-type]
+        translation = (matrix[3], matrix[7], matrix[11])
+        position = tuple(
+            -sum(matrix[row * 4 + axis] * translation[row] for row in range(3))
+            for axis in range(3)
+        )
+        vector = tuple(position[axis] - target[axis] for axis in range(3))
+        length = math.sqrt(sum(value * value for value in vector))
+        return tuple(value / length for value in vector)  # type: ignore[return-value]
+
+    @staticmethod
+    def _angle_degrees(left: tuple[float, float, float], right: tuple[float, float, float]) -> float:
+        cosine = sum(left[axis] * right[axis] for axis in range(3))
+        return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
+
+    def test_planning_orbits_the_anchor_axis_for_a_pole_aligned_anchor(self) -> None:
+        # The identity test camera sits on the world z axis of the Seed Region;
+        # a world-longitude ring would collapse onto that pole and plan only
+        # near-duplicate views. The anchor-relative orbit must still circle.
+        renderer = GsplatContributorRenderer(backend=StaticGsplatBackend(valid_rasterization()))
+        target = (0.0, 0.0, 2.0)
+        seed_region = SeedRegion(
+            center=target,
+            radius=0.2,
+            source="anchor_contributors",
+            stable_ids=(41,),
+        )
+
+        plan = renderer.plan_views(
+            scene_snapshot=supported_snapshot(),
+            anchor_frame=anchor_frame(),
+            seed_region=seed_region,
+            initial_budget=10,
+            replacement_budget=2,
+            resolution=2,
+        )
+
+        base = (0.0, 0.0, -1.0)
+        expected_ring = (45.0, 45.0, 90.0, 90.0, 135.0, 135.0, 180.0)
+        ring = [candidate for candidate in plan.primary if candidate.category == "ring"]
+        self.assertEqual(len(ring), len(expected_ring))
+        for candidate, expected in zip(ring, expected_ring, strict=True):
+            direction = self._direction_from(candidate.camera, target)
+            self.assertAlmostEqual(
+                self._angle_degrees(direction, base), expected, places=6
+            )
+        upper = [candidate for candidate in plan.primary if candidate.category == "upper"]
+        self.assertEqual(len(upper), 3)
+        for candidate, expected in zip(upper, (30.0, 90.0, 90.0), strict=True):
+            direction = self._direction_from(candidate.camera, target)
+            self.assertAlmostEqual(
+                self._angle_degrees(direction, base), expected, places=6
+            )
+        self.assertEqual(len(plan.replacements), 2)
+        for replacement, primary in zip(plan.replacements, plan.primary, strict=False):
+            primary_direction = self._direction_from(primary.camera, target)
+            replacement_direction = self._direction_from(replacement.camera, target)
+            self.assertAlmostEqual(
+                self._angle_degrees(replacement_direction, primary_direction),
+                10.0,
+                places=6,
+            )
+
+    def test_planning_preserves_the_level_anchor_world_orbit(self) -> None:
+        # A level anchor must keep the historical world-z longitude orbit:
+        # the anchor-relative formulation only changes degenerate anchors.
+        renderer = GsplatContributorRenderer(backend=StaticGsplatBackend(valid_rasterization()))
+        target = (0.0, 0.0, 0.0)
+        seed_region = SeedRegion(
+            center=target,
+            radius=0.2,
+            source="anchor_contributors",
+            stable_ids=(41,),
+        )
+        level_anchor = RegisteredFrame(
+            view_id="anchor-view",
+            frame_digest="sha256:editor-anchor-rgb",
+            width=2,
+            height=2,
+            image_png=png_bytes(2, 2),
+            source="anchor",
+            camera={
+                "model": "pinhole",
+                "convention": "opencv-world-to-camera",
+                "worldToCamera": [
+                    1.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0, -1.0, 0.0,
+                    0.0, 1.0, 0.0, 5.0,
+                    0.0, 0.0, 0.0, 1.0,
+                ],
+                "intrinsics": [
+                    20.0, 0.0, 1.0,
+                    0.0, 20.0, 1.0,
+                    0.0, 0.0, 1.0,
+                ],
+                "nearPlane": 0.01,
+                "farPlane": 100.0,
+            },
+        )
+
+        plan = renderer.plan_views(
+            scene_snapshot=supported_snapshot(),
+            anchor_frame=level_anchor,
+            seed_region=seed_region,
+            initial_budget=10,
+            replacement_budget=0,
+            resolution=2,
+        )
+
+        distance = 5.0
+        expected_offsets = (
+            (45.0, 0.0), (-45.0, 0.0), (90.0, 0.0), (-90.0, 0.0),
+            (135.0, 0.0), (-135.0, 0.0), (180.0, 0.0),
+            (0.0, 30.0), (90.0, 30.0), (-90.0, 30.0),
+        )
+        base_azimuth = math.radians(-90.0)
+        for candidate, (azimuth_offset, elevation_offset) in zip(
+            plan.primary, expected_offsets, strict=True
+        ):
+            azimuth = base_azimuth + math.radians(azimuth_offset)
+            elevation = math.radians(elevation_offset)
+            expected = (
+                distance * math.cos(elevation) * math.cos(azimuth),
+                distance * math.cos(elevation) * math.sin(azimuth),
+                distance * math.sin(elevation),
+            )
+            direction = self._direction_from(candidate.camera, target)
+            actual = tuple(value * distance for value in direction)
+            for axis in range(3):
+                self.assertAlmostEqual(actual[axis], expected[axis], places=9)
+
+    def test_render_generated_records_angular_diagnostics_on_the_frame(self) -> None:
+        renderer = GsplatContributorRenderer(backend=StaticGsplatBackend(valid_rasterization()))
+        snapshot = supported_snapshot()
+        seed_region = SeedRegion(
+            center=(0.0, 0.0, 2.0),
+            radius=0.01,
+            source="anchor_contributors",
+            stable_ids=(41,),
+        )
+        plan = renderer.plan_views(
+            scene_snapshot=snapshot,
+            anchor_frame=anchor_frame(),
+            seed_region=seed_region,
+            initial_budget=1,
+            replacement_budget=0,
+            resolution=2,
+        )
+        candidate = plan.primary[0]
+        preflight = renderer.preflight(
+            scene_snapshot=snapshot,
+            candidate=candidate,
+            seed_region=seed_region,
+            resolution=2,
+        )
+
+        frame = renderer.render_generated(
+            scene_snapshot=snapshot,
+            candidate=candidate,
+            preflight=preflight,
+            resolution=2,
+        )
+
+        self.assertIsNotNone(frame.camera)
+        assert frame.camera is not None
+        self.assertEqual(frame.camera["azimuthDegrees"], candidate.azimuth_degrees)
+        self.assertEqual(frame.camera["elevationDegrees"], candidate.elevation_degrees)
+
     def test_plans_and_preflights_cameras_before_coherent_generated_rendering(self) -> None:
         backend = StaticGsplatBackend(valid_rasterization())
         renderer = GsplatContributorRenderer(backend=backend)

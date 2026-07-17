@@ -903,11 +903,12 @@ class GsplatContributorRenderer:
         base_direction = _normalise(
             tuple(anchor_position[index] - target[index] for index in range(3))
         )
-        if abs(base_direction[0]) + abs(base_direction[1]) < 1e-8:
-            base_azimuth = 0.0
-        else:
-            base_azimuth = math.degrees(math.atan2(base_direction[1], base_direction[0]))
-        base_elevation = math.degrees(math.asin(max(-1.0, min(1.0, base_direction[2]))))
+        # The orbit is anchor-relative: the ring sweeps the anchor axis around
+        # the orbit axis instead of sweeping world longitude. For a level
+        # anchor this reproduces the historical world-z orbit exactly; an
+        # anchor looking straight down world z would otherwise collapse the
+        # ring onto the anchor pole and plan only near-duplicate views.
+        orbit_axis = _orbit_axis(base_direction)
         orbit_offsets = (
             (45.0, 0.0, "ring"),
             (-45.0, 0.0, "ring"),
@@ -924,9 +925,13 @@ class GsplatContributorRenderer:
         for index, (azimuth_offset, elevation_offset, category) in enumerate(
             orbit_offsets[: max(0, initial_budget)]
         ):
-            azimuth = base_azimuth + azimuth_offset
-            elevation = max(-75.0, min(75.0, base_elevation + elevation_offset))
-            position = _orbit_position(target, distance, azimuth, elevation)
+            direction = _orbit_direction(
+                base_direction, orbit_axis, azimuth_offset, elevation_offset
+            )
+            position = tuple(
+                float(target[axis]) + distance * direction[axis] for axis in range(3)
+            )
+            azimuth, elevation = _world_azimuth_elevation(direction)
             primary.append(
                 PlannedGeneratedViewCandidate(
                     view_id=f"generated-{index:02d}",
@@ -944,9 +949,12 @@ class GsplatContributorRenderer:
             )
         replacements: list[PlannedGeneratedViewCandidate] = []
         for index, candidate in enumerate(primary[:replacement_budget]):
-            azimuth = float(candidate.azimuth_degrees or 0.0) + 10.0
-            elevation = float(candidate.elevation_degrees or 0.0)
-            position = _orbit_position(target, distance * 1.1, azimuth, elevation)
+            direction = _candidate_direction(candidate, target)
+            rotated = _rotate_about(direction, orbit_axis, 10.0)
+            position = tuple(
+                float(target[axis]) + distance * 1.1 * rotated[axis] for axis in range(3)
+            )
+            azimuth, elevation = _world_azimuth_elevation(rotated)
             replacements.append(
                 PlannedGeneratedViewCandidate(
                     view_id=f"generated-replacement-{index:02d}",
@@ -1071,7 +1079,13 @@ class GsplatContributorRenderer:
                 "rendererFailure", "A rejected camera cannot be rendered as a Generated View."
             )
         stable_ids = validate_supported_snapshot(scene_snapshot)
-        camera = _validated_candidate_camera(preflight.camera, resolution)
+        camera = dict(_validated_candidate_camera(preflight.camera, resolution))
+        # Angular diagnostics describe the accepted camera in the Coverage
+        # Report; they are metadata only and never feed back into rendering.
+        if candidate.azimuth_degrees is not None:
+            camera["azimuthDegrees"] = float(candidate.azimuth_degrees)
+        if candidate.elevation_degrees is not None:
+            camera["elevationDegrees"] = float(candidate.elevation_degrees)
         rasterized = self.backend.rasterize(
             snapshot=scene_snapshot,
             camera=camera,
@@ -1143,16 +1157,89 @@ def _camera_position(camera: Mapping[str, Any]) -> tuple[float, float, float]:
     )  # type: ignore[return-value]
 
 
-def _orbit_position(
-    target: Sequence[float], distance: float, azimuth: float, elevation: float
+def _orbit_axis(
+    base_direction: Sequence[float],
 ) -> tuple[float, float, float]:
-    azimuth_radians = math.radians(azimuth)
-    elevation_radians = math.radians(elevation)
-    horizontal = distance * math.cos(elevation_radians)
-    return (
-        float(target[0]) + horizontal * math.cos(azimuth_radians),
-        float(target[1]) + horizontal * math.sin(azimuth_radians),
-        float(target[2]) + distance * math.sin(elevation_radians),
+    """Return the unit orbit axis perpendicular to the anchor direction.
+
+    The axis is the component of world +z orthogonal to the anchor axis, so a
+    level anchor keeps the historical world-z longitude orbit. An anchor
+    aligned with world +z has no longitude; the next world axis then spans
+    the orbit plane so the ring still circles the Seed Region.
+    """
+
+    for reference in ((0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0)):
+        projection = tuple(
+            reference[index] - _dot(reference, base_direction) * base_direction[index]
+            for index in range(3)
+        )
+        if sum(value * value for value in projection) > 1e-12:
+            return _normalise(projection)
+    raise MaskSessionError(
+        "rendererUnavailable", "Generated View orbit axis is degenerate."
+    )
+
+
+def _rotate_about(
+    direction: Sequence[float], axis: Sequence[float], degrees: float
+) -> tuple[float, float, float]:
+    """Rotate a unit direction around a unit axis by Rodrigues' formula."""
+
+    radians = math.radians(degrees)
+    cosine = math.cos(radians)
+    sine = math.sin(radians)
+    cross = _cross(axis, direction)
+    parallel = _dot(axis, direction)
+    return tuple(
+        direction[index] * cosine
+        + cross[index] * sine
+        + axis[index] * parallel * (1.0 - cosine)
+        for index in range(3)
+    )  # type: ignore[return-value]
+
+
+def _orbit_direction(
+    base_direction: Sequence[float],
+    orbit_axis: Sequence[float],
+    azimuth_offset: float,
+    elevation_offset: float,
+) -> tuple[float, float, float]:
+    """Compose one anchor-relative orbit direction.
+
+    Ring views rotate the anchor axis around the orbit axis. Upper obliques
+    then tilt thirty degrees from the ring direction toward the orbit axis,
+    matching the historical elevation arithmetic whenever the anchor is level.
+    """
+
+    ring = _rotate_about(base_direction, orbit_axis, azimuth_offset)
+    if elevation_offset == 0.0:
+        return ring
+    tilt = math.radians(elevation_offset)
+    return _normalise(
+        tuple(
+            ring[index] * math.cos(tilt) + orbit_axis[index] * math.sin(tilt)
+            for index in range(3)
+        )
+    )
+
+
+def _world_azimuth_elevation(
+    direction: Sequence[float],
+) -> tuple[float, float]:
+    """Report one unit direction as world-frame azimuth/elevation diagnostics."""
+
+    elevation = math.degrees(math.asin(max(-1.0, min(1.0, direction[2]))))
+    if abs(direction[0]) + abs(direction[1]) < 1e-8:
+        return 0.0, elevation
+    return math.degrees(math.atan2(direction[1], direction[0])), elevation
+
+
+def _candidate_direction(
+    candidate: PlannedGeneratedViewCandidate, target: Sequence[float]
+) -> tuple[float, float, float]:
+    position = _camera_position(candidate.camera)
+    return _normalise(
+        tuple(position[index] - float(target[index]) for index in range(3))
     )
 
 

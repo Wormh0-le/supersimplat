@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from io import BytesIO
+import math
 from pathlib import Path
 import tempfile
 import unittest
@@ -15,6 +16,9 @@ from selection_service_companion.gsplat_renderer import (
     GsplatRasterization,
     LockedGsplatBackend,
     MASS_CONSERVATION_ATOL,
+    MASS_CONSERVATION_RTOL,
+    TileGaussian,
+    reconcile_boundary_contributors,
 )
 from selection_service_companion.generated_views import (
     PlannedGeneratedViewCandidate,
@@ -411,6 +415,227 @@ class GsplatContributorRendererTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "rendererUnavailable")
 
 
+class BoundaryContributorReconciliationTests(unittest.TestCase):
+    """Issue #30: repair gsplat's fp32 validity/termination boundary flips.
+
+    The RGB and contributor CUDA kernels evaluate the same per-Gaussian alpha
+    in separate translation units. For a Gaussian whose exact alpha sits within
+    float32 rounding of gsplat's 1/255 validity cut (or whose transmittance
+    update sits at the 1e-4 termination cut), the kernels can disagree on one
+    contributor. The reconciler must align the contributor stream with the RGB
+    rasterization's own alpha and fail closed on anything else.
+    """
+
+    @staticmethod
+    def gaussian(tensor_id: int, *, sigma: float, opacity: float = 0.96) -> TileGaussian:
+        # Pixel center (8.5, 8.5); dx = 1 and dy = 0 make sigma exactly the
+        # conic evaluation 0.5 * conic_a * dx**2.
+        return TileGaussian(
+            tensor_id=tensor_id,
+            mean_x=9.5,
+            mean_y=8.5,
+            conic_a=2.0 * sigma,
+            conic_b=0.0,
+            conic_c=1.0,
+            opacity=opacity,
+        )
+
+    @staticmethod
+    def sigma_for_alpha(alpha: float, opacity: float = 0.96) -> float:
+        return math.log(opacity / alpha)
+
+    @staticmethod
+    def chain(
+        gaussians: list[TileGaussian], *, force_exclude: set[int] | None = None
+    ) -> tuple[list[int], list[float], float]:
+        """Independent float64 replay of the shared kernel semantics."""
+        excluded = force_exclude or set()
+        transmittance = 1.0
+        ids: list[int] = []
+        weights: list[float] = []
+        for gaussian in gaussians:
+            if gaussian.tensor_id in excluded:
+                continue
+            dx = gaussian.mean_x - 8.5
+            dy = gaussian.mean_y - 8.5
+            sigma = (
+                0.5 * (gaussian.conic_a * dx * dx + gaussian.conic_c * dy * dy)
+                + gaussian.conic_b * dx * dy
+            )
+            alpha = min(0.99, gaussian.opacity * math.exp(-sigma))
+            if sigma < 0.0 or alpha < 1.0 / 255.0:
+                continue
+            next_transmittance = transmittance * (1.0 - alpha)
+            if next_transmittance <= 1e-4:
+                break
+            ids.append(gaussian.tensor_id)
+            weights.append(alpha * transmittance)
+            transmittance = next_transmittance
+        return ids, weights, 1.0 - transmittance
+
+    def front_gaussians(self) -> list[TileGaussian]:
+        return [
+            self.gaussian(1, sigma=self.sigma_for_alpha(0.5)),
+            self.gaussian(2, sigma=self.sigma_for_alpha(0.3)),
+            self.gaussian(3, sigma=self.sigma_for_alpha(0.2)),
+        ]
+
+    def test_drops_spurious_contributor_below_validity_cut(self) -> None:
+        # The exact issue #30 signature: exact alpha 1.78e-9 below 1/255, but
+        # the contributor kernel's fp32 evaluation accepted the Gaussian.
+        borderline = self.gaussian(4, sigma=5.50044204404077)
+        gaussians = [*self.front_gaussians(), borderline]
+        _, accepted_weights, _ = self.chain(gaussians)
+        borderline_weight = borderline.opacity * math.exp(-5.50044204404077) * 0.28
+        kernel_ids = [1, 2, 3, 4]
+        kernel_weights = [*accepted_weights, borderline_weight]
+        _, _, raster_alpha = self.chain(gaussians, force_exclude={4})
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_ids=kernel_ids,
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNotNone(repaired)
+        ids, weights, alpha = repaired
+        self.assertEqual(ids, (1, 2, 3))
+        self.assertAlmostEqual(alpha, raster_alpha, delta=1e-6)
+        self.assertAlmostEqual(sum(weights), raster_alpha, delta=1e-6)
+
+    def test_restores_contributor_dropped_below_validity_cut(self) -> None:
+        alpha_target = 1.0 / 255.0 + 1.5e-9
+        borderline = self.gaussian(4, sigma=self.sigma_for_alpha(alpha_target))
+        gaussians = [*self.front_gaussians(), borderline]
+        kernel_ids, kernel_weights, _ = self.chain(gaussians, force_exclude={4})
+        _, _, raster_alpha = self.chain(gaussians)
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_ids=kernel_ids,
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNotNone(repaired)
+        ids, weights, alpha = repaired
+        self.assertEqual(ids, (1, 2, 3, 4))
+        self.assertAlmostEqual(alpha, raster_alpha, delta=1e-6)
+        self.assertAlmostEqual(sum(weights), raster_alpha, delta=1e-6)
+
+    def test_restores_mid_chain_contributor_and_shifts_tail_weights(self) -> None:
+        alpha_target = 1.0 / 255.0 + 1.5e-9
+        borderline = self.gaussian(4, sigma=self.sigma_for_alpha(alpha_target))
+        front = self.front_gaussians()
+        gaussians = [front[0], borderline, front[1], front[2]]
+        kernel_ids, kernel_weights, _ = self.chain(gaussians, force_exclude={4})
+        expected_ids, expected_weights, raster_alpha = self.chain(gaussians)
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_ids=kernel_ids,
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNotNone(repaired)
+        ids, weights, alpha = repaired
+        self.assertEqual(ids, tuple(expected_ids))
+        self.assertAlmostEqual(alpha, raster_alpha, delta=1e-6)
+        for actual, expected in zip(weights, expected_weights, strict=True):
+            self.assertAlmostEqual(actual, expected, delta=1e-6)
+
+    def test_drops_spurious_contributor_above_termination_cut(self) -> None:
+        gaussians = [
+            self.gaussian(1, sigma=self.sigma_for_alpha(0.9)),
+            self.gaussian(2, sigma=0.001, opacity=1.0),
+            self.gaussian(3, sigma=self.sigma_for_alpha(0.8999995)),
+        ]
+        kernel_ids, kernel_weights, _ = self.chain(gaussians)
+        _, _, raster_alpha = self.chain(gaussians, force_exclude={3})
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_ids=kernel_ids,
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNotNone(repaired)
+        ids, _, alpha = repaired
+        self.assertEqual(ids, (1, 2))
+        self.assertAlmostEqual(alpha, raster_alpha, delta=1e-6)
+
+    def test_rejects_unexplained_missing_contributor(self) -> None:
+        gaussians = self.front_gaussians()
+        _, _, raster_alpha = self.chain(gaussians)
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_ids=[1, 3],
+            kernel_weights=[0.5, 0.07],
+        )
+
+        self.assertIsNone(repaired)
+
+    def test_rejects_mismatch_no_variant_explains(self) -> None:
+        gaussians = self.front_gaussians()
+        kernel_ids, kernel_weights, _ = self.chain(gaussians)
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=0.9,
+            kernel_ids=kernel_ids,
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNone(repaired)
+
+    def test_rejects_too_many_boundary_candidates(self) -> None:
+        alpha_target = 1.0 / 255.0 - 1.5e-9
+        gaussians = [
+            self.gaussian(1, sigma=self.sigma_for_alpha(0.5)),
+            *(
+                self.gaussian(10 + index, sigma=self.sigma_for_alpha(alpha_target))
+                for index in range(5)
+            ),
+        ]
+        kernel_ids = [1, 10, 11, 12, 13, 14]
+        kernel_weights = [0.5]
+        transmittance = 0.5
+        for _ in range(5):
+            kernel_weights.append(alpha_target * transmittance)
+            transmittance *= 1.0 - alpha_target
+        _, _, raster_alpha = self.chain(
+            gaussians, force_exclude={10, 11, 12, 13, 14}
+        )
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_ids=kernel_ids,
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNone(repaired)
+
+
 class LockedGsplatGpuGoldenTests(unittest.TestCase):
     def require_cuda(self) -> None:
         try:
@@ -475,6 +700,49 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
         self.assertGreater(len(rendered.contributors), 0)
         self.assertIsNotNone(renderer.last_peak_vram_bytes)
         self.assertGreater(renderer.last_peak_vram_bytes or 0, 0)
+
+    def test_controlled_overlap_1008_anchor_conserves_contributor_mass(self) -> None:
+        self.require_cuda()
+        fixture = (
+            Path(__file__).resolve().parents[2]
+            / "docs/benchmarks/fixtures/controlled-overlap/controlled_front_back_overlap.ply"
+        )
+        if not fixture.exists():
+            self.skipTest("controlled-overlap fixture is unavailable")
+        from selection_service_companion.controlled_overlap_benchmark import (
+            _anchor_camera,
+            build_controlled_overlap_snapshot,
+        )
+
+        snapshot = build_controlled_overlap_snapshot(fixture)
+        rasterized = LockedGsplatBackend().rasterize(
+            snapshot=snapshot,
+            camera=_anchor_camera(1008),
+            width=1008,
+            height=1008,
+        )
+
+        # Issue #30: at pixel (794, 664) the contributor kernels accepted
+        # tensor row 2516 although its exact alpha (0.003921566848368366) sits
+        # 1.78e-9 below gsplat's 1/255 validity cut. The reconciled stream
+        # must match the RGB rasterization's own accepted set.
+        pixel_ids = [tensor_id for tensor_id in rasterized.contributor_ids[664][794] if tensor_id >= 0]
+        self.assertEqual(len(pixel_ids), 33)
+        self.assertNotIn(2516, pixel_ids)
+        alpha = rasterized.alpha[664][794]
+        mass = sum(
+            weight
+            for tensor_id, weight in zip(
+                rasterized.contributor_ids[664][794],
+                rasterized.contributor_weights[664][794],
+                strict=True,
+            )
+            if tensor_id >= 0
+        )
+        self.assertLessEqual(
+            abs(mass - alpha),
+            MASS_CONSERVATION_ATOL + MASS_CONSERVATION_RTOL * abs(alpha),
+        )
 
 
 if __name__ == "__main__":

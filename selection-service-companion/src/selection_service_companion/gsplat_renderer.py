@@ -2,7 +2,11 @@
 
 The production boundary deliberately makes one backend call return the RGB,
 alpha, and contributor stream.  Evidence never reconstructs attribution from
-visibility, distance, or a bounded top-k diagnostic.
+visibility, distance, or a bounded top-k diagnostic.  When gsplat's separate
+CUDA translation units disagree on a contributor exactly at a float32
+validity/termination boundary, the contributor stream is reconciled against
+the RGB rasterization's own alpha from the same projection/tile preparation;
+any other mismatch fails closed.
 """
 
 from __future__ import annotations
@@ -11,6 +15,7 @@ from dataclasses import dataclass, field
 import hashlib
 from io import BytesIO
 import math
+import struct
 from typing import Any, ClassVar, Mapping, Protocol, Sequence
 
 from .evidence import ContributorSample, RenderedContributorView
@@ -26,6 +31,23 @@ from .masking import MaskSessionError, RegisteredFrame
 
 MASS_CONSERVATION_ATOL = 2e-6
 MASS_CONSERVATION_RTOL = 1e-5
+# gsplat's per-Gaussian validity cut (1/255), transmittance termination cut
+# (1e-4), and alpha clamp mirror the pinned CUDA kernels' Common.h.
+_GAUSSIAN_VALIDITY_CUT = 1.0 / 255.0
+_GAUSSIAN_MAX_ALPHA = 0.99
+_TRANSMITTANCE_CUT = 1e-4
+# Boundary reconciliation windows. A contributor is ambiguous only when its
+# exact alpha sits within float32 evaluation noise of the validity cut, its
+# transmittance update at the termination cut, or its sigma at zero; anything
+# else is a real defect and fails closed. At most four ambiguous contributors
+# per pixel are enumerated, and a reconciled chain must reproduce the RGB
+# raster alpha within float32 evaluation noise, far inside mass tolerance.
+_VALIDITY_BOUNDARY_WINDOW = 1e-7
+_SIGMA_BOUNDARY_WINDOW = 1e-9
+_TERMINATION_BOUNDARY_WINDOW = 1e-9
+_MAX_BOUNDARY_CANDIDATES = 4
+_BOUNDARY_MATCH_ATOL = 1e-6
+_MAX_RECONCILED_PIXELS = 4096
 SUPPORTED_COORDINATE_CONVENTION = (
     "right-handed world coordinates; quaternion xyzw"
 )
@@ -55,6 +77,25 @@ class GsplatProbe:
     alpha: Sequence[Sequence[float]]
     contributor_ids: Sequence[Sequence[Sequence[int]]]
     contributor_weights: Sequence[Sequence[Sequence[float]]]
+
+
+@dataclass(frozen=True)
+class TileGaussian:
+    """One projected Gaussian in one tile's front-to-back intersection order."""
+
+    tensor_id: int
+    mean_x: float
+    mean_y: float
+    conic_a: float
+    conic_b: float
+    conic_c: float
+    opacity: float
+
+
+def _f32(value: float) -> float:
+    """Round a Python float to the nearest IEEE-754 binary32 value."""
+
+    return struct.unpack("f", struct.pack("f", value))[0]
 
 
 class GsplatBackend(Protocol):
@@ -153,7 +194,28 @@ class LockedGsplatBackend:
             )
         )
         # This check also proves that RGB's alpha and the contributor operation
-        # consumed the exact same projection/tile preparation.
+        # consumed the exact same projection/tile preparation. The two CUDA
+        # kernels evaluate the shared per-Gaussian alpha in separate
+        # translation units, so their float32 arithmetic can flip a single
+        # contributor exactly at the validity/termination boundaries; reconcile
+        # only those proven boundary flips against the RGB rasterization's own
+        # alpha and fail closed on any other mismatch.
+        difference = torch.abs(contributor_alpha - raster_alpha[..., 0])
+        tolerance = MASS_CONSERVATION_ATOL + MASS_CONSERVATION_RTOL * torch.abs(
+            raster_alpha[..., 0]
+        )
+        if bool((difference > tolerance).any().item()):
+            reconciled = _reconcile_boundary_flips(
+                difference=difference,
+                tolerance=tolerance,
+                raster_alpha=raster_alpha,
+                contributor_alpha=contributor_alpha,
+                contributor_ids=contributor_ids,
+                contributor_weights=contributor_weights,
+                meta=meta,
+            )
+            if reconciled is not None:
+                contributor_alpha, contributor_ids, contributor_weights = reconciled
         if not torch.allclose(
             contributor_alpha,
             raster_alpha[..., 0],
@@ -316,6 +378,293 @@ def _locked_inputs(
         ),
         "sh_degree": sh_degree,
     }
+
+
+@dataclass(frozen=True)
+class _EvaluatedGaussian:
+    """One tile Gaussian's alpha evaluation shared by every replay variant."""
+
+    tensor_id: int
+    alpha32: float
+    invalid32: bool
+
+
+def reconcile_boundary_contributors(
+    *,
+    ordered_gaussians: Sequence[TileGaussian],
+    pixel_x: int,
+    pixel_y: int,
+    raster_alpha: float,
+    kernel_ids: Sequence[int],
+    kernel_weights: Sequence[float],
+) -> tuple[tuple[int, ...], tuple[float, ...], float] | None:
+    """Realign one pixel's contributor stream with the RGB rasterization.
+
+    gsplat's RGB and contributor CUDA kernels share the per-Gaussian alpha
+    source but are separate translation units, so their compiled float32
+    arithmetic can disagree by a few ulps. That disagreement can flip a
+    contributor decision only at the validity cut (alpha 1/255), the
+    termination cut (transmittance 1e-4), or sigma zero; everywhere else the
+    kernels agree far inside mass-conservation tolerance. The RGB
+    rasterization is the same-rasterization authority: enumerate the
+    ambiguous contributor decisions, keep the unique variant whose
+    recomputed alpha matches the raster alpha, and rebuild the pixel's
+    contributor IDs and weights from the matched chain. Return None whenever
+    the mismatch cannot be explained by boundary flips alone so callers keep
+    failing closed.
+    """
+
+    threshold32 = _f32(_GAUSSIAN_VALIDITY_CUT)
+    termination32 = _f32(_TRANSMITTANCE_CUT)
+    center_x = pixel_x + 0.5
+    center_y = pixel_y + 0.5
+
+    kernel_id_list = [int(value) for value in kernel_ids]
+    if (
+        len(kernel_id_list) != len(kernel_weights)
+        or len(set(kernel_id_list)) != len(kernel_id_list)
+        or any(value < 0 for value in kernel_id_list)
+    ):
+        return None
+
+    evaluations: list[_EvaluatedGaussian] = []
+    ambiguous: dict[int, str] = {}
+    transmittance64 = 1.0
+    terminated = False
+    for position, gaussian in enumerate(ordered_gaussians):
+        dx = gaussian.mean_x - center_x
+        dy = gaussian.mean_y - center_y
+        sigma = (
+            0.5 * (gaussian.conic_a * dx * dx + gaussian.conic_c * dy * dy)
+            + gaussian.conic_b * dx * dy
+        )
+        alpha64 = min(_GAUSSIAN_MAX_ALPHA, gaussian.opacity * math.exp(-sigma))
+        alpha32 = _f32(
+            min(_GAUSSIAN_MAX_ALPHA, gaussian.opacity * _f32(math.exp(-sigma)))
+        )
+        if (
+            abs(alpha64 - _GAUSSIAN_VALIDITY_CUT) <= _VALIDITY_BOUNDARY_WINDOW
+            or abs(sigma) <= _SIGMA_BOUNDARY_WINDOW
+        ):
+            ambiguous[position] = "validity"
+        evaluations.append(
+            _EvaluatedGaussian(
+                tensor_id=gaussian.tensor_id,
+                alpha32=alpha32,
+                invalid32=sigma < 0.0 or alpha32 < threshold32,
+            )
+        )
+        if terminated or sigma < 0.0 or alpha64 < _GAUSSIAN_VALIDITY_CUT:
+            continue
+        next_transmittance = transmittance64 * (1.0 - alpha64)
+        if abs(next_transmittance - _TRANSMITTANCE_CUT) <= _TERMINATION_BOUNDARY_WINDOW:
+            if position in ambiguous:
+                return None
+            ambiguous[position] = "termination"
+        if next_transmittance <= _TRANSMITTANCE_CUT:
+            terminated = True
+            continue
+        transmittance64 = next_transmittance
+
+    if len(ambiguous) > _MAX_BOUNDARY_CANDIDATES:
+        return None
+
+    flags = sorted(ambiguous)
+    matched: dict[tuple[int, ...], tuple[tuple[float, ...], float]] = {}
+    for mask in range(1 << len(flags)):
+        forced = {
+            position: bool(mask & (1 << bit)) for bit, position in enumerate(flags)
+        }
+        replay = _replay_boundary_chain(
+            evaluations, ambiguous, forced, termination32
+        )
+        if replay is None:
+            continue
+        ids, weights, alpha = replay
+        if abs(alpha - raster_alpha) <= _BOUNDARY_MATCH_ATOL:
+            matched.setdefault(ids, (weights, alpha))
+    if len(matched) != 1:
+        return None
+    ids, (weights, alpha) = next(iter(matched.items()))
+
+    evaluated_ids = {evaluation.tensor_id for evaluation in evaluations}
+    if any(tensor_id not in evaluated_ids for tensor_id in kernel_id_list):
+        return None
+    ambiguous_ids = {evaluations[position].tensor_id for position in flags}
+    variant_common = [
+        tensor_id for tensor_id in ids if tensor_id not in ambiguous_ids
+    ]
+    kernel_common = [
+        tensor_id for tensor_id in kernel_id_list if tensor_id not in ambiguous_ids
+    ]
+    if variant_common != kernel_common:
+        return None
+    return ids, weights, alpha
+
+
+def _replay_boundary_chain(
+    evaluations: Sequence[_EvaluatedGaussian],
+    ambiguous: Mapping[int, str],
+    forced: Mapping[int, bool],
+    termination32: float,
+) -> tuple[tuple[int, ...], tuple[float, ...], float] | None:
+    """Replay one boundary-decision variant with exact float32 rounding."""
+
+    transmittance = 1.0
+    ids: list[int] = []
+    weights: list[float] = []
+    for position, evaluation in enumerate(evaluations):
+        kind = ambiguous.get(position)
+        if kind == "termination":
+            if not forced[position]:
+                break
+        elif kind == "validity":
+            if not forced[position]:
+                continue
+        elif evaluation.invalid32:
+            continue
+        next_transmittance = _f32(
+            transmittance * _f32(1.0 - evaluation.alpha32)
+        )
+        if next_transmittance <= termination32:
+            if kind != "termination" and abs(
+                next_transmittance - _TRANSMITTANCE_CUT
+            ) <= _TERMINATION_BOUNDARY_WINDOW:
+                return None
+            if kind == "termination":
+                ids.append(evaluation.tensor_id)
+                weights.append(_f32(evaluation.alpha32 * transmittance))
+                transmittance = next_transmittance
+                continue
+            break
+        ids.append(evaluation.tensor_id)
+        weights.append(_f32(evaluation.alpha32 * transmittance))
+        transmittance = next_transmittance
+    return tuple(ids), tuple(weights), _f32(1.0 - transmittance)
+
+
+def _reconcile_boundary_flips(
+    *,
+    difference: Any,
+    tolerance: Any,
+    raster_alpha: Any,
+    contributor_alpha: Any,
+    contributor_ids: Any,
+    contributor_weights: Any,
+    meta: Mapping[str, Any],
+) -> tuple[Any, Any, Any] | None:
+    """Realign failing pixels' contributor streams with the RGB rasterization.
+
+    Returns updated ``(contributor_alpha, contributor_ids,
+    contributor_weights)`` when every failing pixel is explained by gsplat's
+    float32 boundary non-determinism; returns None when any pixel remains
+    unexplained so the caller fails closed with the original error.
+    """
+
+    import torch
+
+    failing = (difference > tolerance).nonzero().tolist()
+    if not failing or len(failing) > _MAX_RECONCILED_PIXELS:
+        return None
+    means2d = meta["means2d"]
+    conics = meta["conics"]
+    opacities = meta["opacities"]
+    isect_offsets = meta["isect_offsets"]
+    flatten_ids = meta["flatten_ids"]
+    tile_size = int(meta["tile_size"])
+    tile_width = int(meta["tile_width"])
+    tile_count = tile_width * int(meta["tile_height"])
+    n_isects = int(flatten_ids.shape[0])
+    image_count = int(means2d.shape[0])
+    gaussian_count = int(means2d.shape[-2])
+
+    new_alpha = contributor_alpha.detach().cpu().clone()
+    new_ids = contributor_ids.detach().cpu().clone()
+    new_weights = contributor_weights.detach().cpu().clone()
+    raster_cpu = raster_alpha.detach().cpu()
+    repairs: list[
+        tuple[int, int, int, tuple[int, ...], tuple[float, ...], float]
+    ] = []
+    for image_id, y, x in failing:
+        offsets = isect_offsets[image_id].reshape(-1)
+        tile_id = (y // tile_size) * tile_width + (x // tile_size)
+        range_start = int(offsets[tile_id].item())
+        last_tile = image_id == image_count - 1 and tile_id == tile_count - 1
+        range_end = n_isects if last_tile else int(offsets[tile_id + 1].item())
+        rows = torch.remainder(
+            flatten_ids[range_start:range_end], gaussian_count
+        ).to(torch.long)
+        tile_means = means2d[image_id].index_select(0, rows).cpu().tolist()
+        tile_conics = conics[image_id].index_select(0, rows).cpu().tolist()
+        tile_opacities = opacities[image_id].index_select(0, rows).cpu().tolist()
+        ordered = [
+            TileGaussian(
+                tensor_id=int(row),
+                mean_x=float(mean[0]),
+                mean_y=float(mean[1]),
+                conic_a=float(conic[0]),
+                conic_b=float(conic[1]),
+                conic_c=float(conic[2]),
+                opacity=float(opacity),
+            )
+            for row, mean, conic, opacity in zip(
+                rows.cpu().tolist(),
+                tile_means,
+                tile_conics,
+                tile_opacities,
+                strict=True,
+            )
+        ]
+        ids_row = new_ids[image_id, y, x].tolist()
+        kernel_ids = [int(value) for value in ids_row if value >= 0]
+        weights_row = new_weights[image_id, y, x].tolist()
+        kernel_weights = [
+            float(weights_row[index])
+            for index, value in enumerate(ids_row)
+            if value >= 0
+        ]
+        result = reconcile_boundary_contributors(
+            ordered_gaussians=ordered,
+            pixel_x=x,
+            pixel_y=y,
+            raster_alpha=float(raster_cpu[image_id, y, x, 0]),
+            kernel_ids=kernel_ids,
+            kernel_weights=kernel_weights,
+        )
+        if result is None:
+            return None
+        ids, weights, alpha = result
+        repairs.append((image_id, y, x, ids, weights, alpha))
+
+    capacity = new_ids.shape[-1]
+    required = max(len(ids) for _, _, _, ids, _, _ in repairs)
+    if required > capacity:
+        grown_ids = torch.full(
+            (*new_ids.shape[:-1], required), -1, dtype=new_ids.dtype
+        )
+        grown_weights = torch.zeros(
+            (*new_weights.shape[:-1], required), dtype=new_weights.dtype
+        )
+        grown_ids[..., :capacity] = new_ids
+        grown_weights[..., :capacity] = new_weights
+        new_ids = grown_ids
+        new_weights = grown_weights
+        capacity = required
+    for image_id, y, x, ids, weights, alpha in repairs:
+        new_ids[image_id, y, x] = torch.tensor(
+            [*ids, *([-1] * (capacity - len(ids)))], dtype=new_ids.dtype
+        )
+        new_weights[image_id, y, x] = torch.tensor(
+            [*weights, *([0.0] * (capacity - len(weights)))],
+            dtype=new_weights.dtype,
+        )
+        new_alpha[image_id, y, x] = alpha
+    device = contributor_alpha.device
+    return (
+        new_alpha.to(device),
+        new_ids.to(device),
+        new_weights.to(device),
+    )
 
 
 @dataclass

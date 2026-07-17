@@ -56,6 +56,17 @@ evidence; a larger error, missing/invalid PNG, or dimension mismatch is severe
 and aborts Evidence lifting. These thresholds are part of the first locked
 renderer policy and must change with its render-configuration revision.
 
+The locked gsplat build evaluates the shared per-Gaussian alpha in separate
+CUDA translation units, so the RGB and contributor kernels can disagree by a
+few float32 ulps exactly at the `1/255` validity cut, the `1e-4` transmittance
+termination cut, or sigma zero. When a pixel fails the mass check only because
+of such a boundary flip, the renderer replays that pixel's tile from the same
+projection/tile preparation, keeps the unique decision variant that reproduces
+the RGB rasterization's own alpha, and rebuilds that pixel's contributor IDs
+and weights from the matched chain. Any mismatch no boundary variant explains
+still aborts the preview; the tolerance, fixture, runtime lock, and Evidence
+Policy contract are unchanged. See ADR 0010 under `docs/adr/`.
+
 ## Install a model separately
 
 The operator supplies an already acquired checkpoint and a Model Manifest. The

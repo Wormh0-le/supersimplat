@@ -33,6 +33,7 @@ from selection_service_companion.masking import (
     SAM31_RUNTIME_CONFIG_DIGEST,
     Sam3PointMaskAdapter,
     _build_sam3_predictor,
+    plan_mask_tracks,
     register_frame_set,
 )
 from selection_service_companion.state import CompanionState
@@ -663,6 +664,433 @@ class MaskSessionContractTests(unittest.TestCase):
             f"/object-selection-sessions/{session_id}/previews", "POST", preview
         )
         self.assertEqual(repeated, result)
+
+    @staticmethod
+    def anchor_prompt(
+        prompt_id: str, x_px: int, y_px: int, polarity: str = "include"
+    ) -> dict[str, object]:
+        return {
+            "promptId": prompt_id,
+            "viewId": "anchor-view",
+            "frameDigest": "sha256:anchor-frame-v1",
+            "frameWidth": 64,
+            "frameHeight": 48,
+            "xPx": x_px,
+            "yPx": y_px,
+            "polarity": polarity,
+        }
+
+    def open_anchor_session(self) -> str:
+        self.request_json(
+            "/frame-sets/anchor-v1",
+            "PUT",
+            {
+                "frameSetId": "frames-1",
+                "frameSetVersion": "anchor-v1",
+                "orderedViews": [
+                    {
+                        "viewId": "anchor-view",
+                        "frameDigest": "sha256:anchor-frame-v1",
+                        "width": 64,
+                        "height": 48,
+                    }
+                ],
+            },
+        )
+        self.request_json("/scene-snapshots/scene-1/snapshot-v1", "PUT", self.snapshot())
+        with urlopen(
+            Request(
+                f"{self.endpoint}/object-selection-sessions",
+                data=json.dumps(
+                    {
+                        "target": {"targetSplatId": "splat-1"},
+                        "frameSetVersion": "anchor-v1",
+                        "modelManifestDigest": self.model_manifest_digest,
+                    }
+                ).encode(),
+                method="POST",
+                headers={"Origin": EDITOR_ORIGIN, "Content-Type": "application/json"},
+            )
+        ) as response:
+            self.assertEqual(response.status, HTTPStatus.CREATED)
+            return json.load(response)["sessionId"]
+
+    def preview_bindings(
+        self, session_id: str, request_id: str, operation: str, correction_round: int, revision: int
+    ) -> dict[str, object]:
+        return {
+            "requestId": request_id,
+            "sessionId": session_id,
+            "targetSplatId": "splat-1",
+            "sceneId": "scene-1",
+            "sceneVersion": "snapshot-v1",
+            "operation": operation,
+            "correctionRound": correction_round,
+            "deterministicSeed": "seed-1",
+            "promptLogRevision": revision,
+            "frameSetVersion": "anchor-v1",
+            "renderConfigVersion": "supersplat-effective-rgb-v1",
+            "modelManifestDigest": self.model_manifest_digest,
+        }
+
+    @staticmethod
+    def anchor_mask(track_pixels: list[list[int]]) -> dict[str, object]:
+        return {
+            "viewId": "anchor-view",
+            "status": "accepted",
+            "binaryMask": {
+                "encoding": "sparse-points-v1",
+                "width": 64,
+                "height": 48,
+                "foregroundPixels": track_pixels,
+            },
+        }
+
+    def test_replays_chronological_independent_mask_tracks(self) -> None:
+        session_id = self.open_anchor_session()
+        prompt_log = [
+            {"operation": "New", "prompt": self.anchor_prompt("prompt-1", 10, 20)},
+            {"operation": "Add", "prompt": self.anchor_prompt("prompt-2", 0, 0)},
+            {"operation": "Remove", "prompt": self.anchor_prompt("prompt-3", 10, 20)},
+        ]
+        first = self.request_json(
+            f"/object-selection-sessions/{session_id}/previews",
+            "POST",
+            {
+                **self.preview_bindings(session_id, "request-1", "Remove", 0, 3),
+                "target": {"targetSplatId": "splat-1"},
+                "promptLog": prompt_log,
+            },
+        )
+
+        # The later Remove excludes the New region while the Add unions its own.
+        self.assertEqual(first["status"], "complete")
+        self.assertEqual(first["selectedIds"], [9])
+        self.assertEqual(first["uncertainIds"], [7])
+        self.assertEqual(first["rejectedIds"], [3])
+        self.assertEqual(
+            first["maskSet"]["tracks"],
+            [
+                {
+                    "trackId": "primary",
+                    "role": "include",
+                    "frames": [self.anchor_mask([[10, 20]])],
+                },
+                {
+                    "trackId": "add-1",
+                    "role": "include",
+                    "frames": [self.anchor_mask([[0, 0]])],
+                },
+                {
+                    "trackId": "remove-1",
+                    "role": "exclude",
+                    "frames": [self.anchor_mask([[10, 20]])],
+                },
+            ],
+        )
+        self.assertEqual(first["maskSet"]["promptLogRevision"], 3)
+
+        repeated = self.request_json(
+            f"/object-selection-sessions/{session_id}/previews",
+            "POST",
+            {
+                **self.preview_bindings(session_id, "request-1", "Remove", 0, 3),
+                "target": {"targetSplatId": "splat-1"},
+                "promptLog": prompt_log,
+            },
+        )
+        self.assertEqual(repeated, first)
+
+        # A later Add restores the region the earlier Remove excluded.
+        prompt_log.append(
+            {"operation": "Add", "prompt": self.anchor_prompt("prompt-4", 10, 20)}
+        )
+        restored = self.request_json(
+            f"/object-selection-sessions/{session_id}/previews",
+            "POST",
+            {
+                **self.preview_bindings(session_id, "request-2", "Add", 1, 4),
+                "target": {"targetSplatId": "splat-1"},
+                "promptLog": prompt_log,
+            },
+        )
+        self.assertEqual(
+            [track["trackId"] for track in restored["maskSet"]["tracks"]],
+            ["primary", "add-1", "remove-1", "add-2"],
+        )
+        self.assertEqual(restored["selectedIds"], [3, 9])
+        self.assertEqual(restored["uncertainIds"], [7])
+        self.assertEqual(restored["rejectedIds"], [])
+
+    def test_rejects_a_mask_set_that_breaks_the_chronological_track_plan(self) -> None:
+        self.state.register_frame_set(
+            {
+                "frameSetId": "frames-1",
+                "frameSetVersion": "anchor-v1",
+                "orderedViews": [
+                    {
+                        "viewId": "anchor-view",
+                        "frameDigest": "sha256:anchor-frame-v1",
+                        "width": 64,
+                        "height": 48,
+                    }
+                ],
+            }
+        )
+        session_id = self.state.open_object_selection_session(
+            frame_set_version="anchor-v1",
+            model_manifest_digest=self.model_manifest_digest,
+        )
+        assert session_id is not None
+        bindings = self.preview_bindings(session_id, "request-1", "Remove", 0, 3)
+        prompt_log = [
+            {"operation": "New", "prompt": self.anchor_prompt("prompt-1", 10, 20)},
+            {"operation": "Add", "prompt": self.anchor_prompt("prompt-2", 0, 0)},
+            {"operation": "Remove", "prompt": self.anchor_prompt("prompt-3", 10, 20)},
+        ]
+
+        class OutOfOrderTrackAdapter(PointMaskAdapter):
+            def produce_tracks(self, **kwargs):
+                production = super().produce_tracks(**kwargs)
+                production.tracks.reverse()
+                return production
+
+        class TrackDroppingAdapter(PointMaskAdapter):
+            def produce_tracks(self, **kwargs):
+                production = super().produce_tracks(**kwargs)
+                del production.tracks[1:]
+                return production
+
+        for adapter in (OutOfOrderTrackAdapter(), TrackDroppingAdapter()):
+            self.state.mask_adapters["point-mask-v1"] = adapter
+            with self.assertRaises(MaskSessionError) as error:
+                self.state.update_mask_session(bindings=bindings, prompt_log=prompt_log)
+            self.assertEqual(error.exception.code, "incompleteMaskSet")
+
+    def test_sam31_runs_one_video_session_per_independent_mask_track(self) -> None:
+        image_png = b"\x89PNG\r\n\x1a\nanchor-frame"
+        frame_digest = f"sha256:{hashlib.sha256(image_png).hexdigest()}"
+        frame_set = register_frame_set(
+            {
+                "frameSetId": "frames-1",
+                "frameSetVersion": "anchor-v1",
+                "orderedViews": [
+                    {
+                        "viewId": "anchor-view",
+                        "frameDigest": frame_digest,
+                        "width": 2,
+                        "height": 2,
+                        "imagePngBase64": base64.b64encode(image_png).decode("ascii"),
+                    }
+                ],
+            }
+        )
+        calls: list[dict[str, object]] = []
+        builds = 0
+
+        class FakeSam3Predictor:
+            def handle_request(self, request: dict[str, object]) -> dict[str, object]:
+                calls.append(request)
+                if request["type"] == "start_session":
+                    return {"session_id": f"sam-session-{len(calls)}"}
+                if request["type"] == "add_prompt":
+                    mask = [[False, False], [False, False]]
+                    for (x_px, y_px), label in zip(
+                        request["points"], request["point_labels"], strict=True
+                    ):
+                        if label == 1:
+                            mask[y_px][x_px] = True
+                    return {
+                        "outputs": {
+                            "out_binary_masks": [mask],
+                            "out_probs": [0.9],
+                        }
+                    }
+                return {"is_success": True}
+
+        def build_predictor(model: Mapping[str, object]) -> FakeSam3Predictor:
+            nonlocal builds
+            builds += 1
+            return FakeSam3Predictor()
+
+        def prompt(prompt_id: str, x_px: int, y_px: int, polarity: str = "include") -> dict[str, object]:
+            return {
+                "promptId": prompt_id,
+                "viewId": "anchor-view",
+                "frameDigest": frame_digest,
+                "frameWidth": 2,
+                "frameHeight": 2,
+                "xPx": x_px,
+                "yPx": y_px,
+                "polarity": polarity,
+            }
+
+        production = Sam3PointMaskAdapter(build_predictor=build_predictor).produce_tracks(
+            model={
+                "adapterId": "sam3.1",
+                "runtimeConfigDigest": SAM31_RUNTIME_CONFIG_DIGEST,
+                "weightsPath": "/models/sam31.pt",
+            },
+            frame_set=frame_set,
+            prompt_log=[
+                {"operation": "New", "prompt": prompt("prompt-1", 0, 0)},
+                {"operation": "Refine", "prompt": prompt("prompt-2", 1, 1, "exclude")},
+                {"operation": "Add", "prompt": prompt("prompt-3", 1, 0)},
+                {"operation": "Remove", "prompt": prompt("prompt-4", 0, 1)},
+            ],
+            cancelled=lambda: False,
+        )
+
+        self.assertEqual(builds, 1)
+        request_types = [call["type"] for call in calls]
+        self.assertEqual(
+            request_types, ["start_session", "add_prompt", "close_session"] * 3
+        )
+        add_prompts = [call for call in calls if call["type"] == "add_prompt"]
+        self.assertEqual(
+            [call["points"] for call in add_prompts],
+            [[[0, 0], [1, 1]], [[1, 0]], [[0, 1]]],
+        )
+        self.assertEqual(
+            [call["point_labels"] for call in add_prompts], [[1, 0], [1], [1]]
+        )
+
+        self.assertEqual(
+            [
+                (track["trackId"], track["role"])
+                for track in production.tracks
+            ],
+            [
+                ("primary", "include"),
+                ("add-1", "include"),
+                ("remove-1", "exclude"),
+            ],
+        )
+        self.assertEqual(
+            [
+                track["frames"][0]["binaryMask"]["data"]
+                for track in production.tracks
+            ],
+            ["AQ==", "Ag==", "BA=="],
+        )
+        self.assertEqual(
+            set(production.diagnostics["trackingConfidenceByTrack"]),
+            {"primary", "add-1", "remove-1"},
+        )
+        self.assertIn(
+            "anchor-view", production.diagnostics["trackingConfidenceByView"]
+        )
+
+    def test_plan_mask_tracks_derives_chronological_independent_tracks(self) -> None:
+        frame_set = register_frame_set(
+            {
+                "frameSetId": "frames-1",
+                "frameSetVersion": "anchor-v1",
+                "orderedViews": [
+                    {
+                        "viewId": "anchor-view",
+                        "frameDigest": "sha256:anchor-frame-v1",
+                        "width": 64,
+                        "height": 48,
+                    },
+                    {
+                        "viewId": "generated-right",
+                        "frameDigest": "sha256:generated-right-v1",
+                        "width": 64,
+                        "height": 48,
+                    },
+                ],
+            }
+        )
+
+        def entry(operation: str, prompt_id: str, **prompt_overrides: object) -> dict[str, object]:
+            prompt = self.anchor_prompt(prompt_id, 10, 20)
+            prompt.update(prompt_overrides)
+            return {"operation": operation, "prompt": prompt}
+
+        def track_ids(plan) -> list[tuple[str, str]]:
+            return [(spec.track_id, spec.role) for spec in plan.tracks]
+
+        plan = plan_mask_tracks([entry("New", "p1")], frame_set)
+        self.assertEqual(plan.anchor_view_id, "anchor-view")
+        self.assertEqual(track_ids(plan), [("primary", "include")])
+        self.assertEqual(len(plan.tracks[0].prompts), 1)
+
+        # Consecutive same-operation prompts refine one independent region track.
+        plan = plan_mask_tracks(
+            [entry("New", "p1"), entry("Add", "p2"), entry("Add", "p3")], frame_set
+        )
+        self.assertEqual(track_ids(plan), [("primary", "include"), ("add-1", "include")])
+        self.assertEqual(len(plan.tracks[1].prompts), 2)
+
+        plan = plan_mask_tracks(
+            [
+                entry("New", "p1"),
+                entry("Add", "p2"),
+                entry("Remove", "p3"),
+                entry("Add", "p4"),
+            ],
+            frame_set,
+        )
+        self.assertEqual(
+            track_ids(plan),
+            [
+                ("primary", "include"),
+                ("add-1", "include"),
+                ("remove-1", "exclude"),
+                ("add-2", "include"),
+            ],
+        )
+
+        # Refine updates the primary track; composition order follows each
+        # track's latest Prompt Log entry.
+        plan = plan_mask_tracks(
+            [
+                entry("New", "p1"),
+                entry("Remove", "p2"),
+                entry("Refine", "p3"),
+                entry("Add", "p4"),
+            ],
+            frame_set,
+        )
+        self.assertEqual(
+            track_ids(plan),
+            [("remove-1", "exclude"), ("primary", "include"), ("add-1", "include")],
+        )
+        self.assertEqual(len(plan.tracks[1].prompts), 2)
+
+        with self.assertRaises(MaskSessionError) as empty_error:
+            plan_mask_tracks([], frame_set)
+        self.assertEqual(empty_error.exception.code, "invalidPromptLog")
+
+        with self.assertRaises(MaskSessionError) as missing_new_error:
+            plan_mask_tracks([entry("Add", "p1")], frame_set)
+        self.assertEqual(missing_new_error.exception.code, "invalidPromptLog")
+
+        with self.assertRaises(MaskSessionError) as second_new_error:
+            plan_mask_tracks([entry("New", "p1"), entry("New", "p2")], frame_set)
+        self.assertEqual(second_new_error.exception.code, "invalidPromptLog")
+
+        with self.assertRaises(MaskSessionError) as unknown_operation_error:
+            plan_mask_tracks(
+                [entry("New", "p1"), entry("Duplicate", "p2")], frame_set
+            )
+        self.assertEqual(unknown_operation_error.exception.code, "unsupportedOperation")
+
+        with self.assertRaises(MaskSessionError) as off_anchor_error:
+            plan_mask_tracks(
+                [
+                    entry("New", "p1"),
+                    entry(
+                        "Add",
+                        "p2",
+                        viewId="generated-right",
+                        frameDigest="sha256:generated-right-v1",
+                    ),
+                ],
+                frame_set,
+            )
+        self.assertEqual(off_anchor_error.exception.code, "unsupportedView")
 
     def generated_preview_context(
         self,

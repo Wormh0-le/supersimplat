@@ -34,6 +34,7 @@ from .masking import (
     RegisteredFrameSet,
     SAM31_RUNTIME_CONFIG_DIGEST,
     Sam3PointMaskAdapter,
+    plan_mask_tracks,
     register_frame_set,
 )
 from .renderer_runtime import (
@@ -1972,6 +1973,16 @@ class CompanionState:
         if primary_frames is None:
             raise MaskSessionError(
                 "incompleteMaskSet", "A New Mask Set requires its primary include Mask Track."
+            )
+        # The adapter must replay exactly the chronological independent Mask
+        # Tracks the authoritative Prompt Log derives, in composition order.
+        expected_plan = plan_mask_tracks(prompt_log, frame_set)
+        if [(track["trackId"], track["role"]) for track in tracks] != [
+            (spec.track_id, spec.role) for spec in expected_plan.tracks
+        ]:
+            raise MaskSessionError(
+                "incompleteMaskSet",
+                "A complete Mask Set replays the chronological independent Mask Tracks derived from the Prompt Log.",
             )
         anchor_view_id = CompanionState._prompt_anchor_view(prompt_log)
         anchor_frame = next(

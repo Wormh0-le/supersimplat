@@ -9,6 +9,17 @@ import {
 type ObjectSelectionMode = 'New' | 'Add' | 'Remove' | 'Refine';
 type ObjectSelectionPromptPolarity = 'include' | 'exclude';
 
+// One session permits at most this many successful Correction Rounds after
+// the initial New result. Prompt staging, local rejection, service failure,
+// and cancelled updates never consume the budget.
+const MAX_CORRECTION_ROUNDS = 5;
+
+interface ObjectSelectionConfirmOptions {
+  // Confirming while Uncertain Gaussians remain requires the user to
+  // acknowledge that only selected Stable Gaussian IDs will commit.
+  acknowledgeUncertain?: boolean;
+}
+
 interface ObjectSelectionTarget {
   targetSplatId: string;
 }
@@ -225,6 +236,8 @@ interface ObjectSelectionSessionState {
   mode: ObjectSelectionMode;
   promptCount: number;
   lockedIdsFiltered: number;
+  correctionRoundsUsed: number;
+  correctionRoundsLimit: number;
 }
 
 type ObjectSelectionSessionListener = (
@@ -242,10 +255,93 @@ interface ObjectSelectionSessionInterface {
   stagePrompt(prompt: ObjectSelectionPrompt): void;
   updatePreview(): Promise<void>;
   cancelUpdate(): Promise<void>;
-  confirm(): Promise<void>;
+  confirm(options?: ObjectSelectionConfirmOptions): Promise<void>;
   cancel(): Promise<void>;
   retryCleanup(): Promise<void>;
 }
+
+interface ExpectedMaskTrack {
+  trackId: string;
+  role: 'include' | 'exclude';
+}
+
+// The chronological independent Mask Track plan a complete Mask Set must
+// replay. New and Refine prompts update the primary include track; each
+// consecutive run of Add or Remove entries forms its own include or exclude
+// track. Composition order follows each track's latest Prompt Log entry, so
+// a later Add can restore a region an earlier Remove excluded and a later
+// Remove can exclude it again. Both runtimes derive and enforce this same
+// plan from the authoritative Prompt Log.
+const deriveMaskTrackPlan = (
+    promptLog: readonly ObjectSelectionPromptLogEntry[]
+): ExpectedMaskTrack[] => {
+  interface PlannedMaskTrack extends ExpectedMaskTrack {
+    lastEntryIndex: number;
+  }
+  const invalidLog = () => new Error(
+      'An Object Selection Prompt Log starts with exactly one New operation.'
+  );
+  const primary: PlannedMaskTrack = {
+      trackId: 'primary',
+      role: 'include',
+      lastEntryIndex: -1
+  };
+  const independent: PlannedMaskTrack[] = [];
+  let addCount = 0;
+  let removeCount = 0;
+  let openRun: PlannedMaskTrack | null = null;
+  let sawNew = false;
+  promptLog.forEach((entry, index) => {
+      switch (entry.operation) {
+          case 'New':
+              if (index !== 0) {
+                  throw invalidLog();
+              }
+              sawNew = true;
+              primary.lastEntryIndex = index;
+              openRun = null;
+              break;
+          case 'Refine':
+              primary.lastEntryIndex = index;
+              openRun = null;
+              break;
+          case 'Add':
+              if (openRun === null || openRun.role !== 'include') {
+                  addCount += 1;
+                  openRun = {
+                      trackId: `add-${addCount}`,
+                      role: 'include',
+                      lastEntryIndex: index
+                  };
+                  independent.push(openRun);
+              }
+              openRun.lastEntryIndex = index;
+              break;
+          case 'Remove':
+              if (openRun === null || openRun.role !== 'exclude') {
+                  removeCount += 1;
+                  openRun = {
+                      trackId: `remove-${removeCount}`,
+                      role: 'exclude',
+                      lastEntryIndex: index
+                  };
+                  independent.push(openRun);
+              }
+              openRun.lastEntryIndex = index;
+              break;
+          default:
+              throw new Error(
+                  'An Object Selection Prompt Log supports New, Add, Remove, and Refine operations only.'
+              );
+      }
+  });
+  if (!sawNew) {
+      throw invalidLog();
+  }
+  return [...independent, primary]
+  .sort((left, right) => left.lastEntryIndex - right.lastEntryIndex)
+  .map(({ trackId, role }) => ({ trackId, role }));
+};
 
 interface ActivePreview {
   requestId: string;
@@ -692,9 +788,14 @@ function assertCompleteMaskSet(
     }
 
     const expectedFrames = request.frameSet.orderedViews;
+    const expectedTracks = deriveMaskTrackPlan(request.promptLog);
+    if (value.tracks.length !== expectedTracks.length) {
+        throw incompleteMaskSet();
+    }
     const trackIds = new Set<string>();
     let primaryFrames: Record<string, unknown>[] | null = null;
-    value.tracks.forEach((track) => {
+    value.tracks.forEach((track, trackIndex) => {
+        const expectedTrack = expectedTracks[trackIndex];
         if (
             !isRecord(track) ||
       typeof track.trackId !== 'string' ||
@@ -702,7 +803,9 @@ function assertCompleteMaskSet(
       (track.role !== 'include' && track.role !== 'exclude') ||
       !Array.isArray(track.frames) ||
       track.frames.length !== expectedFrames.length ||
-      trackIds.has(track.trackId)
+      trackIds.has(track.trackId) ||
+      track.trackId !== expectedTrack.trackId ||
+      track.role !== expectedTrack.role
         ) {
             throw incompleteMaskSet();
         }
@@ -885,7 +988,9 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
                 null,
             mode: this.mode,
             promptCount: this.promptLog.length,
-            lockedIdsFiltered: this.candidateSelection?.lockedIdsFiltered ?? 0
+            lockedIdsFiltered: this.candidateSelection?.lockedIdsFiltered ?? 0,
+            correctionRoundsUsed: this.correctionRoundsUsed(),
+            correctionRoundsLimit: MAX_CORRECTION_ROUNDS
         };
     }
 
@@ -959,6 +1064,11 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
     async updatePreview() {
         const previousStatus = this.requirePreviewStatus();
         this.requireCurrentSnapshot();
+        if (this.correctionRoundsUsed() >= MAX_CORRECTION_ROUNDS) {
+            throw new Error(
+                'Object Selection Session used all five successful Correction Rounds; Confirm Current or Cancel.'
+            );
+        }
 
         const activePreview: ActivePreview = {
             requestId: `request-${++this.requestCount}`,
@@ -1051,10 +1161,18 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
         }
     }
 
-    async confirm() {
+    async confirm(options?: ObjectSelectionConfirmOptions) {
         this.requireStatus('preview');
 
         const candidate = this.requireCandidate();
+        if (
+            candidate.uncertainIds.length > 0 &&
+      options?.acknowledgeUncertain !== true
+        ) {
+            throw new Error(
+                'Object Selection Session confirm requires acknowledging that uncertain Gaussians will not be selected.'
+            );
+        }
         this.requireCurrentSnapshot();
         const selectedIds = this.filterLockedIds(candidate).selectedIds;
         this.setStatus('confirming');
@@ -1187,6 +1305,12 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
             );
         }
         return this.activePreview;
+    }
+
+    // The initial New result is not a Correction Round; only successful
+    // inference-and-preview refreshes after it count against the budget.
+    private correctionRoundsUsed() {
+        return Math.max(0, this.successfulPreviewCount - 1);
     }
 
     private async closeSession() {
@@ -1364,6 +1488,7 @@ export {
     assertEvidenceSnapshot,
     assertPreviewFrameSet,
     copyPreviewBindings,
+    deriveMaskTrackPlan,
     previewBindingsFromRequest,
     previewBindingsMatch,
     requestWithFrameSet,
@@ -1372,6 +1497,8 @@ export {
 
 export type {
     CandidateObjectSelection,
+    ExpectedMaskTrack,
+    ObjectSelectionConfirmOptions,
     ObjectSelectionMode,
     ObjectSelectionFrame,
     ObjectSelectionFrameSet,

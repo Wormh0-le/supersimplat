@@ -11,9 +11,30 @@ interface ObjectSelectionPanelOptions {
   onError?: (error: unknown) => void;
 }
 
+interface ObjectSelectionPanelControls {
+  status: Label;
+  selectedPreview: Label;
+  uncertainPreview: Label;
+  coverage: Label;
+  correctionRounds: Label;
+  acknowledgement: Label;
+  add: Button;
+  remove: Button;
+  refine: Button;
+  update: Button;
+  cancelUpdate: Button;
+  confirm: Button;
+  cancel: Button;
+  retryCleanup: Button;
+}
+
 class ObjectSelectionPanel extends Container {
     private session: ObjectSelectionSessionInterface;
     private options: ObjectSelectionPanelOptions;
+    private controls: ObjectSelectionPanelControls;
+    // Set by the first Confirm click while Uncertain Gaussians remain. Any
+    // session state change requires a fresh acknowledgement.
+    private acknowledgementPending = false;
 
     constructor(
         session: ObjectSelectionSessionInterface,
@@ -45,6 +66,12 @@ class ObjectSelectionPanel extends Container {
         });
         const coverage = new Label({
             id: 'object-selection-panel-coverage'
+        });
+        const correctionRounds = new Label({
+            id: 'object-selection-panel-correction-rounds'
+        });
+        const acknowledgement = new Label({
+            id: 'object-selection-panel-acknowledgement'
         });
         const add = new Button({
             id: 'object-selection-panel-add',
@@ -83,6 +110,8 @@ class ObjectSelectionPanel extends Container {
         this.append(selectedPreview);
         this.append(uncertainPreview);
         this.append(coverage);
+        this.append(correctionRounds);
+        this.append(acknowledgement);
         this.append(add);
         this.append(remove);
         this.append(refine);
@@ -92,35 +121,53 @@ class ObjectSelectionPanel extends Container {
         this.append(cancel);
         this.append(retryCleanup);
 
+        this.controls = {
+            status,
+            selectedPreview,
+            uncertainPreview,
+            coverage,
+            correctionRounds,
+            acknowledgement,
+            add,
+            remove,
+            refine,
+            update,
+            cancelUpdate,
+            confirm,
+            cancel,
+            retryCleanup
+        };
+
         add.on('click', () => this.setMode('Add'));
         remove.on('click', () => this.setMode('Remove'));
         refine.on('click', () => this.setMode('Refine'));
         update.on('click', () => this.run(() => session.updatePreview()));
         cancelUpdate.on('click', () => this.run(() => session.cancelUpdate()));
-        confirm.on('click', () => this.run(() => session.confirm()));
+        confirm.on('click', () => this.confirmSelection());
         cancel.on('click', () => this.run(() => session.cancel()));
         retryCleanup.on('click', () => this.run(() => session.retryCleanup()));
 
         session.subscribe((state) => {
-            this.updateControls(state, {
-                status,
-                selectedPreview,
-                uncertainPreview,
-                coverage,
-                add,
-                remove,
-                refine,
-                update,
-                cancelUpdate,
-                confirm,
-                cancel,
-                retryCleanup
-            });
+            this.acknowledgementPending = false;
+            this.updateControls(state);
         });
     }
 
     stagePrompt(prompt: ObjectSelectionPrompt) {
         this.session.stagePrompt(prompt);
+    }
+
+    private confirmSelection() {
+        const state = this.session.state;
+        const uncertainCount = state.candidate?.uncertainIds.length ?? 0;
+        if (uncertainCount > 0 && !this.acknowledgementPending) {
+            this.acknowledgementPending = true;
+            this.updateControls(state);
+            return;
+        }
+        this.acknowledgementPending = false;
+        this.run(() => this.session.confirm({ acknowledgeUncertain: uncertainCount > 0 })
+        );
     }
 
     private setMode(mode: ObjectSelectionMode) {
@@ -143,24 +190,16 @@ class ObjectSelectionPanel extends Container {
         }
     }
 
-    private updateControls(
-        state: ObjectSelectionSessionState,
-        controls: {
-      status: Label;
-      selectedPreview: Label;
-      uncertainPreview: Label;
-      coverage: Label;
-      add: Button;
-      remove: Button;
-      refine: Button;
-      update: Button;
-      cancelUpdate: Button;
-      confirm: Button;
-      cancel: Button;
-      retryCleanup: Button;
-    }
-    ) {
+    private updateControls(state: ObjectSelectionSessionState) {
+        const controls = this.controls;
         const canEdit = state.status === 'ready' || state.status === 'preview';
+        const budgetExhausted =
+      state.correctionRoundsUsed >= state.correctionRoundsLimit;
+        const uncertainCount = state.candidate?.uncertainIds.length ?? 0;
+        const acknowledging =
+      this.acknowledgementPending &&
+      state.status === 'preview' &&
+      uncertainCount > 0;
 
         controls.status.text =
       state.lockedIdsFiltered > 0 ?
@@ -175,10 +214,18 @@ class ObjectSelectionPanel extends Container {
             state.candidate?.uncertainIds
         );
         controls.coverage.text = this.coverageLabel(state);
+        controls.correctionRounds.text =
+      canEdit && budgetExhausted ?
+          `Correction rounds: ${state.correctionRoundsUsed} / ${state.correctionRoundsLimit} — No more preview updates are available for this session.` :
+          `Correction rounds: ${state.correctionRoundsUsed} / ${state.correctionRoundsLimit}`;
+        controls.acknowledgement.text = acknowledging ?
+            `${uncertainCount} uncertain Gaussians will NOT be selected. The committed selection may be incomplete.` :
+            '';
+        controls.confirm.text = acknowledging ? 'Confirm Selected Only' : 'Confirm';
         controls.add.enabled = canEdit;
         controls.remove.enabled = canEdit;
         controls.refine.enabled = canEdit;
-        controls.update.enabled = canEdit;
+        controls.update.enabled = canEdit && !budgetExhausted;
         controls.cancelUpdate.enabled = state.status === 'previewing';
         controls.confirm.enabled = state.status === 'preview';
         controls.cancel.enabled = canEdit || state.status === 'previewing';

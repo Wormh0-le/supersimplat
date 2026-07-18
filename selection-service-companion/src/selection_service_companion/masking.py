@@ -10,7 +10,7 @@ import json
 import math
 from pathlib import Path
 import tempfile
-from typing import Any, Callable, Mapping, Protocol, Sequence
+from typing import Any, Callable, Literal, Mapping, Protocol, Sequence
 
 
 # The initial SAM 3.1 adapter intentionally pins every material predictor and
@@ -84,6 +84,187 @@ class MaskProduction:
     tracks: list[dict[str, Any]]
     threshold: float
     diagnostics: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class MaskTrackSpec:
+    """One chronological independent Mask Track derived from a Prompt Log."""
+
+    track_id: str
+    role: Literal["include", "exclude"]
+    prompts: tuple[Mapping[str, Any], ...]
+    last_entry_index: int
+
+
+@dataclass(frozen=True)
+class MaskTrackPlan:
+    """The Anchor binding and composition-ordered tracks for one Prompt Log."""
+
+    anchor_view_id: str
+    tracks: tuple[MaskTrackSpec, ...]
+
+
+def _validate_point_prompt(
+    prompt: dict[str, Any], frame_set: RegisteredFrameSet
+) -> RegisteredFrame:
+    if "imagePngBase64" in prompt:
+        raise MaskSessionError(
+            "invalidPromptLog",
+            "Point Prompt Logs must reference Frame Set views without embedding frame image bytes.",
+        )
+    _require_string(prompt, "promptId", "Point prompt")
+    view_id = _require_string(prompt, "viewId", "Point prompt")
+    view = frame_set.view(view_id)
+    if view is None:
+        raise MaskSessionError(
+            "unknownView", "The point prompt references a view outside the registered Frame Set."
+        )
+    if prompt.get("frameDigest") != view.frame_digest:
+        raise MaskSessionError(
+            "staleFrame", "The point prompt Frame Set digest is stale."
+        )
+    if prompt.get("frameWidth") != view.width or prompt.get("frameHeight") != view.height:
+        raise MaskSessionError(
+            "staleFrame", "The point prompt dimensions do not match the registered Frame Set."
+        )
+    x_px = prompt.get("xPx")
+    y_px = prompt.get("yPx")
+    if (
+        isinstance(x_px, bool)
+        or isinstance(y_px, bool)
+        or not isinstance(x_px, int)
+        or not isinstance(y_px, int)
+        or x_px < 0
+        or y_px < 0
+        or x_px >= view.width
+        or y_px >= view.height
+    ):
+        raise MaskSessionError(
+            "invalidPoint",
+            "Point prompts must address an in-bounds pixel center in the registered Frame Set.",
+        )
+    if prompt.get("polarity") not in {"include", "exclude"}:
+        raise MaskSessionError(
+            "invalidPoint", "Point prompt polarity must be include or exclude."
+        )
+    return view
+
+
+def plan_mask_tracks(
+    prompt_log: Sequence[dict[str, Any]],
+    frame_set: RegisteredFrameSet,
+) -> MaskTrackPlan:
+    """Derive the chronological independent Mask Track plan from a Prompt Log.
+
+    New and Refine prompts update the primary include track; each consecutive
+    run of Add or Remove entries forms its own include or exclude track.
+    Tracks compose in the order of their latest Prompt Log entry, so a later
+    Add can restore a region an earlier Remove excluded and a later Remove can
+    exclude it again.  Every prompt binds the Anchor View; Generated Views
+    remain unprompted evidence sources.  Both runtimes derive and enforce this
+    same plan from the authoritative Prompt Log.
+    """
+
+    if not prompt_log:
+        raise MaskSessionError(
+            "invalidPromptLog", "A New Mask Set requires one point prompt."
+        )
+    first = prompt_log[0]
+    if not isinstance(first, dict) or first.get("operation") != "New":
+        raise MaskSessionError(
+            "invalidPromptLog",
+            "An Object Selection Prompt Log starts with exactly one New operation.",
+        )
+
+    anchor_view: RegisteredFrame | None = None
+    primary_prompts: list[Mapping[str, Any]] = []
+    primary_last_entry_index = -1
+    runs: list[dict[str, Any]] = []
+    open_run: dict[str, Any] | None = None
+    add_count = 0
+    remove_count = 0
+    for index, entry in enumerate(prompt_log):
+        if not isinstance(entry, dict):
+            raise MaskSessionError(
+                "invalidPromptLog", "Prompt Log entries must contain point prompts."
+            )
+        operation = entry.get("operation")
+        if operation not in {"New", "Add", "Remove", "Refine"}:
+            raise MaskSessionError(
+                "unsupportedOperation",
+                "The Prompt Log supports New, Add, Remove, and Refine operations only.",
+            )
+        if operation == "New" and index != 0:
+            raise MaskSessionError(
+                "invalidPromptLog",
+                "An Object Selection Prompt Log starts with exactly one New operation.",
+            )
+        prompt = entry.get("prompt")
+        if not isinstance(prompt, dict):
+            raise MaskSessionError(
+                "invalidPromptLog", "Prompt Log entries must contain point prompts."
+            )
+        view = _validate_point_prompt(prompt, frame_set)
+        if operation == "New":
+            anchor_view = view
+        elif anchor_view is not None and view.view_id != anchor_view.view_id:
+            raise MaskSessionError(
+                "unsupportedView",
+                "Object Selection point prompts bind the Anchor View only.",
+            )
+
+        if operation in {"New", "Refine"}:
+            primary_prompts.append(prompt)
+            primary_last_entry_index = index
+            open_run = None
+        elif operation == "Add":
+            if open_run is None or open_run["role"] != "include":
+                add_count += 1
+                open_run = {
+                    "track_id": f"add-{add_count}",
+                    "role": "include",
+                    "prompts": [],
+                    "last_entry_index": index,
+                }
+                runs.append(open_run)
+            open_run["prompts"].append(prompt)
+            open_run["last_entry_index"] = index
+        else:
+            if open_run is None or open_run["role"] != "exclude":
+                remove_count += 1
+                open_run = {
+                    "track_id": f"remove-{remove_count}",
+                    "role": "exclude",
+                    "prompts": [],
+                    "last_entry_index": index,
+                }
+                runs.append(open_run)
+            open_run["prompts"].append(prompt)
+            open_run["last_entry_index"] = index
+
+    if anchor_view is None:
+        raise MaskSessionError(
+            "invalidPromptLog", "A New Mask Set requires an Anchor View prompt."
+        )
+    tracks = [
+        MaskTrackSpec(
+            track_id="primary",
+            role="include",
+            prompts=tuple(primary_prompts),
+            last_entry_index=primary_last_entry_index,
+        ),
+        *(
+            MaskTrackSpec(
+                track_id=run["track_id"],
+                role=run["role"],
+                prompts=tuple(run["prompts"]),
+                last_entry_index=run["last_entry_index"],
+            )
+            for run in runs
+        ),
+    ]
+    tracks.sort(key=lambda spec: spec.last_entry_index)
+    return MaskTrackPlan(anchor_view_id=anchor_view.view_id, tracks=tuple(tracks))
 
 
 class PromptableMaskAdapter(Protocol):
@@ -215,54 +396,34 @@ class PointMaskAdapter:
             raise MaskSessionError(
                 "cancelled", "The promptable-mask update was cancelled."
             )
-        if not prompt_log:
-            raise MaskSessionError(
-                "invalidPromptLog", "A New Mask Set requires one point prompt."
-            )
+        plan = plan_mask_tracks(prompt_log, frame_set)
 
-        points_by_view: dict[str, list[tuple[int, int, str]]] = {
-            view.view_id: [] for view in frame_set.ordered_views
-        }
-        anchor_view_id: str | None = None
-        for entry in prompt_log:
+        tracks: list[dict[str, Any]] = []
+        for spec in plan.tracks:
             if cancelled():
                 raise MaskSessionError(
                     "cancelled", "The promptable-mask update was cancelled."
                 )
-            if not isinstance(entry, dict) or entry.get("operation") != "New":
-                raise MaskSessionError(
-                    "unsupportedOperation",
-                    "This first promptable-mask slice accepts a New point Prompt Log only.",
-                )
-            prompt = entry.get("prompt")
-            if not isinstance(prompt, dict):
-                raise MaskSessionError(
-                    "invalidPromptLog", "Prompt Log entries must contain point prompts."
-                )
-            view = self._validate_point_prompt(prompt, frame_set)
-            if anchor_view_id is None:
-                anchor_view_id = view.view_id
-            points_by_view[view.view_id].append(
+            points = [
                 (prompt["xPx"], prompt["yPx"], prompt["polarity"])
-            )
-
-        if anchor_view_id is None:
-            raise MaskSessionError(
-                "invalidPromptLog", "A New Mask Set requires an Anchor View prompt."
-            )
-
-        tracks = [{
-            "trackId": "primary",
-            "role": "include",
-            "frames": [
-                self._frame_outcome(view, points_by_view[view.view_id])
-                for view in frame_set.ordered_views
-            ],
-        }]
+                for prompt in spec.prompts
+            ]
+            tracks.append({
+                "trackId": spec.track_id,
+                "role": spec.role,
+                "frames": [
+                    self._frame_outcome(
+                        view,
+                        points if view.view_id == plan.anchor_view_id else (),
+                    )
+                    for view in frame_set.ordered_views
+                ],
+            })
+        primary = next(track for track in tracks if track["trackId"] == "primary")
         anchor_outcome = next(
             frame
-            for frame in tracks[0]["frames"]
-            if frame["viewId"] == anchor_view_id
+            for frame in primary["frames"]
+            if frame["viewId"] == plan.anchor_view_id
         )
         if anchor_outcome["status"] != "accepted":
             raise MaskSessionError(
@@ -278,47 +439,7 @@ class PointMaskAdapter:
     def _validate_point_prompt(
         prompt: dict[str, Any], frame_set: RegisteredFrameSet
     ) -> RegisteredFrame:
-        if "imagePngBase64" in prompt:
-            raise MaskSessionError(
-                "invalidPromptLog",
-                "Point Prompt Logs must reference Frame Set views without embedding frame image bytes.",
-            )
-        _require_string(prompt, "promptId", "Point prompt")
-        view_id = _require_string(prompt, "viewId", "Point prompt")
-        view = frame_set.view(view_id)
-        if view is None:
-            raise MaskSessionError(
-                "unknownView", "The point prompt references a view outside the registered Frame Set."
-            )
-        if prompt.get("frameDigest") != view.frame_digest:
-            raise MaskSessionError(
-                "staleFrame", "The point prompt Frame Set digest is stale."
-            )
-        if prompt.get("frameWidth") != view.width or prompt.get("frameHeight") != view.height:
-            raise MaskSessionError(
-                "staleFrame", "The point prompt dimensions do not match the registered Frame Set."
-            )
-        x_px = prompt.get("xPx")
-        y_px = prompt.get("yPx")
-        if (
-            isinstance(x_px, bool)
-            or isinstance(y_px, bool)
-            or not isinstance(x_px, int)
-            or not isinstance(y_px, int)
-            or x_px < 0
-            or y_px < 0
-            or x_px >= view.width
-            or y_px >= view.height
-        ):
-            raise MaskSessionError(
-                "invalidPoint",
-                "Point prompts must address an in-bounds pixel center in the registered Frame Set.",
-            )
-        if prompt.get("polarity") not in {"include", "exclude"}:
-            raise MaskSessionError(
-                "invalidPoint", "Point prompt polarity must be include or exclude."
-            )
-        return view
+        return _validate_point_prompt(prompt, frame_set)
 
     @staticmethod
     def _frame_outcome(
@@ -395,40 +516,8 @@ class Sam3PointMaskAdapter:
             raise MaskSessionError(
                 "cancelled", "The promptable-mask update was cancelled."
             )
-        if not prompt_log:
-            raise MaskSessionError(
-                "invalidPromptLog", "A New Mask Set requires one point prompt."
-            )
-
-        anchor_view: RegisteredFrame | None = None
-        points: list[list[int]] = []
-        point_labels: list[int] = []
-        for entry in prompt_log:
-            if cancelled():
-                raise MaskSessionError(
-                    "cancelled", "The promptable-mask update was cancelled."
-                )
-            if not isinstance(entry, dict) or entry.get("operation") != "New":
-                raise MaskSessionError(
-                    "unsupportedOperation",
-                    "This first SAM 3.1 slice accepts a New point Prompt Log only.",
-                )
-            prompt = entry.get("prompt")
-            if not isinstance(prompt, dict):
-                raise MaskSessionError(
-                    "invalidPromptLog", "Prompt Log entries must contain point prompts."
-                )
-            view = PointMaskAdapter._validate_point_prompt(prompt, frame_set)
-            if anchor_view is None:
-                anchor_view = view
-            elif view.view_id != anchor_view.view_id:
-                raise MaskSessionError(
-                    "unsupportedView",
-                    "This first SAM 3.1 slice accepts point prompts on the Anchor View only.",
-                )
-            points.append([prompt["xPx"], prompt["yPx"]])
-            point_labels.append(1 if prompt["polarity"] == "include" else 0)
-
+        plan = plan_mask_tracks(prompt_log, frame_set)
+        anchor_view = frame_set.view(plan.anchor_view_id)
         if anchor_view is None:
             raise MaskSessionError(
                 "invalidPromptLog", "A New Mask Set requires an Anchor View prompt."
@@ -439,42 +528,69 @@ class Sam3PointMaskAdapter:
                 "The SAM 3.1 adapter requires PNG bytes for every Frame Set view.",
             )
 
-        outcomes, candidate_diagnostics_by_view = self._infer_frame_set(
-            model=model,
-            frame_set=frame_set,
-            anchor_view=anchor_view,
-            points=points,
-            point_labels=point_labels,
-            cancelled=cancelled,
-        )
-        anchor_outcome = outcomes[anchor_view.view_id]
-        if anchor_outcome["status"] != "accepted":
-            raise MaskSessionError(
-                "anchorMaskUnavailable",
-                "The Anchor View did not produce an accepted SAM 3.1 mask; adjust the point prompts and retry.",
+        # Each independent Mask Track runs its own video session on the shared
+        # predictor so Add and Remove regions never contaminate the primary
+        # track's continuation state.
+        predictor = self._build_predictor(model)
+        tracks: list[dict[str, Any]] = []
+        tracking_confidence_by_track: dict[str, dict[str, Any]] = {}
+        primary_candidate_diagnostics: dict[str, dict[str, Any]] | None = None
+        for spec in plan.tracks:
+            if cancelled():
+                raise MaskSessionError(
+                    "cancelled", "The promptable-mask update was cancelled."
+                )
+            points = [[prompt["xPx"], prompt["yPx"]] for prompt in spec.prompts]
+            point_labels = [
+                1 if prompt["polarity"] == "include" else 0
+                for prompt in spec.prompts
+            ]
+            outcomes, candidate_diagnostics_by_view = self._infer_frame_set(
+                predictor=predictor,
+                frame_set=frame_set,
+                anchor_view=anchor_view,
+                points=points,
+                point_labels=point_labels,
+                cancelled=cancelled,
             )
-        tracking_confidence_by_view = {
-            view.view_id: self._tracking_confidence_from_candidate_diagnostics(
-                candidate_diagnostics_by_view.get(view.view_id)
-            )
-            for view in frame_set.ordered_views
+            if spec.track_id == "primary":
+                anchor_outcome = outcomes[anchor_view.view_id]
+                if anchor_outcome["status"] != "accepted":
+                    raise MaskSessionError(
+                        "anchorMaskUnavailable",
+                        "The Anchor View did not produce an accepted SAM 3.1 mask; adjust the point prompts and retry.",
+                    )
+                primary_candidate_diagnostics = candidate_diagnostics_by_view
+            tracks.append({
+                "trackId": spec.track_id,
+                "role": spec.role,
+                "frames": [
+                    outcomes[view.view_id] for view in frame_set.ordered_views
+                ],
+            })
+            tracking_confidence_by_track[spec.track_id] = {
+                view.view_id: self._tracking_confidence_from_candidate_diagnostics(
+                    candidate_diagnostics_by_view.get(view.view_id)
+                )
+                for view in frame_set.ordered_views
+            }
+
+        assert primary_candidate_diagnostics is not None
+        diagnostics: dict[str, Any] = {
+            "adapterId": "sam3.1",
+            "candidateSelection": primary_candidate_diagnostics[anchor_view.view_id],
+            "trackingConfidenceSemantics": (
+                "sigmoid-normalized selected sam3.1.out_probs candidate quality "
+                "score; unavailable when no candidate is selected."
+            ),
+            "trackingConfidenceByView": tracking_confidence_by_track["primary"],
         }
+        if len(plan.tracks) > 1:
+            diagnostics["trackingConfidenceByTrack"] = tracking_confidence_by_track
         return MaskProduction(
-            tracks=[{
-                "trackId": "primary",
-                "role": "include",
-                "frames": [outcomes[view.view_id] for view in frame_set.ordered_views],
-            }],
+            tracks=tracks,
             threshold=float(SAM31_RUNTIME_CONFIG["default_output_prob_thresh"]),
-            diagnostics={
-                "adapterId": "sam3.1",
-                "candidateSelection": candidate_diagnostics_by_view[anchor_view.view_id],
-                "trackingConfidenceSemantics": (
-                    "sigmoid-normalized selected sam3.1.out_probs candidate quality "
-                    "score; unavailable when no candidate is selected."
-                ),
-                "trackingConfidenceByView": tracking_confidence_by_view,
-            },
+            diagnostics=diagnostics,
         )
 
     def discard_attempt(self) -> None:
@@ -490,14 +606,13 @@ class Sam3PointMaskAdapter:
     def _infer_frame_set(
         self,
         *,
-        model: Mapping[str, Any],
+        predictor: Any,
         frame_set: RegisteredFrameSet,
         anchor_view: RegisteredFrame,
         points: list[list[int]],
         point_labels: list[int],
         cancelled: Callable[[], bool],
     ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
-        predictor = self._build_predictor(model)
         with tempfile.TemporaryDirectory(prefix="supersplat-sam3-") as directory:
             frame_directory = Path(directory)
             for index, view in enumerate(frame_set.ordered_views):

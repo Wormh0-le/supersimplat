@@ -5,6 +5,7 @@ const {
   ObjectSelectionSession,
   anchorFrameSetVersion,
   assertCompleteMaskSet,
+  deriveMaskTrackPlan,
 } = require("../.test-dist/src/object-selection-session.js");
 
 const createSnapshot = (stableIds = [1, 2, 3, 7, 9, 11]) => ({
@@ -111,22 +112,20 @@ const maskSetForRequest = (request) => ({
   frameSetVersion: request.frameSetVersion,
   modelManifestDigest: request.modelManifestDigest,
   threshold: 0,
-  tracks: [
-    {
-      trackId: "primary",
-      role: "include",
-      frames: request.frameSet.orderedViews.map((view) => ({
-        viewId: view.viewId,
-        status: "accepted",
-        binaryMask: {
-          encoding: "sparse-points-v1",
-          width: view.width,
-          height: view.height,
-          foregroundPixels: [[0, 0]],
-        },
-      })),
-    },
-  ],
+  tracks: deriveMaskTrackPlan(request.promptLog).map((track) => ({
+    trackId: track.trackId,
+    role: track.role,
+    frames: request.frameSet.orderedViews.map((view) => ({
+      viewId: view.viewId,
+      status: "accepted",
+      binaryMask: {
+        encoding: "sparse-points-v1",
+        width: view.width,
+        height: view.height,
+        foregroundPixels: [[0, 0]],
+      },
+    })),
+  })),
 });
 
 const evidenceSnapshotForRequest = (request, result = candidate) => {
@@ -417,7 +416,7 @@ test("keeps a New preview transient until Confirm", async () => {
   assert.deepEqual(editor.selection, [1, 2]);
   assert.deepEqual(editor.history, []);
 
-  await session.confirm();
+  await session.confirm({ acknowledgeUncertain: true });
 
   assert.deepEqual(editor.selection, [3, 7]);
   assert.deepEqual(editor.history, [[3, 7]]);
@@ -526,7 +525,7 @@ test("starts a fresh New session after cleanup", async () => {
 
   await session.startNew(newSessionInput());
   await session.updatePreview();
-  await session.confirm();
+  await session.confirm({ acknowledgeUncertain: true });
   await session.startNew(newSessionInput());
 
   assert.equal(session.state.status, "ready");
@@ -694,7 +693,10 @@ test("retains a failed cleanup for retry without committing twice", async () => 
 
   await session.startNew(newSessionInput());
   await session.updatePreview();
-  await assert.rejects(session.confirm(), /service cleanup failed/);
+  await assert.rejects(
+    session.confirm({ acknowledgeUncertain: true }),
+    /service cleanup failed/
+  );
 
   assert.equal(session.state.status, "closeFailed");
   assert.deepEqual(editor.history, [[3, 7]]);
@@ -746,7 +748,7 @@ test("accepts only a current, bound Companion result, filters locked IDs, and co
   });
   assert.deepEqual(editor.history, []);
 
-  await session.confirm();
+  await session.confirm({ acknowledgeUncertain: true });
 
   assert.deepEqual(editor.history, [[3]]);
 });
@@ -937,4 +939,340 @@ test("rejects a whitespace-only neutral Mask Set reason", async () => {
     () => assertCompleteMaskSet(maskSet, request),
     /complete, version-bound Mask Set/
   );
+});
+
+test("derives chronological independent Mask Tracks from a Prompt Log", () => {
+  const prompt = (promptId) => ({
+    ...newSessionInput().prompt,
+    promptId,
+  });
+
+  assert.deepEqual(
+    deriveMaskTrackPlan([{ operation: "New", prompt: prompt("p1") }]),
+    [{ trackId: "primary", role: "include" }]
+  );
+
+  // Consecutive same-operation prompts refine one independent region track.
+  assert.deepEqual(
+    deriveMaskTrackPlan([
+      { operation: "New", prompt: prompt("p1") },
+      { operation: "Add", prompt: prompt("p2") },
+      { operation: "Add", prompt: prompt("p3") },
+    ]),
+    [
+      { trackId: "primary", role: "include" },
+      { trackId: "add-1", role: "include" },
+    ]
+  );
+
+  assert.deepEqual(
+    deriveMaskTrackPlan([
+      { operation: "New", prompt: prompt("p1") },
+      { operation: "Add", prompt: prompt("p2") },
+      { operation: "Remove", prompt: prompt("p3") },
+      { operation: "Add", prompt: prompt("p4") },
+    ]),
+    [
+      { trackId: "primary", role: "include" },
+      { trackId: "add-1", role: "include" },
+      { trackId: "remove-1", role: "exclude" },
+      { trackId: "add-2", role: "include" },
+    ]
+  );
+
+  // Refine updates the primary track; composition order follows each track's
+  // latest Prompt Log entry so later operations win overlapping regions.
+  assert.deepEqual(
+    deriveMaskTrackPlan([
+      { operation: "New", prompt: prompt("p1") },
+      { operation: "Remove", prompt: prompt("p2") },
+      { operation: "Refine", prompt: prompt("p3") },
+      { operation: "Add", prompt: prompt("p4") },
+    ]),
+    [
+      { trackId: "remove-1", role: "exclude" },
+      { trackId: "primary", role: "include" },
+      { trackId: "add-1", role: "include" },
+    ]
+  );
+
+  assert.throws(
+    () => deriveMaskTrackPlan([{ operation: "Add", prompt: prompt("p1") }]),
+    /exactly one New operation/
+  );
+  assert.throws(
+    () =>
+      deriveMaskTrackPlan([
+        { operation: "New", prompt: prompt("p1") },
+        { operation: "New", prompt: prompt("p2") },
+      ]),
+    /exactly one New operation/
+  );
+  assert.throws(
+    () =>
+      deriveMaskTrackPlan([
+        { operation: "New", prompt: prompt("p1") },
+        { operation: "Duplicate", prompt: prompt("p2") },
+      ]),
+    /New, Add, Remove, and Refine/
+  );
+});
+
+test("allows at most five successful Correction Rounds after New", async () => {
+  const adapter = new DeterministicSelectionServiceAdapter();
+  const editor = new RecordingSelectionEditor();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor,
+  });
+
+  await session.startNew(newSessionInput());
+  assert.equal(session.state.correctionRoundsUsed, 0);
+  assert.equal(session.state.correctionRoundsLimit, 5);
+
+  for (let round = 0; round <= 5; round += 1) {
+    assert.equal(session.state.correctionRoundsUsed, Math.max(0, round - 1));
+    await session.updatePreview();
+    assert.equal(adapter.previewRequests.at(-1).correctionRound, round);
+  }
+  assert.equal(session.state.correctionRoundsUsed, 5);
+  assert.equal(session.state.correctionRoundsLimit, 5);
+
+  await assert.rejects(
+    session.updatePreview(),
+    /five successful Correction Rounds/
+  );
+  assert.equal(session.state.status, "preview");
+  assert.deepEqual(session.state.candidate, candidate);
+  assert.equal(adapter.previewRequests.length, 6);
+
+  // Inspection, Cancel, and Confirm Current stay available after exhaustion.
+  await session.confirm({ acknowledgeUncertain: true });
+  assert.deepEqual(editor.history, [[3, 7]]);
+});
+
+test("staging, failures, and cancellation do not consume the Correction Round budget", async () => {
+  class FlakySelectionServiceAdapter extends DeterministicSelectionServiceAdapter {
+    constructor() {
+      super();
+      this.failNext = false;
+      this.deferNext = false;
+      this.resolvePreview = null;
+    }
+
+    async updatePreview(request) {
+      this.previewRequests.push(request);
+      if (this.failNext) {
+        this.failNext = false;
+        throw new Error("Selection Service unavailable.");
+      }
+      if (this.deferNext) {
+        this.deferNext = false;
+        return new Promise((resolve) => {
+          this.resolvePreview = resolve;
+        });
+      }
+      return previewResponse(request);
+    }
+  }
+
+  const adapter = new FlakySelectionServiceAdapter();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor: new RecordingSelectionEditor(),
+  });
+
+  await session.startNew(newSessionInput());
+  await session.updatePreview();
+  assert.equal(session.state.correctionRoundsUsed, 0);
+
+  adapter.failNext = true;
+  await assert.rejects(
+    session.updatePreview(),
+    /Selection Service unavailable/
+  );
+  assert.equal(session.state.correctionRoundsUsed, 0);
+
+  adapter.deferNext = true;
+  const cancelledUpdate = session.updatePreview();
+  await session.cancelUpdate();
+  adapter.resolvePreview(previewResponse(adapter.previewRequests.at(-1)));
+  await cancelledUpdate;
+  assert.equal(session.state.correctionRoundsUsed, 0);
+
+  session.setMode("Add");
+  session.stagePrompt(additionalPrompt);
+  assert.equal(session.state.correctionRoundsUsed, 0);
+
+  for (let round = 1; round <= 5; round += 1) {
+    await session.updatePreview();
+    assert.equal(adapter.previewRequests.at(-1).correctionRound, round);
+  }
+  assert.equal(session.state.correctionRoundsUsed, 5);
+  await assert.rejects(
+    session.updatePreview(),
+    /five successful Correction Rounds/
+  );
+});
+
+test("retains the preceding Candidate Object Selection and round count after a service error", async () => {
+  class FailingOnceSelectionServiceAdapter extends DeterministicSelectionServiceAdapter {
+    async updatePreview(request) {
+      this.previewRequests.push(request);
+      if (this.previewRequests.length === 2) {
+        throw new Error("Selection Service unavailable.");
+      }
+      return previewResponse(request);
+    }
+  }
+
+  const adapter = new FailingOnceSelectionServiceAdapter();
+  const editor = new RecordingSelectionEditor();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor,
+  });
+
+  await session.startNew(newSessionInput());
+  await session.updatePreview();
+  assert.deepEqual(session.state.candidate, candidate);
+
+  await assert.rejects(
+    session.updatePreview(),
+    /Selection Service unavailable/
+  );
+  assert.equal(session.state.status, "preview");
+  assert.deepEqual(session.state.candidate, candidate);
+  assert.equal(session.state.correctionRoundsUsed, 0);
+  assert.deepEqual(editor.history, []);
+
+  await session.updatePreview();
+  assert.equal(adapter.previewRequests.at(-1).correctionRound, 1);
+  assert.equal(session.state.correctionRoundsUsed, 1);
+  assert.deepEqual(editor.history, []);
+});
+
+test("Confirm with Uncertain IDs requires acknowledgement and commits selected IDs exactly once", async () => {
+  const adapter = new DeterministicSelectionServiceAdapter();
+  const editor = new RecordingSelectionEditor();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor,
+  });
+
+  await session.startNew(newSessionInput());
+  await session.updatePreview();
+  assert.equal(session.state.candidate.uncertainIds.length, 1);
+
+  await assert.rejects(session.confirm(), /acknowledg/);
+  await assert.rejects(
+    session.confirm({ acknowledgeUncertain: false }),
+    /acknowledg/
+  );
+  assert.equal(session.state.status, "preview");
+  assert.deepEqual(editor.selection, [1, 2]);
+  assert.deepEqual(editor.history, []);
+
+  await session.confirm({ acknowledgeUncertain: true });
+  assert.deepEqual(editor.selection, [3, 7]);
+  assert.deepEqual(editor.history, [[3, 7]]);
+  assert.equal(session.state.status, "idle");
+
+  await assert.rejects(
+    session.confirm({ acknowledgeUncertain: true }),
+    /cannot run this command while idle/
+  );
+  assert.deepEqual(editor.history, [[3, 7]]);
+});
+
+test("Confirm without Uncertain IDs commits directly", async () => {
+  class CertainSelectionServiceAdapter extends DeterministicSelectionServiceAdapter {
+    async updatePreview(request) {
+      this.previewRequests.push(request);
+      return previewResponse(request, {
+        selectedIds: [3, 7],
+        uncertainIds: [],
+        rejectedIds: [1, 2, 9, 11],
+      });
+    }
+  }
+
+  const adapter = new CertainSelectionServiceAdapter();
+  const editor = new RecordingSelectionEditor();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor,
+  });
+
+  await session.startNew(newSessionInput());
+  await session.updatePreview();
+  assert.equal(session.state.candidate.uncertainIds.length, 0);
+
+  await session.confirm();
+  assert.deepEqual(editor.history, [[3, 7]]);
+});
+
+test("rejects a Mask Set that does not replay the chronological independent Mask Tracks", async () => {
+  let responseFor = (request) => previewResponse(request);
+  class ValidatingSelectionServiceAdapter extends DeterministicSelectionServiceAdapter {
+    async updatePreview(request) {
+      this.previewRequests.push(request);
+      return responseFor(request);
+    }
+  }
+
+  const adapter = new ValidatingSelectionServiceAdapter();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor: new RecordingSelectionEditor(),
+  });
+
+  await session.startNew(newSessionInput());
+  session.setMode("Add");
+  session.stagePrompt(additionalPrompt);
+  session.setMode("Remove");
+  session.stagePrompt(removalPrompt);
+  await session.updatePreview();
+  assert.deepEqual(session.state.candidate, candidate);
+  assert.deepEqual(
+    adapter.previewRequests[0].promptLog.map((entry) => entry.operation),
+    ["New", "Add", "Remove"]
+  );
+
+  responseFor = (request) => {
+    const response = previewResponse(request);
+    response.maskSet.tracks = response.maskSet.tracks.filter(
+      (track) => track.trackId !== "remove-1"
+    );
+    return response;
+  };
+  await assert.rejects(
+    session.updatePreview(),
+    /complete, version-bound Mask Set/
+  );
+  assert.deepEqual(session.state.candidate, candidate);
+
+  responseFor = (request) => {
+    const response = previewResponse(request);
+    response.maskSet.tracks = [...response.maskSet.tracks].reverse();
+    return response;
+  };
+  await assert.rejects(
+    session.updatePreview(),
+    /complete, version-bound Mask Set/
+  );
+  assert.deepEqual(session.state.candidate, candidate);
+
+  responseFor = (request) => {
+    const response = previewResponse(request);
+    response.maskSet.tracks = response.maskSet.tracks.map((track) =>
+      track.trackId === "remove-1" ? { ...track, role: "include" } : track
+    );
+    return response;
+  };
+  await assert.rejects(
+    session.updatePreview(),
+    /complete, version-bound Mask Set/
+  );
+  assert.deepEqual(session.state.candidate, candidate);
 });

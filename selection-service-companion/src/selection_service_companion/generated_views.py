@@ -1378,11 +1378,15 @@ def _prompt_mask_reason(
 
     Prompt semantics remain owned by the mask adapter. This gate only checks
     the two universally safe invariants: an include point must stay inside its
-    accepted primary mask and an exclude point must stay outside it.
+    accepted primary mask and an exclude point must stay outside it.  Only New
+    and Refine prompts bind the primary Mask Track; Add and Remove prompts
+    bind their own independent tracks and never constrain this mask.
     """
 
     for entry in prompt_log:
         if not isinstance(entry, Mapping):
+            continue
+        if entry.get("operation") not in {"New", "Refine"}:
             continue
         prompt = entry.get("prompt")
         if not isinstance(prompt, Mapping) or prompt.get("viewId") != frame.view_id:

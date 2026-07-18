@@ -509,6 +509,111 @@ class SelectionEvidenceTests(unittest.TestCase):
             ([target_start], [target_end, distractor_end], [distractor_start]),
         )
 
+    def test_chronological_track_claims_follow_the_latest_prompt_log_operation(self) -> None:
+        frame_set = register_frame_set(
+            {
+                "frameSetId": "frames-1",
+                "frameSetVersion": "anchor-v1",
+                "orderedViews": [
+                    {
+                        "viewId": "anchor-view",
+                        "frameDigest": "sha256:anchor-rgb-v1",
+                        "width": 4,
+                        "height": 3,
+                    }
+                ],
+            }
+        )
+        bindings = {
+            "requestId": "request-1",
+            "sessionId": "session-1",
+            "targetSplatId": "splat-1",
+            "sceneId": "scene-1",
+            "sceneVersion": "snapshot-v1",
+            "operation": "New",
+            "correctionRound": 0,
+            "deterministicSeed": "seed-1",
+            "promptLogRevision": 1,
+            "frameSetVersion": "anchor-v1",
+            "renderConfigVersion": "effective-rgb-v1",
+            "modelManifestDigest": "sha256:model-v1",
+        }
+
+        def track(track_id: str, role: str, pixels: list[list[int]] | None) -> dict[str, object]:
+            if pixels is None:
+                frame = {
+                    "viewId": "anchor-view",
+                    "status": "not_found",
+                    "rejectionReason": "No reliable continuation was found.",
+                }
+            else:
+                frame = {
+                    "viewId": "anchor-view",
+                    "status": "accepted",
+                    "binaryMask": {
+                        "encoding": "sparse-points-v1",
+                        "width": 4,
+                        "height": 3,
+                        "foregroundPixels": pixels,
+                    },
+                }
+            return {"trackId": track_id, "role": role, "frames": [frame]}
+
+        def evidence_for(tracks: list[dict[str, object]]) -> dict[str, object]:
+            return build_evidence_snapshot(
+                bindings=bindings,
+                scene_snapshot={"gaussians": [{"stableId": 10}, {"stableId": 20}]},
+                frame_set=frame_set,
+                mask_set={
+                    "status": "complete",
+                    "requestId": "request-1",
+                    "sessionId": "session-1",
+                    "promptLogRevision": 1,
+                    "frameSetVersion": "anchor-v1",
+                    "modelManifestDigest": "sha256:model-v1",
+                    "threshold": 0.0,
+                    "tracks": tracks,
+                },
+                renderer=StaticContributorRenderer(
+                    {
+                        "anchor-view": RenderedContributorView(
+                            view_id="anchor-view",
+                            rgb_frame_digest="sha256:anchor-rgb-v1",
+                            width=4,
+                            height=3,
+                            support_bounds=(0, 0, 2, 2),
+                            contributors=(
+                                ContributorSample(stable_id=10, x_px=1, y_px=1, mass=3.0),
+                                ContributorSample(stable_id=20, x_px=0, y_px=0, mass=3.0),
+                            ),
+                        )
+                    }
+                ),
+            )
+
+        # A later Remove excludes the contested pixel again.
+        evidence = evidence_for([
+            track("primary", "include", [[0, 0], [1, 1]]),
+            track("add-1", "include", [[1, 1]]),
+            track("remove-1", "exclude", [[1, 1]]),
+        ])
+        self.assertEqual(selection_result_ids(evidence), ([20], [], [10]))
+
+        # A later Add restores the contested pixel.
+        evidence = evidence_for([
+            track("primary", "include", [[0, 0], [1, 1]]),
+            track("remove-1", "exclude", [[1, 1]]),
+            track("add-1", "include", [[1, 1]]),
+        ])
+        self.assertEqual(selection_result_ids(evidence), ([10, 20], [], []))
+
+        # A neutral Remove outcome never claims the pixel.
+        evidence = evidence_for([
+            track("primary", "include", [[0, 0], [1, 1]]),
+            track("remove-1", "exclude", None),
+        ])
+        self.assertEqual(selection_result_ids(evidence), ([10, 20], [], []))
+
 
 if __name__ == "__main__":
     unittest.main()

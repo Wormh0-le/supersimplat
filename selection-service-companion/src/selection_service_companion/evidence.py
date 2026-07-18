@@ -116,13 +116,17 @@ class _BinaryMask:
 
 @dataclass(frozen=True)
 class _CompositeMask:
-    includes: tuple[_BinaryMask, ...]
-    excludes: tuple[_BinaryMask, ...]
+    # Chronological independent Mask Track claims in Mask Set order. The
+    # latest track claiming a pixel decides it, so a later Add restores a
+    # region an earlier Remove excluded and a later Remove excludes it again.
+    claims: tuple[tuple[Literal["include", "exclude"], _BinaryMask], ...]
 
     def contains(self, x_px: int, y_px: int) -> bool:
-        return any(mask.contains(x_px, y_px) for mask in self.includes) and not any(
-            mask.contains(x_px, y_px) for mask in self.excludes
-        )
+        decision: str | None = None
+        for role, mask in self.claims:
+            if mask.contains(x_px, y_px):
+                decision = role
+        return decision == "include"
 
 
 def evidence_policy(render_config_version: str) -> dict[str, object]:
@@ -288,8 +292,7 @@ def _composite_mask_for_view(
         )
 
     primary: Mapping[str, Any] | None = None
-    includes: list[_BinaryMask] = []
-    excludes: list[_BinaryMask] = []
+    claims: list[tuple[str, _BinaryMask]] = []
     for track in tracks:
         if not isinstance(track, Mapping) or track.get("role") not in {"include", "exclude"}:
             raise MaskSessionError(
@@ -323,11 +326,7 @@ def _composite_mask_for_view(
                 )
             primary = mask_frame
         if mask_frame.get("status") == "accepted":
-            binary_mask = _binary_mask(mask_frame.get("binaryMask"), frame)
-            if track["role"] == "include":
-                includes.append(binary_mask)
-            else:
-                excludes.append(binary_mask)
+            claims.append((track["role"], _binary_mask(mask_frame.get("binaryMask"), frame)))
         elif mask_frame.get("status") not in {"not_found", "rejected", "error"}:
             raise MaskSessionError(
                 "invalidEvidenceSnapshot",
@@ -343,7 +342,7 @@ def _composite_mask_for_view(
         )
     if primary.get("status") != "accepted":
         return None
-    return _CompositeMask(tuple(includes), tuple(excludes))
+    return _CompositeMask(tuple(claims))
 
 
 def _binary_mask(value: object, frame: RegisteredFrame) -> _BinaryMask:

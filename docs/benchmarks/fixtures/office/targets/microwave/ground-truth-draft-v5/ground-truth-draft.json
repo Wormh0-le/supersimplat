@@ -14,7 +14,7 @@
   },
   "visual_review": {
     "path": "docs/benchmarks/fixtures/office/targets/microwave/ground-truth-inspection-v2/visual-review.json",
-    "sha256": "549f03ae6dc4d790c7ac31108e5f87bc5e1041937bf9519d32d7ac7c7837b8eb"
+    "sha256": "0edbd94e9d81b68f256a9764a367319512f7866f9cb0412e570a3efd38e8b5bb"
   },
   "annotation_spec": {
     "path": "docs/benchmarks/fixtures/office/targets/microwave/ground-truth-annotation-draft-v2.json",

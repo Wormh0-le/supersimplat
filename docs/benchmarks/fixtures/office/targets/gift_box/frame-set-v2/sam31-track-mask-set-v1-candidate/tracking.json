@@ -10,7 +10,7 @@
   "input_manifest": {
     "kind": "frame_set",
     "path": "gift_box/frame-set-v2/frame-set.json",
-    "sha256": "bdf0730e0dc21d3bfa9dfe6a7f1cf7ed1eb6831b95e7320f65f5de7f00537cb2",
+    "sha256": "2bf66499286e4e71601464a16f7ea599b02ad14851e75da8fd9362fc89708b77",
     "frame_set_version": "frame-set-v2"
   },
   "anchor_mask_prompt": {
@@ -31,13 +31,13 @@
   },
   "prompt_script": {
     "path": "gift_box/sam31-tracking-prompt-v1.json",
-    "sha256": "b9f9b6831a53ffb377f7a777c3bf16b1d7bb924d3bf0455c57cce8d685580c5a",
+    "sha256": "fbe52081e601bf3b238f640e55e09b3fb04516f2dc4de8d465f617e73f203369",
     "content": {
       "schema_version": 1,
       "purpose": "accepted SAM3.1 adapter prompt script for the gift-box Frame Set",
       "target_id": "gift_box",
       "frame_set_version": "frame-set-v2",
-      "frame_set_manifest_sha256": "bdf0730e0dc21d3bfa9dfe6a7f1cf7ed1eb6831b95e7320f65f5de7f00537cb2",
+      "frame_set_manifest_sha256": "2bf66499286e4e71601464a16f7ea599b02ad14851e75da8fd9362fc89708b77",
       "track_id": "primary-include",
       "role": "include",
       "anchor": {

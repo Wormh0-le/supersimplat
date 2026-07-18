@@ -129,8 +129,13 @@ def controlled_fixture(fixtures_root: Path) -> dict[str, Any]:
         raise RuntimeError("controlled Ground Truth label sets overlap")
     if len(selected) + len(rejected) + len(ambiguous) != total:
         raise RuntimeError("controlled Ground Truth does not classify every Gaussian")
-    if not np.array_equal(selected, np.arange(int(source_manifest["targetCount"]), dtype=np.uint32)):
-        raise RuntimeError("controlled selected Stable Gaussian IDs are not the exact target range")
+    # ADR 0011: the distractor-enclosed cap moved from selected to ambiguous;
+    # selected and ambiguous now partition the exact target range.
+    target_range = np.arange(int(source_manifest["targetCount"]), dtype=np.uint32)
+    if not np.array_equal(np.sort(np.concatenate((selected, ambiguous))), target_range):
+        raise RuntimeError(
+            "controlled selected and ambiguous Stable Gaussian IDs do not partition the exact target range"
+        )
     if not np.array_equal(
         rejected,
         np.arange(int(source_manifest["targetCount"]), total, dtype=np.uint32),
@@ -406,7 +411,7 @@ def office_target(fixtures_root: Path, targets_root: Path, target: dict[str, Any
     }
 
 
-def collect_manifest(fixtures_root: Path) -> dict[str, Any]:
+def collect_manifest(fixtures_root: Path, benchmark_version: str = "shared-lifting-benchmark-v1") -> dict[str, Any]:
     fixtures_root = fixtures_root.resolve()
     targets_root = fixtures_root / "office" / "targets"
     targets_index_path = targets_root / "targets.json"
@@ -429,7 +434,7 @@ def collect_manifest(fixtures_root: Path) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "status": "frozen",
-        "benchmark_version": "shared-lifting-benchmark-v1",
+        "benchmark_version": benchmark_version,
         "purpose": "Byte-identical shared Scene Snapshots, Frame Sets, Mask Sets, Coverage Reports, and method-independent Ground Truth for lifting-method comparison.",
         "candidate_input_contract": {
             "required": [
@@ -475,11 +480,20 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--fixtures-root", type=Path, required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--benchmark-version",
+        default="shared-lifting-benchmark-v1",
+        help=(
+            "benchmark version recorded in the manifest and used for the "
+            "default output filename; a corrected shared input requires a "
+            "new version (ADR 0011 re-binds the graph as v2)"
+        ),
+    )
     args = parser.parse_args()
-    output = args.output or args.fixtures_root / "shared-lifting-benchmark-v1.json"
+    output = args.output or args.fixtures_root / f"{args.benchmark_version}.json"
     if output.exists():
         raise FileExistsError(f"refusing to overwrite existing shared benchmark manifest: {output}")
-    manifest = collect_manifest(args.fixtures_root)
+    manifest = collect_manifest(args.fixtures_root, benchmark_version=args.benchmark_version)
     output.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"manifest": str(output), "sha256": sha256(output)}, ensure_ascii=False, indent=2))
 

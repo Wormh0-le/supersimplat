@@ -16,7 +16,7 @@
   "input_manifest": {
     "kind": "frame_set",
     "path": "microwave/frame-set-v1/frame-set.json",
-    "sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc",
+    "sha256": "ec90d0f4af508bfd1b1be83eb062fafc901e35640294681a09aafb8aad2dd144",
     "frame_set_version": "frame-set-v1"
   },
   "anchor_mask_prompt": {
@@ -37,13 +37,13 @@
   },
   "prompt_script": {
     "path": "microwave/sam31-tracking-prompt-v1.json",
-    "sha256": "3ad1890cd2d279a2bf633dc4fe469b0b17a7011066fbb5857232d7851c1b73b8",
+    "sha256": "f5a26558846986a3acee4c19f14af31359150b384ae3b877c57a9d00f2bdacce",
     "content": {
       "schema_version": 1,
       "purpose": "accepted SAM3.1 adapter prompt script for the microwave Frame Set",
       "target_id": "microwave",
       "frame_set_version": "frame-set-v1",
-      "frame_set_manifest_sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc",
+      "frame_set_manifest_sha256": "ec90d0f4af508bfd1b1be83eb062fafc901e35640294681a09aafb8aad2dd144",
       "track_id": "primary-include",
       "role": "include",
       "anchor": {

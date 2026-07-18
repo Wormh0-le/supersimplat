@@ -9,11 +9,11 @@
   },
   "frame_set": {
     "path": "../frame-set.json",
-    "sha256": "1fbe6f5c26be7a88ab7054538532c546baf77ce8058f61d127d3017fb7e2bdee"
+    "sha256": "29c5202edcad9e4d81cbf32bdfddd96226686495580dc8fc4715012ca159ee44"
   },
   "mask_set": {
     "path": "../mask-set-v1/mask-set.json",
-    "sha256": "9af076069eef0dfbf2ed95b94052fb5856f1c9ef8bc45485f642e1cf9dd3c72c"
+    "sha256": "1d89f8b3715471b13a8e19d6d7aeb87a72914bb727cd92d7418d8a8371bd36f9"
   },
   "target_stable_id_range": [0, 8191],
   "observed_target_contributors": {

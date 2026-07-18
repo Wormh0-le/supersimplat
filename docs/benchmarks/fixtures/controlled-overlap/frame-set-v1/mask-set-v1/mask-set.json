@@ -5,11 +5,11 @@
   "mask_set_version": "mask-set-v1",
   "frame_set": {
     "path": "../frame-set.json",
-    "sha256": "1fbe6f5c26be7a88ab7054538532c546baf77ce8058f61d127d3017fb7e2bdee"
+    "sha256": "29c5202edcad9e4d81cbf32bdfddd96226686495580dc8fc4715012ca159ee44"
   },
   "ground_truth": {
     "path": "../../controlled_front_back_overlap_ground_truth.npz",
-    "sha256": "7a04518c2f0f7c6cf68ae55ca6e46030cd5d96572bcdfcc73d2262df802c6ef0"
+    "sha256": "5003049586e39bdb21c121e9e0858621d8b89e1428e8f95c68a45b9d53b784ec"
   },
   "mask_derivation": {
     "kind": "same-renderer-top-contributor-instance-mask",

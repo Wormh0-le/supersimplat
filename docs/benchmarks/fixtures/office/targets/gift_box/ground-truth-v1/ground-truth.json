@@ -37,7 +37,7 @@
     },
     "visual_review": {
       "path": "docs/benchmarks/fixtures/office/targets/gift_box/ground-truth-inspection-v1/visual-review.json",
-      "sha256": "1b257c608d3308c08cc9aa3b4af8c9baeab7775a39dc2d187039c43f585b5627"
+      "sha256": "ed8e4ee261f5d0b8666c5bdf10fef21f0a9ec3db331e11efd7ac3e40a0de39fc"
     },
     "projection_review": {
       "contact_sheet": "projection-overlay-contact-sheet.png",

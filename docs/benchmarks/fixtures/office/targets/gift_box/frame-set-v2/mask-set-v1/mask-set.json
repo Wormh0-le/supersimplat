@@ -7,7 +7,7 @@
   "frame_set": {
     "path": "gift_box/frame-set-v2/frame-set.json",
     "frame_set_version": "frame-set-v2",
-    "sha256": "bdf0730e0dc21d3bfa9dfe6a7f1cf7ed1eb6831b95e7320f65f5de7f00537cb2",
+    "sha256": "2bf66499286e4e71601464a16f7ea599b02ad14851e75da8fd9362fc89708b77",
     "resolution": [1008, 1008]
   },
   "model_manifest": {
@@ -37,13 +37,13 @@
   "model_manifest_sha256": "d0ffc424bae360ca54adda8cb733baa5e149b604cc1c961986cdd4c409ec2c2b",
   "prompt_script": {
     "path": "gift_box/sam31-tracking-prompt-v1.json",
-    "sha256": "b9f9b6831a53ffb377f7a777c3bf16b1d7bb924d3bf0455c57cce8d685580c5a",
+    "sha256": "fbe52081e601bf3b238f640e55e09b3fb04516f2dc4de8d465f617e73f203369",
     "content": {
       "schema_version": 1,
       "purpose": "accepted SAM3.1 adapter prompt script for the gift-box Frame Set",
       "target_id": "gift_box",
       "frame_set_version": "frame-set-v2",
-      "frame_set_manifest_sha256": "bdf0730e0dc21d3bfa9dfe6a7f1cf7ed1eb6831b95e7320f65f5de7f00537cb2",
+      "frame_set_manifest_sha256": "2bf66499286e4e71601464a16f7ea599b02ad14851e75da8fd9362fc89708b77",
       "track_id": "primary-include",
       "role": "include",
       "anchor": {
@@ -91,7 +91,7 @@
   },
   "source_tracking": {
     "path": "gift_box/frame-set-v2/sam31-track-mask-set-v1-final-candidate/tracking.json",
-    "sha256": "b09c6f505c5db8d169596d6c0c97d1a9aab514bb9b2b88100cbf4b159b0ab97d",
+    "sha256": "a6052cd7f9c9b500f301347cd8e535b6257560fb1257caaf33e7d7a25f458799",
     "masks_sha256": "e4df9ac79b39e8f0359ee1c1884f36b8aa523fd333b9a5e6ba6f3b370eaf7217"
   },
   "tracks": [

@@ -26,9 +26,10 @@ def main() -> None:
     parser.add_argument("--manifest", type=Path)
     args = parser.parse_args()
     fixtures_root = args.fixtures_root.resolve()
-    manifest_path = args.manifest or fixtures_root / "shared-lifting-benchmark-v1.json"
+    manifest_path = args.manifest or fixtures_root / "shared-lifting-benchmark-v2.json"
     actual = json.loads(manifest_path.read_text(encoding="utf-8"))
-    expected = collect_manifest(fixtures_root)
+    benchmark_version = actual.get("benchmark_version")
+    expected = collect_manifest(fixtures_root, benchmark_version=benchmark_version)
     violations: list[str] = []
     if actual != expected:
         violations.append("shared manifest content does not match the hash-validated fixture graph")
@@ -39,9 +40,9 @@ def main() -> None:
         violations.append("office target index is not marked shared-lifting-fixtures-frozen")
     manifest_ref = targets_index.get("shared_lifting_benchmark_manifest")
     if manifest_ref != {
-        "path": "../../shared-lifting-benchmark-v1.json",
+        "path": f"../../{manifest_path.name}",
         "sha256": sha256(manifest_path),
-        "version": "shared-lifting-benchmark-v1",
+        "version": benchmark_version,
     }:
         violations.append("office target index does not hash-bind the shared benchmark manifest")
 

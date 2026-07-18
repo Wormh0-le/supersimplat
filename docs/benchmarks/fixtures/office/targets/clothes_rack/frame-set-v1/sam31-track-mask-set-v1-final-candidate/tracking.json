@@ -16,7 +16,7 @@
   "input_manifest": {
     "kind": "frame_set",
     "path": "clothes_rack/frame-set-v1/frame-set.json",
-    "sha256": "e6a2f525a0c833a28a00c978549488a8ff7365a3dcb6223d73826351c23e8bba",
+    "sha256": "adf9880a981cd6fa8b8462136f308f86b96562b05f30ef3f9ae8b455e2e0f023",
     "frame_set_version": "frame-set-v1"
   },
   "anchor_mask_prompt": {
@@ -37,13 +37,13 @@
   },
   "prompt_script": {
     "path": "clothes_rack/sam31-tracking-prompt-v2-frame-set-v1.json",
-    "sha256": "cfda40cb547d337455ef5013b588e373721376dc18c506d9d18ff474a3aae5a8",
+    "sha256": "cc1d99aa1609256a3062156caca09378da93fa9ccd9f61571b5e6119e76c7481",
     "content": {
       "schema_version": 1,
       "purpose": "accepted SAM3.1 adapter prompt script for the clothes-rack Frame Set with explicit neutral not-found outcomes",
       "target_id": "clothes_rack",
       "frame_set_version": "frame-set-v1",
-      "frame_set_manifest_sha256": "e6a2f525a0c833a28a00c978549488a8ff7365a3dcb6223d73826351c23e8bba",
+      "frame_set_manifest_sha256": "adf9880a981cd6fa8b8462136f308f86b96562b05f30ef3f9ae8b455e2e0f023",
       "track_id": "primary-include",
       "role": "include",
       "anchor": {

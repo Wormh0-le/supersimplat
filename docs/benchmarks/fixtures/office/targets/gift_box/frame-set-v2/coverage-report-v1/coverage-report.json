@@ -11,12 +11,12 @@
   },
   "frame_set": {
     "path": "gift_box/frame-set-v2/frame-set.json",
-    "sha256": "bdf0730e0dc21d3bfa9dfe6a7f1cf7ed1eb6831b95e7320f65f5de7f00537cb2",
+    "sha256": "2bf66499286e4e71601464a16f7ea599b02ad14851e75da8fd9362fc89708b77",
     "version": "frame-set-v2"
   },
   "mask_set": {
     "path": "gift_box/frame-set-v2/mask-set-v1/mask-set.json",
-    "sha256": "6573b0c998a4cac049ff80ffc415de52a2848c9aa4fbca8cd713aaba4a047667",
+    "sha256": "1a33dd85a0eb1abfe4cc7b45fb7ea49abeaea0b838b83d538742bde7d4f7d25a",
     "masks_sha256": "e4df9ac79b39e8f0359ee1c1884f36b8aa523fd333b9a5e6ba6f3b370eaf7217",
     "version": "mask-set-v1"
   },

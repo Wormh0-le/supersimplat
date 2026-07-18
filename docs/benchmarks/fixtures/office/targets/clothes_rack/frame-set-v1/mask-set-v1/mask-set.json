@@ -7,7 +7,7 @@
   "frame_set": {
     "path": "clothes_rack/frame-set-v1/frame-set.json",
     "frame_set_version": "frame-set-v1",
-    "sha256": "e6a2f525a0c833a28a00c978549488a8ff7365a3dcb6223d73826351c23e8bba",
+    "sha256": "adf9880a981cd6fa8b8462136f308f86b96562b05f30ef3f9ae8b455e2e0f023",
     "resolution": [1008, 1008]
   },
   "model_manifest": {
@@ -37,13 +37,13 @@
   "model_manifest_sha256": "d0ffc424bae360ca54adda8cb733baa5e149b604cc1c961986cdd4c409ec2c2b",
   "prompt_script": {
     "path": "clothes_rack/sam31-tracking-prompt-v2-frame-set-v1.json",
-    "sha256": "cfda40cb547d337455ef5013b588e373721376dc18c506d9d18ff474a3aae5a8",
+    "sha256": "cc1d99aa1609256a3062156caca09378da93fa9ccd9f61571b5e6119e76c7481",
     "content": {
       "schema_version": 1,
       "purpose": "accepted SAM3.1 adapter prompt script for the clothes-rack Frame Set with explicit neutral not-found outcomes",
       "target_id": "clothes_rack",
       "frame_set_version": "frame-set-v1",
-      "frame_set_manifest_sha256": "e6a2f525a0c833a28a00c978549488a8ff7365a3dcb6223d73826351c23e8bba",
+      "frame_set_manifest_sha256": "adf9880a981cd6fa8b8462136f308f86b96562b05f30ef3f9ae8b455e2e0f023",
       "track_id": "primary-include",
       "role": "include",
       "anchor": {
@@ -95,7 +95,7 @@
   },
   "source_tracking": {
     "path": "clothes_rack/frame-set-v1/sam31-track-mask-set-v1-final-candidate/tracking.json",
-    "sha256": "5b253668d3579238b5d5e689bd305b3a6f6384820911cc7fe14c58bfbf3be21b",
+    "sha256": "d17cf32fa4cdf463a93e37edef15318461c4db9a539804dc6bc09a6fb64a9e5c",
     "masks_sha256": "827ba53976d7c6c065592f5b18674f8ca18e5eb5a481c8b5a036c3e5affa5255"
   },
   "outcome_counts": {

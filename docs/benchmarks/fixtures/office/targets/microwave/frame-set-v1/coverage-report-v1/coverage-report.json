@@ -11,12 +11,12 @@
   },
   "frame_set": {
     "path": "microwave/frame-set-v1/frame-set.json",
-    "sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc",
+    "sha256": "ec90d0f4af508bfd1b1be83eb062fafc901e35640294681a09aafb8aad2dd144",
     "version": "frame-set-v1"
   },
   "mask_set": {
     "path": "microwave/frame-set-v1/mask-set-v1/mask-set.json",
-    "sha256": "d6fb3d630751832e4151e0a015398e010259a1e734e882e6924c5b594835a4ee",
+    "sha256": "9410775cc8989bd4cb2d921ed2d6d45dec5b282e978e3a6ba1ce2a97c403e942",
     "masks_sha256": "17c765084871fbd6a93ae31515b09bc639faea47ed329602cb36dbfc53d783ea",
     "version": "mask-set-v1"
   },

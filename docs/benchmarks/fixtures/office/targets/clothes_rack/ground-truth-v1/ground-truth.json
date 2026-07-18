@@ -37,7 +37,7 @@
     },
     "visual_review": {
       "path": "docs/benchmarks/fixtures/office/targets/clothes_rack/ground-truth-inspection-v1/visual-review.json",
-      "sha256": "ad3e35e17e2a5bb2634383eb6cede64f1919743d63909d807175b70eb4851ef6"
+      "sha256": "b02cfe40ddcc9b281b16acf3b8158f0fa13f2a12d7faed037259daa572d4569d"
     },
     "projection_review": {
       "contact_sheet": "projection-overlay-contact-sheet.png",

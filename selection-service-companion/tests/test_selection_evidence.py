@@ -365,11 +365,6 @@ class SelectionEvidenceTests(unittest.TestCase):
             / "fixtures"
             / "controlled-overlap"
         )
-        controlled = json.loads(
-            (fixture_root / "controlled_front_back_overlap.json").read_text(
-                encoding="utf-8"
-            )
-        )
         fixture_frame_set = json.loads(
             (fixture_root / "frame-set-v1" / "frame-set.json").read_text(
                 encoding="utf-8"
@@ -404,8 +399,18 @@ class SelectionEvidenceTests(unittest.TestCase):
             "same-renderer-top-contributor-instance-mask",
         )
 
-        target_start, target_end = controlled["groundTruth"]["selected"]
-        distractor_start, distractor_end = controlled["groundTruth"]["rejected"]
+        ground_truth = json.loads(
+            (
+                fixture_root / "controlled_front_back_overlap_ground_truth.json"
+            ).read_text(encoding="utf-8")
+        )
+        # The re-frozen Ground Truth (ADR 0011) carries explicit selected and
+        # ambiguous lists rather than a contiguous selected range.
+        target_start = min(ground_truth["selectedStableGaussianIds"])
+        target_end = max(ground_truth["selectedStableGaussianIds"])
+        distractor_start, distractor_end = ground_truth["rejectedStableGaussianIds"][
+            "inclusiveRange"
+        ]
         frame_set = register_frame_set(
             {
                 "frameSetId": "controlled-overlap:anchor",

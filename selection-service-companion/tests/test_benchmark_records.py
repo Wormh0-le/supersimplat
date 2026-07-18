@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import tempfile
 import unittest
 
+import numpy as np
+
 from selection_service_companion.benchmark import (
     REQUIRED_PREDICTION_ARTIFACTS,
     PocRunRecordError,
@@ -29,6 +31,15 @@ FROZEN_PROMPT_LOG = (
     / "controlled-overlap"
     / "benchmark-prompt-log-v1.json"
 )
+
+# Filled by the ADR-0011 Ground Truth re-freeze; any drift turns this suite red.
+EXPECTED_GROUND_TRUTH_JSON_SHA256 = (
+    "740e2a6a3080a6828aa14ff5fc7e0c9741af50e89b53b2480c26ba1021027dc0"
+)
+
+# The frozen fixture's mechanical z>0 rear half before the ADR-0011 re-scope:
+# the redefined observable rear plus the ambiguous enclosed cap must rebuild it.
+MECHANICAL_REAR_Z_POSITIVE_COUNT = 4095
 
 
 class FrozenBenchmarkPromptLogTests(unittest.TestCase):
@@ -137,6 +148,118 @@ class FrozenBenchmarkPromptLogTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(PocRunRecordError, "correction rounds"):
                 load_frozen_benchmark_prompt_log(variant, image_size=1008)
+
+
+class FrozenControlledOverlapGroundTruthTests(unittest.TestCase):
+    """Bind the re-frozen controlled-overlap Ground Truth (ADR 0011).
+
+    The distractor-enclosed target cap is ambiguous Ground Truth under the
+    geometric sight-line screening rule; accuracy excludes it, the rear
+    surface keeps only the honestly observable subset, and the PLY plus
+    frozen Benchmark Prompt Log stay byte-identical.
+    """
+
+    fixture_root = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "benchmarks"
+        / "fixtures"
+        / "controlled-overlap"
+    )
+
+    def load_frozen(self) -> tuple[dict, dict, dict]:
+        manifest = json.loads(
+            (self.fixture_root / "controlled_front_back_overlap.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        truth = json.loads(
+            (
+                self.fixture_root / "controlled_front_back_overlap_ground_truth.json"
+            ).read_text(encoding="utf-8")
+        )
+        npz = np.load(
+            self.fixture_root / "controlled_front_back_overlap_ground_truth.npz"
+        )
+        return manifest, truth, npz
+
+    def id_set(self, value: object) -> set[int]:
+        if isinstance(value, dict):
+            start, end = value["inclusiveRange"]
+            return set(range(start, end + 1))
+        return set(value)
+
+    def test_fixture_file_digests_match_the_manifest(self) -> None:
+        manifest, _, _ = self.load_frozen()
+        for name, record in manifest["files"].items():
+            digest = hashlib.sha256(
+                (self.fixture_root / name).read_bytes()
+            ).hexdigest()
+            self.assertEqual(digest, record["sha256"], name)
+        # The Ground Truth re-freeze leaves the scene PLY and the frozen
+        # Benchmark Prompt Log byte-identical.
+        self.assertEqual(
+            manifest["files"]["controlled_front_back_overlap.ply"]["sha256"],
+            "cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e",
+        )
+        self.assertEqual(
+            manifest["files"]["benchmark-prompt-log-v1.json"]["sha256"],
+            "8cce1991dea0e5bdf7a3ee7a32fe720daa5bb47d486a298849cbf0541bbd082b",
+        )
+
+    def test_ground_truth_json_digest_is_frozen(self) -> None:
+        digest = hashlib.sha256(
+            (
+                self.fixture_root / "controlled_front_back_overlap_ground_truth.json"
+            ).read_bytes()
+        ).hexdigest()
+        self.assertEqual(digest, EXPECTED_GROUND_TRUTH_JSON_SHA256)
+
+    def test_ground_truth_partitions_the_fixture_universe(self) -> None:
+        manifest, truth, npz = self.load_frozen()
+        selected = self.id_set(truth["selectedStableGaussianIds"])
+        rejected = self.id_set(truth["rejectedStableGaussianIds"])
+        ambiguous = self.id_set(truth["ambiguousStableGaussianIds"])
+        self.assertTrue(ambiguous)
+        self.assertFalse(
+            selected & rejected or selected & ambiguous or rejected & ambiguous
+        )
+        self.assertEqual(selected | rejected | ambiguous, set(range(16384)))
+        self.assertTrue(ambiguous <= set(range(8192)))
+        self.assertEqual({int(value) for value in npz["selected_ids"]}, selected)
+        self.assertEqual({int(value) for value in npz["rejected_ids"]}, rejected)
+        self.assertEqual({int(value) for value in npz["ambiguous_ids"]}, ambiguous)
+        ground_truth_block = manifest["groundTruth"]
+        self.assertEqual(ground_truth_block["selectedCount"], len(selected))
+        self.assertEqual(ground_truth_block["ambiguousCount"], len(ambiguous))
+        self.assertEqual(
+            ground_truth_block["rearSurfaceCount"],
+            MECHANICAL_REAR_Z_POSITIVE_COUNT - len(ambiguous),
+        )
+
+    def test_rear_surface_excludes_the_enclosed_ambiguous_cap(self) -> None:
+        _, truth, _ = self.load_frozen()
+        selected = self.id_set(truth["selectedStableGaussianIds"])
+        ambiguous = self.id_set(truth["ambiguousStableGaussianIds"])
+        rear = self.id_set(truth["rearSurfaceStableGaussianIds"])
+        self.assertTrue(rear <= selected)
+        self.assertFalse(rear & ambiguous)
+        self.assertEqual(
+            len(rear) + len(ambiguous), MECHANICAL_REAR_Z_POSITIVE_COUNT
+        )
+
+    def test_observability_rule_discloses_the_screening(self) -> None:
+        manifest, truth, _ = self.load_frozen()
+        rule = truth["observabilityRule"]
+        self.assertEqual(rule["id"], "geometric-sight-line-screening/v1")
+        self.assertEqual(rule["directionCount"], 1024)
+        self.assertGreater(rule["occlusionRadius"], 0)
+        self.assertEqual(rule["measuredEnclosedCapCount"], 482)
+        self.assertIn("unobstructed sight line", rule["rule"])
+        self.assertEqual(
+            manifest["groundTruth"]["observabilityRule"],
+            "geometric-sight-line-screening/v1",
+        )
 
 
 class PocRunRecordTests(unittest.TestCase):
@@ -343,6 +466,128 @@ class PocRunRecordTests(unittest.TestCase):
             self.assertEqual(result["metrics"]["selectedDistractorCount"], 1)
             self.assertFalse(result["controlledOverlapGatePassed"])
             self.assertTrue((root / "score.json").is_file())
+
+    def test_excludes_ambiguous_truth_from_accuracy_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = self.complete_artifacts(root)
+            # The candidate classifies the ambiguous truth ID as selected; the
+            # scorer must exclude ambiguous truth from accuracy rather than
+            # force it into either class.
+            artifacts["candidateObjectSelection"].write_text(
+                json.dumps(
+                    {
+                        "selectedStableGaussianIds": [1, 2, 4, 6],
+                        "rejectedStableGaussianIds": [3, 5],
+                        "uncertainStableGaussianIds": [],
+                        "recordBindings": self.complete_bindings(),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=artifacts,
+                bindings=self.complete_bindings(),
+            )
+            ground_truth = root / "controlled-overlap-ground-truth.json"
+            ground_truth.write_text(
+                json.dumps(
+                    {
+                        "selectedStableGaussianIds": [1, 2, 3],
+                        "rejectedStableGaussianIds": [4, 5],
+                        "ambiguousStableGaussianIds": [6],
+                        "rearSurfaceStableGaussianIds": [2, 3],
+                        "distractorStableGaussianIds": [4, 5],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = score_prediction(
+                record.directory,
+                ground_truth_path=ground_truth,
+                output_path=root / "score.json",
+            )
+
+            self.assertEqual(result["metrics"]["intersectionOverUnion"], 0.5)
+            self.assertEqual(result["metrics"]["precision"], 2 / 3)
+            self.assertEqual(result["metrics"]["recall"], 2 / 3)
+            self.assertEqual(result["metrics"]["rearSurfaceRecall"], 0.5)
+            self.assertEqual(result["metrics"]["selectedDistractorCount"], 1)
+            self.assertFalse(result["controlledOverlapGatePassed"])
+
+    def test_rejects_a_rear_surface_outside_selected_truth(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = self.complete_artifacts(root)
+            artifacts["candidateObjectSelection"].write_text(
+                json.dumps(
+                    {
+                        "selectedStableGaussianIds": [1, 2],
+                        "rejectedStableGaussianIds": [3, 4, 5, 6],
+                        "uncertainStableGaussianIds": [],
+                        "recordBindings": self.complete_bindings(),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=artifacts,
+                bindings=self.complete_bindings(),
+            )
+            ground_truth = root / "ground-truth.json"
+            ground_truth.write_text(
+                json.dumps(
+                    {
+                        "selectedStableGaussianIds": [1, 2, 3],
+                        "rejectedStableGaussianIds": [4, 5],
+                        "ambiguousStableGaussianIds": [6],
+                        "rearSurfaceStableGaussianIds": [2, 6],
+                        "distractorStableGaussianIds": [4, 5],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(PocRunRecordError, "subset of selected truth"):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=root / "score.json",
+                )
+
+    def test_rejects_a_candidate_that_omits_ambiguous_truth(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=self.complete_artifacts(root),
+                bindings=self.complete_bindings(),
+            )
+            ground_truth = root / "ground-truth.json"
+            ground_truth.write_text(
+                json.dumps(
+                    {
+                        "selectedStableGaussianIds": [1, 2, 3],
+                        "rejectedStableGaussianIds": [4, 5],
+                        "ambiguousStableGaussianIds": [6],
+                        "rearSurfaceStableGaussianIds": [2, 3],
+                        "distractorStableGaussianIds": [4, 5],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                PocRunRecordError, "does not completely classify"
+            ):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=root / "score.json",
+                )
 
     def test_invalidates_a_trial_if_a_sealed_prediction_artifact_changes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

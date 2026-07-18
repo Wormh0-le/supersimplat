@@ -1,0 +1,502 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "benchmark_version": "shared-lifting-benchmark-v2",
+  "purpose": "Byte-identical shared Scene Snapshots, Frame Sets, Mask Sets, Coverage Reports, and method-independent Ground Truth for lifting-method comparison.",
+  "candidate_input_contract": {
+    "required": [
+      "Consume the referenced Scene Snapshot, Frame Set, and Mask Set byte-for-byte for a named fixture.",
+      "Do not use the Ground Truth or its projection/annotation artifacts during prediction.",
+      "Report selected Stable Gaussian IDs, any uncertain IDs, implementation version, configuration, seed, timing, and peak VRAM separately from this frozen input manifest."
+    ],
+    "coverage_interpretation": "Coverage Reports are observation facts, not selection labels. An insufficient_coverage status requires unobserved regions to remain distinguishable in a candidate result; it does not invalidate the shared fixture.",
+    "office_metric": "Evaluate only scope_ids, exclude ambiguous_ids, and score a candidate uncertainty as not selected for selected truth IDs."
+  },
+  "controlled_fixture": {
+    "scene_id": "controlled_front_back_overlap",
+    "kind": "synthetic-controlled-overlap",
+    "purpose": "Exact Stable Gaussian ID evaluation with deliberate front/back distractor overlap.",
+    "scene_snapshot": {
+      "path": "controlled-overlap/controlled_front_back_overlap.ply",
+      "sha256": "cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e",
+      "gaussian_count": 16384,
+      "stable_id_dtype": "uint32"
+    },
+    "ground_truth": {
+      "path": "controlled-overlap/controlled_front_back_overlap_ground_truth.npz",
+      "sha256": "5003049586e39bdb21c121e9e0858621d8b89e1428e8f95c68a45b9d53b784ec",
+      "label_counts": {
+        "selected_stable_gaussians": 7904,
+        "rejected_stable_gaussians": 8192,
+        "ambiguous_stable_gaussians": 288
+      },
+      "semantics": "Exact target/distractor Stable Gaussian IDs supplied by the deterministic generator."
+    },
+    "frame_set": {
+      "path": "controlled-overlap/frame-set-v1/frame-set.json",
+      "sha256": "29c5202edcad9e4d81cbf32bdfddd96226686495580dc8fc4715012ca159ee44",
+      "version": "frame-set-v1",
+      "frames": 4,
+      "resolution": [512, 512]
+    },
+    "mask_set": {
+      "path": "controlled-overlap/frame-set-v1/mask-set-v1/mask-set.json",
+      "sha256": "1d89f8b3715471b13a8e19d6d7aeb87a72914bb727cd92d7418d8a8371bd36f9",
+      "version": "mask-set-v1",
+      "mask_tensor": {
+        "path": "controlled-overlap/frame-set-v1/mask-set-v1/masks.npz",
+        "sha256": "fb117b62a0120dcab60f6ede886daab7d43c188eef5b04c1b08940e07416a261",
+        "shape": [4, 512, 512]
+      },
+      "derivation": {
+        "kind": "same-renderer-top-contributor-instance-mask",
+        "target_stable_id_range": [0, 8191],
+        "top_k": 8,
+        "minimum_target_contribution_weight": 0.01,
+        "rule": "target contribution must be at least the distractor contribution at the pixel"
+      },
+      "timing": {
+        "render_and_attribution_seconds": 0.1392059099744074,
+        "peak_vram_bytes": 74014720,
+        "runtime": {
+          "torch": "2.11.0+cu128",
+          "gpu": "NVIDIA GeForce RTX 4090 D"
+        }
+      }
+    },
+    "coverage_report": {
+      "path": "controlled-overlap/frame-set-v1/coverage-report-v1/coverage-report.json",
+      "sha256": "c7452226667ffe7e1a08e60c792420989109c42e663e4ca079244527738a13a4",
+      "status_value": "insufficient_coverage",
+      "observed_target_contributors": {
+        "artifact": "observed-target-contributors.npz",
+        "sha256": "66e9d88bb9435df82e03f30364f3b2a799e4407c78185cd0e20062b28059df42",
+        "count": 7415,
+        "total_target_gaussians": 8192,
+        "fraction": 0.9051513671875
+      }
+    },
+    "diagnostics": {
+      "mask_overlay_contact_sheet": {
+        "path": "controlled-overlap/frame-set-v1/mask-set-v1/overlay-contact-sheet.png",
+        "sha256": "128982d40143e0d3ecf73c8f0a8ae32a39947c8bb8882c9f26e7d8b8e2ea2861"
+      },
+      "camera_specification": "camera_to_world matrices are embedded in the hash-pinned Frame Set."
+    }
+  },
+  "office_scene_snapshot": {
+    "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+    "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1",
+    "gaussian_count": 3680541
+  },
+  "office_targets": [
+    {
+      "target_id": "gift_box",
+      "display_name_zh": "礼品盒",
+      "benchmark_role": "simple",
+      "identity": "green rectangular gift box near the clothes rack",
+      "scene_snapshot": {
+        "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+        "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1",
+        "gaussian_count": 3680541
+      },
+      "anchor": {
+        "image": "gift_box/anchor-candidate/frames/office_overview_00.png",
+        "image_sha256": "c857d7c46a1158246e70b4d34f9bf35a373a10380d9da6dd5b1efba2bbeb0734",
+        "camera_manifest": "gift_box/anchor-candidate/cameras.json",
+        "camera_manifest_sha256": "ca838bb78d3bff127f782fae7d48d6d62186ed0510fc2120f2bb4c42211ff0f9"
+      },
+      "prompt_replay": {
+        "path": "office/targets/gift_box/sam31-tracking-prompt-v1.json",
+        "sha256": "fbe52081e601bf3b238f640e55e09b3fb04516f2dc4de8d465f617e73f203369",
+        "adapter": "SAM3.1 visual prompt/video propagation",
+        "prompt_type": "positive_box_and_text"
+      },
+      "frame_set": {
+        "path": "office/targets/gift_box/frame-set-v2/frame-set.json",
+        "sha256": "2bf66499286e4e71601464a16f7ea599b02ad14851e75da8fd9362fc89708b77",
+        "version": "frame-set-v2",
+        "source_status": "candidate-frame-set-mask-validation-pending",
+        "acceptance_status": "accepted",
+        "accepted_views": 9,
+        "not_found_views": 0
+      },
+      "mask_set": {
+        "path": "office/targets/gift_box/frame-set-v2/mask-set-v1/mask-set.json",
+        "sha256": "1a33dd85a0eb1abfe4cc7b45fb7ea49abeaea0b838b83d538742bde7d4f7d25a",
+        "version": "mask-set-v1",
+        "mask_tensor": {
+          "path": "office/targets/gift_box/frame-set-v2/mask-set-v1/masks.npz",
+          "sha256": "e4df9ac79b39e8f0359ee1c1884f36b8aa523fd333b9a5e6ba6f3b370eaf7217",
+          "shape": [9, 1008, 1008]
+        },
+        "model_manifest": {
+          "adapter": "SAM3.1 visual prompt/video propagation",
+          "model": "facebook/sam3.1",
+          "checkpoint_sha256": "0567debeec80ba4ac6369540c6c248025283cb3ff2b92827509e57e2b3541cb6",
+          "sam3_source_commit": "5dd401d1c5c1d5c3eedff06d41b77af824517619",
+          "license": {
+            "name": "SAM License",
+            "url": "https://github.com/facebookresearch/sam3/blob/5dd401d1c5c1d5c3eedff06d41b77af824517619/LICENSE",
+            "weights_bundled": false
+          },
+          "runtime": {
+            "torch": "2.11.0+cu128",
+            "cuda": "12.8",
+            "gpu": "NVIDIA GeForce RTX 4090 D",
+            "offload_video_to_cpu": false,
+            "compile": false,
+            "warm_up": false,
+            "use_fa3": false,
+            "use_rope_real": true,
+            "async_loading_frames": false,
+            "max_num_objects": 16,
+            "multiplex_count": 16
+          }
+        },
+        "tracking": {
+          "path": "office/targets/gift_box/frame-set-v2/sam31-track-mask-set-v1-final-candidate/tracking.json",
+          "sha256": "a6052cd7f9c9b500f301347cd8e535b6257560fb1257caaf33e7d7a25f458799",
+          "model_build_seconds": 8.253302265977254,
+          "tracking_seconds": 1.068503704998875,
+          "peak_vram_bytes": 10860324352
+        }
+      },
+      "coverage_report": {
+        "path": "office/targets/gift_box/frame-set-v2/coverage-report-v1/coverage-report.json",
+        "sha256": "6828697183f4c658e1e19ea340c04806b637a70580e2a39cf4bc51a33c9689df",
+        "status_value": "insufficient_coverage",
+        "observed_contributors": {
+          "path": "office/targets/gift_box/frame-set-v2/coverage-report-v1/observed-contributors.npz",
+          "sha256": "65abf6ec72aba964886433fce3a1abc31b19128c12f3d2d266f81fd1f02d3ba5",
+          "count": 3508
+        },
+        "timing": {
+          "contributor_analysis_seconds": 0.3363917050010059,
+          "peak_vram_bytes": 352631296
+        }
+      },
+      "ground_truth": {
+        "path": "office/targets/gift_box/ground-truth-v1/ground-truth.json",
+        "sha256": "1e42ed755fdaedb850b72f0ab9ade261150a3eeed4dfd2e40ca7cc4831cef534",
+        "version": "ground-truth-v1",
+        "labels": {
+          "path": "office/targets/gift_box/ground-truth-v1/ground-truth.npz",
+          "sha256": "a5000105de4dcdbe5c1c6224d1bf651843e3dfe94c1f05f645c8cfda29fddf66",
+          "scope_stable_gaussians": 5258,
+          "selected_stable_gaussians": 1671,
+          "rejected_stable_gaussians": 1396,
+          "ambiguous_stable_gaussians": 2191
+        },
+        "metric_rule": "Compute accuracy only within scope_ids and exclude ambiguous_ids. Candidate uncertainty counts as not selected for selected truth IDs.",
+        "review_acceptance": {
+          "reviewer": "workspace-user",
+          "note": "User accepted gift_box Ground Truth v4 after reviewing the corrected 2D annotations and 3D projection overlays; desk-leg and floor conflicts remain ambiguous rather than selected.",
+          "frozen_at_utc": "2026-07-13T09:17:07+00:00"
+        }
+      },
+      "diagnostics": {
+        "frame_set_contact_sheet": {
+          "path": "office/targets/gift_box/frame-set-v2/contact-sheet.png",
+          "sha256": "504a843e29e3d9fd0344858c2117a13f5e7cc070e3277223fa6ad799e08f266a"
+        },
+        "mask_overlay_contact_sheet": {
+          "path": "office/targets/gift_box/frame-set-v2/mask-set-v1/overlay-contact-sheet.png",
+          "sha256": "f965724f64185fdf89f0c6f605428e6bd7e249ae30b65327c994db0281132460"
+        },
+        "ground_truth_projection_overlay_contact_sheet": {
+          "path": "office/targets/gift_box/ground-truth-draft-v4/projection-overlay-contact-sheet.png",
+          "sha256": "9bdbd86c8771475cd78ab4a1da6fc4aca354e5e39d3a3bd732a23127645fb67e"
+        },
+        "ground_truth_annotation_masks": {
+          "path": "office/targets/gift_box/ground-truth-inspection-v1/annotation-masks-draft-v5/annotation-masks.json",
+          "sha256": "64adb4241394c2278f174a7298681dcdf18e29b1dfcfa6c8f3515c720e3e40ef"
+        },
+        "ground_truth_visual_review": {
+          "path": "office/targets/gift_box/ground-truth-inspection-v1/visual-review.json",
+          "sha256": "ed8e4ee261f5d0b8666c5bdf10fef21f0a9ec3db331e11efd7ac3e40a0de39fc"
+        },
+        "camera_specification": "camera_to_world matrices are embedded in the hash-pinned Frame Set; the anchor camera manifest is separately hash-pinned above."
+      }
+    },
+    {
+      "target_id": "microwave",
+      "display_name_zh": "微波炉",
+      "benchmark_role": "contact",
+      "identity": "black silver-trim microwave on the counter below the bulletin board",
+      "scene_snapshot": {
+        "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+        "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1",
+        "gaussian_count": 3680541
+      },
+      "anchor": {
+        "image": "microwave/anchor-candidate/frames/office_overview_00.png",
+        "image_sha256": "0cbbd4989ac217f90331ff04877d78e8b78dcc315b5991aa94603dda9039c2b1",
+        "camera_manifest": "microwave/anchor-candidate/cameras.json",
+        "camera_manifest_sha256": "48c33f60e645263b688e1b8db4eec5cb5f872c22a87fa53f0a85b4438648d043"
+      },
+      "prompt_replay": {
+        "path": "office/targets/microwave/sam31-tracking-prompt-v1.json",
+        "sha256": "f5a26558846986a3acee4c19f14af31359150b384ae3b877c57a9d00f2bdacce",
+        "adapter": "SAM3.1 visual prompt/video propagation",
+        "prompt_type": "positive_box_and_text"
+      },
+      "frame_set": {
+        "path": "office/targets/microwave/frame-set-v1/frame-set.json",
+        "sha256": "ec90d0f4af508bfd1b1be83eb062fafc901e35640294681a09aafb8aad2dd144",
+        "version": "frame-set-v1",
+        "source_status": "candidate-frame-set-mask-validation-pending",
+        "acceptance_status": "accepted",
+        "accepted_views": 6,
+        "not_found_views": 0
+      },
+      "mask_set": {
+        "path": "office/targets/microwave/frame-set-v1/mask-set-v1/mask-set.json",
+        "sha256": "9410775cc8989bd4cb2d921ed2d6d45dec5b282e978e3a6ba1ce2a97c403e942",
+        "version": "mask-set-v1",
+        "mask_tensor": {
+          "path": "office/targets/microwave/frame-set-v1/mask-set-v1/masks.npz",
+          "sha256": "17c765084871fbd6a93ae31515b09bc639faea47ed329602cb36dbfc53d783ea",
+          "shape": [6, 1008, 1008]
+        },
+        "model_manifest": {
+          "adapter": "SAM3.1 visual prompt/video propagation",
+          "model": "facebook/sam3.1",
+          "checkpoint_sha256": "0567debeec80ba4ac6369540c6c248025283cb3ff2b92827509e57e2b3541cb6",
+          "sam3_source_commit": "5dd401d1c5c1d5c3eedff06d41b77af824517619",
+          "license": {
+            "name": "SAM License",
+            "url": "https://github.com/facebookresearch/sam3/blob/5dd401d1c5c1d5c3eedff06d41b77af824517619/LICENSE",
+            "weights_bundled": false
+          },
+          "runtime": {
+            "torch": "2.11.0+cu128",
+            "cuda": "12.8",
+            "gpu": "NVIDIA GeForce RTX 4090 D",
+            "offload_video_to_cpu": false,
+            "compile": false,
+            "warm_up": false,
+            "use_fa3": false,
+            "use_rope_real": true,
+            "async_loading_frames": false,
+            "max_num_objects": 16,
+            "multiplex_count": 16
+          }
+        },
+        "tracking": {
+          "path": "office/targets/microwave/frame-set-v1/sam31-track-mask-set-v1-final-candidate/tracking.json",
+          "sha256": "d31177eef06fcbe2bed5442ac74cf6efeb23696746145b138f32238169f3f562",
+          "model_build_seconds": 8.26846081900294,
+          "tracking_seconds": 0.7333965270081535,
+          "peak_vram_bytes": 8730377728
+        }
+      },
+      "coverage_report": {
+        "path": "office/targets/microwave/frame-set-v1/coverage-report-v1/coverage-report.json",
+        "sha256": "fb462ce32581a001d87244774787647421181c49e0d9e53fef397e95740f339f",
+        "status_value": "insufficient_coverage",
+        "observed_contributors": {
+          "path": "office/targets/microwave/frame-set-v1/coverage-report-v1/observed-contributors.npz",
+          "sha256": "630761d1a4dd0c9379fe441beef1f8b3344f374c1a22786ff2a913f40798f8c3",
+          "count": 4426
+        },
+        "timing": {
+          "contributor_analysis_seconds": 0.319886413984932,
+          "peak_vram_bytes": 332645888
+        }
+      },
+      "ground_truth": {
+        "path": "office/targets/microwave/ground-truth-v1/ground-truth.json",
+        "sha256": "aa1d2d8ec819b0fe06338f15f4ac5695d88d842ab71fa9cb69ed0d451660359b",
+        "version": "ground-truth-v1",
+        "labels": {
+          "path": "office/targets/microwave/ground-truth-v1/ground-truth.npz",
+          "sha256": "3ff56f5541a0f1754a83a628db721aace7c340bdd380e22e76b5104061e5286d",
+          "scope_stable_gaussians": 23155,
+          "selected_stable_gaussians": 2753,
+          "rejected_stable_gaussians": 15012,
+          "ambiguous_stable_gaussians": 5390
+        },
+        "metric_rule": "Compute accuracy only within scope_ids and exclude ambiguous_ids. Candidate uncertainty counts as not selected for selected truth IDs.",
+        "review_acceptance": {
+          "reviewer": "workspace-user",
+          "note": "User accepted the microwave Ground Truth after reviewing the supplemental upper view and conservative ambiguous regions.",
+          "frozen_at_utc": "2026-07-13T09:28:08+00:00"
+        }
+      },
+      "diagnostics": {
+        "frame_set_contact_sheet": {
+          "path": "office/targets/microwave/frame-set-v1/contact-sheet.png",
+          "sha256": "c3f41a990e4ec400349c610afbda03ef9fa3a7dd479c57184ab441675f8464b9"
+        },
+        "mask_overlay_contact_sheet": {
+          "path": "office/targets/microwave/frame-set-v1/mask-set-v1/overlay-contact-sheet.png",
+          "sha256": "256dc606b079aabe00961d39fa32e16dd2f17786045e23822afc6891af38a922"
+        },
+        "ground_truth_projection_overlay_contact_sheet": {
+          "path": "office/targets/microwave/ground-truth-draft-v5/projection-overlay-contact-sheet.png",
+          "sha256": "222c8341a5f5d0e910604264d22265cccf3aac19580770459a240851861569c9"
+        },
+        "ground_truth_annotation_masks": {
+          "path": "office/targets/microwave/ground-truth-inspection-v2/annotation-masks-draft-v1/annotation-masks.json",
+          "sha256": "781b03fb282c01543e0c6ce02110885fb6f340ce072687f6d3b738087a1ea404"
+        },
+        "ground_truth_visual_review": {
+          "path": "office/targets/microwave/ground-truth-inspection-v2/visual-review.json",
+          "sha256": "0edbd94e9d81b68f256a9764a367319512f7866f9cb0412e570a3efd38e8b5bb"
+        },
+        "camera_specification": "camera_to_world matrices are embedded in the hash-pinned Frame Set; the anchor camera manifest is separately hash-pinned above."
+      }
+    },
+    {
+      "target_id": "clothes_rack",
+      "display_name_zh": "衣架",
+      "benchmark_role": "difficult",
+      "identity": "freestanding light-gray rack with thin vertical pole, arms, and feet",
+      "scene_snapshot": {
+        "path": "/home/ubuntu/wormh01e/gaussian/office/lixel/filtered_lixel_office65.ply",
+        "sha256": "6db1ece7024217f7e563af37a01fd7fffa2e1785cbf4d4856d02b873760e64d1",
+        "gaussian_count": 3680541
+      },
+      "anchor": {
+        "image": "clothes_rack/anchor-candidate/frames/office_overview_00.png",
+        "image_sha256": "322399367cbfc3950b399604c48eed7b6f614305f9241f3b56def92be4f9fe7d",
+        "camera_manifest": "clothes_rack/anchor-candidate/cameras.json",
+        "camera_manifest_sha256": "77e47391ec537c02d2a2eb58be9e16c9d2bda99fdaa04d1b2badf4cba1672d24"
+      },
+      "prompt_replay": {
+        "path": "office/targets/clothes_rack/sam31-tracking-prompt-v2-frame-set-v1.json",
+        "sha256": "cc1d99aa1609256a3062156caca09378da93fa9ccd9f61571b5e6119e76c7481",
+        "adapter": "SAM3.1 visual prompt/video propagation",
+        "prompt_type": "positive_box_and_text"
+      },
+      "frame_set": {
+        "path": "office/targets/clothes_rack/frame-set-v1/frame-set.json",
+        "sha256": "adf9880a981cd6fa8b8462136f308f86b96562b05f30ef3f9ae8b455e2e0f023",
+        "version": "frame-set-v1",
+        "source_status": "candidate-frame-set-mask-validation-pending",
+        "acceptance_status": "accepted-with-neutral-not-found-views",
+        "accepted_views": 4,
+        "not_found_views": 3
+      },
+      "mask_set": {
+        "path": "office/targets/clothes_rack/frame-set-v1/mask-set-v1/mask-set.json",
+        "sha256": "d0e0d40015898da8e73125141b94bc8338149268256f3ba24417b98a3d4ade4d",
+        "version": "mask-set-v1",
+        "mask_tensor": {
+          "path": "office/targets/clothes_rack/frame-set-v1/mask-set-v1/masks.npz",
+          "sha256": "827ba53976d7c6c065592f5b18674f8ca18e5eb5a481c8b5a036c3e5affa5255",
+          "shape": [7, 1008, 1008]
+        },
+        "model_manifest": {
+          "adapter": "SAM3.1 visual prompt/video propagation",
+          "model": "facebook/sam3.1",
+          "checkpoint_sha256": "0567debeec80ba4ac6369540c6c248025283cb3ff2b92827509e57e2b3541cb6",
+          "sam3_source_commit": "5dd401d1c5c1d5c3eedff06d41b77af824517619",
+          "license": {
+            "name": "SAM License",
+            "url": "https://github.com/facebookresearch/sam3/blob/5dd401d1c5c1d5c3eedff06d41b77af824517619/LICENSE",
+            "weights_bundled": false
+          },
+          "runtime": {
+            "torch": "2.11.0+cu128",
+            "cuda": "12.8",
+            "gpu": "NVIDIA GeForce RTX 4090 D",
+            "offload_video_to_cpu": false,
+            "compile": false,
+            "warm_up": false,
+            "use_fa3": false,
+            "use_rope_real": true,
+            "async_loading_frames": false,
+            "max_num_objects": 16,
+            "multiplex_count": 16
+          }
+        },
+        "tracking": {
+          "path": "office/targets/clothes_rack/frame-set-v1/sam31-track-mask-set-v1-final-candidate/tracking.json",
+          "sha256": "d17cf32fa4cdf463a93e37edef15318461c4db9a539804dc6bc09a6fb64a9e5c",
+          "model_build_seconds": 8.191261417989153,
+          "tracking_seconds": 0.8485573530197144,
+          "peak_vram_bytes": 9442921472
+        }
+      },
+      "coverage_report": {
+        "path": "office/targets/clothes_rack/frame-set-v1/coverage-report-v1/coverage-report.json",
+        "sha256": "eeae37c6d15c9a313625d13f574f35e29bc7019e7bb31dca49b7d35e5e16b95a",
+        "status_value": "insufficient_coverage",
+        "observed_contributors": {
+          "path": "office/targets/clothes_rack/frame-set-v1/coverage-report-v1/observed-contributors.npz",
+          "sha256": "458d3c077c82c0d62e337117dcc0105f94f561f020149c8873e37a5acd9c3fe6",
+          "count": 7493
+        },
+        "timing": {
+          "contributor_analysis_seconds": 0.168025099002989,
+          "peak_vram_bytes": 355314688
+        }
+      },
+      "ground_truth": {
+        "path": "office/targets/clothes_rack/ground-truth-v1/ground-truth.json",
+        "sha256": "d136290ca68acea3f41c7b7d6aa709c82aeaba1767835853e60fd3532c75f025",
+        "version": "ground-truth-v1",
+        "labels": {
+          "path": "office/targets/clothes_rack/ground-truth-v1/ground-truth.npz",
+          "sha256": "f3aab5b494902606246d93f28684e314984633aab02f93b7c55181c2751c3b41",
+          "scope_stable_gaussians": 33123,
+          "selected_stable_gaussians": 2925,
+          "rejected_stable_gaussians": 15390,
+          "ambiguous_stable_gaussians": 14808
+        },
+        "metric_rule": "Compute accuracy only within scope_ids and exclude ambiguous_ids. Candidate uncertainty counts as not selected for selected truth IDs.",
+        "review_acceptance": {
+          "reviewer": "workspace-user",
+          "note": "User accepted the clothes_rack Ground Truth after reviewing the narrow-rack projections; foot-edge uncertainty remains ambiguous rather than selected.",
+          "frozen_at_utc": "2026-07-13T09:28:08+00:00"
+        }
+      },
+      "diagnostics": {
+        "frame_set_contact_sheet": {
+          "path": "office/targets/clothes_rack/frame-set-v1/contact-sheet.png",
+          "sha256": "c6acf107882d0910cae89a8aa5ed799a750bf3da15ff680c25bbb5ac6a00f555"
+        },
+        "mask_overlay_contact_sheet": {
+          "path": "office/targets/clothes_rack/frame-set-v1/mask-set-v1/overlay-contact-sheet.png",
+          "sha256": "682a1380486e25fb641d7aabec59fd66ef79a0b611977e37c6745c7f7f4e4668"
+        },
+        "ground_truth_projection_overlay_contact_sheet": {
+          "path": "office/targets/clothes_rack/ground-truth-draft-v3/projection-overlay-contact-sheet.png",
+          "sha256": "2e1a31b208f365e642f602bc23ce20b69c753a5011b8a4609c259cbb7522d218"
+        },
+        "ground_truth_annotation_masks": {
+          "path": "office/targets/clothes_rack/ground-truth-inspection-v1/annotation-masks-draft-v2/annotation-masks.json",
+          "sha256": "0c8ad6748d4cc4c74b6702adb71af4aef354f0f4b52db9601418877677791835"
+        },
+        "ground_truth_visual_review": {
+          "path": "office/targets/clothes_rack/ground-truth-inspection-v1/visual-review.json",
+          "sha256": "b02cfe40ddcc9b281b16acf3b8158f0fa13f2a12d7faed037259daa572d4569d"
+        },
+        "camera_specification": "camera_to_world matrices are embedded in the hash-pinned Frame Set; the anchor camera manifest is separately hash-pinned above."
+      }
+    }
+  ],
+  "candidate_result_contract": {
+    "required_fields": [
+      "benchmark_version",
+      "target_or_fixture_id",
+      "shared_input_hashes",
+      "candidate_name",
+      "candidate_version_or_commit",
+      "configuration",
+      "seed",
+      "selected_stable_gaussian_ids",
+      "uncertain_stable_gaussian_ids",
+      "runtime_seconds",
+      "peak_vram_bytes"
+    ],
+    "note": "Candidate outputs and scores are intentionally absent from this shared-input freeze."
+  },
+  "immutability": "Any correction to a shared input requires a new versioned artifact and a new shared-lifting-benchmark manifest; existing results remain bound to this manifest hash.",
+  "verification": {
+    "command": "thirdparty/sam3/.venv/bin/python scripts/benchmarks/verify_shared_lifting_benchmark.py --fixtures-root docs/benchmarks/fixtures",
+    "scope": "hash bindings, label-set integrity, frame/mask alignment, target roles, and references to one Scene Snapshot per fixture"
+  }
+}

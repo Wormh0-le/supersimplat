@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generator": "scripts/benchmarks/generate_controlled_overlap.py",
   "seed": 20260712,
   "gaussianCount": 16384,
@@ -10,9 +10,11 @@
     "range": [0, 16383]
   },
   "groundTruth": {
-    "selected": [0, 8191],
+    "selectedCount": 7904,
     "rejected": [8192, 16383],
-    "ambiguousCount": 0
+    "ambiguousCount": 288,
+    "rearSurfaceCount": 3807,
+    "observabilityRule": "geometric-sight-line-screening/v1"
   },
   "initialCamera": {
     "position": [0.0, 0.0, -3.2],
@@ -29,13 +31,13 @@
       "sha256": "cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e",
       "bytes": 999902
     },
-    "controlled_front_back_overlap_ground_truth.npz": {
-      "sha256": "7a04518c2f0f7c6cf68ae55ca6e46030cd5d96572bcdfcc73d2262df802c6ef0",
-      "bytes": 23361
-    },
     "controlled_front_back_overlap_ground_truth.json": {
-      "sha256": "7e54957a93f80a0790befebb3ac0666588b70763351f76017095214dba1b000c",
-      "bytes": 25645
+      "sha256": "740e2a6a3080a6828aa14ff5fc7e0c9741af50e89b53b2480c26ba1021027dc0",
+      "bytes": 75564
+    },
+    "controlled_front_back_overlap_ground_truth.npz": {
+      "sha256": "5003049586e39bdb21c121e9e0858621d8b89e1428e8f95c68a45b9d53b784ec",
+      "bytes": 23466
     }
   }
 }

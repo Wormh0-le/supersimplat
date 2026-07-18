@@ -16,7 +16,7 @@
   "input_manifest": {
     "kind": "frame_set",
     "path": "clothes_rack/frame-set-v1/frame-set.json",
-    "sha256": "e6a2f525a0c833a28a00c978549488a8ff7365a3dcb6223d73826351c23e8bba",
+    "sha256": "adf9880a981cd6fa8b8462136f308f86b96562b05f30ef3f9ae8b455e2e0f023",
     "frame_set_version": "frame-set-v1"
   },
   "anchor_mask_prompt": {

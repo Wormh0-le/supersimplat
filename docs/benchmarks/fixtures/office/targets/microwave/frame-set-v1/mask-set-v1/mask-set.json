@@ -7,7 +7,7 @@
   "frame_set": {
     "path": "microwave/frame-set-v1/frame-set.json",
     "frame_set_version": "frame-set-v1",
-    "sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc",
+    "sha256": "ec90d0f4af508bfd1b1be83eb062fafc901e35640294681a09aafb8aad2dd144",
     "resolution": [1008, 1008]
   },
   "model_manifest": {
@@ -37,13 +37,13 @@
   "model_manifest_sha256": "d0ffc424bae360ca54adda8cb733baa5e149b604cc1c961986cdd4c409ec2c2b",
   "prompt_script": {
     "path": "microwave/sam31-tracking-prompt-v1.json",
-    "sha256": "3ad1890cd2d279a2bf633dc4fe469b0b17a7011066fbb5857232d7851c1b73b8",
+    "sha256": "f5a26558846986a3acee4c19f14af31359150b384ae3b877c57a9d00f2bdacce",
     "content": {
       "schema_version": 1,
       "purpose": "accepted SAM3.1 adapter prompt script for the microwave Frame Set",
       "target_id": "microwave",
       "frame_set_version": "frame-set-v1",
-      "frame_set_manifest_sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc",
+      "frame_set_manifest_sha256": "ec90d0f4af508bfd1b1be83eb062fafc901e35640294681a09aafb8aad2dd144",
       "track_id": "primary-include",
       "role": "include",
       "anchor": {
@@ -83,7 +83,7 @@
   },
   "source_tracking": {
     "path": "microwave/frame-set-v1/sam31-track-mask-set-v1-final-candidate/tracking.json",
-    "sha256": "be4d79872899692d42500087c681005df15fdbccd27b8d03708b8c6e3db3a11c",
+    "sha256": "d31177eef06fcbe2bed5442ac74cf6efeb23696746145b138f32238169f3f562",
     "masks_sha256": "17c765084871fbd6a93ae31515b09bc639faea47ed329602cb36dbfc53d783ea"
   },
   "outcome_counts": {

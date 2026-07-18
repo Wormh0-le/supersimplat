@@ -3,7 +3,7 @@
   "purpose": "accepted SAM3.1 adapter prompt script for the microwave Frame Set",
   "target_id": "microwave",
   "frame_set_version": "frame-set-v1",
-  "frame_set_manifest_sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc",
+  "frame_set_manifest_sha256": "ec90d0f4af508bfd1b1be83eb062fafc901e35640294681a09aafb8aad2dd144",
   "track_id": "primary-include",
   "role": "include",
   "anchor": {

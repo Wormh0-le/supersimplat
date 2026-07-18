@@ -212,7 +212,7 @@
       },
       "source_frame_set": {
         "path": "docs/benchmarks/fixtures/office/targets/microwave/frame-set-v1/frame-set.json",
-        "sha256": "216aa5a4e4af7d1ab285356f0812feeb54f3ce4ad65f6ba2ed5af336ea203fbc",
+        "sha256": "ec90d0f4af508bfd1b1be83eb062fafc901e35640294681a09aafb8aad2dd144",
         "candidate_id": "upper-00",
         "frame_sha256": "364c2d1923f6fab2d579a07e972b680310ce5ba95de4a73955c5a3ef353821d0"
       }

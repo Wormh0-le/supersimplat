@@ -11,12 +11,12 @@
   },
   "frame_set": {
     "path": "clothes_rack/frame-set-v1/frame-set.json",
-    "sha256": "e6a2f525a0c833a28a00c978549488a8ff7365a3dcb6223d73826351c23e8bba",
+    "sha256": "adf9880a981cd6fa8b8462136f308f86b96562b05f30ef3f9ae8b455e2e0f023",
     "version": "frame-set-v1"
   },
   "mask_set": {
     "path": "clothes_rack/frame-set-v1/mask-set-v1/mask-set.json",
-    "sha256": "50fc52fb9bf4b34e0fa118e11a5002984e040a5ec9443d72c08fc7039f41814b",
+    "sha256": "d0e0d40015898da8e73125141b94bc8338149268256f3ba24417b98a3d4ade4d",
     "masks_sha256": "827ba53976d7c6c065592f5b18674f8ca18e5eb5a481c8b5a036c3e5affa5255",
     "version": "mask-set-v1"
   },

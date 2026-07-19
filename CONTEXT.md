@@ -65,7 +65,7 @@ The authoritative, replayable sequence of accepted point prompts and operations 
 _Avoid_: Model state, click history, tracker token
 
 **Benchmark Prompt Log**:
-The point-only Prompt Log frozen before a PoC Trial. Its ordered points and operations bound that trial's manual effort; adding an interaction outside it requires a new benchmark revision.
+The point-only Prompt Log frozen before a PoC Trial. Its ordered points and operations bound that trial's manual effort; adding an interaction outside it requires a new benchmark revision. A frozen source may represent one initial multi-point `New` interaction as several `New` point entries. Its sealed `sessionMaterialization` then records the deterministic replay mapping: the first point is session `New` and remaining initial points are primary-track `Refine` entries. That mapping is not a Correction Round or additional interaction; the run record retains both the frozen source and materialized session entries.
 _Avoid_: Box/text fixture, ad-hoc correction
 
 **Mask Set**:
@@ -181,7 +181,7 @@ One replay of a frozen benchmark input under its declared configuration and fixe
 _Avoid_: Best run, average-only score
 
 **PoC Run Record**:
-The immutable, version-bound record emitted for a PoC Trial. It links its inputs, Evidence Snapshot output, coverage state, correction outcome, diagnostic reason, timing and VRAM, artifact hashes, and later scoring result; its absence is an observability failure, while its timing values are not performance gates.
+The immutable, version-bound record emitted for a PoC Trial. Its blind prediction record preserves inputs, Evidence Snapshot output, coverage state, correction outcome, diagnostic reason, timing, VRAM, and artifact hashes before Ground Truth opens. A separately sealed scored final record copies that blind record and hashes the independent score while binding both to the canonical target, scene, execution profile, and seed registry; assessment re-verifies the copied prediction and recomputes registered scores. Its formal gate report uses only pass or fail; missing evidence may retain an `unassessed` diagnostic state but formally fails the trial. Their absence is an observability failure; timing values are not performance gates.
 _Avoid_: Console-only result, latency SLA
 
 **Blind Prediction**:

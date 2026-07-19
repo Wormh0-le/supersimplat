@@ -11,9 +11,15 @@ import sys
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 COMPANION_SOURCE = REPOSITORY_ROOT / "selection-service-companion" / "src"
+POC_TRIAL_REGISTRY = (
+    REPOSITORY_ROOT / "docs" / "benchmarks" / "poc-default-path-trial-registry-v1.json"
+)
 sys.path.insert(0, str(COMPANION_SOURCE))
 
-from selection_service_companion.benchmark import score_prediction  # noqa: E402
+from selection_service_companion.benchmark import (  # noqa: E402
+    assess_registered_trials,
+    score_and_seal_prediction,
+)
 from selection_service_companion.controlled_overlap_benchmark import (  # noqa: E402
     run_controlled_overlap_prediction,
 )
@@ -51,7 +57,28 @@ def parser() -> argparse.ArgumentParser:
     score = commands.add_parser("score")
     score.add_argument("--prediction", type=Path, required=True)
     score.add_argument("--ground-truth", type=Path, required=True)
+    score.add_argument(
+        "--office-source-ply",
+        type=Path,
+        help="required when scoring a frozen office Ground Truth manifest",
+    )
     score.add_argument("--output", type=Path, required=True)
+    score.add_argument(
+        "--final-record",
+        type=Path,
+        required=True,
+        help="new immutable record linking the independent score to the prediction",
+    )
+
+    assess = commands.add_parser("assess")
+    assess.add_argument(
+        "--final-record",
+        type=Path,
+        action="append",
+        default=[],
+        help="sealed final Run Record; repeat for every completed trial",
+    )
+    assess.add_argument("--output", type=Path, required=True)
     return result
 
 
@@ -80,13 +107,40 @@ def main() -> int:
         )
         return 0 if manifest["status"] == "prediction-complete" else 2
 
-    result = score_prediction(
+    if arguments.command == "assess":
+        assessment = assess_registered_trials(
+            POC_TRIAL_REGISTRY,
+            final_record_directories=arguments.final_record,
+            output_path=arguments.output,
+        )
+        print(json.dumps(assessment, sort_keys=True))
+        return 0 if assessment["acceptanceStatus"] == "pass" else 2
+
+    result, final_record = score_and_seal_prediction(
         arguments.prediction,
         ground_truth_path=arguments.ground_truth,
         output_path=arguments.output,
+        final_record_directory=arguments.final_record,
+        benchmark_registry_path=POC_TRIAL_REGISTRY,
+        office_source_ply_path=arguments.office_source_ply,
     )
-    print(json.dumps(result, sort_keys=True))
-    return 0
+    print(
+        json.dumps(
+            {
+                **result,
+                "finalRecord": str(final_record.directory),
+                "finalRecordManifestSha256": final_record.manifest_sha256,
+            },
+            sort_keys=True,
+        )
+    )
+    gate_report = result.get("gateReport")
+    return (
+        0
+        if isinstance(gate_report, dict)
+        and gate_report.get("overallStatus") == "pass"
+        else 2
+    )
 
 
 if __name__ == "__main__":

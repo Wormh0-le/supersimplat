@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "benchmarkId": "default-object-selection-poc/v1",
+  "targets": [
+    {
+      "targetId": "controlled-overlap",
+      "benchmarkKind": "controlled-overlap",
+      "availability": "ready",
+      "sceneSnapshot": {
+        "targetSplatId": "controlled-overlap",
+        "sceneId": "controlled-overlap",
+        "sceneVersion": "sha256:cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e",
+        "gaussianCount": 16384,
+        "stableIdSchema": "uint32"
+      },
+      "executionProfile": {
+        "protocolVersion": "1",
+        "model": {
+          "adapterId": "sam3.1",
+          "digest": "sha256:62a94703491580f19672cfb463a614a4745e1f23c31d5939e4c62d3345e6174e",
+          "checkpointDigest": "sha256:0567debeec80ba4ac6369540c6c248025283cb3ff2b92827509e57e2b3541cb6"
+        },
+        "runtime": {
+          "lockDigest": "sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40"
+        },
+        "seedPolicy": {
+          "seedDerivation": "sha256-utf8-first-u32be/v1",
+          "algorithmDeterminism": "not-forced"
+        },
+        "render": {
+          "renderConfigVersion": "supersplat-effective-rgb-v1+generated-1008x1008-v1",
+          "evidencePolicy": {
+            "id": "selection-evidence-policy/v1",
+            "renderConfigVersion": "supersplat-effective-rgb-v1+generated-1008x1008-v1"
+          }
+        }
+      },
+      "groundTruth": {
+        "path": "fixtures/controlled-overlap/controlled_front_back_overlap_ground_truth.json",
+        "sha256": "sha256:740e2a6a3080a6828aa14ff5fc7e0c9741af50e89b53b2480c26ba1021027dc0"
+      },
+      "promptLog": {
+        "status": "frozen-point-only",
+        "path": "fixtures/controlled-overlap/benchmark-prompt-log-v1.json",
+        "sha256": "sha256:8cce1991dea0e5bdf7a3ee7a32fe720daa5bb47d486a298849cbf0541bbd082b",
+        "entriesSha256": "sha256:b090e5647b7a2131b4a86dbac031b8522bae0d16de5a34b2b0f96ce208d7c7a7"
+      },
+      "requiredSeeds": [
+        "controlled-overlap-seed-1",
+        "controlled-overlap-seed-2",
+        "controlled-overlap-seed-3"
+      ]
+    },
+    {
+      "targetId": "gift_box",
+      "benchmarkKind": "office",
+      "availability": "blocked",
+      "groundTruth": {
+        "path": "fixtures/office/targets/gift_box/ground-truth-v1/ground-truth.json",
+        "sha256": "sha256:1e42ed755fdaedb850b72f0ab9ade261150a3eeed4dfd2e40ca7cc4831cef534"
+      },
+      "promptLog": {
+        "status": "missing-frozen-point-only"
+      },
+      "requiredSeeds": [
+        "gift_box-seed-1",
+        "gift_box-seed-2",
+        "gift_box-seed-3"
+      ],
+      "blockedReason": "No frozen point-only Benchmark Prompt Log is available for this office target."
+    },
+    {
+      "targetId": "microwave",
+      "benchmarkKind": "office",
+      "availability": "blocked",
+      "groundTruth": {
+        "path": "fixtures/office/targets/microwave/ground-truth-v1/ground-truth.json",
+        "sha256": "sha256:aa1d2d8ec819b0fe06338f15f4ac5695d88d842ab71fa9cb69ed0d451660359b"
+      },
+      "promptLog": {
+        "status": "missing-frozen-point-only"
+      },
+      "requiredSeeds": [
+        "microwave-seed-1",
+        "microwave-seed-2",
+        "microwave-seed-3"
+      ],
+      "blockedReason": "No frozen point-only Benchmark Prompt Log is available for this office target."
+    },
+    {
+      "targetId": "clothes_rack",
+      "benchmarkKind": "office",
+      "availability": "blocked",
+      "groundTruth": {
+        "path": "fixtures/office/targets/clothes_rack/ground-truth-v1/ground-truth.json",
+        "sha256": "sha256:d136290ca68acea3f41c7b7d6aa709c82aeaba1767835853e60fd3532c75f025"
+      },
+      "promptLog": {
+        "status": "missing-frozen-point-only"
+      },
+      "requiredSeeds": [
+        "clothes_rack-seed-1",
+        "clothes_rack-seed-2",
+        "clothes_rack-seed-3"
+      ],
+      "blockedReason": "No frozen point-only Benchmark Prompt Log is available for this office target."
+    }
+  ]
+}

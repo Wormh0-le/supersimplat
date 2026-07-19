@@ -165,6 +165,11 @@ uv run --locked --extra renderer --extra sam3 python \
   --output /secure/poc-runs/controlled-overlap-seed-1
 ```
 
+The declared seed is applied before renderer or model work to Python, NumPy,
+and Torch CPU/CUDA RNGs. The record preserves the derived effective seed and
+whether deterministic Torch algorithms were enforced; a fixed seed alone is
+not presented as a claim of deterministic GPU execution.
+
 Only after prediction is sealed, invoke the independent scorer with the
 frozen Ground Truth:
 
@@ -173,9 +178,67 @@ uv run --locked --extra renderer --extra sam3 python \
   ../scripts/benchmarks/run_controlled_overlap_trial.py score \
   --prediction /secure/poc-runs/controlled-overlap-seed-1 \
   --ground-truth ../docs/benchmarks/fixtures/controlled-overlap/controlled_front_back_overlap_ground_truth.json \
-  --output /secure/poc-scores/controlled-overlap-seed-1.json
+  --output /secure/poc-scores/controlled-overlap-seed-1.json \
+  --final-record /secure/poc-runs/controlled-overlap-seed-1-scored
 ```
 
 The scorer verifies the prediction seal and every artifact hash before it
-opens Ground Truth. The older deterministic one/two-view fixture outputs are
-diagnostic lifting evidence; they are not production acceptance records.
+opens Ground Truth. It then writes a separate immutable final record that
+copies the sealed blind prediction, copies and hashes the independent score,
+and binds both to the final seal. The older deterministic one/two-view fixture
+outputs are diagnostic lifting evidence; they are not production acceptance
+records. The fixed
+[`poc-default-path-trial-registry-v1.json`](../docs/benchmarks/poc-default-path-trial-registry-v1.json)
+pins each target's Scene Snapshot identity, Ground Truth digest, frozen
+point-only Prompt Log source and canonical entries, default runtime/model/
+render/Evidence Policy profile, versioned seed-derivation policy, and three
+required seeds. The scorer recomputes the effective seed from that policy;
+the score command rejects an unregistered Scene Snapshot, Ground Truth,
+Prompt Log, default execution profile, or declared seed, and marks a
+seed-policy mismatch as a formal failed record.
+The score's `gateReport` marks every formal acceptance axis `pass` or `fail`.
+Missing blinded-Ready, editor acknowledgement, or editor compatibility
+evidence is recorded as `evidenceStatus: unassessed` but formally fails the
+trial. No verified editor-side browser-evidence producer exists yet, so the
+current scorer intentionally makes all three browser-owned gates fail even if
+an artifact merely claims that they passed.
+For a browser-executed acceptance record, `runtimeManifest.executionProfile`
+must retain a non-secret structured profile: `browser.family` and
+`browser.version`, plus `transport.kind` and `transport.endpointScope`. The
+standalone CLI records its in-process profile for diagnosis, but that does not
+substitute for the required browser evidence and makes record completeness
+fail. After sealing the score, the command exits `2` unless every reported
+acceptance axis passes.
+The frozen controlled source records its one initial multi-point interaction
+as five `New` entries. Its sealed record retains those frozen entries and an
+explicit `initial-new-points-to-primary-track/v1` session materialization: one
+service `New` followed by four primary-track `Refine` entries. It does not add
+a Correction Round or an interaction.
+
+After every registered target and seed has a final record, assess them without
+best-run, average-only, or rescue selection:
+
+```sh
+uv run --locked --extra renderer --extra sam3 python \
+  ../scripts/benchmarks/run_controlled_overlap_trial.py assess \
+  --final-record /secure/poc-runs/controlled-overlap-seed-1-scored \
+  --final-record /secure/poc-runs/controlled-overlap-seed-2-scored \
+  --final-record /secure/poc-runs/controlled-overlap-seed-3-scored \
+  --output /secure/poc-scores/default-path-assessment.json
+```
+
+Assessment re-verifies each copied blind prediction and recomputes the
+controlled score from the registry's frozen Ground Truth; it does not trust
+the metrics or gate report merely because they are internally hashed. Its
+output must be kept outside every immutable scored Run Record.
+
+## Office trials are not yet runnable
+
+The office source PLY and frozen Ground Truth manifests are available, but
+there are no valid frozen point-only Benchmark Prompt Logs or office prediction
+runner yet. The registry therefore marks `gift_box`, `microwave`, and
+`clothes_rack` blocked, and `assess` reports every required seed as a failure
+rather than accepting box/text diagnostic fixtures as substitutes. When those
+inputs and the browser evidence path exist, office scoring will additionally
+verify the source PLY digest, Gaussian count, Stable Gaussian ID schema, and
+Ground Truth labels sidecar before applying the `>= 0.80` IoU gate.

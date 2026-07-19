@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 from pathlib import Path
+import shutil
 from types import SimpleNamespace
 import tempfile
 import unittest
@@ -12,13 +13,24 @@ import numpy as np
 from selection_service_companion.benchmark import (
     REQUIRED_PREDICTION_ARTIFACTS,
     PocRunRecordError,
+    _OfficeGroundTruthSource,
+    _load_poc_trial_registry,
+    _seal_scored_run,
+    _validate_benchmark_prompt_log,
+    _validate_office_ground_truth_scene,
+    _verified_prediction,
+    assess_registered_trials,
+    canonical_prompt_entries_sha256,
+    score_and_seal_prediction,
     score_prediction,
     seal_prediction,
 )
 from selection_service_companion.controlled_overlap_benchmark import (
+    _apply_trial_seed,
     _preview_render_policy,
     build_controlled_overlap_snapshot,
     load_frozen_benchmark_prompt_log,
+    materialize_frozen_benchmark_prompt_log,
     seal_preview_prediction,
 )
 
@@ -72,6 +84,37 @@ class FrozenBenchmarkPromptLogTests(unittest.TestCase):
             self.assertEqual(entry["operation"], "New")
             self.assertEqual(entry["prompt"]["viewId"], "anchor-view")
             self.assertEqual(entry["prompt"]["polarity"], "include")
+
+    def test_materializes_initial_new_points_as_one_session_new_operation(self) -> None:
+        frozen_entries = load_frozen_benchmark_prompt_log(
+            FROZEN_PROMPT_LOG, image_size=1008
+        )
+
+        prompt_log = materialize_frozen_benchmark_prompt_log(
+            frozen_entries,
+            anchor_digest="sha256:anchor",
+            image_size=1008,
+        )
+
+        self.assertEqual(
+            [entry["operation"] for entry in prompt_log],
+            ["New", "Refine", "Refine", "Refine", "Refine"],
+        )
+        self.assertEqual(
+            [entry["prompt"]["promptId"] for entry in prompt_log],
+            [
+                "controlled-overlap-center",
+                "controlled-overlap-north",
+                "controlled-overlap-south",
+                "controlled-overlap-west",
+                "controlled-overlap-east",
+            ],
+        )
+        for entry in prompt_log:
+            self.assertEqual(entry["prompt"]["frameDigest"], "sha256:anchor")
+            self.assertEqual(entry["prompt"]["frameWidth"], 1008)
+            self.assertEqual(entry["prompt"]["frameHeight"], 1008)
+        self.assertEqual([entry["operation"] for entry in frozen_entries], ["New"] * 5)
 
     def test_rejects_a_missing_prompt_log(self) -> None:
         with self.assertRaisesRegex(PocRunRecordError, "unavailable or invalid JSON"):
@@ -262,6 +305,94 @@ class FrozenControlledOverlapGroundTruthTests(unittest.TestCase):
         )
 
 
+class OfficeRecordTrustBoundaryTests(unittest.TestCase):
+    def test_rejects_non_integral_or_boolean_office_scene_count(self) -> None:
+        source = _OfficeGroundTruthSource(
+            source_path="office.ply",
+            sha256="a" * 64,
+            gaussian_count=5,
+        )
+        for gaussian_count in (5.0, True):
+            with self.subTest(gaussian_count=gaussian_count):
+                with self.assertRaisesRegex(
+                    PocRunRecordError, "sealed Scene Snapshot identity"
+                ):
+                    _validate_office_ground_truth_scene(
+                        source,
+                        {
+                            "sceneVersion": f"sha256:{source.sha256}",
+                            "gaussianCount": gaussian_count,
+                            "stableIdSchema": "uint32",
+                        },
+                    )
+
+    def test_rejects_office_prompt_log_without_frozen_point_entries(self) -> None:
+        with self.assertRaisesRegex(PocRunRecordError, "frozen entries"):
+            _validate_benchmark_prompt_log(
+                {
+                    "targetId": "gift_box",
+                    "frozenSource": {
+                        "file": "gift-box-point-log-v1.json",
+                        "sha256": "sha256:" + "a" * 64,
+                    },
+                    "frozenEntries": [],
+                    "entries": [],
+                },
+                expected_target_id="gift_box",
+                frame_set={
+                    "orderedViews": [
+                        {
+                            "viewId": "anchor-view",
+                            "frameDigest": "sha256:" + "a" * 64,
+                            "width": 1008,
+                            "height": 1008,
+                        }
+                    ]
+                },
+            )
+
+    def test_rejects_a_second_session_new_operation(self) -> None:
+        frame_digest = "sha256:" + "a" * 64
+        prompt = {
+            "viewId": "anchor-view",
+            "frameDigest": frame_digest,
+            "frameWidth": 1008,
+            "frameHeight": 1008,
+            "xPx": 100,
+            "yPx": 200,
+            "polarity": "include",
+        }
+        with self.assertRaisesRegex(PocRunRecordError, "one initial New"):
+            _validate_benchmark_prompt_log(
+                {
+                    "targetId": "controlled-overlap",
+                    "frozenSource": {
+                        "file": "benchmark-prompt-log-v1.json",
+                        "sha256": frame_digest,
+                    },
+                    "frozenEntries": [
+                        {"operation": "New", "prompt": {**prompt, "promptId": "one"}},
+                        {"operation": "New", "prompt": {**prompt, "promptId": "two"}},
+                    ],
+                    "entries": [
+                        {"operation": "New", "prompt": {**prompt, "promptId": "one"}},
+                        {"operation": "New", "prompt": {**prompt, "promptId": "two"}},
+                    ],
+                },
+                expected_target_id="controlled-overlap",
+                frame_set={
+                    "orderedViews": [
+                        {
+                            "viewId": "anchor-view",
+                            "frameDigest": frame_digest,
+                            "width": 1008,
+                            "height": 1008,
+                        }
+                    ]
+                },
+            )
+
+
 class PocRunRecordTests(unittest.TestCase):
     def complete_bindings(self, **overrides: object) -> dict[str, object]:
         bindings: dict[str, object] = {
@@ -273,13 +404,13 @@ class PocRunRecordTests(unittest.TestCase):
             "sessionId": "session-1",
             "targetSplatId": "controlled-overlap",
             "sceneId": "controlled-overlap",
-            "sceneVersion": "sha256:scene",
+            "sceneVersion": "sha256:" + "d" * 64,
             "operation": "New",
             "correctionRound": 0,
             "promptLogRevision": 1,
             "frameSetVersion": "frames-final",
             "renderConfigVersion": "render-v1",
-            "modelManifestDigest": "sha256:model",
+            "modelManifestDigest": "sha256:" + "c" * 64,
         }
         bindings.update(overrides)
         return bindings
@@ -288,18 +419,49 @@ class PocRunRecordTests(unittest.TestCase):
         self,
         root: Path,
         *,
+        bindings: dict[str, object] | None = None,
         render_policy: dict[str, object] | None = None,
         evidence_snapshot_policy: dict[str, object] | None = None,
     ) -> dict[str, Path]:
+        if bindings is None:
+            bindings = self.complete_bindings()
         if render_policy is None:
             render_policy = {
                 "renderConfigVersion": "render-v1",
-                "evidencePolicy": {"renderConfigVersion": "render-v1"},
+                "evidencePolicy": {
+                    "id": "selection-evidence-policy/v1",
+                    "renderConfigVersion": "render-v1",
+                },
             }
         if evidence_snapshot_policy is None:
-            evidence_snapshot_policy = {"renderConfigVersion": "render-v1"}
+            evidence_snapshot_policy = {
+                "id": "selection-evidence-policy/v1",
+                "renderConfigVersion": "render-v1",
+            }
         inputs = root / "inputs"
         inputs.mkdir()
+        frame_digest = "sha256:" + "a" * 64
+        frozen_prompt = {
+            "promptId": "controlled-center",
+            "viewId": "anchor-view",
+            "xPx": 100,
+            "yPx": 200,
+            "polarity": "include",
+        }
+        frozen_entries = [{"operation": "New", "prompt": frozen_prompt}]
+        session_entries = [
+            {
+                "operation": "New",
+                "prompt": {
+                    **frozen_prompt,
+                    "frameDigest": frame_digest,
+                    "frameWidth": 1008,
+                    "frameHeight": 1008,
+                },
+            }
+        ]
+        frozen_entries_sha256 = canonical_prompt_entries_sha256(frozen_entries)
+        session_entries_sha256 = canonical_prompt_entries_sha256(session_entries)
         artifacts: dict[str, Path] = {}
         for name in REQUIRED_PREDICTION_ARTIFACTS:
             artifact = inputs / f"{name}.json"
@@ -312,34 +474,114 @@ class PocRunRecordTests(unittest.TestCase):
                 }
             elif name == "sceneSnapshot":
                 value = {
-                    "sceneId": "controlled-overlap",
-                    "sceneVersion": "sha256:scene",
+                    "sceneId": bindings["sceneId"],
+                    "sceneVersion": bindings["sceneVersion"],
+                    "gaussianCount": 5,
+                    "stableIdSchema": "uint32",
                 }
             elif name == "frameSet":
-                value = {"frameSetVersion": "frames-final"}
+                value = {
+                    "frameSetVersion": bindings["frameSetVersion"],
+                    "orderedViews": [
+                        {
+                            "viewId": "anchor-view",
+                            "frameDigest": frame_digest,
+                            "width": 1008,
+                            "height": 1008,
+                        }
+                    ],
+                }
+            elif name == "benchmarkPromptLog":
+                value = {
+                    "targetId": "controlled-overlap",
+                    "frozenSource": {
+                        "file": "benchmark-prompt-log-v1.json",
+                        "sha256": frame_digest,
+                    },
+                    "frozenEntries": frozen_entries,
+                    "frozenEntriesSha256": frozen_entries_sha256,
+                    "entries": session_entries,
+                    "sessionEntriesSha256": session_entries_sha256,
+                }
             elif name == "maskSet":
                 value = {
-                    "requestId": "request-1",
-                    "sessionId": "session-1",
-                    "promptLogRevision": 1,
-                    "frameSetVersion": "frames-final",
-                    "modelManifestDigest": "sha256:model",
+                    "requestId": bindings["requestId"],
+                    "sessionId": bindings["sessionId"],
+                    "promptLogRevision": bindings["promptLogRevision"],
+                    "promptLogEntriesSha256": session_entries_sha256,
+                    "frameSetVersion": bindings["frameSetVersion"],
+                    "modelManifestDigest": bindings["modelManifestDigest"],
                 }
+            elif name == "coverageReport":
+                value = {"status": "sufficient"}
             elif name == "renderPolicy":
                 value = render_policy
             elif name == "evidenceSnapshot":
                 value = {
                     **{
                         name: value
-                        for name, value in self.complete_bindings().items()
+                        for name, value in bindings.items()
                         if name not in {"trialId", "terminalState"}
                     },
                     "policy": evidence_snapshot_policy,
+                    "records": [],
                 }
             elif name == "modelManifest":
-                value = {"digest": "sha256:model"}
+                value = {
+                    "adapterId": "sam3.1",
+                    "checkpointDigest": "sha256:" + "b" * 64,
+                    "digest": bindings["modelManifestDigest"],
+                }
+            elif name == "runtimeManifest":
+                effective_seed = int.from_bytes(
+                    hashlib.sha256(
+                        str(bindings["deterministicSeed"]).encode("utf-8")
+                    ).digest()[:4],
+                    "big",
+                )
+                value = {
+                    "companionVersion": "0.1.0",
+                    "serviceBuild": "selection-service-companion/0.1.0+test",
+                    "protocolVersion": bindings["protocolVersion"],
+                    "randomness": {
+                        "declaredSeed": bindings["deterministicSeed"],
+                        "effectiveSeed": effective_seed,
+                        "seedDerivation": "sha256-utf8-first-u32be/v1",
+                        "pythonRandomSeeded": True,
+                        "numpyRandomSeeded": True,
+                        "torchCpuSeeded": True,
+                        "torchCudaSeeded": True,
+                        "algorithmDeterminism": "not-forced",
+                    },
+                    "executionProfile": {
+                        "browser": {"family": "Chromium", "version": "123.0"},
+                        "transport": {
+                            "kind": "fetch",
+                            "endpointScope": "loopback",
+                        },
+                    },
+                }
+            elif name == "correctionOutcomes":
+                value = {
+                    "outcomes": [
+                        {
+                            "operation": "New",
+                            "correctionRound": 0,
+                            "requestId": bindings["requestId"],
+                            "promptLogRevision": bindings["promptLogRevision"],
+                            "promptLogEntriesSha256": session_entries_sha256,
+                            "terminalState": "complete",
+                        }
+                    ]
+                }
+            elif name == "timingAndVram":
+                value = {
+                    "stageSeconds": {"previewPublicationSeconds": 1.0},
+                    "peakVramBytes": 1024,
+                    "peakVramMeasurement": "test sampler",
+                }
             if isinstance(value, dict):
-                value = {**value, "recordBindings": self.complete_bindings()}
+                value = {**value, "recordBindings": bindings}
             artifact.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
             artifacts[name] = artifact
         lock_digest = "sha256:" + hashlib.sha256(
@@ -351,6 +593,108 @@ class PocRunRecordTests(unittest.TestCase):
             json.dumps(runtime, sort_keys=True), encoding="utf-8"
         )
         return artifacts
+
+    def controlled_ground_truth(self, root: Path) -> Path:
+        ground_truth = root / "controlled-overlap-ground-truth.json"
+        ground_truth.write_text(
+            json.dumps(
+                {
+                    "selectedStableGaussianIds": [1, 2, 3],
+                    "rejectedStableGaussianIds": [4, 5],
+                    "ambiguousStableGaussianIds": [],
+                    "rearSurfaceStableGaussianIds": [2, 3],
+                    "distractorStableGaussianIds": [4, 5],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return ground_truth
+
+    def registered_trial_registry(self, root: Path, ground_truth: Path) -> Path:
+        registry = root / "poc-trial-registry.json"
+        inputs = root / "inputs"
+        if not inputs.is_dir():
+            raise AssertionError("complete_artifacts must run before registry setup")
+        prompt_log_path = root / "inputs" / "benchmarkPromptLog.json"
+        prompt_log = json.loads(prompt_log_path.read_text(encoding="utf-8"))
+        scene = json.loads((inputs / "sceneSnapshot.json").read_text(encoding="utf-8"))
+        model = json.loads((inputs / "modelManifest.json").read_text(encoding="utf-8"))
+        runtime = json.loads((inputs / "runtimeManifest.json").read_text(encoding="utf-8"))
+        render_policy = json.loads(
+            (inputs / "renderPolicy.json").read_text(encoding="utf-8")
+        )
+        bindings = model["recordBindings"]
+        registry.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "benchmarkId": "test-poc/v1",
+                    "targets": [
+                        {
+                            "targetId": "controlled-overlap",
+                            "benchmarkKind": "controlled-overlap",
+                            "availability": "ready",
+                            "sceneSnapshot": {
+                                "targetSplatId": bindings["targetSplatId"],
+                                "sceneId": scene["sceneId"],
+                                "sceneVersion": scene["sceneVersion"],
+                                "gaussianCount": scene["gaussianCount"],
+                                "stableIdSchema": scene["stableIdSchema"],
+                            },
+                            "executionProfile": {
+                                "protocolVersion": bindings["protocolVersion"],
+                                "model": {
+                                    "adapterId": model["adapterId"],
+                                    "digest": model["digest"],
+                                    "checkpointDigest": model["checkpointDigest"],
+                                },
+                                "runtime": {
+                                    "lockDigest": runtime["release"]["lockDigest"],
+                                },
+                                "seedPolicy": {
+                                    "seedDerivation": runtime["randomness"][
+                                        "seedDerivation"
+                                    ],
+                                    "algorithmDeterminism": runtime["randomness"][
+                                        "algorithmDeterminism"
+                                    ],
+                                },
+                                "render": {
+                                    "renderConfigVersion": render_policy[
+                                        "renderConfigVersion"
+                                    ],
+                                    "evidencePolicy": {
+                                        "id": render_policy["evidencePolicy"]["id"],
+                                        "renderConfigVersion": render_policy[
+                                            "evidencePolicy"
+                                        ]["renderConfigVersion"],
+                                    },
+                                },
+                            },
+                            "groundTruth": {
+                                "path": ground_truth.name,
+                                "sha256": "sha256:"
+                                + hashlib.sha256(ground_truth.read_bytes()).hexdigest()
+                            },
+                            "promptLog": {
+                                "status": "frozen-point-only",
+                                "sha256": "sha256:" + "a" * 64,
+                                "entriesSha256": canonical_prompt_entries_sha256(
+                                    prompt_log["frozenEntries"]
+                                ),
+                            },
+                            "requiredSeeds": [
+                                "controlled-seed-1",
+                                "controlled-seed-2",
+                                "controlled-seed-3",
+                            ],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return registry
 
     def test_seals_a_complete_prediction_before_ground_truth_is_available(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -457,6 +801,9 @@ class PocRunRecordTests(unittest.TestCase):
                 record.directory,
                 ground_truth_path=ground_truth,
                 output_path=root / "score.json",
+                benchmark_registry_path=self.registered_trial_registry(
+                    root, ground_truth
+                ),
             )
 
             self.assertEqual(result["metrics"]["intersectionOverUnion"], 0.5)
@@ -465,7 +812,889 @@ class PocRunRecordTests(unittest.TestCase):
             self.assertEqual(result["metrics"]["rearSurfaceRecall"], 0.5)
             self.assertEqual(result["metrics"]["selectedDistractorCount"], 1)
             self.assertFalse(result["controlledOverlapGatePassed"])
+            self.assertEqual(
+                result["gateReport"]["gates"]["defaultPathCorrectness"]["status"],
+                "fail",
+            )
+            self.assertEqual(
+                result["gateReport"]["gates"]["recordCompleteness"]["status"],
+                "pass",
+            )
+            self.assertEqual(result["gateReport"]["overallStatus"], "fail")
             self.assertTrue((root / "score.json").is_file())
+
+    def test_marks_missing_browser_transport_evidence_as_incomplete(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = self.complete_artifacts(root)
+            runtime = json.loads(
+                artifacts["runtimeManifest"].read_text(encoding="utf-8")
+            )
+            runtime["executionProfile"] = {
+                "browser": "not-applicable (standalone CLI benchmark)",
+                "transport": "in-process CompanionState; no network transport",
+            }
+            artifacts["runtimeManifest"].write_text(
+                json.dumps(runtime), encoding="utf-8"
+            )
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=artifacts,
+                bindings=self.complete_bindings(),
+            )
+
+            result = score_prediction(
+                record.directory,
+                ground_truth_path=self.controlled_ground_truth(root),
+                output_path=root / "score.json",
+            )
+
+            completeness = result["gateReport"]["gates"]["recordCompleteness"]
+            self.assertEqual(completeness["status"], "fail")
+            self.assertIn(
+                "reference browser/version and non-secret transport profile",
+                completeness["reasons"],
+            )
+
+    def test_rejects_a_substituted_registered_ground_truth_or_seed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ground_truth = self.controlled_ground_truth(root)
+            artifacts = self.complete_artifacts(root)
+            registry = self.registered_trial_registry(root, ground_truth)
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=artifacts,
+                bindings=self.complete_bindings(),
+            )
+            ground_truth.write_text("{}", encoding="utf-8")
+
+            with self.assertRaisesRegex(PocRunRecordError, "registered fixture"):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=root / "score.json",
+                    benchmark_registry_path=registry,
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ground_truth = self.controlled_ground_truth(root)
+            bindings = self.complete_bindings(deterministicSeed="cherry-picked")
+            artifacts = self.complete_artifacts(root, bindings=bindings)
+            registry = self.registered_trial_registry(root, ground_truth)
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=artifacts,
+                bindings=bindings,
+            )
+
+            with self.assertRaisesRegex(PocRunRecordError, "prescribed fixed seed"):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=root / "score.json",
+                    benchmark_registry_path=registry,
+                )
+
+    def test_marks_an_unbound_prompt_log_or_outcome_prefix_as_a_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = self.complete_artifacts(root)
+            prompt_log = json.loads(
+                artifacts["benchmarkPromptLog"].read_text(encoding="utf-8")
+            )
+            del prompt_log["sessionEntriesSha256"]
+            artifacts["benchmarkPromptLog"].write_text(
+                json.dumps(prompt_log), encoding="utf-8"
+            )
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=artifacts,
+                bindings=self.complete_bindings(),
+            )
+            ground_truth = self.controlled_ground_truth(root)
+
+            result = score_prediction(
+                record.directory,
+                ground_truth_path=ground_truth,
+                output_path=root / "score.json",
+                benchmark_registry_path=self.registered_trial_registry(
+                    root, ground_truth
+                ),
+            )
+            self.assertIn(
+                "frozen Prompt Log execution binding",
+                result["gateReport"]["gates"]["recordCompleteness"]["reasons"],
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = self.complete_artifacts(root)
+            correction_outcomes = json.loads(
+                artifacts["correctionOutcomes"].read_text(encoding="utf-8")
+            )
+            correction_outcomes["outcomes"][0]["promptLogEntriesSha256"] = (
+                "sha256:" + "0" * 64
+            )
+            artifacts["correctionOutcomes"].write_text(
+                json.dumps(correction_outcomes), encoding="utf-8"
+            )
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=artifacts,
+                bindings=self.complete_bindings(),
+            )
+            ground_truth = self.controlled_ground_truth(root)
+
+            result = score_prediction(
+                record.directory,
+                ground_truth_path=ground_truth,
+                output_path=root / "score.json",
+                benchmark_registry_path=self.registered_trial_registry(
+                    root, ground_truth
+                ),
+            )
+            self.assertEqual(
+                result["gateReport"]["gates"]["correctionRoundBound"]["status"],
+                "fail",
+            )
+
+    def test_aggregate_requires_every_registered_target_and_seed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ground_truth = self.controlled_ground_truth(root)
+            artifacts = self.complete_artifacts(root)
+            registry = self.registered_trial_registry(root, ground_truth)
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=artifacts,
+                bindings=self.complete_bindings(),
+            )
+            _, final_record = score_and_seal_prediction(
+                record.directory,
+                ground_truth_path=ground_truth,
+                output_path=root / "score.json",
+                final_record_directory=root / "trial-1-final",
+                benchmark_registry_path=registry,
+            )
+
+            assessment = assess_registered_trials(
+                registry,
+                final_record_directories=[final_record.directory],
+                output_path=root / "assessment.json",
+            )
+
+            self.assertEqual(assessment["acceptanceStatus"], "fail")
+            self.assertEqual(len(assessment["trials"]), 3)
+            self.assertTrue(
+                any(
+                    trial.get("reason") == "required final scored Run Record is missing"
+                    for trial in assessment["trials"]
+                )
+            )
+            self.assertTrue((root / "assessment.json").is_file())
+            with self.assertRaisesRegex(PocRunRecordError, "scored Run Record"):
+                assess_registered_trials(
+                    registry,
+                    final_record_directories=[final_record.directory],
+                    output_path=final_record.directory / "assessment.json",
+                )
+
+    def test_rejects_score_outputs_that_alias_consumed_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=self.complete_artifacts(root),
+                bindings=self.complete_bindings(),
+            )
+            ground_truth = self.controlled_ground_truth(root)
+            ground_truth_before = ground_truth.read_bytes()
+
+            with self.assertRaisesRegex(
+                PocRunRecordError, "must not overwrite Benchmark Ground Truth"
+            ):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=ground_truth,
+                )
+            self.assertEqual(ground_truth.read_bytes(), ground_truth_before)
+
+            hard_link_output = root / "ground-truth-hard-link.json"
+            hard_link_output.hardlink_to(ground_truth)
+            with self.assertRaisesRegex(
+                PocRunRecordError, "must not overwrite Benchmark Ground Truth"
+            ):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=hard_link_output,
+                )
+            self.assertEqual(ground_truth.read_bytes(), ground_truth_before)
+
+            candidate = record.directory / "artifacts" / "candidateObjectSelection.json"
+            candidate_before = candidate.read_bytes()
+            candidate_output = root / "candidate-hard-link.json"
+            candidate_output.hardlink_to(candidate)
+            with self.assertRaisesRegex(
+                PocRunRecordError, "must not overwrite sealed prediction input"
+            ):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=candidate_output,
+                )
+            self.assertEqual(candidate.read_bytes(), candidate_before)
+
+            predictable_ground_truth = root / "sealed-score.json.tmp"
+            predictable_ground_truth.write_bytes(ground_truth_before)
+            score_prediction(
+                record.directory,
+                ground_truth_path=predictable_ground_truth,
+                output_path=root / "sealed-score.json",
+            )
+            self.assertEqual(
+                predictable_ground_truth.read_bytes(), ground_truth_before
+            )
+
+            predictable_candidate = root / "candidate-score.json.tmp"
+            predictable_candidate.hardlink_to(candidate)
+            score_prediction(
+                record.directory,
+                ground_truth_path=ground_truth,
+                output_path=root / "candidate-score.json",
+            )
+            self.assertEqual(candidate.read_bytes(), candidate_before)
+
+    def test_correction_gate_requires_contiguous_bound_successes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bindings = self.complete_bindings(operation="Refine", correctionRound=5)
+            artifacts = self.complete_artifacts(root, bindings=bindings)
+            correction_outcomes = json.loads(
+                artifacts["correctionOutcomes"].read_text(encoding="utf-8")
+            )
+            correction_outcomes["outcomes"].append(
+                {
+                    "operation": "Refine",
+                    "correctionRound": 5,
+                    "requestId": bindings["requestId"],
+                    "terminalState": "complete",
+                }
+            )
+            artifacts["correctionOutcomes"].write_text(
+                json.dumps(correction_outcomes), encoding="utf-8"
+            )
+            record = seal_prediction(
+                root / "trial-1", artifacts=artifacts, bindings=bindings
+            )
+
+            result = score_prediction(
+                record.directory,
+                ground_truth_path=self.controlled_ground_truth(root),
+                output_path=root / "score.json",
+            )
+
+            self.assertEqual(
+                result["gateReport"]["gates"]["correctionRoundBound"]["status"],
+                "fail",
+            )
+            self.assertEqual(
+                result["gateReport"]["gates"]["recordCompleteness"]["status"],
+                "fail",
+            )
+
+    def test_correction_gate_binds_the_final_success_to_the_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bindings = self.complete_bindings(operation="Refine", correctionRound=1)
+            artifacts = self.complete_artifacts(root, bindings=bindings)
+            correction_outcomes = json.loads(
+                artifacts["correctionOutcomes"].read_text(encoding="utf-8")
+            )
+            correction_outcomes["outcomes"].append(
+                {
+                    "operation": "Refine",
+                    "correctionRound": 1,
+                    "requestId": "another-request",
+                    "terminalState": "complete",
+                }
+            )
+            artifacts["correctionOutcomes"].write_text(
+                json.dumps(correction_outcomes), encoding="utf-8"
+            )
+            record = seal_prediction(
+                root / "trial-1", artifacts=artifacts, bindings=bindings
+            )
+
+            result = score_prediction(
+                record.directory,
+                ground_truth_path=self.controlled_ground_truth(root),
+                output_path=root / "score.json",
+            )
+
+            self.assertEqual(
+                result["gateReport"]["gates"]["correctionRoundBound"]["status"],
+                "fail",
+            )
+
+    def test_seals_independent_score_as_the_final_run_record(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=self.complete_artifacts(root),
+                bindings=self.complete_bindings(),
+            )
+            ground_truth = root / "controlled-overlap-ground-truth.json"
+            ground_truth.write_text(
+                json.dumps(
+                    {
+                        "selectedStableGaussianIds": [1, 2, 3],
+                        "rejectedStableGaussianIds": [4, 5],
+                        "ambiguousStableGaussianIds": [],
+                        "rearSurfaceStableGaussianIds": [2, 3],
+                        "distractorStableGaussianIds": [4, 5],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            score_path = root / "score.json"
+            registry_path = self.registered_trial_registry(root, ground_truth)
+            result, final_record = score_and_seal_prediction(
+                record.directory,
+                ground_truth_path=ground_truth,
+                output_path=score_path,
+                final_record_directory=root / "trial-1-final",
+                benchmark_registry_path=registry_path,
+            )
+
+            final_manifest = json.loads(
+                final_record.manifest_path.read_text(encoding="utf-8")
+            )
+            final_seal = json.loads(final_record.seal_path.read_text(encoding="utf-8"))
+            copied_score = json.loads(
+                (
+                    final_record.directory
+                    / final_manifest["score"]["path"]
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(final_manifest["status"], "scored")
+            self.assertEqual(
+                final_manifest["prediction"]["manifestSha256"],
+                record.manifest_sha256,
+            )
+            self.assertEqual(
+                copied_score["predictionManifestSha256"], record.manifest_sha256
+            )
+            self.assertEqual(
+                final_manifest["score"]["sha256"],
+                "sha256:"
+                + hashlib.sha256(
+                    (
+                        final_record.directory / final_manifest["score"]["path"]
+                    ).read_bytes()
+                ).hexdigest(),
+            )
+            self.assertEqual(final_seal["status"], "sealed-after-ground-truth")
+            self.assertEqual(
+                copied_score["controlledOverlapGatePassed"],
+                result["controlledOverlapGatePassed"],
+            )
+            injected_score = final_record.directory / "injected-score.json"
+            with self.assertRaisesRegex(
+                PocRunRecordError, "scored Run Record"
+            ):
+                score_and_seal_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=injected_score,
+                    final_record_directory=final_record.directory,
+                    benchmark_registry_path=registry_path,
+                )
+            self.assertFalse(injected_score.exists())
+            with self.assertRaisesRegex(
+                PocRunRecordError, "outside an existing scored Run Record"
+            ):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=injected_score,
+                    benchmark_registry_path=registry_path,
+                )
+            with self.assertRaisesRegex(
+                PocRunRecordError, "outside an existing scored Run Record"
+            ):
+                score_and_seal_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=injected_score,
+                    final_record_directory=root / "different-final-record",
+                    benchmark_registry_path=registry_path,
+                )
+            self.assertFalse((root / "different-final-record").exists())
+
+            tampered_final = root / "tampered-final"
+            shutil.copytree(final_record.directory, tampered_final)
+            tampered_score_path = tampered_final / final_manifest["score"]["path"]
+            tampered_score = json.loads(tampered_score_path.read_text(encoding="utf-8"))
+            tampered_score["metrics"] = {
+                "intersectionOverUnion": 1.0,
+                "precision": 1.0,
+                "recall": 1.0,
+                "rearSurfaceRecall": 1.0,
+                "selectedDistractorCount": 0,
+            }
+            tampered_score["controlledOverlapGatePassed"] = True
+            tampered_score_path.write_text(
+                json.dumps(tampered_score, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            tampered_manifest_path = tampered_final / "scored-run-manifest.json"
+            tampered_manifest = json.loads(
+                tampered_manifest_path.read_text(encoding="utf-8")
+            )
+            tampered_manifest["score"]["bytes"] = tampered_score_path.stat().st_size
+            tampered_manifest["score"]["sha256"] = "sha256:" + hashlib.sha256(
+                tampered_score_path.read_bytes()
+            ).hexdigest()
+            tampered_manifest_path.write_text(
+                json.dumps(tampered_manifest, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            tampered_seal_path = tampered_final / "scored-run-seal.json"
+            tampered_seal = json.loads(tampered_seal_path.read_text(encoding="utf-8"))
+            tampered_seal["manifestSha256"] = "sha256:" + hashlib.sha256(
+                tampered_manifest_path.read_bytes()
+            ).hexdigest()
+            tampered_seal_path.write_text(
+                json.dumps(tampered_seal, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            assessment = assess_registered_trials(
+                registry_path,
+                final_record_directories=[tampered_final],
+            )
+            self.assertEqual(assessment["acceptanceStatus"], "fail")
+            self.assertIn(
+                "frozen evaluator",
+                assessment["invalidRecords"][0]["reason"],
+            )
+
+            external_prediction = root / "external-prediction"
+            shutil.copytree(final_record.directory / "prediction", external_prediction)
+            symlinked_final = root / "symlinked-final"
+            shutil.copytree(final_record.directory, symlinked_final)
+            shutil.rmtree(symlinked_final / "prediction")
+            (symlinked_final / "prediction").symlink_to(
+                external_prediction, target_is_directory=True
+            )
+            assessment = assess_registered_trials(
+                registry_path,
+                final_record_directories=[symlinked_final],
+            )
+            self.assertIn(
+                "copied prediction escapes",
+                assessment["invalidRecords"][0]["reason"],
+            )
+
+            forged_score = json.loads(json.dumps(result))
+            forged_score["controlledOverlapGatePassed"] = True
+            with self.assertRaisesRegex(PocRunRecordError, "gate is inconsistent"):
+                _seal_scored_run(
+                    root / "forged-final",
+                    prediction=_verified_prediction(record.directory),
+                    score=forged_score,
+                    registry=_load_poc_trial_registry(registry_path),
+                )
+
+    def test_registry_binds_frozen_prompt_entries_and_scene_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ground_truth = self.controlled_ground_truth(root)
+            artifacts = self.complete_artifacts(root)
+            registry = self.registered_trial_registry(root, ground_truth)
+            prompt_log = json.loads(
+                artifacts["benchmarkPromptLog"].read_text(encoding="utf-8")
+            )
+            prompt_log["frozenEntries"][0]["prompt"]["xPx"] = 101
+            prompt_log["entries"][0]["prompt"]["xPx"] = 101
+            prompt_log["frozenEntriesSha256"] = canonical_prompt_entries_sha256(
+                prompt_log["frozenEntries"]
+            )
+            session_sha256 = canonical_prompt_entries_sha256(prompt_log["entries"])
+            prompt_log["sessionEntriesSha256"] = session_sha256
+            artifacts["benchmarkPromptLog"].write_text(
+                json.dumps(prompt_log), encoding="utf-8"
+            )
+            mask_set = json.loads(artifacts["maskSet"].read_text(encoding="utf-8"))
+            mask_set["promptLogEntriesSha256"] = session_sha256
+            artifacts["maskSet"].write_text(json.dumps(mask_set), encoding="utf-8")
+            outcomes = json.loads(
+                artifacts["correctionOutcomes"].read_text(encoding="utf-8")
+            )
+            outcomes["outcomes"][0]["promptLogEntriesSha256"] = session_sha256
+            artifacts["correctionOutcomes"].write_text(
+                json.dumps(outcomes), encoding="utf-8"
+            )
+            record = seal_prediction(
+                root / "mutated-prompt", artifacts=artifacts, bindings=self.complete_bindings()
+            )
+            with self.assertRaisesRegex(PocRunRecordError, "frozen entries"):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=root / "score.json",
+                    benchmark_registry_path=registry,
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            canonical_root = root / "canonical"
+            canonical_root.mkdir()
+            ground_truth = self.controlled_ground_truth(canonical_root)
+            self.complete_artifacts(canonical_root)
+            registry = self.registered_trial_registry(canonical_root, ground_truth)
+            trial_root = root / "substitute"
+            trial_root.mkdir()
+            bindings = self.complete_bindings(sceneVersion="sha256:" + "e" * 64)
+            artifacts = self.complete_artifacts(trial_root, bindings=bindings)
+            record = seal_prediction(
+                trial_root / "trial", artifacts=artifacts, bindings=bindings
+            )
+            with self.assertRaisesRegex(PocRunRecordError, "canonical Scene Snapshot"):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=trial_root / "score.json",
+                    benchmark_registry_path=registry,
+                )
+
+    def test_recomputes_the_registered_effective_runtime_seed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ground_truth = self.controlled_ground_truth(root)
+            artifacts = self.complete_artifacts(root)
+            registry = self.registered_trial_registry(root, ground_truth)
+            runtime = json.loads(
+                artifacts["runtimeManifest"].read_text(encoding="utf-8")
+            )
+            runtime["randomness"]["effectiveSeed"] += 1
+            artifacts["runtimeManifest"].write_text(
+                json.dumps(runtime), encoding="utf-8"
+            )
+            record = seal_prediction(
+                root / "trial", artifacts=artifacts, bindings=self.complete_bindings()
+            )
+
+            result = score_prediction(
+                record.directory,
+                ground_truth_path=ground_truth,
+                output_path=root / "score.json",
+                benchmark_registry_path=registry,
+            )
+
+            self.assertIn(
+                "effective runtime seed and determinism policy",
+                result["gateReport"]["gates"]["recordCompleteness"]["reasons"],
+            )
+
+    def test_browser_claims_cannot_make_a_formal_gate_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = self.complete_artifacts(root)
+            browser_claim = root / "browser-acceptance.json"
+            browser_claim.write_text(
+                json.dumps(
+                    {
+                        "producer": "browser",
+                        "gates": {
+                            "blindReadyJudgment": {"status": "pass"},
+                            "uncertaintyDisclosure": {"status": "pass"},
+                            "editorCompatibility": {"status": "pass"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            artifacts["browserAcceptance"] = browser_claim
+            record = seal_prediction(
+                root / "trial", artifacts=artifacts, bindings=self.complete_bindings()
+            )
+            result = score_prediction(
+                record.directory,
+                ground_truth_path=self.controlled_ground_truth(root),
+                output_path=root / "score.json",
+            )
+            gate = result["gateReport"]["gates"]["blindReadyJudgment"]
+            self.assertEqual(gate["status"], "fail")
+            self.assertEqual(gate["evidenceStatus"], "unverified")
+
+    def test_applies_distinct_effective_runtime_seeds(self) -> None:
+        class FakeCuda:
+            def __init__(self) -> None:
+                self.seeds: list[int] = []
+
+            def manual_seed_all(self, seed: int) -> None:
+                self.seeds.append(seed)
+
+        class FakeTorch:
+            def __init__(self) -> None:
+                self.cpu_seeds: list[int] = []
+                self.cuda = FakeCuda()
+
+            def manual_seed(self, seed: int) -> None:
+                self.cpu_seeds.append(seed)
+
+            def are_deterministic_algorithms_enabled(self) -> bool:
+                return False
+
+        torch = FakeTorch()
+        first = _apply_trial_seed(torch, "controlled-overlap-seed-1")
+        second = _apply_trial_seed(torch, "controlled-overlap-seed-2")
+
+        self.assertNotEqual(first["effectiveSeed"], second["effectiveSeed"])
+        self.assertEqual(torch.cpu_seeds, [first["effectiveSeed"], second["effectiveSeed"]])
+        self.assertEqual(torch.cuda.seeds, [first["effectiveSeed"], second["effectiveSeed"]])
+
+    def test_scores_hashed_office_labels_within_the_frozen_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_ply = root / "office.ply"
+            source_ply.write_bytes(b"frozen office fixture")
+            source_sha256 = hashlib.sha256(source_ply.read_bytes()).hexdigest()
+            bindings = self.complete_bindings(
+                sceneId="office",
+                sceneVersion=f"sha256:{source_sha256}",
+                targetSplatId="office",
+                trialId="gift-box-seed-1",
+                promptLogRevision=2,
+            )
+            artifacts = self.complete_artifacts(root, bindings=bindings)
+            frozen_entries = [
+                {
+                    "operation": "New",
+                    "prompt": {
+                        "promptId": "gift-box-center",
+                        "viewId": "anchor-view",
+                        "xPx": 100,
+                        "yPx": 200,
+                        "polarity": "include",
+                    },
+                },
+                {
+                    "operation": "New",
+                    "prompt": {
+                        "promptId": "gift-box-lower",
+                        "viewId": "anchor-view",
+                        "xPx": 110,
+                        "yPx": 220,
+                        "polarity": "include",
+                    },
+                },
+            ]
+            session_entries = [
+                {
+                    "operation": "New",
+                    "prompt": {
+                        **frozen_entries[0]["prompt"],
+                        "frameDigest": "sha256:" + "a" * 64,
+                        "frameWidth": 1008,
+                        "frameHeight": 1008,
+                    },
+                },
+                {
+                    "operation": "Refine",
+                    "prompt": {
+                        **frozen_entries[1]["prompt"],
+                        "frameDigest": "sha256:" + "a" * 64,
+                        "frameWidth": 1008,
+                        "frameHeight": 1008,
+                    },
+                },
+            ]
+            session_entries_sha256 = canonical_prompt_entries_sha256(session_entries)
+            artifacts["benchmarkPromptLog"].write_text(
+                json.dumps(
+                    {
+                        "targetId": "gift_box",
+                        "frozenSource": {
+                            "file": "gift-box-point-log-v1.json",
+                            "sha256": "sha256:" + "a" * 64,
+                        },
+                        "frozenEntries": frozen_entries,
+                        "frozenEntriesSha256": canonical_prompt_entries_sha256(
+                            frozen_entries
+                        ),
+                        "entries": session_entries,
+                        "sessionEntriesSha256": session_entries_sha256,
+                        "sessionMaterialization": {
+                            "kind": "initial-new-points-to-primary-track/v1"
+                        },
+                        "recordBindings": bindings,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            mask_set = json.loads(artifacts["maskSet"].read_text(encoding="utf-8"))
+            mask_set["promptLogEntriesSha256"] = session_entries_sha256
+            artifacts["maskSet"].write_text(json.dumps(mask_set), encoding="utf-8")
+            correction_outcomes = json.loads(
+                artifacts["correctionOutcomes"].read_text(encoding="utf-8")
+            )
+            correction_outcomes["outcomes"][0].update(
+                {
+                    "promptLogRevision": 2,
+                    "promptLogEntriesSha256": session_entries_sha256,
+                }
+            )
+            artifacts["correctionOutcomes"].write_text(
+                json.dumps(correction_outcomes), encoding="utf-8"
+            )
+            artifacts["candidateObjectSelection"].write_text(
+                json.dumps(
+                    {
+                        "selectedStableGaussianIds": [1, 2, 3, 99],
+                        "rejectedStableGaussianIds": [4, 5],
+                        "uncertainStableGaussianIds": [],
+                        "recordBindings": bindings,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            record = seal_prediction(
+                root / "trial-1",
+                artifacts=artifacts,
+                bindings=bindings,
+            )
+            labels = root / "office-ground-truth.npz"
+            np.savez(
+                labels,
+                selected_ids=np.array([1, 2, 3], dtype=np.uint32),
+                rejected_ids=np.array([4, 5], dtype=np.uint32),
+                ambiguous_ids=np.array([], dtype=np.uint32),
+                scope_ids=np.array([1, 2, 3, 4, 5], dtype=np.uint32),
+            )
+            ground_truth = root / "office-ground-truth.json"
+            ground_truth_value = {
+                "schema_version": 1,
+                "status": "frozen",
+                "target_id": "gift_box",
+                "source_ply": {
+                    "path": "office.ply",
+                    "sha256": source_sha256,
+                    "gaussian_count": 5,
+                },
+                "labels": {
+                    "artifact": labels.name,
+                    "artifact_sha256": hashlib.sha256(labels.read_bytes()).hexdigest(),
+                    "scope_stable_gaussians": 5,
+                    "selected_stable_gaussians": 3,
+                    "rejected_stable_gaussians": 2,
+                    "ambiguous_stable_gaussians": 0,
+                },
+            }
+            ground_truth.write_text(
+                json.dumps(ground_truth_value), encoding="utf-8"
+            )
+
+            with self.assertRaisesRegex(PocRunRecordError, "source PLY path"):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=root / "unassessed-score.json",
+                )
+            wrong_source_ply = root / "wrong-office.ply"
+            wrong_source_ply.write_bytes(b"different office fixture")
+            with self.assertRaisesRegex(PocRunRecordError, "source PLY hash"):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=root / "wrong-source-score.json",
+                    office_source_ply_path=wrong_source_ply,
+                )
+
+            source_before = source_ply.read_bytes()
+            with self.assertRaisesRegex(
+                PocRunRecordError, "must not overwrite office source PLY"
+            ):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=source_ply,
+                    office_source_ply_path=source_ply,
+                )
+            self.assertEqual(source_ply.read_bytes(), source_before)
+
+            labels_before = labels.read_bytes()
+            with self.assertRaisesRegex(
+                PocRunRecordError,
+                "must not overwrite office Benchmark Ground Truth labels",
+            ):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=ground_truth,
+                    output_path=labels,
+                    office_source_ply_path=source_ply,
+                )
+            self.assertEqual(labels.read_bytes(), labels_before)
+
+            result = score_prediction(
+                record.directory,
+                ground_truth_path=ground_truth,
+                output_path=root / "score.json",
+                office_source_ply_path=source_ply,
+            )
+
+            self.assertEqual(result["benchmarkKind"], "office")
+            self.assertEqual(result["targetId"], "gift_box")
+            self.assertEqual(result["metrics"]["intersectionOverUnion"], 1.0)
+            self.assertEqual(result["metrics"]["precision"], 1.0)
+            self.assertEqual(result["metrics"]["recall"], 1.0)
+            self.assertEqual(
+                result["officeSourcePlySha256"], f"sha256:{source_sha256}"
+            )
+            self.assertTrue(result["officeGatePassed"])
+            self.assertEqual(
+                result["gateReport"]["gates"]["blindReadyJudgment"]["status"],
+                "fail",
+            )
+            self.assertEqual(
+                result["gateReport"]["gates"]["blindReadyJudgment"][
+                    "evidenceStatus"
+                ],
+                "unassessed",
+            )
+            self.assertEqual(result["gateReport"]["overallStatus"], "fail")
+
+            ground_truth_value["target_id"] = "microwave"
+            mismatched_target_ground_truth = root / "mismatched-target-ground-truth.json"
+            mismatched_target_ground_truth.write_text(
+                json.dumps(ground_truth_value), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(PocRunRecordError, "benchmark target"):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=mismatched_target_ground_truth,
+                    output_path=root / "mismatched-target-score.json",
+                    office_source_ply_path=source_ply,
+                )
+
+            ground_truth_value["target_id"] = "gift_box"
+            ground_truth_value["source_ply"]["sha256"] = "0" * 64
+            mismatched_ground_truth = root / "mismatched-office-ground-truth.json"
+            mismatched_ground_truth.write_text(
+                json.dumps(ground_truth_value), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(PocRunRecordError, "Scene Snapshot"):
+                score_prediction(
+                    record.directory,
+                    ground_truth_path=mismatched_ground_truth,
+                    output_path=root / "mismatched-score.json",
+                    office_source_ply_path=source_ply,
+                )
 
     def test_excludes_ambiguous_truth_from_accuracy_metrics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -615,7 +1844,9 @@ class PocRunRecordTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with self.assertRaisesRegex(PocRunRecordError, "hash mismatch"):
+            with self.assertRaisesRegex(
+                PocRunRecordError, "(byte count|hash) mismatch"
+            ):
                 score_prediction(
                     record.directory,
                     ground_truth_path=ground_truth,
@@ -828,7 +2059,11 @@ class PocRunRecordTests(unittest.TestCase):
                     "sceneId": "controlled-overlap",
                     "sceneVersion": "sha256:scene",
                 },
-                prompt_log=[{"operation": "New"}],
+                prompt_log=[{"operation": "New"}, {"operation": "Refine"}],
+                frozen_prompt_log=[
+                    {"operation": "New"},
+                    {"operation": "New"},
+                ],
                 prompt_log_source={
                     "file": "benchmark-prompt-log-v1.json",
                     "sha256": "sha256:prompt-log",
@@ -844,6 +2079,7 @@ class PocRunRecordTests(unittest.TestCase):
                     "attempts": [{"viewId": "generated-00"}],
                 },
                 bindings=self.complete_bindings(),
+                benchmark_target_id="controlled-overlap",
             )
 
             candidate = json.loads(
@@ -872,6 +2108,18 @@ class PocRunRecordTests(unittest.TestCase):
                     "sha256": "sha256:prompt-log",
                 },
             )
+            self.assertEqual(
+                sealed_prompt_log["frozenEntries"],
+                [{"operation": "New"}, {"operation": "New"}],
+            )
+            self.assertEqual(
+                sealed_prompt_log["sessionMaterialization"],
+                {
+                    "kind": "initial-new-points-to-primary-track/v1",
+                    "reason": "The session contract allows exactly one New operation.",
+                },
+            )
+            self.assertEqual(sealed_prompt_log["targetId"], "controlled-overlap")
 
 
 if __name__ == "__main__":

@@ -9,13 +9,19 @@ import json
 import math
 from pathlib import Path
 import platform
+import random
 import struct
 import tempfile
 from threading import Event, Thread
 import time
 from typing import Any, Mapping, Sequence
 
-from .benchmark import PocRunRecordError, SealedPrediction, seal_prediction
+from .benchmark import (
+    PocRunRecordError,
+    SealedPrediction,
+    canonical_prompt_entries_sha256,
+    seal_prediction,
+)
 
 
 _EXPECTED_PROPERTIES = (
@@ -43,6 +49,43 @@ _CONTROLLED_OVERLAP_PLY_SHA256 = (
 FROZEN_BENCHMARK_PROMPT_LOG_NAME = "benchmark-prompt-log-v1.json"
 _ANCHOR_VIEW_ID = "anchor-view"
 _POINT_POLARITIES = ("include", "exclude")
+
+
+def _apply_trial_seed(torch_module: Any, deterministic_seed: str) -> dict[str, object]:
+    """Apply one recorded seed before renderer or model work begins.
+
+    The PoC does not claim that every GPU operator is deterministic.  It does
+    require that a declared seed reaches each runtime RNG and that the record
+    discloses whether deterministic algorithms were forced.
+    """
+
+    if not isinstance(deterministic_seed, str) or not deterministic_seed.strip():
+        raise PocRunRecordError("trial deterministic seed is invalid")
+    effective_seed = int.from_bytes(
+        hashlib.sha256(deterministic_seed.encode("utf-8")).digest()[:4], "big"
+    )
+    random.seed(effective_seed)
+    try:
+        import numpy
+    except ImportError as error:
+        raise PocRunRecordError("the locked runtime has no NumPy RNG") from error
+    numpy.random.seed(effective_seed)
+    torch_module.manual_seed(effective_seed)
+    torch_module.cuda.manual_seed_all(effective_seed)
+    return {
+        "declaredSeed": deterministic_seed,
+        "effectiveSeed": effective_seed,
+        "seedDerivation": "sha256-utf8-first-u32be/v1",
+        "pythonRandomSeeded": True,
+        "numpyRandomSeeded": True,
+        "torchCpuSeeded": True,
+        "torchCudaSeeded": True,
+        "algorithmDeterminism": (
+            "enforced"
+            if torch_module.are_deterministic_algorithms_enabled()
+            else "not-forced"
+        ),
+    }
 
 
 def build_controlled_overlap_snapshot(ply_path: Path) -> dict[str, object]:
@@ -134,6 +177,8 @@ def seal_preview_prediction(
     timing_and_vram: Mapping[str, object],
     internal_diagnostics: Mapping[str, object],
     bindings: Mapping[str, object],
+    frozen_prompt_log: Sequence[Mapping[str, object]] | None = None,
+    benchmark_target_id: str | None = None,
 ) -> SealedPrediction:
     """Materialize one complete Companion publication as a blind run record."""
 
@@ -170,17 +215,45 @@ def seal_preview_prediction(
     def bound(value: Mapping[str, object]) -> dict[str, object]:
         return {**dict(value), "recordBindings": record_bindings}
 
+    session_entries = list(prompt_log)
+    session_entries_sha256 = canonical_prompt_entries_sha256(session_entries)
+    benchmark_prompt_log: dict[str, object] = {
+        "entries": session_entries,
+        "sessionEntriesSha256": session_entries_sha256,
+        "frozenSource": dict(prompt_log_source),
+        "recordBindings": record_bindings,
+    }
+    if frozen_prompt_log is not None:
+        frozen_entries = list(frozen_prompt_log)
+        benchmark_prompt_log.update(
+            {
+                "frozenEntries": frozen_entries,
+                "frozenEntriesSha256": canonical_prompt_entries_sha256(
+                    frozen_entries
+                ),
+                "sessionMaterialization": {
+                    "kind": "initial-new-points-to-primary-track/v1",
+                    "reason": "The session contract allows exactly one New operation.",
+                },
+            }
+        )
+    if benchmark_target_id is not None:
+        if not isinstance(benchmark_target_id, str) or not benchmark_target_id:
+            raise PocRunRecordError("the benchmark target ID is invalid")
+        benchmark_prompt_log["targetId"] = benchmark_target_id
+
     return _materialize_and_seal(
         output_directory,
         values={
             "sceneSnapshot": bound(scene_snapshot),
-            "benchmarkPromptLog": {
-                "entries": list(prompt_log),
-                "frozenSource": dict(prompt_log_source),
-                "recordBindings": record_bindings,
-            },
+            "benchmarkPromptLog": benchmark_prompt_log,
             "frameSet": bound(publication.frame_set),
-            "maskSet": bound(publication.mask_set),
+            "maskSet": bound(
+                {
+                    **dict(publication.mask_set),
+                    "promptLogEntriesSha256": session_entries_sha256,
+                }
+            ),
             "candidateObjectSelection": candidate,
             "evidenceSnapshot": bound(publication.evidence_snapshot),
             "coverageReport": bound(publication.coverage_report),
@@ -333,6 +406,51 @@ def load_frozen_benchmark_prompt_log(
     return validated
 
 
+def materialize_frozen_benchmark_prompt_log(
+    frozen_entries: Sequence[Mapping[str, object]],
+    *,
+    anchor_digest: str,
+    image_size: int,
+) -> list[dict[str, object]]:
+    """Bind frozen initial points to one service-compatible New request.
+
+    The benchmark source records the initial point set as New prompts so it
+    remains independent of a particular editor's staging mechanics.  The
+    Object Selection Session contract has one New entry, followed by Refine
+    entries on its primary track.  This is still one round-zero request: it
+    does not introduce a correction round or alter the immutable source log.
+    """
+
+    if not frozen_entries:
+        raise PocRunRecordError("the frozen Benchmark Prompt Log has no entries")
+    if (
+        not isinstance(anchor_digest, str)
+        or not anchor_digest
+        or not isinstance(image_size, int)
+        or isinstance(image_size, bool)
+        or image_size <= 0
+    ):
+        raise PocRunRecordError("the frozen Benchmark Prompt Log frame binding is invalid")
+
+    prompt_log: list[dict[str, object]] = []
+    for index, entry in enumerate(frozen_entries):
+        prompt = entry.get("prompt")
+        if entry.get("operation") != "New" or not isinstance(prompt, Mapping):
+            raise PocRunRecordError("a frozen Benchmark Prompt entry is malformed")
+        prompt_log.append(
+            {
+                "operation": "New" if index == 0 else "Refine",
+                "prompt": {
+                    **dict(prompt),
+                    "frameDigest": anchor_digest,
+                    "frameWidth": image_size,
+                    "frameHeight": image_size,
+                },
+            }
+        )
+    return prompt_log
+
+
 def _frozen_prompt_log_source(prompt_log_path: Path) -> dict[str, object]:
     """Identify the frozen prompt input without disclosing trial outputs."""
 
@@ -364,9 +482,11 @@ def run_controlled_overlap_prediction(
         prompt_log_path = fixture_ply.parent / FROZEN_BENCHMARK_PROMPT_LOG_NAME
     started = time.perf_counter()
     memory_sampler: _CudaMemorySampler | None = None
+    runtime_seed_policy: Mapping[str, object] | None = None
     try:
         import torch
 
+        runtime_seed_policy = _apply_trial_seed(torch, deterministic_seed)
         memory_sampler = _CudaMemorySampler(torch)
         memory_sampler.start()
         return _run_controlled_overlap_prediction(
@@ -376,6 +496,7 @@ def run_controlled_overlap_prediction(
             model_manifest_digest=model_manifest_digest,
             image_size=image_size,
             deterministic_seed=deterministic_seed,
+            runtime_seed_policy=runtime_seed_policy,
             memory_sampler=memory_sampler,
             prompt_log_path=prompt_log_path,
         )
@@ -392,6 +513,7 @@ def run_controlled_overlap_prediction(
             error=error,
             peak_vram_bytes=peak_vram_bytes,
             prompt_log_path=prompt_log_path,
+            runtime_seed_policy=runtime_seed_policy,
         )
     finally:
         if memory_sampler is not None:
@@ -406,6 +528,7 @@ def _run_controlled_overlap_prediction(
     model_manifest_digest: str | None,
     image_size: int,
     deterministic_seed: str,
+    runtime_seed_policy: Mapping[str, object],
     memory_sampler: _CudaMemorySampler,
     prompt_log_path: Path,
 ) -> SealedPrediction:
@@ -506,18 +629,12 @@ def _run_controlled_overlap_prediction(
         "renderConfigVersion": "supersplat-effective-rgb-v1",
         "modelManifestDigest": model["digest"],
     }
-    prompt_log = [
-        {
-            "operation": "New",
-            "prompt": {
-                **entry["prompt"],
-                "frameDigest": anchor_digest,
-                "frameWidth": image_size,
-                "frameHeight": image_size,
-            },
-        }
-        for entry in frozen_entries
-    ]
+    prompt_log = materialize_frozen_benchmark_prompt_log(
+        frozen_entries,
+        anchor_digest=anchor_digest,
+        image_size=image_size,
+    )
+    prompt_log_entries_sha256 = canonical_prompt_entries_sha256(prompt_log)
     stage_seconds: dict[str, float] = {}
     preview_started = time.perf_counter()
     try:
@@ -541,6 +658,7 @@ def _run_controlled_overlap_prediction(
         "torch": torch.__version__,
         "cudaRuntime": torch.version.cuda,
         "gpu": torch.cuda.get_device_name(0),
+        "randomness": dict(runtime_seed_policy),
         "executionProfile": {
             "browser": "not-applicable (standalone CLI benchmark)",
             "transport": "in-process CompanionState; no network transport",
@@ -569,6 +687,7 @@ def _run_controlled_overlap_prediction(
         publication=publication,
         scene_snapshot=snapshot,
         prompt_log=prompt_log,
+        frozen_prompt_log=frozen_entries,
         prompt_log_source=frozen_source,
         model_manifest=public_model_manifest,
         runtime_manifest=runtime_manifest,
@@ -581,6 +700,8 @@ def _run_controlled_overlap_prediction(
                 "operation": "New",
                 "correctionRound": 0,
                 "requestId": publication.bindings.get("requestId"),
+                "promptLogRevision": len(prompt_log),
+                "promptLogEntriesSha256": prompt_log_entries_sha256,
                 "terminalState": "complete",
             }
         ],
@@ -604,6 +725,7 @@ def _run_controlled_overlap_prediction(
             "terminalState": "complete",
             **publication.bindings,
         },
+        benchmark_target_id="controlled-overlap",
     )
 
 
@@ -617,6 +739,7 @@ def _seal_failed_controlled_overlap_prediction(
     error: Exception,
     peak_vram_bytes: int | None,
     prompt_log_path: Path,
+    runtime_seed_policy: Mapping[str, object] | None,
 ) -> SealedPrediction:
     from . import PACKAGE_VERSION, PROTOCOL_VERSION
     from .masking import MaskSessionError
@@ -684,6 +807,11 @@ def _seal_failed_controlled_overlap_prediction(
             "protocolVersion": PROTOCOL_VERSION,
             "release": release,
             "python": platform.python_version(),
+            "randomness": (
+                dict(runtime_seed_policy)
+                if runtime_seed_policy is not None
+                else {"status": "unavailable"}
+            ),
         },
         "renderPolicy": _preview_render_policy("supersplat-effective-rgb-v1"),
         "correctionOutcomes": [

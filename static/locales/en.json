@@ -322,5 +322,12 @@
     "tooltip.status-bar.splat-data": "Toggle Splat Data Panel",
     "tooltip.splat-data.on-screen-only": "Only count splats visible in the camera's view. Off-screen splats are excluded from the histogram.",
     "tooltip.splat-data.log-scale": "Use a logarithmic vertical scale so small bucket counts remain visible alongside large ones.",
-    "tooltip.splat-data.show-all": "Show all per-splat properties in the list, including raw DC and spherical harmonic coefficients."
+    "tooltip.splat-data.show-all": "Show all per-splat properties in the list, including raw DC and spherical harmonic coefficients.",
+    "object-selection.refine-prompt": "Refine prompt:",
+    "object-selection.include": "Include",
+    "object-selection.exclude": "Exclude",
+    "object-selection.undo-last": "Undo Last",
+    "object-selection.clear-prompts": "Clear Prompts",
+    "object-selection.pending-prompts": "Pending prompts",
+    "object-selection.pending-prompt": "prompt"
 }

@@ -322,5 +322,12 @@
     "tooltip.status-bar.splat-data": "Afficher/Masquer le panneau Données Splat",
     "tooltip.splat-data.on-screen-only": "Ne compter que les splats visibles dans la caméra. Les splats hors écran sont exclus de l'histogramme.",
     "tooltip.splat-data.log-scale": "Utiliser une échelle verticale logarithmique pour rendre visibles les petites valeurs à côté des grandes.",
-    "tooltip.splat-data.show-all": "Afficher toutes les propriétés des splats dans la liste, y compris les coefficients DC bruts et harmoniques sphériques."
+    "tooltip.splat-data.show-all": "Afficher toutes les propriétés des splats dans la liste, y compris les coefficients DC bruts et harmoniques sphériques.",
+    "object-selection.refine-prompt": "Indication d’affinement :",
+    "object-selection.include": "Inclure",
+    "object-selection.exclude": "Exclure",
+    "object-selection.undo-last": "Annuler la dernière",
+    "object-selection.clear-prompts": "Effacer les indications",
+    "object-selection.pending-prompts": "Indications en attente",
+    "object-selection.pending-prompt": "indication"
 }

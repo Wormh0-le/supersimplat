@@ -10,6 +10,11 @@ import { Events } from './events';
 import { initFileHandler } from './file-handler';
 import { registerIframeApi } from './iframe-api';
 import {
+    ObjectSelectionPromptStaging,
+    type ObjectSelectionAnchorFrame,
+    type ObjectSelectionCanvasPromptPoint
+} from './object-selection-prompt-staging';
+import {
     ObjectSelectionSessionFactory,
     type ObjectSelectionSessionHandle
 } from './object-selection-session-factory';
@@ -50,6 +55,7 @@ import { BoundDimensionsOverlay } from './ui/bound-dimensions-overlay';
 import { EditorUI } from './ui/editor';
 import { i18n } from './ui/localization';
 import { ObjectSelectionPanel } from './ui/object-selection-panel';
+import { ObjectSelectionPromptOverlay } from './ui/object-selection-prompt-overlay';
 import { ObjectSelectionToolbar } from './ui/object-selection-toolbar';
 import { registerSelectCursor } from './ui/select-cursor';
 
@@ -383,7 +389,16 @@ const main = async () => {
         return objectSelectionSessions.create(splat);
     });
 
-    const captureAnchorFrame = async (canvas: HTMLCanvasElement) => {
+    interface CapturedAnchorFrame {
+        readonly frameDigest: string;
+        readonly imagePngBase64: string;
+        readonly frameWidth: number;
+        readonly frameHeight: number;
+    }
+
+    const captureAnchorFrame = async (
+        canvas: HTMLCanvasElement
+    ): Promise<CapturedAnchorFrame> => {
         let imageUrl: string;
         try {
             imageUrl = canvas.toDataURL('image/png');
@@ -415,79 +430,220 @@ const main = async () => {
         };
     };
 
+    const captureQueuedAnchorFrame = () => {
+        return scene.commandQueue.enqueue(() => captureAnchorFrame(editorUI.canvas));
+    };
+
+    const pointFromPointerEvent = (
+        event: PointerEvent,
+        frameWidth: number,
+        frameHeight: number
+    ): ObjectSelectionCanvasPromptPoint | null => {
+        const rect = editorUI.canvas.getBoundingClientRect();
+        if (
+            rect.width <= 0 ||
+      rect.height <= 0 ||
+      frameWidth <= 0 ||
+      frameHeight <= 0
+        ) {
+            return null;
+        }
+        const clamp = (value: number) => {
+            return Math.max(0, Math.min(1 - Number.EPSILON, value));
+        };
+        const normalizedX = clamp((event.clientX - rect.left) / rect.width);
+        const normalizedY = clamp((event.clientY - rect.top) / rect.height);
+        return {
+            xPx: Math.min(frameWidth - 1, Math.floor(normalizedX * frameWidth)),
+            yPx: Math.min(frameHeight - 1, Math.floor(normalizedY * frameHeight)),
+            normalizedX,
+            normalizedY
+        };
+    };
+
+    const intersectObjectSelectionPoint = (
+        point: ObjectSelectionCanvasPromptPoint
+    ) => {
+        return scene.commandQueue.enqueue(() => scene.camera.intersect(
+            point.normalizedX,
+            point.normalizedY
+        ));
+    };
+
+    const anchorFrameMatchesCapture = (
+        anchor: ObjectSelectionAnchorFrame,
+        capture: CapturedAnchorFrame
+    ) => {
+        return anchor.frameDigest === capture.frameDigest &&
+            anchor.frameWidth === capture.frameWidth &&
+            anchor.frameHeight === capture.frameHeight;
+    };
+
     let anchorPromptPoint: {
     xPx: number;
     yPx: number;
-    frame: Promise<{
-      frameDigest: string;
-      imagePngBase64: string;
-      frameWidth: number;
-      frameHeight: number;
-    }>;
+    frame: Promise<CapturedAnchorFrame>;
   } | null = null;
     let anchorPromptCount = 0;
     let awaitingAnchorPrompt = false;
     let objectSelectionHandle: ObjectSelectionSessionHandle | null = null;
+    let objectSelectionTargetSplat: Splat | null = null;
     let objectSelectionToolbar: ObjectSelectionToolbar | null = null;
     let objectSelectionPanel: ObjectSelectionPanel | null = null;
+    let objectSelectionPromptOverlay: ObjectSelectionPromptOverlay | null = null;
+    let objectSelectionPromptStaging: ObjectSelectionPromptStaging | null = null;
+    let objectSelectionAnchorFrame: ObjectSelectionAnchorFrame | null = null;
     let startObjectSelectionAtAnchor: (() => Promise<void>) | null = null;
 
     const reportObjectSelectionError = (error: unknown) => {
         console.error(error);
     };
 
-    editorUI.canvas.addEventListener('pointerdown', (event) => {
+    const startNewAtCanvasPoint = async (
+        point: ObjectSelectionCanvasPromptPoint
+    ) => {
+        const handle = objectSelectionHandle;
+        const targetSplat = objectSelectionTargetSplat;
+        const start = startObjectSelectionAtAnchor;
         if (
-            event.button !== 0 ||
-      !awaitingAnchorPrompt ||
-      startObjectSelectionAtAnchor === null ||
-      objectSelectionHandle?.session.state.status !== 'idle'
+            handle === null ||
+      targetSplat === null ||
+      start === null ||
+      handle.session.state.status !== 'idle'
         ) {
             return;
         }
-        const rect = editorUI.canvas.getBoundingClientRect();
-        const frame = captureAnchorFrame(editorUI.canvas);
-        frame.catch((): undefined => undefined);
-        anchorPromptPoint = {
-            xPx: Math.max(
-                0,
-                Math.min(
-                    editorUI.canvas.width - 1,
-                    Math.round(
-                        ((event.clientX - rect.left) * editorUI.canvas.width) / rect.width
-                    )
-                )
-            ),
-            yPx: Math.max(
-                0,
-                Math.min(
-                    editorUI.canvas.height - 1,
-                    Math.round(
-                        ((event.clientY - rect.top) * editorUI.canvas.height) / rect.height
-                    )
-                )
-            ),
-            frame
-        };
         awaitingAnchorPrompt = false;
-        startObjectSelectionAtAnchor().catch(reportObjectSelectionError);
-    });
+        // Keep the canvas image and GPU hit-test on one stable visible view.
+        // The prompt cannot safely cross the boundary as Anchor pixels if the
+        // camera changes between those two operations.
+        scene.camera.setControlsEnabled(false);
+        const frame = captureQueuedAnchorFrame();
+        frame.catch((): undefined => undefined);
+
+        try {
+            const hit = await intersectObjectSelectionPoint(point);
+            if (hit?.splat !== targetSplat) {
+                throw new Error('Prompt must hit the current Target Splat.');
+            }
+            if (
+                objectSelectionHandle !== handle ||
+        handle.session.state.status !== 'idle'
+            ) {
+                return;
+            }
+            anchorPromptPoint = {
+                xPx: point.xPx,
+                yPx: point.yPx,
+                frame
+            };
+            await start();
+        } catch (error) {
+            if (
+                objectSelectionHandle === handle &&
+        handle.session.state.status === 'idle'
+            ) {
+                awaitingAnchorPrompt = true;
+            }
+            reportObjectSelectionError(error);
+        } finally {
+            scene.camera.setControlsEnabled(true);
+        }
+    };
+
+    const isObjectSelectionCanvasEvent = (event: PointerEvent) => {
+        const target = event.target as Node | null;
+        return target === editorUI.canvas ||
+            (target !== null && editorUI.toolsContainer.dom.contains(target));
+    };
+
+    editorUI.canvasContainer.dom.addEventListener('pointerdown', (event) => {
+        if (!isObjectSelectionCanvasEvent(event)) {
+            return;
+        }
+        if (event.button !== 0) {
+            return;
+        }
+        if (awaitingAnchorPrompt) {
+            if (
+                startObjectSelectionAtAnchor === null ||
+                objectSelectionHandle?.session.state.status !== 'idle'
+            ) {
+                return;
+            }
+            const point = pointFromPointerEvent(
+                event,
+                editorUI.canvas.width,
+                editorUI.canvas.height
+            );
+            if (point === null) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            startNewAtCanvasPoint(point).catch(reportObjectSelectionError);
+            return;
+        }
+
+        const staging = objectSelectionPromptStaging;
+        const anchor = objectSelectionAnchorFrame;
+        if (staging === null || anchor === null) {
+            return;
+        }
+        const point = pointFromPointerEvent(
+            event,
+            anchor.frameWidth,
+            anchor.frameHeight
+        );
+        if (point === null) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        staging.stageAt(point).catch(reportObjectSelectionError);
+    }, { capture: true });
+
+    window.addEventListener('keydown', (event) => {
+        const handle = objectSelectionHandle;
+        if (
+            event.key !== 'Escape' ||
+            handle === null ||
+            handle.session.state.status === 'idle'
+        ) {
+            return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!event.repeat) {
+            objectSelectionPromptStaging?.undoLastPendingPrompt();
+        }
+    }, { capture: true });
 
     const mountObjectSelection = (splat: Splat | null) => {
     // Keep an active Target Splat and its controls intact until the user
     // confirms or cancels; a normal editor selection change cannot retarget
     // a live Companion session.
-        if (objectSelectionHandle?.session.state.status !== 'idle') {
+        if (
+            objectSelectionHandle !== null &&
+            objectSelectionHandle.session.state.status !== 'idle'
+        ) {
             return;
         }
         if (!splat) {
             objectSelectionToolbar?.destroy();
+            objectSelectionPromptStaging?.destroy();
             objectSelectionPanel?.destroy();
+            objectSelectionPromptOverlay?.destroy();
+            scene.camera.setControlsEnabled(true);
             anchorPromptPoint = null;
             awaitingAnchorPrompt = false;
             objectSelectionHandle = null;
+            objectSelectionTargetSplat = null;
             objectSelectionToolbar = null;
             objectSelectionPanel = null;
+            objectSelectionPromptOverlay = null;
+            objectSelectionPromptStaging = null;
+            objectSelectionAnchorFrame = null;
             startObjectSelectionAtAnchor = null;
             return;
         }
@@ -499,9 +655,13 @@ const main = async () => {
         }
 
         objectSelectionToolbar?.destroy();
+        objectSelectionPromptStaging?.destroy();
         objectSelectionPanel?.destroy();
+        objectSelectionPromptOverlay?.destroy();
+        scene.camera.setControlsEnabled(true);
         anchorPromptPoint = null;
         awaitingAnchorPrompt = false;
+        objectSelectionAnchorFrame = null;
         const handle = events.invoke(
             'objectSelection.createSession',
             splat
@@ -524,27 +684,81 @@ const main = async () => {
                 return;
             }
             const promptId = `anchor-prompt-${++anchorPromptCount}`;
-            return handle.startNew({
-                promptId,
+            const anchorFrame: ObjectSelectionAnchorFrame = {
                 viewId: 'anchor-view',
                 frameDigest: capturedFrame.frameDigest,
                 frameWidth: capturedFrame.frameWidth,
-                frameHeight: capturedFrame.frameHeight,
-                imagePngBase64: capturedFrame.imagePngBase64,
-                xPx: anchor.xPx,
-                yPx: anchor.yPx,
-                polarity: 'include'
-            });
+                frameHeight: capturedFrame.frameHeight
+            };
+            try {
+                await handle.startNew({
+                    promptId,
+                    ...anchorFrame,
+                    imagePngBase64: capturedFrame.imagePngBase64,
+                    xPx: anchor.xPx,
+                    yPx: anchor.yPx,
+                    polarity: 'include'
+                });
+                if (objectSelectionHandle === handle) {
+                    objectSelectionAnchorFrame = anchorFrame;
+                    objectSelectionPromptStaging?.setAnchorFrame(anchorFrame);
+                }
+            } catch (error) {
+                if (objectSelectionHandle === handle) {
+                    objectSelectionAnchorFrame = null;
+                    objectSelectionPromptStaging?.setAnchorFrame(null);
+                }
+                throw error;
+            }
         };
         objectSelectionHandle = handle;
+        objectSelectionTargetSplat = splat;
         startObjectSelectionAtAnchor = startNew;
+        const panel = new ObjectSelectionPanel(handle.session, {
+            onError: reportObjectSelectionError
+        });
+        const promptStaging = new ObjectSelectionPromptStaging({
+            session: handle.session,
+            isAnchorViewCurrent: async () => {
+                const anchor = objectSelectionAnchorFrame;
+                if (objectSelectionHandle !== handle || anchor === null) {
+                    return false;
+                }
+                const capture = await captureQueuedAnchorFrame();
+                return objectSelectionHandle === handle &&
+                    objectSelectionAnchorFrame === anchor &&
+                    anchorFrameMatchesCapture(anchor, capture);
+            },
+            isTargetHit: async (point) => {
+                if (objectSelectionHandle !== handle) {
+                    return false;
+                }
+                const hit = await intersectObjectSelectionPoint(point);
+                return objectSelectionHandle === handle && hit?.splat === splat;
+            },
+            onCameraLockChange: (locked) => {
+                if (objectSelectionHandle === handle) {
+                    scene.camera.setControlsEnabled(!locked);
+                }
+            },
+            onStagingChange: (staging) => {
+                if (objectSelectionHandle === handle) {
+                    panel.setPromptStaging(staging);
+                }
+            },
+            onError: reportObjectSelectionError,
+            stagePrompt: prompt => panel.stagePrompt(prompt)
+        });
+        objectSelectionPromptOverlay = new ObjectSelectionPromptOverlay(
+            handle.session,
+            editorUI.canvasContainer.dom
+        );
         objectSelectionToolbar = new ObjectSelectionToolbar(handle.session, {
             startNew,
             onError: reportObjectSelectionError
         });
-        objectSelectionPanel = new ObjectSelectionPanel(handle.session, {
-            onError: reportObjectSelectionError
-        });
+        objectSelectionPanel = panel;
+        objectSelectionPromptStaging = promptStaging;
         editorUI.canvasContainer.append(objectSelectionToolbar);
         editorUI.canvasContainer.append(objectSelectionPanel);
 

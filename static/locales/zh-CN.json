@@ -322,5 +322,12 @@
     "tooltip.status-bar.splat-data": "切换高斯点数据面板",
     "tooltip.splat-data.on-screen-only": "仅统计相机视野内可见的高斯点。屏幕外的高斯点将从直方图中排除。",
     "tooltip.splat-data.log-scale": "对纵轴使用对数刻度，让小数值与大数值同时清晰可见。",
-    "tooltip.splat-data.show-all": "在列表中显示所有高斯点属性，包括原始 DC 系数和球谐函数系数。"
+    "tooltip.splat-data.show-all": "在列表中显示所有高斯点属性，包括原始 DC 系数和球谐函数系数。",
+    "object-selection.refine-prompt": "细化提示：",
+    "object-selection.include": "包含",
+    "object-selection.exclude": "排除",
+    "object-selection.undo-last": "撤销上一项",
+    "object-selection.clear-prompts": "清除提示",
+    "object-selection.pending-prompts": "待提交提示",
+    "object-selection.pending-prompt": "提示"
 }

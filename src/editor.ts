@@ -106,6 +106,8 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     setGridVisible(scene.config.show.grid);
 
+    const cameraNavigationEnabled = () => scene.camera.controlsEnabled;
+
     // camera.fovDolly
 
     let fovDolly = false;
@@ -155,6 +157,10 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     });
 
     events.on('camera.setFov', (fov: number) => {
+        if (!cameraNavigationEnabled()) {
+            events.fire('camera.fov', scene.camera.fov);
+            return;
+        }
         setCameraFov(fov);
     });
 
@@ -263,6 +269,9 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     // camera.focus
 
     events.on('camera.focus', () => {
+        if (!cameraNavigationEnabled()) {
+            return;
+        }
         const splat = selectedSplats()[0];
         if (splat) {
             // use current bounds (caller should have awaited the operation that changed data)
@@ -284,6 +293,9 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     });
 
     events.on('camera.reset', () => {
+        if (!cameraNavigationEnabled()) {
+            return;
+        }
         const { initialAzim, initialElev, initialZoom } = scene.config.controls;
         const x = Math.sin(initialAzim * Math.PI / 180) * Math.cos(initialElev * Math.PI / 180);
         const y = -Math.sin(initialElev * Math.PI / 180);
@@ -295,6 +307,9 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     // handle camera align events
     events.on('camera.align', (axis: string) => {
+        if (!cameraNavigationEnabled()) {
+            return;
+        }
         switch (axis) {
             case 'px': scene.camera.setAzimElev(90, 0); break;
             case 'py': scene.camera.setAzimElev(0, -90); break;
@@ -815,6 +830,9 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     });
 
     events.on('camera.setPose', (pose: { position: Vec3, target: Vec3, fov?: number }, speed = 1) => {
+        if (!cameraNavigationEnabled()) {
+            return;
+        }
         // assign fov before setPose so distance is computed using the new fovFactor
         if (pose.fov !== undefined) {
             // pose-driven fov (timeline playback, fly-to-pose) is not a user

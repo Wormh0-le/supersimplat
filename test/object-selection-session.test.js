@@ -7,6 +7,9 @@ const {
   assertCompleteMaskSet,
   deriveMaskTrackPlan,
 } = require("../.test-dist/src/object-selection-session.js");
+const {
+  ObjectSelectionPromptStaging,
+} = require("../.test-dist/src/object-selection-prompt-staging.js");
 
 const createSnapshot = (stableIds = [1, 2, 3, 7, 9, 11]) => ({
   protocolVersion: "1",
@@ -1275,4 +1278,468 @@ test("rejects a Mask Set that does not replay the chronological independent Mask
     /complete, version-bound Mask Set/
   );
   assert.deepEqual(session.state.candidate, candidate);
+});
+
+test("keeps pending prompts local until preview submission and restores them after a failed update", async () => {
+  class FailingOnceSelectionServiceAdapter extends DeterministicSelectionServiceAdapter {
+    async updatePreview(request) {
+      this.previewRequests.push(request);
+      if (this.previewRequests.length === 2) {
+        throw new Error("Selection Service unavailable.");
+      }
+      return previewResponse(request);
+    }
+  }
+
+  const adapter = new FailingOnceSelectionServiceAdapter();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor: new RecordingSelectionEditor(),
+  });
+
+  await session.startNew(newSessionInput());
+  await session.updatePreview();
+  session.setMode("Add");
+  session.stagePrompt(additionalPrompt);
+
+  assert.deepEqual(session.state.pendingPrompts, [
+    { operation: "Add", prompt: additionalPrompt },
+  ]);
+  assert.equal(session.state.correctionRoundsUsed, 0);
+
+  await assert.rejects(
+    session.updatePreview(),
+    /Selection Service unavailable/
+  );
+
+  assert.equal(session.state.status, "preview");
+  assert.deepEqual(session.state.pendingPrompts, [
+    { operation: "Add", prompt: additionalPrompt },
+  ]);
+  assert.equal(session.state.correctionRoundsUsed, 0);
+
+  await session.updatePreview();
+
+  assert.deepEqual(
+    adapter.previewRequests.at(-1).promptLog.map((entry) => entry.operation),
+    ["New", "Add"]
+  );
+  assert.deepEqual(session.state.pendingPrompts, []);
+  assert.equal(session.state.correctionRoundsUsed, 1);
+});
+
+test("restores staged prompts when an in-flight preview update is cancelled", async () => {
+  class DeferredSelectionServiceAdapter extends DeterministicSelectionServiceAdapter {
+    constructor() {
+      super();
+      this.resolvePreview = null;
+    }
+
+    async updatePreview(request) {
+      this.previewRequests.push(request);
+      if (this.previewRequests.length === 1) {
+        return previewResponse(request);
+      }
+      return new Promise((resolve) => {
+        this.resolvePreview = resolve;
+      });
+    }
+
+    async cancelUpdate(sessionId, requestId) {
+      await super.cancelUpdate(sessionId, requestId);
+      this.resolvePreview(previewResponse(this.previewRequests.at(-1)));
+    }
+  }
+
+  const adapter = new DeferredSelectionServiceAdapter();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor: new RecordingSelectionEditor(),
+  });
+
+  await session.startNew(newSessionInput());
+  await session.updatePreview();
+  session.setMode("Add");
+  session.stagePrompt(additionalPrompt);
+
+  const update = session.updatePreview();
+  assert.deepEqual(session.state.pendingPrompts, []);
+
+  await session.cancelUpdate();
+  await update;
+
+  assert.equal(session.state.status, "preview");
+  assert.deepEqual(session.state.pendingPrompts, [
+    { operation: "Add", prompt: additionalPrompt },
+  ]);
+  assert.equal(session.state.correctionRoundsUsed, 0);
+});
+
+test("lets pending prompts be undone or cleared without changing the Correction Round budget", async () => {
+  const session = new ObjectSelectionSession({
+    selectionService: new DeterministicSelectionServiceAdapter(),
+    editor: new RecordingSelectionEditor(),
+  });
+
+  await session.startNew(newSessionInput());
+  await session.updatePreview();
+  session.setMode("Refine");
+  session.stagePrompt(additionalPrompt);
+  session.stagePrompt(removalPrompt);
+
+  assert.equal(session.state.pendingPrompts.length, 2);
+  assert.equal(session.undoLastPendingPrompt(), true);
+  assert.deepEqual(session.state.pendingPrompts, [
+    { operation: "Refine", prompt: additionalPrompt },
+  ]);
+  assert.equal(session.state.correctionRoundsUsed, 0);
+
+  session.clearPendingPrompts();
+
+  assert.deepEqual(session.state.pendingPrompts, []);
+  assert.equal(session.state.correctionRoundsUsed, 0);
+  assert.equal(session.undoLastPendingPrompt(), false);
+});
+
+test("requires a correction mode before staging a canvas prompt", async () => {
+  const session = new ObjectSelectionSession({
+    selectionService: new DeterministicSelectionServiceAdapter(),
+    editor: new RecordingSelectionEditor(),
+  });
+
+  await session.startNew(newSessionInput());
+  await session.updatePreview();
+
+  assert.throws(
+    () => session.stagePrompt(additionalPrompt),
+    /require Add, Remove, or Refine mode/
+  );
+  assert.deepEqual(session.state.pendingPrompts, []);
+  assert.equal(session.state.correctionRoundsUsed, 0);
+});
+
+test("preserves pre-preview Refine entries for frozen multi-point New materialization", async () => {
+  const adapter = new DeterministicSelectionServiceAdapter();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor: new RecordingSelectionEditor(),
+  });
+
+  await session.startNew(newSessionInput());
+  session.setMode("Refine");
+  session.stagePrompt(additionalPrompt);
+  await session.updatePreview();
+
+  assert.equal(adapter.previewRequests.length, 1);
+  assert.equal(adapter.previewRequests[0].correctionRound, 0);
+  assert.deepEqual(
+    adapter.previewRequests[0].promptLog.map((entry) => entry.operation),
+    ["New", "Refine"]
+  );
+});
+
+test("binds a preview update to the latest staged prompt operation", async () => {
+  const adapter = new DeterministicSelectionServiceAdapter();
+  const session = new ObjectSelectionSession({
+    selectionService: adapter,
+    editor: new RecordingSelectionEditor(),
+  });
+
+  await session.startNew(newSessionInput());
+  await session.updatePreview();
+  session.setMode("Add");
+  session.stagePrompt(additionalPrompt);
+  session.setMode("Remove");
+
+  await session.updatePreview();
+
+  assert.equal(adapter.previewRequests.at(-1).operation, "Add");
+  assert.deepEqual(
+    adapter.previewRequests.at(-1).promptLog.map((entry) => entry.operation),
+    ["New", "Add"]
+  );
+});
+
+test("does not commit a preview while staged prompts remain", async () => {
+  const session = new ObjectSelectionSession({
+    selectionService: new DeterministicSelectionServiceAdapter(),
+    editor: new RecordingSelectionEditor(),
+  });
+
+  await session.startNew(newSessionInput());
+  await session.updatePreview();
+  session.setMode("Add");
+  session.stagePrompt(additionalPrompt);
+
+  await assert.rejects(
+    session.confirm({ acknowledgeUncertain: true }),
+    /pending prompts remain/
+  );
+  assert.equal(session.state.status, "preview");
+  assert.equal(session.state.pendingPrompts.length, 1);
+});
+
+test("stages only Target Splat prompts with a Candidate and locks the camera while they remain pending", async () => {
+  const listeners = new Set();
+  const state = {
+    status: "preview",
+    candidate: {},
+    coverage: null,
+    mode: "Add",
+    promptCount: 1,
+    pendingPrompts: [],
+    lockedIdsFiltered: 0,
+    correctionRoundsUsed: 0,
+    correctionRoundsLimit: 5,
+  };
+  const session = {
+    get state() {
+      return {
+        ...state,
+        pendingPrompts: state.pendingPrompts.map((entry) => ({
+          operation: entry.operation,
+          prompt: { ...entry.prompt },
+        })),
+      };
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      listener(this.state);
+      return () => listeners.delete(listener);
+    },
+    stagePrompt(prompt) {
+      state.pendingPrompts.push({ operation: state.mode, prompt });
+      state.promptCount += 1;
+      listeners.forEach((listener) => listener(this.state));
+    },
+    undoLastPendingPrompt() {
+      if (state.pendingPrompts.length === 0) {
+        return false;
+      }
+      state.pendingPrompts.pop();
+      state.promptCount -= 1;
+      listeners.forEach((listener) => listener(this.state));
+      return true;
+    },
+    clearPendingPrompts() {
+      state.promptCount -= state.pendingPrompts.length;
+      state.pendingPrompts = [];
+      listeners.forEach((listener) => listener(this.state));
+    },
+  };
+  const hitPoints = [];
+  const errors = [];
+  const cameraLocks = [];
+  let targetHit = true;
+  let anchorViewCurrent = true;
+  const staging = new ObjectSelectionPromptStaging({
+    session,
+    isAnchorViewCurrent: async () => anchorViewCurrent,
+    isTargetHit: async (point) => {
+      hitPoints.push(point);
+      return targetHit;
+    },
+    onCameraLockChange: (locked) => cameraLocks.push(locked),
+    onError: (error) => errors.push(error),
+  });
+  staging.setAnchorFrame({
+    viewId: "anchor-view",
+    frameDigest: "sha256:anchor-frame-v1",
+    frameWidth: 64,
+    frameHeight: 48,
+  });
+
+  const point = { xPx: 30, yPx: 20, normalizedX: 0.5, normalizedY: 0.5 };
+  assert.equal(await staging.stageAt(point), true);
+  assert.equal(await staging.stageAt({ ...point, xPx: 31 }), true);
+  assert.equal(session.state.pendingPrompts.length, 2);
+  assert.equal(cameraLocks.at(-1), true);
+
+  assert.equal(staging.undoLastPendingPrompt(), true);
+  assert.equal(session.state.pendingPrompts.length, 1);
+  assert.equal(cameraLocks.at(-1), true);
+
+  assert.equal(staging.undoLastPendingPrompt(), true);
+  assert.equal(session.state.pendingPrompts.length, 0);
+  assert.equal(cameraLocks.at(-1), false);
+
+  targetHit = false;
+  assert.equal(await staging.stageAt(point), false);
+  assert.equal(session.state.pendingPrompts.length, 0);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].message, "Prompt must hit the current Target Splat.");
+  assert.deepEqual(hitPoints, [point, { ...point, xPx: 31 }, point]);
+
+  targetHit = true;
+  anchorViewCurrent = false;
+  assert.equal(await staging.stageAt(point), false);
+  assert.equal(session.state.pendingPrompts.length, 0);
+  assert.equal(errors.length, 2);
+  assert.equal(
+    errors[1].message,
+    "Return to the session Anchor View before staging prompts."
+  );
+  assert.deepEqual(hitPoints, [point, { ...point, xPx: 31 }, point]);
+  assert.equal(cameraLocks.at(-1), false);
+
+  const hitCount = hitPoints.length;
+  state.candidate = null;
+  assert.equal(await staging.stageAt(point), false);
+  assert.equal(hitPoints.length, hitCount);
+  assert.equal(errors.length, 2);
+
+  staging.destroy();
+});
+
+test("announces transient staging before the asynchronous canvas validation settles", async () => {
+  const listeners = new Set();
+  const state = {
+    status: "preview",
+    candidate: {},
+    coverage: null,
+    mode: "Add",
+    promptCount: 1,
+    pendingPrompts: [],
+    lockedIdsFiltered: 0,
+    correctionRoundsUsed: 0,
+    correctionRoundsLimit: 5,
+  };
+  const session = {
+    get state() {
+      return state;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      listener(this.state);
+      return () => listeners.delete(listener);
+    },
+  };
+  let resolveAnchorCheck;
+  const anchorCheck = new Promise((resolve) => {
+    resolveAnchorCheck = resolve;
+  });
+  const stagingChanges = [];
+  const cameraLocks = [];
+  let hitChecks = 0;
+  const staging = new ObjectSelectionPromptStaging({
+    session,
+    isAnchorViewCurrent: () => anchorCheck,
+    isTargetHit: async () => {
+      hitChecks += 1;
+      return true;
+    },
+    onCameraLockChange: (locked) => cameraLocks.push(locked),
+    onStagingChange: (active) => stagingChanges.push(active),
+    onError: (error) => {
+      throw error;
+    },
+    stagePrompt: () => {},
+  });
+  staging.setAnchorFrame({
+    viewId: "anchor-view",
+    frameDigest: "sha256:anchor-frame-v1",
+    frameWidth: 64,
+    frameHeight: 48,
+  });
+
+  const stagingRequest = staging.stageAt({
+    xPx: 30,
+    yPx: 20,
+    normalizedX: 0.5,
+    normalizedY: 0.5,
+  });
+  await Promise.resolve();
+
+  assert.deepEqual(stagingChanges, [true]);
+  assert.deepEqual(cameraLocks, [true]);
+  assert.equal(hitChecks, 0);
+
+  resolveAnchorCheck(true);
+  assert.equal(await stagingRequest, true);
+  assert.deepEqual(stagingChanges, [true, false]);
+  assert.deepEqual(cameraLocks, [true, false]);
+
+  staging.destroy();
+});
+
+test("Escape cancels an in-flight canvas prompt without undoing an older pending prompt", async () => {
+  const listeners = new Set();
+  const existingPrompt = {
+    operation: "Add",
+    prompt: {
+      promptId: "existing-prompt",
+      viewId: "anchor-view",
+      frameDigest: "sha256:anchor-frame-v1",
+      frameWidth: 64,
+      frameHeight: 48,
+      xPx: 20,
+      yPx: 16,
+      polarity: "include",
+    },
+  };
+  const state = {
+    status: "preview",
+    candidate: {},
+    coverage: null,
+    mode: "Add",
+    promptCount: 2,
+    pendingPrompts: [existingPrompt],
+    lockedIdsFiltered: 0,
+    correctionRoundsUsed: 0,
+    correctionRoundsLimit: 5,
+  };
+  const session = {
+    get state() {
+      return state;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      listener(this.state);
+      return () => listeners.delete(listener);
+    },
+    undoLastPendingPrompt() {
+      state.pendingPrompts.pop();
+      return true;
+    },
+  };
+  let resolveAnchorCheck;
+  const anchorCheck = new Promise((resolve) => {
+    resolveAnchorCheck = resolve;
+  });
+  let hitChecks = 0;
+  const staging = new ObjectSelectionPromptStaging({
+    session,
+    isAnchorViewCurrent: () => anchorCheck,
+    isTargetHit: async () => {
+      hitChecks += 1;
+      return true;
+    },
+    onCameraLockChange: () => {},
+    onError: (error) => {
+      throw error;
+    },
+    stagePrompt: () => {},
+  });
+  staging.setAnchorFrame({
+    viewId: "anchor-view",
+    frameDigest: "sha256:anchor-frame-v1",
+    frameWidth: 64,
+    frameHeight: 48,
+  });
+
+  const stagingRequest = staging.stageAt({
+    xPx: 30,
+    yPx: 20,
+    normalizedX: 0.5,
+    normalizedY: 0.5,
+  });
+  await Promise.resolve();
+
+  assert.equal(staging.undoLastPendingPrompt(), true);
+  assert.deepEqual(state.pendingPrompts, [existingPrompt]);
+  resolveAnchorCheck(true);
+  assert.equal(await stagingRequest, false);
+  assert.equal(hitChecks, 0);
+
+  staging.destroy();
 });

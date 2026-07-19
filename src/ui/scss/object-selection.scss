@@ -44,3 +44,40 @@
   white-space: normal;
   word-wrap: break-word;
 }
+
+#object-selection-panel-pending-prompts,
+#object-selection-panel-refine-polarity {
+  color: $text-secondary;
+}
+
+#object-selection-prompt-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.object-selection-prompt-marker {
+  position: absolute;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 2px solid;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.72);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 16px;
+  font-weight: bold;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+}
+
+.object-selection-prompt-marker-include {
+  border-color: $clr-hilight;
+  color: $clr-hilight;
+}
+
+.object-selection-prompt-marker-exclude {
+  border-color: #ff7a7a;
+  color: #ff9a9a;
+}

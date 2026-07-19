@@ -82,6 +82,10 @@ class Camera extends Element {
 
     controlMode: 'orbit' | 'fly' = 'orbit';
 
+    // Object Selection can temporarily freeze the visible camera while a
+    // pending prompt remains bound to the Anchor View's pixel coordinates.
+    private interactiveControlsEnabled = true;
+
     // during fly-mode look, stores the camera position that must stay fixed
     // while the azim/elev tween smoothly converges
     lookCameraPos: Vec3 | null = null;
@@ -749,8 +753,11 @@ class Camera extends Element {
 
     // intersect the scene at the normalized screen location (0-1 range) and focus the camera on this location
     async pickFocalPoint(x: number, y: number) {
+        if (!this.controlsEnabled) {
+            return;
+        }
         const result = await this.intersect(x, y);
-        if (result) {
+        if (result && this.controlsEnabled) {
             const { scene } = this;
 
             this.setFocalPoint(result.position);
@@ -761,6 +768,27 @@ class Camera extends Element {
                 position: result.position
             });
         }
+    }
+
+    setControlsEnabled(enabled: boolean) {
+        if (this.interactiveControlsEnabled === enabled) {
+            return;
+        }
+        this.interactiveControlsEnabled = enabled;
+        if (!enabled) {
+            // Freeze any in-flight damped navigation at the frame the prompt
+            // was placed on; disabling new input alone would still let a
+            // previous camera tween change the prompt's screen-space meaning.
+            this.focalPointTween.goto({ ...this.focalPointTween.value }, 0);
+            this.azimElevTween.goto({ ...this.azimElevTween.value }, 0);
+            this.distanceTween.goto({ ...this.distanceTween.value }, 0);
+            this.lookCameraPos = null;
+        }
+        this.controller?.setEnabled(enabled);
+    }
+
+    get controlsEnabled() {
+        return this.interactiveControlsEnabled;
     }
 
     // pick mode

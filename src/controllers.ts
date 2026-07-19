@@ -13,6 +13,7 @@ const dist = (x0: number, y0: number, x1: number, y1: number) => Math.sqrt((x1 -
 class PointerController {
     update: (deltaTime: number) => void;
     destroy: () => void;
+    setEnabled: (enabled: boolean) => void;
 
     constructor(camera: Camera, target: HTMLElement) {
 
@@ -57,6 +58,7 @@ class PointerController {
         // touch state
         let touches: { id: number, x: number, y: number}[] = [];
         let midx: number, midy: number, midlen: number;
+        let enabled = true;
 
         const pointerdown = (event: PointerEvent) => {
             if (event.pointerType === 'mouse') {
@@ -348,33 +350,41 @@ class PointerController {
         const events = camera.scene.events;
 
         const onFlyForward = (down: boolean) => {
+            if (!enabled) return;
             flyForward = down;
             handleFlyKey(down);
         };
         const onFlyBackward = (down: boolean) => {
+            if (!enabled) return;
             flyBackward = down;
             handleFlyKey(down);
         };
         const onFlyLeft = (down: boolean) => {
+            if (!enabled) return;
             flyLeft = down;
             handleFlyKey(down);
         };
         const onFlyRight = (down: boolean) => {
+            if (!enabled) return;
             flyRight = down;
             handleFlyKey(down);
         };
         const onFlyDown = (down: boolean) => {
+            if (!enabled) return;
             flyDown = down;
             handleFlyKey(down);
         };
         const onFlyUp = (down: boolean) => {
+            if (!enabled) return;
             flyUp = down;
             handleFlyKey(down);
         };
         const onModifierFast = (down: boolean) => {
+            if (!enabled) return;
             fastDown = down;
         };
         const onModifierSlow = (down: boolean) => {
+            if (!enabled) return;
             slowDown = down;
         };
 
@@ -388,7 +398,7 @@ class PointerController {
         events.on('camera.modifier.slow', onModifierSlow);
 
         this.update = (deltaTime: number) => {
-            if (camera.controlMode !== 'fly') return;
+            if (!enabled || camera.controlMode !== 'fly') return;
 
             // Fly mode: WASD for movement, Q/E for up/down - moves focal point
             const forward = (flyForward ? 1 : 0) - (flyBackward ? 1 : 0);
@@ -432,8 +442,23 @@ class PointerController {
 
         let destroy: () => void = null;
 
+        this.setEnabled = (value: boolean) => {
+            if (enabled === value) {
+                return;
+            }
+            enabled = value;
+            if (!enabled) {
+                pressedButton = -1;
+                touches = [];
+                clearAllKeys();
+            }
+        };
+
         const wrap = (target: any, name: string, fn: any, options?: any) => {
             const callback = (event: any) => {
+                if (!enabled) {
+                    return;
+                }
                 camera.scene.events.fire('camera.controller', name);
                 fn(event);
             };

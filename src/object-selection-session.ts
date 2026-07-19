@@ -235,6 +235,7 @@ interface ObjectSelectionSessionState {
   coverage: SelectionServiceCoverageReport | null;
   mode: ObjectSelectionMode;
   promptCount: number;
+  pendingPrompts: readonly ObjectSelectionPromptLogEntry[];
   lockedIdsFiltered: number;
   correctionRoundsUsed: number;
   correctionRoundsLimit: number;
@@ -253,6 +254,8 @@ interface ObjectSelectionSessionInterface {
   startNew(start: ObjectSelectionSessionStart): Promise<void>;
   setMode(mode: ObjectSelectionMode): void;
   stagePrompt(prompt: ObjectSelectionPrompt): void;
+  undoLastPendingPrompt(): boolean;
+  clearPendingPrompts(): void;
   updatePreview(): Promise<void>;
   cancelUpdate(): Promise<void>;
   confirm(options?: ObjectSelectionConfirmOptions): Promise<void>;
@@ -347,6 +350,7 @@ interface ActivePreview {
   requestId: string;
   previousStatus: 'ready' | 'preview';
   cancelled: boolean;
+  submittedPrompts: ObjectSelectionPromptLogEntry[];
 }
 
 const copyTarget = (target: ObjectSelectionTarget): ObjectSelectionTarget => {
@@ -960,6 +964,7 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
     private snapshot: SceneSnapshot | null = null;
     private requestContext: ObjectSelectionRequestContext | null = null;
     private promptLog: ObjectSelectionPromptLogEntry[] = [];
+    private pendingPrompts: ObjectSelectionPromptLogEntry[] = [];
     private candidateSelection: CandidateObjectSelection | null = null;
     private coverageReport: SelectionServiceCoverageReport | null = null;
     private sessionStatus: ObjectSelectionSessionStatus = 'idle';
@@ -987,7 +992,8 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
                 copyCoverageReport(this.coverageReport) :
                 null,
             mode: this.mode,
-            promptCount: this.promptLog.length,
+            promptCount: this.promptLog.length + this.pendingPrompts.length,
+            pendingPrompts: this.pendingPrompts.map(copyPromptLogEntry),
             lockedIdsFiltered: this.candidateSelection?.lockedIdsFiltered ?? 0,
             correctionRoundsUsed: this.correctionRoundsUsed(),
             correctionRoundsLimit: MAX_CORRECTION_ROUNDS
@@ -1022,6 +1028,7 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
                 prompt: copiedStart.prompt
             }
         ];
+        this.pendingPrompts = [];
         this.coverageReport = null;
         this.mode = 'New';
         this.requestCount = 0;
@@ -1053,11 +1060,35 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
 
     stagePrompt(prompt: ObjectSelectionPrompt) {
         this.requireStatus('ready', 'preview');
+        if (this.mode === 'New') {
+            throw new Error(
+                'Object Selection corrections require Add, Remove, or Refine mode.'
+            );
+        }
         this.assertPromptFrame(prompt, this.requireRequestContext());
-        this.promptLog.push({
+        this.pendingPrompts.push({
             operation: this.mode,
             prompt: copyPrompt(prompt)
         });
+        this.publishState();
+    }
+
+    undoLastPendingPrompt() {
+        this.requireStatus('ready', 'preview');
+        if (this.pendingPrompts.length === 0) {
+            return false;
+        }
+        this.pendingPrompts.pop();
+        this.publishState();
+        return true;
+    }
+
+    clearPendingPrompts() {
+        this.requireStatus('ready', 'preview');
+        if (this.pendingPrompts.length === 0) {
+            return;
+        }
+        this.pendingPrompts = [];
         this.publishState();
     }
 
@@ -1070,11 +1101,19 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
             );
         }
 
+        const submittedPrompts = this.pendingPrompts.map(copyPromptLogEntry);
+        const promptLog = [
+            ...this.promptLog.map(copyPromptLogEntry),
+            ...submittedPrompts.map(copyPromptLogEntry)
+        ];
+        const operation = promptLog[promptLog.length - 1].operation;
         const activePreview: ActivePreview = {
             requestId: `request-${++this.requestCount}`,
             previousStatus,
-            cancelled: false
+            cancelled: false,
+            submittedPrompts
         };
+        this.pendingPrompts = [];
         this.activePreview = activePreview;
         this.setStatus('previewing');
 
@@ -1085,14 +1124,14 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
             targetSplatId: this.requireTarget().targetSplatId,
             sceneId: this.requireSnapshot().sceneId,
             sceneVersion: this.requireSnapshot().sceneVersion,
-            operation: this.mode,
+            operation,
             correctionRound: this.successfulPreviewCount,
             deterministicSeed: this.requireRequestContext().deterministicSeed,
-            promptLogRevision: this.promptLog.length,
+            promptLogRevision: promptLog.length,
             frameSetVersion: this.requireRequestContext().frameSetVersion,
             renderConfigVersion: this.requireSnapshot().renderConfiguration.version,
             modelManifestDigest: this.requireRequestContext().modelManifestDigest,
-            promptLog: this.promptLog.map(copyPromptLogEntry),
+            promptLog,
             frameSet: copyFrameSet(this.requireRequestContext().frameSet),
             snapshot: this.requireSnapshot()
         };
@@ -1105,6 +1144,9 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
 
             this.requireCurrentSnapshot();
             const effectiveRequest = this.validatePreviewResponse(response, request);
+            this.promptLog.push(
+                ...activePreview.submittedPrompts.map(copyPromptLogEntry)
+            );
             this.candidateSelection = copyCandidate(this.filterLockedIds(response));
             this.requestContext = {
                 deterministicSeed: this.requireRequestContext().deterministicSeed,
@@ -1117,6 +1159,7 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
             this.setStatus('preview');
         } catch (error) {
             if (!activePreview.cancelled) {
+                this.restorePendingPrompts(activePreview);
                 this.setStatus(activePreview.previousStatus);
                 throw error;
             }
@@ -1144,6 +1187,7 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
             // replace the preceding usable Candidate Object Selection. A failed
             // abort is recoverable by submitting a fresh preview request.
             activePreview.cancelled = true;
+            this.restorePendingPrompts(activePreview);
             if (this.activePreview === activePreview) {
                 this.activePreview = null;
             }
@@ -1156,6 +1200,7 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
         if (this.activePreview === activePreview) {
             this.activePreview = null;
         }
+        this.restorePendingPrompts(activePreview);
         if (this.sessionStatus === 'cancellingUpdate') {
             this.setStatus(activePreview.previousStatus);
         }
@@ -1163,6 +1208,11 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
 
     async confirm(options?: ObjectSelectionConfirmOptions) {
         this.requireStatus('preview');
+        if (this.pendingPrompts.length > 0) {
+            throw new Error(
+                'Object Selection Session cannot confirm while pending prompts remain. Update Preview or Clear Prompts first.'
+            );
+        }
 
         const candidate = this.requireCandidate();
         if (
@@ -1336,6 +1386,7 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
         this.snapshot = null;
         this.requestContext = null;
         this.promptLog = [];
+        this.pendingPrompts = [];
         this.candidateSelection = null;
         this.coverageReport = null;
         this.mode = 'New';
@@ -1351,6 +1402,17 @@ class ObjectSelectionSession implements ObjectSelectionSessionInterface {
     private publishState() {
         const state = this.state;
         this.listeners.forEach(listener => listener(state));
+    }
+
+    private restorePendingPrompts(activePreview: ActivePreview) {
+        if (activePreview.submittedPrompts.length === 0) {
+            return;
+        }
+        this.pendingPrompts = [
+            ...activePreview.submittedPrompts.map(copyPromptLogEntry),
+            ...this.pendingPrompts
+        ];
+        activePreview.submittedPrompts = [];
     }
 
     private assertRequestContext(context: ObjectSelectionRequestContext) {

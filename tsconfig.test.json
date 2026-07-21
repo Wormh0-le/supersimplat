@@ -8,6 +8,7 @@
   },
   "include": [
     "src/object-selection-session.ts",
+    "src/ai-select/**/*.ts",
     "src/scene-snapshot.ts",
     "src/selection-service-fetch-adapter.ts",
     "src/selection-service-readiness.ts",

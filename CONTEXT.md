@@ -30,6 +30,26 @@ _Avoid_: render index, tensor row, file row
 An immutable, versioned representation of the Target Splat geometry/appearance and effective render semantics supplied to the Companion. It is transient inference input, not a saved project or semantic sidecar.  
 _Avoid_: source PLY identity, project save, object cache
 
+**Packed SceneSnapshot**
+The structure-of-arrays typed-binary representation of an effective Scene
+Snapshot used by Binary SceneSnapshot Registration v1. It retains editor-owned
+Stable Gaussian IDs and effective render semantics without a per-Gaussian JSON
+object graph.
+_Avoid_: source PLY path, screenshot, base64 payload
+
+**Snapshot Content Digest**
+The strong, cached SHA-256 identity of a Packed SceneSnapshot's canonical
+logical metadata and typed bytes. It is independent of network chunking and is
+not a TargetDependencyToken.
+_Avoid_: editor semantic revision, upload ID, chunk hash list
+
+**Binary SceneSnapshot Registration v1**
+The versioned begin/chunk/commit protocol that transfers a Packed SceneSnapshot
+to the Companion atomically. It uses bounded raw-binary chunks and a small
+manifest; only a successfully committed typed snapshot enters the Companion
+runtime cache.
+_Avoid_: one giant JSON request, partial snapshot cache entry
+
 **Current Target Context**  
 The single user-visible AI Select context for the object currently being worked on. It owns the Anchor, AI Views, Mask versions, Participation, Coverage/Readiness, Candidate, and Uncertain state. `Restart Current Target` disposes it and creates a new context while Native Selection/EditHistory and runtime caches remain.  
 _Avoid_: persistent multi-object session stack

@@ -99,6 +99,7 @@ const deferred = () => {
 const input = (overrides = {}) => ({
   target: target(),
   dependencyToken: dependency(),
+  getCurrentDependencyToken: () => dependency(),
   snapshot,
   cameraBinding: cameraBinding(),
   ...overrides,
@@ -225,6 +226,33 @@ test('discards a late Anchor response after Restart Current Target creates a new
   await secondStart;
   assert.equal(controller.state.context.targetContextId, secondContextId);
   assert.equal(controller.state.anchor.renderStatus, 'ready');
+});
+
+test('discards an Anchor result after the editor semantic dependency changes', async () => {
+  const rendering = deferred();
+  let effectiveDependency = dependency();
+  const controller = new AISelectAnchorController({
+    renderer: {
+      renderAnchor() {
+        return rendering.promise;
+      },
+    },
+  });
+
+  const start = controller.start(input({
+    getCurrentDependencyToken: () => effectiveDependency,
+  }));
+  effectiveDependency = dependency({ geometryToken: 'geometry-v2' });
+  rendering.resolve(responseFor({
+    requestBinding: controller.state.anchor.requestBinding,
+    target: target(),
+    snapshot,
+    cameraBinding: controller.state.anchor.cameraBinding,
+  }));
+  await start;
+
+  assert.equal(controller.state.context.lifecycle, 'suspended');
+  assert.equal(controller.state.anchor.renderStatus, 'rendering');
 });
 
 test('keeps an Anchor render failure local to the AI view and can exit without a native-selection side effect', async () => {

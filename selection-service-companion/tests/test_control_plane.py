@@ -167,7 +167,10 @@ class CompanionControlPlaneTests(unittest.TestCase):
             )) as response:
                 self.assertEqual(response.status, HTTPStatus.NO_CONTENT)
                 self.assertEqual(response.headers["Access-Control-Allow-Methods"], "GET, POST, PUT, DELETE, OPTIONS")
-                self.assertEqual(response.headers["Access-Control-Allow-Headers"], "Content-Type")
+                self.assertEqual(
+                    response.headers["Access-Control-Allow-Headers"],
+                    "Content-Type, X-SceneSnapshot-Chunk-Digest",
+                )
 
             with self.assertRaises(HTTPError) as error:
                 urlopen(Request(f"{endpoint}/capabilities", headers={"Origin": "https://untrusted.example"}))

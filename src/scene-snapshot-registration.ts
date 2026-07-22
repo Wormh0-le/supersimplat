@@ -1,4 +1,5 @@
 import {
+    createBinarySceneSnapshotManifest,
     type BinarySceneSnapshotManifest,
     type PackedSceneSnapshot
 } from './scene-snapshot-binary';
@@ -30,10 +31,6 @@ interface BinarySceneSnapshotRegistrationTransport {
     abort(uploadId: string): Promise<void>;
 }
 
-/**
- * The editor-side registration seam. Callers use one operation; retry,
- * missing-chunk replay, abort, and commit ordering remain implementation work.
- */
 class BinarySceneSnapshotRegistrar {
     private readonly transport: BinarySceneSnapshotRegistrationTransport;
 
@@ -41,21 +38,105 @@ class BinarySceneSnapshotRegistrar {
         this.transport = transport;
     }
 
-    register(
-        _snapshot: PackedSceneSnapshot,
-        _options?: { readonly chunkByteLength?: number }
+    async register(
+        snapshot: PackedSceneSnapshot,
+        options?: { readonly chunkByteLength?: number }
     ): Promise<BinarySceneSnapshotRegistrationResult> {
-        return this.notImplemented(this.transport);
+        const manifest = createBinarySceneSnapshotManifest(
+            snapshot,
+            options?.chunkByteLength
+        );
+        const admission = await this.retry(() => this.transport.begin(manifest));
+        if (admission.status === 'alreadyCommitted') {
+            if (admission.missingChunkIndices.length !== 0) {
+                throw new Error(
+                    'A committed Binary Scene Snapshot cannot report missing upload chunks.'
+                );
+            }
+            return {
+                status: 'alreadyCommitted',
+                sceneId: snapshot.sceneId,
+                sceneVersion: snapshot.sceneVersion,
+                contentDigest: snapshot.contentDigest
+            };
+        }
+        if (!admission.uploadId) {
+            throw new Error(
+                'The Selection Service Companion did not bind a staged Snapshot upload ID.'
+            );
+        }
+        const chunksByIndex = new Map(
+            manifest.transfer.chunks.map(chunk => [chunk.index, chunk])
+        );
+        const missingIndices = new Set<number>();
+        admission.missingChunkIndices.forEach((index) => {
+            if (
+                !Number.isInteger(index) ||
+                !chunksByIndex.has(index) ||
+                missingIndices.has(index)
+            ) {
+                throw new Error(
+                    'The Selection Service Companion returned invalid missing Snapshot chunk indices.'
+                );
+            }
+            missingIndices.add(index);
+        });
+        try {
+            for (const index of admission.missingChunkIndices) {
+                const chunk = chunksByIndex.get(index);
+                if (!chunk) {
+                    throw new Error(
+                        'The Selection Service Companion requested an unknown Snapshot chunk.'
+                    );
+                }
+                const bytes = snapshot.readPayloadRange(
+                    chunk.offset,
+                    chunk.byteLength
+                );
+                await this.retry(() => this.transport.uploadChunk(
+                        admission.uploadId as string,
+                        chunk.index,
+                        bytes,
+                        chunk.digest
+                ));
+            }
+            const result = await this.retry(() => this.transport.commit(admission.uploadId as string));
+            this.assertResult(snapshot, result);
+            return result;
+        } catch (error) {
+            try {
+                await this.transport.abort(admission.uploadId);
+            } catch {
+                // The caller needs the original upload/commit failure. Abort is
+                // best-effort because Companion TTL cleanup also owns staging.
+            }
+            throw error;
+        }
     }
 
-    private notImplemented(
-        _transport: BinarySceneSnapshotRegistrationTransport
-    ): Promise<BinarySceneSnapshotRegistrationResult> {
-        return Promise.reject(
-            new Error(
-                'Binary SceneSnapshot Registration v1 is not implemented.'
-            )
-        );
+    private async retry<T>(operation: () => Promise<T>): Promise<T> {
+        try {
+            return await operation();
+        } catch (firstError) {
+            return operation();
+        }
+    }
+
+    private assertResult(
+        snapshot: PackedSceneSnapshot,
+        result: BinarySceneSnapshotRegistrationResult
+    ): void {
+        if (
+            (result.status !== 'committed' &&
+                result.status !== 'alreadyCommitted') ||
+            result.sceneId !== snapshot.sceneId ||
+            result.sceneVersion !== snapshot.sceneVersion ||
+            result.contentDigest !== snapshot.contentDigest
+        ) {
+            throw new Error(
+                'The Selection Service Companion returned an invalid committed Snapshot binding.'
+            );
+        }
     }
 }
 

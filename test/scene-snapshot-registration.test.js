@@ -33,6 +33,7 @@ const snapshot = () =>
 
 test('replays only missing raw chunks and commits one bound snapshot atomically', async () => {
     const calls = [];
+    const currentSnapshot = snapshot();
     const registrar = new BinarySceneSnapshotRegistrar({
         begin: async manifest => {
             calls.push(['begin', manifest]);
@@ -50,22 +51,22 @@ test('replays only missing raw chunks and commits one bound snapshot atomically'
             return {
                 status: 'committed',
                 sceneId: 'editor-splat:42',
-                sceneVersion: 'sha256:content',
-                contentDigest: 'sha256:content'
+                sceneVersion: currentSnapshot.sceneVersion,
+                contentDigest: currentSnapshot.contentDigest
             };
         },
         abort: async uploadId => calls.push(['abort', uploadId])
     });
 
-    const result = await registrar.register(snapshot(), {
+    const result = await registrar.register(currentSnapshot, {
         chunkByteLength: 16
     });
 
     assert.deepEqual(result, {
         status: 'committed',
         sceneId: 'editor-splat:42',
-        sceneVersion: 'sha256:content',
-        contentDigest: 'sha256:content'
+        sceneVersion: currentSnapshot.sceneVersion,
+        contentDigest: currentSnapshot.contentDigest
     });
     assert.equal(calls[0][0], 'begin');
     assert.deepEqual(
@@ -78,4 +79,41 @@ test('replays only missing raw chunks and commits one bound snapshot atomically'
             .every(call => call[3] instanceof Uint8Array)
     );
     assert.deepEqual(calls.at(-1), ['commit', 'upload-1']);
+});
+
+test('replays a lost commit acknowledgement without abandoning the immutable upload', async () => {
+    const currentSnapshot = snapshot();
+    let commitCalls = 0;
+    let abortCalls = 0;
+    const registrar = new BinarySceneSnapshotRegistrar({
+        begin: async () => ({
+            status: 'staged',
+            uploadId: 'upload-commit-retry',
+            missingChunkIndices: [0]
+        }),
+        uploadChunk: async () => {},
+        commit: async () => {
+            commitCalls += 1;
+            if (commitCalls === 1) {
+                throw new Error('the commit response was lost');
+            }
+            return {
+                status: 'alreadyCommitted',
+                sceneId: currentSnapshot.sceneId,
+                sceneVersion: currentSnapshot.sceneVersion,
+                contentDigest: currentSnapshot.contentDigest
+            };
+        },
+        abort: async () => {
+            abortCalls += 1;
+        }
+    });
+
+    const result = await registrar.register(currentSnapshot, {
+        chunkByteLength: currentSnapshot.payloadByteLength
+    });
+
+    assert.equal(result.status, 'alreadyCommitted');
+    assert.equal(commitCalls, 2);
+    assert.equal(abortCalls, 0);
 });

@@ -6,6 +6,9 @@ const { deflateSync } = require("node:zlib");
 const {
   FetchSelectionServiceAdapter,
 } = require("../.test-dist/src/selection-service-fetch-adapter.js");
+const {
+  buildPackedSceneSnapshot,
+} = require("../.test-dist/src/scene-snapshot-binary.js");
 
 const snapshot = {
   protocolVersion: "1",
@@ -212,6 +215,28 @@ const anchorCameraBinding = {
   conventionVersion: "opencv-camera-to-world/v1",
 };
 
+const anchorSnapshot = buildPackedSceneSnapshot({
+  sceneId: "scene-1",
+  coordinateConvention: "right-handed world coordinates; quaternion xyzw",
+  stableIdSchema: "uint32",
+  appearancePolicy: "effective-editor-dc-sh-bands-0",
+  renderConfiguration: {
+    version: "supersplat-effective-rgb-v1",
+    backgroundRgba: [0, 0, 0, 1],
+    alphaMode: "opaque-background",
+    shBands: 0,
+    rasterizer: "playcanvas-gsplat-classic",
+  },
+  stableIds: new Uint32Array([3]),
+  means: new Float32Array([3, 0, 0]),
+  rotationsXyzw: new Float32Array([0, 0, 0, 1]),
+  logScales: new Float32Array([0, 0, 0]),
+  logitOpacities: new Float32Array([0]),
+  dc: new Float32Array([0, 0, 0]),
+  sh: new Float32Array(),
+  shFloatCountPerGaussian: 0,
+});
+
 const anchorRequest = {
   requestBinding: {
     targetContextId: "ai-target-context-1",
@@ -225,9 +250,27 @@ const anchorRequest = {
     },
   },
   target: { splatId: "scene-1" },
-  snapshot,
+  snapshot: anchorSnapshot,
   cameraBinding: anchorCameraBinding,
 };
+
+const stagedBinaryRegistrationReplies = (packed, uploadId = "upload-1") => [
+  {
+    status: "staged",
+    uploadId,
+    missingChunkIndices: [0],
+  },
+  { status: "stored", uploadId, index: 0 },
+  {
+    status: "committed",
+    sceneId: packed.sceneId,
+    sceneVersion: packed.sceneVersion,
+    contentDigest: packed.contentDigest,
+  },
+];
+
+const responseBody = body =>
+  typeof body === "string" ? JSON.parse(body) : body ?? null;
 
 const pngCrc32 = bytes => {
   let crc = 0xffffffff;
@@ -297,11 +340,7 @@ const anchorResponse = request => ({
 test("registers the editor-owned Scene Snapshot then renders a bound authoritative Anchor through the Companion", async () => {
   const calls = [];
   const replies = [
-    {
-      status: "registered",
-      sceneId: snapshot.sceneId,
-      sceneVersion: snapshot.sceneVersion,
-    },
+    ...stagedBinaryRegistrationReplies(anchorSnapshot),
     anchorResponse(anchorRequest),
   ];
   const adapter = new FetchSelectionServiceAdapter({
@@ -310,7 +349,7 @@ test("registers the editor-owned Scene Snapshot then renders a bound authoritati
       modelManifestDigest: "sha256:model-v1",
     }),
     fetch: async (url, init) => {
-      calls.push({ url, init, body: init.body ? JSON.parse(init.body) : null });
+      calls.push({ url, init, body: responseBody(init.body) });
       return new Response(JSON.stringify(replies.shift()), { status: 200 });
     },
   });
@@ -318,13 +357,20 @@ test("registers the editor-owned Scene Snapshot then renders a bound authoritati
   const response = await adapter.renderAnchor(anchorRequest);
 
   assert.deepEqual(response, anchorResponse(anchorRequest));
-  assert.equal(calls.length, 2);
-  assert.match(calls[0].url, /\/scene-snapshots\/scene-1\/snapshot-v1$/);
-  assert.equal(calls[0].init.method, "PUT");
-  assert.match(calls[1].url, /\/ai-select\/anchor-renders$/);
-  assert.equal(calls[1].init.method, "POST");
-  assert.deepEqual(calls[1].body.requestBinding, anchorRequest.requestBinding);
-  assert.deepEqual(calls[1].body.cameraBinding, anchorRequest.cameraBinding);
+  assert.equal(calls.length, 4);
+  assert.match(calls[0].url, /\/scene-snapshot-uploads\/v1$/);
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[0].body.content.gaussianCount, 1);
+  assert.equal(calls[0].body.content.gaussians, undefined);
+  assert.match(calls[1].url, /\/scene-snapshot-uploads\/v1\/upload-1\/chunks\/0$/);
+  assert.equal(calls[1].init.method, "PUT");
+  assert.ok(calls[1].init.body instanceof ArrayBuffer);
+  assert.equal(calls[1].init.headers["Content-Type"], "application/octet-stream");
+  assert.match(calls[2].url, /\/scene-snapshot-uploads\/v1\/upload-1\/commit$/);
+  assert.match(calls[3].url, /\/ai-select\/anchor-renders$/);
+  assert.equal(calls[3].init.method, "POST");
+  assert.deepEqual(calls[3].body.requestBinding, anchorRequest.requestBinding);
+  assert.deepEqual(calls[3].body.cameraBinding, anchorRequest.cameraBinding);
 });
 
 test("rejects an Anchor target that does not bind the editor-owned Scene Snapshot", async () => {
@@ -361,26 +407,18 @@ test("rejects an Anchor target that does not bind the editor-owned Scene Snapsho
 test("re-registers the Scene Snapshot exactly once when an Anchor render reports a cache miss", async () => {
   const calls = [];
   const replies = [
-    {
-      status: "registered",
-      sceneId: snapshot.sceneId,
-      sceneVersion: snapshot.sceneVersion,
-    },
+    ...stagedBinaryRegistrationReplies(anchorSnapshot),
     {
       status: "sceneCacheMiss",
       requestBinding: anchorRequest.requestBinding,
       targetSplatId: anchorRequest.target.splatId,
-      sceneId: snapshot.sceneId,
-      sceneVersion: snapshot.sceneVersion,
-      renderConfigVersion: snapshot.renderConfiguration.version,
+      sceneId: anchorSnapshot.sceneId,
+      sceneVersion: anchorSnapshot.sceneVersion,
+      renderConfigVersion: anchorSnapshot.renderConfiguration.version,
       viewId: "anchor-view",
       cameraBinding: anchorCameraBinding,
     },
-    {
-      status: "registered",
-      sceneId: snapshot.sceneId,
-      sceneVersion: snapshot.sceneVersion,
-    },
+    ...stagedBinaryRegistrationReplies(anchorSnapshot, "upload-2"),
     anchorResponse(anchorRequest),
   ];
   const adapter = new FetchSelectionServiceAdapter({
@@ -389,7 +427,7 @@ test("re-registers the Scene Snapshot exactly once when an Anchor render reports
       modelManifestDigest: "sha256:model-v1",
     }),
     fetch: async (url, init) => {
-      calls.push({ url, init, body: init.body ? JSON.parse(init.body) : null });
+      calls.push({ url, init, body: responseBody(init.body) });
       return new Response(JSON.stringify(replies.shift()), { status: 200 });
     },
   });
@@ -397,20 +435,16 @@ test("re-registers the Scene Snapshot exactly once when an Anchor render reports
   const response = await adapter.renderAnchor(anchorRequest);
 
   assert.deepEqual(response, anchorResponse(anchorRequest));
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 8);
   assert.equal(calls.filter(call => call.init.method === "PUT").length, 2);
-  assert.equal(calls.filter(call => call.init.method === "POST").length, 2);
+  assert.equal(calls.filter(call => call.init.method === "POST").length, 6);
 });
 
 test("rejects an Anchor PNG whose declared digest does not bind its bytes", async () => {
   const response = anchorResponse(anchorRequest);
   response.rgb.digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   const replies = [
-    {
-      status: "registered",
-      sceneId: snapshot.sceneId,
-      sceneVersion: snapshot.sceneVersion,
-    },
+    ...stagedBinaryRegistrationReplies(anchorSnapshot),
     response,
   ];
   const adapter = new FetchSelectionServiceAdapter({
@@ -493,11 +527,7 @@ test("rejects malformed or dimension-mismatched Anchor PNG bytes even when their
       const response = anchorResponse(anchorRequest);
       response.rgb = rgb;
       const replies = [
-        {
-          status: "registered",
-          sceneId: snapshot.sceneId,
-          sceneVersion: snapshot.sceneVersion,
-        },
+        ...stagedBinaryRegistrationReplies(anchorSnapshot),
         response,
       ];
       const adapter = new FetchSelectionServiceAdapter({

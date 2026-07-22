@@ -20,6 +20,7 @@ export interface AISelectEditorTargetInput {
  */
 export class AISelectEditorTargetFactory {
     private readonly getRenderConfiguration: () => SceneSnapshotRenderConfiguration;
+    private readonly bindings = new WeakMap<Splat, SplatSceneSnapshotBinding>();
 
     constructor(options: {
         getRenderConfiguration: () => SceneSnapshotRenderConfiguration;
@@ -36,27 +37,46 @@ export class AISelectEditorTargetFactory {
             throw new Error('Select one visible Target Splat before starting AI Select.');
         }
         const splatId = `editor-splat:${targetSplat.uid}`;
-        const snapshot = new SplatSceneSnapshotBinding({
-            splat: targetSplat,
-            sceneId: splatId,
-            getRenderConfiguration: this.getRenderConfiguration
-        }).getSnapshot();
-        const snapshotToken = snapshot.sceneVersion;
+        const binding = this.bindingFor(targetSplat, splatId);
+        const snapshot = binding.getPackedSnapshot();
+        const getCurrentDependencyToken = () => {
+            const revision = binding.getSemanticRevision();
+            return Object.freeze({
+                splatId,
+                renderStateToken: revision.renderStateToken,
+                geometryToken: revision.geometryToken,
+                gaussianIdentityToken: revision.gaussianIdentityToken,
+                worldTransformToken: revision.worldTransformToken
+            });
+        };
+        const dependencyToken = getCurrentDependencyToken();
 
         return Object.freeze({
             targetSplat,
             start: Object.freeze({
                 target: Object.freeze({ splatId }),
-                dependencyToken: Object.freeze({
-                    splatId,
-                    renderStateToken: `${snapshotToken}:${snapshot.renderConfiguration.version}`,
-                    geometryToken: snapshotToken,
-                    gaussianIdentityToken: snapshotToken,
-                    worldTransformToken: snapshotToken
-                }),
+                dependencyToken,
+                // This callback only reads semantic editor revisions. It never
+                // reconstructs or hashes the packed SceneSnapshot while an
+                // asynchronous Companion result is being checked.
+                getCurrentDependencyToken,
                 snapshot,
                 cameraBinding: captureEditorCameraBinding(camera, cameraRevision)
             })
         });
+    }
+
+    private bindingFor(splat: Splat, sceneId: string): SplatSceneSnapshotBinding {
+        const existing = this.bindings.get(splat);
+        if (existing) {
+            return existing;
+        }
+        const binding = new SplatSceneSnapshotBinding({
+            splat,
+            sceneId,
+            getRenderConfiguration: this.getRenderConfiguration
+        });
+        this.bindings.set(splat, binding);
+        return binding;
     }
 }

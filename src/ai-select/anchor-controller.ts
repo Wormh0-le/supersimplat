@@ -1,4 +1,4 @@
-import type { SceneSnapshot } from '../scene-snapshot';
+import type { PackedSceneSnapshot } from '../scene-snapshot-binary';
 import {
     anchorRenderResponseMatchesRequest,
     decodePngBase64,
@@ -44,7 +44,8 @@ export interface AISelectAnchorState {
 export interface StartAnchorInput {
     readonly target: AITarget;
     readonly dependencyToken: TargetDependencyToken;
-    readonly snapshot: SceneSnapshot;
+    readonly getCurrentDependencyToken: () => TargetDependencyToken;
+    readonly snapshot: PackedSceneSnapshot;
     readonly cameraBinding: CameraBinding;
 }
 
@@ -110,6 +111,7 @@ export class AISelectAnchorController {
     private readonly contexts = new CurrentTargetContextKernel();
     private readonly listeners = new Set<AISelectAnchorListener>();
     private anchor: AnchorAIView | null = null;
+    private getCurrentDependencyToken: (() => TargetDependencyToken) | null = null;
 
     constructor(options: { renderer: AISelectAnchorRenderer }) {
         this.renderer = options.renderer;
@@ -141,11 +143,23 @@ export class AISelectAnchorController {
 
     exit(): void {
         this.contexts.dispose();
+        this.getCurrentDependencyToken = null;
         this.anchor = null;
         this.publish();
     }
 
     private async begin(input: StartAnchorInput, restart: boolean): Promise<void> {
+        const effectiveDependencyToken = input.getCurrentDependencyToken();
+        if (
+            !areTargetDependencyTokensEqual(
+                input.dependencyToken,
+                effectiveDependencyToken
+            )
+        ) {
+            throw new Error(
+                'The Target Splat changed while its Anchor SceneSnapshot was being prepared.'
+            );
+        }
         const context = restart ?
             this.contexts.restart({
                 target: input.target,
@@ -155,6 +169,7 @@ export class AISelectAnchorController {
                 target: input.target,
                 dependencyToken: input.dependencyToken
             });
+        this.getCurrentDependencyToken = input.getCurrentDependencyToken;
         const requestBinding = this.contexts.createRequestBinding();
         const request: AnchorRenderRequest = Object.freeze({
             requestBinding,
@@ -242,14 +257,30 @@ export class AISelectAnchorController {
     ): boolean {
         const currentAnchor = this.anchor;
         const currentContext = this.contexts.current;
+        const effectiveDependencyToken = this.getCurrentDependencyToken?.();
+        if (
+            currentAnchor === null ||
+            currentContext === null ||
+            effectiveDependencyToken === undefined
+        ) {
+            return false;
+        }
+        const acceptsResult = this.contexts.acceptsResult(
+            request.requestBinding,
+            effectiveDependencyToken
+        );
+        const synchronizedContext = this.contexts.current;
+        if (
+            !acceptsResult &&
+            synchronizedContext !== null &&
+            synchronizedContext.lifecycle === 'suspended'
+        ) {
+            this.publish();
+        }
         return (
-            currentAnchor !== null &&
-            currentContext !== null &&
-            currentContext.targetContextId === context.targetContextId &&
-            this.contexts.acceptsResult(
-                request.requestBinding,
-                currentContext.dependencyToken
-            ) &&
+            acceptsResult &&
+            synchronizedContext !== null &&
+            synchronizedContext.targetContextId === context.targetContextId &&
             currentAnchor.requestBinding.targetContextId === request.requestBinding.targetContextId &&
             currentAnchor.requestBinding.contextRevision === request.requestBinding.contextRevision &&
             areTargetDependencyTokensEqual(

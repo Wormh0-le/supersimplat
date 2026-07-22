@@ -51,16 +51,20 @@ conserve contributor mass against raster alpha within
 mismatch abort the preview; there is no nearest, visible-only, top-k, or custom
 backend attribution fallback.
 
-AI Select v1 creates an Anchor through `POST /ai-select/anchor-renders` after
-the editor registers its immutable Scene Snapshot. The request carries the
-editor-owned `AIRequestBinding`, Target Splat ID, render-configuration version,
-and `CameraBinding`. `CameraBinding` is an OpenCV camera-to-world affine matrix
-plus pinhole intrinsics, resolution, clipping, and convention revision. The
-Companion derives its row-major `opencv-world-to-camera` matrix, then publishes
-PNG RGB and a contributor digest only after one gsplat rasterization has passed
-complete contributor-mass validation. The editor verifies the PNG SHA-256
-digest before displaying it. No PlayCanvas framebuffer/canvas capture is
-accepted as AI Anchor observation truth.
+AI Select v1 registers its immutable effective Scene Snapshot through the
+versioned Binary SceneSnapshot begin/chunk/commit protocol, then creates an
+Anchor through `POST /ai-select/anchor-renders`. The payload is bounded raw
+typed binary chunks, not a PLY path, base64 payload, or per-Gaussian JSON graph;
+the Companion only publishes its mmap-backed snapshot after commit succeeds.
+The Anchor request carries the editor-owned `AIRequestBinding`, Target Splat ID,
+render-configuration version, and `CameraBinding`. `CameraBinding` is an OpenCV
+camera-to-world affine matrix plus pinhole intrinsics, resolution, clipping, and
+convention revision. The Companion derives its row-major
+`opencv-world-to-camera` matrix, then publishes PNG RGB and a contributor digest
+only after one gsplat rasterization has passed complete contributor-mass
+validation. The editor verifies the PNG SHA-256 digest before displaying it. No
+PlayCanvas framebuffer/canvas capture is accepted as AI Anchor observation
+truth. See [Binary SceneSnapshot Registration v1](../docs/protocols/binary-scene-snapshot-registration-v1.md).
 
 The legacy PoC route's editor-registered Anchor PNG parity policy remains
 limited to legacy fixture/session compatibility. It is not used by AI Select
@@ -152,10 +156,12 @@ browser never starts, stops, upgrades, installs, or rolls back this process.
 Trusted-LAN hosts must resolve only to private-network addresses; public,
 unspecified, and loopback listeners are rejected.
 
-This release exposes `/health`, `/capabilities`, `/scene-snapshots/...`, and
-the AI Select Anchor route `/ai-select/anchor-renders`; `/capabilities` must
-advertise `aiSelectAnchorRender` before the browser enables that route. It also
-keeps the legacy
+This release exposes `/health`, `/capabilities`,
+`/scene-snapshot-uploads/v1`, and the AI Select Anchor route
+`/ai-select/anchor-renders`; `/capabilities` must advertise both
+`aiSelectAnchorRender` and `binarySceneSnapshotRegistrationV1` before the
+browser enables AI Select. `/scene-snapshots/...` remains a legacy fixture
+compatibility endpoint only. It also keeps the legacy
 Object Selection Session admission lease during migration. It verifies the
 locked gsplat/CUDA runtime from the current Companion process only. Whenever
 the release lock or runtime identity does not match, renderer status remains

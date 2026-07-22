@@ -14,6 +14,14 @@ import ssl
 from typing import Iterable
 from urllib.parse import unquote, urlparse
 
+from .binary_scene_snapshot import (
+    MAX_BINARY_SCENE_SNAPSHOT_CHUNK_BYTES,
+    ImmutableSnapshotConflict,
+    IncompleteSnapshotUploadError,
+    SnapshotUploadError,
+    UnknownSnapshotUpload,
+    parse_binary_scene_snapshot_manifest,
+)
 from .masking import MaskSessionError
 from .evidence import selection_result_ids
 from .state import CompanionState
@@ -180,7 +188,10 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         self.send_header(
             "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"
         )
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-SceneSnapshot-Chunk-Digest",
+        )
         self.end_headers()
 
     def do_GET(self) -> None:
@@ -214,6 +225,13 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         if not self._origin_allowed():
             self.send_error(HTTPStatus.FORBIDDEN)
+            return
+        if self.path == "/scene-snapshot-uploads/v1":
+            self._begin_binary_scene_snapshot_upload()
+            return
+        binary_commit_upload_id = self._binary_snapshot_commit_upload_id()
+        if binary_commit_upload_id is not None:
+            self._commit_binary_scene_snapshot_upload(binary_commit_upload_id)
             return
         if self.path == "/ai-select/anchor-renders":
             self._render_ai_select_anchor()
@@ -261,6 +279,10 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
     def do_PUT(self) -> None:
         if not self._origin_allowed():
             self.send_error(HTTPStatus.FORBIDDEN)
+            return
+        binary_chunk = self._binary_snapshot_chunk()
+        if binary_chunk is not None:
+            self._upload_binary_scene_snapshot_chunk(*binary_chunk)
             return
         frame_set_version = self._frame_set_version()
         if frame_set_version is not None:
@@ -361,6 +383,135 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             },
         )
 
+    def _begin_binary_scene_snapshot_upload(self) -> None:
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            manifest = parse_binary_scene_snapshot_manifest(
+                self._read_json_body(maximum_bytes=2 * 1024 * 1024)
+            )
+            self._state.cleanup_expired_binary_scene_snapshot_uploads()
+            admission = self._state.begin_binary_scene_snapshot_upload(manifest)
+        except ImmutableSnapshotConflict as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.CONFLICT, "immutableConflict", str(error)
+            )
+            return
+        except SnapshotUploadError as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.BAD_REQUEST, "invalidUpload", str(error)
+            )
+            return
+        except ValueError as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.BAD_REQUEST, "invalidRequest", str(error)
+            )
+            return
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "status": admission.status,
+                "missingChunkIndices": list(admission.missing_chunk_indices),
+                **(
+                    {"uploadId": admission.upload_id}
+                    if admission.upload_id is not None
+                    else {}
+                ),
+            },
+        )
+
+    def _upload_binary_scene_snapshot_chunk(
+        self, upload_id: str, index: int
+    ) -> None:
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            if self.headers.get("Content-Type", "").split(";", 1)[0].lower() != "application/octet-stream":
+                raise SnapshotUploadError(
+                    "Binary Scene Snapshot chunks must use application/octet-stream"
+                )
+            digest = self.headers.get("X-SceneSnapshot-Chunk-Digest")
+            if not isinstance(digest, str) or not digest:
+                raise SnapshotUploadError(
+                    "Binary Scene Snapshot chunk digest header is required"
+                )
+            status = self._state.accept_binary_scene_snapshot_chunk(
+                upload_id,
+                index,
+                self._read_binary_body(MAX_BINARY_SCENE_SNAPSHOT_CHUNK_BYTES),
+                digest,
+            )
+        except ImmutableSnapshotConflict as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.CONFLICT, "immutableConflict", str(error)
+            )
+            return
+        except UnknownSnapshotUpload as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.NOT_FOUND, "uploadMissing", str(error)
+            )
+            return
+        except SnapshotUploadError as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.BAD_REQUEST, "invalidUpload", str(error)
+            )
+            return
+        self._send_json(
+            HTTPStatus.OK,
+            {"status": status, "uploadId": upload_id, "index": index},
+        )
+
+    def _commit_binary_scene_snapshot_upload(self, upload_id: str) -> None:
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            self._read_json_body(maximum_bytes=1024)
+            commit = self._state.commit_binary_scene_snapshot_upload(upload_id)
+        except IncompleteSnapshotUploadError as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.CONFLICT, "incompleteUpload", str(error)
+            )
+            return
+        except ImmutableSnapshotConflict as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.CONFLICT, "immutableConflict", str(error)
+            )
+            return
+        except UnknownSnapshotUpload as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.NOT_FOUND, "uploadMissing", str(error)
+            )
+            return
+        except SnapshotUploadError as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.BAD_REQUEST, "invalidUpload", str(error)
+            )
+            return
+        except ValueError as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.BAD_REQUEST, "invalidRequest", str(error)
+            )
+            return
+        snapshot = commit.snapshot
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "status": commit.status,
+                "sceneId": snapshot.scene_id,
+                "sceneVersion": snapshot.scene_version,
+                "contentDigest": snapshot.content_digest,
+            },
+        )
+
     def _preview_object_selection_session(self, session_id: str) -> None:
         if not self._state.has_object_selection_session(session_id):
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -434,6 +585,14 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:
         if not self._origin_allowed():
             self.send_error(HTTPStatus.FORBIDDEN)
+            return
+
+        binary_upload_id = self._binary_snapshot_upload_id()
+        if binary_upload_id is not None:
+            self._state.abort_binary_scene_snapshot_upload(binary_upload_id)
+            self.send_response(HTTPStatus.NO_CONTENT)
+            self._send_cors_headers()
+            self.end_headers()
             return
 
         frame_set_version = self._frame_set_version()
@@ -532,6 +691,51 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             return None
         return unquote(parts[0]), unquote(parts[1])
 
+    def _binary_snapshot_chunk(self) -> tuple[str, int] | None:
+        parsed = urlparse(self.path)
+        prefix = "/scene-snapshot-uploads/v1/"
+        suffix = "/chunks/"
+        if parsed.query or not parsed.path.startswith(prefix):
+            return None
+        remainder = parsed.path[len(prefix):]
+        if suffix not in remainder:
+            return None
+        upload_id, encoded_index = remainder.split(suffix, 1)
+        if (
+            not upload_id
+            or "/" in upload_id
+            or not encoded_index
+            or "/" in encoded_index
+            or not encoded_index.isdecimal()
+        ):
+            return None
+        return unquote(upload_id), int(encoded_index)
+
+    def _binary_snapshot_commit_upload_id(self) -> str | None:
+        parsed = urlparse(self.path)
+        prefix = "/scene-snapshot-uploads/v1/"
+        suffix = "/commit"
+        if (
+            parsed.query
+            or not parsed.path.startswith(prefix)
+            or not parsed.path.endswith(suffix)
+        ):
+            return None
+        upload_id = parsed.path[len(prefix):-len(suffix)]
+        if not upload_id or "/" in upload_id:
+            return None
+        return unquote(upload_id)
+
+    def _binary_snapshot_upload_id(self) -> str | None:
+        parsed = urlparse(self.path)
+        prefix = "/scene-snapshot-uploads/v1/"
+        if parsed.query or not parsed.path.startswith(prefix):
+            return None
+        upload_id = parsed.path[len(prefix):]
+        if not upload_id or "/" in upload_id:
+            return None
+        return unquote(upload_id)
+
     def _frame_set_version(self) -> str | None:
         parsed = urlparse(self.path)
         prefix = "/frame-sets/"
@@ -617,13 +821,15 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         return origin in self._allowed_origins
 
-    def _read_json_body(self) -> dict[str, object]:
+    def _read_json_body(self, *, maximum_bytes: int | None = None) -> dict[str, object]:
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
         except ValueError as error:
             raise ValueError("request Content-Length is invalid") from error
         if content_length <= 0:
             raise ValueError("request must contain a JSON object")
+        if maximum_bytes is not None and content_length > maximum_bytes:
+            raise ValueError("request body exceeds the route limit")
         try:
             value = json.loads(self.rfile.read(content_length))
         except json.JSONDecodeError as error:
@@ -631,6 +837,25 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         if not isinstance(value, dict):
             raise ValueError("request body must be a JSON object")
         return value
+
+    def _read_binary_body(self, maximum_bytes: int) -> bytes:
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError as error:
+            raise SnapshotUploadError("Binary Scene Snapshot chunk Content-Length is invalid") from error
+        if content_length <= 0 or content_length > maximum_bytes:
+            raise SnapshotUploadError(
+                "Binary Scene Snapshot chunk exceeds the bounded byte limit"
+            )
+        payload = self.rfile.read(content_length)
+        if len(payload) != content_length:
+            raise SnapshotUploadError("Binary Scene Snapshot chunk body is truncated")
+        return payload
+
+    def _send_binary_snapshot_error(
+        self, status: HTTPStatus, code: str, message: str
+    ) -> None:
+        self._send_json(status, {"status": "snapshotUploadError", "code": code, "message": message})
 
     @staticmethod
     def _request_string(request: dict[str, object], name: str) -> str:

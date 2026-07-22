@@ -35,6 +35,17 @@ import {
     type SelectionServicePreviewResponse
 } from './object-selection-session';
 import { assertSceneSnapshot, type SceneSnapshot } from './scene-snapshot';
+import {
+    isPackedSceneSnapshot,
+    type BinarySceneSnapshotManifest,
+    type PackedSceneSnapshot
+} from './scene-snapshot-binary';
+import {
+    BinarySceneSnapshotRegistrar,
+    type BinarySceneSnapshotRegistrationResult,
+    type BinarySceneSnapshotRegistrationTransport,
+    type BinarySceneSnapshotUploadAdmission
+} from './scene-snapshot-registration';
 import { SelectionServiceTransportError } from './selection-service-readiness';
 
 interface SelectionServiceTransportConfiguration {
@@ -54,7 +65,7 @@ interface SelectionServiceFetchInit {
   mode: 'cors';
   credentials: 'omit';
   cache: 'no-store';
-  body?: string;
+  body?: string | ArrayBuffer;
 }
 
 type SelectionServiceFetch = (
@@ -190,7 +201,12 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter, AISelectA
                 'AI Select requires a complete bound Anchor render request.'
             );
         }
-        assertSceneSnapshot(request.snapshot);
+        if (!isPackedSceneSnapshot(request.snapshot)) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select requires a Binary SceneSnapshot Registration v1 payload.'
+            );
+        }
         if (request.requestBinding.dependencyToken.splatId !== request.target.splatId) {
             throw transportError(
                 'invalidResponse',
@@ -198,13 +214,13 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter, AISelectA
             );
         }
 
-        await this.registerSnapshot(request.snapshot);
+        await this.registerPackedSnapshot(request.snapshot);
         const first = await this.sendAnchorRender(request);
         if (first.status === 'complete') {
             return first.response;
         }
 
-        await this.registerSnapshot(request.snapshot, true);
+        await this.registerPackedSnapshot(request.snapshot, true);
         const retry = await this.sendAnchorRender(request);
         if (retry.status !== 'complete') {
             throw transportError(
@@ -227,9 +243,9 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter, AISelectA
             `/object-selection-sessions/${encodeURIComponent(sessionId)}`,
             'DELETE'
         );
-        // The Companion releases scene caches with its sole session lease, so
-        // a later session must re-register rather than trusting this adapter's
-        // process-local memory of an old snapshot.
+        // A later target must revalidate registration rather than trusting this
+        // adapter's process-local memory. The Companion may reuse a committed
+        // binary runtime cache, but Begin is its authority boundary.
         this.registeredSnapshots.clear();
     }
 
@@ -256,6 +272,173 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter, AISelectA
             );
         }
         this.registeredSnapshots.add(key);
+    }
+
+    private async registerPackedSnapshot(
+        snapshot: PackedSceneSnapshot,
+        force = false
+    ): Promise<void> {
+        if (!isPackedSceneSnapshot(snapshot)) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select requires a complete packed Scene Snapshot binding.'
+            );
+        }
+        const key = this.snapshotKey(snapshot);
+        if (!force && this.registeredSnapshots.has(key)) {
+            return;
+        }
+        const registrar = new BinarySceneSnapshotRegistrar(
+            this.binarySnapshotTransport()
+        );
+        let result: BinarySceneSnapshotRegistrationResult;
+        try {
+            result = await registrar.register(snapshot);
+        } catch (error) {
+            if (error instanceof SelectionServiceTransportError) {
+                throw error;
+            }
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion did not complete Binary SceneSnapshot Registration v1.'
+            );
+        }
+        if (
+            (result.status !== 'committed' && result.status !== 'alreadyCommitted') ||
+            result.sceneId !== snapshot.sceneId ||
+            result.sceneVersion !== snapshot.sceneVersion ||
+            result.contentDigest !== snapshot.contentDigest
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an invalid packed Scene Snapshot binding.'
+            );
+        }
+        this.registeredSnapshots.add(key);
+    }
+
+    private binarySnapshotTransport(): BinarySceneSnapshotRegistrationTransport {
+        return {
+            begin: manifest => this.beginPackedSnapshotUpload(manifest),
+            uploadChunk: (uploadId, index, bytes, digest) => this.uploadPackedSnapshotChunk(uploadId, index, bytes, digest),
+            commit: uploadId => this.commitPackedSnapshotUpload(uploadId),
+            abort: uploadId => this.abortPackedSnapshotUpload(uploadId)
+        };
+    }
+
+    private async beginPackedSnapshotUpload(
+        manifest: BinarySceneSnapshotManifest
+    ): Promise<BinarySceneSnapshotUploadAdmission> {
+        const result = await this.requestJson(
+            '/scene-snapshot-uploads/v1',
+            'POST',
+            manifest
+        );
+        if (!isRecord(result) || !Array.isArray(result.missingChunkIndices)) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion did not acknowledge the staged Binary Scene Snapshot upload.'
+            );
+        }
+        const missingChunkIndices = result.missingChunkIndices;
+        if (!missingChunkIndices.every(isNonNegativeInteger)) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned invalid Binary Scene Snapshot chunk bindings.'
+            );
+        }
+        if (result.status === 'alreadyCommitted') {
+            return {
+                status: 'alreadyCommitted',
+                missingChunkIndices
+            };
+        }
+        if (result.status !== 'staged' || typeof result.uploadId !== 'string' || !result.uploadId) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion did not return a Binary Scene Snapshot upload ID.'
+            );
+        }
+        return {
+            status: 'staged',
+            uploadId: result.uploadId,
+            missingChunkIndices
+        };
+    }
+
+    private async uploadPackedSnapshotChunk(
+        uploadId: string,
+        index: number,
+        bytes: Uint8Array,
+        digest: string
+    ): Promise<void> {
+        const response = await this.request(
+            `/scene-snapshot-uploads/v1/${encodeURIComponent(uploadId)}/chunks/${index}`,
+            'PUT',
+            bytes.slice().buffer,
+            {
+                'Content-Type': 'application/octet-stream',
+                'X-SceneSnapshot-Chunk-Digest': digest
+            }
+        );
+        if (!response.ok) {
+            throw await this.httpError(response);
+        }
+        let result: unknown;
+        try {
+            result = await response.json();
+        } catch {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned invalid Binary Scene Snapshot chunk acknowledgement JSON.'
+            );
+        }
+        if (
+            !isRecord(result) ||
+            (result.status !== 'stored' && result.status !== 'alreadyStored') ||
+            result.uploadId !== uploadId ||
+            result.index !== index
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an invalid Binary Scene Snapshot chunk acknowledgement.'
+            );
+        }
+    }
+
+    private async commitPackedSnapshotUpload(
+        uploadId: string
+    ): Promise<BinarySceneSnapshotRegistrationResult> {
+        const result = await this.requestJson(
+            `/scene-snapshot-uploads/v1/${encodeURIComponent(uploadId)}/commit`,
+            'POST',
+            {}
+        );
+        if (
+            !isRecord(result) ||
+            (result.status !== 'committed' && result.status !== 'alreadyCommitted') ||
+            typeof result.sceneId !== 'string' ||
+            typeof result.sceneVersion !== 'string' ||
+            typeof result.contentDigest !== 'string'
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an invalid Binary Scene Snapshot commit acknowledgement.'
+            );
+        }
+        return {
+            status: result.status,
+            sceneId: result.sceneId,
+            sceneVersion: result.sceneVersion,
+            contentDigest: result.contentDigest
+        };
+    }
+
+    private async abortPackedSnapshotUpload(uploadId: string): Promise<void> {
+        await this.requestNoContent(
+            `/scene-snapshot-uploads/v1/${encodeURIComponent(uploadId)}`,
+            'DELETE'
+        );
     }
 
     private async registerFrameSet(frameSet: ObjectSelectionFrameSet) {
@@ -755,7 +938,8 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter, AISelectA
     private async request(
         path: string,
         method: SelectionServiceFetchInit['method'],
-        body?: string
+        body?: string | ArrayBuffer,
+        additionalHeaders: Record<string, string> = {}
     ) {
         let endpoint: URL;
         try {
@@ -771,7 +955,12 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter, AISelectA
             method,
             headers: {
                 Accept: 'application/json',
-                ...(body === undefined ? {} : { 'Content-Type': 'application/json' })
+                ...(
+                    body === undefined || additionalHeaders['Content-Type'] !== undefined ?
+                        {} :
+                        { 'Content-Type': 'application/json' }
+                ),
+                ...additionalHeaders
             },
             mode: 'cors',
             credentials: 'omit',
@@ -808,7 +997,7 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter, AISelectA
         );
     }
 
-    private snapshotKey(snapshot: SceneSnapshot) {
+    private snapshotKey(snapshot: Pick<SceneSnapshot, 'sceneId' | 'sceneVersion'>) {
         return `${snapshot.sceneId}\u0000${snapshot.sceneVersion}`;
     }
 

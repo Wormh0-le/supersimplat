@@ -17,6 +17,14 @@ import time
 from typing import Any, Callable, Mapping
 
 from . import PACKAGE_VERSION, PROTOCOL_VERSION
+from .binary_scene_snapshot import (
+    BinarySceneSnapshotManifest,
+    BinarySceneSnapshotUploadStore,
+    ImmutableSnapshotConflict,
+    PackedBinarySceneSnapshot,
+    SnapshotUploadAdmission,
+    SnapshotUploadCommit,
+)
 from .evidence import ContributorRenderer, build_evidence_snapshot
 from .generated_views import (
     GENERATED_VIEW_RESOLUTIONS,
@@ -75,9 +83,10 @@ MODEL_MANIFEST_IDENTITY_FIELDS = (
 class RegisteredSceneSnapshot:
     """Immutable Scene Snapshot payload cached by its editor-owned version."""
 
-    canonical: str
-    stable_ids: tuple[int, ...]
+    scene: Mapping[str, Any] | PackedBinarySceneSnapshot
+    stable_ids: tuple[int, ...] | memoryview
     render_config_version: str
+    identity: str
 
 
 @dataclass(frozen=True)
@@ -302,6 +311,10 @@ class CompanionState:
         init=False,
         repr=False,
     )
+    _binary_scene_snapshot_uploads: BinarySceneSnapshotUploadStore = field(
+        init=False,
+        repr=False,
+    )
     _frame_sets: dict[str, RegisteredFrameSet] = field(
         default_factory=dict,
         init=False,
@@ -330,6 +343,11 @@ class CompanionState:
         default_factory=GeneratedViewPolicy,
         repr=False,
     )
+
+    def __post_init__(self) -> None:
+        self._binary_scene_snapshot_uploads = BinarySceneSnapshotUploadStore(
+            self.directory / "runtime-scene-snapshots"
+        )
 
     @property
     def release_path(self) -> Path:
@@ -576,15 +594,65 @@ class CompanionState:
         key = (scene_id, scene_version)
         with self._scene_lock:
             existing = self._scene_snapshots.get(key)
-            if existing is not None and existing.canonical != canonical:
+            if existing is not None and existing.identity != canonical:
                 raise ValueError(
                     "a Scene Snapshot version is immutable and cannot be registered with different content"
                 )
             self._scene_snapshots[key] = RegisteredSceneSnapshot(
-                canonical=canonical,
+                # Legacy JSON fixture compatibility retains an isolated parsed
+                # copy. Binary AI Select registrations never take this path.
+                scene=json.loads(canonical),
                 stable_ids=tuple(sorted(stable_ids)),
                 render_config_version=render_config_version,
+                identity=canonical,
             )
+
+    def begin_binary_scene_snapshot_upload(
+        self, manifest: BinarySceneSnapshotManifest
+    ) -> SnapshotUploadAdmission:
+        key = (manifest.scene_id, manifest.scene_version)
+        expected_identity = f"binary:{manifest.content_digest}"
+        with self._scene_lock:
+            existing = self._scene_snapshots.get(key)
+            if existing is not None and existing.identity != expected_identity:
+                raise ImmutableSnapshotConflict(
+                    "a Scene Snapshot version is immutable and cannot be registered with different content"
+                )
+        return self._binary_scene_snapshot_uploads.begin(manifest)
+
+    def accept_binary_scene_snapshot_chunk(
+        self, upload_id: str, index: int, payload: bytes, digest: str
+    ) -> str:
+        return self._binary_scene_snapshot_uploads.accept_chunk(
+            upload_id, index, payload, digest
+        )
+
+    def commit_binary_scene_snapshot_upload(
+        self, upload_id: str
+    ) -> SnapshotUploadCommit:
+        commit = self._binary_scene_snapshot_uploads.commit_result(upload_id)
+        packed = commit.snapshot
+        key = (packed.scene_id, packed.scene_version)
+        identity = f"binary:{packed.content_digest}"
+        with self._scene_lock:
+            existing = self._scene_snapshots.get(key)
+            if existing is not None and existing.identity != identity:
+                raise ValueError(
+                    "a Scene Snapshot version is immutable and cannot be registered with different content"
+                )
+            self._scene_snapshots[key] = RegisteredSceneSnapshot(
+                scene=packed,
+                stable_ids=packed.stable_ids(),
+                render_config_version=packed.render_config_version,
+                identity=identity,
+            )
+        return commit
+
+    def abort_binary_scene_snapshot_upload(self, upload_id: str) -> None:
+        self._binary_scene_snapshot_uploads.abort(upload_id)
+
+    def cleanup_expired_binary_scene_snapshot_uploads(self) -> int:
+        return self._binary_scene_snapshot_uploads.cleanup_expired()
 
     def scene_snapshot(
         self, scene_id: str, scene_version: str
@@ -594,7 +662,7 @@ class CompanionState:
 
     def scene_snapshot_stable_ids(
         self, scene_id: str, scene_version: str
-    ) -> tuple[int, ...] | None:
+    ) -> tuple[int, ...] | memoryview | None:
         snapshot = self.scene_snapshot(scene_id, scene_version)
         return snapshot.stable_ids if snapshot is not None else None
 
@@ -644,7 +712,7 @@ class CompanionState:
         try:
             try:
                 artifact = render_anchor(
-                    scene_snapshot=json.loads(snapshot.canonical),
+                    scene_snapshot=snapshot.scene,
                     view_id='anchor-view',
                     camera=anchor_request.renderer_camera,
                     width=anchor_request.width,
@@ -1026,7 +1094,7 @@ class CompanionState:
                 )
             stage_started = time.perf_counter()
             coverage_report = self.generated_view_policy.coverage_report(
-                scene_snapshot=json.loads(snapshot.canonical),
+                scene_snapshot=snapshot.scene,
                 frame_set=resolved.frame_set,
                 mask_set=mask_set,
                 renderer=renderer,
@@ -1243,7 +1311,7 @@ class CompanionState:
                     "sceneCacheMiss", "The Scene Snapshot is unavailable for Generated View planning."
                 )
             anchor_mask_set = {"tracks": preliminary_tracks}
-            scene_snapshot = json.loads(snapshot.canonical)
+            scene_snapshot = snapshot.scene
             selected = None
             selected_render_config_version = None
             base_render_config_version = self._mask_binding(
@@ -1690,7 +1758,7 @@ class CompanionState:
                         "The Scene Snapshot is unavailable for Generated View quality gating.",
                     )
                 tracks, quality_rejections = quality_gate_tracks(
-                    scene_snapshot=json.loads(snapshot.canonical),
+                    scene_snapshot=snapshot.scene,
                     frame_set=frame_set,
                     tracks=tracks,
                     renderer=self.contributor_renderer,
@@ -1867,7 +1935,7 @@ class CompanionState:
 
             evidence_snapshot = build_evidence_snapshot(
                 bindings=bindings,
-                scene_snapshot=json.loads(snapshot.canonical),
+                scene_snapshot=snapshot.scene,
                 frame_set=frame_set,
                 mask_set=mask_set,
                 renderer=renderer,
@@ -2507,7 +2575,10 @@ class CompanionState:
             "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}+{release['release']}",
             "renderer": renderer_capability,
             "supportedPromptKinds": ["point"],
-            "supportedOperations": ["aiSelectAnchorRender"],
+            "supportedOperations": [
+                "aiSelectAnchorRender",
+                "binarySceneSnapshotRegistrationV1",
+            ],
             "modelManifests": manifests,
             "capacity": self._capacity(),
             "allowedEditorOrigins": allowed_editor_origins,

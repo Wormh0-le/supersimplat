@@ -27,7 +27,10 @@ const capabilities = (overrides = {}) => ({
     cudaVersion: "12.8",
   },
   supportedPromptKinds: ["point"],
-  supportedOperations: ["aiSelectAnchorRender"],
+  supportedOperations: [
+    "aiSelectAnchorRender",
+    "binarySceneSnapshotRegistrationV1",
+  ],
   modelManifests: [
     {
       digest: selectedModelDigest,
@@ -196,6 +199,25 @@ test("does not admit an Anchor renderer when a compatible protocol does not adve
   assert.equal(readiness.state.status, "reachable");
   assert.equal(readiness.state.diagnostic.code, "aiSelectAnchorUnsupported");
   await assert.rejects(gateway.renderAnchor({}), /cannot start/i);
+});
+
+test("does not admit AI Select when the Companion lacks Binary SceneSnapshot Registration v1", async () => {
+  const readiness = new SelectionServiceReadiness({
+    probe: new DeterministicReadinessProbe({
+      capabilitiesResult: capabilities({
+        supportedOperations: ["aiSelectAnchorRender"],
+      }),
+    }),
+    configuration: configuration(),
+  });
+
+  await readiness.refresh();
+
+  assert.equal(readiness.state.status, "reachable");
+  assert.equal(
+    readiness.state.diagnostic.code,
+    "binarySceneSnapshotRegistrationUnsupported"
+  );
 });
 
 test("reports protocol, renderer, model, origin, and one-session capacity failures without opening a session", async (t) => {

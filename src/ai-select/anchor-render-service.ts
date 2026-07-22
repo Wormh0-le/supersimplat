@@ -1,4 +1,4 @@
-import type { SceneSnapshot } from '../scene-snapshot';
+import type { PackedSceneSnapshot } from '../scene-snapshot-binary';
 import {
     areCameraBindingsEqual,
     isCameraBinding,
@@ -14,7 +14,7 @@ import {
 export interface AnchorRenderRequest {
     readonly requestBinding: AIRequestBinding;
     readonly target: AITarget;
-    readonly snapshot: SceneSnapshot;
+    readonly snapshot: PackedSceneSnapshot;
     readonly cameraBinding: CameraBinding;
 }
 

@@ -84,11 +84,22 @@ bytes, not over JSON and not over upload chunks.
 The canonical byte sequence is:
 
 1. UTF-8 bytes of `supersplat-packed-scene-snapshot-v1\0`;
-2. each logical manifest string in documented order, encoded as
-   `uint32le(byteLength) + UTF-8 bytes`;
-3. fixed-width little-endian numeric logical-manifest values, including `N`,
-   `S`, field component counts, SH band count, and RGBA float32 values;
-4. the six fixed planes and `sh` plane in the order above.
+2. the following UTF-8 strings, each encoded as
+   `uint32le(byteLength) + UTF-8 bytes`, in exactly this order:
+   `coordinateConvention`, `stableIdSchema`, `attributeSchema`,
+   `appearancePolicy`, `renderConfiguration.version`,
+   `renderConfiguration.alphaMode`, `renderConfiguration.rasterizer`;
+3. `uint32le(N)`, `uint32le(S)`, and
+   `uint32le(renderConfiguration.shBands)`;
+4. the four `float32le` values of `renderConfiguration.backgroundRgba`, in
+   RGBA order;
+5. `uint32le` component counts in plane order:
+   `1, 3, 4, 3, 1, 3, S`;
+6. all seven planes in the order above, as their raw little-endian bytes.
+
+`sceneId` is a registration namespace, not a content byte, and is deliberately
+excluded from the digest. `sceneVersion` is required to equal the resulting
+content digest.
 
 The content digest deliberately excludes the transfer chunk size, upload ID,
 chunk boundaries, chunk hashes, retry count, and timestamps. The Editor updates
@@ -137,10 +148,10 @@ from Snapshot Content Digest calculation:
 }
 ```
 
-`chunkByteLength` is at most 4 MiB. Each final chunk may be smaller. The
-Companion rejects malformed, overlapping, gapped, or out-of-range chunk plans.
-The manifest has a bounded size and bounded chunk count. A raw chunk body uses
-`application/octet-stream`; no payload field is base64 encoded.
+`chunkByteLength` is at most 4 MiB. Each final chunk may be smaller. There are
+at most 4096 chunks and the request manifest is at most 2 MiB. The Companion
+rejects malformed, overlapping, gapped, or out-of-range chunk plans. A raw
+chunk body uses `application/octet-stream`; no payload field is base64 encoded.
 
 The browser protocol is:
 
@@ -171,8 +182,11 @@ committed SceneSnapshot cache.
   and atomically installs a typed/mmap-backed `PackedSceneSnapshot` in the
   runtime cache. A failure preserves any prior committed snapshot and publishes
   no partial replacement.
-- A conflicting logical manifest for an existing `(sceneId, contentDigest)` is
-  rejected. A completed identical registration is idempotent.
+- A conflicting logical manifest for an existing `(sceneId, sceneVersion)` is
+  rejected. A completed identical registration is idempotent. For the bounded
+  staging TTL, a repeated commit for the same upload ID returns
+  `alreadyCommitted`; after that TTL, Begin/resume returns the committed
+  identity instead.
 - Explicit abort, failed commit, and a bounded TTL clean incomplete staging
   uploads. Cleanup never removes a committed cache entry.
 

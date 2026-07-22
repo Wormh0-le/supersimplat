@@ -69,3 +69,32 @@ test('keeps the Snapshot Content Digest independent of bounded transport chunkin
         /chunk/i
     );
 });
+
+test('matches the shared Binary SceneSnapshot v1 digest test vector', () => {
+    const snapshot = buildPackedSceneSnapshot({
+        sceneId: 'digest-test-scene',
+        coordinateConvention: 'right-handed world coordinates; quaternion xyzw',
+        stableIdSchema: 'uint32',
+        appearancePolicy: 'effective-editor-dc-sh-bands-0',
+        renderConfiguration: {
+            version: 'supersplat-effective-rgb-v1',
+            backgroundRgba: [0, 0, 0, 1],
+            alphaMode: 'opaque-background',
+            shBands: 0,
+            rasterizer: 'playcanvas-gsplat-classic'
+        },
+        stableIds: new Uint32Array([7]),
+        means: new Float32Array([1, 2, 3]),
+        rotationsXyzw: new Float32Array([0, 0, 0, 1]),
+        logScales: new Float32Array([0, 0, 0]),
+        logitOpacities: new Float32Array([0]),
+        dc: new Float32Array([0, 0, 0]),
+        sh: new Float32Array(),
+        shFloatCountPerGaussian: 0
+    });
+
+    assert.equal(
+        snapshot.contentDigest,
+        'sha256:d2e86ef6efa8979eed111a6d3ecea9419e09bb780b69ab769f279dd768be925e'
+    );
+});

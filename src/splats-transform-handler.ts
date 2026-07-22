@@ -150,6 +150,10 @@ class SplatsTransformHandler implements TransformHandler {
             mat2.mul2(mat, mat2);
             transformPalette.setTransform(newIdx, mat2);
         });
+        // The editable transform palette is an effective SceneSnapshot input.
+        // Mark every visible drag mutation before an Anchor can be requested;
+        // updatePositions at drag end performs its own final revision bump.
+        this.splat.markAISelectGeometryChanged();
 
         // route through the shared queue so overlapping drag ticks don't race
         // on CalcBound's shared render targets / readback buffers. fire-and-

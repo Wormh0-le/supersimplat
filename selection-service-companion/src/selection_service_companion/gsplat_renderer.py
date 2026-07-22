@@ -20,6 +20,7 @@ import math
 import struct
 from typing import Any, ClassVar, Mapping, Protocol, Sequence
 
+from .binary_scene_snapshot import PackedBinarySceneSnapshot
 from .evidence import ContributorSample, RenderedContributorView
 from .generated_views import (
     CameraPreflightResult,
@@ -75,6 +76,10 @@ SUPPORTED_CAMERA_CONVENTION = "opencv-world-to-camera"
 SUPPORTED_RENDER_CONFIG_VERSION = "supersplat-effective-rgb-v1"
 ANCHOR_PARITY_NORMAL_MAE = 2.0 / 255.0
 ANCHOR_PARITY_SEVERE_MAE = 0.25
+
+
+SceneSnapshotInput = Mapping[str, Any] | PackedBinarySceneSnapshot
+StableGaussianIds = tuple[int, ...] | memoryview
 
 
 def _mass_conservation_tolerance(reference: Any) -> Any:
@@ -253,7 +258,7 @@ class GsplatBackend(Protocol):
     def rasterize(
         self,
         *,
-        snapshot: Mapping[str, Any],
+        snapshot: SceneSnapshotInput,
         camera: Mapping[str, Any],
         width: int,
         height: int,
@@ -263,7 +268,7 @@ class GsplatBackend(Protocol):
     def probe(
         self,
         *,
-        snapshot: Mapping[str, Any],
+        snapshot: SceneSnapshotInput,
         camera: Mapping[str, Any],
         width: int,
         height: int,
@@ -277,7 +282,7 @@ class LockedGsplatBackend:
     def rasterize(
         self,
         *,
-        snapshot: Mapping[str, Any],
+        snapshot: SceneSnapshotInput,
         camera: Mapping[str, Any],
         width: int,
         height: int,
@@ -401,7 +406,7 @@ class LockedGsplatBackend:
     def probe(
         self,
         *,
-        snapshot: Mapping[str, Any],
+        snapshot: SceneSnapshotInput,
         camera: Mapping[str, Any],
         width: int,
         height: int,
@@ -449,15 +454,131 @@ class LockedGsplatBackend:
         )
 
 
+def _render_configuration(snapshot: SceneSnapshotInput) -> Mapping[str, Any]:
+    if isinstance(snapshot, PackedBinarySceneSnapshot):
+        value = snapshot.content.get("renderConfiguration")
+    else:
+        value = snapshot.get("renderConfiguration")
+    if not isinstance(value, Mapping):
+        raise ValueError("The Scene Snapshot render configuration is missing")
+    return value
+
+
+def _scene_snapshot_version(snapshot: SceneSnapshotInput) -> str:
+    if isinstance(snapshot, PackedBinarySceneSnapshot):
+        return snapshot.scene_version
+    value = snapshot.get("sceneVersion")
+    if not isinstance(value, str):
+        raise ValueError("The Scene Snapshot sceneVersion is missing")
+    return value
+
+
+def _packed_float_tensor(
+    torch: Any,
+    snapshot: PackedBinarySceneSnapshot,
+    field_name: str,
+    shape: tuple[int, ...],
+    device: Any,
+) -> Any:
+    """Map one immutable float plane into the renderer without Python records."""
+
+    import warnings
+
+    expected_count = math.prod(shape)
+    # The mmap is intentionally read-only. ``frombuffer`` only creates the
+    # short-lived CPU view used by the following device transfer; it does not
+    # mutate the backing plane, but PyTorch warns conservatively about that.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="The given buffer is not writable.*",
+            category=UserWarning,
+        )
+        values = torch.frombuffer(snapshot.field(field_name), dtype=torch.float32)
+    if values.numel() != expected_count:
+        raise ValueError("The packed Scene Snapshot field length is inconsistent")
+    return values.reshape(shape).to(device)
+
+
+def _packed_locked_inputs(
+    snapshot: PackedBinarySceneSnapshot, camera: Mapping[str, Any], device: Any
+) -> dict[str, Any]:
+    """Create gsplat tensors directly from the mmap-backed SoA planes."""
+
+    import torch
+
+    render_configuration = _render_configuration(snapshot)
+    sh_degree = render_configuration["shBands"]
+    assert isinstance(sh_degree, int)
+    sh_basis_count = (sh_degree + 1) ** 2
+    gaussian_count = snapshot.gaussian_count
+    means = _packed_float_tensor(
+        torch, snapshot, "means", (gaussian_count, 3), device
+    )
+    rotations_xyzw = _packed_float_tensor(
+        torch, snapshot, "rotationsXyzw", (gaussian_count, 4), device
+    )
+    quats = rotations_xyzw[:, (3, 0, 1, 2)]
+    scales = _packed_float_tensor(
+        torch, snapshot, "logScales", (gaussian_count, 3), device
+    ).exp()
+    opacities = _packed_float_tensor(
+        torch, snapshot, "logitOpacities", (gaussian_count,), device
+    ).sigmoid()
+    colors = torch.zeros(
+        (gaussian_count, sh_basis_count, 3),
+        dtype=torch.float32,
+        device=device,
+    )
+    colors[:, 0, :] = _packed_float_tensor(
+        torch, snapshot, "dc", (gaussian_count, 3), device
+    )
+    active_coefficients_per_channel = sh_basis_count - 1
+    if active_coefficients_per_channel:
+        available_coefficients_per_channel = snapshot.sh_float_count_per_gaussian // 3
+        sh = _packed_float_tensor(
+            torch,
+            snapshot,
+            "sh",
+            (gaussian_count, 3, available_coefficients_per_channel),
+            device,
+        )
+        colors[:, 1:, :] = sh[:, :, :active_coefficients_per_channel].permute(
+            0, 2, 1
+        )
+    background = render_configuration["backgroundRgba"]
+    assert isinstance(background, list)
+    return {
+        "means": means,
+        "quats": quats,
+        "scales": scales,
+        "opacities": opacities,
+        "colors": colors,
+        "viewmats": torch.tensor(
+            camera["worldToCamera"], dtype=torch.float32, device=device
+        ).reshape(1, 4, 4),
+        "intrinsics": torch.tensor(
+            camera["intrinsics"], dtype=torch.float32, device=device
+        ).reshape(1, 3, 3),
+        "background": torch.tensor(
+            [background[:3]], dtype=torch.float32, device=device
+        ),
+        "sh_degree": sh_degree,
+    }
+
+
 def _locked_inputs(
-    snapshot: Mapping[str, Any], camera: Mapping[str, Any], device: Any
+    snapshot: SceneSnapshotInput, camera: Mapping[str, Any], device: Any
 ) -> dict[str, Any]:
     """Build the shared locked-revision projection inputs for probe or render."""
+
+    if isinstance(snapshot, PackedBinarySceneSnapshot):
+        return _packed_locked_inputs(snapshot, camera, device)
 
     import torch
 
     gaussians = snapshot["gaussians"]
-    render_configuration = snapshot["renderConfiguration"]
+    render_configuration = _render_configuration(snapshot)
     sh_degree = render_configuration["shBands"]
     sh_basis_count = (sh_degree + 1) ** 2
     means = torch.tensor(
@@ -888,11 +1009,11 @@ class GsplatContributorRenderer:
     def render(
         self,
         *,
-        scene_snapshot: Mapping[str, Any],
+        scene_snapshot: SceneSnapshotInput,
         frame: RegisteredFrame,
     ) -> RenderedContributorView:
         stable_ids = validate_supported_snapshot(scene_snapshot)
-        cache_key = (str(scene_snapshot["sceneVersion"]), frame.frame_digest)
+        cache_key = (_scene_snapshot_version(scene_snapshot), frame.frame_digest)
         cached = self._generated_cache.get(cache_key)
         if cached is not None:
             return cached
@@ -917,7 +1038,7 @@ class GsplatContributorRenderer:
     def render_anchor(
         self,
         *,
-        scene_snapshot: Mapping[str, Any],
+        scene_snapshot: SceneSnapshotInput,
         view_id: str,
         camera: Mapping[str, Any],
         width: int,
@@ -1011,7 +1132,7 @@ class GsplatContributorRenderer:
     def plan_views(
         self,
         *,
-        scene_snapshot: Mapping[str, Any],
+        scene_snapshot: SceneSnapshotInput,
         anchor_frame: RegisteredFrame,
         seed_region: SeedRegion,
         initial_budget: int,
@@ -1101,7 +1222,7 @@ class GsplatContributorRenderer:
                 )
             )
         identity = (
-            f"{scene_snapshot['sceneVersion']}:{seed_region.center}:"
+            f"{_scene_snapshot_version(scene_snapshot)}:{seed_region.center}:"
             f"{seed_region.radius}:{resolution}"
         ).encode("utf-8")
         return GeneratedViewCameraPlan(
@@ -1113,7 +1234,7 @@ class GsplatContributorRenderer:
     def preflight(
         self,
         *,
-        scene_snapshot: Mapping[str, Any],
+        scene_snapshot: SceneSnapshotInput,
         candidate: PlannedGeneratedViewCandidate,
         seed_region: SeedRegion,
         resolution: int,
@@ -1198,7 +1319,7 @@ class GsplatContributorRenderer:
     def render_generated(
         self,
         *,
-        scene_snapshot: Mapping[str, Any],
+        scene_snapshot: SceneSnapshotInput,
         candidate: PlannedGeneratedViewCandidate,
         preflight: CameraPreflightResult,
         resolution: int,
@@ -1241,7 +1362,7 @@ class GsplatContributorRenderer:
             frame=frame,
             renderer_id=self.renderer_id,
         )
-        self._generated_cache[(str(scene_snapshot["sceneVersion"]), frame.frame_digest)] = rendered
+        self._generated_cache[(_scene_snapshot_version(scene_snapshot), frame.frame_digest)] = rendered
         return frame
 
     def discard_attempt(self) -> None:
@@ -1464,13 +1585,22 @@ def _outward_camera(
 def _geometry_preflight(
     camera: Mapping[str, Any],
     seed_region: SeedRegion,
-    scene_snapshot: Mapping[str, Any],
+    scene_snapshot: SceneSnapshotInput,
     resolution: int,
 ) -> tuple[str | None, dict[str, float]]:
     position = _camera_position(camera)
     camera_distance = math.dist(position, seed_region.center)
-    means = [gaussian["mean"] for gaussian in scene_snapshot["gaussians"]]
-    nearest_geometry = min(math.dist(position, mean) for mean in means)
+    if isinstance(scene_snapshot, PackedBinarySceneSnapshot):
+        means = scene_snapshot.field("means").cast("f")
+        nearest_geometry = min(
+            math.dist(position, means[offset:offset + 3])
+            for offset in range(0, len(means), 3)
+        )
+    else:
+        nearest_geometry = min(
+            math.dist(position, gaussian["mean"])
+            for gaussian in scene_snapshot["gaussians"]
+        )
     metrics = {
         "cameraDistance": camera_distance,
         "nearestGeometryDistance": nearest_geometry,
@@ -1572,8 +1702,57 @@ def _rgb_png(rgb_bytes: bytes, width: int, height: int) -> bytes:
         ) from error
 
 
-def validate_supported_snapshot(snapshot: Mapping[str, Any]) -> tuple[int, ...]:
+def validate_supported_snapshot(snapshot: SceneSnapshotInput) -> StableGaussianIds:
     """Fail closed unless the snapshot has the approved SuperSplat v1 semantics."""
+
+    if isinstance(snapshot, PackedBinarySceneSnapshot):
+        content = snapshot.content
+        for field_name in (
+            "protocolVersion",
+            "coordinateConvention",
+            "stableIdSchema",
+            "attributeSchema",
+            "appearancePolicy",
+        ):
+            if not isinstance(content.get(field_name), str) or not content[field_name]:
+                raise ValueError(f"Packed Scene Snapshot {field_name} must be a non-empty string")
+        if content.get("protocolVersion") != "1":
+            raise ValueError("The gsplat renderer supports Scene Snapshot protocol version 1 only")
+        if content.get("coordinateConvention") != SUPPORTED_COORDINATE_CONVENTION:
+            raise ValueError("The Scene Snapshot coordinate/quaternion convention is unsupported")
+        if content.get("stableIdSchema") != "uint32":
+            raise ValueError("The Scene Snapshot Stable Gaussian ID schema is unsupported")
+        render_configuration = _render_configuration(snapshot)
+        if render_configuration.get("version") != SUPPORTED_RENDER_CONFIG_VERSION:
+            raise ValueError("The Scene Snapshot render configuration version is unsupported")
+        if (
+            render_configuration.get("rasterizer") != SUPPORTED_RASTERIZER
+            or render_configuration.get("alphaMode") != "opaque-background"
+        ):
+            raise ValueError("The Scene Snapshot rasterizer or alpha semantics are unsupported")
+        background = _finite_sequence(
+            render_configuration.get("backgroundRgba"), 4, "backgroundRgba"
+        )
+        if background[3] != 1.0:
+            raise ValueError("Opaque-background Scene Snapshots require background alpha 1")
+        sh_bands = render_configuration.get("shBands")
+        if isinstance(sh_bands, bool) or not isinstance(sh_bands, int) or sh_bands not in range(4):
+            raise ValueError("The Scene Snapshot shBands must be an integer from 0 through 3")
+        available_bands = {0: 0, 9: 1, 24: 2, 45: 3}.get(
+            snapshot.sh_float_count_per_gaussian
+        )
+        if available_bands is None or sh_bands > available_bands:
+            raise ValueError("Scene Snapshot SH records do not support the declared shBands")
+        expected_attribute_schema = (
+            "mean:f32x3;rotation:f32x4;logScale:f32x3;"
+            f"logitOpacity:f32;dc:f32x3;sh:f32x{snapshot.sh_float_count_per_gaussian}"
+        )
+        if content.get("attributeSchema") != expected_attribute_schema:
+            raise ValueError("The Scene Snapshot attribute schema is unsupported")
+        if content.get("appearancePolicy") != f"effective-editor-dc-sh-bands-{available_bands}":
+            raise ValueError("The Scene Snapshot appearance policy is unsupported")
+        return snapshot.stable_ids()
+
     for field_name in (
         "sceneId",
         "sceneVersion",
@@ -1709,7 +1888,7 @@ def _validate_camera(frame: RegisteredFrame) -> Mapping[str, Any]:
 def _validated_rendered_view(
     *,
     rasterized: GsplatRasterization,
-    stable_ids: tuple[int, ...],
+    stable_ids: Sequence[int],
     frame: RegisteredFrame,
     renderer_id: str,
 ) -> RenderedContributorView:

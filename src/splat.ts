@@ -48,6 +48,12 @@ class Splat extends Element {
     numSelected = 0;
     entity: Entity;
     changedCounter = 0;
+    // These revisions describe only semantic inputs to an AI Select effective
+    // SceneSnapshot. They deliberately exclude native selection and lock state.
+    aiSelectRenderStateRevision = 0;
+    aiSelectGeometryRevision = 0;
+    aiSelectGaussianIdentityRevision = 0;
+    aiSelectWorldTransformRevision = 0;
     stateTexture: Texture;
     // encapsulates per-splat state mirror (cpu Uint8Array + gpu Texture).
     // all writes go through state.setBits/clearBits/toggleBits, then flush().
@@ -281,6 +287,10 @@ class Splat extends Element {
         oldAsset.unload();
 
         this.changedCounter++;
+        this.aiSelectRenderStateRevision++;
+        this.aiSelectGeometryRevision++;
+        this.aiSelectGaussianIdentityRevision++;
+        this.aiSelectWorldTransformRevision++;
         this.scene.forceRender = true;
     }
 
@@ -301,6 +311,7 @@ class Splat extends Element {
 
         // handle splats being added or removed
         if (changedState & State.deleted) {
+            this.aiSelectGaussianIdentityRevision++;
             await this.updateSorting();
         } else {
             await this.updateLocalBounds();
@@ -311,6 +322,7 @@ class Splat extends Element {
     }
 
     async updatePositions() {
+        this.markAISelectGeometryChanged();
         const data = await this.scene.dataProcessor.calcPositions(this);
 
         // update the splat centers which are used for render-time sorting
@@ -503,8 +515,14 @@ class Splat extends Element {
         }
 
         this.updateWorldBound();
+        this.aiSelectWorldTransformRevision++;
 
         this.scene.events.fire('splat.moved', this);
+    }
+
+    /** Mark an effective per-Gaussian transform/geometry mutation for AI Select. */
+    markAISelectGeometryChanged() {
+        this.aiSelectGeometryRevision++;
     }
 
     // calculate both selection and local bounds (async, callers must await)
@@ -548,6 +566,7 @@ class Splat extends Element {
     set tintClr(value: Color) {
         if (!this._tintClr.equals(value)) {
             this._tintClr.set(value.r, value.g, value.b);
+            this.aiSelectRenderStateRevision++;
             this.scene.events.fire('splat.tintClr', this);
         }
     }
@@ -559,6 +578,7 @@ class Splat extends Element {
     set temperature(value: number) {
         if (value !== this._temperature) {
             this._temperature = value;
+            this.aiSelectRenderStateRevision++;
             this.scene.events.fire('splat.temperature', this);
         }
     }
@@ -570,6 +590,7 @@ class Splat extends Element {
     set saturation(value: number) {
         if (value !== this._saturation) {
             this._saturation = value;
+            this.aiSelectRenderStateRevision++;
             this.scene.events.fire('splat.saturation', this);
         }
     }
@@ -581,6 +602,7 @@ class Splat extends Element {
     set brightness(value: number) {
         if (value !== this._brightness) {
             this._brightness = value;
+            this.aiSelectRenderStateRevision++;
             this.scene.events.fire('splat.brightness', this);
         }
     }
@@ -592,6 +614,7 @@ class Splat extends Element {
     set blackPoint(value: number) {
         if (value !== this._blackPoint) {
             this._blackPoint = value;
+            this.aiSelectRenderStateRevision++;
             this.scene.events.fire('splat.blackPoint', this);
         }
     }
@@ -603,6 +626,7 @@ class Splat extends Element {
     set whitePoint(value: number) {
         if (value !== this._whitePoint) {
             this._whitePoint = value;
+            this.aiSelectRenderStateRevision++;
             this.scene.events.fire('splat.whitePoint', this);
         }
     }
@@ -614,6 +638,7 @@ class Splat extends Element {
     set transparency(value: number) {
         if (value !== this._transparency) {
             this._transparency = value;
+            this.aiSelectRenderStateRevision++;
             this.scene.events.fire('splat.transparency', this);
         }
     }

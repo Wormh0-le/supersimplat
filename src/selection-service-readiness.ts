@@ -39,6 +39,7 @@ type SelectionServiceReadinessDiagnosticCode =
   | 'rendererMismatch'
   | 'pointPromptUnsupported'
   | 'aiSelectAnchorUnsupported'
+  | 'binarySceneSnapshotRegistrationUnsupported'
   | 'modelNotSelected'
   | 'modelUnavailable'
   | 'modelWeightsBundled'
@@ -109,6 +110,7 @@ interface SelectionServiceReadinessRequirements {
   rendererId: string;
   modelAdapterId: string;
   aiSelectAnchorOperation: string;
+  binarySceneSnapshotRegistrationOperation: string;
 }
 
 interface SelectionServiceReadinessDiagnostic {
@@ -200,7 +202,8 @@ const defaultRequirements: SelectionServiceReadinessRequirements = {
     protocolVersion: selectionServiceProtocolVersion,
     rendererId: 'gsplat',
     modelAdapterId: 'sam3.1',
-    aiSelectAnchorOperation: 'aiSelectAnchorRender'
+    aiSelectAnchorOperation: 'aiSelectAnchorRender',
+    binarySceneSnapshotRegistrationOperation: 'binarySceneSnapshotRegistrationV1'
 };
 
 const defaultEditorOrigin = () => {
@@ -680,6 +683,18 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             return diagnostic(
                 'aiSelectAnchorUnsupported',
                 'The Companion does not advertise authoritative AI Select Anchor rendering.',
+                'Install the compatible locked Companion release, then refresh readiness.'
+            );
+        }
+
+        if (
+            !capabilities.supportedOperations.includes(
+                this.requirements.binarySceneSnapshotRegistrationOperation
+            )
+        ) {
+            return diagnostic(
+                'binarySceneSnapshotRegistrationUnsupported',
+                'The Companion does not advertise Binary SceneSnapshot Registration v1.',
                 'Install the compatible locked Companion release, then refresh readiness.'
             );
         }

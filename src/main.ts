@@ -53,16 +53,18 @@ import { i18n } from './ui/localization';
 import { registerSelectCursor } from './ui/select-cursor';
 
 declare global {
-  interface LaunchParams {
-    readonly files: FileSystemFileHandle[];
-  }
+    interface LaunchParams {
+        readonly files: FileSystemFileHandle[];
+    }
 
-  interface Window {
-    launchQueue: {
-      setConsumer: (callback: (launchParams: LaunchParams) => void) => void;
-    };
-    scene: Scene;
-  }
+    interface Window {
+        launchQueue: {
+            setConsumer: (
+                callback: (launchParams: LaunchParams) => void
+            ) => void;
+        };
+        scene: Scene;
+    }
 }
 
 const getURLArgs = () => {
@@ -146,7 +148,13 @@ const main = async () => {
     });
     selectionServiceAdapter.setAdapter(
         new FetchSelectionServiceAdapter({
-            getConfiguration: () => selectionServiceReadiness.state.configuration
+            getConfiguration: () => selectionServiceReadiness.state.configuration,
+            // Spatial working sets are additive to the 02A full packed
+            // registration path. A compatible older Companion remains usable
+            // through that reference/fallback path.
+            supportsCameraAwareSpatialWorkingSet: () => selectionServiceReadiness.state.capabilities?.supportedOperations.includes(
+                'cameraAwareSpatialWorkingSetV1'
+            ) ?? false
         })
     );
     registerSelectionServiceReadinessEvents(events, selectionServiceReadiness);
@@ -351,21 +359,22 @@ const main = async () => {
     // AI Select v1 is a native tool. Its Anchor begins with the visible editor
     // camera, but the RGB image itself is requested only from the Companion's
     // locked gsplat renderer; no PlayCanvas framebuffer is observed here.
-    const getAISelectRenderConfiguration = (): SceneSnapshotRenderConfiguration => {
-        const background = events.invoke('bgClr') as Color;
-        return {
-            version: 'supersplat-effective-rgb-v1',
-            backgroundRgba: [
-                background.r,
-                background.g,
-                background.b,
-                background.a
-            ],
-            alphaMode: 'opaque-background',
-            shBands: events.invoke('view.bands') as number,
-            rasterizer: 'playcanvas-gsplat-classic'
+    const getAISelectRenderConfiguration =
+        (): SceneSnapshotRenderConfiguration => {
+            const background = events.invoke('bgClr') as Color;
+            return {
+                version: 'supersplat-effective-rgb-v1',
+                backgroundRgba: [
+                    background.r,
+                    background.g,
+                    background.b,
+                    background.a
+                ],
+                alphaMode: 'opaque-background',
+                shBands: events.invoke('view.bands') as number,
+                rasterizer: 'playcanvas-gsplat-classic'
+            };
         };
-    };
     const aiSelectTargetFactory = new AISelectEditorTargetFactory({
         getRenderConfiguration: getAISelectRenderConfiguration
     });
@@ -393,7 +402,9 @@ const main = async () => {
             aiSelectTargetSplat :
             (events.invoke('selection') as Splat | null);
         if (!selectedSplat || !selectedSplat.visible) {
-            throw new Error('Select one visible Target Splat before starting AI Select.');
+            throw new Error(
+                'Select one visible Target Splat before starting AI Select.'
+            );
         }
         const input = aiSelectTargetFactory.create(
             selectedSplat,
@@ -417,7 +428,9 @@ const main = async () => {
             await selectionServiceReadiness.refresh();
             if (selectionServiceReadiness.state.status !== 'ready') {
                 const { diagnostic } = selectionServiceReadiness.state;
-                throw new Error(`${diagnostic.message} ${diagnostic.action}`.trim());
+                throw new Error(
+                    `${diagnostic.message} ${diagnostic.action}`.trim()
+                );
             }
             await startAISelect(true);
         },
@@ -459,9 +472,9 @@ const main = async () => {
     for (const [i, value] of loadList.entries()) {
         const decoded = decodeURIComponent(value);
         const filename =
-      i < filenameList.length ?
-          decodeURIComponent(filenameList[i]) :
-          decoded.split('/').pop();
+            i < filenameList.length ?
+                decodeURIComponent(filenameList[i]) :
+                decoded.split('/').pop();
 
         await events.invoke('import', [
             {

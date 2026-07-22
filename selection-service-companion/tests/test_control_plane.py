@@ -169,7 +169,7 @@ class CompanionControlPlaneTests(unittest.TestCase):
                 self.assertEqual(response.headers["Access-Control-Allow-Methods"], "GET, POST, PUT, DELETE, OPTIONS")
                 self.assertEqual(
                     response.headers["Access-Control-Allow-Headers"],
-                    "Content-Type, X-SceneSnapshot-Chunk-Digest",
+                    "Content-Type, X-SceneSnapshot-Chunk-Digest, X-Spatial-Scene-Chunk-Digest",
                 )
 
             with self.assertRaises(HTTPError) as error:

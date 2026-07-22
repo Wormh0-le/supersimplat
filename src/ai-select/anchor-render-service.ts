@@ -40,6 +40,9 @@ export interface AnchorRenderResponse {
 
 export interface AISelectAnchorRenderer {
     renderAnchor(request: AnchorRenderRequest): Promise<AnchorRenderResponse>;
+    // Snapshot residency is Companion-local and disposable. Implementations
+    // without the additive 02B protocol deliberately omit this hook.
+    releaseSceneSnapshot?(request: AnchorRenderRequest): Promise<void>;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -87,7 +90,9 @@ const isNonEmptyString = (value: unknown): value is string => {
 /** Decode only the Companion-owned PNG bytes that cross the transport boundary. */
 export const decodePngBase64 = (base64: string): Uint8Array<ArrayBuffer> => {
     if (typeof globalThis.atob !== 'function') {
-        throw new Error('This editor context cannot decode an Anchor PNG artifact.');
+        throw new Error(
+            'This editor context cannot decode an Anchor PNG artifact.'
+        );
     }
     const binary = globalThis.atob(base64);
     const bytes = new Uint8Array(new ArrayBuffer(binary.length));
@@ -126,7 +131,10 @@ const pngCrc32 = (bytes: Uint8Array, start: number, end: number): number => {
     return (crc ^ 0xffffffff) >>> 0;
 };
 
-const isSupportedPngEncoding = (bitDepth: number, colorType: number): boolean => {
+const isSupportedPngEncoding = (
+    bitDepth: number,
+    colorType: number
+): boolean => {
     switch (colorType) {
         case 0:
             return [1, 2, 4, 8, 16].includes(bitDepth);
@@ -186,7 +194,10 @@ const parsePng = (bytes: Uint8Array): ParsedPng => {
         if (nextOffset > bytes.length) {
             throw new Error('Anchor PNG has a truncated chunk payload.');
         }
-        if (pngUint32(bytes, checksumOffset) !== pngCrc32(bytes, typeOffset, checksumOffset)) {
+        if (
+            pngUint32(bytes, checksumOffset) !==
+            pngCrc32(bytes, typeOffset, checksumOffset)
+        ) {
             throw new Error('Anchor PNG has an invalid chunk checksum.');
         }
 
@@ -197,8 +208,13 @@ const parsePng = (bytes: Uint8Array): ParsedPng => {
             }
             const width = pngUint32(bytes, dataOffset);
             const height = pngUint32(bytes, dataOffset + 4);
-            if (!isPositiveSafeInteger(width) || !isPositiveSafeInteger(height)) {
-                throw new Error('Anchor PNG dimensions must be positive integers.');
+            if (
+                !isPositiveSafeInteger(width) ||
+                !isPositiveSafeInteger(height)
+            ) {
+                throw new Error(
+                    'Anchor PNG dimensions must be positive integers.'
+                );
             }
             bitDepth = bytes[dataOffset + 8];
             colorType = bytes[dataOffset + 9];
@@ -211,11 +227,15 @@ const parsePng = (bytes: Uint8Array): ParsedPng => {
                 filterMethod !== 0 ||
                 (interlaceMethod !== 0 && interlaceMethod !== 1)
             ) {
-                throw new Error('Anchor PNG has unsupported image encoding metadata.');
+                throw new Error(
+                    'Anchor PNG has unsupported image encoding metadata.'
+                );
             }
             dimensions = Object.freeze({ width, height });
         } else if (type === 'IHDR') {
-            throw new Error('Anchor PNG must not contain multiple IHDR chunks.');
+            throw new Error(
+                'Anchor PNG must not contain multiple IHDR chunks.'
+            );
         }
 
         if (type === 'IDAT') {
@@ -232,7 +252,7 @@ const parsePng = (bytes: Uint8Array): ParsedPng => {
                 length % 3 !== 0 ||
                 colorType === 0 ||
                 colorType === 4 ||
-                length / 3 > (1 << bitDepth)
+                length / 3 > 1 << bitDepth
             ) {
                 throw new Error('Anchor PNG has an invalid palette chunk.');
             }
@@ -241,7 +261,11 @@ const parsePng = (bytes: Uint8Array): ParsedPng => {
             imageDataEnded = true;
         }
         if (type === 'IEND') {
-            if (length !== 0 || !hasImageData || (colorType === 3 && !hasPalette)) {
+            if (
+                length !== 0 ||
+                !hasImageData ||
+                (colorType === 3 && !hasPalette)
+            ) {
                 throw new Error('Anchor PNG has an invalid IEND chunk.');
             }
             if (nextOffset !== bytes.length) {
@@ -287,26 +311,37 @@ const pngBlobPart = (bytes: Uint8Array): ArrayBuffer => {
 
 const validateInflatedPngImageData = async (png: ParsedPng): Promise<void> => {
     if (typeof globalThis.DecompressionStream !== 'function') {
-        throw new Error('This editor context cannot decode an Anchor PNG artifact.');
+        throw new Error(
+            'This editor context cannot decode an Anchor PNG artifact.'
+        );
     }
     if (png.interlaceMethod !== 0) {
-        throw new Error('This editor context requires a native decoder for interlaced Anchor PNGs.');
+        throw new Error(
+            'This editor context requires a native decoder for interlaced Anchor PNGs.'
+        );
     }
     try {
         const compressed = concatenatePngImageData(png.imageData);
         const compressedBlob = new Blob([pngBlobPart(compressed)]);
         const decompressor = new DecompressionStream('deflate');
         const stream = compressedBlob.stream().pipeThrough(decompressor);
-        const decoded = new Uint8Array(await new Response(stream).arrayBuffer());
+        const decoded = new Uint8Array(
+            await new Response(stream).arrayBuffer()
+        );
         const rowLength = Math.ceil(
-            png.dimensions.width * pngChannels(png.colorType) * png.bitDepth / 8
+            (png.dimensions.width * pngChannels(png.colorType) * png.bitDepth) /
+                8
         );
         if (decoded.length !== (rowLength + 1) * png.dimensions.height) {
-            throw new Error('Anchor PNG image data has an invalid decoded length.');
+            throw new Error(
+                'Anchor PNG image data has an invalid decoded length.'
+            );
         }
         for (let offset = 0; offset < decoded.length; offset += rowLength + 1) {
             if (decoded[offset] > 4) {
-                throw new Error('Anchor PNG image data has an invalid filter byte.');
+                throw new Error(
+                    'Anchor PNG image data has an invalid filter byte.'
+                );
             }
         }
     } catch (error) {
@@ -338,7 +373,11 @@ export const validatePngDecodable = async (
         try {
             const bitmap = await globalThis.createImageBitmap(blob);
             try {
-                assertDecodedDimensions(png.dimensions, bitmap.width, bitmap.height);
+                assertDecodedDimensions(
+                    png.dimensions,
+                    bitmap.width,
+                    bitmap.height
+                );
             } finally {
                 bitmap.close();
             }
@@ -347,7 +386,10 @@ export const validatePngDecodable = async (
             throw new Error('Anchor PNG image data is not decodable.');
         }
     }
-    if (typeof document !== 'undefined' && typeof URL.createObjectURL === 'function') {
+    if (
+        typeof document !== 'undefined' &&
+        typeof URL.createObjectURL === 'function'
+    ) {
         const image = document.createElement('img');
         const objectUrl = URL.createObjectURL(blob);
         try {
@@ -356,17 +398,27 @@ export const validatePngDecodable = async (
                 await image.decode();
             } else {
                 const loaded = new Promise<void>((resolve, reject) => {
-                    image.addEventListener('load', () => resolve(), { once: true });
+                    image.addEventListener('load', () => resolve(), {
+                        once: true
+                    });
                     image.addEventListener(
                         'error',
-                        () => reject(new Error('Anchor PNG image data is not decodable.')),
+                        () => reject(
+                            new Error(
+                                'Anchor PNG image data is not decodable.'
+                            )
+                        ),
                         { once: true }
                     );
                 });
                 image.src = objectUrl;
                 await loaded;
             }
-            assertDecodedDimensions(png.dimensions, image.naturalWidth, image.naturalHeight);
+            assertDecodedDimensions(
+                png.dimensions,
+                image.naturalWidth,
+                image.naturalHeight
+            );
             return png.dimensions;
         } catch (error) {
             throw new Error('Anchor PNG image data is not decodable.');
@@ -438,8 +490,10 @@ export const anchorRenderResponseMatchesRequest = (
     const actualDimensions = actualPngDimensions(response.rgb.pngBase64);
     return (
         actualDimensions !== null &&
-        response.requestBinding.targetContextId === request.requestBinding.targetContextId &&
-        response.requestBinding.contextRevision === request.requestBinding.contextRevision &&
+        response.requestBinding.targetContextId ===
+            request.requestBinding.targetContextId &&
+        response.requestBinding.contextRevision ===
+            request.requestBinding.contextRevision &&
         areTargetDependencyTokensEqual(
             response.requestBinding.dependencyToken,
             request.requestBinding.dependencyToken
@@ -447,7 +501,8 @@ export const anchorRenderResponseMatchesRequest = (
         response.targetSplatId === request.target.splatId &&
         response.sceneId === request.snapshot.sceneId &&
         response.sceneVersion === request.snapshot.sceneVersion &&
-        response.renderConfigVersion === request.snapshot.renderConfiguration.version &&
+        response.renderConfigVersion ===
+            request.snapshot.renderConfiguration.version &&
         areCameraBindingsEqual(response.cameraBinding, request.cameraBinding) &&
         actualDimensions.width === response.rgb.width &&
         actualDimensions.height === response.rgb.height &&

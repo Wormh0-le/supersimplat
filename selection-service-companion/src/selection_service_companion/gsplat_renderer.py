@@ -30,6 +30,7 @@ from .generated_views import (
     SeedRegion,
 )
 from .masking import MaskSessionError, RegisteredFrame
+from .spatial_scene_working_set import SpatialWorkingSet
 
 
 MASS_CONSERVATION_ATOL = 2e-6
@@ -78,7 +79,7 @@ ANCHOR_PARITY_NORMAL_MAE = 2.0 / 255.0
 ANCHOR_PARITY_SEVERE_MAE = 0.25
 
 
-SceneSnapshotInput = Mapping[str, Any] | PackedBinarySceneSnapshot
+SceneSnapshotInput = Mapping[str, Any] | PackedBinarySceneSnapshot | SpatialWorkingSet
 StableGaussianIds = tuple[int, ...] | memoryview
 
 
@@ -457,6 +458,8 @@ class LockedGsplatBackend:
 def _render_configuration(snapshot: SceneSnapshotInput) -> Mapping[str, Any]:
     if isinstance(snapshot, PackedBinarySceneSnapshot):
         value = snapshot.content.get("renderConfiguration")
+    elif isinstance(snapshot, SpatialWorkingSet):
+        value = snapshot.manifest.render_configuration
     else:
         value = snapshot.get("renderConfiguration")
     if not isinstance(value, Mapping):
@@ -467,6 +470,8 @@ def _render_configuration(snapshot: SceneSnapshotInput) -> Mapping[str, Any]:
 def _scene_snapshot_version(snapshot: SceneSnapshotInput) -> str:
     if isinstance(snapshot, PackedBinarySceneSnapshot):
         return snapshot.scene_version
+    if isinstance(snapshot, SpatialWorkingSet):
+        return snapshot.manifest.scene_version
     value = snapshot.get("sceneVersion")
     if not isinstance(value, str):
         raise ValueError("The Scene Snapshot sceneVersion is missing")
@@ -567,6 +572,62 @@ def _packed_locked_inputs(
     }
 
 
+def _spatial_locked_inputs(
+    snapshot: SpatialWorkingSet, camera: Mapping[str, Any], device: Any
+) -> dict[str, Any]:
+    """Build gsplat tensors from mmap-backed chunks in global ordinal order."""
+
+    import torch
+
+    tensors = snapshot.ordered_tensors()
+    render_configuration = _render_configuration(snapshot)
+    sh_degree = render_configuration["shBands"]
+    assert isinstance(sh_degree, int)
+    sh_basis_count = (sh_degree + 1) ** 2
+    means = tensors["means"].to(device)
+    rotations_xyzw = tensors["rotationsXyzw"].to(device)
+    gaussian_count = int(means.shape[0])
+    quats = rotations_xyzw[:, (3, 0, 1, 2)]
+    scales = tensors["logScales"].to(device).exp()
+    opacities = tensors["logitOpacities"].to(device).sigmoid()
+    colors = torch.zeros(
+        (gaussian_count, sh_basis_count, 3),
+        dtype=torch.float32,
+        device=device,
+    )
+    colors[:, 0, :] = tensors["dc"].to(device)
+    active_coefficients_per_channel = sh_basis_count - 1
+    if active_coefficients_per_channel:
+        available_coefficients_per_channel = (
+            snapshot.manifest.sh_float_count_per_gaussian // 3
+        )
+        sh = tensors["sh"].to(device).reshape(
+            gaussian_count, 3, available_coefficients_per_channel
+        )
+        colors[:, 1:, :] = sh[:, :, :active_coefficients_per_channel].permute(
+            0, 2, 1
+        )
+    background = render_configuration["backgroundRgba"]
+    assert isinstance(background, list)
+    return {
+        "means": means,
+        "quats": quats,
+        "scales": scales,
+        "opacities": opacities,
+        "colors": colors,
+        "viewmats": torch.tensor(
+            camera["worldToCamera"], dtype=torch.float32, device=device
+        ).reshape(1, 4, 4),
+        "intrinsics": torch.tensor(
+            camera["intrinsics"], dtype=torch.float32, device=device
+        ).reshape(1, 3, 3),
+        "background": torch.tensor(
+            [background[:3]], dtype=torch.float32, device=device
+        ),
+        "sh_degree": sh_degree,
+    }
+
+
 def _locked_inputs(
     snapshot: SceneSnapshotInput, camera: Mapping[str, Any], device: Any
 ) -> dict[str, Any]:
@@ -574,6 +635,8 @@ def _locked_inputs(
 
     if isinstance(snapshot, PackedBinarySceneSnapshot):
         return _packed_locked_inputs(snapshot, camera, device)
+    if isinstance(snapshot, SpatialWorkingSet):
+        return _spatial_locked_inputs(snapshot, camera, device)
 
     import torch
 
@@ -1705,6 +1768,45 @@ def _rgb_png(rgb_bytes: bytes, width: int, height: int) -> bytes:
 def validate_supported_snapshot(snapshot: SceneSnapshotInput) -> StableGaussianIds:
     """Fail closed unless the snapshot has the approved SuperSplat v1 semantics."""
 
+    if isinstance(snapshot, SpatialWorkingSet):
+        manifest = snapshot.manifest
+        if manifest.protocol_version != "1":
+            raise ValueError("The gsplat renderer supports Scene Snapshot protocol version 1 only")
+        if manifest.coordinate_convention != SUPPORTED_COORDINATE_CONVENTION:
+            raise ValueError("The Scene Snapshot coordinate/quaternion convention is unsupported")
+        if manifest.stable_id_schema != "uint32":
+            raise ValueError("The Scene Snapshot Stable Gaussian ID schema is unsupported")
+        render_configuration = _render_configuration(snapshot)
+        if render_configuration.get("version") != SUPPORTED_RENDER_CONFIG_VERSION:
+            raise ValueError("The Scene Snapshot render configuration version is unsupported")
+        if (
+            render_configuration.get("rasterizer") != SUPPORTED_RASTERIZER
+            or render_configuration.get("alphaMode") != "opaque-background"
+        ):
+            raise ValueError("The Scene Snapshot rasterizer or alpha semantics are unsupported")
+        background = _finite_sequence(
+            render_configuration.get("backgroundRgba"), 4, "backgroundRgba"
+        )
+        if background[3] != 1.0:
+            raise ValueError("Opaque-background Scene Snapshots require background alpha 1")
+        sh_bands = render_configuration.get("shBands")
+        if isinstance(sh_bands, bool) or not isinstance(sh_bands, int) or sh_bands not in range(4):
+            raise ValueError("The Scene Snapshot shBands must be an integer from 0 through 3")
+        available_bands = {0: 0, 9: 1, 24: 2, 45: 3}.get(
+            manifest.sh_float_count_per_gaussian
+        )
+        if available_bands is None or sh_bands > available_bands:
+            raise ValueError("Scene Snapshot SH records do not support the declared shBands")
+        expected_attribute_schema = (
+            "mean:f32x3;rotation:f32x4;logScale:f32x3;"
+            f"logitOpacity:f32;dc:f32x3;sh:f32x{manifest.sh_float_count_per_gaussian}"
+        )
+        if manifest.attribute_schema != expected_attribute_schema:
+            raise ValueError("The Scene Snapshot attribute schema is unsupported")
+        if manifest.appearance_policy != f"effective-editor-dc-sh-bands-{available_bands}":
+            raise ValueError("The Scene Snapshot appearance policy is unsupported")
+        return snapshot.ordered_tensors()["stableIds"]
+
     if isinstance(snapshot, PackedBinarySceneSnapshot):
         content = snapshot.content
         for field_name in (
@@ -1948,9 +2050,17 @@ def _validated_rendered_view(
                     )
                 pixel_mass += weight
                 support_pixels.append((x_px, y_px))
+                stable_id = stable_ids[tensor_id]
+                if hasattr(stable_id, "item"):
+                    stable_id = stable_id.item()
+                if isinstance(stable_id, bool) or not isinstance(stable_id, int):
+                    raise MaskSessionError(
+                        "rendererInvalidContributor",
+                        "gsplat Stable Gaussian ID mapping is invalid.",
+                    )
                 contributors.append(
                     ContributorSample(
-                        stable_id=stable_ids[tensor_id],
+                        stable_id=stable_id,
                         x_px=x_px,
                         y_px=y_px,
                         mass=weight,

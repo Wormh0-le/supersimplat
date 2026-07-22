@@ -197,7 +197,11 @@ class AISelectAnchorRouteTests(unittest.TestCase):
         self.request_json('/scene-snapshots/splat-1/snapshot-v1', 'PUT', snapshot)
         self.assertEqual(
             self.state.capabilities([EDITOR_ORIGIN])['supportedOperations'],
-            ['aiSelectAnchorRender', 'binarySceneSnapshotRegistrationV1'],
+            [
+                'aiSelectAnchorRender',
+                'binarySceneSnapshotRegistrationV1',
+                'cameraAwareSpatialWorkingSetV1',
+            ],
         )
 
         response = self.request_json(

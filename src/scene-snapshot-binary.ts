@@ -452,8 +452,12 @@ const snapshotContentDigest = (
     return `sha256:${digest.digest()}`;
 };
 
-const chunkDigest = (bytes: Uint8Array): string => {
+const sha256Digest = (bytes: Uint8Array): string => {
     return `sha256:${new IncrementalSha256().update(bytes).digest()}`;
+};
+
+const chunkDigest = (bytes: Uint8Array): string => {
+    return sha256Digest(bytes);
 };
 
 const fieldsFor = (
@@ -725,7 +729,8 @@ export {
     MAX_BINARY_SCENE_SNAPSHOT_CHUNK_COUNT,
     buildPackedSceneSnapshot,
     createBinarySceneSnapshotManifest,
-    isPackedSceneSnapshot
+    isPackedSceneSnapshot,
+    sha256Digest
 };
 
 export type {

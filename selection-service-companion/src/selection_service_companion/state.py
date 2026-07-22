@@ -22,6 +22,7 @@ from .binary_scene_snapshot import (
     BinarySceneSnapshotUploadStore,
     ImmutableSnapshotConflict,
     PackedBinarySceneSnapshot,
+    SnapshotUploadError,
     SnapshotUploadAdmission,
     SnapshotUploadCommit,
 )
@@ -52,6 +53,14 @@ from .renderer_runtime import (
     EXPECTED_RENDERER_LOCK_DIGEST,
     RendererRuntime,
     current_renderer_runtime,
+)
+from .spatial_scene_working_set import (
+    SpatialChunkUploadAdmission,
+    SpatialChunkUploadCommit,
+    SpatialManifestRegistration,
+    SpatialSceneManifest,
+    SpatialSceneStore,
+    SpatialWorkingSet,
 )
 
 
@@ -102,6 +111,7 @@ class AISelectAnchorRequest:
     renderer_camera: dict[str, object]
     width: int
     height: int
+    scene_transport: str = 'packed-v1'
 
     def response_fields(self) -> dict[str, object]:
         return {
@@ -315,6 +325,10 @@ class CompanionState:
         init=False,
         repr=False,
     )
+    _spatial_scene_store: SpatialSceneStore = field(
+        init=False,
+        repr=False,
+    )
     _frame_sets: dict[str, RegisteredFrameSet] = field(
         default_factory=dict,
         init=False,
@@ -347,6 +361,9 @@ class CompanionState:
     def __post_init__(self) -> None:
         self._binary_scene_snapshot_uploads = BinarySceneSnapshotUploadStore(
             self.directory / "runtime-scene-snapshots"
+        )
+        self._spatial_scene_store = SpatialSceneStore(
+            self.directory / "runtime-spatial-scene-snapshots"
         )
 
     @property
@@ -654,6 +671,50 @@ class CompanionState:
     def cleanup_expired_binary_scene_snapshot_uploads(self) -> int:
         return self._binary_scene_snapshot_uploads.cleanup_expired()
 
+    def register_spatial_scene_manifest(
+        self, manifest: SpatialSceneManifest
+    ) -> SpatialManifestRegistration:
+        key = (manifest.scene_id, manifest.scene_version)
+        expected_binary_identity = f"binary:{manifest.content_digest}"
+        with self._scene_lock:
+            existing = self._scene_snapshots.get(key)
+            if existing is not None and existing.identity != expected_binary_identity:
+                raise ImmutableSnapshotConflict(
+                    "a Spatial Scene manifest cannot reinterpret an existing Scene Snapshot version"
+                )
+        return self._spatial_scene_store.register_manifest(manifest)
+
+    def begin_spatial_scene_chunk_upload(
+        self,
+        scene_id: str,
+        scene_version: str,
+        chunk_ids: tuple[str, ...],
+    ) -> SpatialChunkUploadAdmission:
+        return self._spatial_scene_store.begin_chunk_upload(
+            scene_id, scene_version, chunk_ids
+        )
+
+    def accept_spatial_scene_chunk(
+        self, upload_id: str, chunk_id: str, payload: bytes, digest: str
+    ) -> str:
+        return self._spatial_scene_store.accept_chunk(
+            upload_id, chunk_id, payload, digest
+        )
+
+    def commit_spatial_scene_chunk_upload(
+        self, upload_id: str
+    ) -> SpatialChunkUploadCommit:
+        return self._spatial_scene_store.commit_chunk_upload(upload_id)
+
+    def abort_spatial_scene_chunk_upload(self, upload_id: str) -> None:
+        self._spatial_scene_store.abort_chunk_upload(upload_id)
+
+    def cleanup_expired_spatial_scene_chunk_uploads(self) -> int:
+        return self._spatial_scene_store.cleanup_expired()
+
+    def release_spatial_scene_manifest(self, registration_id: str) -> None:
+        self._spatial_scene_store.release_manifest(registration_id)
+
     def scene_snapshot(
         self, scene_id: str, scene_version: str
     ) -> RegisteredSceneSnapshot | None:
@@ -677,18 +738,50 @@ class CompanionState:
         """
 
         anchor_request = self._parse_ai_select_anchor_request(request)
-        snapshot = self.scene_snapshot(
-            anchor_request.scene_id, anchor_request.scene_version
-        )
-        if snapshot is None:
-            return {
-                'status': 'sceneCacheMiss',
-                **anchor_request.response_fields(),
-            }
-        if snapshot.render_config_version != anchor_request.render_config_version:
-            raise ValueError(
-                'AI Select Anchor render configuration does not match the registered Scene Snapshot'
+        scene_snapshot: Mapping[str, Any] | PackedBinarySceneSnapshot | SpatialWorkingSet
+        if anchor_request.scene_transport == 'spatial-v1':
+            try:
+                resolution = self._spatial_scene_store.resolve_working_set(
+                    anchor_request.scene_id,
+                    anchor_request.scene_version,
+                    anchor_request.camera_binding,
+                )
+            except SnapshotUploadError:
+                return {
+                    'status': 'sceneCacheMiss',
+                    **anchor_request.response_fields(),
+                }
+            if resolution.missing_chunk_ids:
+                return {
+                    'status': 'sceneChunkMiss',
+                    **anchor_request.response_fields(),
+                    'workingSetToken': resolution.working_set_token,
+                    'missingChunkIds': list(resolution.missing_chunk_ids),
+                }
+            if resolution.working_set is None:
+                raise ValueError(
+                    'AI Select Anchor Spatial Scene working set is incomplete'
+                )
+            render_configuration = resolution.working_set.manifest.render_configuration
+            if render_configuration.get('version') != anchor_request.render_config_version:
+                raise ValueError(
+                    'AI Select Anchor render configuration does not match the registered Spatial Scene manifest'
+                )
+            scene_snapshot = resolution.working_set
+        else:
+            snapshot = self.scene_snapshot(
+                anchor_request.scene_id, anchor_request.scene_version
             )
+            if snapshot is None:
+                return {
+                    'status': 'sceneCacheMiss',
+                    **anchor_request.response_fields(),
+                }
+            if snapshot.render_config_version != anchor_request.render_config_version:
+                raise ValueError(
+                    'AI Select Anchor render configuration does not match the registered Scene Snapshot'
+                )
+            scene_snapshot = snapshot.scene
 
         renderer = self._require_contributor_renderer()
         if getattr(renderer, 'renderer_id', None) != 'gsplat':
@@ -712,7 +805,7 @@ class CompanionState:
         try:
             try:
                 artifact = render_anchor(
-                    scene_snapshot=snapshot.scene,
+                    scene_snapshot=scene_snapshot,
                     view_id='anchor-view',
                     camera=anchor_request.renderer_camera,
                     width=anchor_request.width,
@@ -813,6 +906,9 @@ class CompanionState:
         )
         if request.get('viewId') != 'anchor-view':
             raise ValueError('AI Select Anchor viewId must be anchor-view')
+        scene_transport = request.get('sceneTransport', 'packed-v1')
+        if scene_transport not in ('packed-v1', 'spatial-v1'):
+            raise ValueError('AI Select Anchor sceneTransport is unsupported')
 
         camera_binding, renderer_camera, width, height = (
             self._parse_ai_select_anchor_camera(request.get('cameraBinding'))
@@ -827,6 +923,7 @@ class CompanionState:
             renderer_camera=renderer_camera,
             width=width,
             height=height,
+            scene_transport=scene_transport,
         )
 
     @staticmethod
@@ -2578,6 +2675,7 @@ class CompanionState:
             "supportedOperations": [
                 "aiSelectAnchorRender",
                 "binarySceneSnapshotRegistrationV1",
+                "cameraAwareSpatialWorkingSetV1",
             ],
             "modelManifests": manifests,
             "capacity": self._capacity(),

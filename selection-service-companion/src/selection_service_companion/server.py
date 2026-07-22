@@ -24,6 +24,10 @@ from .binary_scene_snapshot import (
 )
 from .masking import MaskSessionError
 from .evidence import selection_result_ids
+from .spatial_scene_working_set import (
+    MAX_SPATIAL_SCENE_CHUNK_BYTES,
+    parse_spatial_scene_manifest,
+)
 from .state import CompanionState
 
 
@@ -190,7 +194,7 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         )
         self.send_header(
             "Access-Control-Allow-Headers",
-            "Content-Type, X-SceneSnapshot-Chunk-Digest",
+            "Content-Type, X-SceneSnapshot-Chunk-Digest, X-Spatial-Scene-Chunk-Digest",
         )
         self.end_headers()
 
@@ -229,9 +233,19 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/scene-snapshot-uploads/v1":
             self._begin_binary_scene_snapshot_upload()
             return
+        if self.path == "/spatial-scene-manifests/v1":
+            self._register_spatial_scene_manifest()
+            return
+        if self.path == "/spatial-scene-chunk-uploads/v1":
+            self._begin_spatial_scene_chunk_upload()
+            return
         binary_commit_upload_id = self._binary_snapshot_commit_upload_id()
         if binary_commit_upload_id is not None:
             self._commit_binary_scene_snapshot_upload(binary_commit_upload_id)
+            return
+        spatial_commit_upload_id = self._spatial_scene_commit_upload_id()
+        if spatial_commit_upload_id is not None:
+            self._commit_spatial_scene_chunk_upload(spatial_commit_upload_id)
             return
         if self.path == "/ai-select/anchor-renders":
             self._render_ai_select_anchor()
@@ -279,6 +293,10 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
     def do_PUT(self) -> None:
         if not self._origin_allowed():
             self.send_error(HTTPStatus.FORBIDDEN)
+            return
+        spatial_chunk = self._spatial_scene_chunk()
+        if spatial_chunk is not None:
+            self._upload_spatial_scene_chunk(*spatial_chunk)
             return
         binary_chunk = self._binary_snapshot_chunk()
         if binary_chunk is not None:
@@ -420,6 +438,165 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
                     if admission.upload_id is not None
                     else {}
                 ),
+            },
+        )
+
+    def _register_spatial_scene_manifest(self) -> None:
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            manifest = parse_spatial_scene_manifest(
+                self._read_json_body(maximum_bytes=2 * 1024 * 1024)
+            )
+            self._state.cleanup_expired_spatial_scene_chunk_uploads()
+            registration = self._state.register_spatial_scene_manifest(manifest)
+        except ImmutableSnapshotConflict as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.CONFLICT, "immutableConflict", str(error)
+            )
+            return
+        except SnapshotUploadError as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.BAD_REQUEST, "invalidManifest", str(error)
+            )
+            return
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "status": registration.status,
+                "registrationId": registration.registration_id,
+                "sceneId": registration.scene_id,
+                "sceneVersion": registration.scene_version,
+                "contentDigest": registration.content_digest,
+            },
+        )
+
+    def _begin_spatial_scene_chunk_upload(self) -> None:
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            request = self._read_json_body(maximum_bytes=2 * 1024 * 1024)
+            scene_id = request.get("sceneId")
+            scene_version = request.get("sceneVersion")
+            chunk_ids = request.get("chunkIds")
+            if (
+                not isinstance(scene_id, str)
+                or not scene_id
+                or not isinstance(scene_version, str)
+                or not scene_version
+                or not isinstance(chunk_ids, list)
+                or any(not isinstance(chunk_id, str) for chunk_id in chunk_ids)
+            ):
+                raise SnapshotUploadError("Spatial Scene chunk upload bindings are invalid")
+            self._state.cleanup_expired_spatial_scene_chunk_uploads()
+            admission = self._state.begin_spatial_scene_chunk_upload(
+                scene_id, scene_version, tuple(chunk_ids)
+            )
+        except ImmutableSnapshotConflict as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.CONFLICT, "immutableConflict", str(error)
+            )
+            return
+        except SnapshotUploadError as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.BAD_REQUEST, "invalidUpload", str(error)
+            )
+            return
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "status": admission.status,
+                "missingChunkIds": list(admission.missing_chunk_ids),
+                **(
+                    {"uploadId": admission.upload_id}
+                    if admission.upload_id is not None
+                    else {}
+                ),
+            },
+        )
+
+    def _upload_spatial_scene_chunk(self, upload_id: str, chunk_id: str) -> None:
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            if self.headers.get("Content-Type", "").split(";", 1)[0].lower() != "application/octet-stream":
+                raise SnapshotUploadError(
+                    "Spatial Scene chunks must use application/octet-stream"
+                )
+            digest = self.headers.get("X-Spatial-Scene-Chunk-Digest")
+            if not isinstance(digest, str) or not digest:
+                raise SnapshotUploadError("Spatial Scene chunk digest header is required")
+            status = self._state.accept_spatial_scene_chunk(
+                upload_id,
+                chunk_id,
+                self._read_binary_body(MAX_SPATIAL_SCENE_CHUNK_BYTES),
+                digest,
+            )
+        except ImmutableSnapshotConflict as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.CONFLICT, "immutableConflict", str(error)
+            )
+            return
+        except UnknownSnapshotUpload as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.NOT_FOUND, "uploadMissing", str(error)
+            )
+            return
+        except SnapshotUploadError as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.BAD_REQUEST, "invalidUpload", str(error)
+            )
+            return
+        self._send_json(
+            HTTPStatus.OK,
+            {"status": status, "uploadId": upload_id, "chunkId": chunk_id},
+        )
+
+    def _commit_spatial_scene_chunk_upload(self, upload_id: str) -> None:
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            self._read_json_body(maximum_bytes=1024)
+            commit = self._state.commit_spatial_scene_chunk_upload(upload_id)
+        except IncompleteSnapshotUploadError as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.CONFLICT, "incompleteUpload", str(error)
+            )
+            return
+        except ImmutableSnapshotConflict as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.CONFLICT, "immutableConflict", str(error)
+            )
+            return
+        except UnknownSnapshotUpload as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.NOT_FOUND, "uploadMissing", str(error)
+            )
+            return
+        except SnapshotUploadError as error:
+            self._send_binary_snapshot_error(
+                HTTPStatus.BAD_REQUEST, "invalidUpload", str(error)
+            )
+            return
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "status": commit.status,
+                "sceneId": commit.scene_id,
+                "sceneVersion": commit.scene_version,
+                "committedChunkIds": list(commit.committed_chunk_ids),
             },
         )
 
@@ -595,6 +772,22 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
+        spatial_upload_id = self._spatial_scene_upload_id()
+        if spatial_upload_id is not None:
+            self._state.abort_spatial_scene_chunk_upload(spatial_upload_id)
+            self.send_response(HTTPStatus.NO_CONTENT)
+            self._send_cors_headers()
+            self.end_headers()
+            return
+
+        spatial_registration_id = self._spatial_scene_manifest_registration_id()
+        if spatial_registration_id is not None:
+            self._state.release_spatial_scene_manifest(spatial_registration_id)
+            self.send_response(HTTPStatus.NO_CONTENT)
+            self._send_cors_headers()
+            self.end_headers()
+            return
+
         frame_set_version = self._frame_set_version()
         if frame_set_version is not None:
             if not self._state.release_frame_set(frame_set_version):
@@ -735,6 +928,60 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         if not upload_id or "/" in upload_id:
             return None
         return unquote(upload_id)
+
+    def _spatial_scene_chunk(self) -> tuple[str, str] | None:
+        parsed = urlparse(self.path)
+        prefix = "/spatial-scene-chunk-uploads/v1/"
+        suffix = "/chunks/"
+        if parsed.query or not parsed.path.startswith(prefix):
+            return None
+        remainder = parsed.path[len(prefix):]
+        if suffix not in remainder:
+            return None
+        upload_id, encoded_chunk_id = remainder.split(suffix, 1)
+        if (
+            not upload_id
+            or "/" in upload_id
+            or not encoded_chunk_id
+            or "/" in encoded_chunk_id
+        ):
+            return None
+        return unquote(upload_id), unquote(encoded_chunk_id)
+
+    def _spatial_scene_commit_upload_id(self) -> str | None:
+        parsed = urlparse(self.path)
+        prefix = "/spatial-scene-chunk-uploads/v1/"
+        suffix = "/commit"
+        if (
+            parsed.query
+            or not parsed.path.startswith(prefix)
+            or not parsed.path.endswith(suffix)
+        ):
+            return None
+        upload_id = parsed.path[len(prefix):-len(suffix)]
+        if not upload_id or "/" in upload_id:
+            return None
+        return unquote(upload_id)
+
+    def _spatial_scene_upload_id(self) -> str | None:
+        parsed = urlparse(self.path)
+        prefix = "/spatial-scene-chunk-uploads/v1/"
+        if parsed.query or not parsed.path.startswith(prefix):
+            return None
+        upload_id = parsed.path[len(prefix):]
+        if not upload_id or "/" in upload_id:
+            return None
+        return unquote(upload_id)
+
+    def _spatial_scene_manifest_registration_id(self) -> str | None:
+        parsed = urlparse(self.path)
+        prefix = "/spatial-scene-manifests/v1/"
+        if parsed.query or not parsed.path.startswith(prefix):
+            return None
+        registration_id = parsed.path[len(prefix):]
+        if not registration_id or "/" in registration_id:
+            return None
+        return unquote(registration_id)
 
     def _frame_set_version(self) -> str | None:
         parsed = urlparse(self.path)

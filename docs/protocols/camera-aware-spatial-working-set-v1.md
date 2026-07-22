@@ -148,16 +148,17 @@ included.
 
 The endpoint family is intentionally separate from 02A:
 
-| Step                     | Request                                                           | Result                                                         |
-| ------------------------ | ----------------------------------------------------------------- | -------------------------------------------------------------- |
-| Register manifest        | `POST /spatial-scene-manifests/v1`                                | immutable `registered` / `alreadyRegistered` manifest binding  |
-| Begin payload batch      | `POST /spatial-scene-chunk-uploads/v1`                            | bounded staged batch and missing chunk IDs                     |
-| Upload chunk             | `PUT /spatial-scene-chunk-uploads/v1/{uploadId}/chunks/{chunkId}` | raw `application/octet-stream`, digest-verified and idempotent |
-| Commit batch             | `POST /spatial-scene-chunk-uploads/v1/{uploadId}/commit`          | every staged chunk atomically becomes resident                 |
-| Abort batch              | `DELETE /spatial-scene-chunk-uploads/v1/{uploadId}`               | idempotent staging cleanup                                     |
-| Release target residency | `DELETE /spatial-scene-manifests/v1/{registrationId}`             | target-local cache release                                     |
+| Step                     | Request                                                           | Result                                                                                                         |
+| ------------------------ | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Register manifest        | `POST /spatial-scene-manifests/v1`                                | immutable `registered` / `alreadyRegistered` binding with `registrationId`, scene/version, and `contentDigest` |
+| Begin payload batch      | `POST /spatial-scene-chunk-uploads/v1`                            | bounded staged batch and missing chunk IDs                                                                     |
+| Upload chunk             | `PUT /spatial-scene-chunk-uploads/v1/{uploadId}/chunks/{chunkId}` | raw `application/octet-stream`, digest-verified and idempotent                                                 |
+| Commit batch             | `POST /spatial-scene-chunk-uploads/v1/{uploadId}/commit`          | every staged chunk atomically becomes resident                                                                 |
+| Abort batch              | `DELETE /spatial-scene-chunk-uploads/v1/{uploadId}`               | idempotent staging cleanup                                                                                     |
+| Release target residency | `DELETE /spatial-scene-manifests/v1/{registrationId}`             | target-local cache release                                                                                     |
 
-Chunk payloads are bounded at 4 MiB, use no base64, and include
+The Editor's nominal spatial payload target is 1 MiB; every payload remains
+bounded at 4 MiB, uses no base64, and includes
 `X-Spatial-Scene-Chunk-Digest`. Begin/PUT/commit are retry-safe for equal
 identities. A mismatched digest, scene/version, schema, descriptor, or
 overwrite is an immutable conflict. Incomplete stages are cleaned by explicit
@@ -170,10 +171,13 @@ sorted required descriptor list, and computes:
 
 ```text
 workingSetToken = sha256(
-  "supersplat-camera-working-set-v1\\0" +
-  canonical CameraBinding bytes +
-  sceneId + sceneVersion +
-  sorted (chunkId, chunkDigest) pairs
+  canonical JSON {
+    format: "supersplat-camera-working-set-v1",
+    sceneId,
+    sceneVersion,
+    cameraBinding,
+    chunks: sorted [{chunkId, chunkDigest}]
+  }
 )
 ```
 
@@ -193,8 +197,9 @@ If an otherwise valid required chunk is absent, it returns only:
 
 The Editor validates every returned binding/token/chunk ID, uploads only those
 IDs through the raw batch protocol, then retries the identical logical render
-request. It rechecks its Current Target Context after every await; a stale
-context, dependency token, or camera can never publish after a delayed upload.
+request. The editor controller rechecks the Current Target Context before it
+publishes a result; a stale context, dependency token, or camera can never
+publish after a delayed upload.
 
 The Companion renders only when every descriptor named by that
 `workingSetToken` is resident and digest-validated. It never publishes an

@@ -1,6 +1,6 @@
 # 02B — Camera-aware Spatial Chunk Working Set
 
-Status: in-progress
+Status: implementation complete; browser-memory/manual lifecycle validation remains
 
 Blocked by: Binary SceneSnapshot Registration v1 (02A)
 
@@ -84,25 +84,48 @@ order—not arrival/cache order—and maps contributors back to global Stable ID
 
 ## Acceptance criteria
 
-- [ ] Anchor registers one complete global manifest but does not require all
+- [x] Anchor registers one complete global manifest but does not require all
       chunk payloads when a conservative subset suffices.
-- [ ] Required IDs are deterministic/sorted; only returned missing chunks are
+- [x] Required IDs are deterministic/sorted; only returned missing chunks are
       uploaded and retries are idempotent.
-- [ ] Camera or residency changes do not rebuild packed data or change
+- [x] Camera or residency changes do not rebuild packed data or change
       `sceneVersion`.
-- [ ] Every selected chunk has conservative support bounds; center-only,
+- [x] Every selected chunk has conservative support bounds; center-only,
       occlusion, visible-only, and top-k culling are forbidden.
-- [ ] Missing/corrupt/wrong-version/wrong-scene chunks cannot make a render
+- [x] Missing/corrupt/wrong-version/wrong-scene chunks cannot make a render
       Ready; partial working sets never publish authoritative artifacts.
-- [ ] Tensor order and Stable-ID contributor mapping are identical across chunk
+- [x] Tensor order and Stable-ID contributor mapping are identical across chunk
       upload/cache arrival orders.
-- [ ] Full-scene reference/fallback remains available and parity gates
+- [x] Full-scene reference/fallback remains available and parity gates
       selective rendering.
 - [ ] Fixtures cover SH0–SH3, delete/world/palette/color transforms,
       anisotropic center-outside/support-inside and clipping boundaries, and
       different chunk arrival orders.
 - [ ] Real representative SH3 metrics record total/selective bytes, timings,
       editor/CPU/GPU memory, and full/selective parity before claiming benefit.
+
+The locked GPU suite now covers SH0–SH3, typed effective transformed values,
+deleted-ID absence, deterministic reverse arrival, contributor Stable-ID
+remapping, RGB/alpha/weight parity, and the full reference path. Existing
+resolver/store tests cover rotated anisotropic center-outside support,
+near/far boundaries, ambiguity/all-chunk fallback, corrupt bytes, wrong scene,
+duplicate retry, incomplete commit, and release. A browser-driven editor
+fixture for active delete/world/palette/color edits and browser peak-memory
+instrumentation remain open; they are not represented as complete here.
+
+## Validation record — 2026-07-22
+
+- [x] Locked CUDA GPU SH0–SH3 full/selective parity:
+      `selection-service-companion/tests/test_spatial_scene_gpu_parity.py`.
+- [x] Real 954,603-Gaussian SH3 PLY selective/full parity and metrics:
+      [02b-real-sh3-result.md](../benchmarks/02b-real-sh3-result.md).
+- [x] The measured fixed non-empty Anchor needed 37/223 chunks (38,793,316 /
+      232,923,132 bytes; 16.655%) and had exact RGB, alpha, Stable-ID, and weight
+      parity. It therefore materially reduced transferred bytes and locked GPU
+      allocation for that view.
+- [ ] Browser editor peak memory and a browser-generated effective SceneSnapshot
+      with active edit mutations have not yet been measured. Do not treat the
+      direct typed-Ply harness RSS as editor memory.
 
 ## Manual validation links
 

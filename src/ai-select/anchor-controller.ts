@@ -59,7 +59,8 @@ const copyRequestBinding = (binding: AIRequestBinding): AIRequestBinding => {
             splatId: binding.dependencyToken.splatId,
             renderStateToken: binding.dependencyToken.renderStateToken,
             geometryToken: binding.dependencyToken.geometryToken,
-            gaussianIdentityToken: binding.dependencyToken.gaussianIdentityToken,
+            gaussianIdentityToken:
+                binding.dependencyToken.gaussianIdentityToken,
             worldTransformToken: binding.dependencyToken.worldTransformToken
         })
     });
@@ -82,11 +83,17 @@ const copyAnchor = (anchor: AnchorAIView): AnchorAIView => {
         requestBinding: copyRequestBinding(anchor.requestBinding),
         renderStatus: anchor.renderStatus,
         ...(anchor.rgb === undefined ? {} : { rgb: copyRgb(anchor.rgb) }),
-        ...(anchor.contributorDigest === undefined ? {} : {
-            contributorDigest: anchor.contributorDigest
-        }),
-        ...(anchor.rendererId === undefined ? {} : { rendererId: anchor.rendererId }),
-        ...(anchor.errorMessage === undefined ? {} : { errorMessage: anchor.errorMessage })
+        ...(anchor.contributorDigest === undefined ?
+            {} :
+            {
+                contributorDigest: anchor.contributorDigest
+            }),
+        ...(anchor.rendererId === undefined ?
+            {} :
+            { rendererId: anchor.rendererId }),
+        ...(anchor.errorMessage === undefined ?
+            {} :
+            { errorMessage: anchor.errorMessage })
     });
 };
 
@@ -98,7 +105,18 @@ const copyState = (state: AISelectAnchorState): AISelectAnchorState => {
 };
 
 const errorMessage = (error: unknown): string => {
-    return error instanceof Error && error.message ? error.message : 'Anchor rendering failed.';
+    return error instanceof Error && error.message ?
+        error.message :
+        'Anchor rendering failed.';
+};
+
+const snapshotLeaseKey = (request: AnchorRenderRequest): string => {
+    return [
+        request.target.splatId,
+        request.snapshot.sceneId,
+        request.snapshot.sceneVersion,
+        request.snapshot.contentDigest
+    ].join('\u0000');
 };
 
 /**
@@ -111,7 +129,11 @@ export class AISelectAnchorController {
     private readonly contexts = new CurrentTargetContextKernel();
     private readonly listeners = new Set<AISelectAnchorListener>();
     private anchor: AnchorAIView | null = null;
-    private getCurrentDependencyToken: (() => TargetDependencyToken) | null = null;
+    private getCurrentDependencyToken: (() => TargetDependencyToken) | null =
+        null;
+    private activeRequest: AnchorRenderRequest | null = null;
+    private retainedSnapshots = new Map<string, AnchorRenderRequest>();
+    private pendingSnapshotRenders = new Map<string, number>();
 
     constructor(options: { renderer: AISelectAnchorRenderer }) {
         this.renderer = options.renderer;
@@ -132,7 +154,9 @@ export class AISelectAnchorController {
 
     async start(input: StartAnchorInput): Promise<void> {
         if (this.contexts.current !== null) {
-            throw new Error('AI Select already has a Current Target Context. Restart it instead.');
+            throw new Error(
+                'AI Select already has a Current Target Context. Restart it instead.'
+            );
         }
         await this.begin(input, false);
     }
@@ -145,10 +169,15 @@ export class AISelectAnchorController {
         this.contexts.dispose();
         this.getCurrentDependencyToken = null;
         this.anchor = null;
+        this.activeRequest = null;
+        this.releaseIdleSnapshots();
         this.publish();
     }
 
-    private async begin(input: StartAnchorInput, restart: boolean): Promise<void> {
+    private async begin(
+        input: StartAnchorInput,
+        restart: boolean
+    ): Promise<void> {
         const effectiveDependencyToken = input.getCurrentDependencyToken();
         if (
             !areTargetDependencyTokensEqual(
@@ -177,6 +206,9 @@ export class AISelectAnchorController {
             snapshot: input.snapshot,
             cameraBinding: copyCameraBinding(input.cameraBinding)
         });
+        this.activeRequest = request;
+        this.retainSnapshot(request);
+        this.releaseIdleSnapshots();
 
         this.anchor = copyAnchor({
             viewId: 'anchor-view',
@@ -204,7 +236,9 @@ export class AISelectAnchorController {
                 return;
             }
             try {
-                await validatePngDecodable(decodePngBase64(response.rgb.pngBase64));
+                await validatePngDecodable(
+                    decodePngBase64(response.rgb.pngBase64)
+                );
             } catch {
                 this.failCurrentAnchor(
                     request,
@@ -229,6 +263,53 @@ export class AISelectAnchorController {
             this.publish();
         } catch (error) {
             this.failCurrentAnchor(request, context, errorMessage(error));
+        } finally {
+            this.completeSnapshotRender(request);
+        }
+    }
+
+    private retainSnapshot(request: AnchorRenderRequest): void {
+        const key = snapshotLeaseKey(request);
+        this.retainedSnapshots.set(key, request);
+        this.pendingSnapshotRenders.set(
+            key,
+            (this.pendingSnapshotRenders.get(key) ?? 0) + 1
+        );
+    }
+
+    private completeSnapshotRender(request: AnchorRenderRequest): void {
+        const key = snapshotLeaseKey(request);
+        const pending = (this.pendingSnapshotRenders.get(key) ?? 1) - 1;
+        if (pending > 0) {
+            this.pendingSnapshotRenders.set(key, pending);
+        } else {
+            this.pendingSnapshotRenders.delete(key);
+        }
+        this.releaseIdleSnapshots();
+    }
+
+    private releaseIdleSnapshots(): void {
+        const activeKey =
+            this.activeRequest === null ?
+                null :
+                snapshotLeaseKey(this.activeRequest);
+        for (const [key, request] of this.retainedSnapshots) {
+            if (
+                key === activeKey ||
+                (this.pendingSnapshotRenders.get(key) ?? 0) > 0
+            ) {
+                continue;
+            }
+            this.retainedSnapshots.delete(key);
+            if (this.renderer.releaseSceneSnapshot === undefined) {
+                continue;
+            }
+            // Cleanup is a resource policy only. The disposed context cannot
+            // publish again, and a failed DELETE is bounded by Companion-side
+            // cleanup rather than becoming a new user-visible Anchor failure.
+            this.renderer.releaseSceneSnapshot!(request).catch(
+                (): void => undefined
+            );
         }
     }
 
@@ -281,13 +362,18 @@ export class AISelectAnchorController {
             acceptsResult &&
             synchronizedContext !== null &&
             synchronizedContext.targetContextId === context.targetContextId &&
-            currentAnchor.requestBinding.targetContextId === request.requestBinding.targetContextId &&
-            currentAnchor.requestBinding.contextRevision === request.requestBinding.contextRevision &&
+            currentAnchor.requestBinding.targetContextId ===
+                request.requestBinding.targetContextId &&
+            currentAnchor.requestBinding.contextRevision ===
+                request.requestBinding.contextRevision &&
             areTargetDependencyTokensEqual(
                 currentAnchor.requestBinding.dependencyToken,
                 request.requestBinding.dependencyToken
             ) &&
-            areCameraBindingsEqual(currentAnchor.cameraBinding, request.cameraBinding)
+            areCameraBindingsEqual(
+                currentAnchor.cameraBinding,
+                request.cameraBinding
+            )
         );
     }
 

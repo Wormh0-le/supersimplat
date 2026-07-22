@@ -11,6 +11,7 @@
         "src/ai-select/**/*.ts",
         "src/scene-snapshot.ts",
         "src/scene-snapshot-binary.ts",
+        "src/spatial-scene-snapshot.ts",
         "src/scene-snapshot-registration.ts",
         "src/selection-service-fetch-adapter.ts",
         "src/selection-service-readiness.ts",

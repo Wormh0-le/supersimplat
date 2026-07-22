@@ -1,0 +1,97 @@
+@use 'colors.scss' as *;
+
+#ai-select-toolbar {
+    position: absolute;
+    left: 50%;
+    bottom: 92px;
+    transform: translate(-50%, 0);
+    align-items: center;
+    gap: 6px;
+    max-width: calc(100% - 32px);
+    padding: 8px;
+    border-radius: 8px;
+    background-color: $bcg-primary;
+
+    &:not(.pcui-hidden) {
+        display: flex;
+    }
+
+    #ai-select-toolbar-tool {
+        color: $clr-icon-hilight;
+        font-weight: bold;
+    }
+
+    #ai-select-toolbar-anchor {
+        color: $text-secondary;
+        margin-right: 6px;
+    }
+
+    > .pcui-button {
+        min-height: 30px;
+    }
+
+    #ai-select-toolbar-overflow {
+        position: absolute;
+        right: 8px;
+        bottom: calc(100% + 6px);
+        flex-direction: column;
+        gap: 4px;
+        padding: 6px;
+        border-radius: 6px;
+        background-color: $bcg-primary;
+
+        &:not(.pcui-hidden) {
+            display: flex;
+        }
+    }
+}
+
+#ai-views-surface {
+    width: 100%;
+    flex-shrink: 0;
+    border-top: 1px solid $bcg-lighter;
+    background-color: $bcg-primary;
+
+    &:not(.pcui-hidden) {
+        display: flex;
+    }
+}
+
+#ai-select-anchor-dock {
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    max-height: 260px;
+    padding: 8px;
+    background-color: $bcg-primary;
+
+    &:not(.pcui-hidden) {
+        display: flex;
+    }
+
+    #ai-select-anchor-dock-title {
+        color: $text-primary;
+        font-weight: bold;
+    }
+
+    #ai-select-anchor-dock-status {
+        color: $text-secondary;
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    #ai-select-anchor-dock-image {
+        width: 100%;
+        max-height: 180px;
+        object-fit: contain;
+        background-color: black;
+    }
+}
+
+#ai-select-anchor-dock-failure-actions {
+    gap: 6px;
+
+    &:not(.pcui-hidden) {
+        display: flex;
+    }
+}

@@ -1,5 +1,7 @@
 const assert = require("node:assert/strict");
+const { createHash } = require("node:crypto");
 const test = require("node:test");
+const { deflateSync } = require("node:zlib");
 
 const {
   FetchSelectionServiceAdapter,
@@ -186,6 +188,329 @@ const evidenceSnapshot = (
       classification: "rejected",
     },
   ],
+});
+
+const anchorCameraBinding = {
+  revision: 0,
+  cameraToWorld: [
+    1, 0, 0, 0,
+    0, -1, 0, 0,
+    0, 0, -1, 0,
+    0, 0, 0, 1,
+  ],
+  projection: {
+    model: "pinhole",
+    fx: 100,
+    fy: 100,
+    cx: 32,
+    cy: 24,
+    width: 64,
+    height: 48,
+    near: 0.1,
+    far: 100,
+  },
+  conventionVersion: "opencv-camera-to-world/v1",
+};
+
+const anchorRequest = {
+  requestBinding: {
+    targetContextId: "ai-target-context-1",
+    contextRevision: 0,
+    dependencyToken: {
+      splatId: "scene-1",
+      renderStateToken: "render-v1",
+      geometryToken: "geometry-v1",
+      gaussianIdentityToken: "gaussians-v1",
+      worldTransformToken: "transform-v1",
+    },
+  },
+  target: { splatId: "scene-1" },
+  snapshot,
+  cameraBinding: anchorCameraBinding,
+};
+
+const pngCrc32 = bytes => {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+};
+
+const pngChunk = (type, data) => {
+  const typeBytes = Buffer.from(type, "ascii");
+  const payload = Buffer.concat([typeBytes, data]);
+  const length = Buffer.alloc(4);
+  const checksum = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  checksum.writeUInt32BE(pngCrc32(payload));
+  return Buffer.concat([length, payload, checksum]);
+};
+
+const anchorPngBytes = (width, height, imageData = null) => {
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  header[9] = 2;
+  const scanlines = Buffer.alloc((width * 3 + 1) * height);
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk("IHDR", header),
+    pngChunk("IDAT", imageData ?? deflateSync(scanlines)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+};
+
+const anchorPng = (width, height) => {
+  const bytes = anchorPngBytes(width, height);
+  return {
+    pngBase64: bytes.toString("base64"),
+    digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+  };
+};
+
+const anchorResponse = request => ({
+  status: "complete",
+  requestBinding: request.requestBinding,
+  targetSplatId: request.target.splatId,
+  sceneId: request.snapshot.sceneId,
+  sceneVersion: request.snapshot.sceneVersion,
+  renderConfigVersion: request.snapshot.renderConfiguration.version,
+  viewId: "anchor-view",
+  cameraBinding: request.cameraBinding,
+  rgb: {
+    ...anchorPng(
+      request.cameraBinding.projection.width,
+      request.cameraBinding.projection.height
+    ),
+    width: request.cameraBinding.projection.width,
+    height: request.cameraBinding.projection.height,
+  },
+  contributorDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  rendererId: "gsplat",
+});
+
+test("registers the editor-owned Scene Snapshot then renders a bound authoritative Anchor through the Companion", async () => {
+  const calls = [];
+  const replies = [
+    {
+      status: "registered",
+      sceneId: snapshot.sceneId,
+      sceneVersion: snapshot.sceneVersion,
+    },
+    anchorResponse(anchorRequest),
+  ];
+  const adapter = new FetchSelectionServiceAdapter({
+    getConfiguration: () => ({
+      endpoint: "https://companion.example:8787",
+      modelManifestDigest: "sha256:model-v1",
+    }),
+    fetch: async (url, init) => {
+      calls.push({ url, init, body: init.body ? JSON.parse(init.body) : null });
+      return new Response(JSON.stringify(replies.shift()), { status: 200 });
+    },
+  });
+
+  const response = await adapter.renderAnchor(anchorRequest);
+
+  assert.deepEqual(response, anchorResponse(anchorRequest));
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].url, /\/scene-snapshots\/scene-1\/snapshot-v1$/);
+  assert.equal(calls[0].init.method, "PUT");
+  assert.match(calls[1].url, /\/ai-select\/anchor-renders$/);
+  assert.equal(calls[1].init.method, "POST");
+  assert.deepEqual(calls[1].body.requestBinding, anchorRequest.requestBinding);
+  assert.deepEqual(calls[1].body.cameraBinding, anchorRequest.cameraBinding);
+});
+
+test("rejects an Anchor target that does not bind the editor-owned Scene Snapshot", async () => {
+  const calls = [];
+  const mismatchedRequest = {
+    ...anchorRequest,
+    target: { splatId: "different-splat" },
+    requestBinding: {
+      ...anchorRequest.requestBinding,
+      dependencyToken: {
+        ...anchorRequest.requestBinding.dependencyToken,
+        splatId: "different-splat",
+      },
+    },
+  };
+  const adapter = new FetchSelectionServiceAdapter({
+    getConfiguration: () => ({
+      endpoint: "https://companion.example:8787",
+      modelManifestDigest: "sha256:model-v1",
+    }),
+    fetch: async () => {
+      calls.push("fetch");
+      throw new Error("request should not be sent");
+    },
+  });
+
+  await assert.rejects(
+    adapter.renderAnchor(mismatchedRequest),
+    /complete bound Anchor render request/i
+  );
+  assert.deepEqual(calls, []);
+});
+
+test("re-registers the Scene Snapshot exactly once when an Anchor render reports a cache miss", async () => {
+  const calls = [];
+  const replies = [
+    {
+      status: "registered",
+      sceneId: snapshot.sceneId,
+      sceneVersion: snapshot.sceneVersion,
+    },
+    {
+      status: "sceneCacheMiss",
+      requestBinding: anchorRequest.requestBinding,
+      targetSplatId: anchorRequest.target.splatId,
+      sceneId: snapshot.sceneId,
+      sceneVersion: snapshot.sceneVersion,
+      renderConfigVersion: snapshot.renderConfiguration.version,
+      viewId: "anchor-view",
+      cameraBinding: anchorCameraBinding,
+    },
+    {
+      status: "registered",
+      sceneId: snapshot.sceneId,
+      sceneVersion: snapshot.sceneVersion,
+    },
+    anchorResponse(anchorRequest),
+  ];
+  const adapter = new FetchSelectionServiceAdapter({
+    getConfiguration: () => ({
+      endpoint: "https://companion.example:8787",
+      modelManifestDigest: "sha256:model-v1",
+    }),
+    fetch: async (url, init) => {
+      calls.push({ url, init, body: init.body ? JSON.parse(init.body) : null });
+      return new Response(JSON.stringify(replies.shift()), { status: 200 });
+    },
+  });
+
+  const response = await adapter.renderAnchor(anchorRequest);
+
+  assert.deepEqual(response, anchorResponse(anchorRequest));
+  assert.equal(calls.length, 4);
+  assert.equal(calls.filter(call => call.init.method === "PUT").length, 2);
+  assert.equal(calls.filter(call => call.init.method === "POST").length, 2);
+});
+
+test("rejects an Anchor PNG whose declared digest does not bind its bytes", async () => {
+  const response = anchorResponse(anchorRequest);
+  response.rgb.digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const replies = [
+    {
+      status: "registered",
+      sceneId: snapshot.sceneId,
+      sceneVersion: snapshot.sceneVersion,
+    },
+    response,
+  ];
+  const adapter = new FetchSelectionServiceAdapter({
+    getConfiguration: () => ({
+      endpoint: "https://companion.example:8787",
+      modelManifestDigest: "sha256:model-v1",
+    }),
+    fetch: async () => new Response(JSON.stringify(replies.shift()), { status: 200 }),
+  });
+
+  await assert.rejects(
+    adapter.renderAnchor(anchorRequest),
+    /PNG digest does not match/i
+  );
+});
+
+test("rejects malformed or dimension-mismatched Anchor PNG bytes even when their digest is valid", async (t) => {
+  for (const [name, rgb, message] of [
+    [
+      "malformed",
+      {
+        pngBase64: Buffer.from("not a PNG").toString("base64"),
+        digest: `sha256:${createHash("sha256").update("not a PNG").digest("hex")}`,
+        width: 64,
+        height: 48,
+      },
+      /invalid Anchor PNG/i,
+    ],
+    [
+      "wrong actual dimensions",
+      {
+        ...anchorPng(1, 1),
+        width: 64,
+        height: 48,
+      },
+      /PNG dimensions do not match/i,
+    ],
+    [
+      "truncated chunk stream",
+      (() => {
+        const bytes = anchorPngBytes(64, 48).subarray(0, -12);
+        return {
+          pngBase64: bytes.toString("base64"),
+          digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+          width: 64,
+          height: 48,
+        };
+      })(),
+      /invalid Anchor PNG/i,
+    ],
+    [
+      "corrupted chunk checksum",
+      (() => {
+        const bytes = anchorPngBytes(64, 48);
+        bytes[bytes.length - 1] ^= 0x01;
+        return {
+          pngBase64: bytes.toString("base64"),
+          digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+          width: 64,
+          height: 48,
+        };
+      })(),
+      /invalid Anchor PNG/i,
+    ],
+    [
+      "undecodable IDAT stream",
+      (() => {
+        const bytes = anchorPngBytes(64, 48, Buffer.from([0x78, 0x9c, 0x00]));
+        return {
+          pngBase64: bytes.toString("base64"),
+          digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+          width: 64,
+          height: 48,
+        };
+      })(),
+      /invalid Anchor PNG/i,
+    ],
+  ]) {
+    await t.test(name, async () => {
+      const response = anchorResponse(anchorRequest);
+      response.rgb = rgb;
+      const replies = [
+        {
+          status: "registered",
+          sceneId: snapshot.sceneId,
+          sceneVersion: snapshot.sceneVersion,
+        },
+        response,
+      ];
+      const adapter = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+          endpoint: "https://companion.example:8787",
+          modelManifestDigest: "sha256:model-v1",
+        }),
+        fetch: async () => new Response(JSON.stringify(replies.shift()), { status: 200 }),
+      });
+
+      await assert.rejects(adapter.renderAnchor(anchorRequest), message);
+    });
+  }
 });
 
 test("registers one immutable Scene Snapshot, resends it after a cache miss, and retries the bound preview", async () => {

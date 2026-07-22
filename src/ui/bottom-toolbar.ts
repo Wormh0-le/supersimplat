@@ -81,6 +81,12 @@ class BottomToolbar extends Container {
             class: 'bottom-toolbar-tool'
         });
 
+        const aiSelect = new Button({
+            id: 'bottom-toolbar-ai-select',
+            class: 'bottom-toolbar-tool'
+        });
+        i18n.bindText(aiSelect, 'ai-select.bottom-tool');
+
         const eyedropper = new Button({
             id: 'bottom-toolbar-eyedropper',
             class: 'bottom-toolbar-tool'
@@ -151,6 +157,7 @@ class BottomToolbar extends Container {
         this.append(new Element({ class: 'bottom-toolbar-separator' }));
         this.append(sphere);
         this.append(box);
+        this.append(aiSelect);
         // this.append(crop);
         this.append(new Element({ class: 'bottom-toolbar-separator' }));
         this.append(translate);
@@ -171,6 +178,7 @@ class BottomToolbar extends Container {
         eyedropper.dom.addEventListener('click', () => events.fire('tool.eyedropperSelection'));
         sphere.dom.addEventListener('click', () => events.fire('tool.sphereSelection'));
         box.dom.addEventListener('click', () => events.fire('tool.boxSelection'));
+        aiSelect.dom.addEventListener('click', () => events.fire('tool.aiSelect'));
         translate.dom.addEventListener('click', () => events.fire('tool.move'));
         rotate.dom.addEventListener('click', () => events.fire('tool.rotate'));
         scale.dom.addEventListener('click', () => events.fire('tool.scale'));
@@ -193,6 +201,7 @@ class BottomToolbar extends Container {
             lasso.class[toolName === 'lassoSelection' ? 'add' : 'remove']('active');
             sphere.class[toolName === 'sphereSelection' ? 'add' : 'remove']('active');
             box.class[toolName === 'boxSelection' ? 'add' : 'remove']('active');
+            aiSelect.class[toolName === 'aiSelect' ? 'add' : 'remove']('active');
             translate.class[toolName === 'move' ? 'add' : 'remove']('active');
             rotate.class[toolName === 'rotate' ? 'add' : 'remove']('active');
             scale.class[toolName === 'scale' ? 'add' : 'remove']('active');
@@ -231,6 +240,7 @@ class BottomToolbar extends Container {
         tooltips.register(flood, tooltip('tooltip.bottom-toolbar.flood', 'tool.floodSelection'));
         tooltips.register(sphere, tooltip('tooltip.bottom-toolbar.sphere'));
         tooltips.register(box, tooltip('tooltip.bottom-toolbar.box'));
+        tooltips.register(aiSelect, tooltip('ai-select.tool'));
         tooltips.register(translate, tooltip('tooltip.bottom-toolbar.translate', 'tool.move'));
         tooltips.register(rotate, tooltip('tooltip.bottom-toolbar.rotate', 'tool.rotate'));
         tooltips.register(scale, tooltip('tooltip.bottom-toolbar.scale', 'tool.scale'));

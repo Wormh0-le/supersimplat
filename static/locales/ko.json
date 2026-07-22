@@ -322,5 +322,19 @@
     "tooltip.status-bar.splat-data": "스플랫 데이터 패널 전환",
     "tooltip.splat-data.on-screen-only": "카메라에 보이는 스플랫만 히스토그램에 집계합니다. 화면 밖의 스플랫은 제외됩니다.",
     "tooltip.splat-data.log-scale": "세로축을 로그 스케일로 표시하여 작은 값과 큰 값이 함께 잘 보이도록 합니다.",
-    "tooltip.splat-data.show-all": "원시 DC 계수 및 구면 조화 함수 계수를 포함한 모든 스플랫 속성을 목록에 표시합니다."
+    "tooltip.splat-data.show-all": "원시 DC 계수 및 구면 조화 함수 계수를 포함한 모든 스플랫 속성을 목록에 표시합니다.",
+    "ai-select.tool": "AI 선택",
+    "ai-select.dock.title": "AI 뷰 도크",
+    "ai-select.anchor.current-view": "앵커: 현재 뷰",
+    "ai-select.anchor.rendering": "앵커 렌더링 중…",
+    "ai-select.anchor.ready": "앵커 준비됨",
+    "ai-select.anchor.failed": "앵커 렌더링에 실패했습니다.",
+    "ai-select.adjust-anchor": "앵커 조정",
+    "ai-select.restart-current-target": "현재 대상 다시 시작",
+    "ai-select.exit": "AI 선택 종료",
+    "ai-select.reconnect": "다시 연결",
+    "ai-select.open-settings": "설정 열기",
+    "ai-select.bottom-tool": "AI",
+    "ai-select.more": "추가 옵션",
+    "ai-select.start-error": "AI 선택을 시작할 수 없습니다."
 }

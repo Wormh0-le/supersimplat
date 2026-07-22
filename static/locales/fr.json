@@ -322,5 +322,19 @@
     "tooltip.status-bar.splat-data": "Afficher/Masquer le panneau Données Splat",
     "tooltip.splat-data.on-screen-only": "Ne compter que les splats visibles dans la caméra. Les splats hors écran sont exclus de l'histogramme.",
     "tooltip.splat-data.log-scale": "Utiliser une échelle verticale logarithmique pour rendre visibles les petites valeurs à côté des grandes.",
-    "tooltip.splat-data.show-all": "Afficher toutes les propriétés des splats dans la liste, y compris les coefficients DC bruts et harmoniques sphériques."
+    "tooltip.splat-data.show-all": "Afficher toutes les propriétés des splats dans la liste, y compris les coefficients DC bruts et harmoniques sphériques.",
+    "ai-select.tool": "Sélection IA",
+    "ai-select.dock.title": "Volet des vues IA",
+    "ai-select.anchor.current-view": "Ancre : vue actuelle",
+    "ai-select.anchor.rendering": "Rendu de l’ancre…",
+    "ai-select.anchor.ready": "Ancre prête",
+    "ai-select.anchor.failed": "Échec du rendu de l’ancre.",
+    "ai-select.adjust-anchor": "Ajuster l’ancre",
+    "ai-select.restart-current-target": "Redémarrer la cible actuelle",
+    "ai-select.exit": "Quitter Sélection IA",
+    "ai-select.reconnect": "Reconnecter",
+    "ai-select.open-settings": "Ouvrir les paramètres",
+    "ai-select.bottom-tool": "IA",
+    "ai-select.more": "Plus d’options",
+    "ai-select.start-error": "Impossible de démarrer la sélection IA."
 }

@@ -1,3 +1,8 @@
+import type {
+    AISelectAnchorRenderer,
+    AnchorRenderRequest,
+    AnchorRenderResponse
+} from './ai-select/anchor-render-service';
 import type { SelectionServiceAdapter } from './object-selection-session';
 
 const selectionServiceProtocolVersion = '1';
@@ -33,6 +38,7 @@ type SelectionServiceReadinessDiagnosticCode =
   | 'rendererUnavailable'
   | 'rendererMismatch'
   | 'pointPromptUnsupported'
+  | 'aiSelectAnchorUnsupported'
   | 'modelNotSelected'
   | 'modelUnavailable'
   | 'modelWeightsBundled'
@@ -83,6 +89,7 @@ interface SelectionServiceCapabilities {
   serviceBuild: string;
   renderer: SelectionServiceRendererCapability;
   supportedPromptKinds: readonly string[];
+  supportedOperations: readonly string[];
   modelManifests: readonly SelectionServiceModelManifest[];
   capacity: SelectionServiceCapacity;
   allowedEditorOrigins: readonly string[];
@@ -101,6 +108,7 @@ interface SelectionServiceReadinessRequirements {
   protocolVersion: string;
   rendererId: string;
   modelAdapterId: string;
+  aiSelectAnchorOperation: string;
 }
 
 interface SelectionServiceReadinessDiagnostic {
@@ -191,7 +199,8 @@ const defaultConfiguration = (
 const defaultRequirements: SelectionServiceReadinessRequirements = {
     protocolVersion: selectionServiceProtocolVersion,
     rendererId: 'gsplat',
-    modelAdapterId: 'sam3.1'
+    modelAdapterId: 'sam3.1',
+    aiSelectAnchorOperation: 'aiSelectAnchorRender'
 };
 
 const defaultEditorOrigin = () => {
@@ -228,6 +237,7 @@ const copyCapabilities = (
         message: capabilities.renderer.message
     },
     supportedPromptKinds: [...capabilities.supportedPromptKinds],
+    supportedOperations: [...capabilities.supportedOperations],
     modelManifests: capabilities.modelManifests.map(manifest => ({
         digest: manifest.digest,
         adapterId: manifest.adapterId,
@@ -386,6 +396,12 @@ const validateCapabilities = (
     if (
         !Array.isArray(value.supportedPromptKinds) ||
     !value.supportedPromptKinds.every(kind => typeof kind === 'string')
+    ) {
+        return false;
+    }
+    if (
+        !Array.isArray(value.supportedOperations) ||
+        !value.supportedOperations.every(operation => typeof operation === 'string')
     ) {
         return false;
     }
@@ -656,6 +672,18 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             );
         }
 
+        if (
+            !capabilities.supportedOperations.includes(
+                this.requirements.aiSelectAnchorOperation
+            )
+        ) {
+            return diagnostic(
+                'aiSelectAnchorUnsupported',
+                'The Companion does not advertise authoritative AI Select Anchor rendering.',
+                'Install the compatible locked Companion release, then refresh readiness.'
+            );
+        }
+
         const editorOrigin = parseEditorOrigin(configuration.editorOrigin);
         if (
             editorOrigin === null ||
@@ -798,7 +826,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
 // This decorator preserves the ObjectSelectionSession seam: the session still
 // knows only its injected SelectionServiceAdapter, while no New session can
 // bypass the operator-visible readiness decision.
-class ReadinessGatedSelectionServiceAdapter implements SelectionServiceAdapter {
+class ReadinessGatedSelectionServiceAdapter implements SelectionServiceAdapter, AISelectAnchorRenderer {
     private readiness: SelectionServiceReadinessInterface;
     private adapter: SelectionServiceAdapter | null;
 
@@ -836,11 +864,26 @@ class ReadinessGatedSelectionServiceAdapter implements SelectionServiceAdapter {
         return this.requireAdapter().closeSession(...args);
     }
 
+    async renderAnchor(
+        request: AnchorRenderRequest
+    ): Promise<AnchorRenderResponse> {
+        this.readiness.requireReady();
+        return await this.requireAnchorRenderer().renderAnchor(request);
+    }
+
     private requireAdapter() {
         if (this.adapter === null) {
             throw new SelectionServiceAdapterNotConfiguredError();
         }
         return this.adapter;
+    }
+
+    private requireAnchorRenderer(): AISelectAnchorRenderer {
+        const adapter = this.requireAdapter();
+        if (typeof (adapter as Partial<AISelectAnchorRenderer>).renderAnchor !== 'function') {
+            throw new SelectionServiceAdapterNotConfiguredError();
+        }
+        return adapter as SelectionServiceAdapter & AISelectAnchorRenderer;
     }
 }
 

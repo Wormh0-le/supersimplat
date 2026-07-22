@@ -12,9 +12,9 @@ import math
 import os
 from pathlib import Path
 import secrets
-from threading import Lock
+from threading import Event, Lock
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from . import PACKAGE_VERSION, PROTOCOL_VERSION
 from .evidence import ContributorRenderer, build_evidence_snapshot
@@ -26,7 +26,11 @@ from .generated_views import (
     public_frame_set_payload,
     quality_gate_tracks,
 )
-from .gsplat_renderer import production_gsplat_renderer, validate_supported_snapshot
+from .gsplat_renderer import (
+    AnchorRenderArtifact,
+    production_gsplat_renderer,
+    validate_supported_snapshot,
+)
 from .masking import (
     MaskProduction,
     MaskSessionError,
@@ -74,6 +78,41 @@ class RegisteredSceneSnapshot:
     canonical: str
     stable_ids: tuple[int, ...]
     render_config_version: str
+
+
+@dataclass(frozen=True)
+class AISelectAnchorRequest:
+    """Validated browser binding plus the derived locked-renderer camera."""
+
+    request_binding: dict[str, object]
+    target_splat_id: str
+    scene_id: str
+    scene_version: str
+    render_config_version: str
+    camera_binding: dict[str, object]
+    renderer_camera: dict[str, object]
+    width: int
+    height: int
+
+    def response_fields(self) -> dict[str, object]:
+        return {
+            'requestBinding': self.request_binding,
+            'targetSplatId': self.target_splat_id,
+            'sceneId': self.scene_id,
+            'sceneVersion': self.scene_version,
+            'renderConfigVersion': self.render_config_version,
+            'viewId': 'anchor-view',
+            'cameraBinding': self.camera_binding,
+        }
+
+
+@dataclass
+class AnchorRenderAdmission:
+    """One private, replayable Anchor publication reserved by request binding."""
+
+    completed: Event = field(default_factory=Event)
+    publication: str | None = None
+    failure: tuple[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -178,6 +217,64 @@ def _normalise_sha256(value: str, field_name: str = "checkpointDigest") -> str:
     return digest.lower()
 
 
+def _anchor_string(value: object, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f'AI Select Anchor {field_name} must be a non-empty string')
+    return value
+
+
+def _anchor_nonnegative_integer(value: object, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(
+            f'AI Select Anchor {field_name} must be a non-negative integer'
+        )
+    return value
+
+
+def _anchor_positive_integer(value: object, field_name: str) -> int:
+    integer = _anchor_nonnegative_integer(value, field_name)
+    if integer <= 0:
+        raise ValueError(f'AI Select Anchor {field_name} must be greater than zero')
+    return integer
+
+
+def _anchor_finite_number(value: object, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f'AI Select Anchor {field_name} must be a finite number')
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f'AI Select Anchor {field_name} must be a finite number')
+    return number
+
+
+def _anchor_number_sequence(
+    value: object, length: int, field_name: str
+) -> tuple[float, ...]:
+    if (
+        not isinstance(value, list)
+        or len(value) != length
+    ):
+        raise ValueError(
+            f'AI Select Anchor {field_name} must contain {length} finite numbers'
+        )
+    return tuple(
+        _anchor_finite_number(item, f'{field_name}[{index}]')
+        for index, item in enumerate(value)
+    )
+
+
+def _anchor_digest(value: str, field_name: str) -> str:
+    if (
+        len(value) != len('sha256:') + 64
+        or not value.startswith('sha256:')
+        or any(character not in '0123456789abcdef' for character in value[7:].lower())
+    ):
+        raise MaskSessionError(
+            'rendererFailure', f'gsplat Anchor {field_name} is invalid.'
+        )
+    return value
+
+
 @dataclass
 class CompanionState:
     directory: Path
@@ -187,6 +284,16 @@ class CompanionState:
     _mask_lock: Lock = field(default_factory=Lock, init=False, repr=False)
     _active_object_selection_session: str | None = field(
         default=None,
+        init=False,
+        repr=False,
+    )
+    _active_anchor_render: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _anchor_render_admissions: dict[str, AnchorRenderAdmission] = field(
+        default_factory=dict,
         init=False,
         repr=False,
     )
@@ -418,6 +525,9 @@ class CompanionState:
                         return session_id
                 self._discard_unclaimed_frame_set(frame_set_version)
                 return None
+            if self._active_anchor_render is not None:
+                self._discard_unclaimed_frame_set(frame_set_version)
+                return None
             try:
                 if frame_set_version is not None:
                     self._require_frame_set(frame_set_version)
@@ -487,6 +597,264 @@ class CompanionState:
     ) -> tuple[int, ...] | None:
         snapshot = self.scene_snapshot(scene_id, scene_version)
         return snapshot.stable_ids if snapshot is not None else None
+
+    def render_ai_select_anchor(
+        self, request: Mapping[str, object]
+    ) -> dict[str, object]:
+        """Publish one authoritative Anchor RGB product or a bound cache miss.
+
+        The browser owns target and Scene Snapshot identity. This state method
+        validates those untrusted bindings, copies the camera into gsplat's
+        explicit convention, then releases all state locks before GPU work.
+        """
+
+        anchor_request = self._parse_ai_select_anchor_request(request)
+        snapshot = self.scene_snapshot(
+            anchor_request.scene_id, anchor_request.scene_version
+        )
+        if snapshot is None:
+            return {
+                'status': 'sceneCacheMiss',
+                **anchor_request.response_fields(),
+            }
+        if snapshot.render_config_version != anchor_request.render_config_version:
+            raise ValueError(
+                'AI Select Anchor render configuration does not match the registered Scene Snapshot'
+            )
+
+        renderer = self._require_contributor_renderer()
+        if getattr(renderer, 'renderer_id', None) != 'gsplat':
+            raise MaskSessionError(
+                'rendererUnavailable',
+                'The configured Contributor renderer is not the gsplat Anchor renderer.',
+            )
+        render_anchor = getattr(renderer, 'render_anchor', None)
+        if not callable(render_anchor):
+            raise MaskSessionError(
+                'rendererUnavailable',
+                'The gsplat/CUDA Contributor renderer cannot render an AI Select Anchor.',
+            )
+
+        anchor_key, admission, owns_admission = self._admit_anchor_render(
+            anchor_request
+        )
+        if not owns_admission:
+            return self._replay_anchor_render(admission)
+
+        try:
+            try:
+                artifact = render_anchor(
+                    scene_snapshot=json.loads(snapshot.canonical),
+                    view_id='anchor-view',
+                    camera=anchor_request.renderer_camera,
+                    width=anchor_request.width,
+                    height=anchor_request.height,
+                )
+            except MaskSessionError:
+                raise
+            except Exception as error:
+                raise MaskSessionError(
+                    'rendererFailure',
+                    'The gsplat/CUDA renderer failed while producing the AI Select Anchor.',
+                ) from error
+            if not isinstance(artifact, AnchorRenderArtifact):
+                raise MaskSessionError(
+                    'rendererFailure',
+                    'The gsplat/CUDA renderer returned an invalid AI Select Anchor artifact.',
+                )
+            response = {
+                'status': 'complete',
+                **anchor_request.response_fields(),
+                'rgb': {
+                    'pngBase64': base64.b64encode(artifact.image_png).decode('ascii'),
+                    'digest': _anchor_digest(artifact.rgb_digest, 'RGB digest'),
+                    'width': anchor_request.width,
+                    'height': anchor_request.height,
+                },
+                'contributorDigest': _anchor_digest(
+                    artifact.contributor_digest, 'contributor digest'
+                ),
+                'rendererId': 'gsplat',
+            }
+        except MaskSessionError as error:
+            self._complete_anchor_render(anchor_key, admission, failure=error)
+            raise
+        except Exception as error:
+            failure = MaskSessionError(
+                'rendererFailure',
+                'The gsplat/CUDA renderer failed while publishing the AI Select Anchor.',
+            )
+            self._complete_anchor_render(anchor_key, admission, failure=failure)
+            raise failure from error
+
+        self._complete_anchor_render(anchor_key, admission, response=response)
+        return response
+
+    def _parse_ai_select_anchor_request(
+        self, request: Mapping[str, object]
+    ) -> AISelectAnchorRequest:
+        request_binding_value = request.get('requestBinding')
+        if not isinstance(request_binding_value, dict):
+            raise ValueError('AI Select Anchor requestBinding must be an object')
+        dependency_value = request_binding_value.get('dependencyToken')
+        if not isinstance(dependency_value, dict):
+            raise ValueError(
+                'AI Select Anchor requestBinding dependencyToken must be an object'
+            )
+        target_splat_id = _anchor_string(
+            request.get('targetSplatId'), 'targetSplatId'
+        )
+        dependency_token = {
+            'splatId': _anchor_string(dependency_value.get('splatId'), 'dependency splatId'),
+            'renderStateToken': _anchor_string(
+                dependency_value.get('renderStateToken'), 'dependency renderStateToken'
+            ),
+            'geometryToken': _anchor_string(
+                dependency_value.get('geometryToken'), 'dependency geometryToken'
+            ),
+            'gaussianIdentityToken': _anchor_string(
+                dependency_value.get('gaussianIdentityToken'),
+                'dependency gaussianIdentityToken',
+            ),
+            'worldTransformToken': _anchor_string(
+                dependency_value.get('worldTransformToken'),
+                'dependency worldTransformToken',
+            ),
+        }
+        if dependency_token['splatId'] != target_splat_id:
+            raise ValueError(
+                'AI Select Anchor targetSplatId must match its dependency splatId'
+            )
+        request_binding: dict[str, object] = {
+            'targetContextId': _anchor_string(
+                request_binding_value.get('targetContextId'), 'targetContextId'
+            ),
+            'contextRevision': _anchor_nonnegative_integer(
+                request_binding_value.get('contextRevision'), 'contextRevision'
+            ),
+            'dependencyToken': dependency_token,
+        }
+        scene_id = _anchor_string(request.get('sceneId'), 'sceneId')
+        scene_version = _anchor_string(request.get('sceneVersion'), 'sceneVersion')
+        if scene_id != target_splat_id:
+            raise ValueError(
+                'AI Select Anchor sceneId must match its targetSplatId'
+            )
+        render_config_version = _anchor_string(
+            request.get('renderConfigVersion'), 'renderConfigVersion'
+        )
+        if request.get('viewId') != 'anchor-view':
+            raise ValueError('AI Select Anchor viewId must be anchor-view')
+
+        camera_binding, renderer_camera, width, height = (
+            self._parse_ai_select_anchor_camera(request.get('cameraBinding'))
+        )
+        return AISelectAnchorRequest(
+            request_binding=request_binding,
+            target_splat_id=target_splat_id,
+            scene_id=scene_id,
+            scene_version=scene_version,
+            render_config_version=render_config_version,
+            camera_binding=camera_binding,
+            renderer_camera=renderer_camera,
+            width=width,
+            height=height,
+        )
+
+    @staticmethod
+    def _parse_ai_select_anchor_camera(
+        value: object,
+    ) -> tuple[dict[str, object], dict[str, object], int, int]:
+        if not isinstance(value, dict):
+            raise ValueError('AI Select Anchor cameraBinding must be an object')
+        if value.get('conventionVersion') != 'opencv-camera-to-world/v1':
+            raise ValueError(
+                'AI Select Anchor cameraBinding conventionVersion is unsupported'
+            )
+        revision = _anchor_nonnegative_integer(value.get('revision'), 'camera revision')
+        camera_to_world = _anchor_number_sequence(
+            value.get('cameraToWorld'), 16, 'cameraToWorld'
+        )
+        if camera_to_world[12:] != (0.0, 0.0, 0.0, 1.0):
+            raise ValueError('AI Select Anchor cameraToWorld must be affine')
+        rotation_rows = (
+            camera_to_world[0:3],
+            camera_to_world[4:7],
+            camera_to_world[8:11],
+        )
+        for row in rotation_rows:
+            if abs(sum(component * component for component in row) - 1.0) > 1e-5:
+                raise ValueError('AI Select Anchor cameraToWorld rotation must be unit length')
+        for first, second in ((0, 1), (0, 2), (1, 2)):
+            if abs(
+                sum(
+                    rotation_rows[first][axis] * rotation_rows[second][axis]
+                    for axis in range(3)
+                )
+            ) > 1e-5:
+                raise ValueError('AI Select Anchor cameraToWorld rotation must be orthogonal')
+        determinant = (
+            rotation_rows[0][0]
+            * (rotation_rows[1][1] * rotation_rows[2][2] - rotation_rows[1][2] * rotation_rows[2][1])
+            - rotation_rows[0][1]
+            * (rotation_rows[1][0] * rotation_rows[2][2] - rotation_rows[1][2] * rotation_rows[2][0])
+            + rotation_rows[0][2]
+            * (rotation_rows[1][0] * rotation_rows[2][1] - rotation_rows[1][1] * rotation_rows[2][0])
+        )
+        if abs(determinant - 1.0) > 1e-5:
+            raise ValueError(
+                'AI Select Anchor cameraToWorld rotation must be right-handed'
+            )
+
+        projection_value = value.get('projection')
+        if not isinstance(projection_value, dict) or projection_value.get('model') != 'pinhole':
+            raise ValueError('AI Select Anchor projection must be a pinhole object')
+        fx = _anchor_finite_number(projection_value.get('fx'), 'projection fx')
+        fy = _anchor_finite_number(projection_value.get('fy'), 'projection fy')
+        cx = _anchor_finite_number(projection_value.get('cx'), 'projection cx')
+        cy = _anchor_finite_number(projection_value.get('cy'), 'projection cy')
+        width = _anchor_positive_integer(projection_value.get('width'), 'projection width')
+        height = _anchor_positive_integer(projection_value.get('height'), 'projection height')
+        near = _anchor_finite_number(projection_value.get('near'), 'projection near')
+        far = _anchor_finite_number(projection_value.get('far'), 'projection far')
+        if fx <= 0 or fy <= 0 or near <= 0 or far <= near:
+            raise ValueError('AI Select Anchor projection is invalid')
+
+        tx, ty, tz = camera_to_world[3], camera_to_world[7], camera_to_world[11]
+        world_to_camera = [
+            camera_to_world[0], camera_to_world[4], camera_to_world[8],
+            -(camera_to_world[0] * tx + camera_to_world[4] * ty + camera_to_world[8] * tz),
+            camera_to_world[1], camera_to_world[5], camera_to_world[9],
+            -(camera_to_world[1] * tx + camera_to_world[5] * ty + camera_to_world[9] * tz),
+            camera_to_world[2], camera_to_world[6], camera_to_world[10],
+            -(camera_to_world[2] * tx + camera_to_world[6] * ty + camera_to_world[10] * tz),
+            0.0, 0.0, 0.0, 1.0,
+        ]
+        camera_binding: dict[str, object] = {
+            'revision': revision,
+            'cameraToWorld': list(camera_to_world),
+            'projection': {
+                'model': 'pinhole',
+                'fx': fx,
+                'fy': fy,
+                'cx': cx,
+                'cy': cy,
+                'width': width,
+                'height': height,
+                'near': near,
+                'far': far,
+            },
+            'conventionVersion': 'opencv-camera-to-world/v1',
+        }
+        renderer_camera: dict[str, object] = {
+            'model': 'pinhole',
+            'convention': 'opencv-world-to-camera',
+            'worldToCamera': world_to_camera,
+            'intrinsics': [fx, 0.0, cx, 0.0, fy, cy, 0.0, 0.0, 1.0],
+            'nearPlane': near,
+            'farPlane': far,
+        }
+        return camera_binding, renderer_camera, width, height
 
     def register_frame_set(self, payload: dict[str, Any]) -> RegisteredFrameSet:
         """Cache one immutable Frame Set without exposing model-private handles."""
@@ -1572,6 +1940,8 @@ class CompanionState:
         with self._session_lock:
             session_id = self._active_object_selection_session
             if session_id is None:
+                if self._active_anchor_render is not None:
+                    return
                 with self._mask_lock:
                     self._mask_sessions.clear()
                 self._release_all_transient_caches_locked()
@@ -1632,7 +2002,95 @@ class CompanionState:
         self._release_all_transient_caches_locked()
         self._active_object_selection_session = None
 
+    @staticmethod
+    def _anchor_render_request_key(request: AISelectAnchorRequest) -> str:
+        """Canonicalize every immutable input that can affect one Anchor RGB."""
+
+        return json.dumps(
+            request.response_fields(),
+            separators=(',', ':'),
+            sort_keys=True,
+            allow_nan=False,
+        )
+
+    def _admit_anchor_render(
+        self, request: AISelectAnchorRequest
+    ) -> tuple[str, AnchorRenderAdmission, bool]:
+        """Reserve or join one bound GPU publication without holding locks for it."""
+
+        key = self._anchor_render_request_key(request)
+        with self._session_lock:
+            admission = self._anchor_render_admissions.get(key)
+            if admission is not None:
+                return key, admission, False
+            if (
+                self._active_object_selection_session is not None
+                or self._active_anchor_render is not None
+            ):
+                raise MaskSessionError(
+                    'capacityFull',
+                    'The Companion is already serving another AI or Object Selection operation.',
+                )
+            # A replay record can contain a full-resolution PNG. Retain only
+            # the most recent completed request for lost-response recovery;
+            # a different current binding makes older products stale anyway.
+            self._anchor_render_admissions = {
+                completed_key: completed_admission
+                for completed_key, completed_admission
+                in self._anchor_render_admissions.items()
+                if not completed_admission.completed.is_set()
+            }
+            admission = AnchorRenderAdmission()
+            self._anchor_render_admissions[key] = admission
+            self._active_anchor_render = key
+        return key, admission, True
+
+    @staticmethod
+    def _replay_anchor_render(admission: AnchorRenderAdmission) -> dict[str, object]:
+        """Wait for a matching request, then return only its immutable outcome."""
+
+        admission.completed.wait()
+        if admission.publication is not None:
+            return json.loads(admission.publication)
+        if admission.failure is not None:
+            raise MaskSessionError(*admission.failure)
+        raise MaskSessionError(
+            'rendererFailure',
+            'The Companion lost an AI Select Anchor publication before it completed.',
+        )
+
+    def _complete_anchor_render(
+        self,
+        key: str,
+        admission: AnchorRenderAdmission,
+        *,
+        response: dict[str, object] | None = None,
+        failure: MaskSessionError | None = None,
+    ) -> None:
+        """Atomically publish one replay result and release the single GPU slot."""
+
+        if (response is None) == (failure is None):
+            raise ValueError('AI Select Anchor completion requires one outcome')
+        publication = (
+            json.dumps(response, separators=(',', ':'), sort_keys=True, allow_nan=False)
+            if response is not None
+            else None
+        )
+        with self._session_lock:
+            current = self._anchor_render_admissions.get(key)
+            if current is not admission:
+                return
+            if publication is not None:
+                admission.publication = publication
+            else:
+                assert failure is not None
+                admission.failure = (failure.code, str(failure))
+            if self._active_anchor_render == key:
+                self._active_anchor_render = None
+            admission.completed.set()
+
     def _release_all_transient_caches_locked(self) -> None:
+        self._anchor_render_admissions.clear()
         with self._frame_lock:
             self._frame_sets.clear()
         with self._scene_lock:
@@ -2024,6 +2482,7 @@ class CompanionState:
                 "maximumActiveSessions": 1,
                 "activeSessions": int(
                     self._active_object_selection_session is not None
+                    or self._active_anchor_render is not None
                 ),
             }
 
@@ -2048,6 +2507,7 @@ class CompanionState:
             "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}+{release['release']}",
             "renderer": renderer_capability,
             "supportedPromptKinds": ["point"],
+            "supportedOperations": ["aiSelectAnchorRender"],
             "modelManifests": manifests,
             "capacity": self._capacity(),
             "allowedEditorOrigins": allowed_editor_origins,

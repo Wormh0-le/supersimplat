@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import hashlib
 from io import BytesIO
+import json
 import math
 import struct
 from typing import Any, ClassVar, Mapping, Protocol, Sequence
@@ -119,6 +120,40 @@ class GsplatRasterization:
     contributor_ids: Sequence[Sequence[Sequence[int]]]
     contributor_weights: Sequence[Sequence[Sequence[float]]]
     peak_vram_bytes: int | None = None
+
+
+@dataclass(frozen=True)
+class AnchorRenderArtifact:
+    """The complete, self-authenticating RGB/contributor product for one Anchor.
+
+    This exists separately from a mask Frame because v1's Anchor has no
+    editor-captured RGB.  The PNG and contributor digest both originate from
+    one gsplat rasterization before any UI receives the image.
+    """
+
+    image_png: bytes
+    rgb_digest: str
+    contributor_digest: str
+
+    def __post_init__(self) -> None:
+        if not self.image_png:
+            raise MaskSessionError(
+                'rendererFailure', 'gsplat produced an empty Anchor RGB artifact.'
+            )
+        expected_rgb_digest = f'sha256:{hashlib.sha256(self.image_png).hexdigest()}'
+        if self.rgb_digest != expected_rgb_digest:
+            raise MaskSessionError(
+                'rendererFailure', 'gsplat Anchor RGB digest does not match its PNG artifact.'
+            )
+        if (
+            not isinstance(self.contributor_digest, str)
+            or len(self.contributor_digest) != len('sha256:') + 64
+            or not self.contributor_digest.startswith('sha256:')
+            or any(character not in '0123456789abcdef' for character in self.contributor_digest[7:].lower())
+        ):
+            raise MaskSessionError(
+                'rendererFailure', 'gsplat Anchor contributor digest is invalid.'
+            )
 
 
 @dataclass(frozen=True)
@@ -877,6 +912,100 @@ class GsplatContributorRenderer:
             stable_ids=stable_ids,
             frame=frame,
             renderer_id=self.renderer_id,
+        )
+
+    def render_anchor(
+        self,
+        *,
+        scene_snapshot: Mapping[str, Any],
+        view_id: str,
+        camera: Mapping[str, Any],
+        width: int,
+        height: int,
+    ) -> AnchorRenderArtifact:
+        """Render the v1 Anchor from gsplat, never from editor framebuffer data.
+
+        The same backend invocation supplies RGB, alpha, and contributor IDs.
+        ``_validated_rendered_view`` proves contributor mass against that RGB
+        raster before this method publishes an image digest to the browser.
+        """
+
+        if view_id != 'anchor-view':
+            raise MaskSessionError(
+                'rendererFailure', 'AI Select can render only the Anchor View here.'
+            )
+        if (
+            isinstance(width, bool)
+            or isinstance(height, bool)
+            or not isinstance(width, int)
+            or not isinstance(height, int)
+            or width <= 0
+            or height <= 0
+        ):
+            raise MaskSessionError(
+                'rendererFailure', 'AI Select Anchor resolution is invalid.'
+            )
+
+        stable_ids = validate_supported_snapshot(scene_snapshot)
+        immutable_camera = dict(camera)
+        # Validate before dispatching the expensive CUDA operation. The frame
+        # digest here is a placeholder used solely by the shared camera guard.
+        _validate_camera(
+            RegisteredFrame(
+                view_id=view_id,
+                frame_digest='sha256:' + ('0' * 64),
+                width=width,
+                height=height,
+                source='anchor',
+                camera=immutable_camera,
+            )
+        )
+        rasterized = self.backend.rasterize(
+            snapshot=scene_snapshot,
+            camera=immutable_camera,
+            width=width,
+            height=height,
+        )
+        self.last_peak_vram_bytes = rasterized.peak_vram_bytes
+        self.peak_vram_bytes = max(
+            self.peak_vram_bytes, int(rasterized.peak_vram_bytes or 0)
+        )
+        image_png = _rgb_png(rasterized.service_rgb_bytes, width, height)
+        frame = RegisteredFrame(
+            view_id=view_id,
+            frame_digest=f'sha256:{hashlib.sha256(image_png).hexdigest()}',
+            width=width,
+            height=height,
+            image_png=image_png,
+            source='anchor',
+            camera=immutable_camera,
+        )
+        rendered = _validated_rendered_view(
+            rasterized=rasterized,
+            stable_ids=stable_ids,
+            frame=frame,
+            renderer_id=self.renderer_id,
+        )
+        contributor_bytes = json.dumps(
+            [
+                {
+                    'stableId': sample.stable_id,
+                    'xPx': sample.x_px,
+                    'yPx': sample.y_px,
+                    'mass': sample.mass,
+                }
+                for sample in rendered.contributors
+            ],
+            allow_nan=False,
+            separators=(',', ':'),
+            sort_keys=True,
+        ).encode('utf-8')
+        return AnchorRenderArtifact(
+            image_png=image_png,
+            rgb_digest=frame.frame_digest,
+            contributor_digest=(
+                f'sha256:{hashlib.sha256(contributor_bytes).hexdigest()}'
+            ),
         )
 
     def plan_views(

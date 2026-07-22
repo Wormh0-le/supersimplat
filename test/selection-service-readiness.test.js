@@ -27,6 +27,7 @@ const capabilities = (overrides = {}) => ({
     cudaVersion: "12.8",
   },
   supportedPromptKinds: ["point"],
+  supportedOperations: ["aiSelectAnchorRender"],
   modelManifests: [
     {
       digest: selectedModelDigest,
@@ -156,6 +157,45 @@ test("admits the attached transport only through the ready production gateway", 
   await gateway.openSession({ target: {}, prompt: {} });
 
   assert.equal(adapter.openRequests.length, 1);
+});
+
+test("gates the AI Select Anchor renderer through the same readiness decision", async () => {
+  const readiness = new SelectionServiceReadiness({
+    probe: new DeterministicReadinessProbe(),
+    configuration: configuration(),
+  });
+  const adapter = new RecordingSelectionServiceAdapter();
+  const anchorRequests = [];
+  adapter.renderAnchor = async (request) => {
+    anchorRequests.push(request);
+    return { status: "complete" };
+  };
+  const gateway = new ReadinessGatedSelectionServiceAdapter({ readiness, adapter });
+
+  await assert.rejects(gateway.renderAnchor({}), /cannot start/i);
+  await readiness.refresh();
+  const result = await gateway.renderAnchor({ requestBinding: "bound" });
+
+  assert.deepEqual(result, { status: "complete" });
+  assert.deepEqual(anchorRequests, [{ requestBinding: "bound" }]);
+});
+
+test("does not admit an Anchor renderer when a compatible protocol does not advertise Anchor rendering", async () => {
+  const readiness = new SelectionServiceReadiness({
+    probe: new DeterministicReadinessProbe({
+      capabilitiesResult: capabilities({ supportedOperations: [] }),
+    }),
+    configuration: configuration(),
+  });
+  const adapter = new RecordingSelectionServiceAdapter();
+  adapter.renderAnchor = async () => ({ status: "complete" });
+  const gateway = new ReadinessGatedSelectionServiceAdapter({ readiness, adapter });
+
+  await readiness.refresh();
+
+  assert.equal(readiness.state.status, "reachable");
+  assert.equal(readiness.state.diagnostic.code, "aiSelectAnchorUnsupported");
+  await assert.rejects(gateway.renderAnchor({}), /cannot start/i);
 });
 
 test("reports protocol, renderer, model, origin, and one-session capacity failures without opening a session", async (t) => {

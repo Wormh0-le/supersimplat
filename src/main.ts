@@ -1,6 +1,9 @@
 import { WebPCodec, WorkerQueue } from '@playcanvas/splat-transform';
 import { Color, createGraphicsDevice } from 'playcanvas';
 
+import { AISelectAnchorController } from './ai-select/anchor-controller';
+import { AnchorFrustum } from './ai-select-anchor-frustum';
+import { AISelectEditorTargetFactory } from './ai-select-editor-target';
 import { registerCameraPosesEvents } from './camera-poses';
 import { CommandQueue } from './command-queue';
 import { registerDocEvents } from './doc';
@@ -9,10 +12,6 @@ import { registerEditorEvents } from './editor';
 import { Events } from './events';
 import { initFileHandler } from './file-handler';
 import { registerIframeApi } from './iframe-api';
-import {
-    ObjectSelectionSessionFactory,
-    type ObjectSelectionSessionHandle
-} from './object-selection-session-factory';
 import { registerPreferences } from './preferences';
 import { registerPublishEvents } from './publish';
 import { registerRenderEvents } from './render';
@@ -46,11 +45,11 @@ import { SphereSelection } from './tools/sphere-selection';
 import { ToolManager } from './tools/tool-manager';
 import { registerTrackManagerEvents } from './track-manager';
 import { registerTransformHandlerEvents } from './transform-handler';
+import { AISelectAnchorDock } from './ui/ai-select-anchor-dock';
+import { AISelectToolbar } from './ui/ai-select-toolbar';
 import { BoundDimensionsOverlay } from './ui/bound-dimensions-overlay';
 import { EditorUI } from './ui/editor';
 import { i18n } from './ui/localization';
-import { ObjectSelectionPanel } from './ui/object-selection-panel';
-import { ObjectSelectionToolbar } from './ui/object-selection-toolbar';
 import { registerSelectCursor } from './ui/select-cursor';
 
 declare global {
@@ -349,215 +348,102 @@ const main = async () => {
     registerRenderEvents(scene, events);
     initFileHandler(scene, events, editorUI.appContainer.dom);
 
-    // UI workflows obtain a fresh handle for their one selected Target Splat.
-    // The handle owns the real Scene Snapshot/Stable-ID/SelectOp bridge; its
-    // session still uses the readiness-gated transport published above.
-    const objectSelectionSessions = new ObjectSelectionSessionFactory({
-        selectionService: selectionServiceAdapter,
-        editHistory,
-        getModelManifestDigest: () => selectionServiceReadiness.state.configuration.modelManifestDigest,
-        getRenderConfiguration: (): SceneSnapshotRenderConfiguration => {
-            const background = events.invoke('bgClr') as Color;
-            return {
-                version: 'supersplat-effective-rgb-v1',
-                backgroundRgba: [
-                    background.r,
-                    background.g,
-                    background.b,
-                    background.a
-                ],
-                alphaMode: 'opaque-background',
-                shBands: events.invoke('view.bands') as number,
-                rasterizer: 'playcanvas-gsplat-classic'
-            };
-        }
-    });
-    events.function('objectSelection.createSession', (requestedSplat?: Splat) => {
-        const splat =
-      requestedSplat ?? (events.invoke('selection') as Splat | null);
-        if (!splat || !splat.visible) {
-            throw new Error(
-                'Select one visible Target Splat before starting Object Selection.'
-            );
-        }
-        return objectSelectionSessions.create(splat);
-    });
-
-    const captureAnchorFrame = async (canvas: HTMLCanvasElement) => {
-        let imageUrl: string;
-        try {
-            imageUrl = canvas.toDataURL('image/png');
-        } catch (error) {
-            throw new Error(
-                'The visible Anchor View could not be captured for model inference.'
-            );
-        }
-        const prefix = 'data:image/png;base64,';
-        if (!imageUrl.startsWith(prefix)) {
-            throw new Error('The visible Anchor View could not be encoded as a PNG.');
-        }
-        if (globalThis.crypto?.subtle === undefined) {
-            throw new Error(
-                'This browser cannot hash the captured Anchor View for model inference.'
-            );
-        }
-        const imagePngBase64 = imageUrl.slice(prefix.length);
-        const imageBytes = Uint8Array.from(atob(imagePngBase64), character => character.charCodeAt(0)
-        );
-        const digest = await globalThis.crypto.subtle.digest('SHA-256', imageBytes);
-        const digestBytes = [...new Uint8Array(digest)];
-        const frameDigest = `sha256:${digestBytes.map(byte => byte.toString(16).padStart(2, '0')).join('')}`;
+    // AI Select v1 is a native tool. Its Anchor begins with the visible editor
+    // camera, but the RGB image itself is requested only from the Companion's
+    // locked gsplat renderer; no PlayCanvas framebuffer is observed here.
+    const getAISelectRenderConfiguration = (): SceneSnapshotRenderConfiguration => {
+        const background = events.invoke('bgClr') as Color;
         return {
-            frameDigest,
-            imagePngBase64,
-            frameWidth: canvas.width,
-            frameHeight: canvas.height
+            version: 'supersplat-effective-rgb-v1',
+            backgroundRgba: [
+                background.r,
+                background.g,
+                background.b,
+                background.a
+            ],
+            alphaMode: 'opaque-background',
+            shBands: events.invoke('view.bands') as number,
+            rasterizer: 'playcanvas-gsplat-classic'
         };
     };
-
-    let anchorPromptPoint: {
-    xPx: number;
-    yPx: number;
-    frame: Promise<{
-      frameDigest: string;
-      imagePngBase64: string;
-      frameWidth: number;
-      frameHeight: number;
-    }>;
-  } | null = null;
-    let anchorPromptCount = 0;
-    let awaitingAnchorPrompt = false;
-    let objectSelectionHandle: ObjectSelectionSessionHandle | null = null;
-    let objectSelectionToolbar: ObjectSelectionToolbar | null = null;
-    let objectSelectionPanel: ObjectSelectionPanel | null = null;
-    let startObjectSelectionAtAnchor: (() => Promise<void>) | null = null;
-
-    const reportObjectSelectionError = (error: unknown) => {
-        console.error(error);
-    };
-
-    editorUI.canvas.addEventListener('pointerdown', (event) => {
-        if (
-            event.button !== 0 ||
-      !awaitingAnchorPrompt ||
-      startObjectSelectionAtAnchor === null ||
-      objectSelectionHandle?.session.state.status !== 'idle'
-        ) {
-            return;
-        }
-        const rect = editorUI.canvas.getBoundingClientRect();
-        const frame = captureAnchorFrame(editorUI.canvas);
-        frame.catch((): undefined => undefined);
-        anchorPromptPoint = {
-            xPx: Math.max(
-                0,
-                Math.min(
-                    editorUI.canvas.width - 1,
-                    Math.round(
-                        ((event.clientX - rect.left) * editorUI.canvas.width) / rect.width
-                    )
-                )
-            ),
-            yPx: Math.max(
-                0,
-                Math.min(
-                    editorUI.canvas.height - 1,
-                    Math.round(
-                        ((event.clientY - rect.top) * editorUI.canvas.height) / rect.height
-                    )
-                )
-            ),
-            frame
-        };
-        awaitingAnchorPrompt = false;
-        startObjectSelectionAtAnchor().catch(reportObjectSelectionError);
+    const aiSelectTargetFactory = new AISelectEditorTargetFactory({
+        getRenderConfiguration: getAISelectRenderConfiguration
+    });
+    const aiSelectController = new AISelectAnchorController({
+        renderer: selectionServiceAdapter
+    });
+    const anchorFrustum = new AnchorFrustum();
+    await scene.add(anchorFrustum);
+    aiSelectController.subscribe((state) => {
+        anchorFrustum.setCameraBinding(state.anchor?.cameraBinding ?? null);
     });
 
-    const mountObjectSelection = (splat: Splat | null) => {
-    // Keep an active Target Splat and its controls intact until the user
-    // confirms or cancels; a normal editor selection change cannot retarget
-    // a live Companion session.
-        if (objectSelectionHandle?.session.state.status !== 'idle') {
-            return;
-        }
-        if (!splat) {
-            objectSelectionToolbar?.destroy();
-            objectSelectionPanel?.destroy();
-            anchorPromptPoint = null;
-            awaitingAnchorPrompt = false;
-            objectSelectionHandle = null;
-            objectSelectionToolbar = null;
-            objectSelectionPanel = null;
-            startObjectSelectionAtAnchor = null;
-            return;
-        }
-        if (
-            objectSelectionHandle?.target.targetSplatId ===
-      `editor-splat:${splat.uid}`
-        ) {
-            return;
-        }
-
-        objectSelectionToolbar?.destroy();
-        objectSelectionPanel?.destroy();
-        anchorPromptPoint = null;
-        awaitingAnchorPrompt = false;
-        const handle = events.invoke(
-            'objectSelection.createSession',
-            splat
-        ) as ObjectSelectionSessionHandle;
-        const startNew = async () => {
-            if (anchorPromptPoint === null) {
-                // Capturing and hashing the canvas is intentionally armed only
-                // by New. Ordinary editor clicks never pay this full-frame cost.
-                awaitingAnchorPrompt = true;
-                return;
-            }
-            const anchor = anchorPromptPoint;
-            anchorPromptPoint = null;
-            awaitingAnchorPrompt = false;
-            const capturedFrame = await anchor.frame;
-            if (
-                objectSelectionHandle !== handle ||
-        handle.session.state.status !== 'idle'
-            ) {
-                return;
-            }
-            const promptId = `anchor-prompt-${++anchorPromptCount}`;
-            return handle.startNew({
-                promptId,
-                viewId: 'anchor-view',
-                frameDigest: capturedFrame.frameDigest,
-                frameWidth: capturedFrame.frameWidth,
-                frameHeight: capturedFrame.frameHeight,
-                imagePngBase64: capturedFrame.imagePngBase64,
-                xPx: anchor.xPx,
-                yPx: anchor.yPx,
-                polarity: 'include'
-            });
-        };
-        objectSelectionHandle = handle;
-        startObjectSelectionAtAnchor = startNew;
-        objectSelectionToolbar = new ObjectSelectionToolbar(handle.session, {
-            startNew,
-            onError: reportObjectSelectionError
-        });
-        objectSelectionPanel = new ObjectSelectionPanel(handle.session, {
-            onError: reportObjectSelectionError
-        });
-        editorUI.canvasContainer.append(objectSelectionToolbar);
-        editorUI.canvasContainer.append(objectSelectionPanel);
-
-        handle.session.subscribe((state) => {
-            if (state.status === 'idle') {
-                mountObjectSelection(events.invoke('selection') as Splat | null);
-            }
+    let aiSelectTargetSplat: Splat | null = null;
+    let nextCameraBindingRevision = 0;
+    const reportAISelectError = (error: unknown) => {
+        console.error(error);
+        events.invoke('showPopup', {
+            type: 'error',
+            header: i18n.t('popup.error'),
+            message: i18n.t('ai-select.start-error')
         });
     };
-
-    events.on('selection.changed', (splat: Splat | null) => mountObjectSelection(splat)
-    );
-    mountObjectSelection(events.invoke('selection') as Splat | null);
+    const startAISelect = async (restart: boolean) => {
+        const selectedSplat = restart ?
+            aiSelectTargetSplat :
+            (events.invoke('selection') as Splat | null);
+        if (!selectedSplat || !selectedSplat.visible) {
+            throw new Error('Select one visible Target Splat before starting AI Select.');
+        }
+        const input = aiSelectTargetFactory.create(
+            selectedSplat,
+            scene.camera,
+            nextCameraBindingRevision++
+        );
+        aiSelectTargetSplat = selectedSplat;
+        if (restart || aiSelectController.state.context !== null) {
+            await aiSelectController.restart(input.start);
+        } else {
+            await aiSelectController.start(input.start);
+        }
+    };
+    const exitAISelect = () => {
+        aiSelectController.exit();
+        aiSelectTargetSplat = null;
+        events.fire('tool.deactivate');
+    };
+    const aiSelectDock = new AISelectAnchorDock(aiSelectController, {
+        onReconnect: async () => {
+            await selectionServiceReadiness.refresh();
+            if (selectionServiceReadiness.state.status !== 'ready') {
+                const { diagnostic } = selectionServiceReadiness.state;
+                throw new Error(`${diagnostic.message} ${diagnostic.action}`.trim());
+            }
+            await startAISelect(true);
+        },
+        onOpenSettings: () => events.fire('settingsPanel.setVisible', true)
+    });
+    const aiSelectToolbar = new AISelectToolbar(aiSelectController, {
+        onRestart: () => startAISelect(true),
+        onExit: exitAISelect
+    });
+    aiSelectController.subscribe((state) => {
+        editorUI.aiViewsSurface.hidden = state.context === null;
+    });
+    editorUI.aiViewsSurface.append(aiSelectDock);
+    editorUI.canvasContainer.append(aiSelectToolbar);
+    toolManager.register('aiSelect', {
+        activate: () => {
+            startAISelect(false).catch((error) => {
+                reportAISelectError(error);
+                events.fire('tool.deactivate');
+            });
+        },
+        deactivate: () => {
+            aiSelectController.exit();
+            aiSelectTargetSplat = null;
+        }
+    });
 
     // apply stored user preferences and start capturing changes to them.
     // registered after the boot-time initialization events above so they are

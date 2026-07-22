@@ -1,8 +1,10 @@
 # Selection Service Companion
 
-This is the operator-owned control plane for the Object Selection PoC. It is a
-separate Python 3.12 package and is never bundled into the browser editor or
-its npm distribution. It intentionally contains no model weights.
+This is the operator-owned control plane for AI Select. It is a separate
+Python 3.12 package and is never bundled into the browser editor or its npm
+distribution. It intentionally contains no model weights. Legacy Object
+Selection PoC routes remain only for migration and controlled fixtures; they
+are not the AI Select v1 product workflow.
 
 ## Install a locked release
 
@@ -49,12 +51,20 @@ conserve contributor mass against raster alpha within
 mismatch abort the preview; there is no nearest, visible-only, top-k, or custom
 backend attribution fallback.
 
-For the editor-owned Anchor, the renderer compares its 8-bit service RGB with
-the registered PNG. A mean absolute channel error of at most `2/255` is normal;
-an error through `0.25` is moderate and disables outside-mask negative
-evidence; a larger error, missing/invalid PNG, or dimension mismatch is severe
-and aborts Evidence lifting. These thresholds are part of the first locked
-renderer policy and must change with its render-configuration revision.
+AI Select v1 creates an Anchor through `POST /ai-select/anchor-renders` after
+the editor registers its immutable Scene Snapshot. The request carries the
+editor-owned `AIRequestBinding`, Target Splat ID, render-configuration version,
+and `CameraBinding`. `CameraBinding` is an OpenCV camera-to-world affine matrix
+plus pinhole intrinsics, resolution, clipping, and convention revision. The
+Companion derives its row-major `opencv-world-to-camera` matrix, then publishes
+PNG RGB and a contributor digest only after one gsplat rasterization has passed
+complete contributor-mass validation. The editor verifies the PNG SHA-256
+digest before displaying it. No PlayCanvas framebuffer/canvas capture is
+accepted as AI Anchor observation truth.
+
+The legacy PoC route's editor-registered Anchor PNG parity policy remains
+limited to legacy fixture/session compatibility. It is not used by AI Select
+v1 and must not be extended as an alternate Anchor RGB path.
 
 The locked gsplat build evaluates the shared per-Gaussian alpha in separate
 CUDA translation units, so the RGB and contributor kernels can disagree by a
@@ -142,15 +152,19 @@ browser never starts, stops, upgrades, installs, or rolls back this process.
 Trusted-LAN hosts must resolve only to private-network addresses; public,
 unspecified, and loopback listeners are rejected.
 
-This release exposes `/health`, `/capabilities`, and an Object Selection
-Session admission lease. It verifies the locked gsplat/CUDA runtime from the
-current Companion process only. Whenever the release lock or runtime identity
-does not match, renderer status remains unavailable with an operator-facing
-diagnostic. The control plane reserves
-exactly one Object Selection Session lease at a time and returns `busy` to a
-second opener; closing that lease restores capacity. It still proves the
-locked-install, model-manifest, CORS, browser transport, and single-session
-readiness contract.
+This release exposes `/health`, `/capabilities`, `/scene-snapshots/...`, and
+the AI Select Anchor route `/ai-select/anchor-renders`; `/capabilities` must
+advertise `aiSelectAnchorRender` before the browser enables that route. It also
+keeps the legacy
+Object Selection Session admission lease during migration. It verifies the
+locked gsplat/CUDA runtime from the current Companion process only. Whenever
+the release lock or runtime identity does not match, renderer status remains
+unavailable with an operator-facing diagnostic. The legacy control plane
+reserves exactly one Object Selection Session lease at a time and returns
+`busy` to a second opener; closing that lease restores capacity. The Anchor
+route is bound by `targetContextId`, context revision, and dependency token;
+late browser results are discarded editor-side rather than relying on request
+cancellation for correctness.
 
 ## Run the controlled-overlap production trial
 

@@ -36,6 +36,7 @@ class EditorUI {
     appContainer: Container;
     topContainer: Container;
     canvasContainer: Container;
+    aiViewsSurface: Container;
     toolsContainer: Container;
     canvas: HTMLCanvasElement;
     popup: Popup;
@@ -128,10 +129,15 @@ class EditorUI {
         const timelinePanel = new TimelinePanel(events, tooltips);
         const dataPanel = new DataPanel(events, tooltips);
         const statusBar = new StatusBar(events, tooltips);
+        const aiViewsSurface = new Container({
+            id: 'ai-views-surface',
+            hidden: true
+        });
 
         timelinePanel.hidden = true;
 
         mainContainer.append(canvasContainer);
+        mainContainer.append(aiViewsSurface);
         mainContainer.append(timelinePanel);
         mainContainer.append(dataPanel);
         mainContainer.append(statusBar);
@@ -180,6 +186,7 @@ class EditorUI {
         this.appContainer = appContainer;
         this.topContainer = topContainer;
         this.canvasContainer = canvasContainer;
+        this.aiViewsSurface = aiViewsSurface;
         this.toolsContainer = toolsContainer;
         this.canvas = canvas;
         this.popup = popup;

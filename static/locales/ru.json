@@ -322,5 +322,19 @@
     "tooltip.status-bar.splat-data": "Переключить панель данных сплатов",
     "tooltip.splat-data.on-screen-only": "Учитывать только сплаты, видимые в поле зрения камеры. Сплаты вне экрана исключаются из гистограммы.",
     "tooltip.splat-data.log-scale": "Использовать логарифмическую вертикальную шкалу, чтобы малые значения были видны рядом с большими.",
-    "tooltip.splat-data.show-all": "Показать все свойства сплатов в списке, включая необработанные коэффициенты DC и сферических гармоник."
+    "tooltip.splat-data.show-all": "Показать все свойства сплатов в списке, включая необработанные коэффициенты DC и сферических гармоник.",
+    "ai-select.tool": "ИИ-выбор",
+    "ai-select.dock.title": "Панель ИИ-вида",
+    "ai-select.anchor.current-view": "Якорь: текущий вид",
+    "ai-select.anchor.rendering": "Рендеринг якоря…",
+    "ai-select.anchor.ready": "Якорь готов",
+    "ai-select.anchor.failed": "Не удалось отрендерить якорь.",
+    "ai-select.adjust-anchor": "Настроить якорь",
+    "ai-select.restart-current-target": "Перезапустить текущую цель",
+    "ai-select.exit": "Выйти из ИИ-выбора",
+    "ai-select.reconnect": "Переподключиться",
+    "ai-select.open-settings": "Открыть настройки",
+    "ai-select.bottom-tool": "ИИ",
+    "ai-select.more": "Другие параметры",
+    "ai-select.start-error": "Не удалось запустить ИИ-выбор."
 }

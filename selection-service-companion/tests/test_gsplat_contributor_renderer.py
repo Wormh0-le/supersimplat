@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
 from io import BytesIO
 import math
 from pathlib import Path
@@ -330,6 +331,29 @@ class GsplatContributorRendererTests(unittest.TestCase):
         assert frame.camera is not None
         self.assertEqual(frame.camera["azimuthDegrees"], candidate.azimuth_degrees)
         self.assertEqual(frame.camera["elevationDegrees"], candidate.elevation_degrees)
+
+    def test_render_anchor_publishes_png_and_contributor_digests_from_one_rasterization(self) -> None:
+        backend = StaticGsplatBackend(valid_rasterization())
+        renderer = GsplatContributorRenderer(backend=backend)
+        frame = anchor_frame()
+        assert frame.camera is not None
+
+        artifact = renderer.render_anchor(
+            scene_snapshot=supported_snapshot(),
+            view_id='anchor-view',
+            camera=frame.camera,
+            width=frame.width,
+            height=frame.height,
+        )
+
+        self.assertEqual(backend.calls, 1)
+        self.assertEqual(
+            artifact.rgb_digest,
+            f'sha256:{hashlib.sha256(artifact.image_png).hexdigest()}',
+        )
+        self.assertRegex(artifact.contributor_digest, r'^sha256:[0-9a-f]{64}$')
+        with Image.open(BytesIO(artifact.image_png)) as image:
+            self.assertEqual(image.size, (frame.width, frame.height))
 
     def test_plans_and_preflights_cameras_before_coherent_generated_rendering(self) -> None:
         backend = StaticGsplatBackend(valid_rasterization())

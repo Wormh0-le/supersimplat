@@ -215,6 +215,9 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         if not self._origin_allowed():
             self.send_error(HTTPStatus.FORBIDDEN)
             return
+        if self.path == "/ai-select/anchor-renders":
+            self._render_ai_select_anchor()
+            return
         if self.path == "/object-selection-sessions":
             self._open_object_selection_session()
             return
@@ -225,6 +228,35 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             return
 
         self._preview_object_selection_session(session_id)
+
+    def _render_ai_select_anchor(self) -> None:
+        """Route the first v1 AI View through the locked gsplat renderer."""
+
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            request = self._read_json_body()
+            response = self._state.render_ai_select_anchor(request)
+        except ValueError as error:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"status": "invalidRequest", "message": str(error)},
+            )
+            return
+        except MaskSessionError as error:
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {
+                    "status": "anchorRenderError",
+                    "code": error.code,
+                    "message": str(error),
+                },
+            )
+            return
+        self._send_json(HTTPStatus.OK, response)
 
     def do_PUT(self) -> None:
         if not self._origin_allowed():

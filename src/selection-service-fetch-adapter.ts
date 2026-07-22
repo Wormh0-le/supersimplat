@@ -1,4 +1,20 @@
 import {
+    anchorRenderResponseMatchesRequest,
+    decodePngBase64,
+    isAnchorRenderRequest,
+    isAnchorRenderResponse,
+    parsePngDimensions,
+    validatePngDecodable,
+    type AISelectAnchorRenderer,
+    type AnchorRenderRequest,
+    type AnchorRenderResponse
+} from './ai-select/anchor-render-service';
+import { areCameraBindingsEqual, isCameraBinding } from './ai-select/camera-binding';
+import {
+    areTargetDependencyTokensEqual,
+    isAIRequestBinding
+} from './ai-select/current-target-context';
+import {
     assertCompleteMaskSet,
     assertCoverageReport,
     assertEvidenceSnapshot,
@@ -55,6 +71,17 @@ interface SceneCacheMissResponse extends ObjectSelectionPreviewBindings {
   status: 'sceneCacheMiss';
 }
 
+interface AnchorRenderCacheMissResponse extends Record<string, unknown> {
+    readonly status: 'sceneCacheMiss';
+    readonly requestBinding: AnchorRenderRequest['requestBinding'];
+    readonly targetSplatId: string;
+    readonly sceneId: string;
+    readonly sceneVersion: string;
+    readonly renderConfigVersion: string;
+    readonly viewId: 'anchor-view';
+    readonly cameraBinding: AnchorRenderRequest['cameraBinding'];
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 };
@@ -90,7 +117,7 @@ const transportError = (
     details: { status?: number; serviceMessage?: string } = {}
 ) => new SelectionServiceTransportError(code, message, details);
 
-class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
+class FetchSelectionServiceAdapter implements SelectionServiceAdapter, AISelectAnchorRenderer {
     private getConfiguration: () => SelectionServiceTransportConfiguration;
     private fetch: SelectionServiceFetch;
     private registeredSnapshots = new Set<string>();
@@ -154,6 +181,38 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
             );
         }
         return retry;
+    }
+
+    async renderAnchor(request: AnchorRenderRequest): Promise<AnchorRenderResponse> {
+        if (!isAnchorRenderRequest(request)) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select requires a complete bound Anchor render request.'
+            );
+        }
+        assertSceneSnapshot(request.snapshot);
+        if (request.requestBinding.dependencyToken.splatId !== request.target.splatId) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select Anchor request target and dependency bindings must match.'
+            );
+        }
+
+        await this.registerSnapshot(request.snapshot);
+        const first = await this.sendAnchorRender(request);
+        if (first.status === 'complete') {
+            return first.response;
+        }
+
+        await this.registerSnapshot(request.snapshot, true);
+        const retry = await this.sendAnchorRender(request);
+        if (retry.status !== 'complete') {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion repeated an Anchor Scene Snapshot cache miss after the editor resent the snapshot.'
+            );
+        }
+        return retry.response;
     }
 
     async cancelUpdate(sessionId: string, requestId: string) {
@@ -307,6 +366,131 @@ class FetchSelectionServiceAdapter implements SelectionServiceAdapter {
             );
         }
         return this.parseCompletePreview(result, request);
+    }
+
+    private async sendAnchorRender(
+        request: AnchorRenderRequest
+    ): Promise<
+        | { readonly status: 'complete'; readonly response: AnchorRenderResponse }
+        | { readonly status: 'sceneCacheMiss' }
+    > {
+        const result = await this.requestJson('/ai-select/anchor-renders', 'POST', {
+            requestBinding: request.requestBinding,
+            targetSplatId: request.target.splatId,
+            sceneId: request.snapshot.sceneId,
+            sceneVersion: request.snapshot.sceneVersion,
+            renderConfigVersion: request.snapshot.renderConfiguration.version,
+            viewId: 'anchor-view',
+            cameraBinding: request.cameraBinding
+        });
+        if (!isRecord(result)) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an invalid Anchor render response.'
+            );
+        }
+        if (result.status === 'sceneCacheMiss') {
+            if (!this.isMatchingAnchorCacheMiss(result, request)) {
+                throw transportError(
+                    'invalidResponse',
+                    'The Selection Service Companion returned stale Anchor cache-miss bindings.'
+                );
+            }
+            return { status: 'sceneCacheMiss' };
+        }
+        if (result.status !== 'complete' || !isAnchorRenderResponse(result)) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an incomplete or stale Anchor render.'
+            );
+        }
+        await this.assertAnchorRgbDigest(result, request);
+        if (!anchorRenderResponseMatchesRequest(result, request)) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an incomplete or stale Anchor render.'
+            );
+        }
+        return {
+            status: 'complete',
+            response: result
+        };
+    }
+
+    private isMatchingAnchorCacheMiss(
+        value: Record<string, unknown>,
+        request: AnchorRenderRequest
+    ): value is AnchorRenderCacheMissResponse {
+        return (
+            value.status === 'sceneCacheMiss' &&
+            isAIRequestBinding(value.requestBinding) &&
+            value.requestBinding.targetContextId === request.requestBinding.targetContextId &&
+            value.requestBinding.contextRevision === request.requestBinding.contextRevision &&
+            areTargetDependencyTokensEqual(
+                value.requestBinding.dependencyToken,
+                request.requestBinding.dependencyToken
+            ) &&
+            value.targetSplatId === request.target.splatId &&
+            value.sceneId === request.snapshot.sceneId &&
+            value.sceneVersion === request.snapshot.sceneVersion &&
+            value.renderConfigVersion === request.snapshot.renderConfiguration.version &&
+            value.viewId === 'anchor-view' &&
+            isCameraBinding(value.cameraBinding) &&
+            areCameraBindingsEqual(value.cameraBinding, request.cameraBinding)
+        );
+    }
+
+    private async assertAnchorRgbDigest(
+        response: AnchorRenderResponse,
+        request: AnchorRenderRequest
+    ): Promise<void> {
+        if (
+            typeof globalThis.atob !== 'function' ||
+            globalThis.crypto?.subtle === undefined
+        ) {
+            throw transportError(
+                'browserTransport',
+                'This editor context cannot verify the authoritative Anchor PNG digest.'
+            );
+        }
+        let pngBytes: Uint8Array<ArrayBuffer>;
+        try {
+            pngBytes = decodePngBase64(response.rgb.pngBase64);
+            const dimensions = parsePngDimensions(pngBytes);
+            if (
+                dimensions.width !== response.rgb.width ||
+                dimensions.height !== response.rgb.height ||
+                dimensions.width !== request.cameraBinding.projection.width ||
+                dimensions.height !== request.cameraBinding.projection.height
+            ) {
+                throw new Error('Anchor PNG dimensions do not match its bound CameraBinding.');
+            }
+        } catch (error) {
+            if (error instanceof Error && /dimensions do not match/i.test(error.message)) {
+                throw transportError('invalidResponse', error.message);
+            }
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an invalid Anchor PNG artifact.'
+            );
+        }
+        const digest = await globalThis.crypto.subtle.digest('SHA-256', pngBytes);
+        const digestBytes = [...new Uint8Array(digest)];
+        const digestHex = digestBytes.map(byte => byte.toString(16).padStart(2, '0')).join('');
+        if (response.rgb.digest.toLowerCase() !== `sha256:${digestHex}`) {
+            throw transportError(
+                'invalidResponse',
+                'The authoritative Anchor PNG digest does not match the returned bytes.'
+            );
+        }
+        try {
+            await validatePngDecodable(pngBytes);
+        } catch {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an invalid Anchor PNG artifact.'
+            );
+        }
     }
 
     private parseCacheMiss(

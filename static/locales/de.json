@@ -322,5 +322,19 @@
     "tooltip.status-bar.splat-data": "Splat-Daten-Panel umschalten",
     "tooltip.splat-data.on-screen-only": "Nur Splats zählen, die in der Kameraansicht sichtbar sind. Splats außerhalb des Bildschirms werden aus dem Histogramm ausgeschlossen.",
     "tooltip.splat-data.log-scale": "Logarithmische vertikale Skala verwenden, damit kleine Werte neben großen sichtbar bleiben.",
-    "tooltip.splat-data.show-all": "Alle Eigenschaften pro Splat in der Liste anzeigen, einschließlich roher DC- und Kugelflächenfunktions-Koeffizienten."
+    "tooltip.splat-data.show-all": "Alle Eigenschaften pro Splat in der Liste anzeigen, einschließlich roher DC- und Kugelflächenfunktions-Koeffizienten.",
+    "ai-select.tool": "KI-Auswahl",
+    "ai-select.dock.title": "KI-Ansicht-Dock",
+    "ai-select.anchor.current-view": "Anker: aktuelle Ansicht",
+    "ai-select.anchor.rendering": "Anker wird gerendert…",
+    "ai-select.anchor.ready": "Anker bereit",
+    "ai-select.anchor.failed": "Anker-Rendering fehlgeschlagen.",
+    "ai-select.adjust-anchor": "Anker anpassen",
+    "ai-select.restart-current-target": "Aktuelles Ziel neu starten",
+    "ai-select.exit": "KI-Auswahl beenden",
+    "ai-select.reconnect": "Erneut verbinden",
+    "ai-select.open-settings": "Einstellungen öffnen",
+    "ai-select.bottom-tool": "KI",
+    "ai-select.more": "Weitere Optionen",
+    "ai-select.start-error": "KI-Auswahl konnte nicht gestartet werden."
 }

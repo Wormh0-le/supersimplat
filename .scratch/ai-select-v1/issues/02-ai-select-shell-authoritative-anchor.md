@@ -1,6 +1,6 @@
 # 02 — AI Select shell + authoritative gsplat Anchor tracer bullet
 
-Status: ready-for-agent
+Status: implementation complete; manual-validation gaps remain
 
 Blocked by: 01
 
@@ -77,3 +77,24 @@ Introduce only the minimum tool shell required to exercise this path.
 - No Camera Inspection manipulation
 - No Generated Views
 - No Candidate
+
+## Manual validation follow-up — 2026-07-22
+
+Observed on `/home/ubuntu/wormh01e/gaussian/restroom/ply-result/point_cloud/iteration_100/point_cloud_3.ply`
+(331,150 displayed Gaussians):
+
+- [ ] **02-G1 — persistent AI Views bottom-tab shell.** The Final Spec layout
+      reserves a collapsed `AI Views` tab beside Timeline/Splat Data even while AI
+      Select is inactive; activating AI Select must expand that existing bottom
+      dock. The current implementation creates/hides a separate surface only when
+      AI Select becomes active.
+- [ ] **02-G2 — Anchor terminal render state.** Anchor may show Rendering only
+      while a current authoritative request is active. It must reach Ready or a
+      distinct actionable failure state; it must not remain indefinitely Rendering.
+      Ticket 02B addresses the full-scene upload/residency contributor to this
+      symptom, but does not replace the Ticket 02 lifecycle requirement.
+
+Not a Ticket 02 gap:
+
+- Frustum translation/rotation is explicitly deferred to Ticket 03 Camera
+  Inspection; Ticket 02's non-goals prohibit that implementation.

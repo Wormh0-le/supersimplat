@@ -74,3 +74,10 @@ publish a final-resolution preview for the fixed resulting CameraBinding.
 
 - No Anchor mask authoring
 - No Generated View pose editing
+
+## Manual validation evidence — 2026-07-22
+
+- [ ] **03-G1 — Anchor Frustum manipulation unavailable.** The current Anchor
+      frustum cannot translate or rotate after AI Select activation. This is the
+      expected missing behavior until this ticket implements explicit Camera
+      Inspection; it is not a Ticket 02 regression.

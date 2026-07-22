@@ -50,6 +50,30 @@ manifest; only a successfully committed typed snapshot enters the Companion
 runtime cache.
 _Avoid_: one giant JSON request, partial snapshot cache entry
 
+**Spatial Scene Manifest**
+The complete, immutable control-plane description of every spatial binary chunk
+for one Packed SceneSnapshot. It preserves the same `sceneVersion` while
+allowing payload residency to be partial and CameraBinding-specific.
+_Avoid_: a camera-specific SceneSnapshot version, source-PLY partitioning
+
+**Spatial Chunk**
+An immutable bounded SoA payload from effective editor values. It has a
+`chunkId`, content `chunkDigest`, global ordinal data, and conservative
+world-space support bounds; it is not a visibility result or per-Gaussian
+object graph.
+_Avoid_: PlayCanvas visible list, center-only culling
+
+**WorkingSetToken**
+The deterministic identity of the sorted spatial chunks required for an exact
+CameraBinding. It is distinct from both `sceneVersion` and a chunk digest.
+_Avoid_: upload order, residency state, TargetDependencyToken
+
+**Scene Chunk Miss**
+A bound Companion response stating that a complete CameraBinding working set
+is known but one or more validated spatial payloads are not resident. It is
+never a partially rendered AI View.
+_Avoid_: Ready render from a partial working set
+
 **Current Target Context**  
 The single user-visible AI Select context for the object currently being worked on. It owns the Anchor, AI Views, Mask versions, Participation, Coverage/Readiness, Candidate, and Uncertain state. `Restart Current Target` disposes it and creates a new context while Native Selection/EditHistory and runtime caches remain.  
 _Avoid_: persistent multi-object session stack

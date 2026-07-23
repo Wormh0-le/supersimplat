@@ -6,18 +6,15 @@ Blocked by: 01
 
 ## Final Spec mapping
 
-- DG-01
-- DG-02
-- §7 Current View First
-- §73–74 UI shell
+- Final Spec v1.1 §§1–7 where inherited from the completed v1.0 tracer bullet
+- DG-01, DG-02
 - MVP Phase 0–1
-- §87 Renderer acceptance
 
 ## Inputs / preconditions
 
 - Current Scene View camera
 - CurrentTargetContext
-- Existing Companion readiness/transport
+- Companion readiness/transport
 - SceneSnapshot / Stable Gaussian IDs
 
 ## Outputs / handoff artifacts
@@ -28,89 +25,68 @@ Blocked by: 01
 - Anchor frustum
 - Minimal AI View Dock + contextual toolbar
 
-## What to build
+## What was built
 
-Build the first real Final Spec end-to-end slice:
-`Current Scene View → CameraBinding → Companion → authoritative gsplat RGB → AI View Dock`.
-Introduce only the minimum tool shell required to exercise this path.
+The first real end-to-end slice:
 
-## Acceptance criteria
+```text
+Current Scene View
+→ CameraBinding
+→ Companion authoritative gsplat RGB
+→ AI View Dock
+```
 
-- [x] AI Select is exposed as a native Selection Tool in the same conceptual class as existing Box/Sphere selection, not as a separate workspace.
-- [x] Activating AI Select for one selected visible Target Splat creates/uses the CurrentTargetContext and keeps native SuperSplat tools otherwise unaffected.
-- [x] Anchor CameraBinding is copied from the Current Scene View; activation does not move the Editor Camera.
-- [x] CameraBinding versionably binds pose, projection/intrinsics, dimensions, clipping, and coordinate-convention identity needed by both editor and Companion.
-- [x] All Anchor AI RGB comes from the authoritative Companion gsplat renderer; the new path does not use PlayCanvas framebuffer/canvas capture as AI observation truth.
-- [x] The AI View Dock displays authoritative Anchor RGB and at least Rendering / Ready state.
-- [x] The viewport Anchor frustum is derived from the exact same CameraBinding used for gsplat rasterization.
-- [x] Anchor render request/result is bound to the current AIRequestBinding; late results cannot overwrite a newer context/revision.
-- [x] Initial contextual toolbar state exposes AI Select, `Anchor: Current View`, `Adjust Anchor`, `Restart Current Target`, and `Exit AI Select` at the appropriate priority/overflow level.
-- [x] Existing Stable Gaussian ID and SceneSnapshot ownership remain editor-owned and are reused rather than duplicated.
+## Acceptance criteria — closed scope
+
+- [x] AI Select is a native Selection Tool, not a separate workspace.
+- [x] Activation creates/uses CurrentTargetContext and keeps native SuperSplat behavior outside the AI seam.
+- [x] Anchor CameraBinding is copied from Current Scene View without moving Editor Camera.
+- [x] CameraBinding binds pose, projection/intrinsics, dimensions, clipping, and convention identity.
+- [x] Anchor AI RGB comes from Companion gsplat, not PlayCanvas capture.
+- [x] AI View Dock displays authoritative Anchor RGB and Rendering/Ready state.
+- [x] Anchor frustum derives from the same CameraBinding.
+- [x] Render request/result binds current AIRequestBinding and rejects late context/revision results.
+- [x] Initial contextual toolbar exposes AI Select, Anchor: Current View, Adjust Anchor, Restart, and Exit.
+- [x] Stable Gaussian ID and SceneSnapshot ownership remain editor-owned.
 
 ## Failure / recovery criteria
 
-- [x] Companion offline/incompatible state does not break Native SuperSplat; AI Select presents the existing readiness recovery path with reconnect/settings actions.
-- [x] Anchor render failure remains an AI View/render failure; it does not mutate Native Selection.
+- [x] Companion offline/incompatible state does not break native SuperSplat and exposes readiness recovery.
+- [x] Anchor render failure does not mutate Native Selection.
 
-## Affected seams
-
-- src/ai-select/
-- src/main.ts tool registration/wiring
-- src/ui/ minimal AI View Dock
-- src/ui/ contextual AI Select toolbar
-- src/splat-scene-snapshot.ts
-- selection-service readiness/transport
-- Companion gsplat render boundary
-
-## Validation
+## Validation recorded at closure
 
 - npm test
 - npm run lint
 - npm run lint:locales
 - npm run build
-- npm run test:companion if protocol changes
-- Locked GPU: CameraBinding → gsplat Anchor RGB + frustum parity
+- Locked GPU CameraBinding → Anchor RGB + frustum parity
+
+## Historical manual validation — 2026-07-22/23
+
+- The default-collapsed AI Select bottom panel was present before activation and expanded for a new/restarted target.
+- The original per-contributor Python-object/JSON publication bottleneck was replaced by bounded typed-tensor validation/hashing.
+- A fresh browser request reached terminal Ready with DevTools `anchor-renders` waiting-for-server time of 1.26 s on the recorded test scene.
+- Large-scene profiling, effective-snapshot parity, browser memory, and phase timing were transferred to Ticket 19.
+- Frustum translate/rotate remained explicitly deferred to Ticket 03.
+
+## Final Spec v1.1 architecture amendment — 2026-07-23
+
+Ticket 02 remains closed for the native shell, authoritative RGB tracer bullet, CameraBinding/frustum identity, and browser Ready path.
+
+ADR 0013 / Final Spec v1.1 supersede only the former assumption that complete Contributor publication is part of normal View readiness or production lifting:
+
+- authoritative RGB remains a validated Ticket 02 foundation;
+- complete Contributor code produced by the old tracer path is retained only as reference/debug infrastructure;
+- Ticket 03 removes Contributor/Evidence from Camera Inspection preview readiness and implements true Retry attempts;
+- Tickets 14 and 20 own reference P/N/V and production same-decision Evidence respectively.
+
+This amendment does not reopen Ticket 02 or retroactively claim that Direct Evidence was implemented here.
 
 ## Non-goals
 
-- No mask editing
 - No Camera Inspection manipulation
+- No Mask editing
 - No Generated Views
+- No formal P/N/V Evidence
 - No Candidate
-
-## Manual validation follow-up — 2026-07-22
-
-Observed on `/home/ubuntu/wormh01e/gaussian/restroom/ply-result/point_cloud/iteration_100/point_cloud_3.ply`
-(331,150 displayed Gaussians):
-
-- [x] **02-G1 — persistent bottom AI Select panel.** The Final Spec's AI View
-      Dock is now represented by a default-collapsed `AI Select` tab beside
-      Timeline/Splat Data. It exists while inactive, shows an idle instruction,
-      and auto-expands only on a new AI Select target context or restart; it
-      remains an editor bottom panel rather than a separate workspace.
-- [x] **02-G2 — scalable Anchor publication.** The browser closure reached a
-      terminal Ready state, but the legacy Anchor route spent minutes expanding
-      complete contributor tensors into Python objects and JSON. The 02B
-      supplement now validates and hashes the complete contributor stream as
-      bounded typed tensors. A fresh browser request after restarting the local
-      Companion reached Ready with DevTools `anchor-renders` waiting-for-server
-      time of **1.26 s**. This is browser closure evidence, not a locked-GPU
-      benchmark or a claim that all future cache hardening is complete.
-
-## Closure and follow-up ownership — 2026-07-23
-
-Ticket 02 is closed: its shell, authoritative Anchor lifecycle, and terminal
-browser Ready path have been verified. The default-collapsed bottom **AI
-Select** dock is present before activation and expands for a new/restarted
-target; the authoritative Anchor is no longer blocked by the prior
-per-contributor object/JSON publication path.
-
-Remaining large-scene profiling, cache hardening, browser effective-snapshot
-fixtures, browser memory measurement, and phase-level timing analysis are
-explicitly owned by Ticket 19. They are performance/profiling follow-ups, not
-an open Ticket 02 lifecycle or correctness condition.
-
-Not a Ticket 02 gap:
-
-- Frustum translation/rotation is explicitly deferred to Ticket 03 Camera
-  Inspection; Ticket 02's non-goals prohibit that implementation.

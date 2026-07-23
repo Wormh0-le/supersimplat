@@ -5,6 +5,7 @@ import hashlib
 from io import BytesIO
 import math
 from pathlib import Path
+import struct
 import tempfile
 import unittest
 
@@ -19,6 +20,7 @@ from selection_service_companion.gsplat_renderer import (
     MASS_CONSERVATION_ATOL,
     MASS_CONSERVATION_RTOL,
     TileGaussian,
+    TypedAnchorRasterization,
     reconcile_boundary_contributors,
 )
 from selection_service_companion.generated_views import (
@@ -129,6 +131,44 @@ class StaticGsplatBackend:
             contributor_ids=self.rasterization.contributor_ids,
             contributor_weights=self.rasterization.contributor_weights,
         )
+
+
+class StaticTypedAnchorBackend:
+    """Test-only backend that forbids the legacy Python contributor path."""
+
+    def __init__(self) -> None:
+        import torch
+
+        self.calls = 0
+        self.legacy_calls = 0
+        self.rasterization = TypedAnchorRasterization(
+            service_rgb_digest="sha256:service-rgb",
+            service_rgb_bytes=bytes(2 * 2 * 3),
+            alpha=torch.tensor(((0.5, 0.0), (0.0, 0.25)), dtype=torch.float32),
+            contributor_ids=torch.tensor(
+                (((0, 1), (-1, -1)), ((-1, -1), (1, -1))),
+                dtype=torch.int32,
+            ),
+            contributor_weights=torch.tensor(
+                (((0.3, 0.2), (0.0, 0.0)), ((0.0, 0.0), (0.25, 0.0))),
+                dtype=torch.float32,
+            ),
+            stable_ids=torch.tensor((41, 99), dtype=torch.int32),
+        )
+
+    def rasterize_anchor_typed(self, *, snapshot, camera, width, height, stable_ids):
+        del snapshot, camera, width, height, stable_ids
+        self.calls += 1
+        return self.rasterization
+
+    def rasterize(self, *, snapshot, camera, width, height):
+        del snapshot, camera, width, height
+        self.legacy_calls += 1
+        raise AssertionError("Anchor publication must not use the legacy list path")
+
+    def probe(self, *, snapshot, camera, width, height):
+        del snapshot, camera, width, height
+        raise AssertionError("Anchor publication does not probe")
 
 
 def valid_rasterization() -> GsplatRasterization:
@@ -354,6 +394,70 @@ class GsplatContributorRendererTests(unittest.TestCase):
         self.assertRegex(artifact.contributor_digest, r'^sha256:[0-9a-f]{64}$')
         with Image.open(BytesIO(artifact.image_png)) as image:
             self.assertEqual(image.size, (frame.width, frame.height))
+
+    def test_render_anchor_hashes_complete_typed_contributors_without_legacy_lists(self) -> None:
+        backend = StaticTypedAnchorBackend()
+        renderer = GsplatContributorRenderer(backend=backend)
+        frame = anchor_frame()
+        assert frame.camera is not None
+
+        artifact = renderer.render_anchor(
+            scene_snapshot=supported_snapshot(),
+            view_id='anchor-view',
+            camera=frame.camera,
+            width=frame.width,
+            height=frame.height,
+        )
+
+        # The format is deliberately independent of Python object layout:
+        # fixed header, alpha f32, validity bytes, Stable IDs u32, weights f32.
+        stream = b''.join((
+            b'SSPAICTR',
+            struct.pack('<IIII', 1, 2, 2, 2),
+            struct.pack('<4f', 0.5, 0.0, 0.0, 0.25),
+            bytes((1, 1, 0, 0, 0, 0, 1, 0)),
+            struct.pack('<8I', 41, 99, 0, 0, 0, 0, 99, 0),
+            struct.pack('<8f', 0.3, 0.2, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0),
+        ))
+        self.assertEqual(backend.calls, 1)
+        self.assertEqual(backend.legacy_calls, 0)
+        self.assertEqual(
+            artifact.contributor_digest,
+            f'sha256:{hashlib.sha256(stream).hexdigest()}',
+        )
+
+    def test_typed_anchor_keeps_uint32_max_stable_id_distinct_from_padding(self) -> None:
+        import torch
+
+        backend = StaticTypedAnchorBackend()
+        backend.rasterization = replace(
+            backend.rasterization,
+            stable_ids=torch.tensor((-1, 99), dtype=torch.int32),
+        )
+        renderer = GsplatContributorRenderer(backend=backend)
+        frame = anchor_frame()
+        assert frame.camera is not None
+
+        artifact = renderer.render_anchor(
+            scene_snapshot=supported_snapshot(),
+            view_id='anchor-view',
+            camera=frame.camera,
+            width=frame.width,
+            height=frame.height,
+        )
+
+        stream = b''.join((
+            b'SSPAICTR',
+            struct.pack('<IIII', 1, 2, 2, 2),
+            struct.pack('<4f', 0.5, 0.0, 0.0, 0.25),
+            bytes((1, 1, 0, 0, 0, 0, 1, 0)),
+            struct.pack('<8I', 0xffffffff, 99, 0, 0, 0, 0, 99, 0),
+            struct.pack('<8f', 0.3, 0.2, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0),
+        ))
+        self.assertEqual(
+            artifact.contributor_digest,
+            f'sha256:{hashlib.sha256(stream).hexdigest()}',
+        )
 
     def test_plans_and_preflights_cameras_before_coherent_generated_rendering(self) -> None:
         backend = StaticGsplatBackend(valid_rasterization())
@@ -1072,6 +1176,30 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
         self.assertGreater(len(rendered.contributors), 0)
         self.assertEqual({sample.stable_id for sample in rendered.contributors}, {41, 99})
         self.assertLessEqual(rendered.mass_conservation_max_error, MASS_CONSERVATION_ATOL)
+        self.assertIsNotNone(renderer.last_peak_vram_bytes)
+        self.assertGreater(renderer.last_peak_vram_bytes or 0, 0)
+
+    def test_anchor_uses_the_typed_gpu_contributor_publication_path(self) -> None:
+        self.require_cuda()
+
+        class TypedOnlyLockedBackend(LockedGsplatBackend):
+            def rasterize(self, *, snapshot, camera, width, height):
+                del snapshot, camera, width, height
+                raise AssertionError('Anchor must not materialize legacy contributor lists')
+
+        renderer = GsplatContributorRenderer(backend=TypedOnlyLockedBackend())
+        frame = anchor_frame(width=8, height=8)
+        assert frame.camera is not None
+
+        artifact = renderer.render_anchor(
+            scene_snapshot=supported_snapshot(),
+            view_id='anchor-view',
+            camera=frame.camera,
+            width=frame.width,
+            height=frame.height,
+        )
+
+        self.assertRegex(artifact.contributor_digest, r'^sha256:[0-9a-f]{64}$')
         self.assertIsNotNone(renderer.last_peak_vram_bytes)
         self.assertGreater(renderer.last_peak_vram_bytes or 0, 0)
 

@@ -38,6 +38,11 @@ runtime path.
    global Stable Gaussian IDs regardless of upload arrival order.
 5. Retain a full-scene full-chunk/reference mode and fail closed or request all
    chunks whenever the spatial proof or resident state is not trustworthy.
+6. Publish Anchor contributor identity from a versioned typed binary stream,
+   with bounded tensor-to-CPU hashing, rather than first expanding the complete
+   per-pixel stream into Python records or canonical JSON. The existing opaque
+   `contributorDigest` wire field retains its meaning; the artifact version is
+   embedded in the hashed bytes.
 
 ## Consequences
 

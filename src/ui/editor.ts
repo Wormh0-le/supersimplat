@@ -36,12 +36,15 @@ class EditorUI {
     appContainer: Container;
     topContainer: Container;
     canvasContainer: Container;
-    aiViewsSurface: Container;
+    aiSelectPanel: Container;
     toolsContainer: Container;
     canvas: HTMLCanvasElement;
     popup: Popup;
 
-    constructor(events: Events, selectionServiceReadiness?: SelectionServiceReadinessInterface) {
+    constructor(
+        events: Events,
+        selectionServiceReadiness?: SelectionServiceReadinessInterface
+    ) {
         // favicon
         const link = document.createElement('link');
         link.rel = 'icon';
@@ -94,7 +97,11 @@ class EditorUI {
 
         // bottom toolbar
         const scenePanel = new ScenePanel(events, tooltips);
-        const settingsPanel = new SettingsPanel(events, tooltips, selectionServiceReadiness);
+        const settingsPanel = new SettingsPanel(
+            events,
+            tooltips,
+            selectionServiceReadiness
+        );
         const colorPanel = new ColorPanel(events, tooltips);
         const bottomToolbar = new BottomToolbar(events, tooltips);
         const rightToolbar = new RightToolbar(events, tooltips);
@@ -129,15 +136,15 @@ class EditorUI {
         const timelinePanel = new TimelinePanel(events, tooltips);
         const dataPanel = new DataPanel(events, tooltips);
         const statusBar = new StatusBar(events, tooltips);
-        const aiViewsSurface = new Container({
-            id: 'ai-views-surface',
+        const aiSelectPanel = new Container({
+            id: 'ai-select-panel',
             hidden: true
         });
 
         timelinePanel.hidden = true;
 
         mainContainer.append(canvasContainer);
-        mainContainer.append(aiViewsSurface);
+        mainContainer.append(aiSelectPanel);
         mainContainer.append(timelinePanel);
         mainContainer.append(dataPanel);
         mainContainer.append(statusBar);
@@ -146,6 +153,7 @@ class EditorUI {
         events.on('statusBar.panelChanged', (panel: string | null) => {
             timelinePanel.hidden = panel !== 'timeline';
             dataPanel.hidden = panel !== 'splatData';
+            aiSelectPanel.hidden = panel !== 'aiSelect';
         });
 
         editorContainer.append(mainContainer);
@@ -186,7 +194,7 @@ class EditorUI {
         this.appContainer = appContainer;
         this.topContainer = topContainer;
         this.canvasContainer = canvasContainer;
-        this.aiViewsSurface = aiViewsSurface;
+        this.aiSelectPanel = aiSelectPanel;
         this.toolsContainer = toolsContainer;
         this.canvas = canvas;
         this.popup = popup;
@@ -198,9 +206,16 @@ class EditorUI {
             shortcutsPopup.hidden = false;
         });
 
-        events.function('show.exportPopup', (exportType, splatNames: [string], showFilenameEdit: boolean) => {
-            return exportPopup.show(exportType, splatNames, showFilenameEdit);
-        });
+        events.function(
+            'show.exportPopup',
+            (exportType, splatNames: [string], showFilenameEdit: boolean) => {
+                return exportPopup.show(
+                    exportType,
+                    splatNames,
+                    showFilenameEdit
+                );
+            }
+        );
 
         events.function('show.publishSettingsDialog', async () => {
             // show popup if user isn't logged in
@@ -215,7 +230,8 @@ class EditorUI {
             }
 
             // get user publish settings
-            const publishSettings = await publishSettingsDialog.show(userStatus);
+            const publishSettings =
+                await publishSettingsDialog.show(userStatus);
 
             // do publish
             if (publishSettings) {
@@ -235,7 +251,10 @@ class EditorUI {
                         string,
                         {
                             description: string;
-                            accept: Record<`${string}/${string}`, `.${string}`[]>;
+                            accept: Record<
+                                `${string}/${string}`,
+                                `.${string}`[]
+                            >;
                             extension: string;
                         }
                     > = {
@@ -272,14 +291,21 @@ class EditorUI {
                         writable = await fileHandle.createWritable();
                     }
 
-                    const result = await events.invoke('render.image', imageSettings, writable);
+                    const result = await events.invoke(
+                        'render.image',
+                        imageSettings,
+                        writable
+                    );
 
                     // if the render failed, remove the empty file left on disk
                     if (result === false && fileHandle?.remove) {
                         await fileHandle.remove();
                     }
                 } catch (error) {
-                    if (error instanceof DOMException && error.name === 'AbortError') {
+                    if (
+                        error instanceof DOMException &&
+                        error.name === 'AbortError'
+                    ) {
                         // user cancelled save dialog
                         return;
                     }
@@ -309,7 +335,9 @@ class EditorUI {
                         vp9: 'VP9',
                         av1: 'AV1'
                     };
-                    const codecName = codecNames[videoSettings.codec] || videoSettings.codec.toUpperCase();
+                    const codecName =
+                        codecNames[videoSettings.codec] ||
+                        videoSettings.codec.toUpperCase();
 
                     if (videoSettings.format === 'webm') {
                         fileExtension = '.webm';
@@ -360,14 +388,21 @@ class EditorUI {
                         writable = await fileHandle.createWritable();
                     }
 
-                    const result = await events.invoke('render.video', videoSettings, writable);
+                    const result = await events.invoke(
+                        'render.video',
+                        videoSettings,
+                        writable
+                    );
 
                     // if the render was cancelled, remove the empty file left on disk
                     if (result === false && fileHandle?.remove) {
                         await fileHandle.remove();
                     }
                 } catch (error) {
-                    if (error instanceof DOMException && error.name === 'AbortError') {
+                    if (
+                        error instanceof DOMException &&
+                        error.name === 'AbortError'
+                    ) {
                         // user cancelled save dialog
                         return;
                     }
@@ -421,17 +456,22 @@ class EditorUI {
             progress.setText('');
             progress.setProgress(0);
             progress.showCancelButton(!!cancellable);
-            progress.onCancel = cancellable ? () => events.fire('progressCancel') : null;
+            progress.onCancel = cancellable ?
+                () => events.fire('progressCancel') :
+                null;
         });
 
-        events.on('progressUpdate', (options: { text?: string; progress?: number }) => {
-            if (options.text !== undefined) {
-                progress.setText(options.text);
+        events.on(
+            'progressUpdate',
+            (options: { text?: string; progress?: number }) => {
+                if (options.text !== undefined) {
+                    progress.setText(options.text);
+                }
+                if (options.progress !== undefined) {
+                    progress.setProgress(options.progress);
+                }
             }
-            if (options.progress !== undefined) {
-                progress.setProgress(options.progress);
-            }
-        });
+        );
 
         events.on('progressEnd', () => {
             progress.hidden = true;
@@ -442,17 +482,21 @@ class EditorUI {
         // initialize canvas to correct size before creating graphics device etc
         const pixelRatio = window.devicePixelRatio;
         canvas.width = Math.ceil(canvasContainer.dom.offsetWidth * pixelRatio);
-        canvas.height = Math.ceil(canvasContainer.dom.offsetHeight * pixelRatio);
+        canvas.height = Math.ceil(
+            canvasContainer.dom.offsetHeight * pixelRatio
+        );
 
-        ['contextmenu', 'gesturestart', 'gesturechange', 'gestureend'].forEach((event) => {
-            document.addEventListener(
-                event,
-                (e) => {
-                    e.preventDefault();
-                },
-                true
-            );
-        });
+        ['contextmenu', 'gesturestart', 'gesturechange', 'gestureend'].forEach(
+            (event) => {
+                document.addEventListener(
+                    event,
+                    (e) => {
+                        e.preventDefault();
+                    },
+                    true
+                );
+            }
+        );
 
         // whenever the canvas container is clicked, set keyboard focus on the body
         canvasContainer.dom.addEventListener(
@@ -460,7 +504,10 @@ class EditorUI {
             (event: PointerEvent) => {
                 // set focus on the body if user is busy pressing on the canvas or a child of the tools
                 // element
-                if (event.target === canvas || toolsContainer.dom.contains(event.target as Node)) {
+                if (
+                    event.target === canvas ||
+                    toolsContainer.dom.contains(event.target as Node)
+                ) {
                     document.body.focus();
                 }
             },

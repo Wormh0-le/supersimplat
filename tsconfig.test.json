@@ -16,6 +16,7 @@
         "src/selection-service-fetch-adapter.ts",
         "src/selection-service-readiness.ts",
         "src/selection-service-fetch-readiness-probe.ts",
-        "src/ui/selection-service-model-options.ts"
+        "src/ui/selection-service-model-options.ts",
+        "src/ui/bottom-panel-controller.ts"
     ]
 }

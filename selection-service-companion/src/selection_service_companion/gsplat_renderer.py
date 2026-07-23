@@ -15,9 +15,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 import hashlib
 from io import BytesIO
-import json
 import math
 import struct
+import sys
 from typing import Any, ClassVar, Mapping, Protocol, Sequence
 
 from .binary_scene_snapshot import PackedBinarySceneSnapshot
@@ -77,6 +77,12 @@ SUPPORTED_CAMERA_CONVENTION = "opencv-world-to-camera"
 SUPPORTED_RENDER_CONFIG_VERSION = "supersplat-effective-rgb-v1"
 ANCHOR_PARITY_NORMAL_MAE = 2.0 / 255.0
 ANCHOR_PARITY_SEVERE_MAE = 0.25
+# Anchor contribution is an opaque protocol artifact. Its fixed binary layout
+# deliberately avoids a pixel-by-pixel Python object graph:
+# magic/version, alpha f32, validity u8, Stable IDs u32, weights f32.
+_TYPED_CONTRIBUTOR_MAGIC = b"SSPAICTR"
+_TYPED_CONTRIBUTOR_VERSION = 1
+_TYPED_CONTRIBUTOR_TRANSFER_MAX_BYTES = 16 * 1024 * 1024
 
 
 SceneSnapshotInput = Mapping[str, Any] | PackedBinarySceneSnapshot | SpatialWorkingSet
@@ -126,6 +132,36 @@ class GsplatRasterization:
     contributor_ids: Sequence[Sequence[Sequence[int]]]
     contributor_weights: Sequence[Sequence[Sequence[float]]]
     peak_vram_bytes: int | None = None
+
+
+@dataclass(frozen=True)
+class TypedAnchorRasterization:
+    """Typed complete contributor output for scalable Anchor publication.
+
+    Tensors retain gsplat's row-major image order until the bounded digest
+    transfer. ``stable_ids`` maps each tensor row to the editor-owned uint32
+    Stable Gaussian ID as raw signed-int32 bits.
+    """
+
+    service_rgb_digest: str
+    service_rgb_bytes: bytes
+    alpha: Any
+    contributor_ids: Any
+    contributor_weights: Any
+    stable_ids: Any
+    peak_vram_bytes: int | None = None
+
+
+@dataclass(frozen=True)
+class _LockedTensorRasterization:
+    """GPU-resident common rasterization state shared by Anchor and legacy APIs."""
+
+    service_rgb_digest: str
+    service_rgb_bytes: bytes
+    alpha: Any
+    contributor_ids: Any
+    contributor_weights: Any
+    peak_vram_bytes: int
 
 
 @dataclass(frozen=True)
@@ -288,6 +324,72 @@ class LockedGsplatBackend:
         width: int,
         height: int,
     ) -> GsplatRasterization:
+        """Compatibility path for generated-view/evidence consumers.
+
+        Those consumers still require their existing object-oriented evidence
+        representation. Anchor publication uses ``rasterize_anchor_typed`` so
+        it never pays this list conversion cost.
+        """
+
+        rasterized = self._rasterize_tensors(
+            snapshot=snapshot,
+            camera=camera,
+            width=width,
+            height=height,
+        )
+        return GsplatRasterization(
+            service_rgb_digest=rasterized.service_rgb_digest,
+            service_rgb_bytes=rasterized.service_rgb_bytes,
+            alpha=rasterized.alpha[0, ..., 0].detach().cpu().tolist(),
+            contributor_ids=rasterized.contributor_ids[0].detach().cpu().tolist(),
+            contributor_weights=rasterized.contributor_weights[0]
+            .detach()
+            .cpu()
+            .tolist(),
+            peak_vram_bytes=rasterized.peak_vram_bytes,
+        )
+
+    def rasterize_anchor_typed(
+        self,
+        *,
+        snapshot: SceneSnapshotInput,
+        camera: Mapping[str, Any],
+        width: int,
+        height: int,
+        stable_ids: StableGaussianIds,
+    ) -> TypedAnchorRasterization:
+        """Keep the complete Anchor contributor stream typed through hashing."""
+
+        import torch
+
+        rasterized = self._rasterize_tensors(
+            snapshot=snapshot,
+            camera=camera,
+            width=width,
+            height=height,
+        )
+        return TypedAnchorRasterization(
+            service_rgb_digest=rasterized.service_rgb_digest,
+            service_rgb_bytes=rasterized.service_rgb_bytes,
+            alpha=rasterized.alpha[0, ..., 0],
+            contributor_ids=rasterized.contributor_ids[0],
+            contributor_weights=rasterized.contributor_weights[0],
+            stable_ids=_stable_id_tensor(
+                torch, stable_ids, rasterized.alpha.device
+            ),
+            peak_vram_bytes=rasterized.peak_vram_bytes,
+        )
+
+    def _rasterize_tensors(
+        self,
+        *,
+        snapshot: SceneSnapshotInput,
+        camera: Mapping[str, Any],
+        width: int,
+        height: int,
+    ) -> _LockedTensorRasterization:
+        """Return one GPU-resident RGB/contributor result from gsplat."""
+
         import torch
         from gsplat.cuda._wrapper import (
             rasterize_contributing_gaussian_ids,
@@ -395,12 +497,12 @@ class LockedGsplatBackend:
             .numpy()
             .tobytes()
         )
-        return GsplatRasterization(
+        return _LockedTensorRasterization(
             service_rgb_digest=f"sha256:{hashlib.sha256(rgb_bytes).hexdigest()}",
             service_rgb_bytes=rgb_bytes,
-            alpha=raster_alpha[0, ..., 0].detach().cpu().tolist(),
-            contributor_ids=contributor_ids[0].detach().cpu().tolist(),
-            contributor_weights=contributor_weights[0].detach().cpu().tolist(),
+            alpha=raster_alpha,
+            contributor_ids=contributor_ids,
+            contributor_weights=contributor_weights,
             peak_vram_bytes=int(torch.cuda.max_memory_allocated(device)),
         )
 
@@ -503,6 +605,38 @@ def _packed_float_tensor(
     if values.numel() != expected_count:
         raise ValueError("The packed Scene Snapshot field length is inconsistent")
     return values.reshape(shape).to(device)
+
+
+def _stable_id_tensor(torch: Any, stable_ids: StableGaussianIds, device: Any) -> Any:
+    """Map Stable Gaussian IDs without expanding typed snapshots into Python IDs.
+
+    Signed int32 is intentional: it is a one-to-one carrier for uint32 bits,
+    including the otherwise awkward Stable ID ``0xffffffff``. The validity
+    plane in the contributor artifact distinguishes that valid value from a
+    padded local contributor slot.
+    """
+
+    if isinstance(stable_ids, memoryview):
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="The given buffer is not writable.*",
+                category=UserWarning,
+            )
+            values = torch.frombuffer(stable_ids, dtype=torch.int32)
+    elif isinstance(stable_ids, torch.Tensor):
+        values = stable_ids
+    else:
+        # Legacy mapping snapshots are a compatibility/reference path. The
+        # binary Packed/Spatial paths above never construct this tuple/list.
+        values = torch.tensor(stable_ids, dtype=torch.int64).to(torch.int32)
+    if values.ndim != 1 or values.numel() == 0:
+        raise MaskSessionError(
+            "rendererInvalidContributor", "gsplat Stable Gaussian ID mapping is invalid."
+        )
+    return values.to(dtype=torch.int32, device=device)
 
 
 def _packed_locked_inputs(
@@ -1110,8 +1244,9 @@ class GsplatContributorRenderer:
         """Render the v1 Anchor from gsplat, never from editor framebuffer data.
 
         The same backend invocation supplies RGB, alpha, and contributor IDs.
-        ``_validated_rendered_view`` proves contributor mass against that RGB
-        raster before this method publishes an image digest to the browser.
+        The locked backend keeps the Anchor contributor stream as tensors until
+        the bounded canonical digest transfer; the legacy object path remains
+        only as a compatibility/reference fallback for non-typed backends.
         """
 
         if view_id != 'anchor-view':
@@ -1144,6 +1279,21 @@ class GsplatContributorRenderer:
                 camera=immutable_camera,
             )
         )
+        rasterize_anchor_typed = getattr(self.backend, 'rasterize_anchor_typed', None)
+        if callable(rasterize_anchor_typed):
+            typed = rasterize_anchor_typed(
+                snapshot=scene_snapshot,
+                camera=immutable_camera,
+                width=width,
+                height=height,
+                stable_ids=stable_ids,
+            )
+            self.last_peak_vram_bytes = typed.peak_vram_bytes
+            self.peak_vram_bytes = max(
+                self.peak_vram_bytes, int(typed.peak_vram_bytes or 0)
+            )
+            return _typed_anchor_artifact(typed, width=width, height=height)
+
         rasterized = self.backend.rasterize(
             snapshot=scene_snapshot,
             camera=immutable_camera,
@@ -1170,26 +1320,10 @@ class GsplatContributorRenderer:
             frame=frame,
             renderer_id=self.renderer_id,
         )
-        contributor_bytes = json.dumps(
-            [
-                {
-                    'stableId': sample.stable_id,
-                    'xPx': sample.x_px,
-                    'yPx': sample.y_px,
-                    'mass': sample.mass,
-                }
-                for sample in rendered.contributors
-            ],
-            allow_nan=False,
-            separators=(',', ':'),
-            sort_keys=True,
-        ).encode('utf-8')
         return AnchorRenderArtifact(
             image_png=image_png,
             rgb_digest=frame.frame_digest,
-            contributor_digest=(
-                f'sha256:{hashlib.sha256(contributor_bytes).hexdigest()}'
-            ),
+            contributor_digest=_legacy_anchor_contributor_digest(rendered),
         )
 
     def plan_views(
@@ -1985,6 +2119,195 @@ def _validate_camera(frame: RegisteredFrame) -> Mapping[str, Any]:
             "rendererUnavailable", "The rendered Frame camera projection is invalid."
         )
     return camera
+
+
+def _typed_anchor_artifact(
+    rasterized: TypedAnchorRasterization, *, width: int, height: int
+) -> AnchorRenderArtifact:
+    """Validate and hash a complete typed Anchor contributor stream.
+
+    The browser currently receives the digest rather than the contributor
+    payload itself, but the digest must still bind the entire row-major stream
+    and the exact tensor-row-to-Stable-ID mapping. This keeps the artifact
+    future-proof without materializing a per-pixel Python representation.
+    """
+
+    if not isinstance(rasterized, TypedAnchorRasterization):
+        raise MaskSessionError(
+            "rendererFailure", "gsplat returned an invalid typed Anchor rasterization."
+        )
+    if (
+        not isinstance(rasterized.service_rgb_digest, str)
+        or not rasterized.service_rgb_digest.startswith("sha256:")
+        or not isinstance(rasterized.service_rgb_bytes, bytes)
+        or len(rasterized.service_rgb_bytes) != width * height * 3
+    ):
+        raise MaskSessionError("rendererFailure", "gsplat returned invalid service RGB identity.")
+
+    image_png = _rgb_png(rasterized.service_rgb_bytes, width, height)
+    return AnchorRenderArtifact(
+        image_png=image_png,
+        rgb_digest=f"sha256:{hashlib.sha256(image_png).hexdigest()}",
+        contributor_digest=_typed_contributor_digest(
+            rasterized, width=width, height=height
+        ),
+    )
+
+
+def _legacy_anchor_contributor_digest(rendered: RenderedContributorView) -> str:
+    """Bounded binary fallback for reference backends without typed tensors.
+
+    Production locked Anchor rendering does not take this path. It retains the
+    existing full contributor validation for reference adapters while avoiding
+    the former giant canonical JSON allocation.
+    """
+
+    digest = hashlib.sha256()
+    digest.update(b"SSPAILGC")
+    digest.update(struct.pack("<II", 1, len(rendered.contributors)))
+    for sample in rendered.contributors:
+        digest.update(
+            struct.pack(
+                "<IIIf",
+                sample.stable_id,
+                sample.x_px,
+                sample.y_px,
+                sample.mass,
+            )
+        )
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _typed_contributor_digest(
+    rasterized: TypedAnchorRasterization, *, width: int, height: int
+) -> str:
+    """Hash complete typed contributors in a fixed, bounded binary format."""
+
+    import torch
+
+    alpha = rasterized.alpha
+    contributor_ids = rasterized.contributor_ids
+    contributor_weights = rasterized.contributor_weights
+    stable_ids = rasterized.stable_ids
+    if not all(
+        isinstance(value, torch.Tensor)
+        for value in (alpha, contributor_ids, contributor_weights, stable_ids)
+    ):
+        raise MaskSessionError(
+            "rendererFailure", "gsplat returned non-tensor typed Anchor contributors."
+        )
+    if (
+        alpha.dtype != torch.float32
+        or contributor_weights.dtype != torch.float32
+        or contributor_ids.dtype not in (torch.int32, torch.int64)
+        or stable_ids.dtype != torch.int32
+    ):
+        raise MaskSessionError(
+            "rendererInvalidContributor", "gsplat typed Anchor tensor dtypes are invalid."
+        )
+    if (
+        alpha.device != contributor_ids.device
+        or alpha.device != contributor_weights.device
+        or alpha.device != stable_ids.device
+        or tuple(alpha.shape) != (height, width)
+        or contributor_ids.ndim != 3
+        or tuple(contributor_ids.shape[:2]) != (height, width)
+        or contributor_ids.shape != contributor_weights.shape
+        or contributor_ids.shape[2] <= 0
+        or stable_ids.ndim != 1
+        or stable_ids.numel() <= 0
+    ):
+        raise MaskSessionError(
+            "rendererInvalidContributor", "gsplat typed Anchor tensor shapes are invalid."
+        )
+    if not bool(torch.isfinite(alpha).all().item()) or not bool(
+        torch.isfinite(contributor_weights).all().item()
+    ):
+        raise MaskSessionError(
+            "rendererInvalidContributor", "gsplat returned non-finite typed contributors."
+        )
+    if bool(((alpha < 0.0) | (alpha > 1.0 + MASS_CONSERVATION_ATOL)).any().item()):
+        raise MaskSessionError("rendererFailure", "gsplat returned invalid raster alpha.")
+    if bool((contributor_ids < -1).any().item()):
+        raise MaskSessionError(
+            "rendererInvalidContributor", "gsplat returned an invalid contributor ID."
+        )
+
+    valid = contributor_ids >= 0
+    padded = ~valid
+    if bool((padded & (contributor_weights != 0.0)).any().item()):
+        raise MaskSessionError(
+            "rendererInvalidContributor", "gsplat returned mass for a padded contributor ID."
+        )
+    if bool((valid & (contributor_weights <= 0.0)).any().item()):
+        raise MaskSessionError(
+            "rendererInvalidContributor", "gsplat returned an invalid contributor weight."
+        )
+    if bool((valid & (contributor_ids >= stable_ids.numel())).any().item()):
+        raise MaskSessionError(
+            "rendererInvalidContributor", "gsplat returned an invalid contributor ID."
+        )
+
+    contributor_mass = torch.where(valid, contributor_weights, 0.0).sum(dim=-1)
+    difference = torch.abs(contributor_mass - alpha)
+    tolerance = _mass_conservation_tolerance(alpha)
+    if bool((difference > tolerance).any().item()):
+        raise MaskSessionError(
+            "rendererMassMismatch",
+            "Complete gsplat contributor mass does not match raster alpha.",
+        )
+    if not bool(valid.any().item()):
+        raise MaskSessionError(
+            "rendererUnavailable",
+            "The rendered Frame has no complete gsplat contributor support.",
+        )
+
+    # Do not use -1 as an on-wire sentinel: it is a valid raw int32 carrier
+    # for Stable ID 0xffffffff. Validity is independently encoded below.
+    safe_tensor_ids = contributor_ids.clamp_min(0).to(torch.int64)
+    mapped_stable_ids = stable_ids[safe_tensor_ids]
+    canonical_stable_ids = torch.where(
+        valid, mapped_stable_ids, torch.zeros_like(mapped_stable_ids)
+    )
+    canonical_weights = torch.where(
+        valid, contributor_weights, torch.zeros_like(contributor_weights)
+    )
+
+    if sys.byteorder != "little":
+        raise MaskSessionError(
+            "rendererFailure", "The locked typed contributor format requires little-endian host tensors."
+        )
+    digest = hashlib.sha256()
+    digest.update(_TYPED_CONTRIBUTOR_MAGIC)
+    digest.update(
+        struct.pack(
+            "<IIII",
+            _TYPED_CONTRIBUTOR_VERSION,
+            width,
+            height,
+            int(contributor_ids.shape[2]),
+        )
+    )
+    _update_digest_from_typed_tensor(digest, alpha)
+    _update_digest_from_typed_tensor(digest, valid.to(torch.uint8))
+    _update_digest_from_typed_tensor(digest, canonical_stable_ids)
+    _update_digest_from_typed_tensor(digest, canonical_weights)
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _update_digest_from_typed_tensor(digest: Any, tensor: Any) -> None:
+    """Copy a tensor to CPU in bounded slices without a list/base64/JSON path."""
+
+    flattened = tensor.detach().contiguous().reshape(-1)
+    elements_per_chunk = max(
+        1, _TYPED_CONTRIBUTOR_TRANSFER_MAX_BYTES // flattened.element_size()
+    )
+    for offset in range(0, flattened.numel(), elements_per_chunk):
+        cpu_chunk = flattened.narrow(
+            0, offset, min(elements_per_chunk, flattened.numel() - offset)
+        ).to(device="cpu", non_blocking=False)
+        array = cpu_chunk.contiguous().numpy()
+        digest.update(memoryview(array).cast("B"))
 
 
 def _validated_rendered_view(

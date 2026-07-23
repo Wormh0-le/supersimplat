@@ -214,6 +214,34 @@ per-Gaussian Python dict/list records or a canonical JSON snapshot. Contributor
 tensor rows map through the sorted global Stable-ID tensor, so responses always
 refer to global Stable Gaussian IDs.
 
+### Anchor contributor publication artifact
+
+For the authoritative Anchor route, the Companion keeps RGB alpha, local
+contributor rows, contributor weights, and Stable-ID remapping as typed tensors
+until publication. `contributorDigest` remains the existing opaque digest field
+on the wire; its published meaning remains “the complete same-rasterization
+Contributor product,” so no Selection Service protocol bump is required.
+
+The current internal artifact format embeds its own identity:
+
+```text
+magic: "SSPAICTR"
+formatVersion: uint32le = 1
+width, height, contributorSlots: uint32le
+alpha: float32le[height * width]
+validity: uint8[height * width * contributorSlots]
+stableIds: uint32le[height * width * contributorSlots]
+weights: float32le[height * width * contributorSlots]
+```
+
+It is row-major and deterministic. The validity plane is separate from Stable
+IDs because `0xffffffff` is a valid uint32 Stable Gaussian ID and cannot serve
+as a padding sentinel. The SHA-256 input is copied from GPU tensors in bounded
+16 MiB-or-smaller slices; no base64, nested Python list, ContributorSample
+graph, or giant JSON serialization is created for an Anchor. A future change to
+this artifact must use a new embedded format version rather than reinterpret
+version 1.
+
 The resolver and renderer retain a full-scene mode. Invalid manifests,
 unavailable/support bounds, ambiguous resolution, resident inconsistency, or a
 failed selective/reference parity gate cause all chunks to be required or the

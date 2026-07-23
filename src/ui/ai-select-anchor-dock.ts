@@ -25,13 +25,13 @@ export class AISelectAnchorDock extends Container {
     ) {
         super({
             ...args,
-            id: 'ai-select-anchor-dock',
-            hidden: true
+            id: 'ai-select-anchor-dock'
         });
-        this.dom.addEventListener('pointerdown', event => event.stopPropagation());
+        this.dom.addEventListener('pointerdown', event => event.stopPropagation()
+        );
 
         const title = new Label({ id: 'ai-select-anchor-dock-title' });
-        i18n.bindText(title, 'ai-select.dock.title');
+        i18n.bindText(title, 'ai-select.panel.title');
         this.status = new Label({ id: 'ai-select-anchor-dock-status' });
         this.image = document.createElement('img');
         this.image.id = 'ai-select-anchor-dock-image';
@@ -67,8 +67,8 @@ export class AISelectAnchorDock extends Container {
 
     private render(): void {
         const { context, anchor } = this.state;
-        this.hidden = context === null || anchor === null;
-        if (this.hidden || anchor === null) {
+        if (context === null || anchor === null) {
+            this.status.text = i18n.t('ai-select.panel.idle');
             this.image.hidden = true;
             this.failureActions.hidden = true;
             return;

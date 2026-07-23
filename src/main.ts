@@ -440,10 +440,18 @@ const main = async () => {
         onRestart: () => startAISelect(true),
         onExit: exitAISelect
     });
+    let lastAISelectPanelContextId: string | null = null;
     aiSelectController.subscribe((state) => {
-        editorUI.aiViewsSurface.hidden = state.context === null;
+        const targetContextId = state.context?.targetContextId ?? null;
+        if (
+            targetContextId !== null &&
+            targetContextId !== lastAISelectPanelContextId
+        ) {
+            events.fire('statusBar.setPanel', 'aiSelect');
+        }
+        lastAISelectPanelContextId = targetContextId;
     });
-    editorUI.aiViewsSurface.append(aiSelectDock);
+    editorUI.aiSelectPanel.append(aiSelectDock);
     editorUI.canvasContainer.append(aiSelectToolbar);
     toolManager.register('aiSelect', {
         activate: () => {

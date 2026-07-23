@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run Ticket 02B parity/working-set metrics against an unedited SH3 PLY.
+"""Run Ticket 02B parity/working-set metrics against an unedited SH0--SH3 PLY.
 
 This is a local, operator-run validation harness, not a production import
 path.  It deliberately maps an unedited standard 3DGS PLY into the same typed
@@ -23,7 +23,10 @@ from typing import Any
 
 import numpy as np
 
-from selection_service_companion.gsplat_renderer import LockedGsplatBackend
+from selection_service_companion.gsplat_renderer import (
+    GsplatContributorRenderer,
+    LockedGsplatBackend,
+)
 from selection_service_companion.spatial_scene_working_set import (
     SpatialChunkDescriptor,
     SpatialSceneManifest,
@@ -32,8 +35,6 @@ from selection_service_companion.spatial_scene_working_set import (
 )
 
 
-SH3_FLOATS = 45
-BYTES_PER_GAUSSIAN = 64 + 4 * SH3_FLOATS
 DEFAULT_CHUNK_BYTES = 1 * 1024 * 1024
 VALIDITY_CUT = 1.0 / 255.0
 OPACITY_GUARD = 1.0 - 2.0 ** -12
@@ -44,12 +45,26 @@ SCALE_EPSILON = 2.0 ** -18
 @dataclass(frozen=True)
 class PlyPlanes:
     count: int
+    sh_float_count: int
     means: np.ndarray
     rotations_xyzw: np.ndarray
     log_scales: np.ndarray
     logit_opacities: np.ndarray
     dc: np.ndarray
     sh: np.ndarray
+
+
+def bytes_per_gaussian(sh_float_count: int) -> int:
+    return 64 + 4 * sh_float_count
+
+
+def sh_bands_for(sh_float_count: int) -> int:
+    try:
+        return {0: 0, 9: 1, 24: 2, 45: 3}[sh_float_count]
+    except KeyError as error:
+        raise ValueError(
+            'Ticket 02B benchmark supports only SH0 through SH3 PLY records'
+        ) from error
 
 
 def sha256(value: bytes) -> str:
@@ -84,10 +99,10 @@ def read_binary_ply(path: Path) -> PlyPlanes:
     if not required.issubset(properties):
         raise ValueError('PLY does not have standard 3DGS Gaussian attributes')
     rest = [name for name in properties if name.startswith('f_rest_')]
-    if sorted(rest, key=lambda name: int(name.removeprefix('f_rest_'))) != [
-        f'f_rest_{index}' for index in range(SH3_FLOATS)
-    ]:
-        raise ValueError('Ticket 02B benchmark requires exactly SH3 f_rest_0..44')
+    rest_indices = sorted(int(name.removeprefix('f_rest_')) for name in rest)
+    if rest_indices != list(range(len(rest_indices))):
+        raise ValueError('PLY f_rest properties must be contiguous from f_rest_0')
+    sh_bands_for(len(rest_indices))
     data = np.memmap(
         path,
         dtype=np.dtype([(name, '<f4') for name in properties]),
@@ -97,6 +112,7 @@ def read_binary_ply(path: Path) -> PlyPlanes:
     )
     return PlyPlanes(
         count=count,
+        sh_float_count=len(rest_indices),
         means=np.column_stack((data['x'], data['y'], data['z'])).astype(np.float32),
         rotations_xyzw=np.column_stack(
             (data['rot_1'], data['rot_2'], data['rot_3'], data['rot_0'])
@@ -108,7 +124,10 @@ def read_binary_ply(path: Path) -> PlyPlanes:
         dc=np.column_stack(
             (data['f_dc_0'], data['f_dc_1'], data['f_dc_2'])
         ).astype(np.float32),
-        sh=np.column_stack([data[f'f_rest_{index}'] for index in range(SH3_FLOATS)]).astype(np.float32),
+        sh=(
+            np.column_stack([data[f'f_rest_{index}'] for index in rest_indices]).astype(np.float32)
+            if rest_indices else np.empty((count, 0), dtype=np.float32)
+        ),
     )
 
 
@@ -152,7 +171,7 @@ def support_extents(planes: PlyPlanes) -> tuple[np.ndarray, np.ndarray, np.ndarr
 
 def chunk_payload(planes: PlyPlanes, rows: np.ndarray) -> bytes:
     count = len(rows)
-    payload = bytearray(count * BYTES_PER_GAUSSIAN)
+    payload = bytearray(count * bytes_per_gaussian(planes.sh_float_count))
     offset = 0
     for values in (
         rows.astype('<u4', copy=False),
@@ -173,7 +192,7 @@ def chunk_payload(planes: PlyPlanes, rows: np.ndarray) -> bytes:
     return bytes(payload)
 
 
-def camera_for(target: np.ndarray) -> dict[str, object]:
+def camera_for(target: np.ndarray, resolution: int) -> dict[str, object]:
     # A narrow, plausible Anchor aimed at a populated scene corner.  The exact
     # camera is included in the final report, so the selective/full comparison
     # is reproducible rather than an implicit favorable choice.
@@ -187,12 +206,14 @@ def camera_for(target: np.ndarray) -> dict[str, object]:
     matrix = np.eye(4)
     matrix[:3, :3] = np.column_stack((right, down, forward))
     matrix[:3, 3] = eye
+    focal_length = 1800.0 * resolution / 512.0
     return {
         'revision': 0,
         'cameraToWorld': matrix.reshape(-1).tolist(),
         'projection': {
-            'model': 'pinhole', 'fx': 1800.0, 'fy': 1800.0,
-            'cx': 256.0, 'cy': 256.0, 'width': 512, 'height': 512,
+            'model': 'pinhole', 'fx': focal_length, 'fy': focal_length,
+            'cx': resolution / 2.0, 'cy': resolution / 2.0,
+            'width': resolution, 'height': resolution,
             'near': 0.01, 'far': 1000.0,
         },
         'conventionVersion': 'opencv-camera-to-world/v1',
@@ -236,21 +257,25 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--ply', required=True, type=Path)
     parser.add_argument('--chunk-bytes', type=int, default=DEFAULT_CHUNK_BYTES)
+    parser.add_argument('--resolution', type=int, default=512)
     parser.add_argument(
         '--target-mode',
         choices=('first-gaussian', 'first-chunk-midpoint'),
         default='first-gaussian',
     )
     args = parser.parse_args()
-    if args.chunk_bytes < BYTES_PER_GAUSSIAN or args.chunk_bytes > 4 * 1024 * 1024:
-        raise ValueError('chunk-bytes must be within one bounded v1 chunk')
+    if args.resolution <= 0:
+        raise ValueError('resolution must be positive')
     started = time.perf_counter()
     planes = read_binary_ply(args.ply)
     parse_seconds = time.perf_counter() - started
+    bytes_per_record = bytes_per_gaussian(planes.sh_float_count)
+    if args.chunk_bytes < bytes_per_record or args.chunk_bytes > 4 * 1024 * 1024:
+        raise ValueError('chunk-bytes must be within one bounded v1 chunk')
     ordering_started = time.perf_counter()
     order = morton_order(planes.means)
     lower, upper, nonempty = support_extents(planes)
-    rows_per_chunk = args.chunk_bytes // BYTES_PER_GAUSSIAN
+    rows_per_chunk = args.chunk_bytes // bytes_per_record
     descriptors: list[SpatialChunkDescriptor] = []
     payloads: dict[str, bytes] = {}
     for index, start in enumerate(range(0, planes.count, rows_per_chunk)):
@@ -283,13 +308,20 @@ def main() -> None:
         target_splat_id='benchmark-splat:real-sh3', total_gaussian_count=planes.count,
         coordinate_convention='right-handed world coordinates; quaternion xyzw',
         stable_id_schema='uint32',
-        attribute_schema='mean:f32x3;rotation:f32x4;logScale:f32x3;logitOpacity:f32;dc:f32x3;sh:f32x45',
-        appearance_policy='effective-editor-dc-sh-bands-3',
+        attribute_schema=(
+            'mean:f32x3;rotation:f32x4;logScale:f32x3;'
+            f'logitOpacity:f32;dc:f32x3;sh:f32x{planes.sh_float_count}'
+        ),
+        appearance_policy=(
+            f'effective-editor-dc-sh-bands-{sh_bands_for(planes.sh_float_count)}'
+        ),
         render_configuration={
             'version': 'supersplat-effective-rgb-v1', 'backgroundRgba': [0.0, 0.0, 0.0, 1.0],
-            'alphaMode': 'opaque-background', 'shBands': 3, 'rasterizer': 'playcanvas-gsplat-classic',
+            'alphaMode': 'opaque-background',
+            'shBands': sh_bands_for(planes.sh_float_count),
+            'rasterizer': 'playcanvas-gsplat-classic',
         },
-        sh_float_count_per_gaussian=SH3_FLOATS, chunks=tuple(descriptors),
+        sh_float_count_per_gaussian=planes.sh_float_count, chunks=tuple(descriptors),
     )
     # Both choices are explicit, reproducible Anchor camera fixtures.  The
     # first Gaussian is a tight feature-oriented view; the support midpoint is
@@ -301,7 +333,7 @@ def main() -> None:
         if args.target_mode == 'first-gaussian'
         else (np.asarray(first.minimum) + np.asarray(first.maximum)) / 2.0
     )
-    camera = camera_for(target)
+    camera = camera_for(target, args.resolution)
     render_camera = renderer_camera(camera)
     with tempfile.TemporaryDirectory(prefix='supersplat-02b-') as temporary:
         store = SpatialSceneStore(Path(temporary) / 'runtime')
@@ -322,13 +354,37 @@ def main() -> None:
         transfer_seconds = time.perf_counter() - transfer_started
         resolved = store.resolve_working_set(manifest.scene_id, manifest.scene_version, camera)
         assert resolved.working_set is not None
-        backend = LockedGsplatBackend()
+        # Resolve a separate equivalent working set for an independently
+        # measured cold mmap-to-tensor assembly. Keep the actual Anchor's
+        # working set unassembled until the production call below.
+        assembly_probe = store.resolve_working_set(
+            manifest.scene_id, manifest.scene_version, camera
+        ).working_set
+        assert assembly_probe is not None
         selective_assembly_started = time.perf_counter()
-        selective_tensors = resolved.working_set.ordered_tensors()
+        assembly_probe.ordered_tensors()
         selective_assembly_seconds = time.perf_counter() - selective_assembly_started
+        del assembly_probe
+        # Measure the production first-Anchor path before the legacy parity
+        # renderer warms gsplat or materializes contributor Python lists.
+        anchor_renderer = GsplatContributorRenderer(backend=LockedGsplatBackend())
+        anchor_render_started = time.perf_counter()
+        anchor_artifact = anchor_renderer.render_anchor(
+            scene_snapshot=resolved.working_set,
+            view_id='anchor-view',
+            camera=render_camera,
+            width=args.resolution,
+            height=args.resolution,
+        )
+        anchor_render_seconds = time.perf_counter() - anchor_render_started
+        backend = LockedGsplatBackend()
+        selective_tensors = resolved.working_set.ordered_tensors()
         selective_render_started = time.perf_counter()
         selective = backend.rasterize(
-            snapshot=resolved.working_set, camera=render_camera, width=512, height=512
+            snapshot=resolved.working_set,
+            camera=render_camera,
+            width=args.resolution,
+            height=args.resolution,
         )
         selective_render_seconds = time.perf_counter() - selective_render_started
         remaining = tuple(
@@ -346,7 +402,12 @@ def main() -> None:
         full = store.full_working_set(manifest.scene_id, manifest.scene_version, camera)
         full_tensors = full.ordered_tensors()
         full_render_started = time.perf_counter()
-        full_raster = backend.rasterize(snapshot=full, camera=render_camera, width=512, height=512)
+        full_raster = backend.rasterize(
+            snapshot=full,
+            camera=render_camera,
+            width=args.resolution,
+            height=args.resolution,
+        )
         full_render_seconds = time.perf_counter() - full_render_started
         selective_ids = contributor_global_ids(selective, selective_tensors['stableIds'])
         full_ids = contributor_global_ids(full_raster, full_tensors['stableIds'])
@@ -354,6 +415,8 @@ def main() -> None:
             'ply': str(args.ply),
             'rawPlyNoEditAssumption': True,
             'targetMode': args.target_mode,
+            'renderResolution': args.resolution,
+            'shFloatCountPerGaussian': planes.sh_float_count,
             'effectiveGaussianCount': planes.count,
             'totalBinarySceneSnapshotBytes': sum(descriptor.byte_length for descriptor in descriptors),
             'spatialChunkByteLimit': args.chunk_bytes,
@@ -373,11 +436,13 @@ def main() -> None:
                 'requiredChunkTransferAndCommit': transfer_seconds,
                 'workingSetAssembly': selective_assembly_seconds,
                 'selectiveGsplatRender': selective_render_seconds,
+                'anchorRenderAndTypedPublication': anchor_render_seconds,
                 'fullGsplatRender': full_render_seconds,
             },
             'memory': {
                 'processPeakRssBytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024,
                 'selectivePeakVramBytes': selective.peak_vram_bytes,
+                'anchorPeakVramBytes': anchor_renderer.last_peak_vram_bytes,
                 'fullPeakVramBytes': full_raster.peak_vram_bytes,
             },
             'parity': {
@@ -390,6 +455,7 @@ def main() -> None:
             'selectiveNonZeroAlphaPixels': sum(
                 1 for image_row in selective.alpha for alpha in image_row if alpha > 0.0
             ),
+            'typedAnchorContributorDigest': anchor_artifact.contributor_digest,
         }
     print(json.dumps(report, indent=2, sort_keys=True))
 

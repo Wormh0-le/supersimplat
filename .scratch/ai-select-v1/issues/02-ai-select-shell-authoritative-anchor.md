@@ -83,16 +83,17 @@ Introduce only the minimum tool shell required to exercise this path.
 Observed on `/home/ubuntu/wormh01e/gaussian/restroom/ply-result/point_cloud/iteration_100/point_cloud_3.ply`
 (331,150 displayed Gaussians):
 
-- [ ] **02-G1 — persistent AI Views bottom-tab shell.** The Final Spec layout
-      reserves a collapsed `AI Views` tab beside Timeline/Splat Data even while AI
-      Select is inactive; activating AI Select must expand that existing bottom
-      dock. The current implementation creates/hides a separate surface only when
-      AI Select becomes active.
-- [ ] **02-G2 — Anchor terminal render state.** Anchor may show Rendering only
-      while a current authoritative request is active. It must reach Ready or a
-      distinct actionable failure state; it must not remain indefinitely Rendering.
-      Ticket 02B addresses the full-scene upload/residency contributor to this
-      symptom, but does not replace the Ticket 02 lifecycle requirement.
+- [x] **02-G1 — persistent bottom AI Select panel.** The Final Spec's AI View
+      Dock is now represented by a default-collapsed `AI Select` tab beside
+      Timeline/Splat Data. It exists while inactive, shows an idle instruction,
+      and auto-expands only on a new AI Select target context or restart; it
+      remains an editor bottom panel rather than a separate workspace.
+- [x] **02-G2 — scalable Anchor publication.** The browser closure reached a
+      terminal Ready state, but the legacy Anchor route spent minutes expanding
+      complete contributor tensors into Python objects and JSON. The 02B
+      supplement now validates and hashes the complete contributor stream as
+      bounded typed tensors. Fresh browser timing after restarting the local
+      Companion is still required to validate the deployed process.
 
 Not a Ticket 02 gap:
 

@@ -81,6 +81,8 @@ order—not arrival/cache order—and maps contributors back to global Stable ID
    `AIRequestBinding`.
 5. Deterministic tensor assembly and global Stable-ID contributor remapping.
 6. Full-scene/reference versus selective parity and fallback.
+7. Typed Anchor contributor publication: full Stable-ID stream, mass
+   conservation, bounded binary hashing, and no legacy list/object dispatch.
 
 ## Acceptance criteria
 
@@ -98,6 +100,9 @@ order—not arrival/cache order—and maps contributors back to global Stable ID
       upload/cache arrival orders.
 - [x] Full-scene reference/fallback remains available and parity gates
       selective rendering.
+- [x] Authoritative Anchor publication keeps complete contributor tensors typed
+      through Stable-ID remapping and bounded binary digesting; it does not
+      expand them into `ContributorSample` objects or canonical JSON.
 - [ ] Fixtures cover SH0–SH3, delete/world/palette/color transforms,
       anisotropic center-outside/support-inside and clipping boundaries, and
       different chunk arrival orders.
@@ -113,7 +118,7 @@ duplicate retry, incomplete commit, and release. A browser-driven editor
 fixture for active delete/world/palette/color edits and browser peak-memory
 instrumentation remain open; they are not represented as complete here.
 
-## Validation record — 2026-07-22
+## Validation record — 2026-07-23
 
 - [x] Locked CUDA GPU SH0–SH3 full/selective parity:
       `selection-service-companion/tests/test_spatial_scene_gpu_parity.py`.
@@ -123,6 +128,16 @@ instrumentation remain open; they are not represented as complete here.
       232,923,132 bytes; 16.655%) and had exact RGB, alpha, Stable-ID, and weight
       parity. It therefore materially reduced transferred bytes and locked GPU
       allocation for that view.
+- [x] Locked CUDA typed Anchor publication test rejects the legacy list path;
+      fixed binary digest tests retain complete mass, tensor-row order, and the
+      valid uint32 Stable ID `0xffffffff`.
+- [x] On the 331,150-Gaussian restroom SH0 fixture, a cold 1024² selective
+      Anchor completed gsplat plus typed publication in 0.445 s in the locked
+      harness (6/21 chunks; 25.786% of payload bytes), with exact selective/full
+      RGB, alpha, Stable-ID, and weight parity.
+- [x] On the 954,603-Gaussian SH3 fixture, a cold 512² selective Anchor
+      completed gsplat plus typed publication in 0.585 s (37/223 chunks;
+      16.655% of payload bytes), with exact selective/full parity.
 - [ ] Browser editor peak memory and a browser-generated effective SceneSnapshot
       with active edit mutations have not yet been measured. Do not treat the
       direct typed-Ply harness RSS as editor memory.

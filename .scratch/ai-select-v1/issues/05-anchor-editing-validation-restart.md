@@ -1,6 +1,6 @@
 # 05 — Anchor editing + support validation + atomic Confirm Anchor + early Restart
 
-Status: ready-for-agent — v2.2 re-audited
+Status: ready-for-agent — v2.2 FlashSplat-alignment review
 
 Blocked by: 03, 04
 
@@ -29,6 +29,8 @@ Blocked by: 03, 04
 
 Complete Anchor authoring and recovery. Anchor validation proves computability and coherent Camera/RGB/Mask/support identity. Confirm Anchor no longer requires complete Contributor publication or formal multi-view Evidence.
 
+The support probe is a cheap computability gate, not a hidden lifting implementation. It must not reintroduce complete Contributor production into Anchor confirmation.
+
 ## Acceptance criteria
 
 - [ ] Prompt refine and Brush Add/Erase modify only Editing Mask until Confirm Mask.
@@ -37,7 +39,9 @@ Complete Anchor authoring and recovery. Anchor validation proves computability a
 - [ ] Mask Editor has independent Undo/Redo with explicit focus routing.
 - [ ] Anchor Validation evaluates computational suitability, not semantic target confidence.
 - [ ] Hard validation blocks unavailable authoritative RGB, empty/nearly-empty Mask, no computable Gaussian support, pending latest Mask/SAM revision, invalid Stable ID/Render Working Set, or mismatched Camera/RGB/Mask identity.
-- [ ] Gaussian support is obtained from a versioned low-cost support probe or reference Evidence operation; complete Contributor publication is not required.
+- [ ] Gaussian support is obtained from a versioned low-cost support/visibility probe with explicit input identity; it is not complete Contributor publication and is not formal P/N/V Evidence.
+- [ ] The support probe may answer only whether useful Gaussian support is computable/observable under the declared policy; it must not classify Selected/Rejected ownership or become a Candidate source.
+- [ ] The normal Confirm Anchor path does not invoke the complete Contributor backend. Any reference operation used for diagnostics is explicit, bounded, and outside the product hard gate.
 - [ ] Soft warnings such as image-boundary contact, extreme size, fragmentation, or weak visible support remain user-overridable.
 - [ ] Validation refreshes against the latest exact revisions and never confirms stale output.
 - [ ] Changing Anchor after target intent warns before discarding unconfirmed Prompt/Editing state.
@@ -54,6 +58,7 @@ Complete Anchor authoring and recovery. Anchor validation proves computability a
 
 - [ ] Mask/SAM failure preserves View/RGB and supports Retry Auto Mask / Manual Draw / later Exclude.
 - [ ] Support-probe/validation failure offers Fix Mask / Adjust Anchor / Restart and does not relabel RGB as Render Failed.
+- [ ] Unavailable debug/reference Contributor data does not make an otherwise computable Anchor invalid.
 
 ## Validation
 
@@ -63,6 +68,7 @@ Complete Anchor authoring and recovery. Anchor validation proves computability a
 - npm run build
 - npm run test:companion for support-probe/SAM changes
 - Binding mismatch and no-complete-Contributor Confirm tests
+- Test that support probe cannot publish Candidate/Evidence or call the production reference-Contributor path implicitly
 - Manual focus/restart walkthrough
 
 ## Non-goals
@@ -70,3 +76,4 @@ Complete Anchor authoring and recovery. Anchor validation proves computability a
 - No Generated Views beyond Confirm transition
 - No formal P/N/V artifact
 - No Candidate
+- No complete Contributor production or tolerance tuning

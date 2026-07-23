@@ -1,72 +1,59 @@
-# 05 — Anchor editing completeness + validation + atomic Confirm Anchor + early Restart
+# 05 — Anchor editing + support validation + atomic Confirm Anchor + early Restart
 
-Status: ready-for-agent
+Status: ready-for-agent — v2.2 re-audited
 
 Blocked by: 03, 04
 
 ## Final Spec mapping
 
-- DG-09
-- DG-11
-- DG-12
-- §15–18 Anchor editing/validation
-- §68 Mask Undo/Redo
-- §69 Restart
+- Final Spec v1.1 §§10–12, 24
+- DG-09, DG-11, DG-12, DG-20
 - MVP Phase 2
 
 ## Inputs / preconditions
 
-- Anchor AIView
+- RGB-ready Anchor AIView
 - Editing/Stable Mask
 - Camera Inspection
 - CurrentTargetContext
+- Stable Gaussian ID / Render Working Set support-probe seam
 
 ## Outputs / handoff artifacts
 
 - Complete Anchor authoring flow
 - Validated/confirmed Anchor revision
+- Versioned mask-conditioned Gaussian support result
 - Early Restart flow
 
 ## What to build
 
-Complete Anchor authoring and recovery: Prompt refine, Brush Add/Erase, Clear, Restore Auto, manual mask,
-mask-local history/focus routing, Hard/Soft Anchor Validation, atomic Confirm Anchor, and Restart Current
-Target available before Generated Views.
+Complete Anchor authoring and recovery. Anchor validation proves computability and coherent Camera/RGB/Mask/support identity. Confirm Anchor no longer requires complete Contributor publication or formal multi-view Evidence.
 
 ## Acceptance criteria
 
-- [ ] Prompt refine, Brush Add, and Brush Erase modify only the Editing Mask until Confirm Mask.
-- [ ] `Clear Mask` creates an empty Editing Mask; `Restore Auto` restores the most recent valid auto mask and is disabled if none has ever existed.
-- [ ] A user can Clear → Brush Add/Erase → Confirm Mask to create a fully manual User Confirmed Stable Mask.
-- [ ] Mask Editor maintains independent lightweight Undo/Redo history.
-- [ ] Mask Editor focus routes Undo/Redo to mask history; normal 3D/editor focus routes Native Undo/Redo.
-- [ ] UI gives explicit focus feedback so the Undo target is not ambiguous.
-- [ ] Anchor Validation is computational suitability, not a semantic object-confidence score.
-- [ ] Hard validation blocks Confirm Anchor for unavailable final gsplat RGB, empty/nearly-empty mask, no valid Gaussian contributor support, latest mask/SAM revision still computing, or mismatched CameraBinding/RGB/Mask binding.
-- [ ] Soft warnings such as boundary contact, extreme size, fragmentation, occlusion/support concerns remain user-overridable and do not block Confirm Anchor.
-- [ ] Validation refreshes automatically with the latest relevant revision and never confirms stale SAM/mask output.
-- [ ] After first Prompt/Mask target intent, changing Anchor warns before discarding affected unconfirmed Prompt/Editing Mask state.
-- [ ] Confirm Anchor atomically publishes one coherent Anchor revision containing CameraBinding, RGB digest, Stable Mask, Contributor binding, TargetDependencyToken, and Scene/Splat version identity.
-- [ ] After Confirm Anchor, that coherent Anchor revision is locked as the current reference until an explicit permitted Anchor-adjust/restart flow changes it.
-- [ ] `Restart Current Target` is available during Anchor Draft, Camera Inspection, Mask Editing, validation, and confirmed-Anchor early stages.
-- [ ] Early Restart disposes target-local Anchor/View/Mask/review/readiness state, rotates targetContextId, preserves Native Selection/EditHistory/planner policy/shared runtime cache, and creates the new Anchor from Current Scene View.
-- [ ] If Restart occurs during Camera Inspection, restore the saved Scene View first; inspection observer pose can never become the new Anchor.
-- [ ] Restart confirmation policy distinguishes no meaningful draft, unconfirmed draft, and confirmed AI context, and clearly states that Native Selection will not change.
-- [ ] Contextual toolbar exposes Anchor Invalid / Valid-with-warning / Valid states and enables Confirm Anchor only when allowed.
+- [ ] Prompt refine and Brush Add/Erase modify only Editing Mask until Confirm Mask.
+- [ ] Clear creates an empty Editing Mask; Restore Auto restores the latest valid auto mask and is disabled when none exists.
+- [ ] Fully manual Clear → Brush → Confirm produces User Confirmed Stable Mask.
+- [ ] Mask Editor has independent Undo/Redo with explicit focus routing.
+- [ ] Anchor Validation evaluates computational suitability, not semantic target confidence.
+- [ ] Hard validation blocks unavailable authoritative RGB, empty/nearly-empty Mask, no computable Gaussian support, pending latest Mask/SAM revision, invalid Stable ID/Render Working Set, or mismatched Camera/RGB/Mask identity.
+- [ ] Gaussian support is obtained from a versioned low-cost support probe or reference Evidence operation; complete Contributor publication is not required.
+- [ ] Soft warnings such as image-boundary contact, extreme size, fragmentation, or weak visible support remain user-overridable.
+- [ ] Validation refreshes against the latest exact revisions and never confirms stale output.
+- [ ] Changing Anchor after target intent warns before discarding unconfirmed Prompt/Editing state.
+- [ ] Confirm Anchor atomically publishes CameraBinding, RGB digest, Stable Mask+digest, Mask Evidence Policy version, TargetDependencyToken, and Scene/Splat identity.
+- [ ] Complete Contributor identity is not part of the formal Anchor binding.
+- [ ] Formal per-view/multi-view Evidence and Candidate are not prerequisites for Confirm Anchor.
+- [ ] Confirmed Anchor remains locked until an explicit allowed adjustment/restart flow.
+- [ ] Restart is available during Anchor Draft, Camera Inspection, Mask Editing, validation, and confirmed-Anchor early stages.
+- [ ] Early Restart disposes target-local Anchor/View/Mask/Evidence-status/review/readiness state, rotates targetContextId, and preserves Native Selection/EditHistory/policy/runtime caches.
+- [ ] Restart during Camera Inspection restores saved Scene View before constructing the new Anchor.
+- [ ] Restart confirmation states clearly that Native Selection does not change.
 
 ## Failure / recovery criteria
 
-- [ ] Mask/SAM failure preserves the View and supports Retry Auto Mask / Manual Draw / Exclude once participation controls exist.
-- [ ] Validation failure provides actionable recovery: Fix Mask, Adjust Anchor, or Restart Current Target.
-
-## Affected seams
-
-- src/ai-select/mask*
-- src/ai-select/anchor-validation*
-- src/ai-select/current-target-context*
-- AI View Dock Mask Editor
-- Contextual toolbar
-- Editor focus/shortcut routing
+- [ ] Mask/SAM failure preserves View/RGB and supports Retry Auto Mask / Manual Draw / later Exclude.
+- [ ] Support-probe/validation failure offers Fix Mask / Adjust Anchor / Restart and does not relabel RGB as Render Failed.
 
 ## Validation
 
@@ -74,10 +61,12 @@ Target available before Generated Views.
 - npm run lint
 - npm run lint:locales
 - npm run build
-- npm run test:companion for SAM/validation changes
-- Manual focus-routing + restart confirmation walkthrough
+- npm run test:companion for support-probe/SAM changes
+- Binding mismatch and no-complete-Contributor Confirm tests
+- Manual focus/restart walkthrough
 
 ## Non-goals
 
-- No Generated Views beyond the Confirm Anchor transition
+- No Generated Views beyond Confirm transition
+- No formal P/N/V artifact
 - No Candidate

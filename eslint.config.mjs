@@ -1,4 +1,5 @@
 import playcanvasConfig from '@playcanvas/eslint-config';
+import eslintConfigPrettier from 'eslint-config-prettier/flat';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
 import tsParser from '@typescript-eslint/parser';
 import globals from 'globals';
@@ -37,7 +38,8 @@ export default [
             'no-await-in-loop': 'off',
             'require-atomic-updates': 'off'
         }
-    }, {
+    },
+    {
         files: ['**/*.mjs'],
         languageOptions: {
             globals: {
@@ -47,5 +49,8 @@ export default [
         rules: {
             'import/no-unresolved': 'off'
         }
-    }
+    },
+    // Keep this last so ESLint retains semantic checks while Prettier owns
+    // layout rules for every file formatted by the pre-commit hook.
+    eslintConfigPrettier
 ];

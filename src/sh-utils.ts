@@ -1,7 +1,5 @@
 import { Mat3 } from 'playcanvas';
 
-/* eslint-disable indent */
-
 const kSqrt03_02  = Math.sqrt(3.0 /  2.0);
 const kSqrt01_03  = Math.sqrt(1.0 /  3.0);
 const kSqrt02_03  = Math.sqrt(2.0 /  3.0);

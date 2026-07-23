@@ -21,7 +21,8 @@
     "develop:auto-launch": "concurrently --kill-others \"xdg-open 'http://localhost:3000/'\" \"npm run watch\" \"npm run serve\"",
     "test": "rm -rf .test-dist && tsc --noEmit && tsc -p tsconfig.test.json && node --test && npm run test:companion",
     "test:companion": "uv run --project selection-service-companion --locked --python 3.12 python -m unittest discover -s selection-service-companion/tests",
-    "lint": "eslint src",
+    "lint": "eslint src && npm run lint:format-compat",
+    "lint:format-compat": "node scripts/check-prettier-eslint-compat.mjs",
     "lint:locales": "node scripts/check-locales.mjs",
     "prepare": "husky"
   },
@@ -47,6 +48,7 @@
     "cors": "2.8.6",
     "cross-env": "10.1.0",
     "eslint": "10.6.0",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "4.4.5",
     "globals": "17.7.0",
     "husky": "^9.1.7",

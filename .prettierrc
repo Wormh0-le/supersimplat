@@ -5,5 +5,13 @@
     "singleQuote": true,
     "trailingComma": "none",
     "semi": true,
-    "arrowParens": "avoid"
+    "arrowParens": "always",
+    "overrides": [
+        {
+            "files": "*.json",
+            "options": {
+                "tabWidth": 2
+            }
+        }
+    ]
 }

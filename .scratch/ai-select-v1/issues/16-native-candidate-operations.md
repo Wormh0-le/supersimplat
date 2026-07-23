@@ -1,18 +1,19 @@
 # 16 — Candidate → Native Set / Add / Remove / Intersect
 
-Status: ready-for-agent
+Status: ready-for-agent — v2.2 re-audited
 
 Blocked by: 15
 
 ## Final Spec mapping
 
+- Final Spec v1.1 §25
 - DG-07
-- §64–67 Native Operations
 - MVP Phase 6
 
 ## Inputs / preconditions
 
-- Current Candidate
+- Current non-stale Candidate
+- Uncertain diagnostic set
 - Native Selection S
 - Native SelectOp/EditHistory
 
@@ -24,38 +25,26 @@ Blocked by: 15
 
 ## What to build
 
-Bridge the current Candidate into native SuperSplat selection with the four Final Spec operations,
-using existing SelectOp/EditHistory rather than a parallel AI history system.
+Bridge the current Candidate into native SuperSplat selection with exact set algebra and native history. Evidence, Uncertain, and Out-of-Scope remain internal/diagnostic and are not implicitly applied.
 
 ## Acceptance criteria
 
-- [ ] Candidate Ready exposes Set / Add / Remove / Intersect with exact semantics `S'=C`, `S'=S∪C`, `S'=S−C`, `S'=S∩C`.
-- [ ] All four operations execute through existing native SelectOp/EditHistory semantics.
-- [ ] Only a current non-stale Candidate can execute an operation.
-- [ ] Uncertain remains diagnostic and is never implicitly included in native Candidate operations.
-- [ ] Applying Candidate does not rerun AI inference.
-- [ ] AI Select remains active and CurrentTargetContext remains available after application.
-- [ ] CandidateApplicationRecord binds candidate ID/revision, operation, and associated native history command identity.
-- [ ] Candidate Applied state shows the applied operation and provides `Show AI Result`.
-- [ ] Candidate overlay is hidden/weak by default after application while Native Selection keeps normal SuperSplat visual style.
-- [ ] Native Undo restores Native Selection without rerunning AI and returns application presentation to the appropriate Candidate-ready state.
-- [ ] Native Redo reapplies the same native selection operation without rerunning AI.
-- [ ] Native Selection-only changes do not stale Candidate because Native Selection is not an AI input dependency.
-- [ ] Contextual toolbar implements Candidate Ready and Candidate Applied presentation.
+- [ ] Candidate Ready exposes Set/Add/Remove/Intersect with `S'=C`, `S'=S∪C`, `S'=S−C`, `S'=S∩C`.
+- [ ] Operations execute through existing SelectOp/EditHistory.
+- [ ] Only current non-stale Candidate can execute.
+- [ ] Uncertain, Rejected, and Out-of-Scope are never implicitly included.
+- [ ] Applying Candidate does not rerun Evidence/Lift.
+- [ ] AI Select and CurrentTargetContext remain active after application.
+- [ ] CandidateApplicationRecord binds Candidate revision, operation, and native history command.
+- [ ] Candidate Applied shows operation and `Show AI Result`.
+- [ ] Candidate overlay is de-emphasized after application while Native Selection retains native style.
+- [ ] Native Undo/Redo changes Native Selection without rerunning AI.
+- [ ] Native Selection-only changes do not stale Evidence or Candidate.
+- [ ] Stale/suspended context disables all operations.
 
 ## Failure / recovery criteria
 
-- [ ] Operation failure leaves Native Selection/EditHistory unchanged and keeps Candidate current.
-- [ ] Stale/suspended context disables all four operations.
-
-## Affected seams
-
-- src/ai-select/native-selection-bridge*
-- src/selection.ts
-- src/edit-history.ts
-- SelectOp seam
-- Contextual toolbar
-- Candidate visualization
+- [ ] Operation failure leaves Native Selection/EditHistory unchanged and Candidate current.
 
 ## Validation
 
@@ -63,8 +52,7 @@ using existing SelectOp/EditHistory rather than a parallel AI history system.
 - npm run lint
 - npm run lint:locales
 - npm run build
-- Set/Add/Remove/Intersect algebra tests
-- Native Undo/Redo workflow tests
+- Set algebra and Native Undo/Redo tests
 
 ## Non-goals
 

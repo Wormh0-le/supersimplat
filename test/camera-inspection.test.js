@@ -101,10 +101,8 @@ test('Camera Inspection preserves the saved Scene View while observing a separat
     assert.deepEqual(anchorPoses, []);
 });
 
-test('Camera Inspection submits only the latest interactive pose and a final fixed pose', async () => {
+test('Camera Inspection updates only Anchor pose while dragging and renders once at manipulation end', async () => {
     const anchorBinding = captureEditorCameraBinding(editorCamera());
-    const pending = [];
-    const cancelled = [];
     const anchorPoses = [];
     let interactivePreviews = 0;
     let finalPreviews = 0;
@@ -127,14 +125,15 @@ test('Camera Inspection submits only the latest interactive pose and a final fix
             }),
             setSceneView: () => undefined
         },
+        // The prior interactive-preview policy scheduled this callback for
+        // every drag revision. Invoke it immediately to make that regression
+        // observable without waiting for a real timer.
         scheduler: {
             schedule(callback) {
-                pending.push(callback);
+                callback();
                 return callback;
             },
-            cancel(handle) {
-                cancelled.push(handle);
-            }
+            cancel() {}
         }
     });
 
@@ -148,160 +147,55 @@ test('Camera Inspection submits only the latest interactive pose and a final fix
         cameraToWorld(7, 8, 9),
         cameraToWorld(11, 12, 13)
     ]);
-    assert.equal(cancelled.length, 1);
-
-    pending.at(-1)();
-    await Promise.resolve();
-    assert.equal(interactivePreviews, 1);
-
-    await inspection.endAnchorManipulation();
-    assert.equal(finalPreviews, 1);
-});
-
-test('Camera Inspection waits for an in-flight interactive preview before submitting its final fixed pose', async () => {
-    const interactive = deferred();
-    const scheduled = [];
-    let interactivePreviews = 0;
-    let finalPreviews = 0;
-    const inspection = new CameraInspectionController({
-        anchor: {
-            getAnchorCameraBinding: () =>
-                captureEditorCameraBinding(editorCamera()),
-            updateAnchorCameraPose: () => undefined,
-            renderInteractivePreview: () => {
-                interactivePreviews += 1;
-                return interactive.promise;
-            },
-            renderFinalPreview: async () => {
-                finalPreviews += 1;
-            },
-            resetAnchor: async () => undefined
-        },
-        editor: {
-            captureSceneView: () => ({
-                sceneView: sceneView(),
-                restore: () => undefined
-            }),
-            setSceneView: () => undefined
-        },
-        scheduler: {
-            schedule(callback) {
-                scheduled.push(callback);
-                return callback;
-            },
-            cancel() {}
-        }
-    });
-
-    inspection.enter();
-    inspection.moveAnchorFrustum(cameraToWorld(7, 8, 9));
-    scheduled[0]();
-    await Promise.resolve();
-    assert.equal(interactivePreviews, 1);
-
-    const ending = inspection.endAnchorManipulation();
-    await Promise.resolve();
+    assert.equal(interactivePreviews, 0);
     assert.equal(finalPreviews, 0);
 
-    interactive.resolve();
-    await ending;
-    assert.equal(finalPreviews, 1);
-});
-
-test('Camera Inspection coalesces a newer interactive preview until the active one settles', async () => {
-    const previews = [deferred(), deferred()];
-    const scheduled = [];
-    let interactivePreviews = 0;
-    const inspection = new CameraInspectionController({
-        anchor: {
-            getAnchorCameraBinding: () =>
-                captureEditorCameraBinding(editorCamera()),
-            updateAnchorCameraPose: () => undefined,
-            renderInteractivePreview: () => {
-                const preview = previews[interactivePreviews];
-                interactivePreviews += 1;
-                return preview.promise;
-            },
-            renderFinalPreview: async () => undefined,
-            resetAnchor: async () => undefined
-        },
-        editor: {
-            captureSceneView: () => ({
-                sceneView: sceneView(),
-                restore: () => undefined
-            }),
-            setSceneView: () => undefined
-        },
-        scheduler: {
-            schedule(callback) {
-                scheduled.push(callback);
-                return callback;
-            },
-            cancel() {}
-        }
-    });
-
-    inspection.enter();
-    inspection.moveAnchorFrustum(cameraToWorld(7, 8, 9));
-    scheduled[0]();
-    await Promise.resolve();
-    assert.equal(interactivePreviews, 1);
-
-    inspection.moveAnchorFrustum(cameraToWorld(11, 12, 13));
-    scheduled[1]();
-    await Promise.resolve();
-    assert.equal(interactivePreviews, 1);
-
-    previews[0].resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    assert.equal(interactivePreviews, 2);
-
-    previews[1].resolve();
-});
-
-test('Camera Inspection discards a cancelled interactive callback that fires after finalization', async () => {
-    const scheduled = [];
-    let interactivePreviews = 0;
-    let finalPreviews = 0;
-    const inspection = new CameraInspectionController({
-        anchor: {
-            getAnchorCameraBinding: () =>
-                captureEditorCameraBinding(editorCamera()),
-            updateAnchorCameraPose: () => undefined,
-            renderInteractivePreview: async () => {
-                interactivePreviews += 1;
-            },
-            renderFinalPreview: async () => {
-                finalPreviews += 1;
-            },
-            resetAnchor: async () => undefined
-        },
-        editor: {
-            captureSceneView: () => ({
-                sceneView: sceneView(),
-                restore: () => undefined
-            }),
-            setSceneView: () => undefined
-        },
-        scheduler: {
-            schedule(callback) {
-                scheduled.push(callback);
-                return callback;
-            },
-            // Simulate a browser timer that has already escaped cancellation.
-            cancel() {}
-        }
-    });
-
-    inspection.enter();
-    inspection.moveAnchorFrustum(cameraToWorld(7, 8, 9));
     await inspection.endAnchorManipulation();
-    scheduled[0]();
-    await Promise.resolve();
 
     assert.equal(finalPreviews, 1);
     assert.equal(interactivePreviews, 0);
+});
+
+test('Camera Inspection serializes final previews from consecutive manipulations', async () => {
+    const renders = [deferred(), deferred()];
+    let finalPreviews = 0;
+    const inspection = new CameraInspectionController({
+        anchor: {
+            getAnchorCameraBinding: () =>
+                captureEditorCameraBinding(editorCamera()),
+            updateAnchorCameraPose: () => undefined,
+            renderFinalPreview: () => {
+                const render = renders[finalPreviews];
+                finalPreviews += 1;
+                return render.promise;
+            },
+            resetAnchor: async () => undefined
+        },
+        editor: {
+            captureSceneView: () => ({
+                sceneView: sceneView(),
+                restore: () => undefined
+            }),
+            setSceneView: () => undefined
+        }
+    });
+
+    inspection.enter();
+    inspection.moveAnchorFrustum(cameraToWorld(7, 8, 9));
+    const firstEnd = inspection.endAnchorManipulation();
+    assert.equal(finalPreviews, 1);
+
+    inspection.moveAnchorFrustum(cameraToWorld(11, 12, 13));
+    const secondEnd = inspection.endAnchorManipulation();
+    assert.equal(finalPreviews, 1);
+
+    renders[0].resolve();
+    await firstEnd;
+    await Promise.resolve();
+    assert.equal(finalPreviews, 2);
+
+    renders[1].resolve();
+    await secondEnd;
 });
 
 test('Reset Anchor does not replace the camera-owned saved Scene View with the observer view', async () => {

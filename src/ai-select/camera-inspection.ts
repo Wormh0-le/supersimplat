@@ -43,14 +43,8 @@ export interface CameraInspectionEditor {
 export interface CameraInspectionAnchor {
     getAnchorCameraBinding(): CameraBinding | null;
     updateAnchorCameraPose(cameraToWorld: readonly number[]): void;
-    renderInteractivePreview(): Promise<void>;
     renderFinalPreview(): Promise<void>;
     resetAnchor(): Promise<void>;
-}
-
-export interface CameraInspectionScheduler {
-    schedule(callback: () => void, delayMs: number): unknown;
-    cancel(handle: unknown): void;
 }
 
 export type CameraInspectionMode = 'inactive' | 'active';
@@ -65,8 +59,6 @@ export interface CameraInspectionState {
 export interface CameraInspectionOptions {
     readonly anchor: CameraInspectionAnchor;
     readonly editor: CameraInspectionEditor;
-    readonly scheduler?: CameraInspectionScheduler;
-    readonly previewDelayMs?: number;
 }
 
 export type CameraInspectionListener = (state: CameraInspectionState) => void;
@@ -189,15 +181,6 @@ export const cameraInspectionObserverView = (
     });
 };
 
-const defaultScheduler: CameraInspectionScheduler = {
-    schedule(callback, delayMs) {
-        return globalThis.setTimeout(callback, delayMs);
-    },
-    cancel(handle) {
-        globalThis.clearTimeout(handle as number);
-    }
-};
-
 const copyState = (state: CameraInspectionState): CameraInspectionState => {
     return Object.freeze({
         mode: state.mode,
@@ -212,38 +195,23 @@ const copyState = (state: CameraInspectionState): CameraInspectionState => {
 /**
  * Owns the explicit observer-camera mode. It never reads editor camera changes
  * back into the Anchor; only an explicit Frustum manipulation updates the
- * Anchor through its narrow port.
+ * Anchor through its narrow port. Dragging updates only that binding; the
+ * final authoritative RGB is requested when the manipulation ends.
  */
 export class CameraInspectionController {
     private readonly anchor: CameraInspectionAnchor;
     private readonly editor: CameraInspectionEditor;
-    private readonly scheduler: CameraInspectionScheduler;
-    private readonly previewDelayMs: number;
     private readonly listeners = new Set<CameraInspectionListener>();
     private mode: CameraInspectionMode = 'inactive';
     private manipulation: CameraInspectionManipulation = 'move';
     private savedSceneView: SavedSceneView | null = null;
     private restoreSceneView: (() => void) | null = null;
-    private pendingInteractivePreview: unknown = null;
-    /** At most one Companion preview may hold its single rendering lease. */
-    private activeInteractivePreview: Promise<void> | null = null;
-    /** A new drag revision arrived while the active preview was rendering. */
-    private queuedInteractivePreview = false;
-    private interactivePreviewScheduleRevision = 0;
+    /** Serialize fixed-pose renders because the Companion admits one at a time. */
+    private anchorRenderTail: Promise<void> | null = null;
 
     constructor(options: CameraInspectionOptions) {
         this.anchor = options.anchor;
         this.editor = options.editor;
-        this.scheduler = options.scheduler ?? defaultScheduler;
-        this.previewDelayMs = options.previewDelayMs ?? 80;
-        if (
-            !Number.isSafeInteger(this.previewDelayMs) ||
-            this.previewDelayMs < 0
-        ) {
-            throw new Error(
-                'Camera Inspection preview delay must be a non-negative safe integer.'
-            );
-        }
     }
 
     get state(): CameraInspectionState {
@@ -296,21 +264,18 @@ export class CameraInspectionController {
         this.requireActive();
         assertCameraToWorldMatrix(cameraToWorld);
         this.anchor.updateAnchorCameraPose(Object.freeze([...cameraToWorld]));
-        this.scheduleInteractivePreview();
     }
 
     async endAnchorManipulation(): Promise<void> {
         this.requireActive();
-        this.cancelInteractivePreview();
-        await this.waitForInteractivePreview();
-        await this.anchor.renderFinalPreview();
+        await this.queueFinalAnchorRender(() =>
+            this.anchor.renderFinalPreview()
+        );
     }
 
     async resetAnchor(): Promise<void> {
         this.requireActive();
-        this.cancelInteractivePreview();
-        await this.waitForInteractivePreview();
-        await this.anchor.resetAnchor();
+        await this.queueFinalAnchorRender(() => this.anchor.resetAnchor());
     }
 
     returnToSceneView(): void {
@@ -326,7 +291,6 @@ export class CameraInspectionController {
                 'Camera Inspection lost its atomic Scene View restore action.'
             );
         }
-        this.cancelInteractivePreview();
         this.restoreSceneView();
         this.mode = 'inactive';
         this.savedSceneView = null;
@@ -334,82 +298,28 @@ export class CameraInspectionController {
         this.publish();
     }
 
-    private scheduleInteractivePreview(): void {
-        this.cancelInteractivePreview();
-        const scheduleRevision = this.nextInteractivePreviewScheduleRevision();
-        this.pendingInteractivePreview = this.scheduler.schedule(() => {
-            if (scheduleRevision !== this.interactivePreviewScheduleRevision) {
-                return;
-            }
-            this.pendingInteractivePreview = null;
+    private queueFinalAnchorRender(
+        render: () => Promise<void>
+    ): Promise<void> {
+        const previous = this.anchorRenderTail;
+        const run = (): Promise<void> => {
             if (this.mode !== 'active') {
-                return;
+                return Promise.resolve();
             }
-            this.requestInteractivePreview();
-        }, this.previewDelayMs);
-    }
-
-    private cancelInteractivePreview(): void {
-        this.nextInteractivePreviewScheduleRevision();
-        this.queuedInteractivePreview = false;
-        if (this.pendingInteractivePreview === null) {
-            return;
-        }
-        this.scheduler.cancel(this.pendingInteractivePreview);
-        this.pendingInteractivePreview = null;
-    }
-
-    private requestInteractivePreview(): void {
-        if (this.activeInteractivePreview !== null) {
-            this.queuedInteractivePreview = true;
-            return;
-        }
-        this.startInteractivePreview();
-    }
-
-    private startInteractivePreview(): void {
-        if (this.mode !== 'active') {
-            return;
-        }
-        this.queuedInteractivePreview = false;
-        const preview = this.anchor.renderInteractivePreview();
-        this.activeInteractivePreview = preview;
-        preview.catch((): void => undefined).then(() => {
-            if (this.activeInteractivePreview !== preview) {
-                return;
+            return render();
+        };
+        const next =
+            previous === null
+                ? run()
+                : previous.catch((): void => undefined).then(run);
+        this.anchorRenderTail = next;
+        const clearTail = (): void => {
+            if (this.anchorRenderTail === next) {
+                this.anchorRenderTail = null;
             }
-            this.activeInteractivePreview = null;
-            if (
-                !this.queuedInteractivePreview ||
-                this.mode !== 'active'
-            ) {
-                return;
-            }
-            this.startInteractivePreview();
-        });
-    }
-
-    private async waitForInteractivePreview(): Promise<void> {
-        const preview = this.activeInteractivePreview;
-        if (preview === null) {
-            return;
-        }
-        await preview.catch((): void => undefined);
-        if (this.activeInteractivePreview === preview) {
-            this.activeInteractivePreview = null;
-        }
-    }
-
-    private nextInteractivePreviewScheduleRevision(): number {
-        if (
-            this.interactivePreviewScheduleRevision >= Number.MAX_SAFE_INTEGER
-        ) {
-            throw new Error(
-                'Camera Inspection preview schedule revision cannot advance safely.'
-            );
-        }
-        this.interactivePreviewScheduleRevision += 1;
-        return this.interactivePreviewScheduleRevision;
+        };
+        next.then(clearTail, clearTail);
+        return next;
     }
 
     private requireActive(): void {

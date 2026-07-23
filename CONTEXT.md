@@ -114,8 +114,10 @@ _Avoid_: inseparable Camera+RGB+Mask tuple
 The bottom editing surface for gsplat AI RGB, Gallery navigation, 2D Mask prompting/brush editing, Mask version state, View assessment, and related actions. Main 3D viewport remains responsible for Frustums, Candidate/Uncertain overlays, and native selection visualization.  
 _Avoid_: separate AI workspace
 
-**Camera Inspection**  
-An explicit mode that saves the user's Scene View Camera, moves the Editor Camera to an external observer pose, and exposes the Anchor/selected AI View Frustum for spatial inspection/manipulation. Exiting restores the saved Scene View. The observer pose is never silently adopted as the Anchor.  
+**Camera Inspection**
+
+An explicit mode that saves the user's Scene View Camera, moves the Editor Camera to an external observer pose, and exposes the Anchor/selected AI View Frustum for spatial inspection/manipulation. Frustum manipulation updates only the CameraBinding; one final authoritative Anchor RGB is requested when the manipulation ends. Exiting restores the saved Scene View. The observer pose is never silently adopted as the Anchor.
+
 _Avoid_: normal scene navigation
 
 **MaskAnnotation**  

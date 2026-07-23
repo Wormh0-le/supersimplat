@@ -630,7 +630,7 @@ Translate Anchor Frustum
 Rotate Anchor Frustum
 ```
 
-Dock 左侧同步 gsplat Live Preview。
+拖动期间只更新 Anchor CameraBinding；操作结束后，Dock 左侧显示该固定 CameraBinding 的 gsplat Final RGB。
 
 ## 11.3 返回场景视图
 
@@ -652,33 +652,29 @@ Anchor Camera 保持用户修改后的 CameraBinding。
 
 ---
 
-# 12. Live Preview
+# 12. Final Anchor Preview
 
 Frustum Manipulation：
 
 ```text
 CameraBinding revision N
       ↓
-gsplat Preview Request
+Manipulation End
+      ↓
+gsplat Final RGB Request
 ```
 
-必须 latest-only。
+Dragging 期间不发起 gsplat RGB 请求。
 
-旧请求晚到时丢弃。
+Final 请求必须绑定固定的 CameraBinding revision；旧响应晚到时丢弃。
 
 ## 12.1 Dragging
 
-允许：
-
-```text
-lower resolution
-RGB only
-throttle / debounce
-```
+只更新 Anchor CameraBinding 和 3D Frustum，不更新 Dock RGB。
 
 ## 12.2 Manipulation End
 
-请求 final-resolution RGB。
+请求一次 final-resolution RGB。
 
 正式 Inference View 必须使用固定 CameraBinding。
 
@@ -1470,8 +1466,8 @@ Stable = v4
 # 37. 自动执行
 
 ```text
-Frustum movement
-→ Live Preview
+Frustum manipulation end
+→ Final Anchor Preview
 
 Prompt
 → Single-frame SAM
@@ -2915,7 +2911,7 @@ Native Selection 始终沿用原生视觉。
 3. 调整 Anchor
 4. Camera Inspection
 5. 拖动 / 旋转 Frustum
-6. Dock Live Preview
+6. Dock Final Anchor Preview
 7. 返回 Scene View（可选）
 8. Prompt
 9. Confirm Anchor
@@ -3096,8 +3092,8 @@ View 保留：
 ## Phase 1 — gsplat Preview
 
 - CameraBinding；
-- Interactive / Final Spec；
-- revision / latest-only；
+- Final Anchor Preview after manipulation；
+- revision / stale-response discard；
 - AIRequestBinding；
 - dependency token plumbing；
 - Dock Preview。
@@ -3311,7 +3307,7 @@ View 保留：
 1. Camera Inspection 自动外部观察位置算法；
 2. CameraBinding 与 SuperSplat / gsplat 坐标约定的精确实现；
 3. Anchor / Generated View inference resolution；
-4. Frustum Live Preview throttle / debounce；
+4. Frustum manipulation-end Final Preview response sequencing；
 5. Adaptive View Planner 具体候选 Camera 策略；
 6. Planner min/max budget 与 early-stop benchmark；
 7. Core Set / Context Set 构造；

@@ -1,96 +1,73 @@
-# 19 — Large SceneSnapshot + gsplat render/contributor cache hardening
+# 19 — Large SceneSnapshot + authoritative RGB / Render Working Set hardening
 
-Status: ready-for-agent — 02B browser-validation transfer and Anchor timing baseline added
+Status: ready-for-agent — v2.2 re-audited; prior 02B observability baseline retained
 
 Blocked by: 18, 14
 
 ## Final Spec mapping
 
-- §89 engineering items 2/3/11/13/14/19
+- Final Spec v1.1 §§5, 17–19, 30 Stage 4, 31
+- ADR 0013
 - MVP Phase 7 performance
 
 ## Inputs / preconditions
 
-- Complete Final Spec render/lift path
+- Complete authoritative RGB path
+- Reference Evidence/Lift contract
 - Representative large Gaussian scenes
-- Measured profiling data
+- Existing spatial SceneSnapshot implementation and measured profiles
 
 ## Outputs / handoff artifacts
 
 - Validated large SceneSnapshot layout
-- gsplat scene tensor cache
-- render/contributor cache
-- Measured profile
-- Anchor `Server-Timing` phase breakdown
+- Conservative Render Working Set resolver/parity evidence
+- gsplat scene tensor and RGB cache
+- Explicit reference Contributor cache boundary
+- Measured CPU/GPU/browser profile
+- Anchor Server-Timing phase breakdown
 
 ## What to build
 
-Harden only the scene/render data path. Measure first, then change data layout/cache semantics required
-for representative large scenes while preserving Stable IDs and exact dependency/version binding.
+Harden the scene and authoritative render data path. Production cache semantics center on SceneSnapshot, Render Working Set, immutable gsplat tensors, and RGB. Complete Contributor may be cached only as reference/debug data and must not be a View-ready dependency.
 
 ## Acceptance criteria
 
-- [ ] Profile representative large SceneSnapshot creation, serialization/transfer, registration, and gsplat preparation costs before optimization.
-- [x] Expose additive `Server-Timing` diagnostics on accepted Anchor-route
-      responses:
-      `working-set`, `gpu-queue`, `gsplat`, `contributor-digest`, `png`, and
-      `json-base64`; preserve the existing JSON body and Selection Service
-      protocol version.
-- [ ] Capture a representative browser DevTools/response-header phase profile
-      before using the timing data to justify an optimization.
-- [ ] Validate or improve large SceneSnapshot data layout without changing Stable Gaussian ID semantics.
-- [ ] SceneSnapshot/cache identity remains bound to scene/render/dependency versions and cannot reuse stale content after relevant mutation.
-- [ ] Establish or reuse gsplat scene-tensor cache so repeated CameraBindings over the same valid snapshot do not redundantly rebuild immutable scene tensors.
-- [ ] Establish render/contributor cache semantics keyed by CameraBinding/render/dependency identity and incapable of returning data for mismatched revisions.
-- [ ] Clarify/validate Active Splat vs multi-visible-Splat AI render/contributor dependency scope.
-- [ ] Cache invalidation works through semantic dependency identity and remains compatible with Suspended/exact-Undo recovery.
-- [ ] Record measured before/after profile data and avoid speculative rewrites with no demonstrated bottleneck.
-- [ ] **Transferred from 02B:** exercise a browser-created effective
-      SceneSnapshot with delete, world-transform, transform-palette, and
-      color-grade edits; establish selective/full RGB, alpha, contributor
-      Stable-ID stream, and weight parity.
-- [ ] **Transferred from 02B:** record browser editor peak memory for the real
-      path separately from Companion CPU/GPU memory. Do not use direct typed-
-      PLY harness RSS as an editor-memory surrogate.
+- [ ] Profile large SceneSnapshot creation, transfer, registration, working-set resolution, gsplat preparation, RGB, PNG, and browser costs before optimization.
+- [x] Expose additive Anchor `Server-Timing` diagnostics without changing current response semantics.
+- [ ] Capture representative browser/Companion/GPU phase and peak-memory profiles.
+- [ ] Validate/improve large SceneSnapshot layout without changing Stable ID semantics.
+- [ ] Scene/tensor/cache identity binds exact target/render/dependency versions.
+- [ ] Repeated CameraBindings over the same valid snapshot reuse immutable scene tensors.
+- [ ] RGB cache keys include CameraBinding, render policy/runtime, Render Working Set, and dependency identity.
+- [ ] Complete Contributor cache, when retained, is explicitly reference/debug and independently keyed; its absence/failure does not invalidate RGB.
+- [ ] Define Active Splat versus other visible-Splat dependency scope for authoritative occlusion/rendering.
+- [ ] Spatial Render Working Set is conservative and passes declared full-scene RGB/alpha parity; uncertain chunks are included or full fallback is used.
+- [ ] Same WorkingSetToken yields deterministic Gaussian membership/order/Stable ID digest.
+- [ ] Cache invalidation remains compatible with Suspended/exact Undo recovery.
+- [ ] Record measured before/after results; avoid speculative rewrites.
+- [ ] Exercise browser-created effective snapshots with delete, world transform, palette, and color-grade edits; validate authoritative RGB/alpha and Stable ID mapping. Reference Contributor parity is diagnostic, not the production gate.
+- [ ] Measure browser editor memory separately from Companion CPU/GPU memory.
 
 ## Failure / recovery criteria
 
-- [ ] Cache mismatch fails closed to recomputation rather than serving stale RGB/Contributor.
-- [ ] Large-scene preparation failure does not mutate Native Selection or publish partial AI artifacts.
-
-## Affected seams
-
-- src/splat-scene-snapshot.ts
-- Companion SceneSnapshot registration/cache
-- Companion gsplat tensor/runtime cache
-- Contributor render/cache
-- Profiling harness
-- Anchor HTTP response timing instrumentation
+- [ ] Cache mismatch fails closed to recomputation, never stale RGB/Evidence.
+- [ ] Scene Chunk Miss or incomplete Render Working Set never publishes Ready RGB.
+- [ ] Large-scene failure does not mutate Native Selection or publish partial artifacts.
 
 ## Validation
 
 - Full relevant tests
 - Locked GPU representative large-scene profile
-- Cache invalidation tests across CameraBinding/dependency mutations
-- Browser effective-snapshot/edit-mutation parity and browser-memory profile
+- Selective/full Render Working Set parity sweep
+- Cache invalidation across Camera/dependency/runtime changes
+- Browser effective-snapshot and memory profile
 
-## Initial observability baseline — 2026-07-23
+## Existing observability baseline — 2026-07-23
 
-`POST /ai-select/anchor-renders` now returns a standard `Server-Timing` header
-without changing its JSON response body or protocol version. `working-set`
-measures scene lookup/resolution; `gsplat`, `contributor-digest`, and `png`
-measure the locked renderer's publication phases; `json-base64` aggregates
-response base64 and JSON work; `gpu-queue` measures the Companion's single
-Anchor admission/replay wait. The current Companion fails different concurrent
-Anchor keys with `capacityFull` rather than queuing them, so this is not a CUDA
-hardware scheduler measurement.
-
-The baseline is instrumentation, not an optimization result. Use it with the
-transferred browser fixture and memory measurements before selecting a Ticket 19
-cache or data-path change.
+The Anchor route already exposes `working-set`, `gpu-queue`, `gsplat`, `contributor-digest`, `png`, and `json-base64` phases. `contributor-digest` now denotes legacy/reference-path instrumentation and must not define the v1.1 production RGB contract.
 
 ## Non-goals
 
-- No Evidence aggregation optimization
-- No mask artifact GC
+- No production Direct Evidence kernel
+- No Mask/Evidence artifact GC
 - No generic architecture rewrite

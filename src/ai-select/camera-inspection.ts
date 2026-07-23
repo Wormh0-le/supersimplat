@@ -225,6 +225,10 @@ export class CameraInspectionController {
     private savedSceneView: SavedSceneView | null = null;
     private restoreSceneView: (() => void) | null = null;
     private pendingInteractivePreview: unknown = null;
+    /** At most one Companion preview may hold its single rendering lease. */
+    private activeInteractivePreview: Promise<void> | null = null;
+    /** A new drag revision arrived while the active preview was rendering. */
+    private queuedInteractivePreview = false;
     private interactivePreviewScheduleRevision = 0;
 
     constructor(options: CameraInspectionOptions) {
@@ -298,12 +302,14 @@ export class CameraInspectionController {
     async endAnchorManipulation(): Promise<void> {
         this.requireActive();
         this.cancelInteractivePreview();
+        await this.waitForInteractivePreview();
         await this.anchor.renderFinalPreview();
     }
 
     async resetAnchor(): Promise<void> {
         this.requireActive();
         this.cancelInteractivePreview();
+        await this.waitForInteractivePreview();
         await this.anchor.resetAnchor();
     }
 
@@ -339,17 +345,59 @@ export class CameraInspectionController {
             if (this.mode !== 'active') {
                 return;
             }
-            this.anchor.renderInteractivePreview().catch((): void => undefined);
+            this.requestInteractivePreview();
         }, this.previewDelayMs);
     }
 
     private cancelInteractivePreview(): void {
         this.nextInteractivePreviewScheduleRevision();
+        this.queuedInteractivePreview = false;
         if (this.pendingInteractivePreview === null) {
             return;
         }
         this.scheduler.cancel(this.pendingInteractivePreview);
         this.pendingInteractivePreview = null;
+    }
+
+    private requestInteractivePreview(): void {
+        if (this.activeInteractivePreview !== null) {
+            this.queuedInteractivePreview = true;
+            return;
+        }
+        this.startInteractivePreview();
+    }
+
+    private startInteractivePreview(): void {
+        if (this.mode !== 'active') {
+            return;
+        }
+        this.queuedInteractivePreview = false;
+        const preview = this.anchor.renderInteractivePreview();
+        this.activeInteractivePreview = preview;
+        preview.catch((): void => undefined).then(() => {
+            if (this.activeInteractivePreview !== preview) {
+                return;
+            }
+            this.activeInteractivePreview = null;
+            if (
+                !this.queuedInteractivePreview ||
+                this.mode !== 'active'
+            ) {
+                return;
+            }
+            this.startInteractivePreview();
+        });
+    }
+
+    private async waitForInteractivePreview(): Promise<void> {
+        const preview = this.activeInteractivePreview;
+        if (preview === null) {
+            return;
+        }
+        await preview.catch((): void => undefined);
+        if (this.activeInteractivePreview === preview) {
+            this.activeInteractivePreview = null;
+        }
     }
 
     private nextInteractivePreviewScheduleRevision(): number {

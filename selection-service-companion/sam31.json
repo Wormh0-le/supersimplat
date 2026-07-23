@@ -1,0 +1,10 @@
+{
+    "digest": "modelscope-facebook-sam31-616acbee0b9ed4177f1f389e3c13594a0a1f6398",
+    "adapterId": "sam3.1",
+    "modelName": "SAM 3.1 multiplex",
+    "checkpointDigest": "sha256:0567debeec80ba4ac6369540c6c248025283cb3ff2b92827509e57e2b3541cb6",
+    "sourceCommit": "616acbee0b9ed4177f1f389e3c13594a0a1f6398",
+    "licenseName": "SAM License",
+    "licenseUrl": "https://github.com/facebookresearch/sam3/blob/main/LICENSE",
+    "runtimeConfigDigest": "sha256:39a47a6b641b55bf967b7b73fb7e76efa900ff69ecfed764bcce1a89683c3cba"
+}

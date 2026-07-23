@@ -532,6 +532,10 @@ class Camera extends Element {
         // setPose rotates through the camera controller, which switches it to
         // perspective. Restore the requested projection after setting the pose.
         this.ortho = view.ortho;
+        // A Camera Inspection gizmo is attached immediately after this call.
+        // Apply the zero-duration pose now so the gizmo does not observe the
+        // previous camera coincident with the Anchor and remain disabled.
+        this.onUpdate(0);
     }
 
     // set or clear the pose override and apply it immediately so subsequent

@@ -109,13 +109,31 @@ const isProjection = (value: unknown): value is CameraBindingProjection => {
     );
 };
 
-const isAffineCameraToWorld = (value: unknown): value is readonly number[] => {
-    if (!Array.isArray(value) || value.length !== 16 || !value.every(isFiniteNumber)) {
+export const isCameraToWorldMatrix = (
+    value: unknown
+): value is readonly number[] => {
+    if (
+        !Array.isArray(value) ||
+        value.length !== 16 ||
+        !value.every(isFiniteNumber)
+    ) {
         return false;
     }
 
-    return value[12] === 0 && value[13] === 0 && value[14] === 0 && value[15] === 1;
+    return (
+        value[12] === 0 && value[13] === 0 && value[14] === 0 && value[15] === 1
+    );
 };
+
+export function assertCameraToWorldMatrix(
+    value: unknown
+): asserts value is readonly number[] {
+    if (!isCameraToWorldMatrix(value)) {
+        throw new Error(
+            'AI Select CameraBinding pose must be a finite affine camera-to-world matrix.'
+        );
+    }
+}
 
 export const isCameraBinding = (value: unknown): value is CameraBinding => {
     return (
@@ -123,7 +141,7 @@ export const isCameraBinding = (value: unknown): value is CameraBinding => {
         Number.isSafeInteger(value.revision) &&
         (value.revision as number) >= 0 &&
         value.conventionVersion === aiSelectCameraConvention &&
-        isAffineCameraToWorld(value.cameraToWorld) &&
+        isCameraToWorldMatrix(value.cameraToWorld) &&
         isProjection(value.projection)
     );
 };
@@ -148,6 +166,143 @@ export const copyCameraBinding = (binding: CameraBinding): CameraBinding => {
     });
 };
 
+/**
+ * Create the next immutable Anchor pose while retaining the pinhole raster
+ * contract. Frustum manipulation is deliberately pose-only: it cannot turn a
+ * drag preview into a different formal inference resolution or convention.
+ */
+export const withCameraBindingPose = (
+    binding: CameraBinding,
+    cameraToWorld: readonly number[],
+    revision: number
+): CameraBinding => {
+    assertCameraBinding(binding);
+    assertCameraToWorldMatrix(cameraToWorld);
+    if (!Number.isSafeInteger(revision) || revision < 0) {
+        throw new Error(
+            'AI Select CameraBinding revision must be a non-negative safe integer.'
+        );
+    }
+    return copyCameraBinding({
+        revision,
+        cameraToWorld,
+        projection: binding.projection,
+        conventionVersion: binding.conventionVersion
+    });
+};
+
+/**
+ * Derive a display-only gsplat request from a fixed Anchor revision. The
+ * revision stays unchanged because resolution is a transient render policy,
+ * not a new pose that can become a formal inference view.
+ */
+export const scaleCameraBindingForPreview = (
+    binding: CameraBinding,
+    maximumDimension = 512
+): CameraBinding => {
+    assertCameraBinding(binding);
+    if (!Number.isSafeInteger(maximumDimension) || maximumDimension <= 0) {
+        throw new Error(
+            'AI Select preview maximum dimension must be a positive safe integer.'
+        );
+    }
+    const { projection } = binding;
+    const scale = Math.min(
+        1,
+        maximumDimension / Math.max(projection.width, projection.height)
+    );
+    if (scale === 1) {
+        return copyCameraBinding(binding);
+    }
+    const width = Math.max(1, Math.round(projection.width * scale));
+    const height = Math.max(1, Math.round(projection.height * scale));
+    return copyCameraBinding({
+        revision: binding.revision,
+        cameraToWorld: binding.cameraToWorld,
+        projection: {
+            model: 'pinhole',
+            fx: projection.fx * (width / projection.width),
+            fy: projection.fy * (height / projection.height),
+            cx: projection.cx * (width / projection.width),
+            cy: projection.cy * (height / projection.height),
+            width,
+            height,
+            near: projection.near,
+            far: projection.far
+        },
+        conventionVersion: binding.conventionVersion
+    });
+};
+
+/**
+ * Convert the editor's column-major PlayCanvas world transform into the
+ * row-major OpenCV camera-to-world convention used at the Companion boundary.
+ */
+export const cameraToWorldFromPlayCanvasWorldTransform = (
+    worldTransform: ArrayLike<number>
+): readonly number[] => {
+    if (worldTransform.length !== 16) {
+        throw new Error(
+            'Camera Inspection requires a complete PlayCanvas camera transform.'
+        );
+    }
+    const transform = Array.from(worldTransform);
+    if (!transform.every(Number.isFinite)) {
+        throw new Error(
+            'Camera Inspection received a non-finite PlayCanvas camera transform.'
+        );
+    }
+    const cameraToWorld = [
+        transform[0],
+        negate(transform[4]),
+        negate(transform[8]),
+        transform[12],
+        transform[1],
+        negate(transform[5]),
+        negate(transform[9]),
+        transform[13],
+        transform[2],
+        negate(transform[6]),
+        negate(transform[10]),
+        transform[14],
+        0,
+        0,
+        0,
+        1
+    ];
+    assertCameraToWorldMatrix(cameraToWorld);
+    return Object.freeze(cameraToWorld);
+};
+
+/**
+ * Convert an immutable OpenCV Anchor pose back to the editor's column-major
+ * right/up/back transform for a display/manipulation-only gizmo entity.
+ */
+export const playCanvasWorldTransformFromCameraBinding = (
+    binding: CameraBinding
+): readonly number[] => {
+    assertCameraBinding(binding);
+    const matrix = binding.cameraToWorld;
+    return Object.freeze([
+        matrix[0],
+        matrix[4],
+        matrix[8],
+        0,
+        negate(matrix[1]),
+        negate(matrix[5]),
+        negate(matrix[9]),
+        0,
+        negate(matrix[2]),
+        negate(matrix[6]),
+        negate(matrix[10]),
+        0,
+        matrix[3],
+        matrix[7],
+        matrix[11],
+        1
+    ]);
+};
+
 export const areCameraBindingsEqual = (
     left: CameraBinding,
     right: CameraBinding
@@ -156,7 +311,9 @@ export const areCameraBindingsEqual = (
         left.revision === right.revision &&
         left.conventionVersion === right.conventionVersion &&
         left.cameraToWorld.length === right.cameraToWorld.length &&
-        left.cameraToWorld.every((value, index) => value === right.cameraToWorld[index]) &&
+        left.cameraToWorld.every(
+            (value, index) => value === right.cameraToWorld[index]
+        ) &&
         left.projection.model === right.projection.model &&
         left.projection.fx === right.projection.fx &&
         left.projection.fy === right.projection.fy &&
@@ -196,29 +353,47 @@ export const captureEditorCameraBinding = (
         revision < 0 ||
         matrix.length !== 16
     ) {
-        throw new Error('Current Scene View cannot produce a complete AI Select CameraBinding.');
+        throw new Error(
+            'Current Scene View cannot produce a complete AI Select CameraBinding.'
+        );
     }
 
     const transform = Array.from(matrix);
     if (!transform.every(Number.isFinite)) {
-        throw new Error('Current Scene View camera transform contains non-finite values.');
+        throw new Error(
+            'Current Scene View camera transform contains non-finite values.'
+        );
     }
 
-    const radians = camera.fov * Math.PI / 180;
-    const focalLength = camera.camera.horizontalFov ?
-        width / (2 * Math.tan(radians / 2)) :
-        height / (2 * Math.tan(radians / 2));
+    const radians = (camera.fov * Math.PI) / 180;
+    const focalLength = camera.camera.horizontalFov
+        ? width / (2 * Math.tan(radians / 2))
+        : height / (2 * Math.tan(radians / 2));
     if (!Number.isFinite(focalLength) || focalLength <= 0) {
-        throw new Error('Current Scene View camera field of view is invalid for AI Select.');
+        throw new Error(
+            'Current Scene View camera field of view is invalid for AI Select.'
+        );
     }
 
     // PlayCanvas Mat4 data is column-major. Its local camera axes are
     // right/up/back, so OpenCV camera-to-world is right/down/forward.
     const cameraToWorld = [
-        transform[0], negate(transform[4]), negate(transform[8]), transform[12],
-        transform[1], negate(transform[5]), negate(transform[9]), transform[13],
-        transform[2], negate(transform[6]), negate(transform[10]), transform[14],
-        0, 0, 0, 1
+        transform[0],
+        negate(transform[4]),
+        negate(transform[8]),
+        transform[12],
+        transform[1],
+        negate(transform[5]),
+        negate(transform[9]),
+        transform[13],
+        transform[2],
+        negate(transform[6]),
+        negate(transform[10]),
+        transform[14],
+        0,
+        0,
+        0,
+        1
     ];
 
     return copyCameraBinding({

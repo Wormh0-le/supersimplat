@@ -47,6 +47,99 @@ const va = new Vec3();
 const m = new Mat4();
 const v4 = new Vec4();
 
+type CameraVectorSnapshot = Readonly<{
+    x: number;
+    y: number;
+    z: number;
+}>;
+
+type CameraRotationSnapshot = Readonly<{
+    x: number;
+    y: number;
+    z: number;
+    w: number;
+}>;
+
+type CameraTweenValues = Record<string, number>;
+
+interface CameraTweenSnapshot {
+    readonly value: Readonly<CameraTweenValues>;
+    readonly source: Readonly<CameraTweenValues>;
+    readonly target: Readonly<CameraTweenValues>;
+    readonly timer: number;
+    readonly transitionTime: number;
+}
+
+interface CameraPoseOverrideSnapshot {
+    readonly position: CameraVectorSnapshot;
+    readonly rotation: CameraRotationSnapshot;
+    readonly fov: number;
+    readonly near: number;
+    readonly far: number;
+}
+
+/**
+ * An atomic editor-camera snapshot used when a temporary observer must not
+ * corrupt an in-flight user camera transition. It is intentionally owned by
+ * Camera rather than reconstructed from a position and a public tween target.
+ */
+export interface CameraSceneViewSnapshot {
+    readonly sceneView: Readonly<{
+        position: CameraVectorSnapshot;
+        target: CameraVectorSnapshot;
+        fov: number;
+        near: number;
+        far: number;
+        ortho: boolean;
+    }>;
+    readonly focalPointTween: CameraTweenSnapshot;
+    readonly azimElevTween: CameraTweenSnapshot;
+    readonly distanceTween: CameraTweenSnapshot;
+    readonly lookCameraPos: CameraVectorSnapshot | null;
+    readonly poseOverride: CameraPoseOverrideSnapshot | null;
+    readonly cameraRotation: CameraRotationSnapshot;
+    readonly displayTransform: readonly number[];
+    readonly orthoHeight: number;
+}
+
+const copyVectorSnapshot = (value: {
+    x: number;
+    y: number;
+    z: number;
+}): CameraVectorSnapshot => {
+    return Object.freeze({ x: value.x, y: value.y, z: value.z });
+};
+
+const copyRotationSnapshot = (value: Quat): CameraRotationSnapshot => {
+    return Object.freeze({ x: value.x, y: value.y, z: value.z, w: value.w });
+};
+
+const copyTweenSnapshot = (tween: TweenValue): CameraTweenSnapshot => {
+    const copyValues = (
+        value: CameraTweenValues
+    ): Readonly<CameraTweenValues> => {
+        return Object.freeze({ ...value });
+    };
+    return Object.freeze({
+        value: copyValues(tween.value),
+        source: copyValues(tween.source),
+        target: copyValues(tween.target),
+        timer: tween.timer,
+        transitionTime: tween.transitionTime
+    });
+};
+
+const restoreTweenSnapshot = (
+    tween: TweenValue,
+    snapshot: CameraTweenSnapshot
+) => {
+    Object.assign(tween.value, snapshot.value);
+    Object.assign(tween.source, snapshot.source);
+    Object.assign(tween.target, snapshot.target);
+    tween.timer = snapshot.timer;
+    tween.transitionTime = snapshot.transitionTime;
+};
+
 // modulo dealing with negative numbers
 const mod = (n: number, m: number) => ((n % m) + m) % m;
 
@@ -103,12 +196,18 @@ class Camera extends Element {
     finalPass: SimpleRenderPass;
 
     // overridden target size
-    targetSizeOverride: { width: number, height: number } = null;
+    targetSizeOverride: { width: number; height: number } = null;
 
     // when set, overrides the tween-driven pose, fov and clipping planes each
     // update (used by 360 capture to render arbitrary face orientations that
     // the azim/elev pose system cannot express)
-    poseOverride: { position: Vec3, rotation: Quat, fov: number, near: number, far: number } | null = null;
+    poseOverride: {
+        position: Vec3;
+        rotation: Quat;
+        fov: number;
+        near: number;
+        far: number;
+    } | null = null;
 
     // world transform of the user-facing camera pose. while a pose override
     // is active this holds the last tween-driven pose, so ui elements (view
@@ -130,7 +229,9 @@ class Camera extends Element {
     // ortho
     set ortho(value: boolean) {
         if (value !== this.ortho) {
-            this.camera.projection = value ? PROJECTION_ORTHOGRAPHIC : PROJECTION_PERSPECTIVE;
+            this.camera.projection = value
+                ? PROJECTION_ORTHOGRAPHIC
+                : PROJECTION_PERSPECTIVE;
             this.scene.events.fire('camera.ortho', value);
         }
     }
@@ -169,12 +270,18 @@ class Camera extends Element {
 
     get tonemapping() {
         switch (this.camera.toneMapping) {
-            case TONEMAP_LINEAR: return 'linear';
-            case TONEMAP_NEUTRAL: return 'neutral';
-            case TONEMAP_ACES: return 'aces';
-            case TONEMAP_ACES2: return 'aces2';
-            case TONEMAP_FILMIC: return 'filmic';
-            case TONEMAP_HEJL: return 'hejl';
+            case TONEMAP_LINEAR:
+                return 'linear';
+            case TONEMAP_NEUTRAL:
+                return 'neutral';
+            case TONEMAP_ACES:
+                return 'aces';
+            case TONEMAP_ACES2:
+                return 'aces2';
+            case TONEMAP_FILMIC:
+                return 'filmic';
+            case TONEMAP_HEJL:
+                return 'hejl';
         }
         return 'linear';
     }
@@ -222,13 +329,16 @@ class Camera extends Element {
 
     setFocalPoint(point: Vec3, dampingFactorFactor: number = 1) {
         this.lookCameraPos = null;
-        this.focalPointTween.goto(point, dampingFactorFactor * this.scene.config.controls.dampingFactor);
+        this.focalPointTween.goto(
+            point,
+            dampingFactorFactor * this.scene.config.controls.dampingFactor
+        );
     }
 
     // Fly mode: rotate camera around itself, keeping the camera position fixed
     look(dx: number, dy: number) {
         const sensitivity = this.scene.config.controls.orbitSensitivity;
-        const d = this.distance * this.sceneRadius / this.fovFactor;
+        const d = (this.distance * this.sceneRadius) / this.fovFactor;
 
         Camera.calcForwardVec(forwardVec, this.azim, this.elevation);
         const cameraPos = this.focalPoint.add(forwardVec.clone().mulScalar(d));
@@ -237,10 +347,15 @@ class Camera extends Element {
         const elev = this.elevation - dy * sensitivity;
 
         Camera.calcForwardVec(forwardVec, azim, elev);
-        const focalPoint = cameraPos.clone().sub(forwardVec.clone().mulScalar(d));
+        const focalPoint = cameraPos
+            .clone()
+            .sub(forwardVec.clone().mulScalar(d));
 
         this.setAzimElev(azim, elev);
-        this.focalPointTween.goto(focalPoint, this.scene.config.controls.dampingFactor);
+        this.focalPointTween.goto(
+            focalPoint,
+            this.scene.config.controls.dampingFactor
+        );
         this.lookCameraPos = cameraPos;
     }
 
@@ -250,7 +365,10 @@ class Camera extends Element {
         elev = Math.max(this.minElev, Math.min(this.maxElev, elev));
 
         const t = this.azimElevTween;
-        t.goto({ azim, elev }, dampingFactorFactor * this.scene.config.controls.dampingFactor);
+        t.goto(
+            { azim, elev },
+            dampingFactorFactor * this.scene.config.controls.dampingFactor
+        );
 
         // handle wraparound
         if (t.source.azim - azim < -180) {
@@ -269,7 +387,10 @@ class Camera extends Element {
         const controls = this.scene.config.controls;
 
         // clamp
-        distance = Math.max(controls.minZoom, Math.min(controls.maxZoom, distance));
+        distance = Math.max(
+            controls.minZoom,
+            Math.min(controls.maxZoom, distance)
+        );
 
         const t = this.distanceTween;
         t.goto({ distance }, dampingFactorFactor * controls.dampingFactor);
@@ -282,7 +403,135 @@ class Camera extends Element {
         const elev = Math.asin(vec.y / l) * math.RAD_TO_DEG;
         this.setFocalPoint(target, dampingFactorFactor);
         this.setAzimElev(azim, elev, dampingFactorFactor);
-        this.setDistance(l / this.sceneRadius * this.fovFactor, dampingFactorFactor);
+        this.setDistance(
+            (l / this.sceneRadius) * this.fovFactor,
+            dampingFactorFactor
+        );
+    }
+
+    /**
+     * Capture the rendered camera and its in-progress controller state as one
+     * immutable value. Consumers that temporarily move the editor camera must
+     * restore this snapshot rather than synthesize a pose from tween targets.
+     */
+    captureSceneView(): CameraSceneViewSnapshot {
+        const poseOverride = this.poseOverride;
+        const cameraPosition = this.mainCamera.getPosition();
+        const cameraRotation = this.mainCamera.getLocalRotation();
+        const focalPoint = this.focalPointTween.value;
+        return Object.freeze({
+            sceneView: Object.freeze({
+                position: copyVectorSnapshot(cameraPosition),
+                target: copyVectorSnapshot(focalPoint),
+                fov: this.fov,
+                near: this.near,
+                far: this.far,
+                ortho: this.ortho
+            }),
+            focalPointTween: copyTweenSnapshot(this.focalPointTween),
+            azimElevTween: copyTweenSnapshot(this.azimElevTween),
+            distanceTween: copyTweenSnapshot(this.distanceTween),
+            lookCameraPos:
+                this.lookCameraPos === null
+                    ? null
+                    : copyVectorSnapshot(this.lookCameraPos),
+            poseOverride:
+                poseOverride === null
+                    ? null
+                    : Object.freeze({
+                          position: copyVectorSnapshot(poseOverride.position),
+                          rotation: copyRotationSnapshot(poseOverride.rotation),
+                          fov: poseOverride.fov,
+                          near: poseOverride.near,
+                          far: poseOverride.far
+                      }),
+            cameraRotation: copyRotationSnapshot(cameraRotation),
+            displayTransform: Object.freeze([...this.displayTransform.data]),
+            orthoHeight: this.camera.orthoHeight
+        });
+    }
+
+    /**
+     * Restore an atomic Scene View captured by this Camera. The direct visual
+     * state is applied immediately; the restored tween state produces the same
+     * pose and clipping policy on subsequent editor updates.
+     */
+    restoreSceneView(snapshot: CameraSceneViewSnapshot) {
+        restoreTweenSnapshot(this.focalPointTween, snapshot.focalPointTween);
+        restoreTweenSnapshot(this.azimElevTween, snapshot.azimElevTween);
+        restoreTweenSnapshot(this.distanceTween, snapshot.distanceTween);
+        this.lookCameraPos =
+            snapshot.lookCameraPos === null
+                ? null
+                : new Vec3(
+                      snapshot.lookCameraPos.x,
+                      snapshot.lookCameraPos.y,
+                      snapshot.lookCameraPos.z
+                  );
+        this.poseOverride =
+            snapshot.poseOverride === null
+                ? null
+                : {
+                      position: new Vec3(
+                          snapshot.poseOverride.position.x,
+                          snapshot.poseOverride.position.y,
+                          snapshot.poseOverride.position.z
+                      ),
+                      rotation: new Quat(
+                          snapshot.poseOverride.rotation.x,
+                          snapshot.poseOverride.rotation.y,
+                          snapshot.poseOverride.rotation.z,
+                          snapshot.poseOverride.rotation.w
+                      ),
+                      fov: snapshot.poseOverride.fov,
+                      near: snapshot.poseOverride.near,
+                      far: snapshot.poseOverride.far
+                  };
+        this.fov = snapshot.sceneView.fov;
+        this.near = snapshot.sceneView.near;
+        this.far = snapshot.sceneView.far;
+        this.ortho = snapshot.sceneView.ortho;
+        this.camera.orthoHeight = snapshot.orthoHeight;
+        this.mainCamera.setLocalPosition(
+            snapshot.sceneView.position.x,
+            snapshot.sceneView.position.y,
+            snapshot.sceneView.position.z
+        );
+        this.mainCamera.setLocalRotation(
+            new Quat(
+                snapshot.cameraRotation.x,
+                snapshot.cameraRotation.y,
+                snapshot.cameraRotation.z,
+                snapshot.cameraRotation.w
+            )
+        );
+        this.displayTransform.data.set(snapshot.displayTransform);
+    }
+
+    /**
+     * Move to a temporary observer Scene View. A saved CameraSceneViewSnapshot
+     * restores any prior pose override after Camera Inspection exits.
+     */
+    setSceneView(view: {
+        readonly position: CameraVectorSnapshot;
+        readonly target: CameraVectorSnapshot;
+        readonly fov: number;
+        readonly near: number;
+        readonly far: number;
+        readonly ortho: boolean;
+    }) {
+        this.setPoseOverride(null);
+        this.fov = view.fov;
+        this.near = view.near;
+        this.far = view.far;
+        this.setPose(
+            new Vec3(view.position.x, view.position.y, view.position.z),
+            new Vec3(view.target.x, view.target.y, view.target.z),
+            0
+        );
+        // setPose rotates through the camera controller, which switches it to
+        // perspective. Restore the requested projection after setting the pose.
+        this.ortho = view.ortho;
     }
 
     // set or clear the pose override and apply it immediately so subsequent
@@ -300,8 +549,8 @@ class Camera extends Element {
         v4.set(world.x, world.y, world.z, 1);
         m.transformVec4(v4, v4);
 
-        screen.x = v4.x / v4.w * 0.5 + 0.5;
-        screen.y = 1.0 - (v4.y / v4.w * 0.5 + 0.5);
+        screen.x = (v4.x / v4.w) * 0.5 + 0.5;
+        screen.y = 1.0 - ((v4.y / v4.w) * 0.5 + 0.5);
         screen.z = v4.z / v4.w;
     }
 
@@ -327,17 +576,35 @@ class Camera extends Element {
         const composition = app.scene.layers;
 
         this.clearPass = new RenderPass(device);
-        this.mainPass = new RenderPassForward(device, composition, app.scene, renderer);
-        this.splatPass = new RenderPassForward(device, composition, app.scene, renderer);
-        this.gizmoPass = new RenderPassForward(device, composition, app.scene, renderer);
-        this.finalPass = new SimpleRenderPass(device,
-            new ShaderQuad(device, vertexShader, fragmentShader, 'final-blit'), {
+        this.mainPass = new RenderPassForward(
+            device,
+            composition,
+            app.scene,
+            renderer
+        );
+        this.splatPass = new RenderPassForward(
+            device,
+            composition,
+            app.scene,
+            renderer
+        );
+        this.gizmoPass = new RenderPassForward(
+            device,
+            composition,
+            app.scene,
+            renderer
+        );
+        this.finalPass = new SimpleRenderPass(
+            device,
+            new ShaderQuad(device, vertexShader, fragmentShader, 'final-blit'),
+            {
                 vars: () => {
                     return {
                         srcTexture: this.mainTarget.colorBuffer
                     };
                 }
-            });
+            }
+        );
 
         const target = document.getElementById('canvas-container');
         this.controller = new PointerController(this, target);
@@ -415,7 +682,14 @@ class Camera extends Element {
         if (focal) {
             const parts = focal.toString().split(',');
             if (parts.length === 3) {
-                this.setFocalPoint(new Vec3(parseFloat(parts[0]), parseFloat(parts[1]), parseFloat(parts[2])), 0);
+                this.setFocalPoint(
+                    new Vec3(
+                        parseFloat(parts[0]),
+                        parseFloat(parts[1]),
+                        parseFloat(parts[2])
+                    ),
+                    0
+                );
             }
         }
         const angles = url.searchParams.get('angles');
@@ -457,8 +731,9 @@ class Camera extends Element {
     // the entire extents as well as possible.
     // also update the existing camera distance to maintain the current view
     onBoundChanged(bound: BoundingBox) {
-        const prevDistance = this.distanceTween.value.distance * this.sceneRadius;
-        this.sceneRadius = Math.max(1e-03, bound.halfExtents.length());
+        const prevDistance =
+            this.distanceTween.value.distance * this.sceneRadius;
+        this.sceneRadius = Math.max(1e-3, bound.halfExtents.length());
         this.setDistance(prevDistance / this.sceneRadius, 0);
     }
 
@@ -478,7 +753,11 @@ class Camera extends Element {
         const { mainTarget, scene } = this;
 
         // early out if size is unchanged
-        if (mainTarget && mainTarget.width === width && mainTarget.height === height) {
+        if (
+            mainTarget &&
+            mainTarget.width === width &&
+            mainTarget.height === height
+        ) {
             return;
         }
 
@@ -486,7 +765,12 @@ class Camera extends Element {
             // first time - construct render targets
             const { graphicsDevice } = scene;
 
-            const createTexture = (name: string, width: number, height: number, format: number) => {
+            const createTexture = (
+                name: string,
+                width: number,
+                height: number,
+                format: number
+            ) => {
                 return new Texture(graphicsDevice, {
                     name,
                     width,
@@ -500,9 +784,24 @@ class Camera extends Element {
                 });
             };
 
-            const colorBuffer = createTexture('cameraColor', width, height, PIXELFORMAT_RGBA16F);
-            const workBuffer = createTexture('workColor', width, height, PIXELFORMAT_RGBA8);
-            const depthBuffer = createTexture('cameraDepth', width, height, PIXELFORMAT_DEPTH);
+            const colorBuffer = createTexture(
+                'cameraColor',
+                width,
+                height,
+                PIXELFORMAT_RGBA16F
+            );
+            const workBuffer = createTexture(
+                'workColor',
+                width,
+                height,
+                PIXELFORMAT_RGBA8
+            );
+            const depthBuffer = createTexture(
+                'cameraDepth',
+                width,
+                height,
+                PIXELFORMAT_DEPTH
+            );
 
             // create main render target
             this.mainTarget = new RenderTarget({
@@ -515,8 +814,8 @@ class Camera extends Element {
             // create MRT render target for splat pass
             this.splatTarget = new RenderTarget({
                 colorBuffers: [
-                    colorBuffer,        // RT0: main color (shared)
-                    workBuffer          // RT1: overlay output (shared with workTarget)
+                    colorBuffer, // RT0: main color (shared)
+                    workBuffer // RT1: overlay output (shared with workTarget)
                 ],
                 depthBuffer,
                 flipY: false,
@@ -552,12 +851,22 @@ class Camera extends Element {
 
             // configure splat pass - MRT target, no clears
             this.splatPass.init(this.splatTarget);
-            this.splatPass.addLayer(this.camera, scene.splatLayer, false, false);
+            this.splatPass.addLayer(
+                this.camera,
+                scene.splatLayer,
+                false,
+                false
+            );
             this.splatPass.addLayer(this.camera, scene.splatLayer, true, false);
 
             // configure gizmo pass
             this.gizmoPass.init(this.mainTarget);
-            this.gizmoPass.addLayer(this.camera, scene.gizmoLayer, false, false);
+            this.gizmoPass.addLayer(
+                this.camera,
+                scene.gizmoLayer,
+                false,
+                false
+            );
             this.gizmoPass.addLayer(this.camera, scene.gizmoLayer, true, false);
             this.gizmoPass.renderActions[0].clearDepth = true;
             this.gizmoPass.renderActions[0].clearStencil = true;
@@ -565,7 +874,13 @@ class Camera extends Element {
             this.finalPass.init(null);
 
             // assign render passes to camera
-            this.camera.framePasses = [this.clearPass, this.mainPass, this.splatPass, this.gizmoPass, this.finalPass];
+            this.camera.framePasses = [
+                this.clearPass,
+                this.mainPass,
+                this.splatPass,
+                this.gizmoPass,
+                this.finalPass
+            ];
         } else {
             // resize existing render targets
             const { splatTarget, colorTarget, workTarget } = this;
@@ -602,7 +917,9 @@ class Camera extends Element {
             }
         } else {
             cameraPosition.copy(forwardVec);
-            cameraPosition.mulScalar(distance.distance * this.sceneRadius / this.fovFactor);
+            cameraPosition.mulScalar(
+                (distance.distance * this.sceneRadius) / this.fovFactor
+            );
             cameraPosition.add(this.focalPointTween.value);
         }
 
@@ -616,9 +933,16 @@ class Camera extends Element {
             this.far = far;
         } else {
             this.mainCamera.setLocalPosition(cameraPosition);
-            this.mainCamera.setLocalEulerAngles(azimElev.elev, azimElev.azim, 0);
+            this.mainCamera.setLocalEulerAngles(
+                azimElev.elev,
+                azimElev.azim,
+                0
+            );
 
-            this.fitClippingPlanes(this.mainCamera.getLocalPosition(), this.mainCamera.forward);
+            this.fitClippingPlanes(
+                this.mainCamera.getLocalPosition(),
+                this.mainCamera.forward
+            );
 
             this.displayTransform.copy(this.mainCamera.getWorldTransform());
         }
@@ -627,7 +951,11 @@ class Camera extends Element {
         const { targetSize } = this;
 
         // update ortho height
-        camera.orthoHeight = this.distanceTween.value.distance * this.sceneRadius / this.fovFactor * (this.fov / 90) * (camera.horizontalFov ? targetSize.height / targetSize.width : 1);
+        camera.orthoHeight =
+            ((this.distanceTween.value.distance * this.sceneRadius) /
+                this.fovFactor) *
+            (this.fov / 90) *
+            (camera.horizontalFov ? targetSize.height / targetSize.width : 1);
         camera.camera._updateViewProjMat();
     }
 
@@ -641,7 +969,10 @@ class Camera extends Element {
         if (dist > 0) {
             this.far = dist + boundRadius;
             // if camera is placed inside the sphere bound calculate near based far
-            this.near = Math.max(1e-6, dist < boundRadius ? this.far / (1024 * 16) : dist - boundRadius);
+            this.near = Math.max(
+                1e-6,
+                dist < boundRadius ? this.far / (1024 * 16) : dist - boundRadius
+            );
         } else {
             // if the scene is behind the camera
             this.far = boundRadius * 2;
@@ -654,11 +985,9 @@ class Camera extends Element {
         this.updateCameraUniforms();
     }
 
-    onPostRender() {
+    onPostRender() {}
 
-    }
-
-    focus(options?: { focalPoint: Vec3, radius: number, speed: number }) {
+    focus(options?: { focalPoint: Vec3; radius: number; speed: number }) {
         const getSplatFocalPoint = () => {
             for (const element of this.scene.elements) {
                 if (element.type === ElementType.splat) {
@@ -670,8 +999,12 @@ class Camera extends Element {
             }
         };
 
-        const focalPoint = options ? options.focalPoint : (getSplatFocalPoint() ?? this.scene.bound.center);
-        const focalRadius = options ? options.radius : this.scene.bound.halfExtents.length();
+        const focalPoint = options
+            ? options.focalPoint
+            : (getSplatFocalPoint() ?? this.scene.bound.center);
+        const focalRadius = options
+            ? options.radius
+            : this.scene.bound.halfExtents.length();
 
         const fdist = focalRadius / this.sceneRadius;
 
@@ -754,7 +1087,9 @@ class Camera extends Element {
             const { scene } = this;
 
             this.setFocalPoint(result.position);
-            this.setDistance(result.distance / this.sceneRadius * this.fovFactor);
+            this.setDistance(
+                (result.distance / this.sceneRadius) * this.fovFactor
+            );
             scene.events.fire('camera.focalPointPicked', {
                 camera: this,
                 splat: result.splat,

@@ -41,7 +41,7 @@ const editorCamera = () => ({
 
 const cameraBinding = () => captureEditorCameraBinding(editorCamera());
 
-const pngCrc32 = bytes => {
+const pngCrc32 = (bytes) => {
     let crc = 0xffffffff;
     for (const byte of bytes) {
         crc ^= byte;
@@ -100,7 +100,7 @@ const input = (overrides = {}) => ({
     ...overrides
 });
 
-const responseFor = request => ({
+const responseFor = (request) => ({
     requestBinding: request.requestBinding,
     targetSplatId: request.target.splatId,
     sceneId: request.snapshot.sceneId,
@@ -321,6 +321,7 @@ test('discards an Anchor result after the editor semantic dependency changes', a
 
     assert.equal(controller.state.context.lifecycle, 'suspended');
     assert.equal(controller.state.anchor.renderStatus, 'rendering');
+    assert.deepEqual(controller.getAnchorCameraBinding(), cameraBinding());
 });
 
 test('keeps an Anchor render failure local to the AI view and can exit without a native-selection side effect', async () => {
@@ -340,6 +341,139 @@ test('keeps an Anchor render failure local to the AI view and can exit without a
     controller.exit();
     assert.equal(controller.state.context, null);
     assert.equal(controller.state.anchor, null);
+});
+
+test('keeps interactive and stale final responses from replacing the newest fixed Anchor revision', async () => {
+    const requests = [];
+    const renders = [];
+    const controller = new AISelectAnchorController({
+        renderer: {
+            renderAnchor(request) {
+                requests.push(request);
+                const rendering = deferred();
+                renders.push(rendering);
+                return rendering.promise;
+            }
+        }
+    });
+
+    const start = controller.start(input());
+    renders[0].resolve(responseFor(requests[0]));
+    await start;
+
+    controller.updateAnchorCameraPose([
+        1, 0, 0, 7, 0, -1, 0, 8, 0, 0, -1, 9, 0, 0, 0, 1
+    ]);
+    const staleFinal = controller.renderFinalPreview();
+
+    controller.updateAnchorCameraPose([
+        1, 0, 0, 10, 0, -1, 0, 11, 0, 0, -1, 12, 0, 0, 0, 1
+    ]);
+    const interactive = controller.renderInteractivePreview();
+    const newestFinal = controller.renderFinalPreview();
+
+    assert.ok(
+        requests[2].cameraBinding.projection.width <
+            requests[3].cameraBinding.projection.width
+    );
+
+    renders[3].resolve({
+        ...responseFor(requests[3]),
+        rgb: {
+            ...responseFor(requests[3]).rgb,
+            digest: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
+        }
+    });
+    await newestFinal;
+
+    renders[2].resolve({
+        ...responseFor(requests[2]),
+        rgb: {
+            ...responseFor(requests[2]).rgb,
+            digest: 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
+        }
+    });
+    renders[1].resolve({
+        ...responseFor(requests[1]),
+        rgb: {
+            ...responseFor(requests[1]).rgb,
+            digest: 'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+        }
+    });
+    await Promise.all([interactive, staleFinal]);
+
+    assert.equal(controller.state.anchor.cameraBinding.cameraToWorld[3], 10);
+    assert.equal(controller.state.anchor.renderStatus, 'ready');
+    assert.equal(
+        controller.state.anchor.rgb.digest,
+        'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
+    );
+});
+
+test('Reset Anchor restores the initial CameraBinding pose and rerenders it at final resolution', async () => {
+    const requests = [];
+    const controller = new AISelectAnchorController({
+        renderer: {
+            async renderAnchor(request) {
+                requests.push(request);
+                return responseFor(request);
+            }
+        }
+    });
+
+    await controller.start(input());
+    controller.updateAnchorCameraPose([
+        1, 0, 0, 90, 0, -1, 0, 91, 0, 0, -1, 92, 0, 0, 0, 1
+    ]);
+
+    await controller.resetAnchor();
+
+    assert.equal(requests.length, 2);
+    assert.deepEqual(
+        requests[1].cameraBinding.cameraToWorld,
+        [1, 0, 0, 2, 0, -1, 0, 3, 0, 0, -1, 4, 0, 0, 0, 1]
+    );
+    assert.equal(
+        requests[1].cameraBinding.projection.width,
+        cameraBinding().projection.width
+    );
+    assert.equal(controller.state.anchor.renderStatus, 'ready');
+});
+
+test('preserves a valid preview when the current final render fails and retries it', async () => {
+    const requests = [];
+    const controller = new AISelectAnchorController({
+        renderer: {
+            async renderAnchor(request) {
+                requests.push(request);
+                if (requests.length === 2) {
+                    throw new Error('temporary gsplat failure');
+                }
+                return responseFor(request);
+            }
+        }
+    });
+
+    await controller.start(input());
+    const firstDigest = controller.state.anchor.rgb.digest;
+    controller.updateAnchorCameraPose([
+        1, 0, 0, 20, 0, -1, 0, 21, 0, 0, -1, 22, 0, 0, 0, 1
+    ]);
+    await controller.renderFinalPreview();
+
+    assert.equal(controller.state.anchor.renderStatus, 'failed');
+    assert.equal(controller.state.anchor.preview.renderStatus, 'failed');
+    assert.equal(
+        controller.state.anchor.lastValidPreview.rgb.digest,
+        firstDigest
+    );
+
+    await controller.retryAnchorPreview();
+
+    assert.equal(requests.length, 3);
+    assert.deepEqual(requests[2].cameraBinding, requests[1].cameraBinding);
+    assert.equal(controller.state.anchor.renderStatus, 'ready');
+    assert.equal(controller.state.anchor.cameraBinding.cameraToWorld[3], 20);
 });
 
 test('rejects an Anchor response whose actual PNG raster dimensions differ from its CameraBinding', async () => {

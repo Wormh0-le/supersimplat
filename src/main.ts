@@ -1,7 +1,9 @@
 import { WebPCodec, WorkerQueue } from '@playcanvas/splat-transform';
-import { Color, createGraphicsDevice } from 'playcanvas';
+import { Color, Vec3, createGraphicsDevice } from 'playcanvas';
 
 import { AISelectAnchorController } from './ai-select/anchor-controller';
+import { CameraInspectionController } from './ai-select/camera-inspection';
+import { AnchorFrustumManipulator } from './ai-select/camera-inspection-manipulator';
 import { AnchorFrustum } from './ai-select-anchor-frustum';
 import { AISelectEditorTargetFactory } from './ai-select-editor-target';
 import { registerCameraPosesEvents } from './camera-poses';
@@ -109,7 +111,8 @@ const main = async () => {
 
     // expose the queue as an event for any module that needs to serialise async work
     // alongside history mutations.
-    events.function('queue', (fn: () => Promise<void> | void) => commandQueue.enqueue(fn)
+    events.function('queue', (fn: () => Promise<void> | void) =>
+        commandQueue.enqueue(fn)
     );
 
     // init localization
@@ -148,13 +151,15 @@ const main = async () => {
     });
     selectionServiceAdapter.setAdapter(
         new FetchSelectionServiceAdapter({
-            getConfiguration: () => selectionServiceReadiness.state.configuration,
+            getConfiguration: () =>
+                selectionServiceReadiness.state.configuration,
             // Spatial working sets are additive to the 02A full packed
             // registration path. A compatible older Companion remains usable
             // through that reference/fallback path.
-            supportsCameraAwareSpatialWorkingSet: () => selectionServiceReadiness.state.capabilities?.supportedOperations.includes(
-                'cameraAwareSpatialWorkingSetV1'
-            ) ?? false
+            supportsCameraAwareSpatialWorkingSet: () =>
+                selectionServiceReadiness.state.capabilities?.supportedOperations.includes(
+                    'cameraAwareSpatialWorkingSetV1'
+                ) ?? false
         })
     );
     registerSelectionServiceReadinessEvents(events, selectionServiceReadiness);
@@ -246,7 +251,8 @@ const main = async () => {
     });
 
     events.on('bgClr', (clr: Color) => {
-        const cnv = (v: number) => `${Math.max(0, Math.min(255, v * 255)).toFixed(0)}`;
+        const cnv = (v: number) =>
+            `${Math.max(0, Math.min(255, v * 255)).toFixed(0)}`;
         document.body.style.backgroundColor = `rgba(${cnv(clr.r)},${cnv(clr.g)},${cnv(clr.b)},1)`;
     });
     events.on('selectedClr', (clr: Color) => {
@@ -381,10 +387,41 @@ const main = async () => {
     const aiSelectController = new AISelectAnchorController({
         renderer: selectionServiceAdapter
     });
+    const cameraInspection = new CameraInspectionController({
+        anchor: aiSelectController,
+        editor: {
+            captureSceneView: () => {
+                const snapshot = scene.camera.captureSceneView();
+                return {
+                    sceneView: snapshot.sceneView,
+                    restore: () => {
+                        scene.camera.restoreSceneView(snapshot);
+                        scene.forceRender = true;
+                    }
+                };
+            },
+            setSceneView: (view) => {
+                scene.camera.setSceneView(view);
+                scene.forceRender = true;
+            }
+        }
+    });
     const anchorFrustum = new AnchorFrustum();
     await scene.add(anchorFrustum);
-    aiSelectController.subscribe((state) => {
-        anchorFrustum.setCameraBinding(state.anchor?.cameraBinding ?? null);
+    const updateAnchorFrustum = () => {
+        const anchor = aiSelectController.state.anchor;
+        const inspecting = cameraInspection.state.mode === 'active';
+        anchorFrustum.setCameraBinding(
+            inspecting ? (anchor?.cameraBinding ?? null) : null
+        );
+        anchorFrustum.setVisible(inspecting && anchor !== null);
+    };
+    aiSelectController.subscribe(updateAnchorFrustum);
+    cameraInspection.subscribe(updateAnchorFrustum);
+    const anchorFrustumManipulator = new AnchorFrustumManipulator({
+        scene,
+        controller: aiSelectController,
+        inspection: cameraInspection
     });
 
     let aiSelectTargetSplat: Splat | null = null;
@@ -398,9 +435,14 @@ const main = async () => {
         });
     };
     const startAISelect = async (restart: boolean) => {
-        const selectedSplat = restart ?
-            aiSelectTargetSplat :
-            (events.invoke('selection') as Splat | null);
+        if (restart) {
+            // Restart must use the saved Scene View as its baseline. The
+            // external inspection observer is never an implicit new Anchor.
+            cameraInspection.returnToSceneView();
+        }
+        const selectedSplat = restart
+            ? aiSelectTargetSplat
+            : (events.invoke('selection') as Splat | null);
         if (!selectedSplat || !selectedSplat.visible) {
             throw new Error(
                 'Select one visible Target Splat before starting AI Select.'
@@ -419,11 +461,13 @@ const main = async () => {
         }
     };
     const exitAISelect = () => {
+        cameraInspection.returnToSceneView();
         aiSelectController.exit();
         aiSelectTargetSplat = null;
         events.fire('tool.deactivate');
     };
     const aiSelectDock = new AISelectAnchorDock(aiSelectController, {
+        onRetry: () => aiSelectController.retryAnchorPreview(),
         onReconnect: async () => {
             await selectionServiceReadiness.refresh();
             if (selectionServiceReadiness.state.status !== 'ready') {
@@ -436,10 +480,23 @@ const main = async () => {
         },
         onOpenSettings: () => events.fire('settingsPanel.setVisible', true)
     });
-    const aiSelectToolbar = new AISelectToolbar(aiSelectController, {
-        onRestart: () => startAISelect(true),
-        onExit: exitAISelect
-    });
+    const aiSelectToolbar = new AISelectToolbar(
+        aiSelectController,
+        cameraInspection,
+        {
+            onRestart: () => startAISelect(true),
+            onExit: exitAISelect,
+            onEnterInspection: () => {
+                try {
+                    cameraInspection.enter();
+                } catch (error) {
+                    reportAISelectError(error);
+                }
+            },
+            onReturnToSceneView: () => cameraInspection.returnToSceneView(),
+            onResetAnchor: () => cameraInspection.resetAnchor()
+        }
+    );
     let lastAISelectPanelContextId: string | null = null;
     aiSelectController.subscribe((state) => {
         const targetContextId = state.context?.targetContextId ?? null;
@@ -461,6 +518,7 @@ const main = async () => {
             });
         },
         deactivate: () => {
+            cameraInspection.returnToSceneView();
             aiSelectController.exit();
             aiSelectTargetSplat = null;
         }
@@ -480,9 +538,9 @@ const main = async () => {
     for (const [i, value] of loadList.entries()) {
         const decoded = decodeURIComponent(value);
         const filename =
-            i < filenameList.length ?
-                decodeURIComponent(filenameList[i]) :
-                decoded.split('/').pop();
+            i < filenameList.length
+                ? decodeURIComponent(filenameList[i])
+                : decoded.split('/').pop();
 
         await events.invoke('import', [
             {

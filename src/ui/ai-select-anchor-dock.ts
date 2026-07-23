@@ -5,8 +5,10 @@ import {
     type AISelectAnchorController,
     type AISelectAnchorState
 } from '../ai-select/anchor-controller';
+import { getAnchorDockPresentation } from '../ai-select/anchor-dock-presentation';
 
 export interface AISelectAnchorDockOptions {
+    readonly onRetry: () => Promise<void>;
     readonly onReconnect: () => Promise<void>;
     readonly onOpenSettings: () => void;
 }
@@ -27,7 +29,8 @@ export class AISelectAnchorDock extends Container {
             ...args,
             id: 'ai-select-anchor-dock'
         });
-        this.dom.addEventListener('pointerdown', event => event.stopPropagation()
+        this.dom.addEventListener('pointerdown', (event) =>
+            event.stopPropagation()
         );
 
         const title = new Label({ id: 'ai-select-anchor-dock-title' });
@@ -42,14 +45,20 @@ export class AISelectAnchorDock extends Container {
             id: 'ai-select-anchor-dock-failure-actions',
             hidden: true
         });
+        const retry = new Button({ id: 'ai-select-anchor-dock-retry' });
         const reconnect = new Button({ id: 'ai-select-anchor-dock-reconnect' });
         const settings = new Button({ id: 'ai-select-anchor-dock-settings' });
+        i18n.bindText(retry, 'ai-select.retry');
         i18n.bindText(reconnect, 'ai-select.reconnect');
         i18n.bindText(settings, 'ai-select.open-settings');
+        retry.on('click', () => {
+            options.onRetry().catch((error) => console.error(error));
+        });
         reconnect.on('click', () => {
-            options.onReconnect().catch(error => console.error(error));
+            options.onReconnect().catch((error) => console.error(error));
         });
         settings.on('click', () => options.onOpenSettings());
+        this.failureActions.append(retry);
         this.failureActions.append(reconnect);
         this.failureActions.append(settings);
 
@@ -66,28 +75,21 @@ export class AISelectAnchorDock extends Container {
     }
 
     private render(): void {
-        const { context, anchor } = this.state;
-        if (context === null || anchor === null) {
-            this.status.text = i18n.t('ai-select.panel.idle');
-            this.image.hidden = true;
-            this.failureActions.hidden = true;
-            return;
-        }
-        if (anchor.renderStatus === 'rendering') {
-            this.status.text = i18n.t('ai-select.anchor.rendering');
-            this.image.hidden = true;
-            this.failureActions.hidden = true;
-            return;
-        }
-        if (anchor.renderStatus === 'ready' && anchor.rgb) {
-            this.status.text = i18n.t('ai-select.anchor.ready');
-            this.image.src = `data:image/png;base64,${anchor.rgb.pngBase64}`;
+        const presentation = getAnchorDockPresentation(this.state);
+        if (presentation.rgb) {
+            this.image.src = `data:image/png;base64,${presentation.rgb.pngBase64}`;
             this.image.hidden = false;
-            this.failureActions.hidden = true;
-            return;
+        } else {
+            this.image.hidden = true;
         }
-        this.status.text = i18n.t('ai-select.anchor.failed');
-        this.image.hidden = true;
-        this.failureActions.hidden = false;
+        const textKey = {
+            idle: 'ai-select.panel.idle',
+            ready: 'ai-select.anchor.ready',
+            previewing: 'ai-select.anchor.previewing',
+            rendering: 'ai-select.anchor.rendering',
+            failed: 'ai-select.anchor.failed'
+        }[presentation.status];
+        this.status.text = i18n.t(textKey);
+        this.failureActions.hidden = !presentation.showFailureActions;
     }
 }

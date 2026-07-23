@@ -2,7 +2,7 @@
 
 Status: ready-for-agent — v2.2 re-audited
 
-Blocked by: 14, 10, 11, 12, 08
+Blocked by: 14, 11, 12, 08
 
 ## Final Spec mapping
 
@@ -14,9 +14,9 @@ Blocked by: 14, 10, 11, 12, 08
 
 - Reference P/N/V and Evidence Working Set from Ticket 14
 - Current Included Stable View Annotations
-- Cross-view assessment
 - Planner completion/stop state
 - Dirty-state model
+- Optional P1 cross-view diagnostics when Ticket 10 is available
 
 ## Outputs / handoff artifacts
 
@@ -27,7 +27,7 @@ Blocked by: 14, 10, 11, 12, 08
 
 ## What to build
 
-Implement target-scoped readiness after the Evidence contract exists. Coverage uses valid Visible Mass over the Core Target Set. Readiness may use declared low-cost support/visibility diagnostics before all formal per-view Evidence artifacts are computed, but it must not invent production Evidence or require complete Contributor.
+Implement target-scoped readiness after the Evidence contract exists. Coverage uses valid Visible Mass over the Core Target Set. Readiness may use declared low-cost support/visibility diagnostics before all formal per-view Evidence artifacts are computed, but it must not invent production Evidence or require complete Contributor. P1 cross-view assessment may enrich diagnostics but is not a hard prerequisite for basic readiness.
 
 ## Acceptance criteria
 
@@ -38,6 +38,7 @@ Implement target-scoped readiness after the Evidence contract exists. Coverage u
 - [ ] Lift Readiness is Not Ready / Limited / Ready from current Included Stable inputs.
 - [ ] Hard gates cover confirmed Anchor, usable Included Views, valid RGB/Stable Mask identity, Stable IDs/Render Working Set, and nondegenerate diversity.
 - [ ] Readiness may use low-cost versioned support/visibility diagnostics before formal Lift; it does not require complete Contributor or all P/N/V artifacts in advance.
+- [ ] P1 cross-view diagnostics are consumed when available but absence of Ticket 10 output does not block the base readiness state.
 - [ ] Auto Review Excluded never secretly contributes.
 - [ ] User Confirmed Included contributes regardless of historical machine Review.
 - [ ] Stable Mask/Participation changes refresh derived readiness and mark appropriate Evidence/Lift dirty.
@@ -59,6 +60,7 @@ Implement target-scoped readiness after the Evidence contract exists. Coverage u
 - npm run lint
 - Reference V/Coverage fixtures
 - Low-cost diagnostic versus formal Evidence consistency fixtures
+- Base readiness without P1 and enriched readiness with P1 fixtures
 - Not Ready/Limited/Ready calibration inputs
 
 ## Non-goals

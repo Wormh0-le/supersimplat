@@ -1,61 +1,52 @@
 # 08 — Adaptive progressive View planner + Stop / Generate More / Regenerate Auto Views
 
-Status: ready-for-agent
+Status: ready-for-agent — v2.2 re-audited
 
 Blocked by: 07
 
 ## Final Spec mapping
 
-- DG-13
-- §19–24 Adaptive planning
+- Final Spec v1.1 §§23, 27
+- DG-13, DG-20
 - MVP Phase 3
 
 ## Inputs / preconditions
 
 - Confirmed Anchor
-- Existing published AIViews/masks/assessment
-- Compatible orbit/preflight primitives
+- Published AIViews/Masks/assessment
+- Compatible camera/preflight primitives
+- Low-cost target support/visibility diagnostics
 
 ## Outputs / handoff artifacts
 
 - Adaptive planner policy
 - Progressive planner jobs
-- Stop Generation
-- Generate More
-- Regenerate Auto Views
+- Stop Generation / Generate More / Regenerate Auto Views
 
 ## What to build
 
-Replace fixed user-facing View-count semantics with bounded adaptive planning. Reuse validated camera
-geometry/preflight primitives, but use target-observation and directional-gain semantics rather than
-whole-scene Gaussian denominator.
+Replace fixed View-count UX with bounded adaptive planning. Planning may use low-cost support/visibility diagnostics before formal Lift; it must not require complete Contributor or precompute all per-view Evidence.
 
 ## Acceptance criteria
 
-- [ ] Planner does not ask the user for a fixed View count and does not expose Fast/Balanced/High presets in the main v1.0 flow.
-- [ ] Planner uses bounded policy inputs including min/max auto views, target observation, target diversity, marginal gain threshold, low-gain patience, and optional calibrated time/resource cap.
-- [ ] View candidates/render/mask pipeline publishes progressively rather than waiting for one complete immutable batch.
-- [ ] Stopping decisions use usable target observation plus View Diversity/directional gain; raw whole-scene Gaussian count is not the observation denominator.
-- [ ] `Stop Generation` remains visible while planner is active and cancels pending/future work without deleting completed Views/RGB/Stable Masks/review state.
-- [ ] `Generate More Views` is incremental and plans from current observation/directional gaps rather than regenerating the current set.
-- [ ] Reaching maxAutoViews stops automatically and offers Review / Generate More / Add View rather than exceeding the hard bound.
-- [ ] A user-triggered Generate More after cap authorizes a new bounded incremental batch.
-- [ ] Manual/user-added View confirmation never implicitly resumes the automatic planner.
-- [ ] `Regenerate Auto Views` is a separate low-frequency destructive action that replaces planner-owned auto views while preserving user-owned Views.
-- [ ] Planner-owned vs user-owned View ownership is explicit and stable.
-- [ ] Contextual toolbar uses adaptive text such as `Generating AI Views… N views ready` and never fixed `N / total` wording.
+- [ ] Main flow does not ask for fixed View count or expose fixed quality presets.
+- [ ] Planner uses bounded min/max, target observation, diversity, marginal gain, low-gain patience, and optional calibrated resource cap.
+- [ ] View candidates, RGB, Mask, and later Evidence publish independently/progressively.
+- [ ] Planner uses target-scoped observation and directional gain, not whole-scene Gaussian denominator.
+- [ ] Planner may use declared low-cost diagnostics before formal P/N/V exists; it does not fabricate production Evidence.
+- [ ] Stop Generation cancels pending/future work without deleting completed Views/RGB/Stable Masks/review state.
+- [ ] Generate More is incremental from current observation/directional gaps.
+- [ ] maxAutoViews is a hard batch bound; user may authorize another bounded batch.
+- [ ] Manual View confirmation never implicitly resumes planner.
+- [ ] Regenerate Auto Views replaces planner-owned Views and preserves user-owned Views.
+- [ ] Ownership is explicit and stable.
+- [ ] Toolbar uses adaptive text and no fixed N/total wording.
 
 ## Failure / recovery criteria
 
-- [ ] Render failure supports Retry and, where planning policy can do so, Generate Replacement View.
-- [ ] Stopping/canceling planner work never publishes a late obsolete View into a new target context.
-
-## Affected seams
-
-- Companion generated_views.py policy layer
-- src/ai-select/planner*
-- AI View registry
-- Contextual toolbar
+- [ ] Render failure supports true Retry and policy-based replacement.
+- [ ] Stop/cancel/restart cannot publish obsolete work into a new context.
+- [ ] Missing Evidence does not classify an RGB-ready View as Render Failed.
 
 ## Validation
 
@@ -63,9 +54,10 @@ whole-scene Gaussian denominator.
 - npm test
 - npm run lint
 - Locked GPU planner smoke
-- Frozen-scene marginal target observation/diversity/early-stop benchmark
+- Frozen-scene marginal observation/diversity/early-stop benchmark
 
 ## Non-goals
 
-- No final Lift Readiness thresholds
-- No User-added camera UI yet
+- No final readiness calibration
+- No User-added View UI
+- No formal Direct Evidence kernel

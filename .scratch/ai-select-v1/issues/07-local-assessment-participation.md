@@ -1,22 +1,21 @@
 # 07 — Local ViewAssessmentPolicy + Participation + actionable Review
 
-Status: ready-for-agent
+Status: ready-for-agent — v2.2 re-audited
 
 Blocked by: 06
 
 ## Final Spec mapping
 
-- DG-06
-- DG-19
-- §29–33 Review/Participation
+- Final Spec v1.1 §§13, 23, 26
+- DG-06, DG-19, DG-20
 - MVP Phase 4 P0
 
 ## Inputs / preconditions
 
-- AIViews with render/mask states
+- AIViews with independent render/mask/evidence states
 - Mask geometry
-- Contributor support
 - Propagation metadata
+- Versioned low-cost Gaussian support/visibility diagnostics
 
 ## Outputs / handoff artifacts
 
@@ -27,39 +26,30 @@ Blocked by: 06
 
 ## What to build
 
-Evolve existing quality diagnostics into Final Spec local/P0 ViewAssessmentPolicy. Keep machine
-assessment, user confirmation, and Lift Participation as independent dimensions.
+Implement P0 local assessment without requiring complete per-pixel Contributor. Use Mask geometry, propagation metadata, and available versioned support/visibility diagnostics. Formal P/N/V may refine assessment later but is not a prerequisite for ordinary Review state.
 
 ## Acceptance criteria
 
-- [ ] Automatic assessment produces Good / Review / Failed only from evidence available to ViewAssessmentPolicy.
-- [ ] Review Reasons are structured codes produced by Companion policy; frontend does not invent backend causes.
-- [ ] P0 user-visible reasons are limited to evidence-backed target-at-boundary, fragmented-mask, weak-gaussian-support, and propagation-uncertain when corresponding evidence exists.
-- [ ] Multiple Review Reasons may exist and assessment exposes a deterministic Primary Reason/top actionable subset.
-- [ ] Frontend maps structured reason codes to localized static recommended actions; normal UI shows actionable explanation rather than raw entropy/logits/cosine diagnostics.
-- [ ] Normal UI never displays one unified uncalibrated `AI Confidence %`.
-- [ ] Auto Good defaults to Included.
-- [ ] Auto Review defaults to Excluded and unresolved Needs Attention.
-- [ ] Failed, No Stable Mask, Mask Failed, and Render Failed are Excluded and remain distinct from valid Review.
-- [ ] A valid Review mask can be Confirmed as-is, becoming User Confirmed Stable Mask with Participation=Included.
-- [ ] Prompt/Brush/Clear+Manual remain available correction choices for Review.
-- [ ] Explicit user Exclude resolves the user's review task; system-auto-excluded Review stays actionable until user decision.
-- [ ] Automatic reassessment cannot silently revoke User Confirmed authority or secretly down-weight it in Lift.
-- [ ] View source (auto-generated/user-added/replacement) does not itself determine trust or participation.
-- [ ] Assessment metadata binds to the relevant RGB/Stable Mask/policy revision so stale reasons disappear after a new mask revision.
+- [ ] Assessment produces Good / Review / Failed only from available version-bound evidence.
+- [ ] Review Reasons are Companion-owned structured codes; frontend does not invent causes.
+- [ ] P0 reasons are limited to target-at-boundary, fragmented-mask, weak-gaussian-support, and propagation-uncertain when supported.
+- [ ] `weak-gaussian-support` uses a declared support/visibility diagnostic or later P/N/V; it is not inferred from complete Contributor availability alone.
+- [ ] Missing support evidence yields no fabricated weak-support reason.
+- [ ] Multiple reasons and deterministic primary/actionable subset are supported.
+- [ ] Frontend maps reason codes to localized static actions and does not expose raw algorithm diagnostics as user claims.
+- [ ] No unified uncalibrated AI Confidence percentage is shown.
+- [ ] Auto Good defaults Included; Auto Review defaults Excluded; Failed/no Stable Mask/Render Failed default Excluded.
+- [ ] Evidence Failed remains distinct from Render Failed and may be actionable only when Evidence was actually requested.
+- [ ] User may Confirm Review as-is, producing User Confirmed Stable Mask + Included.
+- [ ] Prompt/Brush/Clear+Manual/Exclude remain correction options.
+- [ ] User-confirmed authority cannot be silently revoked or down-weighted by reassessment.
+- [ ] View source does not determine trust.
+- [ ] Assessment binds RGB/Stable Mask/policy/support identity; stale reasons disappear after revision change.
 
 ## Failure / recovery criteria
 
-- [ ] Assessment failures fail closed without inventing unsupported semantics.
-- [ ] Mask failure recovery keeps the View and exposes Retry Auto Mask / Manual Draw / Exclude.
-
-## Affected seams
-
-- src/ai-select/view-assessment*
-- src/ai-select/participation*
-- AI View selected detail
-- Frontend localization/action mapping
-- Companion ViewAssessmentPolicy over existing diagnostics/evidence
+- [ ] Assessment failure fails closed without inventing semantics and does not corrupt Participation.
+- [ ] Mask failure preserves View/RGB and exposes retry/manual/exclude.
 
 ## Validation
 
@@ -67,11 +57,11 @@ assessment, user confirmation, and Lift Participation as independent dimensions.
 - npm run test:companion
 - npm run lint
 - npm run lint:locales
-- P0 reason fixtures
-- Participation/user-authority transition tests
+- P0 reason fixtures with and without support diagnostics
+- Participation/user-authority transitions
 
 ## Non-goals
 
-- No identity-drift emission
-- No unified Confidence %
+- No cross-view reason
+- No identity-drift
 - No Candidate provenance

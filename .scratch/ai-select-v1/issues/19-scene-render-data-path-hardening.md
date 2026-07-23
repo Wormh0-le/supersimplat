@@ -1,6 +1,6 @@
 # 19 — Large SceneSnapshot + gsplat render/contributor cache hardening
 
-Status: ready-for-agent
+Status: ready-for-agent — 02B browser-validation transfer and Anchor timing baseline added
 
 Blocked by: 18, 14
 
@@ -21,6 +21,7 @@ Blocked by: 18, 14
 - gsplat scene tensor cache
 - render/contributor cache
 - Measured profile
+- Anchor `Server-Timing` phase breakdown
 
 ## What to build
 
@@ -30,6 +31,13 @@ for representative large scenes while preserving Stable IDs and exact dependency
 ## Acceptance criteria
 
 - [ ] Profile representative large SceneSnapshot creation, serialization/transfer, registration, and gsplat preparation costs before optimization.
+- [x] Expose additive `Server-Timing` diagnostics on accepted Anchor-route
+      responses:
+      `working-set`, `gpu-queue`, `gsplat`, `contributor-digest`, `png`, and
+      `json-base64`; preserve the existing JSON body and Selection Service
+      protocol version.
+- [ ] Capture a representative browser DevTools/response-header phase profile
+      before using the timing data to justify an optimization.
 - [ ] Validate or improve large SceneSnapshot data layout without changing Stable Gaussian ID semantics.
 - [ ] SceneSnapshot/cache identity remains bound to scene/render/dependency versions and cannot reuse stale content after relevant mutation.
 - [ ] Establish or reuse gsplat scene-tensor cache so repeated CameraBindings over the same valid snapshot do not redundantly rebuild immutable scene tensors.
@@ -37,6 +45,13 @@ for representative large scenes while preserving Stable IDs and exact dependency
 - [ ] Clarify/validate Active Splat vs multi-visible-Splat AI render/contributor dependency scope.
 - [ ] Cache invalidation works through semantic dependency identity and remains compatible with Suspended/exact-Undo recovery.
 - [ ] Record measured before/after profile data and avoid speculative rewrites with no demonstrated bottleneck.
+- [ ] **Transferred from 02B:** exercise a browser-created effective
+      SceneSnapshot with delete, world-transform, transform-palette, and
+      color-grade edits; establish selective/full RGB, alpha, contributor
+      Stable-ID stream, and weight parity.
+- [ ] **Transferred from 02B:** record browser editor peak memory for the real
+      path separately from Companion CPU/GPU memory. Do not use direct typed-
+      PLY harness RSS as an editor-memory surrogate.
 
 ## Failure / recovery criteria
 
@@ -50,12 +65,29 @@ for representative large scenes while preserving Stable IDs and exact dependency
 - Companion gsplat tensor/runtime cache
 - Contributor render/cache
 - Profiling harness
+- Anchor HTTP response timing instrumentation
 
 ## Validation
 
 - Full relevant tests
 - Locked GPU representative large-scene profile
 - Cache invalidation tests across CameraBinding/dependency mutations
+- Browser effective-snapshot/edit-mutation parity and browser-memory profile
+
+## Initial observability baseline — 2026-07-23
+
+`POST /ai-select/anchor-renders` now returns a standard `Server-Timing` header
+without changing its JSON response body or protocol version. `working-set`
+measures scene lookup/resolution; `gsplat`, `contributor-digest`, and `png`
+measure the locked renderer's publication phases; `json-base64` aggregates
+response base64 and JSON work; `gpu-queue` measures the Companion's single
+Anchor admission/replay wait. The current Companion fails different concurrent
+Anchor keys with `capacityFull` rather than queuing them, so this is not a CUDA
+hardware scheduler measurement.
+
+The baseline is instrumentation, not an optimization result. Use it with the
+transferred browser fixture and memory measurements before selecting a Ticket 19
+cache or data-path change.
 
 ## Non-goals
 

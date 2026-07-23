@@ -1,6 +1,6 @@
 # 02B — Camera-aware Spatial Chunk Working Set
 
-Status: implementation complete; browser-memory/manual lifecycle validation remains
+Status: closed — 2026-07-23; residual browser validation transferred to Ticket 19
 
 Blocked by: Binary SceneSnapshot Registration v1 (02A)
 
@@ -103,11 +103,15 @@ order—not arrival/cache order—and maps contributors back to global Stable ID
 - [x] Authoritative Anchor publication keeps complete contributor tensors typed
       through Stable-ID remapping and bounded binary digesting; it does not
       expand them into `ContributorSample` objects or canonical JSON.
-- [ ] Fixtures cover SH0–SH3, delete/world/palette/color transforms,
-      anisotropic center-outside/support-inside and clipping boundaries, and
-      different chunk arrival orders.
-- [ ] Real representative SH3 metrics record total/selective bytes, timings,
-      editor/CPU/GPU memory, and full/selective parity before claiming benefit.
+- [x] Locked/reference fixtures cover SH0–SH3, delete/world/palette/color
+      transforms, anisotropic center-outside/support-inside and clipping
+      boundaries, and different chunk arrival orders.
+- [x] Real representative SH3 metrics record total/selective bytes, timings,
+      Companion CPU/GPU data, and full/selective parity before claiming
+      selective-transfer benefit.
+- [→ Ticket 19] Record browser editor peak memory and a browser-generated
+  effective SceneSnapshot with active edit mutations; do not substitute a
+  direct typed-PLY harness for either measurement.
 
 The locked GPU suite now covers SH0–SH3, typed effective transformed values,
 deleted-ID absence, deterministic reverse arrival, contributor Stable-ID
@@ -138,9 +142,27 @@ instrumentation remain open; they are not represented as complete here.
 - [x] On the 954,603-Gaussian SH3 fixture, a cold 512² selective Anchor
       completed gsplat plus typed publication in 0.585 s (37/223 chunks;
       16.655% of payload bytes), with exact selective/full parity.
-- [ ] Browser editor peak memory and a browser-generated effective SceneSnapshot
-      with active edit mutations have not yet been measured. Do not treat the
-      direct typed-Ply harness RSS as editor memory.
+- [→ Ticket 19] Browser editor peak memory and a browser-generated effective
+  SceneSnapshot with active edit mutations have not yet been measured. Do
+  not treat the direct typed-PLY harness RSS as editor memory.
+
+## Closure and Ticket 19 transfer — 2026-07-23
+
+Ticket 02B is closed because its versioned global manifest, conservative
+camera-aware residency protocol, deterministic typed assembly, missing-only
+retry path, and locked/reference parity boundary are complete. The two remaining
+browser-facing validation gaps are now Ticket 19 acceptance work:
+
+1. Exercise a browser-created effective SceneSnapshot with delete, world
+   transform, transform-palette, and color-grade edits, then compare selective
+   and full reference RGB/alpha/contributor Stable-ID/weight parity.
+2. Measure browser editor peak memory for that real path separately from
+   Companion CPU/GPU memory, and record a representative end-to-end phase
+   profile.
+
+Ticket 19 also owns the new response-level phase instrumentation used for that
+profile. This transfer does not change 02B's protocol v1 semantics or recast
+the unmeasured browser work as validated.
 
 ## Manual validation links
 

@@ -11,6 +11,7 @@ import unittest
 
 from PIL import Image
 
+from selection_service_companion.anchor_timing import AnchorServerTiming
 from selection_service_companion.evidence import ContributorSample
 from selection_service_companion.gsplat_renderer import (
     GsplatContributorRenderer,
@@ -425,6 +426,28 @@ class GsplatContributorRendererTests(unittest.TestCase):
             artifact.contributor_digest,
             f'sha256:{hashlib.sha256(stream).hexdigest()}',
         )
+
+    def test_typed_anchor_records_renderer_png_and_digest_timing_separately(self) -> None:
+        backend = StaticTypedAnchorBackend()
+        renderer = GsplatContributorRenderer(backend=backend)
+        frame = anchor_frame()
+        assert frame.camera is not None
+        timing = AnchorServerTiming()
+
+        renderer.render_anchor(
+            scene_snapshot=supported_snapshot(),
+            view_id='anchor-view',
+            camera=frame.camera,
+            width=frame.width,
+            height=frame.height,
+            timing=timing,
+        )
+
+        self.assertGreater(timing.duration_ms('gsplat'), 0)
+        self.assertGreater(timing.duration_ms('png'), 0)
+        self.assertGreater(timing.duration_ms('contributor-digest'), 0)
+        self.assertEqual(timing.duration_ms('working-set'), 0)
+        self.assertEqual(timing.duration_ms('gpu-queue'), 0)
 
     def test_typed_anchor_keeps_uint32_max_stable_id_distinct_from_padding(self) -> None:
         import torch

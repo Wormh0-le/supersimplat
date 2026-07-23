@@ -11,6 +11,7 @@ any other mismatch fails closed.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from enum import Enum
 import hashlib
@@ -20,6 +21,7 @@ import struct
 import sys
 from typing import Any, ClassVar, Mapping, Protocol, Sequence
 
+from .anchor_timing import AnchorServerTiming
 from .binary_scene_snapshot import PackedBinarySceneSnapshot
 from .evidence import ContributorSample, RenderedContributorView
 from .generated_views import (
@@ -1240,6 +1242,7 @@ class GsplatContributorRenderer:
         camera: Mapping[str, Any],
         width: int,
         height: int,
+        timing: AnchorServerTiming | None = None,
     ) -> AnchorRenderArtifact:
         """Render the v1 Anchor from gsplat, never from editor framebuffer data.
 
@@ -1281,30 +1284,39 @@ class GsplatContributorRenderer:
         )
         rasterize_anchor_typed = getattr(self.backend, 'rasterize_anchor_typed', None)
         if callable(rasterize_anchor_typed):
-            typed = rasterize_anchor_typed(
-                snapshot=scene_snapshot,
-                camera=immutable_camera,
-                width=width,
-                height=height,
-                stable_ids=stable_ids,
-            )
+            with (
+                timing.measure('gsplat')
+                if timing is not None
+                else nullcontext()
+            ):
+                typed = rasterize_anchor_typed(
+                    snapshot=scene_snapshot,
+                    camera=immutable_camera,
+                    width=width,
+                    height=height,
+                    stable_ids=stable_ids,
+                )
             self.last_peak_vram_bytes = typed.peak_vram_bytes
             self.peak_vram_bytes = max(
                 self.peak_vram_bytes, int(typed.peak_vram_bytes or 0)
             )
-            return _typed_anchor_artifact(typed, width=width, height=height)
+            return _typed_anchor_artifact(
+                typed, width=width, height=height, timing=timing
+            )
 
-        rasterized = self.backend.rasterize(
-            snapshot=scene_snapshot,
-            camera=immutable_camera,
-            width=width,
-            height=height,
-        )
+        with timing.measure('gsplat') if timing is not None else nullcontext():
+            rasterized = self.backend.rasterize(
+                snapshot=scene_snapshot,
+                camera=immutable_camera,
+                width=width,
+                height=height,
+            )
         self.last_peak_vram_bytes = rasterized.peak_vram_bytes
         self.peak_vram_bytes = max(
             self.peak_vram_bytes, int(rasterized.peak_vram_bytes or 0)
         )
-        image_png = _rgb_png(rasterized.service_rgb_bytes, width, height)
+        with timing.measure('png') if timing is not None else nullcontext():
+            image_png = _rgb_png(rasterized.service_rgb_bytes, width, height)
         frame = RegisteredFrame(
             view_id=view_id,
             frame_digest=f'sha256:{hashlib.sha256(image_png).hexdigest()}',
@@ -1314,16 +1326,22 @@ class GsplatContributorRenderer:
             source='anchor',
             camera=immutable_camera,
         )
-        rendered = _validated_rendered_view(
-            rasterized=rasterized,
-            stable_ids=stable_ids,
-            frame=frame,
-            renderer_id=self.renderer_id,
-        )
+        with (
+            timing.measure('contributor-digest')
+            if timing is not None
+            else nullcontext()
+        ):
+            rendered = _validated_rendered_view(
+                rasterized=rasterized,
+                stable_ids=stable_ids,
+                frame=frame,
+                renderer_id=self.renderer_id,
+            )
+            contributor_digest = _legacy_anchor_contributor_digest(rendered)
         return AnchorRenderArtifact(
             image_png=image_png,
             rgb_digest=frame.frame_digest,
-            contributor_digest=_legacy_anchor_contributor_digest(rendered),
+            contributor_digest=contributor_digest,
         )
 
     def plan_views(
@@ -2122,7 +2140,11 @@ def _validate_camera(frame: RegisteredFrame) -> Mapping[str, Any]:
 
 
 def _typed_anchor_artifact(
-    rasterized: TypedAnchorRasterization, *, width: int, height: int
+    rasterized: TypedAnchorRasterization,
+    *,
+    width: int,
+    height: int,
+    timing: AnchorServerTiming | None = None,
 ) -> AnchorRenderArtifact:
     """Validate and hash a complete typed Anchor contributor stream.
 
@@ -2144,13 +2166,20 @@ def _typed_anchor_artifact(
     ):
         raise MaskSessionError("rendererFailure", "gsplat returned invalid service RGB identity.")
 
-    image_png = _rgb_png(rasterized.service_rgb_bytes, width, height)
+    with timing.measure('png') if timing is not None else nullcontext():
+        image_png = _rgb_png(rasterized.service_rgb_bytes, width, height)
+    with (
+        timing.measure('contributor-digest')
+        if timing is not None
+        else nullcontext()
+    ):
+        contributor_digest = _typed_contributor_digest(
+            rasterized, width=width, height=height
+        )
     return AnchorRenderArtifact(
         image_png=image_png,
         rgb_digest=f"sha256:{hashlib.sha256(image_png).hexdigest()}",
-        contributor_digest=_typed_contributor_digest(
-            rasterized, width=width, height=height
-        ),
+        contributor_digest=contributor_digest,
     )
 
 

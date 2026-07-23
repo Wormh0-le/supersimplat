@@ -14,6 +14,7 @@ import ssl
 from typing import Iterable
 from urllib.parse import unquote, urlparse
 
+from .anchor_timing import AnchorServerTiming
 from .binary_scene_snapshot import (
     MAX_BINARY_SCENE_SNAPSHOT_CHUNK_BYTES,
     ImmutableSnapshotConflict,
@@ -264,18 +265,20 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
     def _render_ai_select_anchor(self) -> None:
         """Route the first v1 AI View through the locked gsplat renderer."""
 
+        timing = AnchorServerTiming()
         try:
             self._state.require_release()
         except ValueError as error:
-            self._send_unavailable(str(error))
+            self._send_unavailable(str(error), server_timing=timing)
             return
         try:
             request = self._read_json_body()
-            response = self._state.render_ai_select_anchor(request)
+            response = self._state.render_ai_select_anchor(request, timing=timing)
         except ValueError as error:
             self._send_json(
                 HTTPStatus.BAD_REQUEST,
                 {"status": "invalidRequest", "message": str(error)},
+                server_timing=timing,
             )
             return
         except MaskSessionError as error:
@@ -286,9 +289,10 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
                     "code": error.code,
                     "message": str(error),
                 },
+                server_timing=timing,
             )
             return
-        self._send_json(HTTPStatus.OK, response)
+        self._send_json(HTTPStatus.OK, response, server_timing=timing)
 
     def do_PUT(self) -> None:
         if not self._origin_allowed():
@@ -1124,16 +1128,33 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
 
-    def _send_unavailable(self, message: str) -> None:
+    def _send_unavailable(
+        self, message: str, *, server_timing: AnchorServerTiming | None = None
+    ) -> None:
         self._send_json(
             HTTPStatus.SERVICE_UNAVAILABLE,
             {"status": "unavailable", "message": message},
+            server_timing=server_timing,
         )
 
-    def _send_json(self, status: HTTPStatus, body: dict[str, object]) -> None:
-        encoded = json.dumps(body, separators=(",", ":")).encode("utf-8")
+    def _send_json(
+        self,
+        status: HTTPStatus,
+        body: dict[str, object],
+        *,
+        server_timing: AnchorServerTiming | None = None,
+    ) -> None:
+        if server_timing is None:
+            encoded = json.dumps(body, separators=(",", ":")).encode("utf-8")
+        else:
+            with server_timing.measure('json-base64'):
+                encoded = json.dumps(body, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
         self._send_cors_headers()
+        if server_timing is not None:
+            self.send_header("Server-Timing", server_timing.header_value())
+            if self.headers.get("Origin") is not None:
+                self.send_header("Access-Control-Expose-Headers", "Server-Timing")
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()

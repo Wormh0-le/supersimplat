@@ -238,6 +238,43 @@ class AISelectAnchorRouteTests(unittest.TestCase):
             },
         )
 
+    def test_reports_all_anchor_server_timing_phases(self) -> None:
+        """The browser can distinguish the Anchor publication stages in DevTools."""
+
+        self.state.register_scene_snapshot(self.snapshot())
+        with urlopen(Request(
+            f'{self.endpoint}/ai-select/anchor-renders',
+            data=json.dumps(self.request_body()).encode(),
+            method='POST',
+            headers={'Origin': EDITOR_ORIGIN, 'Content-Type': 'application/json'},
+        )) as response:
+            self.assertEqual(response.status, HTTPStatus.OK)
+            timing_header = response.headers.get('Server-Timing')
+            self.assertIsNotNone(timing_header)
+            self.assertEqual(
+                response.headers.get('Access-Control-Expose-Headers'),
+                'Server-Timing',
+            )
+            json.load(response)
+
+        metrics = {
+            metric.split(';', 1)[0]
+            for metric in timing_header.split(', ')
+        }
+        self.assertEqual(
+            metrics,
+            {
+                'working-set',
+                'gpu-queue',
+                'gsplat',
+                'contributor-digest',
+                'png',
+                'json-base64',
+            },
+        )
+        for metric in timing_header.split(', '):
+            self.assertRegex(metric, r'^[a-z0-9-]+;dur=\d+(?:\.\d+)?$')
+
     def test_returns_a_bound_cache_miss_without_rendering(self) -> None:
         response = self.request_json(
             '/ai-select/anchor-renders', 'POST', self.request_body()

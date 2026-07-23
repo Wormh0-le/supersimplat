@@ -17,6 +17,7 @@ import time
 from typing import Any, Callable, Mapping
 
 from . import PACKAGE_VERSION, PROTOCOL_VERSION
+from .anchor_timing import AnchorServerTiming
 from .binary_scene_snapshot import (
     BinarySceneSnapshotManifest,
     BinarySceneSnapshotUploadStore,
@@ -37,6 +38,7 @@ from .generated_views import (
 )
 from .gsplat_renderer import (
     AnchorRenderArtifact,
+    GsplatContributorRenderer,
     production_gsplat_renderer,
     validate_supported_snapshot,
 )
@@ -728,7 +730,10 @@ class CompanionState:
         return snapshot.stable_ids if snapshot is not None else None
 
     def render_ai_select_anchor(
-        self, request: Mapping[str, object]
+        self,
+        request: Mapping[str, object],
+        *,
+        timing: AnchorServerTiming | None = None,
     ) -> dict[str, object]:
         """Publish one authoritative Anchor RGB product or a bound cache miss.
 
@@ -737,51 +742,56 @@ class CompanionState:
         explicit convention, then releases all state locks before GPU work.
         """
 
+        anchor_timing = timing or AnchorServerTiming()
         anchor_request = self._parse_ai_select_anchor_request(request)
         scene_snapshot: Mapping[str, Any] | PackedBinarySceneSnapshot | SpatialWorkingSet
-        if anchor_request.scene_transport == 'spatial-v1':
-            try:
-                resolution = self._spatial_scene_store.resolve_working_set(
-                    anchor_request.scene_id,
-                    anchor_request.scene_version,
-                    anchor_request.camera_binding,
+        with anchor_timing.measure('working-set'):
+            if anchor_request.scene_transport == 'spatial-v1':
+                try:
+                    resolution = self._spatial_scene_store.resolve_working_set(
+                        anchor_request.scene_id,
+                        anchor_request.scene_version,
+                        anchor_request.camera_binding,
+                    )
+                except SnapshotUploadError:
+                    return {
+                        'status': 'sceneCacheMiss',
+                        **anchor_request.response_fields(),
+                    }
+                if resolution.missing_chunk_ids:
+                    return {
+                        'status': 'sceneChunkMiss',
+                        **anchor_request.response_fields(),
+                        'workingSetToken': resolution.working_set_token,
+                        'missingChunkIds': list(resolution.missing_chunk_ids),
+                    }
+                if resolution.working_set is None:
+                    raise ValueError(
+                        'AI Select Anchor Spatial Scene working set is incomplete'
+                    )
+                render_configuration = resolution.working_set.manifest.render_configuration
+                if (
+                    render_configuration.get('version')
+                    != anchor_request.render_config_version
+                ):
+                    raise ValueError(
+                        'AI Select Anchor render configuration does not match the registered Spatial Scene manifest'
+                    )
+                scene_snapshot = resolution.working_set
+            else:
+                snapshot = self.scene_snapshot(
+                    anchor_request.scene_id, anchor_request.scene_version
                 )
-            except SnapshotUploadError:
-                return {
-                    'status': 'sceneCacheMiss',
-                    **anchor_request.response_fields(),
-                }
-            if resolution.missing_chunk_ids:
-                return {
-                    'status': 'sceneChunkMiss',
-                    **anchor_request.response_fields(),
-                    'workingSetToken': resolution.working_set_token,
-                    'missingChunkIds': list(resolution.missing_chunk_ids),
-                }
-            if resolution.working_set is None:
-                raise ValueError(
-                    'AI Select Anchor Spatial Scene working set is incomplete'
-                )
-            render_configuration = resolution.working_set.manifest.render_configuration
-            if render_configuration.get('version') != anchor_request.render_config_version:
-                raise ValueError(
-                    'AI Select Anchor render configuration does not match the registered Spatial Scene manifest'
-                )
-            scene_snapshot = resolution.working_set
-        else:
-            snapshot = self.scene_snapshot(
-                anchor_request.scene_id, anchor_request.scene_version
-            )
-            if snapshot is None:
-                return {
-                    'status': 'sceneCacheMiss',
-                    **anchor_request.response_fields(),
-                }
-            if snapshot.render_config_version != anchor_request.render_config_version:
-                raise ValueError(
-                    'AI Select Anchor render configuration does not match the registered Scene Snapshot'
-                )
-            scene_snapshot = snapshot.scene
+                if snapshot is None:
+                    return {
+                        'status': 'sceneCacheMiss',
+                        **anchor_request.response_fields(),
+                    }
+                if snapshot.render_config_version != anchor_request.render_config_version:
+                    raise ValueError(
+                        'AI Select Anchor render configuration does not match the registered Scene Snapshot'
+                    )
+                scene_snapshot = snapshot.scene
 
         renderer = self._require_contributor_renderer()
         if getattr(renderer, 'renderer_id', None) != 'gsplat':
@@ -796,21 +806,37 @@ class CompanionState:
                 'The gsplat/CUDA Contributor renderer cannot render an AI Select Anchor.',
             )
 
-        anchor_key, admission, owns_admission = self._admit_anchor_render(
-            anchor_request
-        )
-        if not owns_admission:
-            return self._replay_anchor_render(admission)
+        with anchor_timing.measure('gpu-queue'):
+            anchor_key, admission, owns_admission = self._admit_anchor_render(
+                anchor_request
+            )
+            if not owns_admission:
+                return self._replay_anchor_render(admission)
 
         try:
             try:
-                artifact = render_anchor(
-                    scene_snapshot=scene_snapshot,
-                    view_id='anchor-view',
-                    camera=anchor_request.renderer_camera,
-                    width=anchor_request.width,
-                    height=anchor_request.height,
-                )
+                if isinstance(renderer, GsplatContributorRenderer):
+                    artifact = render_anchor(
+                        scene_snapshot=scene_snapshot,
+                        view_id='anchor-view',
+                        camera=anchor_request.renderer_camera,
+                        width=anchor_request.width,
+                        height=anchor_request.height,
+                        timing=anchor_timing,
+                    )
+                else:
+                    # Contract fixtures and compatibility renderers preserve
+                    # the old narrow method signature. They still report the
+                    # total renderer interval, while the locked production
+                    # renderer exposes its PNG and digest subphases itself.
+                    with anchor_timing.measure('gsplat'):
+                        artifact = render_anchor(
+                            scene_snapshot=scene_snapshot,
+                            view_id='anchor-view',
+                            camera=anchor_request.renderer_camera,
+                            width=anchor_request.width,
+                            height=anchor_request.height,
+                        )
             except MaskSessionError:
                 raise
             except Exception as error:
@@ -823,32 +849,39 @@ class CompanionState:
                     'rendererFailure',
                     'The gsplat/CUDA renderer returned an invalid AI Select Anchor artifact.',
                 )
-            response = {
-                'status': 'complete',
-                **anchor_request.response_fields(),
-                'rgb': {
-                    'pngBase64': base64.b64encode(artifact.image_png).decode('ascii'),
-                    'digest': _anchor_digest(artifact.rgb_digest, 'RGB digest'),
-                    'width': anchor_request.width,
-                    'height': anchor_request.height,
-                },
-                'contributorDigest': _anchor_digest(
-                    artifact.contributor_digest, 'contributor digest'
-                ),
-                'rendererId': 'gsplat',
-            }
+            with anchor_timing.measure('json-base64'):
+                response = {
+                    'status': 'complete',
+                    **anchor_request.response_fields(),
+                    'rgb': {
+                        'pngBase64': base64.b64encode(artifact.image_png).decode('ascii'),
+                        'digest': _anchor_digest(artifact.rgb_digest, 'RGB digest'),
+                        'width': anchor_request.width,
+                        'height': anchor_request.height,
+                    },
+                    'contributorDigest': _anchor_digest(
+                        artifact.contributor_digest, 'contributor digest'
+                    ),
+                    'rendererId': 'gsplat',
+                }
         except MaskSessionError as error:
-            self._complete_anchor_render(anchor_key, admission, failure=error)
+            self._complete_anchor_render(
+                anchor_key, admission, failure=error, timing=anchor_timing
+            )
             raise
         except Exception as error:
             failure = MaskSessionError(
                 'rendererFailure',
                 'The gsplat/CUDA renderer failed while publishing the AI Select Anchor.',
             )
-            self._complete_anchor_render(anchor_key, admission, failure=failure)
+            self._complete_anchor_render(
+                anchor_key, admission, failure=failure, timing=anchor_timing
+            )
             raise failure from error
 
-        self._complete_anchor_render(anchor_key, admission, response=response)
+        self._complete_anchor_render(
+            anchor_key, admission, response=response, timing=anchor_timing
+        )
         return response
 
     def _parse_ai_select_anchor_request(
@@ -2231,16 +2264,23 @@ class CompanionState:
         *,
         response: dict[str, object] | None = None,
         failure: MaskSessionError | None = None,
+        timing: AnchorServerTiming | None = None,
     ) -> None:
         """Atomically publish one replay result and release the single GPU slot."""
 
         if (response is None) == (failure is None):
             raise ValueError('AI Select Anchor completion requires one outcome')
-        publication = (
-            json.dumps(response, separators=(',', ':'), sort_keys=True, allow_nan=False)
-            if response is not None
-            else None
-        )
+        if response is None:
+            publication = None
+        elif timing is None:
+            publication = json.dumps(
+                response, separators=(',', ':'), sort_keys=True, allow_nan=False
+            )
+        else:
+            with timing.measure('json-base64'):
+                publication = json.dumps(
+                    response, separators=(',', ':'), sort_keys=True, allow_nan=False
+                )
         with self._session_lock:
             current = self._anchor_render_admissions.get(key)
             if current is not admission:

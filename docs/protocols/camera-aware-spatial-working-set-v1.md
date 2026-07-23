@@ -242,6 +242,33 @@ graph, or giant JSON serialization is created for an Anchor. A future change to
 this artifact must use a new embedded format version rather than reinterpret
 version 1.
 
+## Anchor Server-Timing diagnostics
+
+`POST /ai-select/anchor-renders` may include an additive standard
+`Server-Timing` HTTP response header. It does not change the response JSON,
+Anchor/SceneSnapshot identity, `workingSetToken`, or Selection Service protocol
+version. For browser-origin requests the Companion also exposes this header via
+`Access-Control-Expose-Headers`.
+
+The current header emits these wall-clock milliseconds in deterministic order:
+
+| Metric               | Boundary                                                                                                                      |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `working-set`        | Registered packed-snapshot lookup or spatial manifest resolution, including a bound cache miss.                               |
+| `gpu-queue`          | Waiting to acquire or join the Companion's single Anchor admission. A matching in-flight retry measures its replay wait here. |
+| `gsplat`             | The locked renderer's typed rasterization call, including its required synchronous result preparation.                        |
+| `contributor-digest` | Complete contributor validation, Stable-ID remapping, bounded tensor-to-CPU hashing, or the legacy reference equivalent.      |
+| `png`                | RGB PNG encoding.                                                                                                             |
+| `json-base64`        | Anchor PNG base64 encoding plus the Companion's replay and outgoing JSON serialization.                                       |
+
+`gpu-queue` is intentionally an admission measurement, not a CUDA hardware
+scheduler measurement: this Companion currently rejects a different active
+Anchor key with `capacityFull` instead of placing it in a GPU work queue. A zero
+or small value therefore does not prove that the CUDA device had no external
+queueing. The metrics are diagnostic only and need not sum exactly to network
+TTFB because they exclude request transfer, browser work, and unrelated server
+overhead.
+
 The resolver and renderer retain a full-scene mode. Invalid manifests,
 unavailable/support bounds, ambiguous resolution, resident inconsistency, or a
 failed selective/reference parity gate cause all chunks to be required or the

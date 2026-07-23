@@ -1,6 +1,6 @@
 # 02 — AI Select shell + authoritative gsplat Anchor tracer bullet
 
-Status: implementation complete; manual-validation gaps remain
+Status: closed — 2026-07-23
 
 Blocked by: 01
 
@@ -36,21 +36,21 @@ Introduce only the minimum tool shell required to exercise this path.
 
 ## Acceptance criteria
 
-- [ ] AI Select is exposed as a native Selection Tool in the same conceptual class as existing Box/Sphere selection, not as a separate workspace.
-- [ ] Activating AI Select for one selected visible Target Splat creates/uses the CurrentTargetContext and keeps native SuperSplat tools otherwise unaffected.
-- [ ] Anchor CameraBinding is copied from the Current Scene View; activation does not move the Editor Camera.
-- [ ] CameraBinding versionably binds pose, projection/intrinsics, dimensions, clipping, and coordinate-convention identity needed by both editor and Companion.
-- [ ] All Anchor AI RGB comes from the authoritative Companion gsplat renderer; the new path does not use PlayCanvas framebuffer/canvas capture as AI observation truth.
-- [ ] The AI View Dock displays authoritative Anchor RGB and at least Rendering / Ready state.
-- [ ] The viewport Anchor frustum is derived from the exact same CameraBinding used for gsplat rasterization.
-- [ ] Anchor render request/result is bound to the current AIRequestBinding; late results cannot overwrite a newer context/revision.
-- [ ] Initial contextual toolbar state exposes AI Select, `Anchor: Current View`, `Adjust Anchor`, `Restart Current Target`, and `Exit AI Select` at the appropriate priority/overflow level.
-- [ ] Existing Stable Gaussian ID and SceneSnapshot ownership remain editor-owned and are reused rather than duplicated.
+- [x] AI Select is exposed as a native Selection Tool in the same conceptual class as existing Box/Sphere selection, not as a separate workspace.
+- [x] Activating AI Select for one selected visible Target Splat creates/uses the CurrentTargetContext and keeps native SuperSplat tools otherwise unaffected.
+- [x] Anchor CameraBinding is copied from the Current Scene View; activation does not move the Editor Camera.
+- [x] CameraBinding versionably binds pose, projection/intrinsics, dimensions, clipping, and coordinate-convention identity needed by both editor and Companion.
+- [x] All Anchor AI RGB comes from the authoritative Companion gsplat renderer; the new path does not use PlayCanvas framebuffer/canvas capture as AI observation truth.
+- [x] The AI View Dock displays authoritative Anchor RGB and at least Rendering / Ready state.
+- [x] The viewport Anchor frustum is derived from the exact same CameraBinding used for gsplat rasterization.
+- [x] Anchor render request/result is bound to the current AIRequestBinding; late results cannot overwrite a newer context/revision.
+- [x] Initial contextual toolbar state exposes AI Select, `Anchor: Current View`, `Adjust Anchor`, `Restart Current Target`, and `Exit AI Select` at the appropriate priority/overflow level.
+- [x] Existing Stable Gaussian ID and SceneSnapshot ownership remain editor-owned and are reused rather than duplicated.
 
 ## Failure / recovery criteria
 
-- [ ] Companion offline/incompatible state does not break Native SuperSplat; AI Select presents the existing readiness recovery path with reconnect/settings actions.
-- [ ] Anchor render failure remains an AI View/render failure; it does not mutate Native Selection.
+- [x] Companion offline/incompatible state does not break Native SuperSplat; AI Select presents the existing readiness recovery path with reconnect/settings actions.
+- [x] Anchor render failure remains an AI View/render failure; it does not mutate Native Selection.
 
 ## Affected seams
 
@@ -92,8 +92,23 @@ Observed on `/home/ubuntu/wormh01e/gaussian/restroom/ply-result/point_cloud/iter
       terminal Ready state, but the legacy Anchor route spent minutes expanding
       complete contributor tensors into Python objects and JSON. The 02B
       supplement now validates and hashes the complete contributor stream as
-      bounded typed tensors. Fresh browser timing after restarting the local
-      Companion is still required to validate the deployed process.
+      bounded typed tensors. A fresh browser request after restarting the local
+      Companion reached Ready with DevTools `anchor-renders` waiting-for-server
+      time of **1.26 s**. This is browser closure evidence, not a locked-GPU
+      benchmark or a claim that all future cache hardening is complete.
+
+## Closure and follow-up ownership — 2026-07-23
+
+Ticket 02 is closed: its shell, authoritative Anchor lifecycle, and terminal
+browser Ready path have been verified. The default-collapsed bottom **AI
+Select** dock is present before activation and expands for a new/restarted
+target; the authoritative Anchor is no longer blocked by the prior
+per-contributor object/JSON publication path.
+
+Remaining large-scene profiling, cache hardening, browser effective-snapshot
+fixtures, browser memory measurement, and phase-level timing analysis are
+explicitly owned by Ticket 19. They are performance/profiling follow-ups, not
+an open Ticket 02 lifecycle or correctness condition.
 
 Not a Ticket 02 gap:
 

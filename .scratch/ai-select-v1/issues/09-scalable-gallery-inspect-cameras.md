@@ -1,20 +1,20 @@
 # 09 — Scalable Gallery + Frustum sync + Inspect AI Cameras
 
-Status: ready-for-agent
+Status: ready-for-agent — v2.2 re-audited
 
 Blocked by: 08
 
 ## Final Spec mapping
 
-- DG-18
-- §22 Gallery↔Frustum
-- §73/76 Gallery IA
+- Final Spec v1.1 §§7, 13, 27–28
+- DG-18, DG-20
 - MVP Phase 3
 
 ## Inputs / preconditions
 
 - Progressive AIView registry
-- Assessment/Participation state
+- Independent render/mask/evidence states
+- Assessment/Participation
 - Generated frustums
 - Camera Inspection
 
@@ -27,42 +27,31 @@ Blocked by: 08
 
 ## What to build
 
-Build the scalable Gallery UI and connect it to 3D frustums/Camera Inspection. Keep View management
-separate from Participation semantics: filtering/navigation never mutates evidence participation.
+Build Gallery and frustum synchronization while preserving state boundaries. Navigation/filtering never changes Participation or Evidence identity. Render, Mask, and Evidence failures remain distinguishable.
 
 ## Acceptance criteria
 
-- [ ] Gallery is one horizontal row with stable base order: Anchor first, then auto-generated creation order, then user-added creation order.
-- [ ] Cards are minimal: thumbnail, View ID, primary quality/status badge, participation visual state, and current-selection state.
-- [ ] Quality/status badge, Included/Excluded encoding, and current-selection outline are independent visual dimensions.
-- [ ] Status priority is deterministic for overlapping states (for example Failed > Review > No Mask > Rendering > Confirmed > Good).
-- [ ] Header/summary exposes useful counts such as total Views, Included, Review, Failed without pretending those counts are Lift Readiness.
-- [ ] Filter supports at least All / Needs Attention / Included / Excluded / User-added and never mutates Participation.
-- [ ] Needs Attention aggregates unresolved Review, No Stable Mask, Mask Failed, and Render Failed cases according to the current policy.
-- [ ] When a filter is active, nonmatching 3D frustums are visually de-emphasized rather than deleted or reclassified.
-- [ ] Selecting a Gallery card highlights/selects its frustum without moving Editor Camera.
-- [ ] Selecting a frustum selects and auto-scrolls the matching Gallery card.
-- [ ] `Inspect AI Cameras` enters the existing Camera Inspection mode for spatial inspection of Anchor, Generated, Review/Failed/Excluded, and later User-added frustums.
-- [ ] Inspecting a Generated View never silently retargets or changes the Anchor CameraBinding.
-- [ ] Generated frustums remain read-only in v1.0.
-- [ ] Gallery uses stable viewId identity, never array-index identity.
-- [ ] Thumbnail/resource strategy supports lazy/virtualized handling for 10–20+ views and does not instantiate a full Mask Editor per card.
-- [ ] Sticky `+` affordance exposes Generate More / Use Current View / Adjust New View when those actions exist; Stop Generation remains in header/summary while active.
-- [ ] v1.0 exposes no ordinary Delete View action; Exclude is the normal evidence-removal workflow, while actual record removal is limited to Restart Target or Regenerate Auto Views.
-- [ ] Needs Attention empty state offers a clear return to All rather than leaving an apparently empty workflow.
+- [ ] Gallery uses one horizontal row with stable order: Anchor, auto-generated creation order, user-added creation order.
+- [ ] Cards remain minimal: thumbnail, View ID, primary status, Participation, current selection.
+- [ ] Render status, Mask quality, Evidence state, Participation, and selection are not collapsed into one ambiguous flag.
+- [ ] Status priority is deterministic; Evidence Failed is shown only when Evidence was requested and does not replace RGB Ready.
+- [ ] Summary exposes useful counts without pretending they are Lift Readiness.
+- [ ] Filters support All / Needs Attention / Included / Excluded / User-added and never mutate Participation.
+- [ ] Needs Attention includes unresolved Review, no Stable Mask, Mask Failed, Render Failed, and actionable Evidence Failed where applicable.
+- [ ] Filtering de-emphasizes nonmatching frustums without deleting/reclassifying them.
+- [ ] Card↔frustum selection sync works without moving Editor Camera.
+- [ ] Inspect AI Cameras reuses Camera Inspection and never retargets Anchor.
+- [ ] Generated frustums remain read-only in v1.1.
+- [ ] Stable viewId, never array index, is identity.
+- [ ] Thumbnail/resource handling supports 10–20+ Views without one full Mask Editor per card.
+- [ ] Sticky add exposes Generate More / Use Current View / Adjust New View; Stop remains visible while active.
+- [ ] No ordinary Delete View; Exclude is normal participation removal, record deletion is Restart/Regenerate-owned.
+- [ ] Needs Attention empty state provides return to All.
 
 ## Failure / recovery criteria
 
-- [ ] Failed thumbnails/resources do not crash Gallery; the card remains a recoverable View record.
-- [ ] Filtering/navigation never changes underlying participation or AI artifact versions.
-
-## Affected seams
-
-- src/ai-select/gallery*
-- AI View Dock
-- Viewport frustum registry
-- Camera Inspection integration
-- Thumbnail/resource seam
+- [ ] Failed thumbnails/resources keep recoverable View records.
+- [ ] Filtering/navigation never changes Participation, Mask, Evidence, or Candidate identity.
 
 ## Validation
 
@@ -70,11 +59,10 @@ separate from Participation semantics: filtering/navigation never mutates eviden
 - npm run lint
 - npm run lint:locales
 - npm run build
-- Manual 10–20+ View Gallery walkthrough
-- Frustum↔card synchronization tests
+- Manual 10–20+ View walkthrough including RGB Ready + Evidence Failed
+- Frustum↔card tests
 
 ## Non-goals
 
-- No manual reordering
-- No search
-- No Candidate provenance/source inspector
+- No manual reorder/search
+- No Candidate provenance inspector

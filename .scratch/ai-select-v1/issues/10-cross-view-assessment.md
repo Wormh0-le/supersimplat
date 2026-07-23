@@ -1,19 +1,19 @@
 # 10 — Cross-view Review assessment + visible-support reasons
 
-Status: ready-for-agent
+Status: ready-for-agent — v2.2 re-audited
 
-Blocked by: 09, 07
+Blocked by: 14, 09, 07
 
 ## Final Spec mapping
 
-- DG-19 P1
-- §32 ViewAssessmentPolicy P1
-- MVP Phase 4
+- Final Spec v1.1 §§18, 20, 22, 26
+- DG-19 P1, DG-20
+- MVP Phase 4 P1
 
 ## Inputs / preconditions
 
-- Stable cross-view Gaussian evidence/visibility
-- AIView assessments
+- Version-bound per-view P/N/V Evidence from Ticket 14
+- AIView assessments and Participation
 - Gallery/Review UI
 
 ## Outputs / handoff artifacts
@@ -25,41 +25,37 @@ Blocked by: 09, 07
 
 ## What to build
 
-Add the P1 cross-view assessment layer as a separate, testable Companion policy slice. Use Gaussian
-evidence/visibility semantics rather than raw 2D mask-area or image IoU heuristics.
+Add P1 cross-view assessment over per-view Gaussian Evidence. The v2.2 reverse dependency audit moves this ticket after Ticket 14 because cross-view P/N/V cannot be consumed before the reference Evidence contract exists.
 
 ## Acceptance criteria
 
-- [ ] Cross-view assessment computes only from version-bound Stable Mask, Contributor/Visibility, and cross-view Gaussian evidence.
-- [ ] `cross-view-inconsistency` is emitted only from validated Gaussian-evidence consistency logic, not raw 2D area comparison alone.
-- [ ] `low-visible-support` is preferred over claiming semantic strong-occlusion when only visibility evidence is available.
-- [ ] P1 diagnostics may include crossViewPrecision, crossViewRecall, visibleTargetRatio or equivalent calibrated measures.
-- [ ] Raw mask-area outlier remains internal diagnostic unless perspective/visibility normalization justifies a user-visible reason.
-- [ ] `identity-drift` remains future taxonomy and is not emitted in v1.0 without a separately validated detector.
-- [ ] P1 assessment automatically refreshes metadata when enough stable evidence becomes available but does not trigger Repropagate or Re-Lift.
-- [ ] User Confirmed authority remains dominant; P1 assessment cannot silently re-exclude or down-weight a user-confirmed Included View.
-- [ ] Gallery/Selected View Detail displays only the top actionable P1 reason(s) with the same static frontend Reason→Action mapping.
+- [ ] Cross-view assessment consumes Stable Mask-bound per-view P/N/V/visibility and policy identities.
+- [ ] Complete per-pixel Contributor is not a required production input.
+- [ ] `cross-view-inconsistency` is emitted only from validated Gaussian ownership/conflict logic, not raw 2D area alone.
+- [ ] `low-visible-support` is used instead of claiming semantic occlusion when only V evidence is available.
+- [ ] Diagnostics may include cross-view precision/recall, visible target ratio, supporting/conflicting View counts, or calibrated equivalents.
+- [ ] Raw Mask-area outlier remains internal unless perspective/visibility normalization supports a user reason.
+- [ ] `identity-drift` remains future taxonomy and is not emitted in v1.1.
+- [ ] Assessment refreshes when matching per-view Evidence becomes available but never triggers Repropagate or Re-Lift.
+- [ ] User Confirmed authority cannot be silently revoked or down-weighted.
+- [ ] UI shows only actionable reason(s) through static localized Reason→Action mapping.
 
 ## Failure / recovery criteria
 
-- [ ] Insufficient cross-view evidence yields no fabricated cross-view reason.
-- [ ] Policy failure does not corrupt existing local/P0 assessment or participation.
-
-## Affected seams
-
-- Companion ViewAssessmentPolicy P1
-- Companion visibility/evidence primitives
-- src/ai-select assessment presentation
+- [ ] Insufficient/missing Evidence yields no fabricated cross-view reason.
+- [ ] P1 failure does not corrupt P0 assessment, Participation, View RGB, Stable Mask, or Candidate.
 
 ## Validation
 
 - npm run test:companion
 - npm test
-- Cross-view fixture tests
-- Locked GPU visibility/evidence smoke
-- False-positive/false-negative benchmark inputs prepared for Ticket 21
+- P/N/V cross-view fixtures
+- Missing/stale Evidence fixtures
+- Locked GPU/reference visibility smoke
+- False-positive/false-negative benchmark inputs for Ticket 21
 
 ## Non-goals
 
-- No new deep model inference
+- No new deep model
 - No identity-drift requirement
+- No production Direct Evidence kernel

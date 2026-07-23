@@ -22,13 +22,13 @@ This v2.2 supersedes the v2.1 local ticket graph. It retains 22 tickets but chan
 - Camera Inspection and AIView Render Ready depend on authoritative RGB only, not complete Contributor or formal Evidence.
 - Explicit Retry creates a real new render attempt for the same CameraBinding; same-attempt replay remains idempotent.
 - Stable Mask publication invalidates exact per-view Evidence by dependency identity.
-- Ticket 14 now owns the reference P/N/V Evidence contract, Mask Evidence policy, per-view artifact, multi-view aggregation, and Candidate PoC.
-- Ticket 10 cross-view assessment and Ticket 13 Coverage/Readiness now follow Ticket 14 rather than consuming undefined Evidence.
+- Ticket 14 owns the reference P/N/V Evidence contract, Mask Evidence policy, per-view artifact, multi-view aggregation, and Candidate PoC.
+- Tickets 10 and 13 both follow Ticket 14; P1 assessment may enrich readiness but is not a hard prerequisite for the base readiness state.
 - Ticket 19 owns SceneSnapshot, authoritative RGB, and conservative Render Working Set hardening; complete Contributor is reference/debug only.
-- Ticket 20 owns the production same-decision Direct Evidence path and artifact/working-set hardening.
+- Ticket 20 owns production same-decision Direct Evidence and artifact/working-set hardening.
 - Ticket 21 owns true Retry, Evidence/OOM/atomic failure hardening, classification stability, and policy calibration.
 - Ticket 22 contracts both the legacy Object Selection workflow and complete Contributor production dependency.
-- Error/recovery coverage now includes Evidence Failure, reference Contributor failure, cached-failure Retry semantics, Scene Chunk Miss, and atomic Evidence publication.
+- Error/recovery coverage includes Evidence Failure, reference Contributor failure, cached-failure Retry semantics, Scene Chunk Miss, and atomic Evidence publication.
 
 ## Dependency graph
 
@@ -63,13 +63,11 @@ This v2.2 supersedes the v2.1 local ticket graph. It retains 22 tickets but chan
  └──────────┬───────┘
             ▼
 14 Reference P/N/V Evidence + Gaussian Lifting/Candidate
-            │
-            ▼
-10 Cross-view Assessment
-            │
-            ▼
-13 Visible Evidence Coverage + Diversity + Lift Readiness
-            │
+ ├──────────────────┐
+ ▼                  ▼
+10 Cross-view P1    13 Visible Evidence Coverage + Readiness
+ Assessment          │
+ └──────────────────┘
             ▼
 15 Candidate correction + Evidence-aware explicit Re-Lift
             │
@@ -95,9 +93,11 @@ This v2.2 supersedes the v2.1 local ticket graph. It retains 22 tickets but chan
 22 Contract legacy product and Contributor paths
 ```
 
-Structural graph root: **Ticket 01**. Implementation progress/closure remains recorded in each ticket; the audit validates scope and dependency correctness rather than inferring code completion.
+Ticket 10 and Ticket 13 are parallel consumers of Ticket 14. Ticket 15 depends on Ticket 13; Ticket 21 waits for both P1 assessment and readiness so final calibration covers both.
 
-## Topological order
+Structural graph root: **Ticket 01**. Implementation progress/closure remains recorded in each ticket; this audit validates scope and dependency correctness rather than inferring code completion.
+
+## One valid topological order
 
 `01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
 

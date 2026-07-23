@@ -1,73 +1,68 @@
-# 12 — Explicit Repropagate + Dirty / Stale state model
+# 12 — Explicit Repropagate + Evidence Dirty / Candidate Stale model
 
-Status: ready-for-agent
+Status: ready-for-agent — v2.2 re-audited
 
 Blocked by: 09, 07, 05
 
 ## Final Spec mapping
 
-- DG-10
-- §36–43 Explicit Recompute
-- MVP Phase 4 Repropagate
+- Final Spec v1.1 §§11, 18, 24
+- DG-10, DG-20
+- MVP Phase 4
 
 ## Inputs / preconditions
 
-- Stable masks
+- Stable Masks
 - Participation
+- AIView Camera/RGB identity
 - Current target/reference identity
 - View registry
 
 ## Outputs / handoff artifacts
 
 - propagationDirty
+- evidenceDirtyViewIds
 - liftDirty
 - candidateStale
 - Explicit Update Multi-view Masks
 
 ## What to build
 
-Introduce explicit recompute semantics before Candidate application. Reference/Anchor Stable Mask
-changes may dirty propagation; Repropagate is explicit, publishes new proposed/stable results atomically,
-refreshes assessment/participation/readiness inputs, and never auto Re-Lifts.
+Implement explicit recompute semantics including per-view Evidence invalidation. Repropagate remains explicit and never auto-Re-Lifts. Stable input changes mark only the dependent Evidence/Candidate state dirty.
 
 ## Acceptance criteria
 
-- [ ] Domain exposes or derives propagationDirty, liftDirty, candidateStale, and contextSuspended with Final Spec meanings.
-- [ ] Editing an unconfirmed Editing Mask does not dirty propagation/lift and does not stale Candidate.
-- [ ] Confirming a normal Generated/User View Stable Mask dirties Lift but not propagation.
-- [ ] Confirming a changed Anchor/reference Stable Mask sets propagationDirty and liftDirty.
-- [ ] Exclude Included View or Include a View with Stable Mask dirties Lift without dirtying propagation.
-- [ ] Adding a View with no Stable Mask changes neither propagation nor lift dirtiness.
-- [ ] Gallery/frustum browsing changes neither propagation nor lift dirtiness.
-- [ ] When propagationDirty is true, contextual toolbar shows `Update Multi-view Masks` as the required next step.
-- [ ] `Update Multi-view Masks` is an explicit operation bound to the current stable reference input/revision.
-- [ ] Repropagate may produce new Good/Review/Failed outcomes and refresh Participation/readiness inputs.
-- [ ] Repropagate completion never auto Re-Lifts or publishes a new Candidate.
-- [ ] Late Repropagate results with stale target/reference/dependency bindings are discarded.
-- [ ] Repropagate failure preserves the previous Stable Masks and does not publish partial/proposed incomplete masks.
-- [ ] Technical propagation failure remains distinct from a valid Review result.
+- [ ] Domain exposes or derives propagationDirty, evidenceDirtyViewIds, liftDirty, candidateStale, and contextSuspended.
+- [ ] Editing an unconfirmed Editing Mask changes none of those formal states.
+- [ ] Confirming a normal View Stable Mask marks that View Evidence dirty and Lift dirty, but not propagation.
+- [ ] Confirming changed Anchor/reference Stable Mask marks propagation dirty, Anchor Evidence dirty, and Lift dirty.
+- [ ] Excluding an Included View preserves its artifact for possible reuse but marks Lift dirty.
+- [ ] Including a View with Stable Mask marks Lift dirty and its Evidence dirty when no exact matching artifact exists.
+- [ ] Adding a View with no Stable Mask changes neither Evidence nor Lift dirtiness.
+- [ ] Publishing a new CameraBinding/RGB revision marks that View Evidence dirty and Lift dirty.
+- [ ] Gallery/frustum browsing changes no dirty state.
+- [ ] Propagation Dirty exposes `Update Multi-view Masks`.
+- [ ] Repropagate binds current reference identity and publishes Mask revisions atomically.
+- [ ] Repropagate may refresh assessment/Participation/readiness inputs but never auto-produces Evidence or Candidate.
+- [ ] Late results with stale target/reference/dependency identity are discarded.
+- [ ] Repropagate failure preserves prior Stable Masks and matching Evidence/Candidate state.
+- [ ] Technical failure remains distinct from valid Review.
 
 ## Failure / recovery criteria
 
-- [ ] Repropagate failure keeps old Stable Masks and current Candidate state; no partial new mask set becomes stable.
-- [ ] Cancellation/restart during propagation relies on request binding rejection, not cancellation success.
-
-## Affected seams
-
-- src/ai-select/dirty-state*
-- src/ai-select/mask*
-- Contextual toolbar
-- Companion propagation orchestration over SAM runtime
+- [ ] No partial proposed Mask or Evidence becomes stable.
+- [ ] Cancellation/restart correctness relies on binding rejection, not cancellation success.
 
 ## Validation
 
 - npm test
 - npm run test:companion
 - npm run lint
-- Dependency-table tests matching Final Spec §40
+- Dependency-table tests matching Final Spec v1.1 §24
+- Mask/RGB/Participation → Evidence dirty transition tests
 - Stale-result/cancel tests
 
 ## Non-goals
 
 - No automatic Re-Lift
-- No Candidate implementation in this ticket
+- No Evidence computation or Candidate implementation

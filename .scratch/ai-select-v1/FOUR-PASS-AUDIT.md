@@ -11,14 +11,15 @@ The filename is retained for compatibility with the v2.1 artifact, but the v2.2 
 - Topological order length: 22/22
 - Result: **PASS**
 
-Topological order:
+One valid topological order:
 
 `01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
 
-Important dependency correction from v2.1:
+Important dependency corrections from v2.1:
 
-- Ticket 14 now defines/reference-validates P/N/V before Ticket 10 cross-view assessment and Ticket 13 Coverage consume it.
-- Ticket 14 no longer depends on Ticket 13, avoiding a semantic cycle where readiness required Evidence that had not yet been defined.
+- Ticket 14 defines/reference-validates P/N/V before Ticket 10 cross-view assessment or Ticket 13 Coverage consumes the Evidence contract.
+- Ticket 14 no longer depends on Ticket 13, avoiding the semantic cycle where readiness required Evidence not yet defined.
+- Tickets 10 and 13 are parallel consumers of Ticket 14; P1 assessment is optional enrichment, not a hard prerequisite for base readiness.
 - Ticket 20 productionizes same-decision Direct Evidence only after Ticket 14 reference semantics and Ticket 19 authoritative render/working-set hardening.
 
 ## Pass 2 — Final Spec v1.1 → tickets
@@ -36,7 +37,7 @@ Newly mapped requirement groups include:
 
 - RGB Ready independent from Contributor/Evidence;
 - true same-CameraBinding Retry attempts;
-- P/N/V and mask positive/boundary/local-negative policy;
+- P/N/V and positive/boundary/local-negative Mask policy;
 - same-decision production Evidence;
 - Render Working Set versus Evidence Working Set;
 - per-view Evidence artifact identity/invalidation;
@@ -71,12 +72,22 @@ Starting from Native Set/Add/Remove/Intersect and tracing backward:
 ```text
 Ticket 16 native operation
 ← Ticket 15 current atomic Candidate / explicit Re-Lift
-← Ticket 14 reference Evidence/Lift + Ticket 13 readiness
-← Ticket 10 cross-view assessment where available
+← Ticket 13 base Lift Readiness
+← Ticket 14 reference Evidence/Lift contract
 ← Tickets 11/12 Included Stable View and exact dirty identity
 ← Tickets 03–09 authoritative RGB, Mask, Participation, Gallery/planning
 ← Tickets 01/02 Stable identity, context, authoritative renderer
 ```
+
+Optional assessment branch:
+
+```text
+Ticket 10 P1 cross-view assessment
+← Ticket 14 per-view P/N/V
+← Tickets 07/09 assessment and presentation foundations
+```
+
+Ticket 10 may enrich review/readiness diagnostics but does not block Ticket 13's base readiness implementation. Ticket 21 waits for both branches before final calibration.
 
 Production-path backtrace:
 
@@ -92,6 +103,7 @@ Reverse checks:
 - No consumer precedes definition of its formal artifact.
 - Cross-view assessment cannot consume P/N/V before Ticket 14.
 - Coverage cannot require formal Visible Evidence before Ticket 14.
+- P1 assessment is not an unjustified hard blocker for base readiness.
 - Production Direct Evidence cannot precede reference policy/fixtures or render-working-set parity.
 - Complete Contributor is not on the mandatory path from Camera View to Native Selection.
 - Every destructive/stale transition has a retained-state and recovery owner.
@@ -140,4 +152,4 @@ Result: **PASS**
 
 No known traceability, reverse-dependency, workflow, or scope gap remains after the v2.2 audit.
 
-This audit validates the implementation plan, not future code. Every implementation run must still satisfy the ticket acceptance criteria, locked-runtime requirements, and Final Spec v1.1/ADR 0013 authority.
+This audit validates the implementation plan, not future code. Every implementation run must still satisfy ticket acceptance criteria, locked-runtime requirements, and Final Spec v1.1/ADR 0013 authority.

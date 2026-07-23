@@ -1,55 +1,53 @@
-# 22 — Contract superseded legacy Object Selection product path
+# 22 — Contract superseded legacy product and Contributor paths
 
-Status: ready-for-agent
+Status: ready-for-agent — v2.2 re-audited
 
 Blocked by: 21
 
 ## Final Spec mapping
 
-- ADR 0012 supersession
+- Final Spec v1.1 §§0, 19, 30 Stage 5
+- ADR 0012 as partially superseded by ADR 0013
 - Final migration contraction
 
 ## Inputs / preconditions
 
-- Complete validated Final Spec v1.0 path
+- Complete validated Final Spec v1.1 path
+- Production same-decision Direct Evidence
 - Legacy ObjectSelectionSession product path
+- Complete Contributor reference backend
 
 ## Outputs / handoff artifacts
 
 - One authoritative AI Select product model
-- Legacy internals isolated/removed where superseded
+- Legacy orchestration isolated/removed
+- Contributor explicitly constrained to debug/reference use
 
 ## What to build
 
-Only after the Final Spec path is complete and production-hardened, remove/isolate the superseded
-user-visible Object Selection orchestration. Preserve validated low-level algorithms, Stable IDs,
-SceneSnapshot, gsplat/SAM/Evidence/planner primitives, native selection integration, and benchmark assets.
+Only after the v1.1 path is production-hardened, remove or isolate superseded user-visible orchestration and any normal-path dependency on complete per-pixel Contributor. Preserve validated foundations and historical benchmark/reference assets.
 
 ## Acceptance criteria
 
-- [ ] Production AI Select no longer depends on legacy ObjectSelectionSession as its user-visible lifecycle container.
+- [ ] Production AI Select no longer depends on ObjectSelectionSession as lifecycle container.
 - [ ] Production UI no longer exposes New/Add/Remove/Refine inference modes.
-- [ ] Production AI Anchor path contains no PlayCanvas canvas-capture observation path.
-- [ ] PromptLog/MaskTrack/complete FrameSet-MaskSet may remain only as internal compatibility/model-adapter/benchmark details where still justified.
-- [ ] Preview → Confirm → Selection Commit → close is no longer an active product lifecycle.
-- [ ] Old workflow tests asserting superseded behavior are removed/replaced while unrelated low-level correctness tests are preserved.
-- [ ] Stable Gaussian IDs, SceneSnapshot, Companion readiness, gsplat/Contributor, SAM runtime, Evidence Policy mathematics, compatible planner primitives, SelectOp/EditHistory, and benchmark fixtures remain preserved where compatible.
-- [ ] Code comments/docs no longer present superseded concepts as current architecture.
-- [ ] AI Select remains a native Selection Tool, not a new workspace/app.
-- [ ] Final full repository validation and locked GPU Final Spec regression pass.
+- [ ] Production Anchor contains no PlayCanvas capture path.
+- [ ] PromptLog/MaskTrack/FrameSet/MaskSet remain only where explicitly justified as internal adapters/fixtures.
+- [ ] Preview → Confirm → Selection Commit → close is not active product lifecycle.
+- [ ] Complete Contributor is not required for RGB Ready, Anchor Confirm, formal Lift, or Candidate publication.
+- [ ] Complete Contributor remains available only as a clearly named debug/reference backend for fixtures and diagnostics.
+- [ ] Contributor failure cannot invalidate successful RGB or Direct Evidence.
+- [ ] Old workflow tests are removed/replaced while low-level correctness/reference fixtures remain.
+- [ ] Preserve Stable IDs, SceneSnapshot/spatial working sets, authoritative RGB, SAM, P/N/V policy, reference Contributor, planner primitives, native SelectOp/EditHistory, and benchmark assets where compatible.
+- [ ] Comments/docs do not present v1.0 Contributor production semantics or legacy sessions as current architecture.
+- [ ] AI Select remains a native Selection Tool, not a workspace/app.
+- [ ] Final repository and locked GPU v1.1 regression pass.
 
 ## Failure / recovery criteria
 
-- [ ] Contraction must not delete historical benchmark artifacts merely because terminology is legacy.
-- [ ] Any compatibility shim retained after contraction is clearly non-normative and cannot leak legacy product semantics back into UI/domain.
-
-## Affected seams
-
-- src/object-selection-session.ts/factory
-- legacy object-selection UI
-- src/main.ts legacy wiring
-- legacy transport/orchestration paths
-- legacy workflow tests/docs
+- [ ] Contraction does not delete historical benchmark/reference artifacts merely because terminology is legacy.
+- [ ] Retained shims are explicitly non-normative and cannot leak legacy semantics into UI/domain.
+- [ ] Removal occurs only after replacement validation, not by assumption.
 
 ## Validation
 
@@ -58,10 +56,11 @@ SceneSnapshot, gsplat/SAM/Evidence/planner primitives, native selection integrat
 - npm run lint
 - npm run lint:locales
 - npm run build
-- Locked GPU Final Spec end-to-end regression
+- Locked GPU Final Spec v1.1 end-to-end regression
+- Reference Contributor diagnostics regression
 - Native SuperSplat regression
 
 ## Non-goals
 
-- Do not remove validated foundations listed in ADR 0012
+- Do not remove validated foundations retained by ADR 0012/0013
 - Do not re-open DG-14

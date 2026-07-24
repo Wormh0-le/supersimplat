@@ -106,7 +106,7 @@ Structural graph root: **Ticket 01**. Implementation progress/closure remains re
 
 ## Audit artifacts
 
-- `TRACEABILITY.md`: 125 Final Spec v1.1/inherited requirements mapped to tickets, plus reverse mapping result.
+- `TRACEABILITY.md`: 127 Final Spec v1.1/Amendment 001/inherited requirements mapped to tickets, plus reverse mapping result.
 - `FOUR-PASS-AUDIT.md`: five-pass graph, spec→ticket, ticket→spec, outcome→prerequisite, and workflow/failure audit. Filename retained for compatibility.
 - `WALKTHROUGHS.md`: inherited Flows A–I, four v1.1 architecture flows, reverse outcome backtrace, and 12 failure/degradation walkthroughs.
 - `manifest.json`: machine-readable v2.2 graph and audit metadata.

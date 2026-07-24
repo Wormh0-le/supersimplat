@@ -7,6 +7,7 @@ Blocked by: 11, 12
 ## Final Spec mapping
 
 - Final Spec v1.1 §§14–22, 24.3, 30 Stage 1–2
+- Final Spec v1.1 Amendment 001 — Renderer / Evidence Implementation Identity and RGB Continuity
 - ADR 0013
 - FlashSplat-style direct-Evidence design: reference/algorithm stage
 - DG-20 and DG-03 retired semantics
@@ -60,8 +61,9 @@ This ticket defines the mask-conditioned P/N/V contract, per-view artifact, mult
 
 ### Artifact and policy semantics
 
-- [ ] Per-view GaussianEvidenceArtifact binds Camera, RGB, Stable Mask, policy, Render/Evidence Working Sets, Stable IDs, reference backend identity, and implementation/runtime identity.
+- [ ] Per-view GaussianEvidenceArtifact binds Camera, RGB, Stable Mask, policy, Render/Evidence Working Sets, Stable IDs, `rasterImplementationId`, `evidenceBackendKind=reference`, `evidenceBackendId`, and `runtimeBuildId`.
 - [ ] Artifact records `backendKind=reference` or an equivalent non-production identity; it cannot be mistaken for Ticket 20 same-decision production Evidence.
+- [ ] Reference artifacts are invalidated by incompatible renderer/runtime/backend identity changes even when Camera/Mask inputs are unchanged.
 - [ ] Artifact supports exclude/reinclude, Stable Mask replacement, incremental Re-Lift, and exact invalidation.
 - [ ] Preserve per-view raw P/N/V before cross-view aggregation.
 - [ ] Define/version multi-view aggregation using effective evidence, visible mass, supporting/conflicting Views, and optional boundary/footprint/diversity diagnostics.
@@ -83,7 +85,8 @@ This ticket defines the mask-conditioned P/N/V contract, per-view artifact, mult
 
 - [ ] Reference Lift publication is atomic and never mutates Native Selection/EditHistory.
 - [ ] Candidate records enough bound identity to determine current/stale state without DG-14 UI.
-- [ ] Stable input change makes Candidate stale; explicit Re-Lift is required.
+- [ ] Candidate retains raster implementation, Evidence backend, runtime build, and policy identity needed for Ticket 16 readiness gating.
+- [ ] Stable input or incompatible renderer/runtime/backend identity change makes Candidate stale/inapplicable; explicit Re-Lift is required.
 - [ ] Reference Candidate is clearly identified as pre-production until Ticket 20/21 production readiness is satisfied.
 
 ## Failure / recovery criteria
@@ -112,6 +115,7 @@ This ticket defines the mask-conditioned P/N/V contract, per-view artifact, mult
 - P/N/V independence/no-mass-conservation tests
 - Out-of-scope occluder fixture
 - Multi-view dominance and atomic publication tests
+- Reference backend/raster/runtime identity invalidation tests
 
 ## Non-goals
 

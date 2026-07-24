@@ -7,6 +7,7 @@ Blocked by: 20, 18, 08, 10, 13
 ## Final Spec mapping
 
 - Final Spec v1.1 §§8, 16.2, 22–23, 28, 30–32
+- Final Spec v1.1 Amendment 001 — Renderer / Evidence Implementation Identity and RGB Continuity
 - ADR 0013
 - MVP Phase 7 hardening
 
@@ -44,25 +45,34 @@ Close the production-hardening loop. This ticket calibrates existing semantics a
 - [ ] Repropagate failure preserves old Stable Masks and matching Evidence/Candidate.
 - [ ] Offline/upgrade/incompatible states preserve native SuperSplat and expose readiness/settings recovery.
 - [ ] Stress stale-result rejection across Camera churn, planner Stop, Restart, Suspended/Undo, Evidence recomputation, and cancellation.
+- [ ] Validate RGB-only versus RGB+Evidence parity for the same `rasterImplementationId`, exact inputs, and compatible `runtimeBuildId`.
+- [ ] Inject an Evidence traversal RGB-digest mismatch and verify no Evidence publishes, the Stable Mask is not silently rebound, and historical RGB remains inspectable.
+- [ ] Validate incompatible renderer/runtime migration: old RGB/Mask/Evidence/Candidate reuse is blocked until explicit rerender/review/recompute recovery.
+- [ ] Validate reference and production backend identities cannot collide in cache, Candidate readiness, or Native application state.
 - [ ] Calibrate Camera observer placement, preview behavior, and inference resolutions.
 - [ ] Calibrate planner budget, marginal Visible Evidence gain, diversity, and early stop.
 - [ ] Calibrate Core/Context/Evidence Working Set construction and Render Working Set parity gate.
 - [ ] Calibrate positive/boundary/local-negative Mask policy and P/N/V classification margins.
 - [ ] Validate mixed and unobserved remain stable classifications under repeated atomic accumulation.
 - [ ] Calibrate Observation Coverage, Lift Readiness, P0/P1 assessment, and cross-view false-positive/false-negative behavior.
-- [ ] Record exact source/build/CUDA/PyTorch/GPU/model/renderer/Evidence policy identities.
+- [ ] Record exact `rasterImplementationId`, `evidenceBackendId`, `runtimeBuildId`, source/build/CUDA/PyTorch/GPU/model/renderer/Evidence policy identities.
 - [ ] Clearly distinguish reference/autograd checks from production same-decision GPU validation.
 
 ## Failure / recovery criteria
 
 - [ ] Every injected failure documents retained state, disabled operations, and recovery action.
 - [ ] No failure silently downgrades to a stale-but-applicable Candidate or approximate attribution.
+- [ ] Renderer/backend/runtime incompatibility disables production application without destroying inspectable artifacts or mutating Native Selection.
 
 ## Validation
 
 - Full repository checks
 - Locked GPU fault injection
 - Same-CameraBinding Retry/cache tests
+- RGB-only versus RGB+Evidence parity test
+- Stable Mask/RGB digest mismatch test
+- Renderer migration invalidation and explicit recovery test
+- Reference-versus-production backend identity separation test
 - Frozen benchmark calibration
 - Atomic repeatability/classification stability suite
 - Stale async stress suite

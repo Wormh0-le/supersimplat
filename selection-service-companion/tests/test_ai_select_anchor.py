@@ -158,6 +158,7 @@ class AISelectAnchorRouteTests(unittest.TestCase):
             'sceneId': 'splat-1',
             'sceneVersion': 'snapshot-v1',
             'renderConfigVersion': 'supersplat-effective-rgb-v1',
+            'renderAttemptId': 'attempt-1',
             'viewId': 'anchor-view',
             'cameraBinding': {
                 'revision': 0,
@@ -199,6 +200,7 @@ class AISelectAnchorRouteTests(unittest.TestCase):
             self.state.capabilities([EDITOR_ORIGIN])['supportedOperations'],
             [
                 'aiSelectAnchorRender',
+                'aiSelectAnchorReferenceContributor',
                 'binarySceneSnapshotRegistrationV1',
                 'cameraAwareSpatialWorkingSetV1',
             ],
@@ -210,7 +212,14 @@ class AISelectAnchorRouteTests(unittest.TestCase):
 
         self.assertEqual(response['status'], 'complete')
         self.assertEqual(response['requestBinding'], self.request_body()['requestBinding'])
+        self.assertEqual(response['renderAttemptId'], 'attempt-1')
         self.assertEqual(response['cameraBinding'], self.request_body()['cameraBinding'])
+        self.assertEqual(response['rgbRendererVersion'], 'gsplat-rgb/v1')
+        # RGB Ready stands alone: the production response carries no complete
+        # Contributor identity or mass-validation result.
+        self.assertNotIn('contributorDigest', response)
+        self.assertNotIn('referenceContributorDigest', response)
+        self.assertNotIn('referenceContributorError', response)
         self.assertEqual(response['rgb']['width'], 1)
         self.assertEqual(response['rgb']['height'], 1)
         self.assertEqual(
@@ -400,6 +409,126 @@ class AISelectAnchorRouteTests(unittest.TestCase):
         )
         self.assertEqual(len(self.renderer.calls), 2)
         self.assertEqual(len(self.state._anchor_render_admissions), 1)  # type: ignore[attr-defined]
+
+    def test_rejects_a_request_without_a_render_attempt_identity(self) -> None:
+        request = self.request_body()
+        del request['renderAttemptId']
+
+        with self.assertRaises(HTTPError) as error:
+            urlopen(Request(
+                f'{self.endpoint}/ai-select/anchor-renders',
+                data=json.dumps(request).encode(),
+                method='POST',
+                headers={'Origin': EDITOR_ORIGIN, 'Content-Type': 'application/json'},
+            ))
+
+        self.assertEqual(error.exception.code, HTTPStatus.BAD_REQUEST)
+        self.assertEqual(json.load(error.exception)['status'], 'invalidRequest')
+        self.assertEqual(self.renderer.calls, [])
+
+    def test_rejects_a_non_boolean_reference_contributor_switch(self) -> None:
+        request = self.request_body()
+        request['referenceContributor'] = 'true'
+
+        with self.assertRaises(HTTPError) as error:
+            urlopen(Request(
+                f'{self.endpoint}/ai-select/anchor-renders',
+                data=json.dumps(request).encode(),
+                method='POST',
+                headers={'Origin': EDITOR_ORIGIN, 'Content-Type': 'application/json'},
+            ))
+
+        self.assertEqual(error.exception.code, HTTPStatus.BAD_REQUEST)
+        self.assertEqual(json.load(error.exception)['status'], 'invalidRequest')
+        self.assertEqual(self.renderer.calls, [])
+
+    def test_reference_contributor_requires_an_explicit_opt_in(self) -> None:
+        self.state.register_scene_snapshot(self.snapshot())
+        request = self.request_body()
+        request['referenceContributor'] = True
+
+        response = self.state.render_ai_select_anchor(request)
+
+        self.assertEqual(response['status'], 'complete')
+        self.assertEqual(
+            response['referenceContributorDigest'], 'sha256:' + ('1' * 64)
+        )
+        self.assertNotIn('referenceContributorError', response)
+        self.assertNotIn('contributorDigest', response)
+
+    def test_reference_contributor_failure_never_blocks_rgb_publication(self) -> None:
+        class FailingReferenceRenderer(AnchorFixtureRenderer):
+            def render_anchor(self, **kwargs: object) -> AnchorRenderArtifact:
+                artifact = super().render_anchor(**kwargs)
+                return AnchorRenderArtifact(
+                    image_png=artifact.image_png,
+                    rgb_digest=artifact.rgb_digest,
+                    reference_contributor_error=(
+                        'rendererMassMismatch: contributor alpha diverged'
+                    ),
+                )
+
+        self.state.register_scene_snapshot(self.snapshot())
+        self.state.contributor_renderer = FailingReferenceRenderer()  # type: ignore[assignment]
+        request = self.request_body()
+        request['referenceContributor'] = True
+
+        response = self.state.render_ai_select_anchor(request)
+
+        self.assertEqual(response['status'], 'complete')
+        self.assertIn('rgb', response)
+        self.assertNotIn('referenceContributorDigest', response)
+        self.assertEqual(
+            response['referenceContributorError'],
+            'rendererMassMismatch: contributor alpha diverged',
+        )
+
+    def test_explicit_retry_creates_a_new_attempt_that_actually_rerenders(self) -> None:
+        self.state.register_scene_snapshot(self.snapshot())
+
+        first = self.state.render_ai_select_anchor(self.request_body())
+        replay = self.state.render_ai_select_anchor(self.request_body())
+        retry_request = self.request_body()
+        retry_request['renderAttemptId'] = 'attempt-2'
+        retry = self.state.render_ai_select_anchor(retry_request)
+
+        # The same attempt replays idempotently; the explicit Retry mints a
+        # new attempt identity for the same CameraBinding and really reruns.
+        self.assertEqual(replay, first)
+        self.assertEqual(retry['renderAttemptId'], 'attempt-2')
+        self.assertEqual(retry['cameraBinding'], first['cameraBinding'])
+        self.assertEqual(len(self.renderer.calls), 2)
+
+    def test_a_new_attempt_reruns_instead_of_replaying_a_cached_failure(self) -> None:
+        class FlakyAnchorFixtureRenderer(AnchorFixtureRenderer):
+            def __init__(self) -> None:
+                super().__init__()
+                self.invocations = 0
+
+            def render_anchor(self, **kwargs: object) -> AnchorRenderArtifact:
+                self.invocations += 1
+                if self.invocations == 1:
+                    raise MaskSessionError('rendererFailure', 'transient gsplat failure')
+                return super().render_anchor(**kwargs)
+
+        self.state.register_scene_snapshot(self.snapshot())
+        renderer = FlakyAnchorFixtureRenderer()
+        self.state.contributor_renderer = renderer  # type: ignore[assignment]
+
+        with self.assertRaisesRegex(MaskSessionError, 'transient gsplat failure'):
+            self.state.render_ai_select_anchor(self.request_body())
+        with self.assertRaisesRegex(MaskSessionError, 'transient gsplat failure'):
+            self.state.render_ai_select_anchor(self.request_body())
+        # The cached failure replays for the same attempt without GPU work.
+        self.assertEqual(renderer.invocations, 1)
+
+        retry_request = self.request_body()
+        retry_request['renderAttemptId'] = 'attempt-2'
+        retry = self.state.render_ai_select_anchor(retry_request)
+
+        self.assertEqual(retry['status'], 'complete')
+        self.assertEqual(retry['renderAttemptId'], 'attempt-2')
+        self.assertEqual(renderer.invocations, 2)
 
 
 if __name__ == '__main__':

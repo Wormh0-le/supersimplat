@@ -141,6 +141,16 @@ const plus = (
  * Choose an external observer for the editor camera. It deliberately derives
  * a view of the immutable Anchor Frustum rather than adopting that Anchor as
  * the editor camera.
+ *
+ * The observer pulls straight back along the Anchor view axis without any
+ * sideways or vertical offset. The editor camera drives orientation through a
+ * roll-free azimuth/elevation model whose screen-up is world +Y, so tilting
+ * the observer view direction away from the Anchor forward would force a
+ * different roll for Anchors not aligned with +Y (for example Z-up scenes
+ * viewed near the orbit pole), visibly rotating the whole viewport. Keeping
+ * the exact Anchor view direction lets `setPose` recover the Anchor's own
+ * azimuth/elevation, so the scene orientation stays continuous and only the
+ * pull-back reveals the Anchor Frustum.
  */
 export const cameraInspectionObserverView = (
     binding: CameraBinding
@@ -148,8 +158,6 @@ export const cameraInspectionObserverView = (
     const camera = copyCameraBinding(binding);
     const matrix = camera.cameraToWorld;
     const origin = Object.freeze({ x: matrix[3], y: matrix[7], z: matrix[11] });
-    const right = normalize({ x: matrix[0], y: matrix[4], z: matrix[8] });
-    const up = normalize({ x: -matrix[1], y: -matrix[5], z: -matrix[9] });
     const forward = normalize({ x: matrix[2], y: matrix[6], z: matrix[10] });
     const displayDepth = Math.min(
         camera.projection.far,
@@ -157,15 +165,7 @@ export const cameraInspectionObserverView = (
     );
     const observerDistance = Math.max(displayDepth * 2.5, 0.25);
     const target = plus(origin, forward, displayDepth * 0.6);
-    const position = plus(
-        plus(
-            plus(origin, forward, -observerDistance),
-            up,
-            observerDistance * 0.25
-        ),
-        right,
-        observerDistance * 0.25
-    );
+    const position = plus(origin, forward, -observerDistance);
     const fov =
         (2 *
             Math.atan(camera.projection.height / (2 * camera.projection.fy)) *
@@ -298,9 +298,7 @@ export class CameraInspectionController {
         this.publish();
     }
 
-    private queueFinalAnchorRender(
-        render: () => Promise<void>
-    ): Promise<void> {
+    private queueFinalAnchorRender(render: () => Promise<void>): Promise<void> {
         const previous = this.anchorRenderTail;
         const run = (): Promise<void> => {
             if (this.mode !== 'active') {

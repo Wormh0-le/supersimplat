@@ -99,6 +99,7 @@ interface AnchorRenderCacheMissResponse extends Record<string, unknown> {
     readonly sceneId: string;
     readonly sceneVersion: string;
     readonly renderConfigVersion: string;
+    readonly renderAttemptId: string;
     readonly viewId: 'anchor-view';
     readonly cameraBinding: AnchorRenderRequest['cameraBinding'];
 }
@@ -110,6 +111,7 @@ interface AnchorRenderSceneChunkMissResponse extends Record<string, unknown> {
     readonly sceneId: string;
     readonly sceneVersion: string;
     readonly renderConfigVersion: string;
+    readonly renderAttemptId: string;
     readonly viewId: 'anchor-view';
     readonly cameraBinding: AnchorRenderRequest['cameraBinding'];
     readonly workingSetToken: string;
@@ -161,7 +163,8 @@ const isSortedUniqueChunkIds = (
         Array.isArray(value) &&
         (!requireNonEmpty || value.length > 0) &&
         value.every(
-            (chunkId, index) => typeof chunkId === 'string' &&
+            (chunkId, index) =>
+                typeof chunkId === 'string' &&
                 chunkId.length > 0 &&
                 (index === 0 || value[index - 1] < chunkId)
         )
@@ -185,7 +188,8 @@ const transportError = (
 ) => new SelectionServiceTransportError(code, message, details);
 
 class FetchSelectionServiceAdapter
-implements SelectionServiceAdapter, AISelectAnchorRenderer {
+    implements SelectionServiceAdapter, AISelectAnchorRenderer
+{
     private getConfiguration: () => SelectionServiceTransportConfiguration;
     private supportsCameraAwareSpatialWorkingSet: () => boolean;
     private fetch: SelectionServiceFetch;
@@ -452,10 +456,11 @@ implements SelectionServiceAdapter, AISelectAnchorRenderer {
 
     private binarySnapshotTransport(): BinarySceneSnapshotRegistrationTransport {
         return {
-            begin: manifest => this.beginPackedSnapshotUpload(manifest),
-            uploadChunk: (uploadId, index, bytes, digest) => this.uploadPackedSnapshotChunk(uploadId, index, bytes, digest),
-            commit: uploadId => this.commitPackedSnapshotUpload(uploadId),
-            abort: uploadId => this.abortPackedSnapshotUpload(uploadId)
+            begin: (manifest) => this.beginPackedSnapshotUpload(manifest),
+            uploadChunk: (uploadId, index, bytes, digest) =>
+                this.uploadPackedSnapshotChunk(uploadId, index, bytes, digest),
+            commit: (uploadId) => this.commitPackedSnapshotUpload(uploadId),
+            abort: (uploadId) => this.abortPackedSnapshotUpload(uploadId)
         };
     }
 
@@ -627,7 +632,8 @@ implements SelectionServiceAdapter, AISelectAnchorRenderer {
         if (!force && this.spatialManifestRegistrationIds.has(key)) {
             return;
         }
-        const result = await this.retrySpatialTransport(() => this.requestJson('/spatial-scene-manifests/v1', 'POST', manifest)
+        const result = await this.retrySpatialTransport(() =>
+            this.requestJson('/spatial-scene-manifests/v1', 'POST', manifest)
         );
         if (
             !isRecord(result) ||
@@ -668,9 +674,12 @@ implements SelectionServiceAdapter, AISelectAnchorRenderer {
             );
         }
         const descriptors = new Map<string, SpatialSceneChunkDescriptor>(
-            spatialSnapshot.manifest.chunks.map(chunk => [chunk.chunkId, chunk])
+            spatialSnapshot.manifest.chunks.map((chunk) => [
+                chunk.chunkId,
+                chunk
+            ])
         );
-        if (!requestedChunkIds.every(chunkId => descriptors.has(chunkId))) {
+        if (!requestedChunkIds.every((chunkId) => descriptors.has(chunkId))) {
             throw transportError(
                 'invalidResponse',
                 'The Selection Service Companion requested an unknown Anchor Spatial Scene chunk.'
@@ -697,7 +706,8 @@ implements SelectionServiceAdapter, AISelectAnchorRenderer {
             );
         }
         if (
-            !admission.missingChunkIds.every(chunkId => descriptors.has(chunkId)
+            !admission.missingChunkIds.every((chunkId) =>
+                descriptors.has(chunkId)
             )
         ) {
             throw transportError(
@@ -740,16 +750,18 @@ implements SelectionServiceAdapter, AISelectAnchorRenderer {
         spatialSnapshot: SpatialSceneSnapshot,
         requestedChunkIds: readonly string[]
     ): Promise<SpatialSceneChunkUploadAdmission> {
-        const result = await this.retrySpatialTransport(() => this.requestJson('/spatial-scene-chunk-uploads/v1', 'POST', {
-            sceneId: spatialSnapshot.manifest.sceneId,
-            sceneVersion: spatialSnapshot.manifest.sceneVersion,
-            chunkIds: requestedChunkIds
-        })
+        const result = await this.retrySpatialTransport(() =>
+            this.requestJson('/spatial-scene-chunk-uploads/v1', 'POST', {
+                sceneId: spatialSnapshot.manifest.sceneId,
+                sceneVersion: spatialSnapshot.manifest.sceneVersion,
+                chunkIds: requestedChunkIds
+            })
         );
         if (
             !isRecord(result) ||
             !isSortedUniqueChunkIds(result.missingChunkIds) ||
-            !result.missingChunkIds.every(chunkId => requestedChunkIds.includes(chunkId)
+            !result.missingChunkIds.every((chunkId) =>
+                requestedChunkIds.includes(chunkId)
             )
         ) {
             throw transportError(
@@ -833,11 +845,12 @@ implements SelectionServiceAdapter, AISelectAnchorRenderer {
         spatialSnapshot: SpatialSceneSnapshot,
         requestedChunkIds: readonly string[]
     ): Promise<void> {
-        const result = await this.retrySpatialTransport(() => this.requestJson(
-            `/spatial-scene-chunk-uploads/v1/${encodeURIComponent(uploadId)}/commit`,
-            'POST',
-            {}
-        )
+        const result = await this.retrySpatialTransport(() =>
+            this.requestJson(
+                `/spatial-scene-chunk-uploads/v1/${encodeURIComponent(uploadId)}/commit`,
+                'POST',
+                {}
+            )
         );
         if (
             !isRecord(result) ||
@@ -1014,9 +1027,13 @@ implements SelectionServiceAdapter, AISelectAnchorRenderer {
                 sceneVersion: request.snapshot.sceneVersion,
                 renderConfigVersion:
                     request.snapshot.renderConfiguration.version,
+                renderAttemptId: request.renderAttemptId,
                 viewId: 'anchor-view',
                 cameraBinding: request.cameraBinding,
                 ...(sceneTransport === 'spatial-v1' ? { sceneTransport } : {})
+                // The production preview never sets the explicit
+                // referenceContributor debug capability: complete per-pixel
+                // Contributor data stays off the Anchor RGB critical path.
             }
         );
         if (!isRecord(result)) {
@@ -1109,6 +1126,7 @@ implements SelectionServiceAdapter, AISelectAnchorRenderer {
             value.sceneVersion === request.snapshot.sceneVersion &&
             value.renderConfigVersion ===
                 request.snapshot.renderConfiguration.version &&
+            value.renderAttemptId === request.renderAttemptId &&
             value.viewId === 'anchor-view' &&
             isCameraBinding(value.cameraBinding) &&
             areCameraBindingsEqual(value.cameraBinding, request.cameraBinding)
@@ -1160,8 +1178,8 @@ implements SelectionServiceAdapter, AISelectAnchorRenderer {
         );
         const digestBytes = [...new Uint8Array(digest)];
         const digestHex = digestBytes
-        .map(byte => byte.toString(16).padStart(2, '0'))
-        .join('');
+            .map((byte) => byte.toString(16).padStart(2, '0'))
+            .join('');
         if (response.rgb.digest.toLowerCase() !== `sha256:${digestHex}`) {
             throw transportError(
                 'invalidResponse',
@@ -1289,7 +1307,7 @@ implements SelectionServiceAdapter, AISelectAnchorRenderer {
                 'The Selection Service Companion returned an invalid Mask Set threshold.'
             );
         }
-        const tracks = value.tracks.map(track => this.parseMaskTrack(track));
+        const tracks = value.tracks.map((track) => this.parseMaskTrack(track));
         return {
             status: 'complete',
             requestId: bindings.requestId,
@@ -1319,7 +1337,7 @@ implements SelectionServiceAdapter, AISelectAnchorRenderer {
         return {
             trackId: value.trackId,
             role: value.role,
-            frames: value.frames.map(frame => this.parseMaskFrame(frame))
+            frames: value.frames.map((frame) => this.parseMaskFrame(frame))
         };
     }
 
@@ -1352,12 +1370,12 @@ implements SelectionServiceAdapter, AISelectAnchorRenderer {
         return {
             viewId: value.viewId,
             status: value.status as SelectionServiceMaskFrame['status'],
-            ...(isRecord(value.binaryMask) ?
-                { binaryMask: value.binaryMask } :
-                {}),
-            ...(typeof value.rejectionReason === 'string' ?
-                { rejectionReason: value.rejectionReason } :
-                {})
+            ...(isRecord(value.binaryMask)
+                ? { binaryMask: value.binaryMask }
+                : {}),
+            ...(typeof value.rejectionReason === 'string'
+                ? { rejectionReason: value.rejectionReason }
+                : {})
         };
     }
 
@@ -1460,9 +1478,9 @@ implements SelectionServiceAdapter, AISelectAnchorRenderer {
             headers: {
                 Accept: 'application/json',
                 ...(body === undefined ||
-                additionalHeaders['Content-Type'] !== undefined ?
-                    {} :
-                    { 'Content-Type': 'application/json' }),
+                additionalHeaders['Content-Type'] !== undefined
+                    ? {}
+                    : { 'Content-Type': 'application/json' }),
                 ...additionalHeaders
             },
             mode: 'cors',

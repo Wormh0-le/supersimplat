@@ -11,11 +11,25 @@ import {
     type AITarget
 } from './current-target-context';
 
+/**
+ * The versioned identity of the Companion's authoritative RGB implementation.
+ * The editor fails closed on any other version; Ticket 20 introduces the
+ * FlashSplat-style same-decision kernel behind a new value of this seam.
+ */
+export const aiSelectRgbRendererVersion = 'gsplat-rgb/v1';
+
 export interface AnchorRenderRequest {
     readonly requestBinding: AIRequestBinding;
     readonly target: AITarget;
     readonly snapshot: PackedSceneSnapshot;
     readonly cameraBinding: CameraBinding;
+    /**
+     * The identity of one actual render execution attempt. Replaying the same
+     * request (for example after a lost response) stays idempotent; an
+     * explicit user Retry submits a new attempt identity for the same
+     * CameraBinding instead of mutating the camera to bypass a cached result.
+     */
+    readonly renderAttemptId: string;
 }
 
 export interface AnchorRgbArtifact {
@@ -31,10 +45,11 @@ export interface AnchorRenderResponse {
     readonly sceneId: string;
     readonly sceneVersion: string;
     readonly renderConfigVersion: string;
+    readonly renderAttemptId: string;
     readonly viewId: 'anchor-view';
     readonly cameraBinding: CameraBinding;
     readonly rgb: AnchorRgbArtifact;
-    readonly contributorDigest: string;
+    readonly rgbRendererVersion: typeof aiSelectRgbRendererVersion;
     readonly rendererId: 'gsplat';
 }
 
@@ -403,11 +418,12 @@ export const validatePngDecodable = async (
                     });
                     image.addEventListener(
                         'error',
-                        () => reject(
-                            new Error(
-                                'Anchor PNG image data is not decodable.'
-                            )
-                        ),
+                        () =>
+                            reject(
+                                new Error(
+                                    'Anchor PNG image data is not decodable.'
+                                )
+                            ),
                         { once: true }
                     );
                 });
@@ -450,6 +466,7 @@ export const isAnchorRenderRequest = (
         isNonEmptyString(value.snapshot.sceneId) &&
         isNonEmptyString(value.snapshot.sceneVersion) &&
         isCameraBinding(value.cameraBinding) &&
+        isNonEmptyString(value.renderAttemptId) &&
         value.requestBinding.dependencyToken.splatId === value.target.splatId &&
         value.snapshot.sceneId === value.target.splatId
     );
@@ -475,10 +492,11 @@ export const isAnchorRenderResponse = (
         isNonEmptyString(value.sceneId) &&
         isNonEmptyString(value.sceneVersion) &&
         isNonEmptyString(value.renderConfigVersion) &&
+        isNonEmptyString(value.renderAttemptId) &&
         value.viewId === 'anchor-view' &&
         isCameraBinding(value.cameraBinding) &&
         isAnchorRgbArtifact(value.rgb) &&
-        isDigest(value.contributorDigest) &&
+        value.rgbRendererVersion === aiSelectRgbRendererVersion &&
         value.rendererId === 'gsplat'
     );
 };
@@ -503,6 +521,7 @@ export const anchorRenderResponseMatchesRequest = (
         response.sceneVersion === request.snapshot.sceneVersion &&
         response.renderConfigVersion ===
             request.snapshot.renderConfiguration.version &&
+        response.renderAttemptId === request.renderAttemptId &&
         areCameraBindingsEqual(response.cameraBinding, request.cameraBinding) &&
         actualDimensions.width === response.rgb.width &&
         actualDimensions.height === response.rgb.height &&

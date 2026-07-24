@@ -494,7 +494,8 @@ const main = async () => {
                 }
             },
             onReturnToSceneView: () => cameraInspection.returnToSceneView(),
-            onResetAnchor: () => cameraInspection.resetAnchor()
+            onResetAnchor: () => cameraInspection.resetAnchor(),
+            onRetryPreview: () => aiSelectController.retryAnchorPreview()
         }
     );
     let lastAISelectPanelContextId: string | null = null;

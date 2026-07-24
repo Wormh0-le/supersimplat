@@ -216,11 +216,22 @@ refer to global Stable Gaussian IDs.
 
 ### Anchor contributor publication artifact
 
-For the authoritative Anchor route, the Companion keeps RGB alpha, local
-contributor rows, contributor weights, and Stable-ID remapping as typed tensors
-until publication. `contributorDigest` remains the existing opaque digest field
-on the wire; its published meaning remains “the complete same-rasterization
-Contributor product,” so no Selection Service protocol bump is required.
+Ticket 03 moved the complete Contributor product off the production Anchor
+critical path. The production `POST /ai-select/anchor-renders` response is
+RGB-only: it carries `rgb`, `rgbRendererVersion`, and the echoed
+`renderAttemptId`, and it never invokes, allocates, hashes, serializes,
+caches, or waits for complete per-pixel Contributor IDs/weights. The typed
+Contributor stream below is produced only when the request explicitly sets
+`referenceContributor: true` (the `aiSelectAnchorReferenceContributor`
+debug/reference capability), and its digest is published as
+`referenceContributorDigest`. A reference Contributor failure degrades to the
+diagnostic-only `referenceContributorError` field beside the still-valid RGB.
+
+For that explicit reference path, the Companion keeps RGB alpha, local
+contributor rows, contributor weights, and Stable-ID remapping as typed
+tensors until publication. The digest meaning remains “the complete
+same-rasterization Contributor product,” so no Selection Service protocol
+bump is required.
 
 The current internal artifact format embeds its own identity:
 

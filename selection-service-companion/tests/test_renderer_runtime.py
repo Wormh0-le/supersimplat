@@ -63,7 +63,12 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
 
             self.assertEqual(
                 state.capabilities(["https://editor.example"])["renderer"],
-                {"id": "gsplat", "status": "ready", "cudaVersion": "12.8"},
+                {
+                    "id": "gsplat",
+                    "status": "ready",
+                    "cudaVersion": "12.8",
+                    "rgbRendererVersion": "gsplat-rgb/v1",
+                },
             )
 
     def test_capabilities_verify_the_locked_gsplat_runtime_before_ready(self) -> None:
@@ -81,7 +86,12 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
 
             self.assertEqual(
                 state.capabilities(["https://editor.example"])["renderer"],
-                {"id": "gsplat", "status": "ready", "cudaVersion": "12.8"},
+                {
+                    "id": "gsplat",
+                    "status": "ready",
+                    "cudaVersion": "12.8",
+                    "rgbRendererVersion": "gsplat-rgb/v1",
+                },
             )
 
     def test_runtime_mismatches_remain_explicitly_unavailable(self) -> None:
@@ -201,7 +211,12 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
 
             self.assertEqual(
                 state.capabilities(["https://editor.example"])["renderer"],
-                {"id": "gsplat", "status": "ready", "cudaVersion": "12.8"},
+                {
+                    "id": "gsplat",
+                    "status": "ready",
+                    "cudaVersion": "12.8",
+                    "rgbRendererVersion": "gsplat-rgb/v1",
+                },
             )
 
     def test_readiness_rejects_a_shadowed_gsplat_module(self) -> None:

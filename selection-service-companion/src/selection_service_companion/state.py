@@ -89,6 +89,11 @@ MODEL_MANIFEST_IDENTITY_FIELDS = (
     "runtimeConfigDigest",
 )
 
+# The versioned identity of the authoritative RGB implementation. Ticket 20
+# replaces this seam with the FlashSplat-style same-decision kernel; the
+# browser fails closed on any version it does not explicitly support.
+AI_SELECT_RGB_RENDERER_VERSION = 'gsplat-rgb/v1'
+
 
 @dataclass(frozen=True)
 class RegisteredSceneSnapshot:
@@ -109,11 +114,13 @@ class AISelectAnchorRequest:
     scene_id: str
     scene_version: str
     render_config_version: str
+    render_attempt_id: str
     camera_binding: dict[str, object]
     renderer_camera: dict[str, object]
     width: int
     height: int
     scene_transport: str = 'packed-v1'
+    reference_contributor: bool = False
 
     def response_fields(self) -> dict[str, object]:
         return {
@@ -122,6 +129,7 @@ class AISelectAnchorRequest:
             'sceneId': self.scene_id,
             'sceneVersion': self.scene_version,
             'renderConfigVersion': self.render_config_version,
+            'renderAttemptId': self.render_attempt_id,
             'viewId': 'anchor-view',
             'cameraBinding': self.camera_binding,
         }
@@ -823,6 +831,9 @@ class CompanionState:
                         width=anchor_request.width,
                         height=anchor_request.height,
                         timing=anchor_timing,
+                        include_reference_contributor=(
+                            anchor_request.reference_contributor
+                        ),
                     )
                 else:
                     # Contract fixtures and compatibility renderers preserve
@@ -859,11 +870,26 @@ class CompanionState:
                         'width': anchor_request.width,
                         'height': anchor_request.height,
                     },
-                    'contributorDigest': _anchor_digest(
-                        artifact.contributor_digest, 'contributor digest'
-                    ),
+                    'rgbRendererVersion': AI_SELECT_RGB_RENDERER_VERSION,
                     'rendererId': 'gsplat',
                 }
+                if anchor_request.reference_contributor:
+                    # The explicit debug/reference capability reports its own
+                    # outcome beside the RGB; its failure never converts the
+                    # successful authoritative render into a Preview Failure.
+                    if artifact.reference_contributor_error is not None:
+                        response['referenceContributorError'] = (
+                            artifact.reference_contributor_error
+                        )
+                    elif artifact.contributor_digest is not None:
+                        response['referenceContributorDigest'] = _anchor_digest(
+                            artifact.contributor_digest,
+                            'reference contributor digest',
+                        )
+                    else:
+                        response['referenceContributorError'] = (
+                            'rendererUnavailable: The renderer did not produce a reference Contributor artifact.'
+                        )
         except MaskSessionError as error:
             self._complete_anchor_render(
                 anchor_key, admission, failure=error, timing=anchor_timing
@@ -937,11 +963,19 @@ class CompanionState:
         render_config_version = _anchor_string(
             request.get('renderConfigVersion'), 'renderConfigVersion'
         )
+        render_attempt_id = _anchor_string(
+            request.get('renderAttemptId'), 'renderAttemptId'
+        )
         if request.get('viewId') != 'anchor-view':
             raise ValueError('AI Select Anchor viewId must be anchor-view')
         scene_transport = request.get('sceneTransport', 'packed-v1')
         if scene_transport not in ('packed-v1', 'spatial-v1'):
             raise ValueError('AI Select Anchor sceneTransport is unsupported')
+        reference_contributor = request.get('referenceContributor', False)
+        if not isinstance(reference_contributor, bool):
+            raise ValueError(
+                'AI Select Anchor referenceContributor must be an explicit boolean'
+            )
 
         camera_binding, renderer_camera, width, height = (
             self._parse_ai_select_anchor_camera(request.get('cameraBinding'))
@@ -952,11 +986,13 @@ class CompanionState:
             scene_id=scene_id,
             scene_version=scene_version,
             render_config_version=render_config_version,
+            render_attempt_id=render_attempt_id,
             camera_binding=camera_binding,
             renderer_camera=renderer_camera,
             width=width,
             height=height,
             scene_transport=scene_transport,
+            reference_contributor=reference_contributor,
         )
 
     @staticmethod
@@ -2714,6 +2750,7 @@ class CompanionState:
             "supportedPromptKinds": ["point"],
             "supportedOperations": [
                 "aiSelectAnchorRender",
+                "aiSelectAnchorReferenceContributor",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",
             ],
@@ -2754,6 +2791,7 @@ class CompanionState:
                 "id": renderer.renderer_id,
                 "status": "ready",
                 "cudaVersion": runtime.cuda_version,
+                "rgbRendererVersion": AI_SELECT_RGB_RENDERER_VERSION,
             }
         return renderer_capability
 

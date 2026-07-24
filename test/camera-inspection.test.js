@@ -2,7 +2,8 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const {
-    CameraInspectionController
+    CameraInspectionController,
+    cameraInspectionObserverView
 } = require('../.test-dist/src/ai-select/camera-inspection.js');
 const {
     captureEditorCameraBinding
@@ -238,4 +239,39 @@ test('Reset Anchor does not replace the camera-owned saved Scene View with the o
 
     assert.equal(resets, 1);
     assert.equal(restoredRuntimeSnapshot, cameraRuntimeSnapshot);
+});
+
+test('Camera Inspection observer keeps the Anchor view direction so Z-up scenes do not roll', () => {
+    // A Z-up-scene Anchor: PlayCanvas right/up/back = +X/+Z/-Y, so the view
+    // direction is +Y with screen-up +Z. Such an Anchor sits at the roll-free
+    // orbit camera's pole, where any sideways/vertical observer offset swings
+    // azimuth wildly and rotates the whole viewport around the view axis.
+    const anchorBinding = captureEditorCameraBinding({
+        targetSize: { width: 640, height: 480 },
+        fov: 60,
+        near: 0.1,
+        far: 100,
+        camera: { horizontalFov: false },
+        worldTransform: {
+            data: [1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 2, 3, 4, 1]
+        }
+    });
+
+    const view = cameraInspectionObserverView(anchorBinding);
+    const direction = {
+        x: view.target.x - view.position.x,
+        y: view.target.y - view.position.y,
+        z: view.target.z - view.position.z
+    };
+    const length = Math.hypot(direction.x, direction.y, direction.z);
+
+    // The observer view direction stays exactly parallel to the Anchor
+    // forward (+Y here), so the azimuth/elevation camera model reproduces the
+    // Anchor screen orientation and the viewport does not rotate on entry.
+    assert.ok(Math.abs(direction.x / length) < 1e-9);
+    assert.ok(direction.y / length > 1 - 1e-9);
+    assert.ok(Math.abs(direction.z / length) < 1e-9);
+
+    // The observer still moves behind the Anchor instead of adopting it.
+    assert.ok(view.position.y < 3);
 });

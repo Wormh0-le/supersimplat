@@ -106,6 +106,7 @@ const responseFor = (request) => ({
     sceneId: request.snapshot.sceneId,
     sceneVersion: request.snapshot.sceneVersion,
     renderConfigVersion: 'supersplat-effective-rgb-v1',
+    renderAttemptId: request.renderAttemptId,
     viewId: 'anchor-view',
     cameraBinding: request.cameraBinding,
     rgb: {
@@ -117,8 +118,7 @@ const responseFor = (request) => ({
         width: request.cameraBinding.projection.width,
         height: request.cameraBinding.projection.height
     },
-    contributorDigest:
-        'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    rgbRendererVersion: 'gsplat-rgb/v1',
     rendererId: 'gsplat'
 });
 
@@ -472,8 +472,81 @@ test('preserves a valid preview when the current final render fails and retries 
 
     assert.equal(requests.length, 3);
     assert.deepEqual(requests[2].cameraBinding, requests[1].cameraBinding);
+    // The explicit user Retry mints a fresh render-attempt identity for the
+    // same CameraBinding instead of replaying the cached failed attempt.
+    assert.notEqual(requests[2].renderAttemptId, requests[1].renderAttemptId);
     assert.equal(controller.state.anchor.renderStatus, 'ready');
     assert.equal(controller.state.anchor.cameraBinding.cameraToWorld[3], 20);
+});
+
+test('mints a distinct render-attempt identity for every actual render execution', async () => {
+    const requests = [];
+    const controller = new AISelectAnchorController({
+        renderer: {
+            async renderAnchor(request) {
+                requests.push(request);
+                return responseFor(request);
+            }
+        }
+    });
+
+    await controller.start(input());
+    await controller.renderFinalPreview();
+    await controller.retryAnchorPreview();
+
+    assert.equal(requests.length, 3);
+    const attemptIds = requests.map((request) => request.renderAttemptId);
+    assert.equal(new Set(attemptIds).size, requests.length);
+    attemptIds.forEach((attemptId) => {
+        assert.equal(typeof attemptId, 'string');
+        assert.ok(attemptId.length > 0);
+    });
+    // Every attempt reused the same semantic CameraBinding without jitter.
+    requests.forEach((request) => {
+        assert.deepEqual(request.cameraBinding, requests[0].cameraBinding);
+    });
+});
+
+test('rejects an Anchor response bound to a different render attempt', async () => {
+    const controller = new AISelectAnchorController({
+        renderer: {
+            async renderAnchor(request) {
+                return {
+                    ...responseFor(request),
+                    renderAttemptId: `${request.renderAttemptId}-stale`
+                };
+            }
+        }
+    });
+
+    await controller.start(input());
+
+    assert.equal(controller.state.anchor.renderStatus, 'failed');
+    assert.match(
+        controller.state.anchor.errorMessage,
+        /invalid Anchor render binding/i
+    );
+});
+
+test('rejects an Anchor response from an unsupported RGB renderer version', async () => {
+    const controller = new AISelectAnchorController({
+        renderer: {
+            async renderAnchor(request) {
+                return {
+                    ...responseFor(request),
+                    rgbRendererVersion: 'flashsplat-same-decision/v1'
+                };
+            }
+        }
+    });
+
+    await controller.start(input());
+
+    assert.equal(controller.state.anchor.renderStatus, 'failed');
+    assert.match(
+        controller.state.anchor.errorMessage,
+        /invalid Anchor render binding/i
+    );
 });
 
 test('rejects an Anchor response whose actual PNG raster dimensions differ from its CameraBinding', async () => {

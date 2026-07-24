@@ -121,6 +121,7 @@ def request(scene_version: str) -> dict[str, object]:
         "sceneId": "editor-splat:42",
         "sceneVersion": scene_version,
         "renderConfigVersion": "supersplat-effective-rgb-v1",
+        "renderAttemptId": "attempt-1",
         "viewId": "anchor-view",
         "sceneTransport": "spatial-v1",
         "cameraBinding": {

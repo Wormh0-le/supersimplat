@@ -118,6 +118,10 @@ _Avoid_: complete lifting input
 The identity of one actual render execution attempt. Replaying the same attempt may be idempotent; explicit Retry creates a new attempt for the same semantic CameraBinding rather than replaying a cached failure.  
 _Avoid_: changing CameraBinding to bypass cache
 
+**RGB Renderer Version**  
+The versioned identity of the authoritative RGB implementation bound to every AI observation response (currently `gsplat-rgb/v1`). It is the explicit seam that lets a later same-decision FlashSplat-style kernel replace the RGB implementation without silently changing observation semantics.  
+_Avoid_: implicit renderer swap
+
 ## Mask Vocabulary
 
 **MaskAnnotation**  

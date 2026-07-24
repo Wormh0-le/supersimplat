@@ -255,6 +255,7 @@ class BinarySceneSnapshotRouteTests(unittest.TestCase):
                 "sceneId": manifest.scene_id,
                 "sceneVersion": manifest.scene_version,
                 "renderConfigVersion": "supersplat-effective-rgb-v1",
+                "renderAttemptId": "attempt-1",
                 "viewId": "anchor-view",
                 "cameraBinding": {
                     "revision": 0,

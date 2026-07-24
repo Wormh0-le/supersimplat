@@ -29,7 +29,7 @@ const snapshot = {
         shBands: 3,
         rasterizer: 'playcanvas-gsplat-classic'
     },
-    gaussians: [3, 7, 9].map(stableId => ({
+    gaussians: [3, 7, 9].map((stableId) => ({
         stableId,
         mean: [stableId, 0, 0],
         rotation: [0, 0, 0, 1],
@@ -91,7 +91,7 @@ const previewRequest = (sessionId = 'session-1', requestId = 'request-1') => ({
     snapshot
 });
 
-const previewBindings = requestId => ({
+const previewBindings = (requestId) => ({
     requestId,
     sessionId: 'session-1',
     targetSplatId: start.target.targetSplatId,
@@ -106,7 +106,7 @@ const previewBindings = requestId => ({
     modelManifestDigest: start.requestContext.modelManifestDigest
 });
 
-const frameSetForBindings = bindings => ({
+const frameSetForBindings = (bindings) => ({
     ...start.requestContext.frameSet,
     frameSetVersion: bindings.frameSetVersion
 });
@@ -135,7 +135,7 @@ const maskSet = (bindings, frameSet = frameSetForBindings(bindings)) => ({
         {
             trackId: 'primary',
             role: 'include',
-            frames: frameSet.orderedViews.map(view => ({
+            frames: frameSet.orderedViews.map((view) => ({
                 viewId: view.viewId,
                 status: 'accepted',
                 binaryMask: {
@@ -249,7 +249,8 @@ const anchorRequest = {
     },
     target: { splatId: 'scene-1' },
     snapshot: anchorSnapshot,
-    cameraBinding: anchorCameraBinding
+    cameraBinding: anchorCameraBinding,
+    renderAttemptId: 'anchor-render-attempt-1'
 };
 
 const stagedBinaryRegistrationReplies = (packed, uploadId = 'upload-1') => [
@@ -267,10 +268,10 @@ const stagedBinaryRegistrationReplies = (packed, uploadId = 'upload-1') => [
     }
 ];
 
-const responseBody = body =>
+const responseBody = (body) =>
     typeof body === 'string' ? JSON.parse(body) : (body ?? null);
 
-const pngCrc32 = bytes => {
+const pngCrc32 = (bytes) => {
     let crc = 0xffffffff;
     for (const byte of bytes) {
         crc ^= byte;
@@ -314,13 +315,14 @@ const anchorPng = (width, height) => {
     };
 };
 
-const anchorResponse = request => ({
+const anchorResponse = (request) => ({
     status: 'complete',
     requestBinding: request.requestBinding,
     targetSplatId: request.target.splatId,
     sceneId: request.snapshot.sceneId,
     sceneVersion: request.snapshot.sceneVersion,
     renderConfigVersion: request.snapshot.renderConfiguration.version,
+    renderAttemptId: request.renderAttemptId,
     viewId: 'anchor-view',
     cameraBinding: request.cameraBinding,
     rgb: {
@@ -331,8 +333,7 @@ const anchorResponse = request => ({
         width: request.cameraBinding.projection.width,
         height: request.cameraBinding.projection.height
     },
-    contributorDigest:
-        'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    rgbRendererVersion: 'gsplat-rgb/v1',
     rendererId: 'gsplat'
 });
 
@@ -407,6 +408,7 @@ test('registers one global spatial manifest, uploads only the missing Anchor chu
             sceneId: anchorSnapshot.sceneId,
             sceneVersion: anchorSnapshot.sceneVersion,
             renderConfigVersion: anchorSnapshot.renderConfiguration.version,
+            renderAttemptId: anchorRequest.renderAttemptId,
             viewId: 'anchor-view',
             cameraBinding: anchorCameraBinding,
             workingSetToken:
@@ -502,7 +504,7 @@ test('registers one global spatial manifest, uploads only the missing Anchor chu
     );
     assert.equal(calls[7].init.method, 'DELETE');
     assert.equal(
-        calls.some(call => call.url.includes('/scene-snapshot-uploads/v1')),
+        calls.some((call) => call.url.includes('/scene-snapshot-uploads/v1')),
         false
     );
 });
@@ -528,6 +530,7 @@ test('rejects a stale Spatial Scene chunk miss before any raw chunk upload can b
             sceneId: anchorSnapshot.sceneId,
             sceneVersion: anchorSnapshot.sceneVersion,
             renderConfigVersion: anchorSnapshot.renderConfiguration.version,
+            renderAttemptId: anchorRequest.renderAttemptId,
             viewId: 'anchor-view',
             cameraBinding: anchorCameraBinding,
             workingSetToken:
@@ -555,7 +558,7 @@ test('rejects a stale Spatial Scene chunk miss before any raw chunk upload can b
     );
     assert.equal(calls.length, 2);
     assert.equal(
-        calls.some(call =>
+        calls.some((call) =>
             call.url.includes('/spatial-scene-chunk-uploads/v1')
         ),
         false
@@ -604,6 +607,7 @@ test('re-registers the Scene Snapshot exactly once when an Anchor render reports
             sceneId: anchorSnapshot.sceneId,
             sceneVersion: anchorSnapshot.sceneVersion,
             renderConfigVersion: anchorSnapshot.renderConfiguration.version,
+            renderAttemptId: anchorRequest.renderAttemptId,
             viewId: 'anchor-view',
             cameraBinding: anchorCameraBinding
         },
@@ -627,8 +631,8 @@ test('re-registers the Scene Snapshot exactly once when an Anchor render reports
 
     assert.deepEqual(response, anchorResponse(anchorRequest));
     assert.equal(calls.length, 8);
-    assert.equal(calls.filter(call => call.init.method === 'PUT').length, 2);
-    assert.equal(calls.filter(call => call.init.method === 'POST').length, 6);
+    assert.equal(calls.filter((call) => call.init.method === 'PUT').length, 2);
+    assert.equal(calls.filter((call) => call.init.method === 'POST').length, 6);
 });
 
 test('rejects an Anchor PNG whose declared digest does not bind its bytes', async () => {
@@ -654,7 +658,7 @@ test('rejects an Anchor PNG whose declared digest does not bind its bytes', asyn
     );
 });
 
-test('rejects malformed or dimension-mismatched Anchor PNG bytes even when their digest is valid', async t => {
+test('rejects malformed or dimension-mismatched Anchor PNG bytes even when their digest is valid', async (t) => {
     for (const [name, rgb, message] of [
         [
             'malformed',
@@ -815,7 +819,7 @@ test('registers one immutable Scene Snapshot, resends it after a cache miss, and
     assert.equal(first.maskSet.threshold, 0.5);
     assert.deepEqual(second.uncertainIds, [7]);
     assert.deepEqual(
-        calls.map(call => `${call.init.method} ${call.url}`),
+        calls.map((call) => `${call.init.method} ${call.url}`),
         [
             'PUT https://companion.example:8787/frame-sets/anchor%3Aanchor-view',
             'POST https://companion.example:8787/object-selection-sessions',
@@ -882,7 +886,7 @@ test("accepts a complete preview bound to the Companion's generated Frame Set", 
 
     assert.equal(response.frameSetVersion, frameSet.frameSetVersion);
     assert.deepEqual(
-        response.frameSet.orderedViews.map(view => view.viewId),
+        response.frameSet.orderedViews.map((view) => view.viewId),
         ['anchor-view', 'generated-ring-01']
     );
     assert.equal(response.maskSet.frameSetVersion, frameSet.frameSetVersion);
@@ -954,7 +958,7 @@ test('re-registers the Scene Snapshot after closing the Companion session lease'
     await adapter.openSession(start);
 
     assert.equal(
-        calls.filter(call => call.url.includes('/scene-snapshots/')).length,
+        calls.filter((call) => call.url.includes('/scene-snapshots/')).length,
         2
     );
 });
@@ -996,7 +1000,7 @@ test('cleans an unrecovered opening after session admission fails', async () => 
     );
     const openRequestId = calls[1].body.openRequestId;
     assert.deepEqual(
-        calls.map(call => `${call.init.method} ${call.url}`),
+        calls.map((call) => `${call.init.method} ${call.url}`),
         [
             'PUT https://companion.example:8787/frame-sets/anchor%3Aanchor-view',
             'POST https://companion.example:8787/object-selection-sessions',
@@ -1064,7 +1068,7 @@ test('recovers a session when its first admission response is lost', async () =>
 
     assert.equal(sessionId, 'recovered-session');
     assert.deepEqual(
-        calls.map(call => `${call.init.method} ${call.url}`),
+        calls.map((call) => `${call.init.method} ${call.url}`),
         [
             'PUT https://companion.example:8787/frame-sets/anchor%3Aanchor-view',
             'POST https://companion.example:8787/object-selection-sessions',
@@ -1137,7 +1141,7 @@ test('uses a distinct admission ID for each logical New opening', async () => {
     await adapter.openSession(nextStart);
 
     const admissions = calls.filter(
-        call =>
+        (call) =>
             call.init.method === 'POST' &&
             call.url.endsWith('/object-selection-sessions')
     );

@@ -256,6 +256,7 @@ class SpatialSceneLockedGpuParityTests(unittest.TestCase):
                     camera=renderer_camera,
                     width=64,
                     height=64,
+                    include_reference_contributor=True,
                 )
                 full_artifact = contributor_renderer.render_anchor(
                     scene_snapshot=full_working_set,
@@ -263,6 +264,7 @@ class SpatialSceneLockedGpuParityTests(unittest.TestCase):
                     camera=renderer_camera,
                     width=64,
                     height=64,
+                    include_reference_contributor=True,
                 )
                 self.assertEqual(selective_artifact.rgb_digest, full_artifact.rgb_digest)
                 self.assertEqual(

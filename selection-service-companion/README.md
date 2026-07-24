@@ -57,14 +57,25 @@ Anchor through `POST /ai-select/anchor-renders`. The payload is bounded raw
 typed binary chunks, not a PLY path, base64 payload, or per-Gaussian JSON graph;
 the Companion only publishes its mmap-backed snapshot after commit succeeds.
 The Anchor request carries the editor-owned `AIRequestBinding`, Target Splat ID,
-render-configuration version, and `CameraBinding`. `CameraBinding` is an OpenCV
-camera-to-world affine matrix plus pinhole intrinsics, resolution, clipping, and
-convention revision. The Companion derives its row-major
-`opencv-world-to-camera` matrix, then publishes PNG RGB and a contributor digest
-only after one gsplat rasterization has passed complete contributor-mass
-validation. The editor verifies the PNG SHA-256 digest before displaying it. No
-PlayCanvas framebuffer/canvas capture is accepted as AI Anchor observation
-truth. See [Binary SceneSnapshot Registration v1](../docs/protocols/binary-scene-snapshot-registration-v1.md).
+render-configuration version, `CameraBinding`, and a `renderAttemptId`.
+`CameraBinding` is an OpenCV camera-to-world affine matrix plus pinhole
+intrinsics, resolution, clipping, and convention revision. The Companion
+derives its row-major `opencv-world-to-camera` matrix, then publishes PNG RGB
+with its SHA-256 digest and the `gsplat-rgb/v1` renderer version. Replaying
+the same `renderAttemptId` is idempotent; an explicit user Retry mints a new
+attempt identity for the same `CameraBinding` and actually reruns the render
+instead of replaying a cached result or failure. The editor verifies the PNG
+SHA-256 digest before displaying it. No PlayCanvas framebuffer/canvas capture
+is accepted as AI Anchor observation truth. See [Binary SceneSnapshot Registration v1](../docs/protocols/binary-scene-snapshot-registration-v1.md).
+
+The production Anchor response is RGB-only: it never invokes, allocates,
+hashes, serializes, caches, or waits for complete per-pixel Contributor
+IDs/weights. The complete Contributor backend is reachable only through the
+explicit `referenceContributor: true` debug/reference opt-in (advertised as
+`aiSelectAnchorReferenceContributor`), which adds a
+`referenceContributorDigest` to the response. Its failure degrades to the
+diagnostic-only `referenceContributorError` field and never converts a
+successful authoritative RGB render into a Preview Failure.
 
 The legacy PoC route's editor-registered Anchor PNG parity policy remains
 limited to legacy fixture/session compatibility. It is not used by AI Select
@@ -77,9 +88,10 @@ termination cut, or sigma zero. When a pixel fails the mass check only because
 of such a boundary flip, the renderer replays that pixel's tile from the same
 projection/tile preparation, keeps the unique decision variant that reproduces
 the RGB rasterization's own alpha, and rebuilds that pixel's contributor IDs
-and weights from the matched chain. Any mismatch no boundary variant explains
-still aborts the preview; the tolerance, fixture, runtime lock, and Evidence
-Policy contract are unchanged. See ADR 0010 under `docs/adr/`.
+and weights from the matched chain. This reconciliation runs only inside the
+explicit reference Contributor path, where an unexplained mismatch becomes the
+diagnostic `referenceContributorError` rather than an RGB failure; the legacy
+evidence consumers keep their fail-closed abort. See ADR 0010 under `docs/adr/`.
 
 ## Install a model separately
 

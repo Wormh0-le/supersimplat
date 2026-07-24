@@ -138,46 +138,61 @@ class GsplatRasterization:
 
 @dataclass(frozen=True)
 class TypedAnchorRasterization:
-    """Typed complete contributor output for scalable Anchor publication.
+    """Typed Anchor raster output with an optional reference Contributor stream.
 
     Tensors retain gsplat's row-major image order until the bounded digest
     transfer. ``stable_ids`` maps each tensor row to the editor-owned uint32
-    Stable Gaussian ID as raw signed-int32 bits.
+    Stable Gaussian ID as raw signed-int32 bits. The contributor tensors and
+    ``stable_ids`` are present only for the explicit debug/reference
+    Contributor path; ``contributor_error`` records its diagnostic-only
+    failure without discarding the authoritative RGB.
     """
 
     service_rgb_digest: str
     service_rgb_bytes: bytes
     alpha: Any
-    contributor_ids: Any
-    contributor_weights: Any
-    stable_ids: Any
+    contributor_ids: Any | None
+    contributor_weights: Any | None
+    stable_ids: Any | None
     peak_vram_bytes: int | None = None
+    contributor_error: MaskSessionError | None = None
 
 
 @dataclass(frozen=True)
 class _LockedTensorRasterization:
-    """GPU-resident common rasterization state shared by Anchor and legacy APIs."""
+    """GPU-resident common rasterization state shared by Anchor and legacy APIs.
+
+    The contributor tensors stay ``None`` unless the explicit reference
+    Contributor path requested them; the production RGB path never allocates
+    them. A captured ``contributor_error`` keeps a reference-Contributor
+    failure diagnostic-only instead of sacrificing the valid RGB.
+    """
 
     service_rgb_digest: str
     service_rgb_bytes: bytes
     alpha: Any
-    contributor_ids: Any
-    contributor_weights: Any
+    contributor_ids: Any | None
+    contributor_weights: Any | None
     peak_vram_bytes: int
+    contributor_error: MaskSessionError | None = None
 
 
 @dataclass(frozen=True)
 class AnchorRenderArtifact:
-    """The complete, self-authenticating RGB/contributor product for one Anchor.
+    """The self-authenticating authoritative RGB product for one Anchor.
 
     This exists separately from a mask Frame because v1's Anchor has no
-    editor-captured RGB.  The PNG and contributor digest both originate from
-    one gsplat rasterization before any UI receives the image.
+    editor-captured RGB. Complete per-pixel Contributor data is no longer part
+    of the production Anchor product: ``contributor_digest`` is present only
+    when the explicit debug/reference Contributor path was requested, and
+    ``reference_contributor_error`` records its diagnostic-only failure while
+    the valid RGB still publishes.
     """
 
     image_png: bytes
     rgb_digest: str
-    contributor_digest: str
+    contributor_digest: str | None = None
+    reference_contributor_error: str | None = None
 
     def __post_init__(self) -> None:
         if not self.image_png:
@@ -190,10 +205,13 @@ class AnchorRenderArtifact:
                 'rendererFailure', 'gsplat Anchor RGB digest does not match its PNG artifact.'
             )
         if (
-            not isinstance(self.contributor_digest, str)
-            or len(self.contributor_digest) != len('sha256:') + 64
-            or not self.contributor_digest.startswith('sha256:')
-            or any(character not in '0123456789abcdef' for character in self.contributor_digest[7:].lower())
+            self.contributor_digest is not None
+            and (
+                not isinstance(self.contributor_digest, str)
+                or len(self.contributor_digest) != len('sha256:') + 64
+                or not self.contributor_digest.startswith('sha256:')
+                or any(character not in '0123456789abcdef' for character in self.contributor_digest[7:].lower())
+            )
         ):
             raise MaskSessionError(
                 'rendererFailure', 'gsplat Anchor contributor digest is invalid.'
@@ -339,6 +357,14 @@ class LockedGsplatBackend:
             width=width,
             height=height,
         )
+        if (
+            rasterized.contributor_ids is None
+            or rasterized.contributor_weights is None
+        ):
+            raise MaskSessionError(
+                "rendererFailure",
+                "gsplat did not return the contributor tensors this evidence path requires.",
+            )
         return GsplatRasterization(
             service_rgb_digest=rasterized.service_rgb_digest,
             service_rgb_bytes=rasterized.service_rgb_bytes,
@@ -359,8 +385,15 @@ class LockedGsplatBackend:
         width: int,
         height: int,
         stable_ids: StableGaussianIds,
+        include_reference_contributor: bool = False,
     ) -> TypedAnchorRasterization:
-        """Keep the complete Anchor contributor stream typed through hashing."""
+        """Rasterize the Anchor RGB, keeping any reference Contributor typed.
+
+        The production path never allocates, reconciles, or hashes complete
+        per-pixel Contributor tensors; they exist only when the explicit
+        debug/reference path requested them. A reference Contributor failure
+        is captured next to the valid RGB instead of destroying it.
+        """
 
         import torch
 
@@ -369,17 +402,30 @@ class LockedGsplatBackend:
             camera=camera,
             width=width,
             height=height,
+            include_contributor=include_reference_contributor,
+            capture_contributor_error=True,
+        )
+        has_contributor = (
+            rasterized.contributor_ids is not None
+            and rasterized.contributor_weights is not None
         )
         return TypedAnchorRasterization(
             service_rgb_digest=rasterized.service_rgb_digest,
             service_rgb_bytes=rasterized.service_rgb_bytes,
             alpha=rasterized.alpha[0, ..., 0],
-            contributor_ids=rasterized.contributor_ids[0],
-            contributor_weights=rasterized.contributor_weights[0],
-            stable_ids=_stable_id_tensor(
-                torch, stable_ids, rasterized.alpha.device
+            contributor_ids=(
+                rasterized.contributor_ids[0] if has_contributor else None
+            ),
+            contributor_weights=(
+                rasterized.contributor_weights[0] if has_contributor else None
+            ),
+            stable_ids=(
+                _stable_id_tensor(torch, stable_ids, rasterized.alpha.device)
+                if has_contributor
+                else None
             ),
             peak_vram_bytes=rasterized.peak_vram_bytes,
+            contributor_error=rasterized.contributor_error,
         )
 
     def _rasterize_tensors(
@@ -389,14 +435,20 @@ class LockedGsplatBackend:
         camera: Mapping[str, Any],
         width: int,
         height: int,
+        include_contributor: bool = True,
+        capture_contributor_error: bool = False,
     ) -> _LockedTensorRasterization:
-        """Return one GPU-resident RGB/contributor result from gsplat."""
+        """Return one GPU-resident RGB result from gsplat.
+
+        The complete per-pixel Contributor CUDA passes run only when
+        ``include_contributor`` selects them. With
+        ``capture_contributor_error`` their failure is recorded next to the
+        valid RGB so the reference/debug path can report a diagnostic without
+        destroying the authoritative observation; evidence consumers keep the
+        historical fail-closed raise.
+        """
 
         import torch
-        from gsplat.cuda._wrapper import (
-            rasterize_contributing_gaussian_ids,
-            rasterize_num_contributing_gaussians,
-        )
         from gsplat.rendering import rasterization
 
         device = torch.device("cuda")
@@ -427,6 +479,77 @@ class LockedGsplatBackend:
                 "rendererFailure", "gsplat returned non-finite service RGB."
             )
 
+        contributor_ids: Any | None = None
+        contributor_weights: Any | None = None
+        contributor_error: MaskSessionError | None = None
+        if include_contributor:
+            try:
+                contributor_ids, contributor_weights = (
+                    self._reference_contributor_tensors(
+                        meta=meta,
+                        raster_alpha=raster_alpha,
+                        width=width,
+                        height=height,
+                    )
+                )
+            except MaskSessionError as error:
+                if not capture_contributor_error:
+                    raise
+                contributor_error = error
+            except Exception as error:
+                if not capture_contributor_error:
+                    raise
+                contributor_error = MaskSessionError(
+                    "rendererFailure",
+                    "gsplat failed while producing the reference Contributor stream.",
+                )
+
+        rgb_bytes = (
+            service_rgb.detach()
+            .clamp(0.0, 1.0)
+            .mul(255.0)
+            .round()
+            .to(torch.uint8)
+            .cpu()
+            .contiguous()
+            .numpy()
+            .tobytes()
+        )
+        return _LockedTensorRasterization(
+            service_rgb_digest=f"sha256:{hashlib.sha256(rgb_bytes).hexdigest()}",
+            service_rgb_bytes=rgb_bytes,
+            alpha=raster_alpha,
+            contributor_ids=contributor_ids,
+            contributor_weights=contributor_weights,
+            peak_vram_bytes=int(torch.cuda.max_memory_allocated(device)),
+            contributor_error=contributor_error,
+        )
+
+    @staticmethod
+    def _reference_contributor_tensors(
+        *,
+        meta: Mapping[str, Any],
+        raster_alpha: Any,
+        width: int,
+        height: int,
+    ) -> tuple[Any, Any]:
+        """Run the reference Contributor passes against RGB's own decisions.
+
+        This check also proves that RGB's alpha and the contributor operation
+        consumed the exact same projection/tile preparation. The two CUDA
+        kernels evaluate the shared per-Gaussian alpha in separate
+        translation units, so their float32 arithmetic can flip a single
+        contributor exactly at the validity/termination boundaries; reconcile
+        only those proven boundary flips against the RGB rasterization's own
+        alpha and fail closed on any other mismatch.
+        """
+
+        import torch
+        from gsplat.cuda._wrapper import (
+            rasterize_contributing_gaussian_ids,
+            rasterize_num_contributing_gaussians,
+        )
+
         contributor_counts, contributor_alpha = (
             rasterize_num_contributing_gaussians(
                 meta["means2d"],
@@ -452,13 +575,6 @@ class LockedGsplatBackend:
                 contributor_counts,
             )
         )
-        # This check also proves that RGB's alpha and the contributor operation
-        # consumed the exact same projection/tile preparation. The two CUDA
-        # kernels evaluate the shared per-Gaussian alpha in separate
-        # translation units, so their float32 arithmetic can flip a single
-        # contributor exactly at the validity/termination boundaries; reconcile
-        # only those proven boundary flips against the RGB rasterization's own
-        # alpha and fail closed on any other mismatch.
         difference = torch.abs(contributor_alpha - raster_alpha[..., 0])
         tolerance = _mass_conservation_tolerance(raster_alpha[..., 0])
         if bool((difference > tolerance).any().item()):
@@ -487,26 +603,7 @@ class LockedGsplatBackend:
                 f"(max absolute difference {float(difference.max().item()):.9g}; "
                 f"pixels over tolerance {int((difference > tolerance).sum().item())}).",
             )
-
-        rgb_bytes = (
-            service_rgb.detach()
-            .clamp(0.0, 1.0)
-            .mul(255.0)
-            .round()
-            .to(torch.uint8)
-            .cpu()
-            .contiguous()
-            .numpy()
-            .tobytes()
-        )
-        return _LockedTensorRasterization(
-            service_rgb_digest=f"sha256:{hashlib.sha256(rgb_bytes).hexdigest()}",
-            service_rgb_bytes=rgb_bytes,
-            alpha=raster_alpha,
-            contributor_ids=contributor_ids,
-            contributor_weights=contributor_weights,
-            peak_vram_bytes=int(torch.cuda.max_memory_allocated(device)),
-        )
+        return contributor_ids, contributor_weights
 
     def probe(
         self,
@@ -1243,13 +1340,16 @@ class GsplatContributorRenderer:
         width: int,
         height: int,
         timing: AnchorServerTiming | None = None,
+        include_reference_contributor: bool = False,
     ) -> AnchorRenderArtifact:
         """Render the v1 Anchor from gsplat, never from editor framebuffer data.
 
-        The same backend invocation supplies RGB, alpha, and contributor IDs.
-        The locked backend keeps the Anchor contributor stream as tensors until
-        the bounded canonical digest transfer; the legacy object path remains
-        only as a compatibility/reference fallback for non-typed backends.
+        The production path publishes authoritative RGB only; it never invokes,
+        allocates, reconciles, or hashes complete per-pixel Contributor data.
+        The explicit ``include_reference_contributor`` opt-in is the only way
+        to reach the reference Contributor backend, and its failure stays
+        diagnostic-only next to the valid RGB. The legacy object path remains
+        as a compatibility/reference fallback for non-typed backends.
         """
 
         if view_id != 'anchor-view':
@@ -1295,13 +1395,18 @@ class GsplatContributorRenderer:
                     width=width,
                     height=height,
                     stable_ids=stable_ids,
+                    include_reference_contributor=include_reference_contributor,
                 )
             self.last_peak_vram_bytes = typed.peak_vram_bytes
             self.peak_vram_bytes = max(
                 self.peak_vram_bytes, int(typed.peak_vram_bytes or 0)
             )
             return _typed_anchor_artifact(
-                typed, width=width, height=height, timing=timing
+                typed,
+                width=width,
+                height=height,
+                timing=timing,
+                include_reference_contributor=include_reference_contributor,
             )
 
         with timing.measure('gsplat') if timing is not None else nullcontext():
@@ -1317,31 +1422,40 @@ class GsplatContributorRenderer:
         )
         with timing.measure('png') if timing is not None else nullcontext():
             image_png = _rgb_png(rasterized.service_rgb_bytes, width, height)
-        frame = RegisteredFrame(
-            view_id=view_id,
-            frame_digest=f'sha256:{hashlib.sha256(image_png).hexdigest()}',
-            width=width,
-            height=height,
-            image_png=image_png,
-            source='anchor',
-            camera=immutable_camera,
-        )
-        with (
-            timing.measure('contributor-digest')
-            if timing is not None
-            else nullcontext()
-        ):
-            rendered = _validated_rendered_view(
-                rasterized=rasterized,
-                stable_ids=stable_ids,
-                frame=frame,
-                renderer_id=self.renderer_id,
+        contributor_digest: str | None = None
+        reference_contributor_error: str | None = None
+        if include_reference_contributor:
+            frame = RegisteredFrame(
+                view_id=view_id,
+                frame_digest=f'sha256:{hashlib.sha256(image_png).hexdigest()}',
+                width=width,
+                height=height,
+                image_png=image_png,
+                source='anchor',
+                camera=immutable_camera,
             )
-            contributor_digest = _legacy_anchor_contributor_digest(rendered)
+            with (
+                timing.measure('contributor-digest')
+                if timing is not None
+                else nullcontext()
+            ):
+                try:
+                    rendered = _validated_rendered_view(
+                        rasterized=rasterized,
+                        stable_ids=stable_ids,
+                        frame=frame,
+                        renderer_id=self.renderer_id,
+                    )
+                    contributor_digest = _legacy_anchor_contributor_digest(rendered)
+                except MaskSessionError as error:
+                    reference_contributor_error = _reference_contributor_diagnostic(
+                        error
+                    )
         return AnchorRenderArtifact(
             image_png=image_png,
-            rgb_digest=frame.frame_digest,
+            rgb_digest=f'sha256:{hashlib.sha256(image_png).hexdigest()}',
             contributor_digest=contributor_digest,
+            reference_contributor_error=reference_contributor_error,
         )
 
     def plan_views(
@@ -2139,19 +2253,26 @@ def _validate_camera(frame: RegisteredFrame) -> Mapping[str, Any]:
     return camera
 
 
+def _reference_contributor_diagnostic(error: MaskSessionError) -> str:
+    """Format a reference Contributor failure as diagnostic-only metadata."""
+
+    return f'{error.code}: {error}'
+
+
 def _typed_anchor_artifact(
     rasterized: TypedAnchorRasterization,
     *,
     width: int,
     height: int,
     timing: AnchorServerTiming | None = None,
+    include_reference_contributor: bool = False,
 ) -> AnchorRenderArtifact:
-    """Validate and hash a complete typed Anchor contributor stream.
+    """Validate and package one typed Anchor rasterization.
 
-    The browser currently receives the digest rather than the contributor
-    payload itself, but the digest must still bind the entire row-major stream
-    and the exact tensor-row-to-Stable-ID mapping. This keeps the artifact
-    future-proof without materializing a per-pixel Python representation.
+    The production artifact is authoritative RGB alone. The complete typed
+    Contributor stream is hashed only for the explicit debug/reference path,
+    and a reference failure degrades to diagnostic metadata rather than
+    destroying the valid RGB.
     """
 
     if not isinstance(rasterized, TypedAnchorRasterization):
@@ -2168,18 +2289,32 @@ def _typed_anchor_artifact(
 
     with timing.measure('png') if timing is not None else nullcontext():
         image_png = _rgb_png(rasterized.service_rgb_bytes, width, height)
-    with (
-        timing.measure('contributor-digest')
-        if timing is not None
-        else nullcontext()
-    ):
-        contributor_digest = _typed_contributor_digest(
-            rasterized, width=width, height=height
-        )
+    contributor_digest: str | None = None
+    reference_contributor_error: str | None = None
+    if include_reference_contributor:
+        if rasterized.contributor_error is not None:
+            reference_contributor_error = _reference_contributor_diagnostic(
+                rasterized.contributor_error
+            )
+        else:
+            with (
+                timing.measure('contributor-digest')
+                if timing is not None
+                else nullcontext()
+            ):
+                try:
+                    contributor_digest = _typed_contributor_digest(
+                        rasterized, width=width, height=height
+                    )
+                except MaskSessionError as error:
+                    reference_contributor_error = _reference_contributor_diagnostic(
+                        error
+                    )
     return AnchorRenderArtifact(
         image_png=image_png,
         rgb_digest=f"sha256:{hashlib.sha256(image_png).hexdigest()}",
         contributor_digest=contributor_digest,
+        reference_contributor_error=reference_contributor_error,
     )
 
 

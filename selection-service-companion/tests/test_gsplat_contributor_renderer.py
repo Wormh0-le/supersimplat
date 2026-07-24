@@ -8,6 +8,7 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+from unittest import mock
 
 from PIL import Image
 
@@ -142,6 +143,7 @@ class StaticTypedAnchorBackend:
 
         self.calls = 0
         self.legacy_calls = 0
+        self.reference_contributor_requests: list[bool] = []
         self.rasterization = TypedAnchorRasterization(
             service_rgb_digest="sha256:service-rgb",
             service_rgb_bytes=bytes(2 * 2 * 3),
@@ -157,9 +159,19 @@ class StaticTypedAnchorBackend:
             stable_ids=torch.tensor((41, 99), dtype=torch.int32),
         )
 
-    def rasterize_anchor_typed(self, *, snapshot, camera, width, height, stable_ids):
+    def rasterize_anchor_typed(
+        self,
+        *,
+        snapshot,
+        camera,
+        width,
+        height,
+        stable_ids,
+        include_reference_contributor=False,
+    ):
         del snapshot, camera, width, height, stable_ids
         self.calls += 1
+        self.reference_contributor_requests.append(include_reference_contributor)
         return self.rasterization
 
     def rasterize(self, *, snapshot, camera, width, height):
@@ -385,6 +397,7 @@ class GsplatContributorRendererTests(unittest.TestCase):
             camera=frame.camera,
             width=frame.width,
             height=frame.height,
+            include_reference_contributor=True,
         )
 
         self.assertEqual(backend.calls, 1)
@@ -392,9 +405,78 @@ class GsplatContributorRendererTests(unittest.TestCase):
             artifact.rgb_digest,
             f'sha256:{hashlib.sha256(artifact.image_png).hexdigest()}',
         )
+        self.assertIsNotNone(artifact.contributor_digest)
+        assert artifact.contributor_digest is not None
         self.assertRegex(artifact.contributor_digest, r'^sha256:[0-9a-f]{64}$')
         with Image.open(BytesIO(artifact.image_png)) as image:
             self.assertEqual(image.size, (frame.width, frame.height))
+
+    def test_production_render_anchor_never_touches_the_reference_contributor(self) -> None:
+        backend = StaticTypedAnchorBackend()
+        backend.rasterization = replace(
+            backend.rasterization,
+            contributor_ids=None,
+            contributor_weights=None,
+            stable_ids=None,
+        )
+        renderer = GsplatContributorRenderer(backend=backend)
+        frame = anchor_frame()
+        assert frame.camera is not None
+
+        artifact = renderer.render_anchor(
+            scene_snapshot=supported_snapshot(),
+            view_id='anchor-view',
+            camera=frame.camera,
+            width=frame.width,
+            height=frame.height,
+        )
+
+        # The production preview neither requests nor publishes any complete
+        # Contributor artifact; RGB alone decides readiness.
+        self.assertEqual(backend.reference_contributor_requests, [False])
+        self.assertIsNone(artifact.contributor_digest)
+        self.assertIsNone(artifact.reference_contributor_error)
+        self.assertEqual(
+            artifact.rgb_digest,
+            f'sha256:{hashlib.sha256(artifact.image_png).hexdigest()}',
+        )
+        with Image.open(BytesIO(artifact.image_png)) as image:
+            self.assertEqual(image.size, (frame.width, frame.height))
+
+    def test_reference_contributor_failure_stays_diagnostic_beside_valid_rgb(self) -> None:
+        backend = StaticTypedAnchorBackend()
+        backend.rasterization = replace(
+            backend.rasterization,
+            contributor_ids=None,
+            contributor_weights=None,
+            stable_ids=None,
+            contributor_error=MaskSessionError(
+                'rendererMassMismatch', 'contributor alpha diverged'
+            ),
+        )
+        renderer = GsplatContributorRenderer(backend=backend)
+        frame = anchor_frame()
+        assert frame.camera is not None
+
+        artifact = renderer.render_anchor(
+            scene_snapshot=supported_snapshot(),
+            view_id='anchor-view',
+            camera=frame.camera,
+            width=frame.width,
+            height=frame.height,
+            include_reference_contributor=True,
+        )
+
+        self.assertEqual(backend.reference_contributor_requests, [True])
+        self.assertIsNone(artifact.contributor_digest)
+        self.assertEqual(
+            artifact.reference_contributor_error,
+            'rendererMassMismatch: contributor alpha diverged',
+        )
+        self.assertEqual(
+            artifact.rgb_digest,
+            f'sha256:{hashlib.sha256(artifact.image_png).hexdigest()}',
+        )
 
     def test_render_anchor_hashes_complete_typed_contributors_without_legacy_lists(self) -> None:
         backend = StaticTypedAnchorBackend()
@@ -408,6 +490,7 @@ class GsplatContributorRendererTests(unittest.TestCase):
             camera=frame.camera,
             width=frame.width,
             height=frame.height,
+            include_reference_contributor=True,
         )
 
         # The format is deliberately independent of Python object layout:
@@ -441,6 +524,7 @@ class GsplatContributorRendererTests(unittest.TestCase):
             width=frame.width,
             height=frame.height,
             timing=timing,
+            include_reference_contributor=True,
         )
 
         self.assertGreater(timing.duration_ms('gsplat'), 0)
@@ -467,6 +551,7 @@ class GsplatContributorRendererTests(unittest.TestCase):
             camera=frame.camera,
             width=frame.width,
             height=frame.height,
+            include_reference_contributor=True,
         )
 
         stream = b''.join((
@@ -1202,6 +1287,49 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
         self.assertIsNotNone(renderer.last_peak_vram_bytes)
         self.assertGreater(renderer.last_peak_vram_bytes or 0, 0)
 
+    def test_production_anchor_render_never_invokes_the_contributor_kernels(self) -> None:
+        self.require_cuda()
+
+        import gsplat.cuda._wrapper as gsplat_wrapper
+
+        renderer = GsplatContributorRenderer(backend=LockedGsplatBackend())
+        frame = anchor_frame(width=8, height=8)
+        assert frame.camera is not None
+
+        def forbidden(*args: object, **kwargs: object) -> None:
+            raise AssertionError(
+                'production Anchor RGB must not run the reference Contributor kernels'
+            )
+
+        with (
+            mock.patch.object(
+                gsplat_wrapper,
+                'rasterize_num_contributing_gaussians',
+                forbidden,
+            ),
+            mock.patch.object(
+                gsplat_wrapper,
+                'rasterize_contributing_gaussian_ids',
+                forbidden,
+            ),
+        ):
+            artifact = renderer.render_anchor(
+                scene_snapshot=supported_snapshot(),
+                view_id='anchor-view',
+                camera=frame.camera,
+                width=frame.width,
+                height=frame.height,
+            )
+
+        self.assertIsNone(artifact.contributor_digest)
+        self.assertIsNone(artifact.reference_contributor_error)
+        self.assertEqual(
+            artifact.rgb_digest,
+            f'sha256:{hashlib.sha256(artifact.image_png).hexdigest()}',
+        )
+        with Image.open(BytesIO(artifact.image_png)) as image:
+            self.assertEqual(image.size, (frame.width, frame.height))
+
     def test_anchor_uses_the_typed_gpu_contributor_publication_path(self) -> None:
         self.require_cuda()
 
@@ -1220,8 +1348,11 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
             camera=frame.camera,
             width=frame.width,
             height=frame.height,
+            include_reference_contributor=True,
         )
 
+        self.assertIsNotNone(artifact.contributor_digest)
+        assert artifact.contributor_digest is not None
         self.assertRegex(artifact.contributor_digest, r'^sha256:[0-9a-f]{64}$')
         self.assertIsNotNone(renderer.last_peak_vram_bytes)
         self.assertGreater(renderer.last_peak_vram_bytes or 0, 0)

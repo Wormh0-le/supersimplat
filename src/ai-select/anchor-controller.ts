@@ -52,7 +52,6 @@ export interface AnchorAIView {
     readonly renderStatus: AnchorRenderStatus;
     /** Present only when this exact full-resolution binding is ready. */
     readonly rgb?: AnchorRgbArtifact;
-    readonly contributorDigest?: string;
     readonly rendererId?: 'gsplat';
     readonly errorMessage?: string;
     readonly preview?: AnchorPreview;
@@ -84,7 +83,6 @@ interface PendingAnchorRender {
 
 interface AnchorViewDetails {
     readonly rgb?: AnchorRgbArtifact;
-    readonly contributorDigest?: string;
     readonly rendererId?: 'gsplat';
     readonly errorMessage?: string;
     readonly preview?: AnchorPreview;
@@ -145,9 +143,6 @@ const copyAnchor = (anchor: AnchorAIView): AnchorAIView => {
         requestBinding: copyRequestBinding(anchor.requestBinding),
         renderStatus: anchor.renderStatus,
         ...(anchor.rgb === undefined ? {} : { rgb: copyRgb(anchor.rgb) }),
-        ...(anchor.contributorDigest === undefined
-            ? {}
-            : { contributorDigest: anchor.contributorDigest }),
         ...(anchor.rendererId === undefined
             ? {}
             : { rendererId: anchor.rendererId }),
@@ -209,9 +204,6 @@ const formalDetails = (anchor: AnchorAIView): AnchorViewDetails => {
     }
     return {
         rgb: anchor.rgb,
-        ...(anchor.contributorDigest === undefined
-            ? {}
-            : { contributorDigest: anchor.contributorDigest }),
         ...(anchor.rendererId === undefined
             ? {}
             : { rendererId: anchor.rendererId })
@@ -248,6 +240,12 @@ export class AISelectAnchorController {
     private initialAnchorCameraBinding: CameraBinding | null = null;
     private retainedSnapshots = new Map<string, AnchorRenderRequest>();
     private pendingSnapshotRenders = new Map<string, number>();
+    /**
+     * Mint one fresh render-attempt identity per actual render execution. It
+     * never resets within this controller so a late replay of an older
+     * context cannot collide with a newer attempt.
+     */
+    private nextRenderAttemptOrdinal = 0;
 
     constructor(options: { renderer: AISelectAnchorRenderer }) {
         this.renderer = options.renderer;
@@ -422,8 +420,19 @@ export class AISelectAnchorController {
             requestBinding: copyRequestBinding(requestBinding),
             target: Object.freeze({ splatId: target.splatId }),
             snapshot,
-            cameraBinding: copyCameraBinding(cameraBinding)
+            cameraBinding: copyCameraBinding(cameraBinding),
+            renderAttemptId: this.mintRenderAttemptId()
         });
+    }
+
+    private mintRenderAttemptId(): string {
+        if (this.nextRenderAttemptOrdinal >= Number.MAX_SAFE_INTEGER) {
+            throw new Error(
+                'AI Select render attempt identity cannot advance safely.'
+            );
+        }
+        this.nextRenderAttemptOrdinal += 1;
+        return `anchor-render-attempt-${this.nextRenderAttemptOrdinal}`;
     }
 
     private async submitRender(
@@ -527,7 +536,6 @@ export class AISelectAnchorController {
                 'ready',
                 {
                     rgb: response.rgb,
-                    contributorDigest: response.contributorDigest,
                     rendererId: response.rendererId,
                     lastValidPreview
                 }

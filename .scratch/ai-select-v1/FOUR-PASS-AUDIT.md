@@ -24,12 +24,13 @@ Important dependency corrections from v2.1:
 
 ## Pass 2 — Final Spec v1.1 → tickets
 
-A curated catalog of **125** inherited and new requirements is mapped in `TRACEABILITY.md`.
+A curated catalog of **127** inherited and new requirements is mapped in `TRACEABILITY.md`, including Final Spec v1.1 Amendment 001.
 
 Checks:
 
 - Invalid ticket references: 0
 - Unmapped DG-20 requirements: 0
+- Unmapped Amendment 001 requirements: 0
 - Known v1.1 architecture gaps have explicit owners
 - Result: **PASS**
 
@@ -41,6 +42,9 @@ Newly mapped requirement groups include:
 - same-decision production Evidence;
 - Render Working Set versus Evidence Working Set;
 - per-view Evidence artifact identity/invalidation;
+- explicit rasterImplementationId / Evidence backend / runtimeBuildId binding;
+- RGB-only versus later RGB+Evidence implementation continuity;
+- incompatible renderer migration invalidation and explicit recovery;
 - reference Contributor debug-only role;
 - mixed/unobserved Uncertain semantics;
 - atomic accumulation classification stability.
@@ -48,8 +52,8 @@ Newly mapped requirement groups include:
 ## Pass 3 — tickets → Final Spec / reverse traceability and scope audit
 
 - Orphan tickets with no normative/migration/hardening owner: []
-- Every active ticket names a Final Spec v1.1/ADR/inherited v1.0 mapping
-- Tickets 19–21 are justified by Final Spec v1.1 Stages 3–4 and engineering/benchmark gates
+- Every active ticket names a Final Spec v1.1/Amendment/ADR/inherited v1.0 mapping
+- Tickets 19–21 are justified by Final Spec v1.1 Stages 3–4, Amendment 001, and engineering/benchmark gates
 - Ticket 22 is justified by migration contraction after replacement validation
 - DG-14 remains excluded
 - Result: **PASS**
@@ -70,10 +74,10 @@ No ticket introduces:
 Starting from Native Set/Add/Remove/Intersect and tracing backward:
 
 ```text
-Ticket 16 native operation
+Ticket 16 native operation + backend/readiness gate
 ← Ticket 15 current atomic Candidate / explicit Re-Lift
 ← Ticket 13 base Lift Readiness
-← Ticket 14 reference Evidence/Lift contract
+← Ticket 14 reference Evidence/Lift contract + implementation identity
 ← Tickets 11/12 Included Stable View and exact dirty identity
 ← Tickets 03–09 authoritative RGB, Mask, Participation, Gallery/planning
 ← Tickets 01/02 Stable identity, context, authoritative renderer
@@ -93,9 +97,9 @@ Production-path backtrace:
 
 ```text
 Ticket 21 calibrated/hardened production
-← Ticket 20 same-decision Direct Evidence
-← Ticket 19 authoritative RGB + conservative Render Working Set
-← Ticket 14 reference P/N/V semantics and fixtures
+← Ticket 20 same-decision Direct Evidence + RGB continuity
+← Ticket 19 authoritative RGB + renderer identity + conservative Render Working Set
+← Ticket 14 reference P/N/V semantics, backend identity, and fixtures
 ```
 
 Reverse checks:
@@ -105,6 +109,8 @@ Reverse checks:
 - Coverage cannot require formal Visible Evidence before Ticket 14.
 - P1 assessment is not an unjustified hard blocker for base readiness.
 - Production Direct Evidence cannot precede reference policy/fixtures or render-working-set parity.
+- RGB-only and later Evidence paths cannot silently cross incompatible raster implementations.
+- Reference and production Evidence/Candidates cannot collide in identity or readiness.
 - Complete Contributor is not on the mandatory path from Camera View to Native Selection.
 - Every destructive/stale transition has a retained-state and recovery owner.
 - Result: **PASS**
@@ -125,13 +131,15 @@ Critical closure checks:
 - Stable Mask publication invalidates exact per-view Evidence but does not auto-Lift.
 - Reference P/N/V precedes production same-decision CUDA.
 - Full Render Working Set preserves occlusion while Evidence Working Set limits writes.
+- RGB-only and RGB+Evidence bind the same compatible rasterImplementationId.
+- Incompatible renderer migration requires explicit rerender/review rather than silent Mask rebinding.
 - Evidence failure preserves RGB/View/Mask/Gallery/previous Candidate.
 - Reference Contributor failure is diagnostic only.
 - Scene mutation preserves artifacts read-only and requires exact semantic restoration.
 
 ## Mechanical critical-phrase audit
 
-Critical acceptance/failure phrases were checked in Tickets 03, 04, 05, 06, 07, 10, 12, 13, 14, 15, 18, 19, 20, 21, and 22.
+Critical acceptance/failure phrases were checked in Tickets 03, 04, 05, 06, 07, 10, 12, 13, 14, 15, 16, 18, 19, 20, 21, and 22.
 
 Required phrases/semantics include:
 
@@ -140,6 +148,9 @@ Required phrases/semantics include:
 - `P/N/V` and `alpha × incoming transmittance`;
 - `Render Working Set` / `Evidence Working Set` separation;
 - `same decision source`;
+- `rasterImplementationId`, Evidence backend identity, and `runtimeBuildId`;
+- RGB-only versus RGB+Evidence implementation continuity;
+- incompatible renderer migration invalidation;
 - complete Contributor `debug/reference` only;
 - `Uncertain` for mixed/unobserved;
 - no partial Evidence/Candidate publication.
@@ -150,6 +161,6 @@ Result: **PASS**
 
 ## Conclusion
 
-No known traceability, reverse-dependency, workflow, or scope gap remains after the v2.2 audit.
+No known traceability, reverse-dependency, workflow, or scope gap remains after the v2.2 audit plus Final Spec v1.1 Amendment 001.
 
-This audit validates the implementation plan, not future code. Every implementation run must still satisfy ticket acceptance criteria, locked-runtime requirements, and Final Spec v1.1/ADR 0013 authority.
+This audit validates the implementation plan, not future code. Every implementation run must still satisfy ticket acceptance criteria, locked-runtime requirements, Final Spec v1.1, Amendment 001, and ADR 0013 authority.

@@ -5,11 +5,14 @@ Status: **ready-for-agent after five-pass bidirectional traceability audit**
 Authoritative source order:
 
 1. `docs/specs/ai-select-final-spec-v1.1.md`
-2. `docs/adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md`
-3. `docs/adr/0012-adopt-ai-select-final-spec-v1.md` where not superseded
-4. `CONTEXT.md`
-5. `AGENTS.md`
-6. Current implementation and tests
+2. `docs/specs/ai-select-final-spec-v1.1-amendment-001-renderer-evidence-identity.md`
+3. `docs/adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md`
+4. `docs/adr/0012-adopt-ai-select-final-spec-v1.md` where not superseded
+5. `CONTEXT.md`
+6. `AGENTS.md`
+7. Current implementation and tests
+
+The amendment is a normative part of Final Spec v1.1 for renderer/Evidence implementation identity, RGB-only versus RGB+Evidence continuity, and incompatible-renderer migration.
 
 Branch: `ai-select-v1`
 

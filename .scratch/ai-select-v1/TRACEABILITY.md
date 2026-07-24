@@ -1,6 +1,6 @@
 # Final Spec v1.1 → Ticket Traceability Matrix
 
-A requirement counts as covered only when the mapped ticket contains an explicit acceptance/failure/validation criterion. A neighboring-subsystem mention does not count. Final Spec v1.0 requirements inherited by v1.1 remain in the matrix; DG-20 additions are included explicitly.
+A requirement counts as covered only when the mapped ticket contains an explicit acceptance/failure/validation criterion. A neighboring-subsystem mention does not count. Final Spec v1.0 requirements inherited by v1.1 remain in the matrix; DG-20 and Final Spec v1.1 Amendment 001 additions are included explicitly.
 
 | ID | Requirement | Ticket(s) |
 |---|---|---|
@@ -129,7 +129,9 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R123 | Production Direct Evidence has pinned source/build/runtime ownership | 20, 21 |
 | R124 | Evidence OOM/failure preserves RGB/View/Mask and publishes no partial artifact | 20, 21 |
 | R125 | Reference Contributor failure does not block RGB or successful Direct Evidence | 03, 14, 20, 21, 22 |
+| R126 | RGB/Evidence artifacts explicitly bind rasterImplementationId, evidenceBackend identity, and runtimeBuildId | 14, 16, 19, 20, 21 |
+| R127 | RGB-only and later RGB+Evidence use the same compatible raster implementation; incompatible migration invalidates reuse and requires explicit rerender/review | 19, 20, 21 |
 
 ## Reverse mapping result
 
-Every active ticket maps back to at least one Final Spec v1.1, inherited v1.0, ADR 0013, migration, or hardening requirement. No orphan ticket remains. Tickets 14 and 20 are intentionally separate: Ticket 14 proves the Evidence model through a reference path; Ticket 20 owns the locked same-decision production implementation.
+Every active ticket maps back to at least one Final Spec v1.1, Final Spec v1.1 Amendment 001, inherited v1.0, ADR 0013, migration, or hardening requirement. No orphan ticket remains. Tickets 14 and 20 are intentionally separate: Ticket 14 proves the Evidence model through a reference path; Ticket 20 owns the locked same-decision production implementation.

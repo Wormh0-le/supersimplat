@@ -7,6 +7,7 @@ Blocked by: 19, 14, 09
 ## Final Spec mapping
 
 - Final Spec v1.1 §§14–19, 30 Stage 3–5, 31–32
+- Final Spec v1.1 Amendment 001 — Renderer / Evidence Implementation Identity and RGB Continuity
 - ADR 0013
 - FlashSplat-style direct Evidence accumulation design
 - DG-20
@@ -68,8 +69,9 @@ This is a single **decision-source** requirement, not merely reuse of the same f
 
 ### Artifact and incremental lifecycle
 
-- [ ] GaussianEvidenceArtifact binds target/dependency identity, Camera, authoritative RGB digest, Stable Mask, Evidence Policy, Render/Evidence Working Sets, target Stable IDs, rasterImplementationId, Evidence backend identity, and runtime/build identity.
+- [ ] GaussianEvidenceArtifact binds target/dependency identity, Camera, authoritative RGB digest, Stable Mask, Evidence Policy, Render/Evidence Working Sets, target Stable IDs, `rasterImplementationId`, `evidenceBackendKind=production-direct`, `evidenceBackendId`, and `runtimeBuildId`.
 - [ ] Per-view artifact reuse validates every dependency and supports Exclude/reinclude, Stable Mask replacement, and incremental Re-Lift.
+- [ ] Reference and production artifacts cannot collide in cache or Candidate readiness even when numeric P/N/V arrays are similar.
 - [ ] Views may be processed sequentially; production does not require all Views' GPU P/N/V buffers resident simultaneously.
 - [ ] GPU buffer scale is O(|Evidence Working Set| × channels) per processed View, excluding required renderer state; measured memory matches this contract.
 - [ ] Restart Target and Regenerate Auto Views release unreferenced target-local artifacts without invalidating exact shared caches.
@@ -104,6 +106,7 @@ This is a single **decision-source** requirement, not merely reuse of the same f
 - [ ] Evidence OOM/kernel/artifact failure preserves RGB/View/Stable Mask/Gallery and previous Candidate; no partial Evidence publishes.
 - [ ] Same-pass RGB digest mismatch fails Evidence closed and does not silently mutate the Stable Mask binding.
 - [ ] Identity/mapping/overflow failure never emits partial target Evidence.
+- [ ] Incompatible rasterImplementationId/runtimeBuildId/evidenceBackendId blocks artifact reuse and Candidate publication without relabeling the historical RGB as Render Failed.
 - [ ] GC failure cannot delete current Stable Mask, current per-view Evidence, or current Candidate inputs.
 - [ ] Reference Contributor failure affects diagnostics only.
 
@@ -112,6 +115,7 @@ This is a single **decision-source** requirement, not merely reuse of the same f
 - Locked GPU same-decision tests
 - RGB-only versus RGB+Evidence same-implementation digest test
 - Old-renderer identity migration/invalidation test
+- Reference-versus-production backend cache/readiness separation test
 - Known contributor-alpha mismatch CameraBinding regression
 - Reference-vs-production P/N/V and classification fixtures
 - Target plus non-target occluder fixture

@@ -2,6 +2,10 @@ import { Button, Container, Label } from '@playcanvas/pcui';
 
 import { i18n } from './localization';
 import {
+    type AISelectAnchorConfirmationController,
+    type AISelectAnchorConfirmationState
+} from '../ai-select/anchor-confirmation';
+import {
     type AISelectAnchorController,
     type AISelectAnchorState
 } from '../ai-select/anchor-controller';
@@ -19,6 +23,9 @@ export interface AISelectAnchorDockOptions {
     readonly onRetry: () => Promise<void>;
     readonly onReconnect: () => Promise<void>;
     readonly onOpenSettings: () => void;
+    readonly onValidate: () => Promise<void>;
+    readonly onConfirmAnchor: () => Promise<void>;
+    readonly onAdjustAnchor: () => void;
 }
 
 interface ImagePixel {
@@ -31,6 +38,7 @@ const CLICK_TOLERANCE_PX = 4;
 /** The first AI View Dock: authoritative RGB plus the Anchor Mask surface. */
 export class AISelectAnchorDock extends Container {
     private readonly mask: AISelectMaskController;
+    private readonly confirmation: AISelectAnchorConfirmationController;
     private readonly status: Label;
     private readonly maskStatus: Label;
     private readonly image: HTMLImageElement;
@@ -39,14 +47,25 @@ export class AISelectAnchorDock extends Container {
     private readonly maskActions: Container;
     private readonly confirmMaskButton: Button;
     private readonly retryMaskButton: Button;
+    private readonly clearMaskButton: Button;
+    private readonly restoreAutoButton: Button;
+    private readonly undoMaskButton: Button;
+    private readonly redoMaskButton: Button;
+    private readonly anchorActions: Container;
+    private readonly validateButton: Button;
+    private readonly confirmAnchorButton: Button;
+    private readonly adjustAnchorButton: Button;
+    private readonly validationStatus: Label;
     private state: AISelectAnchorState = { context: null, anchor: null };
     private maskState: AISelectMaskState;
+    private confirmationState: AISelectAnchorConfirmationState;
     private dragStart: { x: number; y: number } | null = null;
     private lastStrokePixel: ImagePixel | null = null;
 
     constructor(
         controller: AISelectAnchorController,
         mask: AISelectMaskController,
+        confirmation: AISelectAnchorConfirmationController,
         options: AISelectAnchorDockOptions,
         args = {}
     ) {
@@ -55,9 +74,18 @@ export class AISelectAnchorDock extends Container {
             id: 'ai-select-anchor-dock'
         });
         this.mask = mask;
+        this.confirmation = confirmation;
         this.maskState = mask.state;
+        this.confirmationState = confirmation.state;
         this.dom.addEventListener('pointerdown', (event) =>
             event.stopPropagation()
+        );
+        // Explicit focus routing: while the Mask Editor holds focus,
+        // Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or Ctrl+Y) belong to mask-local
+        // Undo/Redo and never reach native EditHistory.
+        this.dom.tabIndex = 0;
+        this.dom.addEventListener('keydown', (event) =>
+            this.routeEditingKeys(event)
         );
 
         const title = new Label({ id: 'ai-select-anchor-dock-title' });
@@ -104,8 +132,24 @@ export class AISelectAnchorDock extends Container {
         this.retryMaskButton = new Button({
             id: 'ai-select-anchor-dock-retry-mask'
         });
+        this.clearMaskButton = new Button({
+            id: 'ai-select-anchor-dock-clear-mask'
+        });
+        this.restoreAutoButton = new Button({
+            id: 'ai-select-anchor-dock-restore-auto'
+        });
+        this.undoMaskButton = new Button({
+            id: 'ai-select-anchor-dock-undo-mask'
+        });
+        this.redoMaskButton = new Button({
+            id: 'ai-select-anchor-dock-redo-mask'
+        });
         i18n.bindText(this.confirmMaskButton, 'ai-select.mask.confirm');
         i18n.bindText(this.retryMaskButton, 'ai-select.mask.retry');
+        i18n.bindText(this.clearMaskButton, 'ai-select.mask.clear');
+        i18n.bindText(this.restoreAutoButton, 'ai-select.mask.restore-auto');
+        i18n.bindText(this.undoMaskButton, 'ai-select.mask.undo');
+        i18n.bindText(this.redoMaskButton, 'ai-select.mask.redo');
         this.confirmMaskButton.on('click', () => {
             try {
                 this.mask.confirmEditingMask();
@@ -116,8 +160,74 @@ export class AISelectAnchorDock extends Container {
         this.retryMaskButton.on('click', () => {
             this.mask.retryMaskRequest().catch((error) => console.error(error));
         });
+        this.clearMaskButton.on('click', () => {
+            try {
+                this.mask.clearEditingMask();
+            } catch (error) {
+                console.error(error);
+            }
+        });
+        this.restoreAutoButton.on('click', () => {
+            try {
+                this.mask.restoreAutoMask();
+            } catch (error) {
+                console.error(error);
+            }
+        });
+        this.undoMaskButton.on('click', () => {
+            try {
+                this.mask.undoMaskEdit();
+            } catch (error) {
+                console.error(error);
+            }
+        });
+        this.redoMaskButton.on('click', () => {
+            try {
+                this.mask.redoMaskEdit();
+            } catch (error) {
+                console.error(error);
+            }
+        });
         this.maskActions.append(this.confirmMaskButton);
         this.maskActions.append(this.retryMaskButton);
+        this.maskActions.append(this.clearMaskButton);
+        this.maskActions.append(this.restoreAutoButton);
+        this.maskActions.append(this.undoMaskButton);
+        this.maskActions.append(this.redoMaskButton);
+
+        this.anchorActions = new Container({
+            id: 'ai-select-anchor-dock-anchor-actions',
+            hidden: true
+        });
+        this.validateButton = new Button({
+            id: 'ai-select-anchor-dock-validate'
+        });
+        this.confirmAnchorButton = new Button({
+            id: 'ai-select-anchor-dock-confirm-anchor'
+        });
+        this.adjustAnchorButton = new Button({
+            id: 'ai-select-anchor-dock-adjust-anchor',
+            hidden: true
+        });
+        i18n.bindText(this.validateButton, 'ai-select.anchor.validate');
+        i18n.bindText(this.confirmAnchorButton, 'ai-select.anchor.confirm');
+        i18n.bindText(this.adjustAnchorButton, 'ai-select.adjust-anchor');
+        this.validateButton.on('click', () => {
+            options.onValidate().catch((error) => console.error(error));
+        });
+        this.confirmAnchorButton.on('click', () => {
+            options.onConfirmAnchor().catch((error) => console.error(error));
+        });
+        this.adjustAnchorButton.on('click', () => {
+            options.onAdjustAnchor();
+        });
+        this.anchorActions.append(this.validateButton);
+        this.anchorActions.append(this.confirmAnchorButton);
+        this.anchorActions.append(this.adjustAnchorButton);
+        this.validationStatus = new Label({
+            id: 'ai-select-anchor-dock-validation-status',
+            hidden: true
+        });
 
         this.failureActions = new Container({
             id: 'ai-select-anchor-dock-failure-actions',
@@ -145,6 +255,8 @@ export class AISelectAnchorDock extends Container {
         this.dom.appendChild(imageWrap);
         this.append(this.maskStatus);
         this.append(this.maskActions);
+        this.append(this.anchorActions);
+        this.append(this.validationStatus);
         this.append(this.failureActions);
 
         controller.subscribe((state) => {
@@ -153,6 +265,10 @@ export class AISelectAnchorDock extends Container {
         });
         mask.subscribe((maskState) => {
             this.maskState = maskState;
+            this.render();
+        });
+        confirmation.subscribe((confirmationState) => {
+            this.confirmationState = confirmationState;
             this.render();
         });
         i18n.onChange(() => this.render(), this);
@@ -191,8 +307,106 @@ export class AISelectAnchorDock extends Container {
         }
         this.confirmMaskButton.hidden = !mask.showConfirm;
         this.retryMaskButton.hidden = !mask.showRetry;
-        this.maskActions.hidden = !mask.showConfirm && !mask.showRetry;
+        this.confirmMaskButton.enabled =
+            mask.showConfirm && !this.confirmation.locked;
+        this.retryMaskButton.enabled =
+            mask.showRetry && !this.confirmation.locked;
+        this.renderEditingActions(presentation);
+        this.renderAnchorActions(presentation);
         this.renderMaskOverlay(presentation);
+    }
+
+    private renderEditingActions(presentation: AnchorDockPresentation): void {
+        const editingReady =
+            presentation.status === 'ready' && !this.confirmation.locked;
+        this.clearMaskButton.hidden = !editingReady;
+        this.restoreAutoButton.hidden = !editingReady;
+        this.undoMaskButton.hidden = !editingReady;
+        this.redoMaskButton.hidden = !editingReady;
+        this.clearMaskButton.enabled =
+            editingReady && this.maskState.editingMask !== null;
+        this.restoreAutoButton.enabled =
+            editingReady && this.maskState.canRestoreAuto;
+        this.undoMaskButton.enabled = editingReady && this.maskState.canUndo;
+        this.redoMaskButton.enabled = editingReady && this.maskState.canRedo;
+        this.maskActions.hidden =
+            !presentation.mask.showConfirm &&
+            !presentation.mask.showRetry &&
+            !editingReady;
+    }
+
+    private renderAnchorActions(presentation: AnchorDockPresentation): void {
+        const confirmation = this.confirmationState;
+        const confirmed = confirmation.confirmedAnchor !== null;
+        const ready = presentation.status === 'ready';
+        this.anchorActions.hidden = !ready && !confirmed;
+        this.validateButton.hidden = confirmed;
+        this.validateButton.enabled =
+            ready &&
+            confirmation.validationStatus !== 'validating' &&
+            this.maskState.stableMask !== null;
+        this.confirmAnchorButton.hidden = confirmed;
+        this.confirmAnchorButton.enabled =
+            ready &&
+            confirmation.validationStatus !== 'validating' &&
+            confirmation.validation !== null &&
+            confirmation.validation.canConfirm;
+        this.adjustAnchorButton.hidden = !confirmed;
+
+        const lines: string[] = [];
+        if (confirmed) {
+            lines.push(i18n.t('ai-select.anchor.confirmed'));
+        } else if (confirmation.validationStatus === 'validating') {
+            lines.push(i18n.t('ai-select.validation.validating'));
+        } else if (
+            confirmation.validationStatus === 'failed' &&
+            confirmation.errorMessage !== undefined
+        ) {
+            lines.push(confirmation.errorMessage);
+        } else if (confirmation.validation !== null) {
+            for (const block of confirmation.validation.hardBlocks) {
+                lines.push(i18n.t(`ai-select.validation.hard.${block}`));
+            }
+            for (const warning of confirmation.validation.softWarnings) {
+                lines.push(i18n.t(`ai-select.validation.soft.${warning}`));
+            }
+            if (confirmation.validation.canConfirm) {
+                lines.push(i18n.t('ai-select.validation.passed'));
+            }
+        }
+        this.validationStatus.hidden = lines.length === 0;
+        this.validationStatus.text = lines.join('\n');
+    }
+
+    /** Mask Editor keyboard focus routing for mask-local Undo/Redo. */
+    private routeEditingKeys(event: KeyboardEvent): void {
+        if (!(event.ctrlKey || event.metaKey)) {
+            return;
+        }
+        const key = event.key.toLowerCase();
+        const redo =
+            (key === 'z' && event.shiftKey) || (!event.shiftKey && key === 'y');
+        const undo = key === 'z' && !event.shiftKey;
+        if (!undo && !redo) {
+            return;
+        }
+        const available = redo
+            ? this.maskState.canRedo
+            : this.maskState.canUndo;
+        if (!available) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+            if (redo) {
+                this.mask.redoMaskEdit();
+            } else {
+                this.mask.undoMaskEdit();
+            }
+        } catch (error) {
+            console.error(error);
+        }
     }
 
     private renderMaskOverlay(presentation: AnchorDockPresentation): void {
@@ -305,6 +519,7 @@ export class AISelectAnchorDock extends Container {
     private beginStroke(event: PointerEvent): void {
         if (
             event.button !== 0 ||
+            this.confirmation.locked ||
             getAnchorDockPresentation(this.state, this.maskState).status !==
                 'ready'
         ) {

@@ -24,13 +24,24 @@ import {
     type CurrentTargetContext,
     type TargetDependencyToken
 } from './current-target-context';
-import type { MaskPrompt } from './mask-annotation';
+import {
+    isMaskArtifact,
+    type MaskArtifact,
+    type MaskPrompt
+} from './mask-annotation';
 import {
     isMaskResultResponse,
     maskResponseMatchesRequest,
     type AIViewMaskRequest,
     type MaskResultResponse
 } from './mask-service';
+import {
+    aiSelectSupportProbePolicyVersion,
+    isAnchorSupportProbeResponse,
+    supportProbeResponseMatchesRequest,
+    type AnchorSupportProbeRequest,
+    type AnchorSupportProbeResponse
+} from './support-probe';
 
 export type AnchorRenderStatus = 'rendering' | 'ready' | 'failed';
 export type AnchorPreviewKind = 'interactive' | 'final';
@@ -253,9 +264,18 @@ export class AISelectAnchorController {
      * context cannot collide with a newer attempt.
      */
     private nextRenderAttemptOrdinal = 0;
+    private readonly isAnchorLocked: () => boolean;
 
-    constructor(options: { renderer: AISelectAnchorRenderer }) {
+    constructor(options: {
+        renderer: AISelectAnchorRenderer;
+        /**
+         * A confirmed Anchor locks CameraBinding changes until an explicit
+         * adjustment or restart flow unlocks it (Final Spec v1.1 §12.4).
+         */
+        isAnchorLocked?: () => boolean;
+    }) {
         this.renderer = options.renderer;
+        this.isAnchorLocked = options.isAnchorLocked ?? (() => false);
     }
 
     get state(): AISelectAnchorState {
@@ -303,6 +323,11 @@ export class AISelectAnchorController {
 
     /** Update only the Anchor pose; projection stays fixed for formal renders. */
     updateAnchorCameraPose(cameraToWorld: readonly number[]): void {
+        if (this.isAnchorLocked()) {
+            throw new Error(
+                'AI Select Anchor CameraBinding is locked while the Anchor is confirmed. Adjust or restart the Anchor first.'
+            );
+        }
         const anchor = this.requireAnchor();
         if (anchor.cameraBinding.revision >= Number.MAX_SAFE_INTEGER) {
             throw new Error(
@@ -421,6 +446,90 @@ export class AISelectAnchorController {
             isMaskResultResponse(response) &&
             maskResponseMatchesRequest(response, request)
         );
+    }
+
+    /**
+     * Build one Anchor support-probe request bound to the exact current
+     * Camera/RGB/Stable-Mask identity. Returns null unless that identity is
+     * current: support is never probed for superseded RGB or a Mask that
+     * does not cover the CameraBinding image extent.
+     */
+    createAnchorSupportProbeRequest(
+        stableMask: MaskArtifact,
+        supportProbeAttemptId: string
+    ): AnchorSupportProbeRequest | null {
+        const anchor = this.anchor;
+        const activeRequest = this.activeRequest;
+        if (
+            anchor === null ||
+            activeRequest === null ||
+            this.contexts.current?.lifecycle !== 'active' ||
+            anchor.renderStatus !== 'ready' ||
+            anchor.rgb === undefined ||
+            !isMaskArtifact(stableMask) ||
+            stableMask.width !== anchor.rgb.width ||
+            stableMask.height !== anchor.rgb.height
+        ) {
+            return null;
+        }
+        return Object.freeze({
+            requestBinding: this.contexts.createRequestBinding(),
+            target: Object.freeze({
+                splatId: activeRequest.target.splatId
+            }),
+            snapshot: activeRequest.snapshot,
+            sceneId: activeRequest.snapshot.sceneId,
+            sceneVersion: activeRequest.snapshot.sceneVersion,
+            viewId: anchor.viewId,
+            supportProbeAttemptId,
+            cameraBinding: copyCameraBinding(anchor.cameraBinding),
+            rgbDigest: anchor.rgb.digest,
+            stableMask,
+            supportProbePolicyVersion: aiSelectSupportProbePolicyVersion
+        });
+    }
+
+    /**
+     * The stale-result gate for support-probe responses, mirroring
+     * `acceptsMaskResponse`: the full binding and the current RGB identity
+     * must still match before the verdict can publish.
+     */
+    acceptsSupportProbeResponse(
+        response: AnchorSupportProbeResponse,
+        request: AnchorSupportProbeRequest
+    ): boolean {
+        const anchor = this.anchor;
+        const effectiveDependencyToken = this.getCurrentDependencyToken?.();
+        if (anchor === null || effectiveDependencyToken === undefined) {
+            return false;
+        }
+        return (
+            this.contexts.acceptsResult(
+                request.requestBinding,
+                effectiveDependencyToken
+            ) &&
+            anchor.renderStatus === 'ready' &&
+            anchor.rgb !== undefined &&
+            anchor.viewId === request.viewId &&
+            anchor.rgb.digest === request.rgbDigest &&
+            isAnchorSupportProbeResponse(response) &&
+            supportProbeResponseMatchesRequest(response, request)
+        );
+    }
+
+    /** The Scene identity of the active Anchor, for Confirm Anchor binding. */
+    getAnchorSceneIdentity(): {
+        readonly sceneId: string;
+        readonly sceneVersion: string;
+    } | null {
+        const activeRequest = this.activeRequest;
+        if (activeRequest === null || this.anchor === null) {
+            return null;
+        }
+        return Object.freeze({
+            sceneId: activeRequest.snapshot.sceneId,
+            sceneVersion: activeRequest.snapshot.sceneVersion
+        });
     }
 
     private async begin(

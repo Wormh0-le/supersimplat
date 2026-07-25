@@ -1,6 +1,7 @@
 import { WebPCodec, WorkerQueue } from '@playcanvas/splat-transform';
 import { Color, Vec3, createGraphicsDevice } from 'playcanvas';
 
+import { AISelectAnchorConfirmationController } from './ai-select/anchor-confirmation';
 import { AISelectAnchorController } from './ai-select/anchor-controller';
 import { CameraInspectionController } from './ai-select/camera-inspection';
 import { AnchorFrustumManipulator } from './ai-select/camera-inspection-manipulator';
@@ -385,14 +386,27 @@ const main = async () => {
     const aiSelectTargetFactory = new AISelectEditorTargetFactory({
         getRenderConfiguration: getAISelectRenderConfiguration
     });
+    // The confirmed Anchor locks CameraBinding and Mask authoring until an
+    // explicit Adjust/Restart flow; the confirmation controller is composed
+    // just below, so the lock reads through a lazy reference.
+    let aiSelectConfirmation: AISelectAnchorConfirmationController | null =
+        null;
+    const isAISelectAnchorLocked = () => aiSelectConfirmation?.locked ?? false;
     const aiSelectController = new AISelectAnchorController({
-        renderer: selectionServiceAdapter
+        renderer: selectionServiceAdapter,
+        isAnchorLocked: isAISelectAnchorLocked
     });
     const aiSelectMaskController = new AISelectMaskController({
         anchor: aiSelectController,
         maskProvider: selectionServiceAdapter,
         getModelManifestDigest: () =>
-            selectionServiceReadiness.state.configuration.modelManifestDigest
+            selectionServiceReadiness.state.configuration.modelManifestDigest,
+        isAnchorLocked: isAISelectAnchorLocked
+    });
+    aiSelectConfirmation = new AISelectAnchorConfirmationController({
+        anchor: aiSelectController,
+        mask: aiSelectMaskController,
+        supportProbe: selectionServiceAdapter
     });
     const cameraInspection = new CameraInspectionController({
         anchor: aiSelectController,
@@ -467,6 +481,43 @@ const main = async () => {
             await aiSelectController.start(input.start);
         }
     };
+    // Early Restart is available at every Anchor stage. The confirmation
+    // states clearly that Native Selection and EditHistory do not change.
+    const confirmAISelectRestart = async (): Promise<boolean> => {
+        const result = await events.invoke('showPopup', {
+            type: 'yesno',
+            header: i18n.t('ai-select.restart-current-target'),
+            message: i18n.t('ai-select.restart-confirm-message')
+        });
+        return result.action === 'yes';
+    };
+    const restartAISelect = async () => {
+        if (aiSelectController.state.context === null) {
+            return;
+        }
+        if (!(await confirmAISelectRestart())) {
+            return;
+        }
+        await startAISelect(true);
+    };
+    // Changing the Anchor discards unconfirmed Prompt/Editing state; warn
+    // before that happens. A confirmed Anchor unlocks only through this
+    // explicit Adjust flow or through Restart.
+    const confirmAnchorChange = async (): Promise<boolean> => {
+        if (aiSelectConfirmation?.locked) {
+            aiSelectConfirmation.adjustAnchor();
+            return true;
+        }
+        if (!aiSelectMaskController.state.hasUnconfirmedChanges) {
+            return true;
+        }
+        const result = await events.invoke('showPopup', {
+            type: 'yesno',
+            header: i18n.t('ai-select.adjust-anchor'),
+            message: i18n.t('ai-select.anchor-discard-message')
+        });
+        return result.action === 'yes';
+    };
     const exitAISelect = () => {
         cameraInspection.returnToSceneView();
         aiSelectController.exit();
@@ -476,6 +527,7 @@ const main = async () => {
     const aiSelectDock = new AISelectAnchorDock(
         aiSelectController,
         aiSelectMaskController,
+        aiSelectConfirmation,
         {
             onRetry: () => aiSelectController.retryAnchorPreview(),
             onReconnect: async () => {
@@ -488,24 +540,67 @@ const main = async () => {
                 }
                 await startAISelect(true);
             },
-            onOpenSettings: () => events.fire('settingsPanel.setVisible', true)
+            onOpenSettings: () => events.fire('settingsPanel.setVisible', true),
+            onValidate: async () => {
+                await aiSelectConfirmation.validate();
+            },
+            onAdjustAnchor: () => {
+                aiSelectConfirmation.adjustAnchor();
+            },
+            onConfirmAnchor: async () => {
+                try {
+                    await aiSelectConfirmation.confirmAnchor();
+                } catch (error) {
+                    const warnings =
+                        aiSelectConfirmation.state.validation?.softWarnings ??
+                        [];
+                    if (warnings.length === 0) {
+                        throw error;
+                    }
+                    // Soft warnings stay user-overridable; hard blocks already
+                    // rejected above and never reach this override.
+                    const result = await events.invoke('showPopup', {
+                        type: 'yesno',
+                        header: i18n.t('ai-select.anchor.confirm'),
+                        message: `${warnings
+                            .map((warning) =>
+                                i18n.t(`ai-select.validation.soft.${warning}`)
+                            )
+                            .join('\n')}\n${i18n.t(
+                            'ai-select.validation.soft-confirm'
+                        )}`
+                    });
+                    if (result.action !== 'yes') {
+                        return;
+                    }
+                    await aiSelectConfirmation.confirmAnchor({
+                        overrideSoftWarnings: true
+                    });
+                }
+            }
         }
     );
     const aiSelectToolbar = new AISelectToolbar(
         aiSelectController,
         cameraInspection,
         {
-            onRestart: () => startAISelect(true),
+            onRestart: restartAISelect,
             onExit: exitAISelect,
             onEnterInspection: () => {
-                try {
-                    cameraInspection.enter();
-                } catch (error) {
-                    reportAISelectError(error);
-                }
+                confirmAnchorChange()
+                    .then((confirmed) => {
+                        if (confirmed) {
+                            cameraInspection.enter();
+                        }
+                    })
+                    .catch((error) => reportAISelectError(error));
             },
             onReturnToSceneView: () => cameraInspection.returnToSceneView(),
-            onResetAnchor: () => cameraInspection.resetAnchor(),
+            onResetAnchor: async () => {
+                if (await confirmAnchorChange()) {
+                    await cameraInspection.resetAnchor();
+                }
+            },
             onRetryPreview: () => aiSelectController.retryAnchorPreview()
         }
     );

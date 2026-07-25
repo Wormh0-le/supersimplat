@@ -26,6 +26,14 @@ import {
     type MaskResultResponse
 } from './ai-select/mask-service';
 import {
+    isAnchorSupportProbeRequest,
+    isAnchorSupportProbeResponse,
+    supportProbeResponseMatchesRequest,
+    type AISelectSupportProbeProvider,
+    type AnchorSupportProbeRequest,
+    type AnchorSupportProbeResponse
+} from './ai-select/support-probe';
+import {
     assertCompleteMaskSet,
     assertCoverageReport,
     assertEvidenceSnapshot,
@@ -126,6 +134,35 @@ interface AnchorRenderSceneChunkMissResponse extends Record<string, unknown> {
     readonly missingChunkIds: readonly string[];
 }
 
+interface AnchorSupportProbeCacheMissResponse extends Record<string, unknown> {
+    readonly status: 'sceneCacheMiss';
+    readonly requestBinding: AnchorSupportProbeRequest['requestBinding'];
+    readonly targetSplatId: string;
+    readonly sceneId: string;
+    readonly sceneVersion: string;
+    readonly renderConfigVersion: string;
+    readonly supportProbeAttemptId: string;
+    readonly viewId: 'anchor-view';
+    readonly cameraBinding: AnchorSupportProbeRequest['cameraBinding'];
+}
+
+interface AnchorSupportProbeSceneChunkMissResponse extends Record<
+    string,
+    unknown
+> {
+    readonly status: 'sceneChunkMiss';
+    readonly requestBinding: AnchorSupportProbeRequest['requestBinding'];
+    readonly targetSplatId: string;
+    readonly sceneId: string;
+    readonly sceneVersion: string;
+    readonly renderConfigVersion: string;
+    readonly supportProbeAttemptId: string;
+    readonly viewId: 'anchor-view';
+    readonly cameraBinding: AnchorSupportProbeRequest['cameraBinding'];
+    readonly workingSetToken: string;
+    readonly missingChunkIds: readonly string[];
+}
+
 interface SpatialSceneManifestRegistrationResponse {
     readonly status: 'registered' | 'alreadyRegistered';
     readonly registrationId: string;
@@ -199,7 +236,8 @@ class FetchSelectionServiceAdapter
     implements
         SelectionServiceAdapter,
         AISelectAnchorRenderer,
-        AISelectMaskProvider
+        AISelectMaskProvider,
+        AISelectSupportProbeProvider
 {
     private getConfiguration: () => SelectionServiceTransportConfiguration;
     private supportsCameraAwareSpatialWorkingSet: () => boolean;
@@ -596,7 +634,9 @@ class FetchSelectionServiceAdapter
     }
 
     private spatialSnapshotFor(
-        request: AnchorRenderRequest
+        request:
+            | AnchorRenderRequest
+            | Pick<AnchorSupportProbeRequest, 'snapshot' | 'target'>
     ): SpatialSceneSnapshot {
         const key = this.spatialSnapshotKey(
             request.snapshot,
@@ -1143,6 +1183,209 @@ class FetchSelectionServiceAdapter
             );
         }
         return result;
+    }
+
+    /**
+     * Run the versioned low-cost Anchor support probe. The response is
+     * untrusted until every bound identity verifies; the probe verdict only
+     * answers Gaussian-support computability and never carries ownership
+     * data. Scene cache/chunk misses recover exactly like the Anchor render
+     * path: one re-registration or chunk upload, then one bounded retry.
+     */
+    async probeAnchorSupport(
+        request: AnchorSupportProbeRequest
+    ): Promise<AnchorSupportProbeResponse> {
+        if (!isAnchorSupportProbeRequest(request)) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select requires a complete bound Anchor support probe request.'
+            );
+        }
+        if (this.supportsCameraAwareSpatialWorkingSet()) {
+            return this.probeSpatialAnchorSupport(request);
+        }
+        await this.registerPackedSnapshot(request.snapshot);
+        const first = await this.sendAnchorSupportProbe(request);
+        if (first.status === 'complete') {
+            return first.response;
+        }
+        await this.registerPackedSnapshot(request.snapshot, true);
+        const retry = await this.sendAnchorSupportProbe(request);
+        if (retry.status !== 'complete') {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion repeated an Anchor Scene Snapshot cache miss after the editor resent the snapshot.'
+            );
+        }
+        return retry.response;
+    }
+
+    private async probeSpatialAnchorSupport(
+        request: AnchorSupportProbeRequest
+    ): Promise<AnchorSupportProbeResponse> {
+        const spatialSnapshot = this.spatialSnapshotFor(request);
+        await this.registerSpatialSceneManifest(spatialSnapshot);
+
+        let manifestRecoveryAttempts = 0;
+        let chunkRecoveryAttempts = 0;
+        for (;;) {
+            const result = await this.sendAnchorSupportProbe(
+                request,
+                'spatial-v1'
+            );
+            if (result.status === 'complete') {
+                return result.response;
+            }
+            if (result.status === 'sceneCacheMiss') {
+                if (manifestRecoveryAttempts >= 1) {
+                    throw transportError(
+                        'invalidResponse',
+                        'The Selection Service Companion repeated an Anchor Spatial Scene manifest cache miss after the editor resent the manifest.'
+                    );
+                }
+                manifestRecoveryAttempts += 1;
+                await this.registerSpatialSceneManifest(spatialSnapshot, true);
+                continue;
+            }
+            if (chunkRecoveryAttempts >= 1) {
+                throw transportError(
+                    'invalidResponse',
+                    'The Selection Service Companion repeated an Anchor Spatial Scene chunk miss after the editor uploaded its validated working set.'
+                );
+            }
+            chunkRecoveryAttempts += 1;
+            await this.uploadSpatialSceneChunks(
+                spatialSnapshot,
+                result.missingChunkIds
+            );
+        }
+    }
+
+    private async sendAnchorSupportProbe(
+        request: AnchorSupportProbeRequest,
+        sceneTransport: 'packed-v1' | 'spatial-v1' = 'packed-v1'
+    ): Promise<
+        | {
+              readonly status: 'complete';
+              readonly response: AnchorSupportProbeResponse;
+          }
+        | { readonly status: 'sceneCacheMiss' }
+        | {
+              readonly status: 'sceneChunkMiss';
+              readonly missingChunkIds: readonly string[];
+          }
+    > {
+        const result = await this.requestJson(
+            '/ai-select/anchor-support-probes',
+            'POST',
+            {
+                requestBinding: request.requestBinding,
+                targetSplatId: request.target.splatId,
+                sceneId: request.sceneId,
+                sceneVersion: request.sceneVersion,
+                renderConfigVersion:
+                    request.snapshot.renderConfiguration.version,
+                supportProbeAttemptId: request.supportProbeAttemptId,
+                viewId: 'anchor-view',
+                cameraBinding: request.cameraBinding,
+                rgbDigest: request.rgbDigest,
+                stableMask: request.stableMask,
+                supportProbePolicyVersion: request.supportProbePolicyVersion,
+                ...(sceneTransport === 'spatial-v1' ? { sceneTransport } : {})
+            }
+        );
+        if (!isRecord(result)) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an invalid Anchor support probe response.'
+            );
+        }
+        if (result.status === 'sceneCacheMiss') {
+            if (!this.isMatchingProbeCacheMiss(result, request)) {
+                throw transportError(
+                    'invalidResponse',
+                    'The Selection Service Companion returned stale Anchor support probe cache-miss bindings.'
+                );
+            }
+            return { status: 'sceneCacheMiss' };
+        }
+        if (result.status === 'sceneChunkMiss') {
+            if (
+                sceneTransport !== 'spatial-v1' ||
+                !this.isMatchingProbeSceneChunkMiss(result, request)
+            ) {
+                throw transportError(
+                    'invalidResponse',
+                    'The Selection Service Companion returned stale or invalid Anchor support probe chunk-miss bindings.'
+                );
+            }
+            return {
+                status: 'sceneChunkMiss',
+                missingChunkIds: result.missingChunkIds
+            };
+        }
+        if (
+            result.status !== 'complete' ||
+            !isAnchorSupportProbeResponse(result) ||
+            !supportProbeResponseMatchesRequest(result, request)
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an incomplete or stale Anchor support probe result.'
+            );
+        }
+        return {
+            status: 'complete',
+            response: result
+        };
+    }
+
+    private isMatchingProbeCacheMiss(
+        value: Record<string, unknown>,
+        request: AnchorSupportProbeRequest
+    ): value is AnchorSupportProbeCacheMissResponse {
+        return (
+            value.status === 'sceneCacheMiss' &&
+            this.hasMatchingProbeBindings(value, request)
+        );
+    }
+
+    private isMatchingProbeSceneChunkMiss(
+        value: Record<string, unknown>,
+        request: AnchorSupportProbeRequest
+    ): value is AnchorSupportProbeSceneChunkMissResponse {
+        return (
+            value.status === 'sceneChunkMiss' &&
+            this.hasMatchingProbeBindings(value, request) &&
+            isSha256Digest(value.workingSetToken) &&
+            isSortedUniqueChunkIds(value.missingChunkIds, true)
+        );
+    }
+
+    private hasMatchingProbeBindings(
+        value: Record<string, unknown>,
+        request: AnchorSupportProbeRequest
+    ): boolean {
+        return (
+            isAIRequestBinding(value.requestBinding) &&
+            value.requestBinding.targetContextId ===
+                request.requestBinding.targetContextId &&
+            value.requestBinding.contextRevision ===
+                request.requestBinding.contextRevision &&
+            areTargetDependencyTokensEqual(
+                value.requestBinding.dependencyToken,
+                request.requestBinding.dependencyToken
+            ) &&
+            value.targetSplatId === request.target.splatId &&
+            value.sceneId === request.sceneId &&
+            value.sceneVersion === request.sceneVersion &&
+            value.renderConfigVersion ===
+                request.snapshot.renderConfiguration.version &&
+            value.supportProbeAttemptId === request.supportProbeAttemptId &&
+            value.viewId === 'anchor-view' &&
+            isCameraBinding(value.cameraBinding) &&
+            areCameraBindingsEqual(value.cameraBinding, request.cameraBinding)
+        );
     }
 
     private isMatchingAnchorSceneChunkMiss(

@@ -8,6 +8,11 @@ import type {
     AIViewMaskRequest,
     MaskResultResponse
 } from './ai-select/mask-service';
+import type {
+    AISelectSupportProbeProvider,
+    AnchorSupportProbeRequest,
+    AnchorSupportProbeResponse
+} from './ai-select/support-probe';
 import type { SelectionServiceAdapter } from './object-selection-session';
 
 const selectionServiceProtocolVersion = '1';
@@ -866,7 +871,8 @@ class ReadinessGatedSelectionServiceAdapter
     implements
         SelectionServiceAdapter,
         AISelectAnchorRenderer,
-        AISelectMaskProvider
+        AISelectMaskProvider,
+        AISelectSupportProbeProvider
 {
     private readiness: SelectionServiceReadinessInterface;
     private adapter: SelectionServiceAdapter | null;
@@ -921,6 +927,15 @@ class ReadinessGatedSelectionServiceAdapter
         return await this.requireMaskProvider().produceMask(request);
     }
 
+    async probeAnchorSupport(
+        request: AnchorSupportProbeRequest
+    ): Promise<AnchorSupportProbeResponse> {
+        this.readiness.requireReady();
+        return await this.requireSupportProbeProvider().probeAnchorSupport(
+            request
+        );
+    }
+
     private requireAdapter() {
         if (this.adapter === null) {
             throw new SelectionServiceAdapterNotConfiguredError();
@@ -948,6 +963,18 @@ class ReadinessGatedSelectionServiceAdapter
             throw new SelectionServiceAdapterNotConfiguredError();
         }
         return adapter as SelectionServiceAdapter & AISelectMaskProvider;
+    }
+
+    private requireSupportProbeProvider(): AISelectSupportProbeProvider {
+        const adapter = this.requireAdapter();
+        if (
+            typeof (adapter as Partial<AISelectSupportProbeProvider>)
+                .probeAnchorSupport !== 'function'
+        ) {
+            throw new SelectionServiceAdapterNotConfiguredError();
+        }
+        return adapter as SelectionServiceAdapter &
+            AISelectSupportProbeProvider;
     }
 }
 

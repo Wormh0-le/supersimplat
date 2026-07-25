@@ -1,7 +1,7 @@
 export type CurrentTargetContextLifecycle = 'active' | 'suspended' | 'disposed';
 
 export interface AITarget {
-  readonly splatId: string;
+    readonly splatId: string;
 }
 
 /**
@@ -10,11 +10,11 @@ export interface AITarget {
  * selection state so those changes cannot suspend a target context.
  */
 export interface TargetDependencyToken {
-  readonly splatId: string;
-  readonly renderStateToken: string;
-  readonly geometryToken: string;
-  readonly gaussianIdentityToken: string;
-  readonly worldTransformToken: string;
+    readonly splatId: string;
+    readonly renderStateToken: string;
+    readonly geometryToken: string;
+    readonly gaussianIdentityToken: string;
+    readonly worldTransformToken: string;
 }
 
 /**
@@ -22,22 +22,22 @@ export interface TargetDependencyToken {
  * not sufficient because cancellation cannot guarantee that GPU work stopped.
  */
 export interface AIRequestBinding {
-  readonly targetContextId: string;
-  readonly contextRevision: number;
-  readonly dependencyToken: TargetDependencyToken;
+    readonly targetContextId: string;
+    readonly contextRevision: number;
+    readonly dependencyToken: TargetDependencyToken;
 }
 
 export interface CurrentTargetContext {
-  readonly targetContextId: string;
-  readonly revision: number;
-  readonly target: AITarget;
-  readonly dependencyToken: TargetDependencyToken;
-  readonly lifecycle: CurrentTargetContextLifecycle;
+    readonly targetContextId: string;
+    readonly revision: number;
+    readonly target: AITarget;
+    readonly dependencyToken: TargetDependencyToken;
+    readonly lifecycle: CurrentTargetContextLifecycle;
 }
 
 export interface CurrentTargetContextInput {
-  readonly target: AITarget;
-  readonly dependencyToken: TargetDependencyToken;
+    readonly target: AITarget;
+    readonly dependencyToken: TargetDependencyToken;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -58,7 +58,7 @@ const copyTarget = (target: AITarget): AITarget => {
     });
 };
 
-const copyDependencyToken = (
+export const copyDependencyToken = (
     dependencyToken: TargetDependencyToken
 ): TargetDependencyToken => {
     return Object.freeze({
@@ -77,7 +77,9 @@ const createTargetContextId = (): string => {
 
 const nextRevision = (context: CurrentTargetContext): number => {
     if (context.revision >= Number.MAX_SAFE_INTEGER) {
-        throw new Error('Current Target Context revision cannot advance safely.');
+        throw new Error(
+            'Current Target Context revision cannot advance safely.'
+        );
     }
 
     return context.revision + 1;
@@ -108,11 +110,11 @@ export const isTargetDependencyToken = (
 ): value is TargetDependencyToken => {
     return (
         isRecord(value) &&
-    isNonEmptyString(value.splatId) &&
-    isNonEmptyString(value.renderStateToken) &&
-    isNonEmptyString(value.geometryToken) &&
-    isNonEmptyString(value.gaussianIdentityToken) &&
-    isNonEmptyString(value.worldTransformToken)
+        isNonEmptyString(value.splatId) &&
+        isNonEmptyString(value.renderStateToken) &&
+        isNonEmptyString(value.geometryToken) &&
+        isNonEmptyString(value.gaussianIdentityToken) &&
+        isNonEmptyString(value.worldTransformToken)
     );
 };
 
@@ -122,10 +124,10 @@ export const areTargetDependencyTokensEqual = (
 ): boolean => {
     return (
         left.splatId === right.splatId &&
-    left.renderStateToken === right.renderStateToken &&
-    left.geometryToken === right.geometryToken &&
-    left.gaussianIdentityToken === right.gaussianIdentityToken &&
-    left.worldTransformToken === right.worldTransformToken
+        left.renderStateToken === right.renderStateToken &&
+        left.geometryToken === right.geometryToken &&
+        left.gaussianIdentityToken === right.gaussianIdentityToken &&
+        left.worldTransformToken === right.worldTransformToken
     );
 };
 
@@ -134,10 +136,10 @@ export const isAIRequestBinding = (
 ): value is AIRequestBinding => {
     return (
         isRecord(value) &&
-    isNonEmptyString(value.targetContextId) &&
-    Number.isSafeInteger(value.contextRevision) &&
-    (value.contextRevision as number) >= 0 &&
-    isTargetDependencyToken(value.dependencyToken)
+        isNonEmptyString(value.targetContextId) &&
+        Number.isSafeInteger(value.contextRevision) &&
+        (value.contextRevision as number) >= 0 &&
+        isTargetDependencyToken(value.dependencyToken)
     );
 };
 
@@ -146,9 +148,9 @@ const isCurrentTargetContextInput = (
 ): value is CurrentTargetContextInput => {
     return (
         isRecord(value) &&
-    isAITarget(value.target) &&
-    isTargetDependencyToken(value.dependencyToken) &&
-    value.target.splatId === value.dependencyToken.splatId
+        isAITarget(value.target) &&
+        isTargetDependencyToken(value.dependencyToken) &&
+        value.target.splatId === value.dependencyToken.splatId
     );
 };
 
@@ -238,12 +240,12 @@ export class CurrentTargetContextKernel {
         }
 
         const matchesCurrentDependency =
-      isTargetDependencyToken(effectiveDependencyToken) &&
-      effectiveDependencyToken.splatId === current.target.splatId &&
-      areTargetDependencyTokensEqual(
-          current.dependencyToken,
-          effectiveDependencyToken
-      );
+            isTargetDependencyToken(effectiveDependencyToken) &&
+            effectiveDependencyToken.splatId === current.target.splatId &&
+            areTargetDependencyTokensEqual(
+                current.dependencyToken,
+                effectiveDependencyToken
+            );
 
         if (current.lifecycle === 'active') {
             return matchesCurrentDependency ? current : this.suspend(current);
@@ -272,26 +274,29 @@ export class CurrentTargetContextKernel {
         });
     }
 
-    acceptsResult(binding: unknown, effectiveDependencyToken: unknown): boolean {
+    acceptsResult(
+        binding: unknown,
+        effectiveDependencyToken: unknown
+    ): boolean {
         const current = this.synchronizeDependency(effectiveDependencyToken);
 
         return (
             current !== null &&
-      current.lifecycle === 'active' &&
-      isAIRequestBinding(binding) &&
-      binding.targetContextId === current.targetContextId &&
-      binding.contextRevision === current.revision &&
-      areTargetDependencyTokensEqual(
-          binding.dependencyToken,
-          current.dependencyToken
-      )
+            current.lifecycle === 'active' &&
+            isAIRequestBinding(binding) &&
+            binding.targetContextId === current.targetContextId &&
+            binding.contextRevision === current.revision &&
+            areTargetDependencyTokensEqual(
+                binding.dependencyToken,
+                current.dependencyToken
+            )
         );
     }
 
     private requireActiveContext(): CurrentTargetContext {
         if (
             this.currentContext === null ||
-      this.currentContext.lifecycle !== 'active'
+            this.currentContext.lifecycle !== 'active'
         ) {
             throw new Error(
                 'Current Target Context must be active for this operation.'

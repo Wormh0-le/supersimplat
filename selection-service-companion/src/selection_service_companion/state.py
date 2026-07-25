@@ -64,6 +64,13 @@ from .spatial_scene_working_set import (
     SpatialSceneStore,
     SpatialWorkingSet,
 )
+from .support_probe import (
+    AI_SELECT_SUPPORT_PROBE_MASK_ENCODING,
+    AI_SELECT_SUPPORT_PROBE_POLICY_VERSION,
+    AnchorSupportProbeCamera,
+    count_observed_gaussians,
+    probe_camera_from_renderer_camera,
+)
 
 
 DEFAULT_STATE_DIRECTORY = Path.home() / ".local" / "state" / "supersplat-selection-service"
@@ -208,6 +215,54 @@ class MaskRequestAdmission:
 
 
 @dataclass(frozen=True)
+class AISelectSupportProbeRequest:
+    """Validated browser binding for one Anchor support probe attempt."""
+
+    request_binding: dict[str, object]
+    target_splat_id: str
+    scene_id: str
+    scene_version: str
+    render_config_version: str
+    support_probe_attempt_id: str
+    camera_binding: dict[str, object]
+    probe_camera: AnchorSupportProbeCamera
+    rgb_digest: str
+    stable_mask: bytes
+    stable_mask_digest: str
+    scene_transport: str = 'packed-v1'
+
+    def response_fields(self) -> dict[str, object]:
+        return {
+            'requestBinding': self.request_binding,
+            'targetSplatId': self.target_splat_id,
+            'sceneId': self.scene_id,
+            'sceneVersion': self.scene_version,
+            'renderConfigVersion': self.render_config_version,
+            'supportProbeAttemptId': self.support_probe_attempt_id,
+            'viewId': 'anchor-view',
+            'cameraBinding': self.camera_binding,
+        }
+
+    def identity_fields(self) -> dict[str, object]:
+        return {
+            **self.response_fields(),
+            'rgbDigest': self.rgb_digest,
+            'stableMaskDigest': self.stable_mask_digest,
+            'supportProbePolicyVersion': AI_SELECT_SUPPORT_PROBE_POLICY_VERSION,
+            'sceneTransport': self.scene_transport,
+        }
+
+
+@dataclass
+class SupportProbeAdmission:
+    """One private, replayable support probe publication reserved by binding."""
+
+    completed: Event = field(default_factory=Event)
+    publication: str | None = None
+    failure: tuple[str, str] | None = None
+
+
+@dataclass(frozen=True)
 class GeneratedFrameSetResolution:
     """The cached one-rebuild result for a Generated View preview session."""
 
@@ -315,6 +370,19 @@ def _anchor_string(value: object, field_name: str) -> str:
     return value
 
 
+def _anchor_sha256_digest(value: object, field_name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != len('sha256:') + 64
+        or not value.startswith('sha256:')
+        or any(character not in '0123456789abcdef' for character in value[7:])
+    ):
+        raise ValueError(
+            f'AI Select Anchor {field_name} must be a sha256:<64 hex> digest'
+        )
+    return value
+
+
 def _anchor_nonnegative_integer(value: object, field_name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError(
@@ -416,6 +484,16 @@ class CompanionState:
         repr=False,
     )
     _mask_admissions: dict[str, MaskRequestAdmission] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _active_support_probe: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _support_probe_admissions: dict[str, SupportProbeAdmission] = field(
         default_factory=dict,
         init=False,
         repr=False,
@@ -1186,6 +1264,262 @@ class CompanionState:
             'farPlane': far,
         }
         return camera_binding, renderer_camera, width, height
+
+    def probe_ai_select_anchor_support(
+        self, request: Mapping[str, object]
+    ) -> dict[str, object]:
+        """Publish one mask-conditioned Gaussian support computability verdict.
+
+        The probe is the cheap Confirm Anchor gate, not Evidence and not a
+        Contributor artifact: it reuses the Anchor scene resolution seam,
+        reserves the single Companion operation slot, then runs the pure-CPU
+        projection loop outside every state lock. The published answer is only
+        ``computable`` plus its diagnostic count — never Stable Gaussian IDs.
+        """
+
+        probe_request = self._parse_ai_select_support_probe_request(request)
+        planes: list[tuple[memoryview, memoryview]] = []
+        if probe_request.scene_transport == 'spatial-v1':
+            try:
+                resolution = self._spatial_scene_store.resolve_working_set(
+                    probe_request.scene_id,
+                    probe_request.scene_version,
+                    probe_request.camera_binding,
+                )
+            except SnapshotUploadError:
+                return {
+                    'status': 'sceneCacheMiss',
+                    **probe_request.response_fields(),
+                }
+            if resolution.missing_chunk_ids:
+                return {
+                    'status': 'sceneChunkMiss',
+                    **probe_request.response_fields(),
+                    'workingSetToken': resolution.working_set_token,
+                    'missingChunkIds': list(resolution.missing_chunk_ids),
+                }
+            if resolution.working_set is None:
+                raise ValueError(
+                    'AI Select Anchor support probe Spatial Scene working set is incomplete'
+                )
+            render_configuration = (
+                resolution.working_set.manifest.render_configuration
+            )
+            if (
+                render_configuration.get('version')
+                != probe_request.render_config_version
+            ):
+                raise ValueError(
+                    'AI Select Anchor support probe render configuration does not match the registered Spatial Scene manifest'
+                )
+            # Resident chunks expose their immutable mmap planes directly; the
+            # probe never materializes the renderer's torch tensor views.
+            planes.extend(
+                (chunk.field('means'), chunk.field('logitOpacities'))
+                for chunk in resolution.working_set.chunks
+            )
+        else:
+            snapshot = self.scene_snapshot(
+                probe_request.scene_id, probe_request.scene_version
+            )
+            if snapshot is None:
+                return {
+                    'status': 'sceneCacheMiss',
+                    **probe_request.response_fields(),
+                }
+            if snapshot.render_config_version != probe_request.render_config_version:
+                raise ValueError(
+                    'AI Select Anchor support probe render configuration does not match the registered Scene Snapshot'
+                )
+            if not isinstance(snapshot.scene, PackedBinarySceneSnapshot):
+                raise MaskSessionError(
+                    'supportProbeFailure',
+                    'AI Select Anchor support probes require a packed binary Scene Snapshot.',
+                )
+            planes.append(
+                (snapshot.scene.field('means'), snapshot.scene.field('logitOpacities'))
+            )
+
+        probe_key, admission, owns_admission = self._admit_support_probe(
+            probe_request
+        )
+        if not owns_admission:
+            return self._replay_support_probe(admission)
+
+        try:
+            try:
+                observed_gaussian_count = count_observed_gaussians(
+                    planes=planes,
+                    camera=probe_request.probe_camera,
+                    mask=probe_request.stable_mask,
+                )
+            except Exception as error:
+                raise MaskSessionError(
+                    'supportProbeFailure',
+                    'The Companion failed while computing the AI Select Anchor support probe.',
+                ) from error
+            response = {
+                'status': 'complete',
+                **probe_request.response_fields(),
+                'rgbDigest': probe_request.rgb_digest,
+                'stableMaskDigest': probe_request.stable_mask_digest,
+                'supportProbePolicyVersion': AI_SELECT_SUPPORT_PROBE_POLICY_VERSION,
+                'support': {
+                    'computable': observed_gaussian_count > 0,
+                    'observedGaussianCount': observed_gaussian_count,
+                },
+            }
+        except MaskSessionError as error:
+            self._complete_support_probe(probe_key, admission, failure=error)
+            raise
+        except Exception as error:
+            failure = MaskSessionError(
+                'supportProbeFailure',
+                'The Companion failed while publishing the AI Select Anchor support probe.',
+            )
+            self._complete_support_probe(probe_key, admission, failure=failure)
+            raise failure from error
+
+        self._complete_support_probe(probe_key, admission, response=response)
+        return response
+
+    def _parse_ai_select_support_probe_request(
+        self, request: Mapping[str, object]
+    ) -> AISelectSupportProbeRequest:
+        request_binding_value = request.get('requestBinding')
+        if not isinstance(request_binding_value, dict):
+            raise ValueError('AI Select Anchor support probe requestBinding must be an object')
+        dependency_value = request_binding_value.get('dependencyToken')
+        if not isinstance(dependency_value, dict):
+            raise ValueError(
+                'AI Select Anchor support probe requestBinding dependencyToken must be an object'
+            )
+        target_splat_id = _anchor_string(
+            request.get('targetSplatId'), 'targetSplatId'
+        )
+        dependency_token = {
+            'splatId': _anchor_string(dependency_value.get('splatId'), 'dependency splatId'),
+            'renderStateToken': _anchor_string(
+                dependency_value.get('renderStateToken'), 'dependency renderStateToken'
+            ),
+            'geometryToken': _anchor_string(
+                dependency_value.get('geometryToken'), 'dependency geometryToken'
+            ),
+            'gaussianIdentityToken': _anchor_string(
+                dependency_value.get('gaussianIdentityToken'),
+                'dependency gaussianIdentityToken',
+            ),
+            'worldTransformToken': _anchor_string(
+                dependency_value.get('worldTransformToken'),
+                'dependency worldTransformToken',
+            ),
+        }
+        if dependency_token['splatId'] != target_splat_id:
+            raise ValueError(
+                'AI Select Anchor support probe targetSplatId must match its dependency splatId'
+            )
+        request_binding: dict[str, object] = {
+            'targetContextId': _anchor_string(
+                request_binding_value.get('targetContextId'), 'targetContextId'
+            ),
+            'contextRevision': _anchor_nonnegative_integer(
+                request_binding_value.get('contextRevision'), 'contextRevision'
+            ),
+            'dependencyToken': dependency_token,
+        }
+        scene_id = _anchor_string(request.get('sceneId'), 'sceneId')
+        scene_version = _anchor_string(request.get('sceneVersion'), 'sceneVersion')
+        if scene_id != target_splat_id:
+            raise ValueError(
+                'AI Select Anchor support probe sceneId must match its targetSplatId'
+            )
+        render_config_version = _anchor_string(
+            request.get('renderConfigVersion'), 'renderConfigVersion'
+        )
+        support_probe_attempt_id = _anchor_string(
+            request.get('supportProbeAttemptId'), 'supportProbeAttemptId'
+        )
+        if request.get('viewId') != 'anchor-view':
+            raise ValueError('AI Select Anchor support probe viewId must be anchor-view')
+        rgb_digest = _anchor_sha256_digest(request.get('rgbDigest'), 'support probe rgbDigest')
+        if (
+            request.get('supportProbePolicyVersion')
+            != AI_SELECT_SUPPORT_PROBE_POLICY_VERSION
+        ):
+            raise ValueError(
+                'AI Select Anchor support probe supportProbePolicyVersion is unsupported'
+            )
+        scene_transport = request.get('sceneTransport', 'packed-v1')
+        if scene_transport not in ('packed-v1', 'spatial-v1'):
+            raise ValueError('AI Select Anchor support probe sceneTransport is unsupported')
+
+        camera_binding, renderer_camera, width, height = (
+            self._parse_ai_select_anchor_camera(request.get('cameraBinding'))
+        )
+        probe_camera = probe_camera_from_renderer_camera(
+            renderer_camera, width=width, height=height
+        )
+        stable_mask, stable_mask_digest = self._parse_ai_select_support_probe_mask(
+            request.get('stableMask'), width=width, height=height
+        )
+        return AISelectSupportProbeRequest(
+            request_binding=request_binding,
+            target_splat_id=target_splat_id,
+            scene_id=scene_id,
+            scene_version=scene_version,
+            render_config_version=render_config_version,
+            support_probe_attempt_id=support_probe_attempt_id,
+            camera_binding=camera_binding,
+            probe_camera=probe_camera,
+            rgb_digest=rgb_digest,
+            stable_mask=stable_mask,
+            stable_mask_digest=stable_mask_digest,
+            scene_transport=scene_transport,
+        )
+
+    @staticmethod
+    def _parse_ai_select_support_probe_mask(
+        value: object, *, width: int, height: int
+    ) -> tuple[bytes, str]:
+        if not isinstance(value, dict):
+            raise ValueError('AI Select Anchor support probe stableMask must be an object')
+        if value.get('encoding') != AI_SELECT_SUPPORT_PROBE_MASK_ENCODING:
+            raise ValueError(
+                'AI Select Anchor support probe stableMask encoding is unsupported'
+            )
+        mask_width = _anchor_positive_integer(value.get('width'), 'stableMask width')
+        mask_height = _anchor_positive_integer(value.get('height'), 'stableMask height')
+        if mask_width != width or mask_height != height:
+            raise ValueError(
+                'AI Select Anchor support probe stableMask dimensions must match the cameraBinding projection'
+            )
+        data = value.get('data')
+        if not isinstance(data, str) or not data:
+            raise ValueError(
+                'AI Select Anchor support probe stableMask data must be a non-empty string'
+            )
+        try:
+            mask = base64.b64decode(data, validate=True)
+        except (ValueError, binascii.Error) as error:
+            raise ValueError(
+                'AI Select Anchor support probe stableMask data must be valid base64'
+            ) from error
+        pixel_count = width * height
+        if len(mask) != (pixel_count + 7) // 8:
+            raise ValueError(
+                'AI Select Anchor support probe stableMask data does not match its dimensions'
+            )
+        used_bits = pixel_count % 8
+        if used_bits and mask[-1] >> used_bits:
+            raise ValueError(
+                'AI Select Anchor support probe stableMask sets bits beyond its dimensions'
+            )
+        digest = _anchor_sha256_digest(value.get('digest'), 'support probe stableMask digest')
+        if f'sha256:{hashlib.sha256(mask).hexdigest()}' != digest:
+            raise ValueError(
+                'AI Select Anchor support probe stableMask digest does not match its data bytes'
+            )
+        return mask, digest
 
     def produce_ai_select_mask(self, request: Mapping[str, object]) -> dict[str, object]:
         """Publish one bound single-frame SAM mask or replay its outcome.
@@ -2608,10 +2942,7 @@ class CompanionState:
             admission = self._anchor_render_admissions.get(key)
             if admission is not None:
                 return key, admission, False
-            if (
-                self._active_object_selection_session is not None
-                or self._active_anchor_render is not None
-            ):
+            if self._operation_slot_in_use_locked():
                 raise MaskSessionError(
                     'capacityFull',
                     'The Companion is already serving another AI or Object Selection operation.',
@@ -2682,6 +3013,90 @@ class CompanionState:
             admission.completed.set()
 
     @staticmethod
+    def _support_probe_request_key(request: AISelectSupportProbeRequest) -> str:
+        """Canonicalize every immutable input that can affect one support probe."""
+
+        return json.dumps(
+            request.identity_fields(),
+            separators=(',', ':'),
+            sort_keys=True,
+            allow_nan=False,
+        )
+
+    def _admit_support_probe(
+        self, request: AISelectSupportProbeRequest
+    ) -> tuple[str, SupportProbeAdmission, bool]:
+        """Reserve or join one bound probe publication without holding locks for it."""
+
+        key = self._support_probe_request_key(request)
+        with self._session_lock:
+            admission = self._support_probe_admissions.get(key)
+            if admission is not None:
+                return key, admission, False
+            if self._operation_slot_in_use_locked():
+                raise MaskSessionError(
+                    'capacityFull',
+                    'The Companion is already serving another AI or Object Selection operation.',
+                )
+            # Completed admissions are dropped at the next admission: a newer
+            # current binding makes older verdicts stale, so lost-response
+            # recovery replays only the still-running attempt.
+            self._support_probe_admissions = {
+                completed_key: completed_admission
+                for completed_key, completed_admission
+                in self._support_probe_admissions.items()
+                if not completed_admission.completed.is_set()
+            }
+            admission = SupportProbeAdmission()
+            self._support_probe_admissions[key] = admission
+            self._active_support_probe = key
+        return key, admission, True
+
+    @staticmethod
+    def _replay_support_probe(admission: SupportProbeAdmission) -> dict[str, object]:
+        """Wait for a matching request, then return only its immutable outcome."""
+
+        admission.completed.wait()
+        if admission.publication is not None:
+            return json.loads(admission.publication)
+        if admission.failure is not None:
+            raise MaskSessionError(*admission.failure)
+        raise MaskSessionError(
+            'supportProbeFailure',
+            'The Companion lost an AI Select Anchor support probe publication before it completed.',
+        )
+
+    def _complete_support_probe(
+        self,
+        key: str,
+        admission: SupportProbeAdmission,
+        *,
+        response: dict[str, object] | None = None,
+        failure: MaskSessionError | None = None,
+    ) -> None:
+        """Atomically publish one replay result and release the single slot."""
+
+        if (response is None) == (failure is None):
+            raise ValueError('AI Select Anchor support probe completion requires one outcome')
+        publication = None
+        if response is not None:
+            publication = json.dumps(
+                response, separators=(',', ':'), sort_keys=True, allow_nan=False
+            )
+        with self._session_lock:
+            current = self._support_probe_admissions.get(key)
+            if current is not admission:
+                return
+            if publication is not None:
+                admission.publication = publication
+            else:
+                assert failure is not None
+                admission.failure = (failure.code, str(failure))
+            if self._active_support_probe == key:
+                self._active_support_probe = None
+            admission.completed.set()
+
+    @staticmethod
     def _mask_request_key(request: AISelectMaskRequest) -> str:
         """Canonicalize every immutable input that can affect one mask attempt."""
 
@@ -2702,11 +3117,7 @@ class CompanionState:
             admission = self._mask_admissions.get(key)
             if admission is not None:
                 return key, admission, False
-            if (
-                self._active_object_selection_session is not None
-                or self._active_anchor_render is not None
-                or self._active_mask_request is not None
-            ):
+            if self._operation_slot_in_use_locked():
                 raise MaskSessionError(
                     'capacityFull',
                     'The Companion is already serving another AI or Object Selection operation.',
@@ -2772,6 +3183,7 @@ class CompanionState:
     def _release_all_transient_caches_locked(self) -> None:
         self._anchor_render_admissions.clear()
         self._mask_admissions.clear()
+        self._support_probe_admissions.clear()
         with self._frame_lock:
             self._frame_sets.clear()
         with self._scene_lock:
@@ -3157,15 +3569,20 @@ class CompanionState:
             render_configuration["version"],
         )
 
+    def _operation_slot_in_use_locked(self) -> bool:
+        """The single global AI/Object Selection operation slot; call under _session_lock."""
+        return (
+            self._active_object_selection_session is not None
+            or self._active_anchor_render is not None
+            or self._active_mask_request is not None
+            or self._active_support_probe is not None
+        )
+
     def _capacity(self) -> dict[str, int]:
         with self._session_lock:
             return {
                 "maximumActiveSessions": 1,
-                "activeSessions": int(
-                    self._active_object_selection_session is not None
-                    or self._active_anchor_render is not None
-                    or self._active_mask_request is not None
-                ),
+                "activeSessions": int(self._operation_slot_in_use_locked()),
             }
 
     def capabilities(self, allowed_editor_origins: list[str]) -> dict[str, Any]:
@@ -3192,6 +3609,7 @@ class CompanionState:
             "supportedOperations": [
                 "aiSelectAnchorRender",
                 "aiSelectAnchorReferenceContributor",
+                "aiSelectAnchorSupportProbe",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",
             ],

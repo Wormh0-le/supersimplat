@@ -214,6 +214,96 @@ export class MaskAnnotationRegistry {
         return stable;
     }
 
+    /**
+     * Clear replaces the Editing Mask with an empty manual draft chained from
+     * the current one. It never touches the Stable Mask, and the replaced
+     * draft stays retained for Undo or Restore Auto.
+     */
+    clearEditing(
+        viewId: string,
+        rgbDigest: string,
+        width: number,
+        height: number
+    ): MaskAnnotation {
+        const view = this.requireView(viewId);
+        const currentEditing = this.currentAnnotation(
+            view,
+            view.editingMaskId,
+            rgbDigest
+        );
+        const editing = copyAnnotation({
+            maskId: this.mintMaskId(),
+            viewId,
+            source: 'manual',
+            status: 'draft',
+            artifact: createEmptyMaskArtifact(width, height),
+            ...(currentEditing === null
+                ? {}
+                : { parentMaskId: currentEditing.maskId }),
+            createdFromRgbDigest: rgbDigest
+        });
+        view.versions.set(editing.maskId, editing);
+        view.editingMaskId = editing.maskId;
+        return editing;
+    }
+
+    /**
+     * Restore a retained Editing-chain version as the current Editing Mask,
+     * or detach it back to the empty start state. Mask-local Undo/Redo and
+     * Restore Auto navigate existing versions; they never fabricate new
+     * content or touch the Stable Mask.
+     */
+    restoreEditing(
+        viewId: string,
+        maskId: string | null,
+        rgbDigest: string
+    ): MaskAnnotation | null {
+        const view = this.views.get(viewId);
+        if (view === undefined) {
+            throw new Error(
+                'AI Select cannot restore a Mask for an unknown AI View.'
+            );
+        }
+        if (maskId === null) {
+            view.editingMaskId = null;
+            return null;
+        }
+        const annotation = view.versions.get(maskId);
+        if (
+            annotation === undefined ||
+            annotation.createdFromRgbDigest !== rgbDigest ||
+            annotation.status !== 'draft'
+        ) {
+            throw new Error(
+                'AI Select can only restore a current-RGB Editing Mask version.'
+            );
+        }
+        view.editingMaskId = maskId;
+        return copyAnnotation(annotation);
+    }
+
+    /**
+     * The newest retained automatic (single-frame SAM) version bound to the
+     * current RGB, for Restore Auto. Manual and hybrid drafts never qualify.
+     */
+    latestAutoMask(viewId: string, rgbDigest: string): MaskAnnotation | null {
+        const view = this.views.get(viewId);
+        if (view === undefined) {
+            return null;
+        }
+        let latest: MaskAnnotation | null = null;
+        for (const annotation of view.versions.values()) {
+            if (
+                annotation.source === 'single-frame-sam' &&
+                annotation.status === 'draft' &&
+                annotation.createdFromRgbDigest === rgbDigest
+            ) {
+                latest = annotation;
+            }
+        }
+        return latest === null ? null : copyAnnotation(latest);
+    }
+
     viewState(viewId: string, rgbDigest: string): ViewMaskState {
         const view = this.views.get(viewId);
         if (view === undefined) {

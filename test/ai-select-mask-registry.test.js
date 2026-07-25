@@ -250,6 +250,145 @@ test('disposeView drops all mask versions for a restarted view', () => {
     assert.equal(view.stableMask, null);
 });
 
+test('Clear creates an empty manual Editing Mask chained from the current draft', () => {
+    const registry = new MaskAnnotationRegistry();
+    const sam = registry.registerSamResult({
+        viewId: 'anchor-view',
+        rgbDigest: rgbDigest('a'),
+        artifact: samArtifact(8, 8, 0b101),
+        prompts
+    });
+    const cleared = registry.clearEditing('anchor-view', rgbDigest('a'), 8, 8);
+    assert.equal(cleared.source, 'manual');
+    assert.equal(cleared.status, 'draft');
+    assert.equal(cleared.parentMaskId, sam.maskId);
+    assert.equal(cleared.createdFromRgbDigest, rgbDigest('a'));
+    assert.equal(cleared.artifact.digest, createEmptyMaskArtifact(8, 8).digest);
+    const view = registry.viewState('anchor-view', rgbDigest('a'));
+    assert.equal(view.editingMask?.maskId, cleared.maskId);
+});
+
+test('Clear with no Editing Mask creates the first empty manual draft', () => {
+    const registry = new MaskAnnotationRegistry();
+    const cleared = registry.clearEditing('anchor-view', rgbDigest('a'), 8, 8);
+    assert.equal(cleared.source, 'manual');
+    assert.equal(cleared.parentMaskId, undefined);
+    assert.equal(
+        registry.viewState('anchor-view', rgbDigest('a')).editingMask?.maskId,
+        cleared.maskId
+    );
+});
+
+test('a fully manual Clear then Brush then Confirm publishes a User Confirmed Stable Mask', () => {
+    const registry = new MaskAnnotationRegistry();
+    registry.registerSamResult({
+        viewId: 'anchor-view',
+        rgbDigest: rgbDigest('a'),
+        artifact: samArtifact(8, 8, 0b101),
+        prompts
+    });
+    registry.clearEditing('anchor-view', rgbDigest('a'), 8, 8);
+    registry.applyBrush({
+        viewId: 'anchor-view',
+        rgbDigest: rgbDigest('a'),
+        stroke: { xPx: 4, yPx: 4, radiusPx: 2, mode: 'add' },
+        width: 8,
+        height: 8
+    });
+    const stable = registry.confirm('anchor-view', rgbDigest('a'));
+    assert.equal(stable.source, 'manual');
+    assert.equal(stable.status, 'user-confirmed');
+    const view = registry.viewState('anchor-view', rgbDigest('a'));
+    assert.equal(view.stableMask?.maskId, stable.maskId);
+    assert.notEqual(
+        stable.artifact.digest,
+        createEmptyMaskArtifact(8, 8).digest
+    );
+});
+
+test('restoreEditing restores a retained version as the current Editing Mask', () => {
+    const registry = new MaskAnnotationRegistry();
+    const sam = registry.registerSamResult({
+        viewId: 'anchor-view',
+        rgbDigest: rgbDigest('a'),
+        artifact: samArtifact(8, 8, 0b101),
+        prompts
+    });
+    const cleared = registry.clearEditing('anchor-view', rgbDigest('a'), 8, 8);
+    const restored = registry.restoreEditing(
+        'anchor-view',
+        sam.maskId,
+        rgbDigest('a')
+    );
+    assert.equal(restored.maskId, sam.maskId);
+    assert.equal(restored.source, 'single-frame-sam');
+    const view = registry.viewState('anchor-view', rgbDigest('a'));
+    assert.equal(view.editingMask?.maskId, sam.maskId);
+    // The cleared version stays retained for a later restore.
+    assert.ok(registry.version('anchor-view', cleared.maskId));
+});
+
+test('restoreEditing can detach the Editing Mask back to the empty start state', () => {
+    const registry = new MaskAnnotationRegistry();
+    registry.registerSamResult({
+        viewId: 'anchor-view',
+        rgbDigest: rgbDigest('a'),
+        artifact: samArtifact(8, 8, 0b101),
+        prompts
+    });
+    registry.restoreEditing('anchor-view', null, rgbDigest('a'));
+    assert.equal(
+        registry.viewState('anchor-view', rgbDigest('a')).editingMask,
+        null
+    );
+});
+
+test('restoreEditing rejects unknown, stale-RGB, and Stable versions', () => {
+    const registry = new MaskAnnotationRegistry();
+    const sam = registry.registerSamResult({
+        viewId: 'anchor-view',
+        rgbDigest: rgbDigest('a'),
+        artifact: samArtifact(8, 8, 0b101),
+        prompts
+    });
+    const stable = registry.confirm('anchor-view', rgbDigest('a'));
+    assert.throws(() =>
+        registry.restoreEditing('anchor-view', 'mask-999', rgbDigest('a'))
+    );
+    assert.throws(() =>
+        registry.restoreEditing('anchor-view', sam.maskId, rgbDigest('b'))
+    );
+    // A published Stable Mask is not an Editing-chain version.
+    assert.throws(() =>
+        registry.restoreEditing('anchor-view', stable.maskId, rgbDigest('a'))
+    );
+});
+
+test('latestAutoMask returns the newest SAM version bound to the current RGB only', () => {
+    const registry = new MaskAnnotationRegistry();
+    assert.equal(registry.latestAutoMask('anchor-view', rgbDigest('a')), null);
+    const first = registry.registerSamResult({
+        viewId: 'anchor-view',
+        rgbDigest: rgbDigest('a'),
+        artifact: samArtifact(8, 8, 0b101),
+        prompts
+    });
+    registry.applyBrush({
+        viewId: 'anchor-view',
+        rgbDigest: rgbDigest('a'),
+        stroke: { xPx: 5, yPx: 5, radiusPx: 1, mode: 'add' },
+        width: 8,
+        height: 8
+    });
+    // A later hybrid draft does not replace the latest auto version.
+    assert.equal(
+        registry.latestAutoMask('anchor-view', rgbDigest('a'))?.maskId,
+        first.maskId
+    );
+    // No auto version exists for a different RGB identity.
+    assert.equal(registry.latestAutoMask('anchor-view', rgbDigest('b')), null);
+});
+
 test('returned annotations are immutable domain records', () => {
     const registry = new MaskAnnotationRegistry();
     const editing = registry.registerSamResult({

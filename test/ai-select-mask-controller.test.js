@@ -185,7 +185,10 @@ const setup = async (options = {}) => {
         getModelManifestDigest: () =>
             'modelManifestDigest' in options
                 ? options.modelManifestDigest
-                : 'manifest-digest-1'
+                : 'manifest-digest-1',
+        ...(options.isAnchorLocked === undefined
+            ? {}
+            : { isAnchorLocked: options.isAnchorLocked })
     });
     return {
         anchor,
@@ -443,4 +446,136 @@ test('prompt and brush validation requires an RGB Ready Anchor', async () => {
         mask.applyBrushStroke({ xPx: 4, yPx: 4, radiusPx: 2, mode: 'add' })
     );
     assert.throws(() => mask.confirmEditingMask());
+});
+
+test('Clear replaces only the Editing Mask and supersedes in-flight SAM', async () => {
+    const gate = deferred();
+    const maskRequests = [];
+    const { mask } = await setup({
+        produceMask: (request) => {
+            maskRequests.push(request);
+            return gate.promise;
+        }
+    });
+    const pending = mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    mask.clearEditingMask();
+    const cleared = mask.state.editingMask;
+    assert.equal(cleared.source, 'manual');
+    assert.equal(cleared.status, 'draft');
+    assert.equal(mask.state.stableMask, null);
+    assert.equal(mask.state.requestStatus, 'idle');
+    assert.equal(mask.state.hasUnconfirmedChanges, true);
+    gate.resolve(maskResponseFor(maskRequests[0]));
+    await pending;
+    // The late SAM response must not clobber the cleared draft.
+    assert.equal(mask.state.editingMask.maskId, cleared.maskId);
+    // A Stable Mask from an earlier Confirm survives Clear.
+    mask.applyBrushStroke({ xPx: 8, yPx: 8, radiusPx: 2, mode: 'add' });
+    mask.confirmEditingMask();
+    const stable = mask.state.stableMask;
+    mask.clearEditingMask();
+    assert.equal(mask.state.stableMask.maskId, stable.maskId);
+    assert.notEqual(mask.state.editingMask.maskId, stable.maskId);
+});
+
+test('Restore Auto restores the latest valid SAM Mask and is disabled when none exists', async () => {
+    const { mask } = await setup();
+    assert.equal(mask.state.canRestoreAuto, false);
+    assert.throws(() => mask.restoreAutoMask());
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    const auto = mask.state.editingMask;
+    mask.clearEditingMask();
+    assert.equal(mask.state.canRestoreAuto, true);
+    mask.restoreAutoMask();
+    assert.equal(mask.state.editingMask.maskId, auto.maskId);
+    // The current draft already is the latest auto Mask: nothing to restore.
+    assert.equal(mask.state.canRestoreAuto, false);
+});
+
+test('mask-local Undo/Redo walks Editing history without touching the Stable Mask', async () => {
+    const { mask } = await setup();
+    assert.equal(mask.state.canUndo, false);
+    assert.equal(mask.state.canRedo, false);
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    const sam = mask.state.editingMask;
+    assert.equal(mask.state.canUndo, true);
+    mask.applyBrushStroke({ xPx: 30, yPx: 30, radiusPx: 2, mode: 'add' });
+    const hybrid = mask.state.editingMask;
+
+    mask.undoMaskEdit();
+    assert.equal(mask.state.editingMask.maskId, sam.maskId);
+    assert.equal(mask.state.canRedo, true);
+    mask.undoMaskEdit();
+    assert.equal(mask.state.editingMask, null);
+    assert.equal(mask.state.canUndo, false);
+    mask.redoMaskEdit();
+    assert.equal(mask.state.editingMask.maskId, sam.maskId);
+    mask.redoMaskEdit();
+    assert.equal(mask.state.editingMask.maskId, hybrid.maskId);
+    assert.equal(mask.state.canRedo, false);
+    assert.equal(mask.state.stableMask, null);
+});
+
+test('a new local edit clears the Redo stack and branches from the restored draft', async () => {
+    const { mask } = await setup();
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    const sam = mask.state.editingMask;
+    mask.applyBrushStroke({ xPx: 30, yPx: 30, radiusPx: 2, mode: 'add' });
+    mask.undoMaskEdit();
+    assert.equal(mask.state.canRedo, true);
+    mask.applyBrushStroke({ xPx: 40, yPx: 40, radiusPx: 1, mode: 'erase' });
+    assert.equal(mask.state.canRedo, false);
+    assert.equal(mask.state.editingMask.parentMaskId, sam.maskId);
+});
+
+test('a confirmed Stable Mask is not an Undo step; Undo walks the draft chain', async () => {
+    const { mask } = await setup();
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    const sam = mask.state.editingMask;
+    mask.confirmEditingMask();
+    const stable = mask.state.stableMask;
+    mask.applyBrushStroke({ xPx: 30, yPx: 30, radiusPx: 2, mode: 'add' });
+    mask.undoMaskEdit();
+    assert.equal(mask.state.editingMask.maskId, sam.maskId);
+    assert.equal(mask.state.stableMask.maskId, stable.maskId);
+});
+
+test('a new Anchor RGB identity resets mask-local Undo/Redo and Restore Auto', async () => {
+    const { anchor, mask, setRgbDigest } = await setup();
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    mask.applyBrushStroke({ xPx: 30, yPx: 30, radiusPx: 2, mode: 'add' });
+    assert.equal(mask.state.canUndo, true);
+
+    setRgbDigest(`sha256:${'b'.repeat(64)}`);
+    anchor.updateAnchorCameraPose([
+        1, 0, 0, 9, 0, 1, 0, 9, 0, 0, 1, 9, 0, 0, 0, 1
+    ]);
+    await anchor.renderFinalPreview();
+    assert.equal(mask.state.canUndo, false);
+    assert.equal(mask.state.canRedo, false);
+    assert.equal(mask.state.canRestoreAuto, false);
+    assert.equal(mask.state.hasUnconfirmedChanges, false);
+});
+
+test('a locked confirmed Anchor rejects every Mask mutation', async () => {
+    let locked = false;
+    const { mask } = await setup({ isAnchorLocked: () => locked });
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    mask.confirmEditingMask();
+    locked = true;
+    await assert.rejects(
+        mask.addPrompt({ xPx: 20, yPx: 20, polarity: 'include' })
+    );
+    assert.throws(() =>
+        mask.applyBrushStroke({ xPx: 4, yPx: 4, radiusPx: 2, mode: 'add' })
+    );
+    assert.throws(() => mask.clearEditingMask());
+    assert.throws(() => mask.restoreAutoMask());
+    assert.throws(() => mask.undoMaskEdit());
+    assert.throws(() => mask.redoMaskEdit());
+    assert.throws(() => mask.confirmEditingMask());
+    await assert.rejects(mask.retryMaskRequest());
+    locked = false;
+    mask.applyBrushStroke({ xPx: 4, yPx: 4, radiusPx: 2, mode: 'add' });
+    assert.equal(mask.state.editingMask.source, 'hybrid');
 });

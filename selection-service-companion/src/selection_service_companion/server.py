@@ -251,6 +251,9 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/ai-select/anchor-renders":
             self._render_ai_select_anchor()
             return
+        if self.path == "/ai-select/masks":
+            self._produce_ai_select_mask()
+            return
         if self.path == "/object-selection-sessions":
             self._open_object_selection_session()
             return
@@ -293,6 +296,37 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             )
             return
         self._send_json(HTTPStatus.OK, response, server_timing=timing)
+
+    def _produce_ai_select_mask(self) -> None:
+        """Route one bound single-frame SAM mask request through the adapter."""
+
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            request = self._read_json_body()
+            response = self._state.produce_ai_select_mask(request)
+        except MaskSessionError as error:
+            # MaskSessionError subclasses ValueError, so the actionable 409
+            # branch must be matched before the generic 400 validation branch.
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {
+                    "status": "maskError",
+                    "code": error.code,
+                    "message": str(error),
+                },
+            )
+            return
+        except ValueError as error:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"status": "invalidRequest", "message": str(error)},
+            )
+            return
+        self._send_json(HTTPStatus.OK, response)
 
     def do_PUT(self) -> None:
         if not self._origin_allowed():

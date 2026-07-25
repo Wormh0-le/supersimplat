@@ -1,6 +1,6 @@
 # 04 — Anchor AIView + independent Editing / Stable Mask / Evidence lifecycle
 
-Status: ready-for-agent — v2.2 re-audited
+Status: implemented — 2026-07-24
 
 Blocked by: 02
 
@@ -30,25 +30,25 @@ Introduce the current per-view Mask domain. AIView, Mask, and Evidence are indep
 
 ## Acceptance criteria
 
-- [ ] AIView may be RGB Ready with no Mask and Evidence=`not-requested`.
-- [ ] AIView may remain RGB Ready when Evidence is stale or failed.
-- [ ] Mask identity/lifecycle is independent from View identity/lifecycle.
-- [ ] Anchor exposes independent editingMaskId and stableMaskId.
-- [ ] SAM output creates/replaces Editing Mask and never silently overwrites Stable Mask.
-- [ ] Prompt changes trigger single-frame SAM feedback without an extra apply action.
-- [ ] Brush strokes update Editing Mask locally.
-- [ ] Confirm Mask atomically publishes the current Editing Mask as a new Stable Mask revision.
-- [ ] Until Confirm succeeds, downstream users continue seeing the previous Stable Mask and Evidence/Candidate remain current.
-- [ ] Publishing a new Stable Mask invalidates only dependent per-view Evidence by exact RGB/Mask/policy identity; if Included, Candidate becomes stale.
-- [ ] Automatic and fully manual masks use the same publication contract.
-- [ ] Mask artifacts bind to AIView/RGB identity so stale output cannot attach to changed RGB/CameraBinding.
-- [ ] Render, Mask, Evidence, and Candidate statuses remain distinct.
+- [x] AIView may be RGB Ready with no Mask and Evidence=`not-requested`.
+- [x] AIView may remain RGB Ready when Evidence is stale or failed.
+- [x] Mask identity/lifecycle is independent from View identity/lifecycle.
+- [x] Anchor exposes independent editingMaskId and stableMaskId.
+- [x] SAM output creates/replaces Editing Mask and never silently overwrites Stable Mask.
+- [x] Prompt changes trigger single-frame SAM feedback without an extra apply action.
+- [x] Brush strokes update Editing Mask locally.
+- [x] Confirm Mask atomically publishes the current Editing Mask as a new Stable Mask revision.
+- [x] Until Confirm succeeds, downstream users continue seeing the previous Stable Mask and Evidence/Candidate remain current.
+- [x] Publishing a new Stable Mask invalidates only dependent per-view Evidence by exact RGB/Mask/policy identity; if Included, Candidate becomes stale. (Candidate does not exist in 04 — explicit non-goal. The exact-identity Evidence invalidation seam that drives future `liftDirty` is in place and tested; Candidate staleness wiring lands with Ticket 14.)
+- [x] Automatic and fully manual masks use the same publication contract.
+- [x] Mask artifacts bind to AIView/RGB identity so stale output cannot attach to changed RGB/CameraBinding.
+- [x] Render, Mask, Evidence, and Candidate statuses remain distinct. (Candidate status: no Candidate in 04 — non-goal. Render/Mask/Evidence statuses are independent and separately exposed.)
 
 ## Failure / recovery criteria
 
-- [ ] Mask generation failure keeps View/RGB available and permits retry/manual recovery.
-- [ ] Partial/stale SAM output is not published as Stable Mask.
-- [ ] Evidence failure never mutates Stable Mask or View render status.
+- [x] Mask generation failure keeps View/RGB available and permits retry/manual recovery.
+- [x] Partial/stale SAM output is not published as Stable Mask.
+- [x] Evidence failure never mutates Stable Mask or View render status.
 
 ## Affected seams
 
@@ -73,3 +73,40 @@ Introduce the current per-view Mask domain. AIView, Mask, and Evidence are indep
 - No production Evidence kernel
 - No Candidate/lifting
 - No full mask-history UX
+
+## What was built — 2026-07-24
+
+Editor (TypeScript, `src/ai-select/`):
+
+- `mask-annotation.ts` — versioned `MaskAnnotation`/`MaskArtifact` (`bitset-lsb-v1` + `sha256:` digest of decoded bytes), `MaskPrompt`, trust-boundary validators, bitset decode/encode, and local disc brush strokes.
+- `mask-registry.ts` — pure per-view Mask domain: SAM results create/replace only the Editing Mask; brush edits create `manual`/`hybrid` local revisions (an out-of-RGB brush starts a fresh manual chain); Confirm Mask atomically publishes the Editing Mask as a new `user-confirmed` Stable revision (synchronous pointer swap; previous Stable version retained). Currency derives from `createdFromRgbDigest`, so stale masks never attach to changed RGB.
+- `evidence-state.ts` — per-view Evidence dependency identity (`viewId`, `rgbDigest`, `stableMaskDigest`, `evidencePolicyDigest`) and derived status (`not-requested/pending/ready/stale/failed`). Ready/pending records whose exact identity no longer matches derive `stale`; failures bound to superseded inputs read as not-requested. `aiSelectEvidencePolicyVersion = 'evidence-policy/pnv-v0'` is an identity seam only — no calibrated policy exists yet (Ticket 20).
+- `ai-view.ts` — the Final Spec §7 `AIView` record and `composeAnchorAIView`, exposing independent `renderStatus`, `editingMaskId`/`stableMaskId`, and `evidenceStatus`. Anchor `participation` is fixed `included` until Ticket 07.
+- `mask-service.ts` — the single-frame SAM transport contract: request binds full async identity + exact RGB artifact + prompt set + `maskAttemptId`; response matching fails closed on any stale identity, dimension, or digest-of-bytes mismatch.
+- `mask-controller.ts` — `AISelectMaskController`: prompt changes auto-submit the full prompt set (latest-only; no extra apply action), local brush supersedes in-flight SAM, Confirm publishes atomically and derives Evidence invalidation, Retry mints a new `maskAttemptId`, Restart/RGB-change disposes target-local Mask state by identity.
+- `anchor-controller.ts` — narrow seam only: `createAnchorMaskRequest` (null unless exact full-resolution RGB Ready) and `acceptsMaskResponse` (context/rgb-digest freshness gate).
+- `anchor-dock-presentation.ts` — Mask surface (`none/pending/draft/confirmed/failed` + prompt count + evidenceStatus + confirm/retry affordances), kept distinct from render status.
+- `ui/ai-select-anchor-dock.ts` — Dock renders the Mask surface, a tinted Mask overlay aligned to the `object-fit: contain` image, click = include prompt, Shift+click = exclude prompt, drag = brush add, Shift+drag = brush erase (only when the formal RGB is `ready`), plus Confirm Mask / Retry Mask actions.
+- `selection-service-fetch-adapter.ts` + `selection-service-readiness.ts` — `produceMask` transport (POST `/ai-select/masks`, manifest assertion, fail-closed validation) behind the readiness gate; `main.ts` wiring; `ai-select.mask.*` locale keys in all 9 locales.
+
+Companion (Python):
+
+- `POST /ai-select/masks` → `CompanionState.produce_ai_select_mask`: full request validation (dependency binding, `sha256` RGB digest against decoded PNG bytes, in-bounds prompts), `_require_mask_adapter`, single-operation admission with idempotent same-attempt replay and new-attempt re-execution (`maskAttemptId`), a synthetic single-view `RegisteredFrameSet` so `Sam3PointMaskAdapter` performs exactly one SAM pass with no propagation, complete-tracks validation, and a bitset digest bound to the decoded bytes. `MaskSessionError` → 409 `maskError`; validation `ValueError` → 400 `invalidRequest` (the route matches `MaskSessionError` first because it subclasses `ValueError`).
+
+Decisions recorded:
+
+- Editing Masks are `draft`; SAM quality labels (`auto-good`/`auto-review`) are not fabricated before evidence-backed View Assessment (Ticket 07). Confirm publishes `user-confirmed`.
+- Brush while a SAM request is in flight supersedes that request; the late response is discarded rather than clobbering the local edit.
+- Evidence registry is exposed (`evidenceRegistry`) for Ticket 20 to drive; nothing produces Evidence in 04.
+
+## Validation recorded — 2026-07-24
+
+- `npm test` — 170 editor tests pass, including atomic Stable publication (`ai-select-mask-registry.test.js`), Editing-no-stale versus Confirm-invalidates-Evidence (`ai-select-mask-controller.test.js` "Confirm Mask invalidates dependent Evidence only at publication"), stale RGB/mask binding rejection (`ai-select-mask-service.test.js`, mask-controller stale-response cases, fetch-adapter produceMask cases).
+- `npm run test:companion` — 197 tests pass (16 new in `tests/test_ai_select_masks.py`: route validation, digest/prompt rejection, no-candidate, idempotent replay vs new-attempt, capacity, invalid-artifact failure).
+- `npm run lint` — clean (172 TS files); `npm run lint:locales` — 356 keys in sync; `npm run build` — success.
+- SAM ran against the fake predictor only. Real SAM 3.1 weights/GPU were not exercised in this environment; the single-frame path is contract-tested, not production-model validated.
+
+Known gaps / handoff notes:
+
+- `_render_ai_select_anchor` in `server.py` lists `except ValueError` before `except MaskSessionError`, making its 409 `anchorRenderError` branch unreachable (pre-existing, discovered during 04). Candidate for Ticket 19 hardening.
+- Manual browser walkthrough of the Dock prompt/brush/Confirm flow (with a live Companion) has not run in this environment.

@@ -347,5 +347,12 @@
   "ai-select.open-settings": "Einstellungen öffnen",
   "ai-select.bottom-tool": "KI",
   "ai-select.more": "Weitere Optionen",
-  "ai-select.start-error": "KI-Auswahl konnte nicht gestartet werden."
+  "ai-select.start-error": "KI-Auswahl konnte nicht gestartet werden.",
+  "ai-select.mask.none": "Noch keine Maske. Klicken Sie auf das Ankerbild, um Prompt-Punkte zu setzen; ziehen Sie, um zu pinseln.",
+  "ai-select.mask.pending": "SAM-Maske wird aktualisiert…",
+  "ai-select.mask.draft": "Bearbeitungsmaske (unbestätigt). Maske bestätigen, um sie zu veröffentlichen.",
+  "ai-select.mask.confirmed": "Stabile Maske bestätigt.",
+  "ai-select.mask.failed": "Maskenerstellung fehlgeschlagen.",
+  "ai-select.mask.confirm": "Maske bestätigen",
+  "ai-select.mask.retry": "Maske erneut versuchen"
 }

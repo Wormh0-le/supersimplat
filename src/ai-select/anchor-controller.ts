@@ -24,6 +24,13 @@ import {
     type CurrentTargetContext,
     type TargetDependencyToken
 } from './current-target-context';
+import type { MaskPrompt } from './mask-annotation';
+import {
+    isMaskResultResponse,
+    maskResponseMatchesRequest,
+    type AIViewMaskRequest,
+    type MaskResultResponse
+} from './mask-service';
 
 export type AnchorRenderStatus = 'rendering' | 'ready' | 'failed';
 export type AnchorPreviewKind = 'interactive' | 'final';
@@ -340,6 +347,80 @@ export class AISelectAnchorController {
             return;
         }
         await this.renderFinalPreview();
+    }
+
+    /**
+     * Build a single-frame SAM mask request bound to the current RGB Ready
+     * Anchor. Returns null unless the exact full-resolution Anchor RGB is
+     * current: a mask must never be produced for superseded RGB.
+     */
+    createAnchorMaskRequest(
+        prompts: readonly MaskPrompt[],
+        maskAttemptId: string,
+        modelManifestDigest: string
+    ): AIViewMaskRequest | null {
+        const anchor = this.anchor;
+        const activeRequest = this.activeRequest;
+        if (
+            anchor === null ||
+            activeRequest === null ||
+            this.contexts.current?.lifecycle !== 'active' ||
+            anchor.renderStatus !== 'ready' ||
+            anchor.rgb === undefined ||
+            prompts.length === 0
+        ) {
+            return null;
+        }
+        return Object.freeze({
+            requestBinding: this.contexts.createRequestBinding(),
+            target: Object.freeze({
+                splatId: activeRequest.target.splatId
+            }),
+            sceneId: activeRequest.snapshot.sceneId,
+            sceneVersion: activeRequest.snapshot.sceneVersion,
+            viewId: anchor.viewId,
+            maskAttemptId,
+            rgb: copyRgb(anchor.rgb),
+            prompts: Object.freeze(
+                prompts.map((prompt) =>
+                    Object.freeze({
+                        promptId: prompt.promptId,
+                        xPx: prompt.xPx,
+                        yPx: prompt.yPx,
+                        polarity: prompt.polarity
+                    })
+                )
+            ),
+            modelManifestDigest
+        });
+    }
+
+    /**
+     * The stale-result gate for mask responses. A response is current only
+     * when its full binding still matches the live context and the Anchor's
+     * current RGB identity is still the one the mask was produced from.
+     */
+    acceptsMaskResponse(
+        response: MaskResultResponse,
+        request: AIViewMaskRequest
+    ): boolean {
+        const anchor = this.anchor;
+        const effectiveDependencyToken = this.getCurrentDependencyToken?.();
+        if (anchor === null || effectiveDependencyToken === undefined) {
+            return false;
+        }
+        return (
+            this.contexts.acceptsResult(
+                request.requestBinding,
+                effectiveDependencyToken
+            ) &&
+            anchor.renderStatus === 'ready' &&
+            anchor.rgb !== undefined &&
+            anchor.viewId === request.viewId &&
+            anchor.rgb.digest === request.rgb.digest &&
+            isMaskResultResponse(response) &&
+            maskResponseMatchesRequest(response, request)
+        );
     }
 
     private async begin(

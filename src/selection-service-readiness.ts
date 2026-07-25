@@ -3,6 +3,11 @@ import type {
     AnchorRenderRequest,
     AnchorRenderResponse
 } from './ai-select/anchor-render-service';
+import type {
+    AISelectMaskProvider,
+    AIViewMaskRequest,
+    MaskResultResponse
+} from './ai-select/mask-service';
 import type { SelectionServiceAdapter } from './object-selection-session';
 
 const selectionServiceProtocolVersion = '1';
@@ -10,135 +15,135 @@ const defaultSelectionServiceEndpoint = 'http://127.0.0.1:8787';
 
 type SelectionServiceTransportProfile = 'loopback' | 'trustedLan';
 type SelectionServiceReadinessStatus =
-  'unchecked' | 'checking' | 'unavailable' | 'reachable' | 'ready';
+    'unchecked' | 'checking' | 'unavailable' | 'reachable' | 'ready';
 type SelectionServiceRendererStatus = 'ready' | 'unavailable';
 type SelectionServiceTransportErrorCode =
-  | 'localNetworkPermissionDenied'
-  | 'insecureEditorContext'
-  | 'browserTransport'
-  | 'invalidResponse'
-  | 'http';
+    | 'localNetworkPermissionDenied'
+    | 'insecureEditorContext'
+    | 'browserTransport'
+    | 'invalidResponse'
+    | 'http';
 type SelectionServiceReadinessDiagnosticCode =
-  | 'unchecked'
-  | 'checking'
-  | 'ready'
-  | 'invalidEndpoint'
-  | 'invalidEditorOrigin'
-  | 'loopbackEndpointRequired'
-  | 'trustedLanHttpsRequired'
-  | 'trustedLanEndpointRequired'
-  | 'healthUnavailable'
-  | 'capabilitiesUnavailable'
-  | 'localNetworkPermissionDenied'
-  | 'insecureEditorContext'
-  | 'browserTransport'
-  | 'invalidResponse'
-  | 'companionRejectedRequest'
-  | 'protocolMismatch'
-  | 'rendererUnavailable'
-  | 'rendererMismatch'
-  | 'pointPromptUnsupported'
-  | 'aiSelectAnchorUnsupported'
-  | 'binarySceneSnapshotRegistrationUnsupported'
-  | 'modelNotSelected'
-  | 'modelUnavailable'
-  | 'modelWeightsBundled'
-  | 'modelAdapterMismatch'
-  | 'editorOriginDenied'
-  | 'capacityMismatch'
-  | 'capacityBusy'
-  | 'invalidCapabilities';
+    | 'unchecked'
+    | 'checking'
+    | 'ready'
+    | 'invalidEndpoint'
+    | 'invalidEditorOrigin'
+    | 'loopbackEndpointRequired'
+    | 'trustedLanHttpsRequired'
+    | 'trustedLanEndpointRequired'
+    | 'healthUnavailable'
+    | 'capabilitiesUnavailable'
+    | 'localNetworkPermissionDenied'
+    | 'insecureEditorContext'
+    | 'browserTransport'
+    | 'invalidResponse'
+    | 'companionRejectedRequest'
+    | 'protocolMismatch'
+    | 'rendererUnavailable'
+    | 'rendererMismatch'
+    | 'pointPromptUnsupported'
+    | 'aiSelectAnchorUnsupported'
+    | 'binarySceneSnapshotRegistrationUnsupported'
+    | 'modelNotSelected'
+    | 'modelUnavailable'
+    | 'modelWeightsBundled'
+    | 'modelAdapterMismatch'
+    | 'editorOriginDenied'
+    | 'capacityMismatch'
+    | 'capacityBusy'
+    | 'invalidCapabilities';
 
 interface SelectionServiceConfiguration {
-  endpoint: string;
-  profile: SelectionServiceTransportProfile;
-  editorOrigin: string;
-  modelManifestDigest: string | null;
+    endpoint: string;
+    profile: SelectionServiceTransportProfile;
+    editorOrigin: string;
+    modelManifestDigest: string | null;
 }
 
 interface SelectionServiceReadinessRequest {
-  endpoint: string;
-  profile: SelectionServiceTransportProfile;
-  editorOrigin: string;
+    endpoint: string;
+    profile: SelectionServiceTransportProfile;
+    editorOrigin: string;
 }
 
 interface SelectionServiceHealth {
-  serviceBuild?: string;
+    serviceBuild?: string;
 }
 
 interface SelectionServiceRendererCapability {
-  id: string;
-  status: SelectionServiceRendererStatus;
-  cudaVersion?: string;
-  message?: string;
+    id: string;
+    status: SelectionServiceRendererStatus;
+    cudaVersion?: string;
+    message?: string;
 }
 
 interface SelectionServiceModelManifest {
-  digest: string;
-  adapterId: string;
-  modelName: string;
-  weightsBundled: boolean;
+    digest: string;
+    adapterId: string;
+    modelName: string;
+    weightsBundled: boolean;
 }
 
 interface SelectionServiceCapacity {
-  maximumActiveSessions: number;
-  activeSessions: number;
+    maximumActiveSessions: number;
+    activeSessions: number;
 }
 
 interface SelectionServiceCapabilities {
-  protocolVersion: string;
-  serviceBuild: string;
-  renderer: SelectionServiceRendererCapability;
-  supportedPromptKinds: readonly string[];
-  supportedOperations: readonly string[];
-  modelManifests: readonly SelectionServiceModelManifest[];
-  capacity: SelectionServiceCapacity;
-  allowedEditorOrigins: readonly string[];
+    protocolVersion: string;
+    serviceBuild: string;
+    renderer: SelectionServiceRendererCapability;
+    supportedPromptKinds: readonly string[];
+    supportedOperations: readonly string[];
+    modelManifests: readonly SelectionServiceModelManifest[];
+    capacity: SelectionServiceCapacity;
+    allowedEditorOrigins: readonly string[];
 }
 
 interface SelectionServiceReadinessProbe {
-  checkHealth(
-    request: SelectionServiceReadinessRequest
-  ): Promise<SelectionServiceHealth>;
-  getCapabilities(
-    request: SelectionServiceReadinessRequest
-  ): Promise<SelectionServiceCapabilities>;
+    checkHealth(
+        request: SelectionServiceReadinessRequest
+    ): Promise<SelectionServiceHealth>;
+    getCapabilities(
+        request: SelectionServiceReadinessRequest
+    ): Promise<SelectionServiceCapabilities>;
 }
 
 interface SelectionServiceReadinessRequirements {
-  protocolVersion: string;
-  rendererId: string;
-  modelAdapterId: string;
-  aiSelectAnchorOperation: string;
-  binarySceneSnapshotRegistrationOperation: string;
+    protocolVersion: string;
+    rendererId: string;
+    modelAdapterId: string;
+    aiSelectAnchorOperation: string;
+    binarySceneSnapshotRegistrationOperation: string;
 }
 
 interface SelectionServiceReadinessDiagnostic {
-  code: SelectionServiceReadinessDiagnosticCode;
-  message: string;
-  action: string;
+    code: SelectionServiceReadinessDiagnosticCode;
+    message: string;
+    action: string;
 }
 
 interface SelectionServiceReadinessState {
-  status: SelectionServiceReadinessStatus;
-  configuration: SelectionServiceConfiguration;
-  health: SelectionServiceHealth | null;
-  capabilities: SelectionServiceCapabilities | null;
-  diagnostic: SelectionServiceReadinessDiagnostic;
+    status: SelectionServiceReadinessStatus;
+    configuration: SelectionServiceConfiguration;
+    health: SelectionServiceHealth | null;
+    capabilities: SelectionServiceCapabilities | null;
+    diagnostic: SelectionServiceReadinessDiagnostic;
 }
 
 type SelectionServiceReadinessListener = (
-  state: SelectionServiceReadinessState
+    state: SelectionServiceReadinessState
 ) => void;
 
 interface SelectionServiceReadinessInterface {
-  readonly state: SelectionServiceReadinessState;
+    readonly state: SelectionServiceReadinessState;
 
-  subscribe(listener: SelectionServiceReadinessListener): () => void;
-  setConfiguration(configuration: SelectionServiceConfiguration): void;
-  updateConfiguration(partial: Partial<SelectionServiceConfiguration>): void;
-  refresh(): Promise<void>;
-  requireReady(): void;
+    subscribe(listener: SelectionServiceReadinessListener): () => void;
+    setConfiguration(configuration: SelectionServiceConfiguration): void;
+    updateConfiguration(partial: Partial<SelectionServiceConfiguration>): void;
+    refresh(): Promise<void>;
+    requireReady(): void;
 }
 
 interface SelectionServiceTransportErrorDetails {
@@ -203,7 +208,8 @@ const defaultRequirements: SelectionServiceReadinessRequirements = {
     rendererId: 'gsplat',
     modelAdapterId: 'sam3.1',
     aiSelectAnchorOperation: 'aiSelectAnchorRender',
-    binarySceneSnapshotRegistrationOperation: 'binarySceneSnapshotRegistrationV1'
+    binarySceneSnapshotRegistrationOperation:
+        'binarySceneSnapshotRegistrationV1'
 };
 
 const defaultEditorOrigin = () => {
@@ -241,7 +247,7 @@ const copyCapabilities = (
     },
     supportedPromptKinds: [...capabilities.supportedPromptKinds],
     supportedOperations: [...capabilities.supportedOperations],
-    modelManifests: capabilities.modelManifests.map(manifest => ({
+    modelManifests: capabilities.modelManifests.map((manifest) => ({
         digest: manifest.digest,
         adapterId: manifest.adapterId,
         modelName: manifest.modelName,
@@ -268,9 +274,9 @@ const copyState = (
     status: state.status,
     configuration: copyConfiguration(state.configuration),
     health: state.health ? copyHealth(state.health) : null,
-    capabilities: state.capabilities ?
-        copyCapabilities(state.capabilities) :
-        null,
+    capabilities: state.capabilities
+        ? copyCapabilities(state.capabilities)
+        : null,
     diagnostic: copyDiagnostic(state.diagnostic)
 });
 
@@ -290,7 +296,7 @@ const parseEditorOrigin = (editorOrigin: string) => {
         const url = new URL(editorOrigin);
         if (
             (url.protocol !== 'http:' && url.protocol !== 'https:') ||
-      url.origin === 'null'
+            url.origin === 'null'
         ) {
             return null;
         }
@@ -325,10 +331,10 @@ const validateConfiguration = (
 
     if (
         endpoint.username ||
-    endpoint.password ||
-    endpoint.search ||
-    endpoint.hash ||
-    endpoint.pathname !== '/'
+        endpoint.password ||
+        endpoint.search ||
+        endpoint.hash ||
+        endpoint.pathname !== '/'
     ) {
         return diagnostic(
             'invalidEndpoint',
@@ -340,7 +346,7 @@ const validateConfiguration = (
     if (configuration.profile === 'loopback') {
         if (
             (endpoint.protocol !== 'http:' && endpoint.protocol !== 'https:') ||
-      !isLoopbackHost(endpoint.hostname)
+            !isLoopbackHost(endpoint.hostname)
         ) {
             return diagnostic(
                 'loopbackEndpointRequired',
@@ -383,55 +389,57 @@ const validateCapabilities = (
 ): value is SelectionServiceCapabilities => {
     if (
         !isRecord(value) ||
-    typeof value.protocolVersion !== 'string' ||
-    typeof value.serviceBuild !== 'string'
+        typeof value.protocolVersion !== 'string' ||
+        typeof value.serviceBuild !== 'string'
     ) {
         return false;
     }
     if (
         !isRecord(value.renderer) ||
-    typeof value.renderer.id !== 'string' ||
-    (value.renderer.status !== 'ready' &&
-      value.renderer.status !== 'unavailable')
+        typeof value.renderer.id !== 'string' ||
+        (value.renderer.status !== 'ready' &&
+            value.renderer.status !== 'unavailable')
     ) {
         return false;
     }
     if (
         !Array.isArray(value.supportedPromptKinds) ||
-    !value.supportedPromptKinds.every(kind => typeof kind === 'string')
+        !value.supportedPromptKinds.every((kind) => typeof kind === 'string')
     ) {
         return false;
     }
     if (
         !Array.isArray(value.supportedOperations) ||
-        !value.supportedOperations.every(operation => typeof operation === 'string')
+        !value.supportedOperations.every(
+            (operation) => typeof operation === 'string'
+        )
     ) {
         return false;
     }
     if (
         !Array.isArray(value.modelManifests) ||
-    !value.modelManifests.every((manifest) => {
-        return (
-            isRecord(manifest) &&
-        typeof manifest.digest === 'string' &&
-        typeof manifest.adapterId === 'string' &&
-        typeof manifest.modelName === 'string' &&
-        typeof manifest.weightsBundled === 'boolean'
-        );
-    })
+        !value.modelManifests.every((manifest) => {
+            return (
+                isRecord(manifest) &&
+                typeof manifest.digest === 'string' &&
+                typeof manifest.adapterId === 'string' &&
+                typeof manifest.modelName === 'string' &&
+                typeof manifest.weightsBundled === 'boolean'
+            );
+        })
     ) {
         return false;
     }
     if (
         !isRecord(value.capacity) ||
-    !isNonNegativeInteger(value.capacity.maximumActiveSessions) ||
-    !isNonNegativeInteger(value.capacity.activeSessions)
+        !isNonNegativeInteger(value.capacity.maximumActiveSessions) ||
+        !isNonNegativeInteger(value.capacity.activeSessions)
     ) {
         return false;
     }
     return (
         Array.isArray(value.allowedEditorOrigins) &&
-    value.allowedEditorOrigins.every(origin => typeof origin === 'string')
+        value.allowedEditorOrigins.every((origin) => typeof origin === 'string')
     );
 };
 
@@ -441,7 +449,8 @@ const requestFromConfiguration = (
     endpoint: configuration.endpoint,
     profile: configuration.profile,
     editorOrigin:
-    parseEditorOrigin(configuration.editorOrigin) ?? configuration.editorOrigin
+        parseEditorOrigin(configuration.editorOrigin) ??
+        configuration.editorOrigin
 });
 
 class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
@@ -452,18 +461,18 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
     private refreshVersion = 0;
 
     constructor(options: {
-    probe: SelectionServiceReadinessProbe;
-    configuration?: SelectionServiceConfiguration;
-    requirements?: Partial<SelectionServiceReadinessRequirements>;
-  }) {
+        probe: SelectionServiceReadinessProbe;
+        configuration?: SelectionServiceConfiguration;
+        requirements?: Partial<SelectionServiceReadinessRequirements>;
+    }) {
         this.probe = options.probe;
         this.requirements = {
             ...defaultRequirements,
             ...options.requirements
         };
-        const configuration = options.configuration ?
-            copyConfiguration(options.configuration) :
-            defaultConfiguration(defaultEditorOrigin());
+        const configuration = options.configuration
+            ? copyConfiguration(options.configuration)
+            : defaultConfiguration(defaultEditorOrigin());
         this.readinessState = {
             status: 'unchecked',
             configuration,
@@ -513,7 +522,9 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
     }
 
     async refresh() {
-        const configuration = copyConfiguration(this.readinessState.configuration);
+        const configuration = copyConfiguration(
+            this.readinessState.configuration
+        );
         const validationDiagnostic = validateConfiguration(configuration);
         const refreshVersion = ++this.refreshVersion;
 
@@ -550,7 +561,9 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
                 return;
             }
             this.setState({
-                status: this.isReachableProbeError(error) ? 'reachable' : 'unavailable',
+                status: this.isReachableProbeError(error)
+                    ? 'reachable'
+                    : 'unavailable',
                 configuration,
                 health: null,
                 capabilities: null,
@@ -623,18 +636,20 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             health: copyHealth(health),
             capabilities: copyCapabilities(capabilities),
             diagnostic:
-        capabilityDiagnostic ??
-        diagnostic(
-            'ready',
-            'The Selection Service Companion is ready for one new Object Selection Session.',
-            'Start New to begin Object Selection.'
-        )
+                capabilityDiagnostic ??
+                diagnostic(
+                    'ready',
+                    'The Selection Service Companion is ready for one new Object Selection Session.',
+                    'Start New to begin Object Selection.'
+                )
         });
     }
 
     requireReady() {
         if (this.readinessState.status !== 'ready') {
-            throw new SelectionServiceNotReadyError(this.readinessState.diagnostic);
+            throw new SelectionServiceNotReadyError(
+                this.readinessState.diagnostic
+            );
         }
     }
 
@@ -642,7 +657,9 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
         capabilities: SelectionServiceCapabilities,
         configuration: SelectionServiceConfiguration
     ): SelectionServiceReadinessDiagnostic | null {
-        if (capabilities.protocolVersion !== this.requirements.protocolVersion) {
+        if (
+            capabilities.protocolVersion !== this.requirements.protocolVersion
+        ) {
             return diagnostic(
                 'protocolMismatch',
                 `The Companion protocol ${capabilities.protocolVersion} is incompatible with editor protocol ${this.requirements.protocolVersion}.`,
@@ -654,7 +671,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             return diagnostic(
                 'rendererUnavailable',
                 capabilities.renderer.message ??
-          'The Companion renderer or CUDA runtime is unavailable.',
+                    'The Companion renderer or CUDA runtime is unavailable.',
                 'Resolve the Companion renderer or CUDA diagnostic with the operator-managed installation, then refresh readiness.'
             );
         }
@@ -702,7 +719,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
         const editorOrigin = parseEditorOrigin(configuration.editorOrigin);
         if (
             editorOrigin === null ||
-      !capabilities.allowedEditorOrigins.includes(editorOrigin)
+            !capabilities.allowedEditorOrigins.includes(editorOrigin)
         ) {
             return diagnostic(
                 'editorOriginDenied',
@@ -736,7 +753,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
         }
 
         const modelManifest = capabilities.modelManifests.find(
-            manifest => manifest.digest === configuration.modelManifestDigest
+            (manifest) => manifest.digest === configuration.modelManifestDigest
         );
         if (!modelManifest) {
             return diagnostic(
@@ -799,7 +816,9 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
                     return diagnostic(
                         'companionRejectedRequest',
                         `The reachable Companion rejected the ${operation} check${
-                            error.status === undefined ? '' : ` with HTTP ${error.status}`
+                            error.status === undefined
+                                ? ''
+                                : ` with HTTP ${error.status}`
                         }.`,
                         error.serviceMessage ??
                             'Resolve the Companion-reported error, then refresh readiness.'
@@ -810,13 +829,15 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
         }
 
         return diagnostic(
-            operation === 'health' ? 'healthUnavailable' : 'capabilitiesUnavailable',
-            operation === 'health' ?
-                'The configured Selection Service Companion is not reachable.' :
-                'The Companion is reachable, but its capabilities could not be read.',
-            operation === 'health' ?
-                'Verify the operator-started Companion endpoint, then refresh readiness.' :
-                'Check the Companion protocol and browser transport configuration, then refresh readiness.'
+            operation === 'health'
+                ? 'healthUnavailable'
+                : 'capabilitiesUnavailable',
+            operation === 'health'
+                ? 'The configured Selection Service Companion is not reachable.'
+                : 'The Companion is reachable, but its capabilities could not be read.',
+            operation === 'health'
+                ? 'Verify the operator-started Companion endpoint, then refresh readiness.'
+                : 'Check the Companion protocol and browser transport configuration, then refresh readiness.'
         );
     }
 
@@ -834,28 +855,35 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
     private setState(state: SelectionServiceReadinessState) {
         this.readinessState = copyState(state);
         const published = this.state;
-        this.listeners.forEach(listener => listener(published));
+        this.listeners.forEach((listener) => listener(published));
     }
 }
 
 // This decorator preserves the ObjectSelectionSession seam: the session still
 // knows only its injected SelectionServiceAdapter, while no New session can
 // bypass the operator-visible readiness decision.
-class ReadinessGatedSelectionServiceAdapter implements SelectionServiceAdapter, AISelectAnchorRenderer {
+class ReadinessGatedSelectionServiceAdapter
+    implements
+        SelectionServiceAdapter,
+        AISelectAnchorRenderer,
+        AISelectMaskProvider
+{
     private readiness: SelectionServiceReadinessInterface;
     private adapter: SelectionServiceAdapter | null;
 
     constructor(options: {
-    readiness: SelectionServiceReadinessInterface;
-    adapter?: SelectionServiceAdapter;
-  }) {
+        readiness: SelectionServiceReadinessInterface;
+        adapter?: SelectionServiceAdapter;
+    }) {
         this.readiness = options.readiness;
         this.adapter = options.adapter ?? null;
     }
 
     setAdapter(adapter: SelectionServiceAdapter) {
         if (this.adapter !== null) {
-            throw new Error('The Selection Service Companion transport is already configured.');
+            throw new Error(
+                'The Selection Service Companion transport is already configured.'
+            );
         }
         this.adapter = adapter;
     }
@@ -867,7 +895,9 @@ class ReadinessGatedSelectionServiceAdapter implements SelectionServiceAdapter, 
         return await this.requireAdapter().openSession(...args);
     }
 
-    updatePreview(...args: Parameters<SelectionServiceAdapter['updatePreview']>) {
+    updatePreview(
+        ...args: Parameters<SelectionServiceAdapter['updatePreview']>
+    ) {
         return this.requireAdapter().updatePreview(...args);
     }
 
@@ -886,6 +916,11 @@ class ReadinessGatedSelectionServiceAdapter implements SelectionServiceAdapter, 
         return await this.requireAnchorRenderer().renderAnchor(request);
     }
 
+    async produceMask(request: AIViewMaskRequest): Promise<MaskResultResponse> {
+        this.readiness.requireReady();
+        return await this.requireMaskProvider().produceMask(request);
+    }
+
     private requireAdapter() {
         if (this.adapter === null) {
             throw new SelectionServiceAdapterNotConfiguredError();
@@ -895,10 +930,24 @@ class ReadinessGatedSelectionServiceAdapter implements SelectionServiceAdapter, 
 
     private requireAnchorRenderer(): AISelectAnchorRenderer {
         const adapter = this.requireAdapter();
-        if (typeof (adapter as Partial<AISelectAnchorRenderer>).renderAnchor !== 'function') {
+        if (
+            typeof (adapter as Partial<AISelectAnchorRenderer>).renderAnchor !==
+            'function'
+        ) {
             throw new SelectionServiceAdapterNotConfiguredError();
         }
         return adapter as SelectionServiceAdapter & AISelectAnchorRenderer;
+    }
+
+    private requireMaskProvider(): AISelectMaskProvider {
+        const adapter = this.requireAdapter();
+        if (
+            typeof (adapter as Partial<AISelectMaskProvider>).produceMask !==
+            'function'
+        ) {
+            throw new SelectionServiceAdapterNotConfiguredError();
+        }
+        return adapter as SelectionServiceAdapter & AISelectMaskProvider;
     }
 }
 

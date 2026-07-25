@@ -347,5 +347,12 @@
   "ai-select.open-settings": "設定を開く",
   "ai-select.bottom-tool": "AI",
   "ai-select.more": "その他のオプション",
-  "ai-select.start-error": "AI 選択を開始できませんでした。"
+  "ai-select.start-error": "AI 選択を開始できませんでした。",
+  "ai-select.mask.none": "マスクはまだありません。アンカー画像をクリックしてプロンプト点を追加し、ドラッグでブラシ編集します。",
+  "ai-select.mask.pending": "SAM マスクを更新中…",
+  "ai-select.mask.draft": "編集中マスク（未確定）。マスクを確定して公開します。",
+  "ai-select.mask.confirmed": "安定マスクが確定しました。",
+  "ai-select.mask.failed": "マスク生成に失敗しました。",
+  "ai-select.mask.confirm": "マスクを確定",
+  "ai-select.mask.retry": "マスクを再試行"
 }

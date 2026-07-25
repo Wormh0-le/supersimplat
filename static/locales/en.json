@@ -347,5 +347,12 @@
   "ai-select.open-settings": "Open Settings",
   "ai-select.bottom-tool": "AI",
   "ai-select.more": "More options",
-  "ai-select.start-error": "AI Select could not start."
+  "ai-select.start-error": "AI Select could not start.",
+  "ai-select.mask.none": "No Mask yet. Click the Anchor image to add prompt points; drag to brush.",
+  "ai-select.mask.pending": "SAM Mask updating…",
+  "ai-select.mask.draft": "Editing Mask (unconfirmed). Confirm Mask to publish it.",
+  "ai-select.mask.confirmed": "Stable Mask confirmed.",
+  "ai-select.mask.failed": "Mask generation failed.",
+  "ai-select.mask.confirm": "Confirm Mask",
+  "ai-select.mask.retry": "Retry Mask"
 }

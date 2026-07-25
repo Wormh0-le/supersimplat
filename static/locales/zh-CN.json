@@ -347,5 +347,12 @@
   "ai-select.open-settings": "打开设置",
   "ai-select.bottom-tool": "AI",
   "ai-select.more": "更多选项",
-  "ai-select.start-error": "无法启动 AI 选择。"
+  "ai-select.start-error": "无法启动 AI 选择。",
+  "ai-select.mask.none": "还没有 Mask。点击 Anchor 图像添加提示点；拖动进行笔刷编辑。",
+  "ai-select.mask.pending": "SAM Mask 更新中…",
+  "ai-select.mask.draft": "编辑中 Mask（未确认）。确认 Mask 后发布。",
+  "ai-select.mask.confirmed": "Stable Mask 已确认。",
+  "ai-select.mask.failed": "Mask 生成失败。",
+  "ai-select.mask.confirm": "确认 Mask",
+  "ai-select.mask.retry": "重试 Mask"
 }

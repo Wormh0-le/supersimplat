@@ -347,5 +347,12 @@
   "ai-select.open-settings": "Открыть настройки",
   "ai-select.bottom-tool": "ИИ",
   "ai-select.more": "Другие параметры",
-  "ai-select.start-error": "Не удалось запустить ИИ-выбор."
+  "ai-select.start-error": "Не удалось запустить ИИ-выбор.",
+  "ai-select.mask.none": "Маски пока нет. Щёлкните изображение якоря, чтобы добавить точки; перетаскивайте для работы кистью.",
+  "ai-select.mask.pending": "Обновление маски SAM…",
+  "ai-select.mask.draft": "Черновая маска (не подтверждена). Подтвердите маску для публикации.",
+  "ai-select.mask.confirmed": "Стабильная маска подтверждена.",
+  "ai-select.mask.failed": "Не удалось создать маску.",
+  "ai-select.mask.confirm": "Подтвердить маску",
+  "ai-select.mask.retry": "Повторить маску"
 }

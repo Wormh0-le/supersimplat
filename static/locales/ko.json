@@ -347,5 +347,12 @@
   "ai-select.open-settings": "설정 열기",
   "ai-select.bottom-tool": "AI",
   "ai-select.more": "추가 옵션",
-  "ai-select.start-error": "AI 선택을 시작할 수 없습니다."
+  "ai-select.start-error": "AI 선택을 시작할 수 없습니다.",
+  "ai-select.mask.none": "아직 마스크가 없습니다. 앵커 이미지를 클릭해 프롬프트 점을 추가하고 드래그로 브러시 편집하세요.",
+  "ai-select.mask.pending": "SAM 마스크 업데이트 중…",
+  "ai-select.mask.draft": "편집 중 마스크(미확정). 마스크 확정으로 게시합니다.",
+  "ai-select.mask.confirmed": "안정 마스크가 확정되었습니다.",
+  "ai-select.mask.failed": "마스크 생성에 실패했습니다.",
+  "ai-select.mask.confirm": "마스크 확정",
+  "ai-select.mask.retry": "마스크 재시도"
 }

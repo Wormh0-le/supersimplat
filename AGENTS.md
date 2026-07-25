@@ -28,13 +28,14 @@ Do not reintroduce superseded behavior merely because old implementation, fixtur
 Before changing non-trivial AI Select behavior, inspect these sources in order:
 
 1. `docs/specs/ai-select-final-spec-v1.1.md`
-2. `docs/adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md`
-3. `docs/adr/0012-adopt-ai-select-final-spec-v1.md` where not superseded by ADR 0013
-4. `CONTEXT.md`
-5. Relevant non-superseded ADRs under `docs/adr/`
-6. The associated implementation issue under `.scratch/ai-select-v1/issues/` and its audit/traceability artifacts
-7. The nearest implementation and tests
-8. Dependency/runtime declarations when installation, rendering, inference, CUDA, or calibration is affected
+2. `docs/specs/ai-select-final-spec-v1.1-amendment-001-renderer-evidence-identity.md`
+3. `docs/adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md`
+4. `docs/adr/0012-adopt-ai-select-final-spec-v1.md` where not superseded by ADR 0013
+5. `CONTEXT.md`
+6. Relevant non-superseded ADRs under `docs/adr/`
+7. The associated implementation issue under `.scratch/ai-select-v1/issues/` and its audit/traceability artifacts
+8. The nearest implementation and tests
+9. Dependency/runtime declarations when installation, rendering, inference, CUDA, or calibration is affected
 
 Final Spec v1.1 is authoritative for current product, interaction, lifecycle, lifting semantics, and engineering boundaries.
 

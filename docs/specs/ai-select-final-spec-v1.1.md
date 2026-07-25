@@ -18,9 +18,13 @@
 
 Final Spec v1.0 中未被本规格显式修改的产品、交互、生命周期和 Native Selection 规则继续有效，并视为已合并到 v1.1。
 
+本规格的规范性补充（Normative Amendments）作为本规格的一部分发布，对其修订的条款具有同等规范效力。当前有效补充：
+
+- `docs/specs/ai-select-final-spec-v1.1-amendment-001-renderer-evidence-identity.md` — Amendment 001：Renderer / Evidence Implementation Identity and RGB Continuity（2026-07-24，修订 §§5.4, 16, 18, 30, 31, 32）。
+
 当文档发生冲突时，权威顺序为：
 
-1. `docs/specs/ai-select-final-spec-v1.1.md`；
+1. `docs/specs/ai-select-final-spec-v1.1.md` 及其规范性补充（对被修订条款以补充为准）；
 2. `docs/adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md`；
 3. `docs/adr/0012-adopt-ai-select-final-spec-v1.md` 中未被 ADR 0013 替代的部分；
 4. `CONTEXT.md`；
@@ -320,40 +324,25 @@ Camera Inspection Observer Camera 不得静默成为 Anchor Camera。
 
 ```ts
 interface AIView {
-  viewId: string;
+    viewId: string;
 
-  source:
-    | 'anchor'
-    | 'auto-generated'
-    | 'user-added'
-    | 'replacement';
+    source: 'anchor' | 'auto-generated' | 'user-added' | 'replacement';
 
-  camera: CameraBinding;
+    camera: CameraBinding;
 
-  renderStatus:
-    | 'pending'
-    | 'rendering'
-    | 'ready'
-    | 'failed';
+    renderStatus: 'pending' | 'rendering' | 'ready' | 'failed';
 
-  rgbArtifact?: string;
-  rgbDigest?: string;
+    rgbArtifact?: string;
+    rgbDigest?: string;
 
-  participation:
-    | 'included'
-    | 'excluded';
+    participation: 'included' | 'excluded';
 
-  stableMaskId?: string;
-  editingMaskId?: string;
+    stableMaskId?: string;
+    editingMaskId?: string;
 
-  evidenceStatus?:
-    | 'not-requested'
-    | 'pending'
-    | 'ready'
-    | 'stale'
-    | 'failed';
+    evidenceStatus?: 'not-requested' | 'pending' | 'ready' | 'stale' | 'failed';
 
-  evidenceArtifactId?: string;
+    evidenceArtifactId?: string;
 }
 ```
 
@@ -452,25 +441,17 @@ v1.0 的 `MaskAnnotation`、Stable Mask、Editing Mask、Confirm Mask、Prompt�
 
 ```ts
 interface MaskAnnotation {
-  maskId: string;
-  viewId: string;
+    maskId: string;
+    viewId: string;
 
-  source:
-    | 'single-frame-sam'
-    | 'propagated'
-    | 'manual'
-    | 'hybrid';
+    source: 'single-frame-sam' | 'propagated' | 'manual' | 'hybrid';
 
-  status:
-    | 'draft'
-    | 'auto-good'
-    | 'auto-review'
-    | 'user-confirmed';
+    status: 'draft' | 'auto-good' | 'auto-review' | 'user-confirmed';
 
-  maskArtifact: string;
-  prompts?: MaskPrompt[];
-  parentMaskId?: string;
-  createdFromRgbDigest: string;
+    maskArtifact: string;
+    prompts?: MaskPrompt[];
+    parentMaskId?: string;
+    createdFromRgbDigest: string;
 }
 ```
 
@@ -824,29 +805,29 @@ Evidence Working Set 只决定哪些 Stable Gaussian IDs 接收 P/N/V 写入。
 
 ```ts
 interface GaussianEvidenceArtifact {
-  schemaVersion: number;
+    schemaVersion: number;
 
-  targetContextId: string;
-  targetDependencyToken: string;
-  sceneVersion: string;
-  splatVersion: string;
+    targetContextId: string;
+    targetDependencyToken: string;
+    sceneVersion: string;
+    splatVersion: string;
 
-  viewId: string;
-  cameraBindingDigest: string;
-  rgbDigest: string;
-  stableMaskDigest: string;
-  evidencePolicyDigest: string;
+    viewId: string;
+    cameraBindingDigest: string;
+    rgbDigest: string;
+    stableMaskDigest: string;
+    evidencePolicyDigest: string;
 
-  renderWorkingSetToken: string;
-  evidenceWorkingSetToken: string;
+    renderWorkingSetToken: string;
+    evidenceWorkingSetToken: string;
 
-  stableGaussianIds: Uint32Array;
+    stableGaussianIds: Uint32Array;
 
-  positiveMass: Float32Array;
-  negativeMass: Float32Array;
-  visibleMass: Float32Array;
+    positiveMass: Float32Array;
+    negativeMass: Float32Array;
+    visibleMass: Float32Array;
 
-  boundaryMass?: Float32Array;
+    boundaryMass?: Float32Array;
 }
 ```
 
@@ -1052,11 +1033,11 @@ Hard gate 满足，但 observation/diversity 较弱。Lift enabled + warning。
 
 ```ts
 interface AIComputeDirtyState {
-  propagationDirty: boolean;
-  evidenceDirtyViewIds: string[];
-  liftDirty: boolean;
-  candidateStale: boolean;
-  contextSuspended: boolean;
+    propagationDirty: boolean;
+    evidenceDirtyViewIds: string[];
+    liftDirty: boolean;
+    candidateStale: boolean;
+    contextSuspended: boolean;
 }
 ```
 
@@ -1064,17 +1045,17 @@ interface AIComputeDirtyState {
 
 ## 24.2 操作依赖
 
-| 操作 | Propagation | Per-view Evidence | Lift |
-|---|---|---|---|
-| 编辑 Editing Mask，未 Confirm | 不变 | 不变 | 不变 |
-| Confirm 普通 View Stable Mask | 不变 | 对应 View Dirty | Dirty |
-| Confirm Anchor / Reference Mask | Dirty | Anchor Dirty | Dirty |
-| Exclude Included View | 不变 | artifact 可保留 | Dirty |
-| Include 有 Stable Mask 的 View | 不变 | 缺失/旧 artifact Dirty | Dirty |
-| Add View，无 Stable Mask | 不变 | 不变 | 不变 |
-| 新 View Stable Mask + Included | 不变 | 对应 View Dirty | Dirty |
-| CameraBinding / RGB 新 revision | 依赖策略 | 对应 View Dirty | Dirty |
-| Gallery / Frustum 浏览 | 不变 | 不变 | 不变 |
+| 操作                            | Propagation | Per-view Evidence      | Lift  |
+| ------------------------------- | ----------- | ---------------------- | ----- |
+| 编辑 Editing Mask，未 Confirm   | 不变        | 不变                   | 不变  |
+| Confirm 普通 View Stable Mask   | 不变        | 对应 View Dirty        | Dirty |
+| Confirm Anchor / Reference Mask | Dirty       | Anchor Dirty           | Dirty |
+| Exclude Included View           | 不变        | artifact 可保留        | Dirty |
+| Include 有 Stable Mask 的 View  | 不变        | 缺失/旧 artifact Dirty | Dirty |
+| Add View，无 Stable Mask        | 不变        | 不变                   | 不变  |
+| 新 View Stable Mask + Included  | 不变        | 对应 View Dirty        | Dirty |
+| CameraBinding / RGB 新 revision | 依赖策略    | 对应 View Dirty        | Dirty |
+| Gallery / Frustum 浏览          | 不变        | 不变                   | 不变  |
 
 ## 24.3 Update 3D Candidate
 

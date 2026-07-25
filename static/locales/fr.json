@@ -347,5 +347,12 @@
   "ai-select.open-settings": "Ouvrir les paramètres",
   "ai-select.bottom-tool": "IA",
   "ai-select.more": "Plus d’options",
-  "ai-select.start-error": "Impossible de démarrer la sélection IA."
+  "ai-select.start-error": "Impossible de démarrer la sélection IA.",
+  "ai-select.mask.none": "Aucun masque pour l’instant. Cliquez sur l’image d’ancrage pour ajouter des points ; faites glisser pour peindre.",
+  "ai-select.mask.pending": "Mise à jour du masque SAM…",
+  "ai-select.mask.draft": "Masque d’édition (non confirmé). Confirmez le masque pour le publier.",
+  "ai-select.mask.confirmed": "Masque stable confirmé.",
+  "ai-select.mask.failed": "Échec de la génération du masque.",
+  "ai-select.mask.confirm": "Confirmer le masque",
+  "ai-select.mask.retry": "Réessayer le masque"
 }

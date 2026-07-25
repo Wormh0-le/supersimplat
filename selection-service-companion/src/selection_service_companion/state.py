@@ -145,6 +145,69 @@ class AnchorRenderAdmission:
 
 
 @dataclass(frozen=True)
+class AISelectMaskPrompt:
+    """One validated point prompt on the single authoritative RGB frame."""
+
+    prompt_id: str
+    x_px: int
+    y_px: int
+    polarity: str
+
+    def response_fields(self) -> dict[str, object]:
+        return {
+            'promptId': self.prompt_id,
+            'xPx': self.x_px,
+            'yPx': self.y_px,
+            'polarity': self.polarity,
+        }
+
+
+@dataclass(frozen=True)
+class AISelectMaskRequest:
+    """Validated browser binding for one single-frame SAM mask attempt."""
+
+    request_binding: dict[str, object]
+    target_splat_id: str
+    scene_id: str
+    scene_version: str
+    view_id: str
+    mask_attempt_id: str
+    rgb_png: bytes
+    rgb_digest: str
+    width: int
+    height: int
+    prompts: tuple[AISelectMaskPrompt, ...]
+    model_manifest_digest: str
+
+    def response_fields(self) -> dict[str, object]:
+        return {
+            'requestBinding': self.request_binding,
+            'targetSplatId': self.target_splat_id,
+            'sceneId': self.scene_id,
+            'sceneVersion': self.scene_version,
+            'viewId': self.view_id,
+            'maskAttemptId': self.mask_attempt_id,
+            'rgbDigest': self.rgb_digest,
+            'modelManifestDigest': self.model_manifest_digest,
+        }
+
+    def identity_fields(self) -> dict[str, object]:
+        return {
+            **self.response_fields(),
+            'prompts': [prompt.response_fields() for prompt in self.prompts],
+        }
+
+
+@dataclass
+class MaskRequestAdmission:
+    """One private, replayable single-frame mask reserved by request binding."""
+
+    completed: Event = field(default_factory=Event)
+    publication: str | None = None
+    failure: tuple[str, str] | None = None
+
+
+@dataclass(frozen=True)
 class GeneratedFrameSetResolution:
     """The cached one-rebuild result for a Generated View preview session."""
 
@@ -304,6 +367,27 @@ def _anchor_digest(value: str, field_name: str) -> str:
     return value
 
 
+def _mask_request_string(value: object, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f'AI Select Mask {field_name} must be a non-empty string')
+    return value
+
+
+def _mask_request_nonnegative_integer(value: object, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(
+            f'AI Select Mask {field_name} must be a non-negative integer'
+        )
+    return value
+
+
+def _mask_request_positive_integer(value: object, field_name: str) -> int:
+    integer = _mask_request_nonnegative_integer(value, field_name)
+    if integer <= 0:
+        raise ValueError(f'AI Select Mask {field_name} must be greater than zero')
+    return integer
+
+
 @dataclass
 class CompanionState:
     directory: Path
@@ -322,6 +406,16 @@ class CompanionState:
         repr=False,
     )
     _anchor_render_admissions: dict[str, AnchorRenderAdmission] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _active_mask_request: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _mask_admissions: dict[str, MaskRequestAdmission] = field(
         default_factory=dict,
         init=False,
         repr=False,
@@ -571,6 +665,9 @@ class CompanionState:
                 self._discard_unclaimed_frame_set(frame_set_version)
                 return None
             if self._active_anchor_render is not None:
+                self._discard_unclaimed_frame_set(frame_set_version)
+                return None
+            if self._active_mask_request is not None:
                 self._discard_unclaimed_frame_set(frame_set_version)
                 return None
             try:
@@ -1089,6 +1186,260 @@ class CompanionState:
             'farPlane': far,
         }
         return camera_binding, renderer_camera, width, height
+
+    def produce_ai_select_mask(self, request: Mapping[str, object]) -> dict[str, object]:
+        """Publish one bound single-frame SAM mask or replay its outcome.
+
+        The browser owns target identity, the authoritative Anchor RGB, and the
+        point prompts. This state method validates those untrusted bindings,
+        reserves the single Companion operation slot, then runs the promptable
+        mask adapter outside every state lock before atomically publishing the
+        immutable result. The synthetic single-view Frame Set makes the adapter
+        perform exactly one SAM pass with no video propagation.
+        """
+
+        mask_request = self._parse_ai_select_mask_request(request)
+        model, adapter = self._require_mask_adapter(mask_request.model_manifest_digest)
+        mask_key, admission, owns_admission = self._admit_mask_request(mask_request)
+        if not owns_admission:
+            return self._replay_mask_request(admission)
+
+        try:
+            try:
+                frame_set = register_frame_set({
+                    'frameSetId': f'ai-select-mask-{mask_request.view_id}',
+                    'frameSetVersion': (
+                        f'{mask_request.view_id}-{mask_request.rgb_digest}'
+                    ),
+                    'orderedViews': [{
+                        'viewId': mask_request.view_id,
+                        'frameDigest': mask_request.rgb_digest,
+                        'width': mask_request.width,
+                        'height': mask_request.height,
+                        'imagePngBase64': base64.b64encode(
+                            mask_request.rgb_png
+                        ).decode('ascii'),
+                        'source': 'anchor',
+                    }],
+                })
+                prompt_log: list[dict[str, object]] = [
+                    {
+                        'operation': 'New',
+                        'prompt': {
+                            'promptId': prompt.prompt_id,
+                            'viewId': mask_request.view_id,
+                            'frameDigest': mask_request.rgb_digest,
+                            'frameWidth': mask_request.width,
+                            'frameHeight': mask_request.height,
+                            'xPx': prompt.x_px,
+                            'yPx': prompt.y_px,
+                            'polarity': prompt.polarity,
+                        },
+                    }
+                    for prompt in mask_request.prompts
+                ]
+                production = adapter.produce_tracks(
+                    model=model,
+                    frame_set=frame_set,
+                    prompt_log=prompt_log,
+                    cancelled=lambda: False,
+                )
+            except MaskSessionError:
+                raise
+            except Exception as error:
+                raise MaskSessionError(
+                    'modelFailure',
+                    'The promptable-mask adapter failed; verify the installed model runtime and retry.',
+                ) from error
+            tracks, _diagnostics, _threshold = self._normalise_mask_production(
+                production
+            )
+            self._validate_complete_tracks(frame_set, prompt_log, tracks)
+            primary_track = next(
+                track for track in tracks if track['trackId'] == 'primary'
+            )
+            anchor_frame = next(
+                frame
+                for frame in primary_track['frames']
+                if frame['viewId'] == mask_request.view_id
+            )
+            binary_mask = anchor_frame['binaryMask']
+            # The single-frame product contract publishes bitset bytes only;
+            # dimensions, payload length, and trailing bits were validated
+            # with the complete tracks above.
+            if binary_mask.get('encoding') != 'bitset-lsb-v1':
+                raise MaskSessionError(
+                    'incompleteMaskSet',
+                    'A single-frame SAM mask must use the bitset-lsb-v1 encoding.',
+                )
+            mask_bytes = base64.b64decode(binary_mask['data'], validate=True)
+            response = {
+                'status': 'complete',
+                **mask_request.response_fields(),
+                'mask': {
+                    'encoding': 'bitset-lsb-v1',
+                    'width': mask_request.width,
+                    'height': mask_request.height,
+                    'data': binary_mask['data'],
+                    'digest': f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}',
+                },
+                'maskSource': 'single-frame-sam',
+            }
+        except MaskSessionError as error:
+            self._complete_mask_request(mask_key, admission, failure=error)
+            raise
+        except Exception as error:
+            failure = MaskSessionError(
+                'modelFailure',
+                'The promptable-mask adapter failed while publishing the single-frame mask.',
+            )
+            self._complete_mask_request(mask_key, admission, failure=failure)
+            raise failure from error
+
+        self._complete_mask_request(mask_key, admission, response=response)
+        return response
+
+    def _parse_ai_select_mask_request(
+        self, request: Mapping[str, object]
+    ) -> AISelectMaskRequest:
+        request_binding_value = request.get('requestBinding')
+        if not isinstance(request_binding_value, dict):
+            raise ValueError('AI Select Mask requestBinding must be an object')
+        dependency_value = request_binding_value.get('dependencyToken')
+        if not isinstance(dependency_value, dict):
+            raise ValueError(
+                'AI Select Mask requestBinding dependencyToken must be an object'
+            )
+        target_splat_id = _mask_request_string(
+            request.get('targetSplatId'), 'targetSplatId'
+        )
+        dependency_token = {
+            'splatId': _mask_request_string(
+                dependency_value.get('splatId'), 'dependency splatId'
+            ),
+            'renderStateToken': _mask_request_string(
+                dependency_value.get('renderStateToken'), 'dependency renderStateToken'
+            ),
+            'geometryToken': _mask_request_string(
+                dependency_value.get('geometryToken'), 'dependency geometryToken'
+            ),
+            'gaussianIdentityToken': _mask_request_string(
+                dependency_value.get('gaussianIdentityToken'),
+                'dependency gaussianIdentityToken',
+            ),
+            'worldTransformToken': _mask_request_string(
+                dependency_value.get('worldTransformToken'),
+                'dependency worldTransformToken',
+            ),
+        }
+        if dependency_token['splatId'] != target_splat_id:
+            raise ValueError(
+                'AI Select Mask targetSplatId must match its dependency splatId'
+            )
+        request_binding: dict[str, object] = {
+            'targetContextId': _mask_request_string(
+                request_binding_value.get('targetContextId'), 'targetContextId'
+            ),
+            'contextRevision': _mask_request_nonnegative_integer(
+                request_binding_value.get('contextRevision'), 'contextRevision'
+            ),
+            'dependencyToken': dependency_token,
+        }
+        scene_id = _mask_request_string(request.get('sceneId'), 'sceneId')
+        scene_version = _mask_request_string(request.get('sceneVersion'), 'sceneVersion')
+        view_id = _mask_request_string(request.get('viewId'), 'viewId')
+        mask_attempt_id = _mask_request_string(
+            request.get('maskAttemptId'), 'maskAttemptId'
+        )
+        model_manifest_digest = _mask_request_string(
+            request.get('modelManifestDigest'), 'modelManifestDigest'
+        )
+        rgb_png, rgb_digest, width, height = self._parse_ai_select_mask_rgb(
+            request.get('rgb')
+        )
+        prompts = self._parse_ai_select_mask_prompts(
+            request.get('prompts'), width=width, height=height
+        )
+        return AISelectMaskRequest(
+            request_binding=request_binding,
+            target_splat_id=target_splat_id,
+            scene_id=scene_id,
+            scene_version=scene_version,
+            view_id=view_id,
+            mask_attempt_id=mask_attempt_id,
+            rgb_png=rgb_png,
+            rgb_digest=rgb_digest,
+            width=width,
+            height=height,
+            prompts=prompts,
+            model_manifest_digest=model_manifest_digest,
+        )
+
+    @staticmethod
+    def _parse_ai_select_mask_rgb(value: object) -> tuple[bytes, str, int, int]:
+        if not isinstance(value, dict):
+            raise ValueError('AI Select Mask rgb must be an object')
+        png_base64 = value.get('pngBase64')
+        if not isinstance(png_base64, str) or not png_base64:
+            raise ValueError('AI Select Mask rgb pngBase64 must be a non-empty string')
+        try:
+            png = base64.b64decode(png_base64, validate=True)
+        except (ValueError, binascii.Error) as error:
+            raise ValueError(
+                'AI Select Mask rgb pngBase64 must be valid base64'
+            ) from error
+        digest = value.get('digest')
+        if (
+            not isinstance(digest, str)
+            or len(digest) != len('sha256:') + 64
+            or not digest.startswith('sha256:')
+            or any(character not in '0123456789abcdef' for character in digest[7:])
+        ):
+            raise ValueError(
+                'AI Select Mask rgb digest must be a sha256:<64 hex> digest'
+            )
+        if f'sha256:{hashlib.sha256(png).hexdigest()}' != digest:
+            raise ValueError(
+                'AI Select Mask rgb digest does not match its pngBase64 bytes'
+            )
+        width = _mask_request_positive_integer(value.get('width'), 'rgb width')
+        height = _mask_request_positive_integer(value.get('height'), 'rgb height')
+        return png, digest, width, height
+
+    @staticmethod
+    def _parse_ai_select_mask_prompts(
+        value: object, *, width: int, height: int
+    ) -> tuple[AISelectMaskPrompt, ...]:
+        if not isinstance(value, list) or not value:
+            raise ValueError('AI Select Mask prompts must be a non-empty list')
+        prompts: list[AISelectMaskPrompt] = []
+        for index, entry in enumerate(value):
+            if not isinstance(entry, dict):
+                raise ValueError(f'AI Select Mask prompts[{index}] must be an object')
+            prompt_id = _mask_request_string(
+                entry.get('promptId'), f'prompts[{index}] promptId'
+            )
+            x_px = _mask_request_nonnegative_integer(
+                entry.get('xPx'), f'prompts[{index}] xPx'
+            )
+            y_px = _mask_request_nonnegative_integer(
+                entry.get('yPx'), f'prompts[{index}] yPx'
+            )
+            if x_px >= width or y_px >= height:
+                raise ValueError(
+                    f'AI Select Mask prompts[{index}] must address an in-bounds pixel'
+                )
+            polarity = entry.get('polarity')
+            if polarity not in ('include', 'exclude'):
+                raise ValueError(
+                    f'AI Select Mask prompts[{index}] polarity must be include or exclude'
+                )
+            prompts.append(
+                AISelectMaskPrompt(
+                    prompt_id=prompt_id, x_px=x_px, y_px=y_px, polarity=polarity
+                )
+            )
+        return tuple(prompts)
 
     def register_frame_set(self, payload: dict[str, Any]) -> RegisteredFrameSet:
         """Cache one immutable Frame Set without exposing model-private handles."""
@@ -2330,8 +2681,97 @@ class CompanionState:
                 self._active_anchor_render = None
             admission.completed.set()
 
+    @staticmethod
+    def _mask_request_key(request: AISelectMaskRequest) -> str:
+        """Canonicalize every immutable input that can affect one mask attempt."""
+
+        return json.dumps(
+            request.identity_fields(),
+            separators=(',', ':'),
+            sort_keys=True,
+            allow_nan=False,
+        )
+
+    def _admit_mask_request(
+        self, request: AISelectMaskRequest
+    ) -> tuple[str, MaskRequestAdmission, bool]:
+        """Reserve or join one bound mask attempt without holding locks for it."""
+
+        key = self._mask_request_key(request)
+        with self._session_lock:
+            admission = self._mask_admissions.get(key)
+            if admission is not None:
+                return key, admission, False
+            if (
+                self._active_object_selection_session is not None
+                or self._active_anchor_render is not None
+                or self._active_mask_request is not None
+            ):
+                raise MaskSessionError(
+                    'capacityFull',
+                    'The Companion is already serving another AI or Object Selection operation.',
+                )
+            # A replay record can contain a full-resolution mask. Retain only
+            # the most recent completed request for lost-response recovery;
+            # a different current binding makes older products stale anyway.
+            self._mask_admissions = {
+                completed_key: completed_admission
+                for completed_key, completed_admission
+                in self._mask_admissions.items()
+                if not completed_admission.completed.is_set()
+            }
+            admission = MaskRequestAdmission()
+            self._mask_admissions[key] = admission
+            self._active_mask_request = key
+        return key, admission, True
+
+    @staticmethod
+    def _replay_mask_request(admission: MaskRequestAdmission) -> dict[str, object]:
+        """Wait for a matching request, then return only its immutable outcome."""
+
+        admission.completed.wait()
+        if admission.publication is not None:
+            return json.loads(admission.publication)
+        if admission.failure is not None:
+            raise MaskSessionError(*admission.failure)
+        raise MaskSessionError(
+            'modelFailure',
+            'The Companion lost a single-frame mask publication before it completed.',
+        )
+
+    def _complete_mask_request(
+        self,
+        key: str,
+        admission: MaskRequestAdmission,
+        *,
+        response: dict[str, object] | None = None,
+        failure: MaskSessionError | None = None,
+    ) -> None:
+        """Atomically publish one replay result and release the single slot."""
+
+        if (response is None) == (failure is None):
+            raise ValueError('AI Select Mask completion requires one outcome')
+        publication = None
+        if response is not None:
+            publication = json.dumps(
+                response, separators=(',', ':'), sort_keys=True, allow_nan=False
+            )
+        with self._session_lock:
+            current = self._mask_admissions.get(key)
+            if current is not admission:
+                return
+            if publication is not None:
+                admission.publication = publication
+            else:
+                assert failure is not None
+                admission.failure = (failure.code, str(failure))
+            if self._active_mask_request == key:
+                self._active_mask_request = None
+            admission.completed.set()
+
     def _release_all_transient_caches_locked(self) -> None:
         self._anchor_render_admissions.clear()
+        self._mask_admissions.clear()
         with self._frame_lock:
             self._frame_sets.clear()
         with self._scene_lock:
@@ -2724,6 +3164,7 @@ class CompanionState:
                 "activeSessions": int(
                     self._active_object_selection_session is not None
                     or self._active_anchor_render is not None
+                    or self._active_mask_request is not None
                 ),
             }
 

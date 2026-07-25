@@ -1280,3 +1280,171 @@ test('rejects a Mask Set with a malformed accepted binary mask', async () => {
         /complete, version-bound Mask Set/
     );
 });
+
+const maskRequest = {
+    requestBinding: anchorRequest.requestBinding,
+    target: anchorRequest.target,
+    sceneId: anchorSnapshot.sceneId,
+    sceneVersion: anchorSnapshot.sceneVersion,
+    viewId: 'anchor-view',
+    maskAttemptId: 'mask-attempt-1',
+    rgb: {
+        pngBase64: anchorPng(64, 48).pngBase64,
+        digest: `sha256:${'a'.repeat(64)}`,
+        width: 64,
+        height: 48
+    },
+    prompts: [{ promptId: 'prompt-1', xPx: 10, yPx: 12, polarity: 'include' }],
+    modelManifestDigest: 'sha256:model-v1'
+};
+
+const maskBitset = (width, height, foreground = [[10, 12]]) => {
+    const bytes = new Uint8Array(Math.ceil((width * height) / 8));
+    for (const [x, y] of foreground) {
+        const index = y * width + x;
+        bytes[index >> 3] |= 1 << (index % 8);
+    }
+    return {
+        encoding: 'bitset-lsb-v1',
+        width,
+        height,
+        data: Buffer.from(bytes).toString('base64'),
+        digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}`
+    };
+};
+
+const maskReply = (request, overrides = {}) => ({
+    status: 'complete',
+    requestBinding: request.requestBinding,
+    targetSplatId: request.target.splatId,
+    sceneId: request.sceneId,
+    sceneVersion: request.sceneVersion,
+    viewId: request.viewId,
+    maskAttemptId: request.maskAttemptId,
+    rgbDigest: request.rgb.digest,
+    mask: maskBitset(request.rgb.width, request.rgb.height),
+    maskSource: 'single-frame-sam',
+    modelManifestDigest: request.modelManifestDigest,
+    ...overrides
+});
+
+test('sends a bound single-frame Mask request and returns the validated Mask result', async () => {
+    const calls = [];
+    const adapter = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:model-v1'
+        }),
+        fetch: async (url, init) => {
+            calls.push({ url, init, body: responseBody(init.body) });
+            return new Response(JSON.stringify(maskReply(maskRequest)), {
+                status: 200
+            });
+        }
+    });
+
+    const response = await adapter.produceMask(maskRequest);
+
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].url, /\/ai-select\/masks$/);
+    assert.equal(calls[0].init.method, 'POST');
+    assert.deepEqual(calls[0].body.requestBinding, maskRequest.requestBinding);
+    assert.deepEqual(calls[0].body.prompts, maskRequest.prompts);
+    assert.equal(calls[0].body.maskAttemptId, 'mask-attempt-1');
+    assert.equal(response.mask.digest, maskReply(maskRequest).mask.digest);
+    assert.equal(response.maskSource, 'single-frame-sam');
+});
+
+test('rejects a Mask response bound to a stale attempt or RGB identity', async () => {
+    const staleAttempt = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:model-v1'
+        }),
+        fetch: async () =>
+            new Response(
+                JSON.stringify(
+                    maskReply(maskRequest, { maskAttemptId: 'mask-attempt-2' })
+                ),
+                { status: 200 }
+            )
+    });
+    await assert.rejects(
+        staleAttempt.produceMask(maskRequest),
+        /incomplete or stale Mask result/
+    );
+
+    const staleRgb = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:model-v1'
+        }),
+        fetch: async () =>
+            new Response(
+                JSON.stringify(
+                    maskReply(maskRequest, {
+                        rgbDigest: `sha256:${'b'.repeat(64)}`
+                    })
+                ),
+                { status: 200 }
+            )
+    });
+    await assert.rejects(
+        staleRgb.produceMask(maskRequest),
+        /incomplete or stale Mask result/
+    );
+});
+
+test('rejects a Mask artifact whose bytes do not match its digest', async () => {
+    const tampered = maskBitset(64, 48, [[1, 1]]);
+    tampered.data = maskBitset(64, 48, [[2, 2]]).data;
+    const adapter = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:model-v1'
+        }),
+        fetch: async () =>
+            new Response(
+                JSON.stringify(maskReply(maskRequest, { mask: tampered })),
+                {
+                    status: 200
+                }
+            )
+    });
+    await assert.rejects(
+        adapter.produceMask(maskRequest),
+        /incomplete or stale Mask result/
+    );
+});
+
+test('surfaces a Companion Mask error without publishing anything', async () => {
+    const adapter = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:model-v1'
+        }),
+        fetch: async () =>
+            new Response(
+                JSON.stringify({
+                    status: 'maskError',
+                    code: 'anchorMaskUnavailable',
+                    message: 'SAM found no foreground mask for the prompts.'
+                }),
+                { status: 409 }
+            )
+    });
+    await assert.rejects(adapter.produceMask(maskRequest), /HTTP 409/);
+});
+
+test('rejects a Mask request that is not bound to the configured Model Manifest', async () => {
+    const adapter = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:other-model'
+        }),
+        fetch: async () => {
+            throw new Error('must not be called');
+        }
+    });
+    await assert.rejects(adapter.produceMask(maskRequest));
+});

@@ -4,6 +4,7 @@ import { Color, Vec3, createGraphicsDevice } from 'playcanvas';
 import { AISelectAnchorController } from './ai-select/anchor-controller';
 import { CameraInspectionController } from './ai-select/camera-inspection';
 import { AnchorFrustumManipulator } from './ai-select/camera-inspection-manipulator';
+import { AISelectMaskController } from './ai-select/mask-controller';
 import { AnchorFrustum } from './ai-select-anchor-frustum';
 import { AISelectEditorTargetFactory } from './ai-select-editor-target';
 import { registerCameraPosesEvents } from './camera-poses';
@@ -387,6 +388,12 @@ const main = async () => {
     const aiSelectController = new AISelectAnchorController({
         renderer: selectionServiceAdapter
     });
+    const aiSelectMaskController = new AISelectMaskController({
+        anchor: aiSelectController,
+        maskProvider: selectionServiceAdapter,
+        getModelManifestDigest: () =>
+            selectionServiceReadiness.state.configuration.modelManifestDigest
+    });
     const cameraInspection = new CameraInspectionController({
         anchor: aiSelectController,
         editor: {
@@ -466,20 +473,24 @@ const main = async () => {
         aiSelectTargetSplat = null;
         events.fire('tool.deactivate');
     };
-    const aiSelectDock = new AISelectAnchorDock(aiSelectController, {
-        onRetry: () => aiSelectController.retryAnchorPreview(),
-        onReconnect: async () => {
-            await selectionServiceReadiness.refresh();
-            if (selectionServiceReadiness.state.status !== 'ready') {
-                const { diagnostic } = selectionServiceReadiness.state;
-                throw new Error(
-                    `${diagnostic.message} ${diagnostic.action}`.trim()
-                );
-            }
-            await startAISelect(true);
-        },
-        onOpenSettings: () => events.fire('settingsPanel.setVisible', true)
-    });
+    const aiSelectDock = new AISelectAnchorDock(
+        aiSelectController,
+        aiSelectMaskController,
+        {
+            onRetry: () => aiSelectController.retryAnchorPreview(),
+            onReconnect: async () => {
+                await selectionServiceReadiness.refresh();
+                if (selectionServiceReadiness.state.status !== 'ready') {
+                    const { diagnostic } = selectionServiceReadiness.state;
+                    throw new Error(
+                        `${diagnostic.message} ${diagnostic.action}`.trim()
+                    );
+                }
+                await startAISelect(true);
+            },
+            onOpenSettings: () => events.fire('settingsPanel.setVisible', true)
+        }
+    );
     const aiSelectToolbar = new AISelectToolbar(
         aiSelectController,
         cameraInspection,

@@ -88,6 +88,13 @@
         flex-shrink: 0;
     }
 
+    #ai-select-anchor-dock-image-wrap {
+        position: relative;
+        width: 100%;
+        min-height: 0;
+        flex-shrink: 1;
+    }
+
     #ai-select-anchor-dock-image {
         width: 100%;
         min-height: 0;
@@ -95,6 +102,33 @@
         flex-shrink: 1;
         object-fit: contain;
         background-color: black;
+        cursor: crosshair;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-drag: none;
+    }
+
+    #ai-select-anchor-dock-mask-overlay {
+        position: absolute;
+        pointer-events: none;
+        image-rendering: pixelated;
+    }
+
+    #ai-select-anchor-dock-mask-status {
+        color: $text-secondary;
+        white-space: normal;
+        word-break: break-word;
+        flex-shrink: 0;
+    }
+}
+
+#ai-select-anchor-dock-mask-actions {
+    gap: 6px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+
+    &:not(.pcui-hidden) {
+        display: flex;
     }
 }
 

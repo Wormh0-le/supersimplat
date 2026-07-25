@@ -18,6 +18,14 @@ import {
     isAIRequestBinding
 } from './ai-select/current-target-context';
 import {
+    isAIViewMaskRequest,
+    isMaskResultResponse,
+    maskResponseMatchesRequest,
+    type AISelectMaskProvider,
+    type AIViewMaskRequest,
+    type MaskResultResponse
+} from './ai-select/mask-service';
+import {
     assertCompleteMaskSet,
     assertCoverageReport,
     assertEvidenceSnapshot,
@@ -188,7 +196,10 @@ const transportError = (
 ) => new SelectionServiceTransportError(code, message, details);
 
 class FetchSelectionServiceAdapter
-    implements SelectionServiceAdapter, AISelectAnchorRenderer
+    implements
+        SelectionServiceAdapter,
+        AISelectAnchorRenderer,
+        AISelectMaskProvider
 {
     private getConfiguration: () => SelectionServiceTransportConfiguration;
     private supportsCameraAwareSpatialWorkingSet: () => boolean;
@@ -1093,6 +1104,45 @@ class FetchSelectionServiceAdapter
             value.status === 'sceneCacheMiss' &&
             this.hasMatchingAnchorBindings(value, request)
         );
+    }
+
+    /**
+     * Request one single-frame SAM mask from the Companion. The response is
+     * untrusted until every bound identity, the exact RGB digest/dimensions,
+     * and the artifact digest verify; anything less is a transport failure,
+     * never a publishable Mask.
+     */
+    async produceMask(request: AIViewMaskRequest): Promise<MaskResultResponse> {
+        if (!isAIViewMaskRequest(request)) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select requires a complete bound Mask request.'
+            );
+        }
+        this.assertConfiguredModelManifest(request.modelManifestDigest);
+        const result = await this.requestJson('/ai-select/masks', 'POST', {
+            requestBinding: request.requestBinding,
+            targetSplatId: request.target.splatId,
+            sceneId: request.sceneId,
+            sceneVersion: request.sceneVersion,
+            viewId: request.viewId,
+            maskAttemptId: request.maskAttemptId,
+            rgb: request.rgb,
+            prompts: request.prompts,
+            modelManifestDigest: request.modelManifestDigest
+        });
+        if (
+            !isRecord(result) ||
+            result.status !== 'complete' ||
+            !isMaskResultResponse(result) ||
+            !maskResponseMatchesRequest(result, request)
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an incomplete or stale Mask result.'
+            );
+        }
+        return result;
     }
 
     private isMatchingAnchorSceneChunkMiss(

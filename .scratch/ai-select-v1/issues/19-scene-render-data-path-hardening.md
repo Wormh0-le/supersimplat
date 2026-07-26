@@ -18,6 +18,7 @@ Blocked by: 18, 14
 - Reference Evidence/Lift contract
 - Representative large Gaussian scenes
 - Existing spatial SceneSnapshot implementation and measured profiles
+- Editor fetch-adapter scene-miss recovery loops (five near-identical copies since Ticket 06, plus any added by Tickets 07–14): fold their dedup into this ticket as a first subtask — extract one parameterized recovery loop with the existing per-route tests as the safety net (Ticket 06 handoff)
 
 ## Outputs / handoff artifacts
 

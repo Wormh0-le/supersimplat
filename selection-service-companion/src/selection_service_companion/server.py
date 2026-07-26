@@ -289,14 +289,9 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         try:
             request = self._read_json_body()
             response = self._state.render_ai_select_anchor(request, timing=timing)
-        except ValueError as error:
-            self._send_json(
-                HTTPStatus.BAD_REQUEST,
-                {"status": "invalidRequest", "message": str(error)},
-                server_timing=timing,
-            )
-            return
         except MaskSessionError as error:
+            # MaskSessionError subclasses ValueError, so the actionable 409
+            # branch must be matched before the generic 400 validation branch.
             self._send_json(
                 HTTPStatus.CONFLICT,
                 {
@@ -304,6 +299,13 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
                     "code": error.code,
                     "message": str(error),
                 },
+                server_timing=timing,
+            )
+            return
+        except ValueError as error:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"status": "invalidRequest", "message": str(error)},
                 server_timing=timing,
             )
             return

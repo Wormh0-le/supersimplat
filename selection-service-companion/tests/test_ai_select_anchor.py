@@ -296,6 +296,62 @@ class AISelectAnchorRouteTests(unittest.TestCase):
         self.assertEqual(response['cameraBinding'], self.request_body()['cameraBinding'])
         self.assertEqual(self.renderer.calls, [])
 
+    def test_maps_a_renderer_failure_to_a_409_anchor_render_error(self) -> None:
+        class FailingAnchorFixtureRenderer(AnchorFixtureRenderer):
+            def render_anchor(self, **kwargs: object) -> AnchorRenderArtifact:
+                raise RuntimeError('synthetic renderer explosion')
+
+        self.state.contributor_renderer = FailingAnchorFixtureRenderer()  # type: ignore[assignment]
+        self.state.register_scene_snapshot(self.snapshot())
+
+        with self.assertRaises(HTTPError) as error:
+            urlopen(Request(
+                f'{self.endpoint}/ai-select/anchor-renders',
+                data=json.dumps(self.request_body()).encode(),
+                method='POST',
+                headers={'Origin': EDITOR_ORIGIN, 'Content-Type': 'application/json'},
+            ))
+
+        self.assertEqual(error.exception.code, HTTPStatus.CONFLICT)
+        payload = json.load(error.exception)
+        self.assertEqual(payload['status'], 'anchorRenderError')
+        self.assertEqual(payload['code'], 'rendererFailure')
+
+    def test_maps_a_capacity_conflict_to_a_409_anchor_render_error(self) -> None:
+        self.state.register_scene_snapshot(self.snapshot())
+        renderer = BlockingAnchorFixtureRenderer()
+        self.state.contributor_renderer = renderer  # type: ignore[assignment]
+        first: dict[str, object] = {}
+
+        def post_first() -> None:
+            first['response'] = self.request_json(
+                '/ai-select/anchor-renders', 'POST', self.request_body()
+            )
+
+        worker = Thread(target=post_first, daemon=True)
+        worker.start()
+        self.assertTrue(renderer.started.wait(timeout=1))
+
+        competing_request = self.request_body()
+        competing_request['requestBinding']['contextRevision'] = 1  # type: ignore[index]
+        with self.assertRaises(HTTPError) as error:
+            urlopen(Request(
+                f'{self.endpoint}/ai-select/anchor-renders',
+                data=json.dumps(competing_request).encode(),
+                method='POST',
+                headers={'Origin': EDITOR_ORIGIN, 'Content-Type': 'application/json'},
+            ))
+
+        self.assertEqual(error.exception.code, HTTPStatus.CONFLICT)
+        payload = json.load(error.exception)
+        self.assertEqual(payload['status'], 'anchorRenderError')
+        self.assertEqual(payload['code'], 'capacityFull')
+
+        renderer.release.set()
+        worker.join(timeout=5)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(first['response']['status'], 'complete')  # type: ignore[index]
+
     def test_rejects_a_request_whose_target_and_dependency_bindings_disagree(self) -> None:
         request = self.request_body()
         request['requestBinding']['dependencyToken']['splatId'] = 'other-splat'  # type: ignore[index]

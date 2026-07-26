@@ -472,7 +472,9 @@ export const isAnchorRenderRequest = (
     );
 };
 
-const isAnchorRgbArtifact = (value: unknown): value is AnchorRgbArtifact => {
+export const isAnchorRgbArtifact = (
+    value: unknown
+): value is AnchorRgbArtifact => {
     return (
         isRecord(value) &&
         isBase64(value.pngBase64) &&

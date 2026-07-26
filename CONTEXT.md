@@ -140,6 +140,10 @@ _Avoid_: stable lifting input
 The atomic publication that promotes the current Editing Mask to the new Stable Mask. It makes dependent per-view Evidence stale and may make the Candidate stale; it does not modify Native Selection.  
 _Avoid_: Selection Commit
 
+**Automatic Mask Publication**  
+The atomic publication of an automatic (propagated) Mask directly as a Stable Mask for a Generated View, without an Editing Mask or user confirmation. Until evidence-backed View Assessment refines the label, the unassessed automatic Mask publishes as Auto Review, the fail-closed default whose Participation stays Excluded.  
+_Avoid_: auto-confirm, hidden Lift participation
+
 **Mask Quality / View Assessment**  
 The automatic quality state attached to an automatic Mask/View, typically Auto Good, Auto Review, or Failed. It is separate from Participation and is not a calibrated universal confidence probability.  
 _Avoid_: participation flag, unified confidence percentage

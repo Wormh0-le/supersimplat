@@ -532,6 +532,29 @@ export class AISelectAnchorController {
         });
     }
 
+    /**
+     * The stale-result gate for target-bound Generated View work (Final Spec
+     * v1.1 §27): the same kernel acceptance the Anchor applies, shared so a
+     * late plan/render/mask result is discarded whenever the Current Target
+     * Context moved on or its dependency token suspended.
+     */
+    acceptsTargetBinding(binding: unknown): boolean {
+        const effectiveDependencyToken = this.getCurrentDependencyToken?.();
+        if (effectiveDependencyToken === undefined) {
+            return false;
+        }
+        return this.contexts.acceptsResult(binding, effectiveDependencyToken);
+    }
+
+    /**
+     * The active immutable Scene Snapshot for target-bound Generated View
+     * requests. It is shared by reference and stays editor-owned; callers
+     * must not mutate it.
+     */
+    getAnchorSnapshot(): PackedSceneSnapshot | null {
+        return this.activeRequest?.snapshot ?? null;
+    }
+
     private async begin(
         input: StartAnchorInput,
         restart: boolean

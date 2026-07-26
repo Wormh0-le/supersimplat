@@ -22,8 +22,10 @@ export type MaskSource =
 
 /**
  * Editing Masks stay `draft` until Confirm Mask publishes them as
- * `user-confirmed`. `auto-good`/`auto-review` arrive with evidence-backed
- * View Assessment (Ticket 07); nothing here fabricates a quality label.
+ * `user-confirmed`. Automatic cross-view Masks publish directly as Stable
+ * with the fail-closed `auto-review` label (Excluded from Lift by default);
+ * Ticket 07's evidence-backed View Assessment owns the `auto-good` upgrade
+ * and structured review reasons. Nothing fabricates a quality label.
  */
 export type MaskLifecycleStatus =
     'draft' | 'auto-good' | 'auto-review' | 'user-confirmed';

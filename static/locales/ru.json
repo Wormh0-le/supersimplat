@@ -382,5 +382,20 @@
   "ai-select.validation.soft.fragmented-mask": "Маска фрагментирована.",
   "ai-select.validation.soft.weak-visible-support": "Видимая гауссова поддержка слабая.",
   "ai-select.restart-confirm-message": "Перезапустить текущую цель? Якорь, ИИ-виды, маски и прогресс проверки будут удалены. Нативное выделение не изменится.",
-  "ai-select.anchor-discard-message": "Изменение якоря удалит неподтверждённые правки промптов и маски. Продолжить?"
+  "ai-select.anchor-discard-message": "Изменение якоря удалит неподтверждённые правки промптов и маски. Продолжить?",
+  "ai-select.views.anchor": "Якорь",
+  "ai-select.views.generated": "Вид",
+  "ai-select.views.planner.planning": "Планирование созданных видов…",
+  "ai-select.views.planner.failed": "Не удалось спланировать созданные виды.",
+  "ai-select.views.planner.retry": "Повторить планирование",
+  "ai-select.views.retry-render": "Повторить рендер",
+  "ai-select.views.status.pending": "Ожидание",
+  "ai-select.views.status.rendering": "Рендеринг…",
+  "ai-select.views.status.ready": "RGB готов",
+  "ai-select.views.status.failed": "Ошибка рендеринга",
+  "ai-select.views.status.mask-none": "Маски пока нет",
+  "ai-select.views.status.mask-generating": "Создание маски…",
+  "ai-select.views.status.mask-ready": "Маска готова",
+  "ai-select.views.status.mask-failed": "Ошибка маски",
+  "ai-select.views.status.evidence-not-requested": "Evidence не запрошено"
 }

@@ -382,5 +382,20 @@
   "ai-select.validation.soft.fragmented-mask": "A máscara está fragmentada.",
   "ai-select.validation.soft.weak-visible-support": "O suporte gaussiano visível é fraco.",
   "ai-select.restart-confirm-message": "Reiniciar o alvo atual? A âncora, as visualizações de IA, as máscaras e o progresso da validação são descartados. A seleção nativa não muda.",
-  "ai-select.anchor-discard-message": "Alterar a âncora descarta edições não confirmadas de prompts e máscara. Continuar?"
+  "ai-select.anchor-discard-message": "Alterar a âncora descarta edições não confirmadas de prompts e máscara. Continuar?",
+  "ai-select.views.anchor": "Âncora",
+  "ai-select.views.generated": "Visualização",
+  "ai-select.views.planner.planning": "Planejando visualizações geradas…",
+  "ai-select.views.planner.failed": "Falha ao planejar visualizações geradas.",
+  "ai-select.views.planner.retry": "Tentar planejar novamente",
+  "ai-select.views.retry-render": "Tentar renderizar novamente",
+  "ai-select.views.status.pending": "Pendente",
+  "ai-select.views.status.rendering": "Renderizando…",
+  "ai-select.views.status.ready": "RGB pronta",
+  "ai-select.views.status.failed": "Falha na renderização",
+  "ai-select.views.status.mask-none": "Ainda sem máscara",
+  "ai-select.views.status.mask-generating": "Gerando máscara…",
+  "ai-select.views.status.mask-ready": "Máscara pronta",
+  "ai-select.views.status.mask-failed": "Falha na máscara",
+  "ai-select.views.status.evidence-not-requested": "Evidência não solicitada"
 }

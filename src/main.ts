@@ -5,9 +5,12 @@ import { AISelectAnchorConfirmationController } from './ai-select/anchor-confirm
 import { AISelectAnchorController } from './ai-select/anchor-controller';
 import { CameraInspectionController } from './ai-select/camera-inspection';
 import { AnchorFrustumManipulator } from './ai-select/camera-inspection-manipulator';
+import { pickGeneratedViewFrustum } from './ai-select/generated-frustum-picking';
+import { AISelectGeneratedViewController } from './ai-select/generated-view-controller';
 import { AISelectMaskController } from './ai-select/mask-controller';
 import { AnchorFrustum } from './ai-select-anchor-frustum';
 import { AISelectEditorTargetFactory } from './ai-select-editor-target';
+import { GeneratedViewFrustums } from './ai-select-generated-frustums';
 import { registerCameraPosesEvents } from './camera-poses';
 import { CommandQueue } from './command-queue';
 import { registerDocEvents } from './doc';
@@ -408,6 +411,26 @@ const main = async () => {
         mask: aiSelectMaskController,
         supportProbe: selectionServiceAdapter
     });
+    // Confirm Anchor starts automatic Generated View planning: the Companion
+    // owns cameras, the editor publishes each View progressively as
+    // authoritative RGB arrives, and automatic Mask production follows
+    // independently per View. Older Companions without the additive
+    // capability fail planning closed with an actionable diagnostic.
+    const aiSelectGeneratedViews = new AISelectGeneratedViewController({
+        anchor: aiSelectController,
+        confirmation: aiSelectConfirmation,
+        maskRegistry: aiSelectMaskController.maskRegistry,
+        evidenceRegistry: aiSelectMaskController.evidenceRegistry,
+        planner: selectionServiceAdapter,
+        renderer: selectionServiceAdapter,
+        maskProvider: selectionServiceAdapter,
+        getModelManifestDigest: () =>
+            selectionServiceReadiness.state.configuration.modelManifestDigest,
+        supportsGeneratedViews: () =>
+            selectionServiceReadiness.state.capabilities?.supportedOperations.includes(
+                'aiSelectGeneratedViewPlanning'
+            ) ?? false
+    });
     const cameraInspection = new CameraInspectionController({
         anchor: aiSelectController,
         editor: {
@@ -443,6 +466,84 @@ const main = async () => {
         scene,
         controller: aiSelectController,
         inspection: cameraInspection
+    });
+
+    // Generated Frustums derive from the exact planner-owned CameraBindings,
+    // stay read-only, and highlight the Gallery selection in 3D.
+    const generatedFrustums = new GeneratedViewFrustums();
+    await scene.add(generatedFrustums);
+    const updateGeneratedFrustums = () => {
+        const generated = aiSelectGeneratedViews.state;
+        generatedFrustums.setViews(
+            generated.views.map((view) => ({
+                viewId: view.viewId,
+                cameraBinding: view.cameraBinding,
+                selected: generated.selectedViewId === view.viewId
+            }))
+        );
+        generatedFrustums.setVisible(
+            aiSelectController.state.context !== null &&
+                generated.views.length > 0
+        );
+    };
+    aiSelectGeneratedViews.subscribe(updateGeneratedFrustums);
+    aiSelectController.subscribe(updateGeneratedFrustums);
+    // Generated Frustum picking: a click (not an orbit drag) near a frustum's
+    // lines selects its View for Gallery ↔ Frustum sync; all other pointer
+    // work passes through untouched.
+    const pickWorld = new Vec3();
+    const pickProjected = new Vec3();
+    const pickOffset = new Vec3();
+    let pickStart: { x: number; y: number } | null = null;
+    editorUI.canvasContainer.dom.addEventListener('pointerdown', (event) => {
+        if (event.button === 0) {
+            pickStart = { x: event.clientX, y: event.clientY };
+        }
+    });
+    editorUI.canvasContainer.dom.addEventListener('pointerup', (event) => {
+        const start = pickStart;
+        pickStart = null;
+        if (
+            start === null ||
+            event.button !== 0 ||
+            Math.abs(event.clientX - start.x) +
+                Math.abs(event.clientY - start.y) >
+                4 ||
+            aiSelectController.state.context === null ||
+            aiSelectGeneratedViews.state.views.length === 0
+        ) {
+            return;
+        }
+        const rect = editorUI.canvas.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+            return;
+        }
+        const cameraPosition = scene.camera.mainCamera.getPosition();
+        const cameraForward = scene.camera.mainCamera.forward;
+        const viewId = pickGeneratedViewFrustum(
+            aiSelectGeneratedViews.state.views.map((view) => ({
+                viewId: view.viewId,
+                cameraBinding: view.cameraBinding
+            })),
+            (x, y, z) => {
+                pickWorld.set(x, y, z);
+                pickOffset.sub2(pickWorld, cameraPosition);
+                const inFront = pickOffset.dot(cameraForward) > 0;
+                scene.camera.worldToScreen(pickWorld, pickProjected);
+                return { x: pickProjected.x, y: pickProjected.y, inFront };
+            },
+            (event.clientX - rect.left) / rect.width,
+            (event.clientY - rect.top) / rect.height,
+            10 / Math.max(rect.width, rect.height)
+        );
+        if (viewId === null) {
+            return;
+        }
+        try {
+            aiSelectGeneratedViews.selectView(viewId);
+        } catch (error) {
+            console.error(error);
+        }
     });
 
     let aiSelectTargetSplat: Splat | null = null;
@@ -529,6 +630,7 @@ const main = async () => {
         aiSelectMaskController,
         aiSelectConfirmation,
         {
+            generatedViews: aiSelectGeneratedViews,
             onRetry: () => aiSelectController.retryAnchorPreview(),
             onReconnect: async () => {
                 await selectionServiceReadiness.refresh();

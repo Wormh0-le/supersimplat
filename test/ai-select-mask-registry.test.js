@@ -389,6 +389,81 @@ test('latestAutoMask returns the newest SAM version bound to the current RGB onl
     assert.equal(registry.latestAutoMask('anchor-view', rgbDigest('b')), null);
 });
 
+test('publishAutoStable publishes an auto-review Stable Mask without an Editing Mask', () => {
+    const registry = new MaskAnnotationRegistry();
+    const stable = registry.publishAutoStable({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('g'),
+        artifact: samArtifact(8, 8, 0b110),
+        source: 'propagated'
+    });
+    assert.equal(stable.viewId, 'generated-00');
+    assert.equal(stable.source, 'propagated');
+    // Unassessed automatic Masks publish as auto-review (fail-closed default);
+    // Ticket 07 refines the label with evidence-backed View Assessment.
+    assert.equal(stable.status, 'auto-review');
+    assert.equal(stable.createdFromRgbDigest, rgbDigest('g'));
+    const view = registry.viewState('generated-00', rgbDigest('g'));
+    assert.equal(view.stableMask?.maskId, stable.maskId);
+    assert.equal(view.editingMask, null);
+});
+
+test('publishAutoStable atomically replaces the previous Stable revision', () => {
+    const registry = new MaskAnnotationRegistry();
+    const first = registry.publishAutoStable({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('g'),
+        artifact: samArtifact(8, 8, 0b110),
+        source: 'propagated'
+    });
+    const second = registry.publishAutoStable({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('g'),
+        artifact: samArtifact(8, 8, 0b111),
+        source: 'propagated'
+    });
+    assert.notEqual(second.maskId, first.maskId);
+    assert.equal(second.parentMaskId, first.maskId);
+    const view = registry.viewState('generated-00', rgbDigest('g'));
+    assert.equal(view.stableMask?.maskId, second.maskId);
+    // The replaced revision stays retained for inspection.
+    assert.equal(
+        registry.version('generated-00', first.maskId)?.status,
+        'auto-review'
+    );
+});
+
+test('publishAutoStable rejects artifacts whose bytes do not match their digest', () => {
+    const registry = new MaskAnnotationRegistry();
+    const artifact = samArtifact(8, 8, 0b110);
+    assert.throws(() =>
+        registry.publishAutoStable({
+            viewId: 'generated-00',
+            rgbDigest: rgbDigest('g'),
+            artifact: { ...artifact, digest: rgbDigest('f') },
+            source: 'propagated'
+        })
+    );
+    assert.equal(
+        registry.viewState('generated-00', rgbDigest('g')).stableMask,
+        null
+    );
+});
+
+test('an auto-published Stable Mask stops being current when RGB identity changes', () => {
+    const registry = new MaskAnnotationRegistry();
+    registry.publishAutoStable({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('g'),
+        artifact: samArtifact(8, 8, 0b110),
+        source: 'propagated'
+    });
+    assert.equal(
+        registry.viewState('generated-00', rgbDigest('h')).stableMask,
+        null
+    );
+});
+
 test('returned annotations are immutable domain records', () => {
     const registry = new MaskAnnotationRegistry();
     const editing = registry.registerSamResult({

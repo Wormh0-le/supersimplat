@@ -71,6 +71,13 @@ from .support_probe import (
     count_observed_gaussians,
     probe_camera_from_renderer_camera,
 )
+from .generated_view_planning import (
+    AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION,
+    AI_SELECT_GENERATED_VIEW_PLANNER_VERSION,
+    derive_mask_support_seed,
+    plan_first_generated_views,
+    synthesize_view_prompts,
+)
 
 
 DEFAULT_STATE_DIRECTORY = Path.home() / ".local" / "state" / "supersplat-selection-service"
@@ -126,6 +133,7 @@ class AISelectAnchorRequest:
     renderer_camera: dict[str, object]
     width: int
     height: int
+    view_id: str = 'anchor-view'
     scene_transport: str = 'packed-v1'
     reference_contributor: bool = False
 
@@ -137,7 +145,7 @@ class AISelectAnchorRequest:
             'sceneVersion': self.scene_version,
             'renderConfigVersion': self.render_config_version,
             'renderAttemptId': self.render_attempt_id,
-            'viewId': 'anchor-view',
+            'viewId': self.view_id,
             'cameraBinding': self.camera_binding,
         }
 
@@ -145,6 +153,111 @@ class AISelectAnchorRequest:
 @dataclass
 class AnchorRenderAdmission:
     """One private, replayable Anchor publication reserved by request binding."""
+
+    completed: Event = field(default_factory=Event)
+    publication: str | None = None
+    failure: tuple[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class AISelectGeneratedViewPlanRequest:
+    """Validated browser binding for one Generated View planning attempt."""
+
+    request_binding: dict[str, object]
+    target_splat_id: str
+    scene_id: str
+    scene_version: str
+    render_config_version: str
+    plan_attempt_id: str
+    camera_binding: dict[str, object]
+    probe_camera: AnchorSupportProbeCamera
+    anchor_rgb_digest: str
+    stable_mask: bytes
+    stable_mask_digest: str
+    scene_transport: str = 'packed-v1'
+
+    def response_fields(self) -> dict[str, object]:
+        return {
+            'requestBinding': self.request_binding,
+            'targetSplatId': self.target_splat_id,
+            'sceneId': self.scene_id,
+            'sceneVersion': self.scene_version,
+            'renderConfigVersion': self.render_config_version,
+            'planAttemptId': self.plan_attempt_id,
+            'plannerPolicyVersion': AI_SELECT_GENERATED_VIEW_PLANNER_VERSION,
+        }
+
+    def identity_fields(self) -> dict[str, object]:
+        return {
+            **self.response_fields(),
+            'cameraBinding': self.camera_binding,
+            'anchorRgbDigest': self.anchor_rgb_digest,
+            'stableMaskDigest': self.stable_mask_digest,
+            'sceneTransport': self.scene_transport,
+        }
+
+
+@dataclass
+class GeneratedViewPlanAdmission:
+    """One private, replayable plan publication reserved by request binding."""
+
+    completed: Event = field(default_factory=Event)
+    publication: str | None = None
+    failure: tuple[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class AISelectGeneratedViewMaskRequest:
+    """Validated browser binding for one cross-view automatic Mask attempt."""
+
+    request_binding: dict[str, object]
+    target_splat_id: str
+    scene_id: str
+    scene_version: str
+    render_config_version: str
+    view_id: str
+    view_camera_binding: dict[str, object]
+    view_probe_camera: AnchorSupportProbeCamera
+    mask_attempt_id: str
+    rgb_png: bytes
+    rgb_digest: str
+    width: int
+    height: int
+    anchor_camera_binding: dict[str, object]
+    anchor_probe_camera: AnchorSupportProbeCamera
+    anchor_rgb_digest: str
+    stable_mask: bytes
+    stable_mask_digest: str
+    model_manifest_digest: str
+    scene_transport: str = 'packed-v1'
+
+    def response_fields(self) -> dict[str, object]:
+        return {
+            'requestBinding': self.request_binding,
+            'targetSplatId': self.target_splat_id,
+            'sceneId': self.scene_id,
+            'sceneVersion': self.scene_version,
+            'renderConfigVersion': self.render_config_version,
+            'viewId': self.view_id,
+            'maskAttemptId': self.mask_attempt_id,
+        }
+
+    def identity_fields(self) -> dict[str, object]:
+        return {
+            **self.response_fields(),
+            'viewCameraBinding': self.view_camera_binding,
+            'rgbDigest': self.rgb_digest,
+            'anchorCameraBinding': self.anchor_camera_binding,
+            'anchorRgbDigest': self.anchor_rgb_digest,
+            'stableMaskDigest': self.stable_mask_digest,
+            'modelManifestDigest': self.model_manifest_digest,
+            'sceneTransport': self.scene_transport,
+        }
+
+
+@dataclass
+class GeneratedViewMaskAdmission:
+    """One private, replayable automatic Mask reserved by request binding."""
 
     completed: Event = field(default_factory=Event)
     publication: str | None = None
@@ -494,6 +607,26 @@ class CompanionState:
         repr=False,
     )
     _support_probe_admissions: dict[str, SupportProbeAdmission] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _active_generated_view_plan: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _generated_view_plan_admissions: dict[str, GeneratedViewPlanAdmission] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _active_generated_view_mask: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _generated_view_mask_admissions: dict[str, GeneratedViewMaskAdmission] = field(
         default_factory=dict,
         init=False,
         repr=False,
@@ -918,7 +1051,36 @@ class CompanionState:
         *,
         timing: AnchorServerTiming | None = None,
     ) -> dict[str, object]:
-        """Publish one authoritative Anchor RGB product or a bound cache miss.
+        """Publish the authoritative Anchor RGB product or a bound cache miss."""
+
+        return self._render_ai_select_view(
+            request, expected_view_id='anchor-view', timing=timing
+        )
+
+    def render_ai_select_view(
+        self,
+        request: Mapping[str, object],
+        *,
+        timing: AnchorServerTiming | None = None,
+    ) -> dict[str, object]:
+        """Publish one planner-owned Generated View RGB or a bound cache miss.
+
+        This is the Anchor render contract with a planner-owned viewId; the
+        Anchor route keeps its strict ``anchor-view`` reservation.
+        """
+
+        return self._render_ai_select_view(
+            request, expected_view_id=None, timing=timing
+        )
+
+    def _render_ai_select_view(
+        self,
+        request: Mapping[str, object],
+        *,
+        expected_view_id: str | None,
+        timing: AnchorServerTiming | None = None,
+    ) -> dict[str, object]:
+        """Publish one authoritative AI View RGB product or a bound cache miss.
 
         The browser owns target and Scene Snapshot identity. This state method
         validates those untrusted bindings, copies the camera into gsplat's
@@ -926,7 +1088,9 @@ class CompanionState:
         """
 
         anchor_timing = timing or AnchorServerTiming()
-        anchor_request = self._parse_ai_select_anchor_request(request)
+        anchor_request = self._parse_ai_select_anchor_request(
+            request, expected_view_id
+        )
         scene_snapshot: Mapping[str, Any] | PackedBinarySceneSnapshot | SpatialWorkingSet
         with anchor_timing.measure('working-set'):
             if anchor_request.scene_transport == 'spatial-v1':
@@ -1001,7 +1165,7 @@ class CompanionState:
                 if isinstance(renderer, GsplatContributorRenderer):
                     artifact = render_anchor(
                         scene_snapshot=scene_snapshot,
-                        view_id='anchor-view',
+                        view_id=anchor_request.view_id,
                         camera=anchor_request.renderer_camera,
                         width=anchor_request.width,
                         height=anchor_request.height,
@@ -1018,7 +1182,7 @@ class CompanionState:
                     with anchor_timing.measure('gsplat'):
                         artifact = render_anchor(
                             scene_snapshot=scene_snapshot,
-                            view_id='anchor-view',
+                            view_id=anchor_request.view_id,
                             camera=anchor_request.renderer_camera,
                             width=anchor_request.width,
                             height=anchor_request.height,
@@ -1086,7 +1250,9 @@ class CompanionState:
         return response
 
     def _parse_ai_select_anchor_request(
-        self, request: Mapping[str, object]
+        self,
+        request: Mapping[str, object],
+        expected_view_id: str | None = 'anchor-view',
     ) -> AISelectAnchorRequest:
         request_binding_value = request.get('requestBinding')
         if not isinstance(request_binding_value, dict):
@@ -1141,8 +1307,21 @@ class CompanionState:
         render_attempt_id = _anchor_string(
             request.get('renderAttemptId'), 'renderAttemptId'
         )
-        if request.get('viewId') != 'anchor-view':
-            raise ValueError('AI Select Anchor viewId must be anchor-view')
+        view_id_value = request.get('viewId')
+        if expected_view_id is not None:
+            if view_id_value != expected_view_id:
+                raise ValueError(
+                    f'AI Select Anchor viewId must be {expected_view_id}'
+                )
+            view_id = expected_view_id
+        else:
+            if not isinstance(view_id_value, str) or not view_id_value:
+                raise ValueError('AI Select View viewId must be a non-empty string')
+            if view_id_value == 'anchor-view':
+                raise ValueError(
+                    'AI Select View viewId anchor-view is reserved for the Anchor route'
+                )
+            view_id = view_id_value
         scene_transport = request.get('sceneTransport', 'packed-v1')
         if scene_transport not in ('packed-v1', 'spatial-v1'):
             raise ValueError('AI Select Anchor sceneTransport is unsupported')
@@ -1166,6 +1345,7 @@ class CompanionState:
             renderer_camera=renderer_camera,
             width=width,
             height=height,
+            view_id=view_id,
             scene_transport=scene_transport,
             reference_contributor=reference_contributor,
         )
@@ -3184,10 +3364,719 @@ class CompanionState:
         self._anchor_render_admissions.clear()
         self._mask_admissions.clear()
         self._support_probe_admissions.clear()
+        self._generated_view_plan_admissions.clear()
+        self._generated_view_mask_admissions.clear()
         with self._frame_lock:
             self._frame_sets.clear()
         with self._scene_lock:
             self._scene_snapshots.clear()
+
+    def plan_ai_select_generated_views(
+        self, request: Mapping[str, object]
+    ) -> dict[str, object]:
+        """Publish the first planner-owned Generated View camera plan.
+
+        The browser owns the confirmed Anchor identity. This state method
+        validates those untrusted bindings, resolves the scene exactly like
+        the support probe, reserves the single Companion operation slot, then
+        derives the mask-conditioned Seed Region and sweeps the deterministic
+        anchor-relative orbit outside every state lock. Planning is pure CPU
+        geometry: no RGB, no Contributor, no SAM, and no GPU work.
+        """
+
+        plan_request = self._parse_ai_select_generated_view_plan_request(request)
+        planes, miss = self._resolve_ai_select_scene_planes(
+            scene_id=plan_request.scene_id,
+            scene_version=plan_request.scene_version,
+            render_config_version=plan_request.render_config_version,
+            camera_binding=plan_request.camera_binding,
+            scene_transport=plan_request.scene_transport,
+            response_fields=plan_request.response_fields(),
+            failure_code='plannerFailure',
+            failure_label='AI Select Generated View planning',
+        )
+        if miss is not None:
+            return miss
+
+        plan_key, admission, owns_admission = self._admit_generated_view_plan(
+            plan_request
+        )
+        if not owns_admission:
+            return self._replay_generated_view_plan(admission)
+
+        try:
+            try:
+                seed = derive_mask_support_seed(
+                    planes=planes,
+                    camera=plan_request.probe_camera,
+                    mask=plan_request.stable_mask,
+                )
+                if seed is None:
+                    raise MaskSessionError(
+                        'seedUnavailable',
+                        'The confirmed Anchor Stable Mask has no observable Gaussian support for Generated View planning.',
+                    )
+                views = plan_first_generated_views(
+                    camera_binding=plan_request.camera_binding,
+                    seed=seed,
+                )
+            except MaskSessionError:
+                raise
+            except Exception as error:
+                raise MaskSessionError(
+                    'plannerFailure',
+                    'The Companion failed while planning the AI Select Generated Views.',
+                ) from error
+            response = {
+                'status': 'complete',
+                **plan_request.response_fields(),
+                'views': [
+                    {
+                        'viewId': view.view_id,
+                        'cameraBinding': view.camera_binding,
+                    }
+                    for view in views
+                ],
+            }
+        except MaskSessionError as error:
+            self._complete_generated_view_plan(plan_key, admission, failure=error)
+            raise
+        except Exception as error:
+            failure = MaskSessionError(
+                'plannerFailure',
+                'The Companion failed while publishing the AI Select Generated View plan.',
+            )
+            self._complete_generated_view_plan(plan_key, admission, failure=failure)
+            raise failure from error
+
+        self._complete_generated_view_plan(plan_key, admission, response=response)
+        return response
+
+    def _parse_ai_select_generated_view_plan_request(
+        self, request: Mapping[str, object]
+    ) -> AISelectGeneratedViewPlanRequest:
+        request_binding_value = request.get('requestBinding')
+        if not isinstance(request_binding_value, dict):
+            raise ValueError('AI Select Generated View plan requestBinding must be an object')
+        dependency_value = request_binding_value.get('dependencyToken')
+        if not isinstance(dependency_value, dict):
+            raise ValueError(
+                'AI Select Generated View plan requestBinding dependencyToken must be an object'
+            )
+        target_splat_id = _anchor_string(
+            request.get('targetSplatId'), 'targetSplatId'
+        )
+        dependency_token = {
+            'splatId': _anchor_string(dependency_value.get('splatId'), 'dependency splatId'),
+            'renderStateToken': _anchor_string(
+                dependency_value.get('renderStateToken'), 'dependency renderStateToken'
+            ),
+            'geometryToken': _anchor_string(
+                dependency_value.get('geometryToken'), 'dependency geometryToken'
+            ),
+            'gaussianIdentityToken': _anchor_string(
+                dependency_value.get('gaussianIdentityToken'),
+                'dependency gaussianIdentityToken',
+            ),
+            'worldTransformToken': _anchor_string(
+                dependency_value.get('worldTransformToken'),
+                'dependency worldTransformToken',
+            ),
+        }
+        if dependency_token['splatId'] != target_splat_id:
+            raise ValueError(
+                'AI Select Generated View plan targetSplatId must match its dependency splatId'
+            )
+        request_binding: dict[str, object] = {
+            'targetContextId': _anchor_string(
+                request_binding_value.get('targetContextId'), 'targetContextId'
+            ),
+            'contextRevision': _anchor_nonnegative_integer(
+                request_binding_value.get('contextRevision'), 'contextRevision'
+            ),
+            'dependencyToken': dependency_token,
+        }
+        scene_id = _anchor_string(request.get('sceneId'), 'sceneId')
+        scene_version = _anchor_string(request.get('sceneVersion'), 'sceneVersion')
+        if scene_id != target_splat_id:
+            raise ValueError(
+                'AI Select Generated View plan sceneId must match its targetSplatId'
+            )
+        render_config_version = _anchor_string(
+            request.get('renderConfigVersion'), 'renderConfigVersion'
+        )
+        plan_attempt_id = _anchor_string(
+            request.get('planAttemptId'), 'planAttemptId'
+        )
+        anchor_rgb_digest = _anchor_sha256_digest(
+            request.get('anchorRgbDigest'), 'plan anchorRgbDigest'
+        )
+        if (
+            request.get('plannerPolicyVersion')
+            != AI_SELECT_GENERATED_VIEW_PLANNER_VERSION
+        ):
+            raise ValueError(
+                'AI Select Generated View plan plannerPolicyVersion is unsupported'
+            )
+        scene_transport = request.get('sceneTransport', 'packed-v1')
+        if scene_transport not in ('packed-v1', 'spatial-v1'):
+            raise ValueError(
+                'AI Select Generated View plan sceneTransport is unsupported'
+            )
+
+        camera_binding, renderer_camera, width, height = (
+            self._parse_ai_select_anchor_camera(request.get('anchorCameraBinding'))
+        )
+        probe_camera = probe_camera_from_renderer_camera(
+            renderer_camera, width=width, height=height
+        )
+        stable_mask, stable_mask_digest = self._parse_ai_select_support_probe_mask(
+            request.get('anchorStableMask'), width=width, height=height
+        )
+        return AISelectGeneratedViewPlanRequest(
+            request_binding=request_binding,
+            target_splat_id=target_splat_id,
+            scene_id=scene_id,
+            scene_version=scene_version,
+            render_config_version=render_config_version,
+            plan_attempt_id=plan_attempt_id,
+            camera_binding=camera_binding,
+            probe_camera=probe_camera,
+            anchor_rgb_digest=anchor_rgb_digest,
+            stable_mask=stable_mask,
+            stable_mask_digest=stable_mask_digest,
+            scene_transport=scene_transport,
+        )
+
+    @staticmethod
+    def _generated_view_plan_request_key(
+        request: AISelectGeneratedViewPlanRequest,
+    ) -> str:
+        """Canonicalize every immutable input that can affect one camera plan."""
+
+        return json.dumps(
+            request.identity_fields(),
+            separators=(',', ':'),
+            sort_keys=True,
+            allow_nan=False,
+        )
+
+    def _admit_generated_view_plan(
+        self, request: AISelectGeneratedViewPlanRequest
+    ) -> tuple[str, GeneratedViewPlanAdmission, bool]:
+        """Reserve or join one bound plan publication without holding locks for it."""
+
+        key = self._generated_view_plan_request_key(request)
+        with self._session_lock:
+            admission = self._generated_view_plan_admissions.get(key)
+            if admission is not None:
+                return key, admission, False
+            if self._operation_slot_in_use_locked():
+                raise MaskSessionError(
+                    'capacityFull',
+                    'The Companion is already serving another AI or Object Selection operation.',
+                )
+            # A completed admission stays replayable for lost-response
+            # recovery; a different request's admission then evicts every
+            # completed record here, because a newer current binding makes
+            # older plans stale anyway.
+            self._generated_view_plan_admissions = {
+                completed_key: completed_admission
+                for completed_key, completed_admission
+                in self._generated_view_plan_admissions.items()
+                if not completed_admission.completed.is_set()
+            }
+            admission = GeneratedViewPlanAdmission()
+            self._generated_view_plan_admissions[key] = admission
+            self._active_generated_view_plan = key
+        return key, admission, True
+
+    @staticmethod
+    def _replay_generated_view_plan(
+        admission: GeneratedViewPlanAdmission,
+    ) -> dict[str, object]:
+        """Wait for a matching request, then return only its immutable outcome."""
+
+        admission.completed.wait()
+        if admission.publication is not None:
+            return json.loads(admission.publication)
+        if admission.failure is not None:
+            raise MaskSessionError(*admission.failure)
+        raise MaskSessionError(
+            'plannerFailure',
+            'The Companion lost an AI Select Generated View plan publication before it completed.',
+        )
+
+    def _complete_generated_view_plan(
+        self,
+        key: str,
+        admission: GeneratedViewPlanAdmission,
+        *,
+        response: dict[str, object] | None = None,
+        failure: MaskSessionError | None = None,
+    ) -> None:
+        """Atomically publish one replay result and release the single slot."""
+
+        if (response is None) == (failure is None):
+            raise ValueError('AI Select Generated View plan completion requires one outcome')
+        publication = None
+        if response is not None:
+            publication = json.dumps(
+                response, separators=(',', ':'), sort_keys=True, allow_nan=False
+            )
+        with self._session_lock:
+            current = self._generated_view_plan_admissions.get(key)
+            if current is not admission:
+                return
+            if publication is not None:
+                admission.publication = publication
+            else:
+                assert failure is not None
+                admission.failure = (failure.code, str(failure))
+            if self._active_generated_view_plan == key:
+                self._active_generated_view_plan = None
+            admission.completed.set()
+
+    def produce_ai_select_generated_view_mask(
+        self, request: Mapping[str, object]
+    ) -> dict[str, object]:
+        """Publish one propagated automatic Mask for a Generated View.
+
+        The Companion projects the confirmed Anchor's mask-conditioned
+        Gaussian support into the Generated View camera, synthesizes
+        deterministic include prompts, and runs exactly one single-frame SAM
+        pass on the bound Generated View RGB. An Anchor support set that does
+        not project into the View fails Mask production closed; it never
+        demotes the RGB Ready View.
+        """
+
+        mask_request = self._parse_ai_select_generated_view_mask_request(request)
+        model, adapter = self._require_mask_adapter(mask_request.model_manifest_digest)
+        planes, miss = self._resolve_ai_select_scene_planes(
+            scene_id=mask_request.scene_id,
+            scene_version=mask_request.scene_version,
+            render_config_version=mask_request.render_config_version,
+            camera_binding=mask_request.anchor_camera_binding,
+            scene_transport=mask_request.scene_transport,
+            response_fields=mask_request.response_fields(),
+            failure_code='modelFailure',
+            failure_label='AI Select Generated View Mask production',
+        )
+        if miss is not None:
+            return miss
+
+        mask_key, admission, owns_admission = self._admit_generated_view_mask(
+            mask_request
+        )
+        if not owns_admission:
+            return self._replay_generated_view_mask(admission)
+
+        try:
+            try:
+                synthesized = synthesize_view_prompts(
+                    planes=planes,
+                    anchor_camera=mask_request.anchor_probe_camera,
+                    view_camera=mask_request.view_probe_camera,
+                    mask=mask_request.stable_mask,
+                )
+                if synthesized is None:
+                    raise MaskSessionError(
+                        'propagationUnavailable',
+                        'The confirmed Anchor Stable Mask support is not observable from this Generated View camera; adjust the View or draw the Mask manually.',
+                    )
+                frame_set = register_frame_set({
+                    'frameSetId': f'ai-select-mask-{mask_request.view_id}',
+                    'frameSetVersion': (
+                        f'{mask_request.view_id}-{mask_request.rgb_digest}'
+                    ),
+                    'orderedViews': [{
+                        'viewId': mask_request.view_id,
+                        'frameDigest': mask_request.rgb_digest,
+                        'width': mask_request.width,
+                        'height': mask_request.height,
+                        'imagePngBase64': base64.b64encode(
+                            mask_request.rgb_png
+                        ).decode('ascii'),
+                        'source': 'generated',
+                    }],
+                })
+                prompt_log: list[dict[str, object]] = [
+                    {
+                        'operation': 'New',
+                        'prompt': {
+                            'promptId': f'propagated-prompt-{index + 1}',
+                            'viewId': mask_request.view_id,
+                            'frameDigest': mask_request.rgb_digest,
+                            'frameWidth': mask_request.width,
+                            'frameHeight': mask_request.height,
+                            'xPx': x_px,
+                            'yPx': y_px,
+                            'polarity': 'include',
+                        },
+                    }
+                    for index, (x_px, y_px) in enumerate(synthesized.prompts)
+                ]
+                production = adapter.produce_tracks(
+                    model=model,
+                    frame_set=frame_set,
+                    prompt_log=prompt_log,
+                    cancelled=lambda: False,
+                )
+            except MaskSessionError:
+                raise
+            except Exception as error:
+                raise MaskSessionError(
+                    'modelFailure',
+                    'The promptable-mask adapter failed; verify the installed model runtime and retry.',
+                ) from error
+            tracks, _diagnostics, _threshold = self._normalise_mask_production(
+                production
+            )
+            self._validate_complete_tracks(frame_set, prompt_log, tracks)
+            primary_track = next(
+                track for track in tracks if track['trackId'] == 'primary'
+            )
+            view_frame = next(
+                frame
+                for frame in primary_track['frames']
+                if frame['viewId'] == mask_request.view_id
+            )
+            binary_mask = view_frame['binaryMask']
+            # The propagated product contract publishes bitset bytes only;
+            # dimensions, payload length, and trailing bits were validated
+            # with the complete tracks above.
+            if binary_mask.get('encoding') != 'bitset-lsb-v1':
+                raise MaskSessionError(
+                    'incompleteMaskSet',
+                    'A propagated Generated View mask must use the bitset-lsb-v1 encoding.',
+                )
+            mask_bytes = base64.b64decode(binary_mask['data'], validate=True)
+            response = {
+                'status': 'complete',
+                **mask_request.response_fields(),
+                'rgbDigest': mask_request.rgb_digest,
+                'anchorRgbDigest': mask_request.anchor_rgb_digest,
+                'mask': {
+                    'encoding': 'bitset-lsb-v1',
+                    'width': mask_request.width,
+                    'height': mask_request.height,
+                    'data': binary_mask['data'],
+                    'digest': f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}',
+                },
+                'maskSource': 'propagated',
+                'maskPropagation': {
+                    'policyVersion': AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION,
+                    'projectedSupportCount': synthesized.projected_support_count,
+                    'promptCount': len(synthesized.prompts),
+                },
+                'modelManifestDigest': mask_request.model_manifest_digest,
+            }
+        except MaskSessionError as error:
+            self._complete_generated_view_mask(mask_key, admission, failure=error)
+            raise
+        except Exception as error:
+            failure = MaskSessionError(
+                'modelFailure',
+                'The promptable-mask adapter failed while publishing the propagated mask.',
+            )
+            self._complete_generated_view_mask(mask_key, admission, failure=failure)
+            raise failure from error
+
+        self._complete_generated_view_mask(mask_key, admission, response=response)
+        return response
+
+    def _parse_ai_select_generated_view_mask_request(
+        self, request: Mapping[str, object]
+    ) -> AISelectGeneratedViewMaskRequest:
+        request_binding_value = request.get('requestBinding')
+        if not isinstance(request_binding_value, dict):
+            raise ValueError('AI Select Generated View Mask requestBinding must be an object')
+        dependency_value = request_binding_value.get('dependencyToken')
+        if not isinstance(dependency_value, dict):
+            raise ValueError(
+                'AI Select Generated View Mask requestBinding dependencyToken must be an object'
+            )
+        target_splat_id = _anchor_string(
+            request.get('targetSplatId'), 'targetSplatId'
+        )
+        dependency_token = {
+            'splatId': _anchor_string(dependency_value.get('splatId'), 'dependency splatId'),
+            'renderStateToken': _anchor_string(
+                dependency_value.get('renderStateToken'), 'dependency renderStateToken'
+            ),
+            'geometryToken': _anchor_string(
+                dependency_value.get('geometryToken'), 'dependency geometryToken'
+            ),
+            'gaussianIdentityToken': _anchor_string(
+                dependency_value.get('gaussianIdentityToken'),
+                'dependency gaussianIdentityToken',
+            ),
+            'worldTransformToken': _anchor_string(
+                dependency_value.get('worldTransformToken'),
+                'dependency worldTransformToken',
+            ),
+        }
+        if dependency_token['splatId'] != target_splat_id:
+            raise ValueError(
+                'AI Select Generated View Mask targetSplatId must match its dependency splatId'
+            )
+        request_binding: dict[str, object] = {
+            'targetContextId': _anchor_string(
+                request_binding_value.get('targetContextId'), 'targetContextId'
+            ),
+            'contextRevision': _anchor_nonnegative_integer(
+                request_binding_value.get('contextRevision'), 'contextRevision'
+            ),
+            'dependencyToken': dependency_token,
+        }
+        scene_id = _anchor_string(request.get('sceneId'), 'sceneId')
+        scene_version = _anchor_string(request.get('sceneVersion'), 'sceneVersion')
+        if scene_id != target_splat_id:
+            raise ValueError(
+                'AI Select Generated View Mask sceneId must match its targetSplatId'
+            )
+        render_config_version = _anchor_string(
+            request.get('renderConfigVersion'), 'renderConfigVersion'
+        )
+        view_id = _anchor_string(request.get('viewId'), 'viewId')
+        if view_id == 'anchor-view':
+            raise ValueError(
+                'AI Select Generated View Mask viewId anchor-view is reserved for the Anchor route'
+            )
+        mask_attempt_id = _anchor_string(
+            request.get('maskAttemptId'), 'maskAttemptId'
+        )
+        model_manifest_digest = _anchor_string(
+            request.get('modelManifestDigest'), 'modelManifestDigest'
+        )
+        scene_transport = request.get('sceneTransport', 'packed-v1')
+        if scene_transport not in ('packed-v1', 'spatial-v1'):
+            raise ValueError(
+                'AI Select Generated View Mask sceneTransport is unsupported'
+            )
+
+        view_camera_binding, view_renderer_camera, width, height = (
+            self._parse_ai_select_anchor_camera(request.get('viewCameraBinding'))
+        )
+        view_probe_camera = probe_camera_from_renderer_camera(
+            view_renderer_camera, width=width, height=height
+        )
+        rgb_png, rgb_digest, rgb_width, rgb_height = self._parse_ai_select_mask_rgb(
+            request.get('rgb')
+        )
+        if rgb_width != width or rgb_height != height:
+            raise ValueError(
+                'AI Select Generated View Mask rgb dimensions must match its viewCameraBinding projection'
+            )
+
+        anchor_value = request.get('anchor')
+        if not isinstance(anchor_value, dict):
+            raise ValueError('AI Select Generated View Mask anchor must be an object')
+        anchor_camera_binding, anchor_renderer_camera, anchor_width, anchor_height = (
+            self._parse_ai_select_anchor_camera(anchor_value.get('cameraBinding'))
+        )
+        anchor_probe_camera = probe_camera_from_renderer_camera(
+            anchor_renderer_camera, width=anchor_width, height=anchor_height
+        )
+        anchor_rgb_digest = _anchor_sha256_digest(
+            anchor_value.get('rgbDigest'), 'anchor rgbDigest'
+        )
+        stable_mask, stable_mask_digest = self._parse_ai_select_support_probe_mask(
+            anchor_value.get('stableMask'), width=anchor_width, height=anchor_height
+        )
+        return AISelectGeneratedViewMaskRequest(
+            request_binding=request_binding,
+            target_splat_id=target_splat_id,
+            scene_id=scene_id,
+            scene_version=scene_version,
+            render_config_version=render_config_version,
+            view_id=view_id,
+            view_camera_binding=view_camera_binding,
+            view_probe_camera=view_probe_camera,
+            mask_attempt_id=mask_attempt_id,
+            rgb_png=rgb_png,
+            rgb_digest=rgb_digest,
+            width=width,
+            height=height,
+            anchor_camera_binding=anchor_camera_binding,
+            anchor_probe_camera=anchor_probe_camera,
+            anchor_rgb_digest=anchor_rgb_digest,
+            stable_mask=stable_mask,
+            stable_mask_digest=stable_mask_digest,
+            model_manifest_digest=model_manifest_digest,
+            scene_transport=scene_transport,
+        )
+
+    @staticmethod
+    def _generated_view_mask_request_key(
+        request: AISelectGeneratedViewMaskRequest,
+    ) -> str:
+        """Canonicalize every immutable input that can affect one mask attempt."""
+
+        return json.dumps(
+            request.identity_fields(),
+            separators=(',', ':'),
+            sort_keys=True,
+            allow_nan=False,
+        )
+
+    def _admit_generated_view_mask(
+        self, request: AISelectGeneratedViewMaskRequest
+    ) -> tuple[str, GeneratedViewMaskAdmission, bool]:
+        """Reserve or join one bound mask attempt without holding locks for it."""
+
+        key = self._generated_view_mask_request_key(request)
+        with self._session_lock:
+            admission = self._generated_view_mask_admissions.get(key)
+            if admission is not None:
+                return key, admission, False
+            if self._operation_slot_in_use_locked():
+                raise MaskSessionError(
+                    'capacityFull',
+                    'The Companion is already serving another AI or Object Selection operation.',
+                )
+            # A replay record can contain a full-resolution mask. A completed
+            # admission stays replayable for lost-response recovery; a
+            # different request's admission then evicts every completed record
+            # here, because a newer current binding makes older products stale.
+            self._generated_view_mask_admissions = {
+                completed_key: completed_admission
+                for completed_key, completed_admission
+                in self._generated_view_mask_admissions.items()
+                if not completed_admission.completed.is_set()
+            }
+            admission = GeneratedViewMaskAdmission()
+            self._generated_view_mask_admissions[key] = admission
+            self._active_generated_view_mask = key
+        return key, admission, True
+
+    @staticmethod
+    def _replay_generated_view_mask(
+        admission: GeneratedViewMaskAdmission,
+    ) -> dict[str, object]:
+        """Wait for a matching request, then return only its immutable outcome."""
+
+        admission.completed.wait()
+        if admission.publication is not None:
+            return json.loads(admission.publication)
+        if admission.failure is not None:
+            raise MaskSessionError(*admission.failure)
+        raise MaskSessionError(
+            'modelFailure',
+            'The Companion lost a propagated mask publication before it completed.',
+        )
+
+    def _complete_generated_view_mask(
+        self,
+        key: str,
+        admission: GeneratedViewMaskAdmission,
+        *,
+        response: dict[str, object] | None = None,
+        failure: MaskSessionError | None = None,
+    ) -> None:
+        """Atomically publish one replay result and release the single slot."""
+
+        if (response is None) == (failure is None):
+            raise ValueError('AI Select Generated View Mask completion requires one outcome')
+        publication = None
+        if response is not None:
+            publication = json.dumps(
+                response, separators=(',', ':'), sort_keys=True, allow_nan=False
+            )
+        with self._session_lock:
+            current = self._generated_view_mask_admissions.get(key)
+            if current is not admission:
+                return
+            if publication is not None:
+                admission.publication = publication
+            else:
+                assert failure is not None
+                admission.failure = (failure.code, str(failure))
+            if self._active_generated_view_mask == key:
+                self._active_generated_view_mask = None
+            admission.completed.set()
+
+    def _resolve_ai_select_scene_planes(
+        self,
+        *,
+        scene_id: str,
+        scene_version: str,
+        render_config_version: str,
+        camera_binding: Mapping[str, object],
+        scene_transport: str,
+        response_fields: dict[str, object],
+        failure_code: str,
+        failure_label: str,
+    ) -> tuple[list[tuple[memoryview, memoryview]], dict[str, object] | None]:
+        """Resolve immutable Gaussian planes or a bound scene miss response.
+
+        The resolution is identical to the Anchor support probe: spatial
+        working sets expose their resident chunk mmap planes, and packed
+        binary snapshots expose the whole-scene planes. A cache or chunk miss
+        returns bound identity echoes so the editor can re-register or upload
+        exactly once before one bounded retry.
+        """
+
+        planes: list[tuple[memoryview, memoryview]] = []
+        if scene_transport == 'spatial-v1':
+            try:
+                resolution = self._spatial_scene_store.resolve_working_set(
+                    scene_id,
+                    scene_version,
+                    camera_binding,
+                )
+            except SnapshotUploadError:
+                return planes, {
+                    'status': 'sceneCacheMiss',
+                    **response_fields,
+                }
+            if resolution.missing_chunk_ids:
+                return planes, {
+                    'status': 'sceneChunkMiss',
+                    **response_fields,
+                    'workingSetToken': resolution.working_set_token,
+                    'missingChunkIds': list(resolution.missing_chunk_ids),
+                }
+            if resolution.working_set is None:
+                raise ValueError(
+                    f'{failure_label} Spatial Scene working set is incomplete'
+                )
+            render_configuration = (
+                resolution.working_set.manifest.render_configuration
+            )
+            if (
+                render_configuration.get('version')
+                != render_config_version
+            ):
+                raise ValueError(
+                    f'{failure_label} render configuration does not match the registered Spatial Scene manifest'
+                )
+            # Resident chunks expose their immutable mmap planes directly; the
+            # policies never materialize the renderer's torch tensor views.
+            planes.extend(
+                (chunk.field('means'), chunk.field('logitOpacities'))
+                for chunk in resolution.working_set.chunks
+            )
+        else:
+            snapshot = self.scene_snapshot(scene_id, scene_version)
+            if snapshot is None:
+                return planes, {
+                    'status': 'sceneCacheMiss',
+                    **response_fields,
+                }
+            if snapshot.render_config_version != render_config_version:
+                raise ValueError(
+                    f'{failure_label} render configuration does not match the registered Scene Snapshot'
+                )
+            if not isinstance(snapshot.scene, PackedBinarySceneSnapshot):
+                raise MaskSessionError(
+                    failure_code,
+                    f'{failure_label} requires a packed binary Scene Snapshot.',
+                )
+            planes.append(
+                (snapshot.scene.field('means'), snapshot.scene.field('logitOpacities'))
+            )
+        return planes, None
 
     def _discard_unclaimed_frame_set(self, frame_set_version: str | None) -> None:
         if frame_set_version is None:
@@ -3576,6 +4465,8 @@ class CompanionState:
             or self._active_anchor_render is not None
             or self._active_mask_request is not None
             or self._active_support_probe is not None
+            or self._active_generated_view_plan is not None
+            or self._active_generated_view_mask is not None
         )
 
     def _capacity(self) -> dict[str, int]:
@@ -3610,6 +4501,7 @@ class CompanionState:
                 "aiSelectAnchorRender",
                 "aiSelectAnchorReferenceContributor",
                 "aiSelectAnchorSupportProbe",
+                "aiSelectGeneratedViewPlanning",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",
             ],

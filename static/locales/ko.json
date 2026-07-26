@@ -382,5 +382,20 @@
   "ai-select.validation.soft.fragmented-mask": "마스크가 분할되어 있습니다.",
   "ai-select.validation.soft.weak-visible-support": "가시 Gaussian 서포트가 약합니다.",
   "ai-select.restart-confirm-message": "현재 대상을 다시 시작하시겠습니까? 앵커, AI 뷰, 마스크, 검증 진행 상황이 삭제됩니다. 네이티브 선택은 변경되지 않습니다.",
-  "ai-select.anchor-discard-message": "앵커를 변경하면 확인되지 않은 프롬프트와 마스크 편집이 삭제됩니다. 계속하시겠습니까?"
+  "ai-select.anchor-discard-message": "앵커를 변경하면 확인되지 않은 프롬프트와 마스크 편집이 삭제됩니다. 계속하시겠습니까?",
+  "ai-select.views.anchor": "앵커",
+  "ai-select.views.generated": "뷰",
+  "ai-select.views.planner.planning": "생성 뷰 계획 중…",
+  "ai-select.views.planner.failed": "생성 뷰 계획에 실패했습니다.",
+  "ai-select.views.planner.retry": "계획 다시 시도",
+  "ai-select.views.retry-render": "렌더 다시 시도",
+  "ai-select.views.status.pending": "대기 중",
+  "ai-select.views.status.rendering": "렌더링 중…",
+  "ai-select.views.status.ready": "RGB 준비됨",
+  "ai-select.views.status.failed": "렌더 실패",
+  "ai-select.views.status.mask-none": "마스크 없음",
+  "ai-select.views.status.mask-generating": "마스크 생성 중…",
+  "ai-select.views.status.mask-ready": "마스크 준비됨",
+  "ai-select.views.status.mask-failed": "마스크 실패",
+  "ai-select.views.status.evidence-not-requested": "Evidence 요청되지 않음"
 }

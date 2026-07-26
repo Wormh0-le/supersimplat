@@ -382,5 +382,20 @@
   "ai-select.validation.soft.fragmented-mask": "マスクが断片化しています。",
   "ai-select.validation.soft.weak-visible-support": "可視の Gaussian サポートが弱いです。",
   "ai-select.restart-confirm-message": "現在のターゲットを再起動しますか？アンカー、AI ビュー、マスク、検証の進行は破棄されます。ネイティブ選択は変更されません。",
-  "ai-select.anchor-discard-message": "アンカーを変更すると、未確定のプロンプトとマスク編集が破棄されます。続行しますか？"
+  "ai-select.anchor-discard-message": "アンカーを変更すると、未確定のプロンプトとマスク編集が破棄されます。続行しますか？",
+  "ai-select.views.anchor": "アンカー",
+  "ai-select.views.generated": "ビュー",
+  "ai-select.views.planner.planning": "生成ビューを計画中…",
+  "ai-select.views.planner.failed": "生成ビューの計画に失敗しました。",
+  "ai-select.views.planner.retry": "計画を再試行",
+  "ai-select.views.retry-render": "レンダーを再試行",
+  "ai-select.views.status.pending": "保留中",
+  "ai-select.views.status.rendering": "レンダー中…",
+  "ai-select.views.status.ready": "RGB 準備完了",
+  "ai-select.views.status.failed": "レンダー失敗",
+  "ai-select.views.status.mask-none": "マスク未生成",
+  "ai-select.views.status.mask-generating": "マスク生成中…",
+  "ai-select.views.status.mask-ready": "マスク準備完了",
+  "ai-select.views.status.mask-failed": "マスク失敗",
+  "ai-select.views.status.evidence-not-requested": "Evidence 未要求"
 }

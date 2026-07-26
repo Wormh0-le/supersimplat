@@ -382,5 +382,20 @@
   "ai-select.validation.soft.fragmented-mask": "La máscara está fragmentada.",
   "ai-select.validation.soft.weak-visible-support": "El soporte gaussiano visible es débil.",
   "ai-select.restart-confirm-message": "¿Reiniciar el objetivo actual? Se descartan el ancla, las vistas de IA, las máscaras y el progreso de validación. La selección nativa no cambia.",
-  "ai-select.anchor-discard-message": "Cambiar el ancla descarta las ediciones de indicaciones y máscara no confirmadas. ¿Continuar?"
+  "ai-select.anchor-discard-message": "Cambiar el ancla descarta las ediciones de indicaciones y máscara no confirmadas. ¿Continuar?",
+  "ai-select.views.anchor": "Ancla",
+  "ai-select.views.generated": "Vista",
+  "ai-select.views.planner.planning": "Planificando vistas generadas…",
+  "ai-select.views.planner.failed": "Error al planificar vistas generadas.",
+  "ai-select.views.planner.retry": "Reintentar planificación",
+  "ai-select.views.retry-render": "Reintentar renderizado",
+  "ai-select.views.status.pending": "Pendiente",
+  "ai-select.views.status.rendering": "Renderizando…",
+  "ai-select.views.status.ready": "RGB lista",
+  "ai-select.views.status.failed": "Renderizado fallido",
+  "ai-select.views.status.mask-none": "Aún sin máscara",
+  "ai-select.views.status.mask-generating": "Generando máscara…",
+  "ai-select.views.status.mask-ready": "Máscara lista",
+  "ai-select.views.status.mask-failed": "Máscara fallida",
+  "ai-select.views.status.evidence-not-requested": "Evidencia no solicitada"
 }

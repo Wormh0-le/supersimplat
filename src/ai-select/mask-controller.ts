@@ -92,7 +92,12 @@ export class AISelectMaskController {
     private readonly maskProvider: AISelectMaskProvider;
     private readonly getModelManifestDigest: () => string | null;
     private readonly isAnchorLocked: () => boolean;
-    private readonly registry = new MaskAnnotationRegistry();
+    /**
+     * The one versioned Mask registry for every AI View in the Current Target
+     * Context. The Generated View controller shares this instance so Mask
+     * identities never fork across views.
+     */
+    readonly maskRegistry = new MaskAnnotationRegistry();
     /**
      * The per-view Evidence dependency registry. Nothing produces Evidence at
      * this stage; the production path (Ticket 20) drives this seam, and Mask
@@ -133,7 +138,10 @@ export class AISelectMaskController {
 
     get state(): AISelectMaskState {
         const rgbDigest = this.currentRgbDigest();
-        const view = this.registry.viewState(ANCHOR_VIEW_ID, rgbDigest ?? '');
+        const view = this.maskRegistry.viewState(
+            ANCHOR_VIEW_ID,
+            rgbDigest ?? ''
+        );
         const currentIdentity = this.currentEvidenceIdentity(
             rgbDigest,
             view.stableMask
@@ -141,7 +149,7 @@ export class AISelectMaskController {
         const restorableAuto =
             rgbDigest === null
                 ? null
-                : this.registry.latestAutoMask(ANCHOR_VIEW_ID, rgbDigest);
+                : this.maskRegistry.latestAutoMask(ANCHOR_VIEW_ID, rgbDigest);
         return Object.freeze({
             viewId: ANCHOR_VIEW_ID,
             editingMask: view.editingMask,
@@ -209,7 +217,7 @@ export class AISelectMaskController {
         this.requireUnlocked();
         const rgb = this.requireReadyRgb();
         this.recordEdit(rgb.digest);
-        this.registry.applyBrush({
+        this.maskRegistry.applyBrush({
             viewId: ANCHOR_VIEW_ID,
             rgbDigest: rgb.digest,
             stroke,
@@ -228,7 +236,7 @@ export class AISelectMaskController {
     confirmEditingMask(): void {
         this.requireUnlocked();
         const rgb = this.requireReadyRgb();
-        this.registry.confirm(ANCHOR_VIEW_ID, rgb.digest);
+        this.maskRegistry.confirm(ANCHOR_VIEW_ID, rgb.digest);
         this.lastErrorMessage = undefined;
         this.publish();
     }
@@ -242,7 +250,7 @@ export class AISelectMaskController {
         this.requireUnlocked();
         const rgb = this.requireReadyRgb();
         this.recordEdit(rgb.digest);
-        this.registry.clearEditing(
+        this.maskRegistry.clearEditing(
             ANCHOR_VIEW_ID,
             rgb.digest,
             rgb.width,
@@ -258,8 +266,11 @@ export class AISelectMaskController {
     restoreAutoMask(): void {
         this.requireUnlocked();
         const rgb = this.requireReadyRgb();
-        const latest = this.registry.latestAutoMask(ANCHOR_VIEW_ID, rgb.digest);
-        const currentEditing = this.registry.viewState(
+        const latest = this.maskRegistry.latestAutoMask(
+            ANCHOR_VIEW_ID,
+            rgb.digest
+        );
+        const currentEditing = this.maskRegistry.viewState(
             ANCHOR_VIEW_ID,
             rgb.digest
         ).editingMask;
@@ -269,7 +280,11 @@ export class AISelectMaskController {
             );
         }
         this.recordEdit(rgb.digest);
-        this.registry.restoreEditing(ANCHOR_VIEW_ID, latest.maskId, rgb.digest);
+        this.maskRegistry.restoreEditing(
+            ANCHOR_VIEW_ID,
+            latest.maskId,
+            rgb.digest
+        );
         this.supersedeLocalEditing();
     }
 
@@ -286,7 +301,7 @@ export class AISelectMaskController {
             throw new Error('AI Select has no Mask edit to undo.');
         }
         this.redoStack.push(this.currentEditingMaskId(rgb.digest));
-        this.registry.restoreEditing(ANCHOR_VIEW_ID, target, rgb.digest);
+        this.maskRegistry.restoreEditing(ANCHOR_VIEW_ID, target, rgb.digest);
         this.supersedeLocalEditing();
     }
 
@@ -299,7 +314,7 @@ export class AISelectMaskController {
             throw new Error('AI Select has no Mask edit to redo.');
         }
         this.undoStack.push(this.currentEditingMaskId(rgb.digest));
-        this.registry.restoreEditing(ANCHOR_VIEW_ID, target, rgb.digest);
+        this.maskRegistry.restoreEditing(ANCHOR_VIEW_ID, target, rgb.digest);
         this.supersedeLocalEditing();
     }
 
@@ -362,7 +377,7 @@ export class AISelectMaskController {
         }
         try {
             this.recordEdit(request.rgb.digest);
-            this.registry.registerSamResult({
+            this.maskRegistry.registerSamResult({
                 viewId: request.viewId,
                 rgbDigest: request.rgb.digest,
                 artifact: response.mask,
@@ -400,7 +415,7 @@ export class AISelectMaskController {
             // Restart/exit rotates targetContextId and disposes every
             // target-local Mask/Evidence record.
             this.targetContextId = contextId;
-            this.registry.disposeView(ANCHOR_VIEW_ID);
+            this.maskRegistry.disposeView(ANCHOR_VIEW_ID);
             this.evidenceRegistry.disposeView(ANCHOR_VIEW_ID);
             this.resetForNewRgbIdentity(rgbDigest);
             return;
@@ -459,7 +474,7 @@ export class AISelectMaskController {
 
     private currentEditingMaskId(rgbDigest: string): string | null {
         return (
-            this.registry.viewState(ANCHOR_VIEW_ID, rgbDigest).editingMask
+            this.maskRegistry.viewState(ANCHOR_VIEW_ID, rgbDigest).editingMask
                 ?.maskId ?? null
         );
     }

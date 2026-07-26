@@ -13,6 +13,11 @@ import {
     getAnchorDockPresentation,
     type AnchorDockPresentation
 } from '../ai-select/anchor-dock-presentation';
+import type {
+    AISelectGeneratedViewController,
+    AISelectGeneratedViewState,
+    GeneratedAIView
+} from '../ai-select/generated-view-controller';
 import { decodeMaskArtifact } from '../ai-select/mask-annotation';
 import {
     type AISelectMaskController,
@@ -26,11 +31,21 @@ export interface AISelectAnchorDockOptions {
     readonly onValidate: () => Promise<void>;
     readonly onConfirmAnchor: () => Promise<void>;
     readonly onAdjustAnchor: () => void;
+    readonly generatedViews: AISelectGeneratedViewController;
 }
 
 interface ImagePixel {
     readonly xPx: number;
     readonly yPx: number;
+}
+
+interface GeneratedCardElements {
+    readonly root: Container;
+    readonly image: HTMLImageElement;
+    readonly title: Label;
+    readonly status: Label;
+    readonly retryButton: Button;
+    rgbDigest?: string;
 }
 
 const CLICK_TOLERANCE_PX = 4;
@@ -39,6 +54,7 @@ const CLICK_TOLERANCE_PX = 4;
 export class AISelectAnchorDock extends Container {
     private readonly mask: AISelectMaskController;
     private readonly confirmation: AISelectAnchorConfirmationController;
+    private readonly generatedViews: AISelectGeneratedViewController;
     private readonly status: Label;
     private readonly maskStatus: Label;
     private readonly image: HTMLImageElement;
@@ -56,9 +72,17 @@ export class AISelectAnchorDock extends Container {
     private readonly confirmAnchorButton: Button;
     private readonly adjustAnchorButton: Button;
     private readonly validationStatus: Label;
+    private readonly gallery: Container;
+    private readonly plannerLine: Container;
+    private readonly plannerStatus: Label;
+    private readonly plannerRetryButton: Button;
+    private readonly galleryCards: Container;
+    private readonly anchorCard: GeneratedCardElements;
+    private readonly generatedCards = new Map<string, GeneratedCardElements>();
     private state: AISelectAnchorState = { context: null, anchor: null };
     private maskState: AISelectMaskState;
     private confirmationState: AISelectAnchorConfirmationState;
+    private generatedState: AISelectGeneratedViewState;
     private dragStart: { x: number; y: number } | null = null;
     private lastStrokePixel: ImagePixel | null = null;
 
@@ -75,8 +99,10 @@ export class AISelectAnchorDock extends Container {
         });
         this.mask = mask;
         this.confirmation = confirmation;
+        this.generatedViews = options.generatedViews;
         this.maskState = mask.state;
         this.confirmationState = confirmation.state;
+        this.generatedState = options.generatedViews.state;
         this.dom.addEventListener('pointerdown', (event) =>
             event.stopPropagation()
         );
@@ -250,6 +276,43 @@ export class AISelectAnchorDock extends Container {
         this.failureActions.append(reconnect);
         this.failureActions.append(settings);
 
+        // The AI View Gallery: progressive Generated View cards with their
+        // independent Render/Mask/Evidence states, plus the Anchor card.
+        this.gallery = new Container({
+            id: 'ai-select-view-gallery',
+            hidden: true
+        });
+        this.plannerLine = new Container({
+            id: 'ai-select-view-gallery-planner',
+            hidden: true
+        });
+        this.plannerStatus = new Label({
+            id: 'ai-select-view-gallery-planner-status'
+        });
+        this.plannerRetryButton = new Button({
+            id: 'ai-select-view-gallery-planner-retry'
+        });
+        i18n.bindText(this.plannerRetryButton, 'ai-select.views.planner.retry');
+        this.plannerRetryButton.on('click', () => {
+            try {
+                this.generatedViews.retryPlanning();
+            } catch (error) {
+                console.error(error);
+            }
+        });
+        this.plannerLine.append(this.plannerStatus);
+        this.plannerLine.append(this.plannerRetryButton);
+        this.galleryCards = new Container({
+            id: 'ai-select-view-gallery-cards'
+        });
+        this.gallery.append(this.plannerLine);
+        this.gallery.append(this.galleryCards);
+        this.anchorCard = this.createCard(
+            () => this.selectGeneratedView(null),
+            null
+        );
+        this.galleryCards.append(this.anchorCard.root);
+
         this.append(title);
         this.append(this.status);
         this.dom.appendChild(imageWrap);
@@ -258,6 +321,7 @@ export class AISelectAnchorDock extends Container {
         this.append(this.anchorActions);
         this.append(this.validationStatus);
         this.append(this.failureActions);
+        this.append(this.gallery);
 
         controller.subscribe((state) => {
             this.state = state;
@@ -269,6 +333,10 @@ export class AISelectAnchorDock extends Container {
         });
         confirmation.subscribe((confirmationState) => {
             this.confirmationState = confirmationState;
+            this.render();
+        });
+        options.generatedViews.subscribe((generatedState) => {
+            this.generatedState = generatedState;
             this.render();
         });
         i18n.onChange(() => this.render(), this);
@@ -314,6 +382,177 @@ export class AISelectAnchorDock extends Container {
         this.renderEditingActions(presentation);
         this.renderAnchorActions(presentation);
         this.renderMaskOverlay(presentation);
+        this.renderGallery(presentation);
+    }
+
+    private createCard(
+        onClick: () => void,
+        onRetry: (() => void) | null
+    ): GeneratedCardElements {
+        const root = new Container({ class: 'ai-select-view-card' });
+        const image = document.createElement('img');
+        image.className = 'ai-select-view-card-image';
+        image.alt = '';
+        image.hidden = true;
+        image.draggable = false;
+        const title = new Label({ class: 'ai-select-view-card-title' });
+        const status = new Label({ class: 'ai-select-view-card-status' });
+        const retryButton = new Button({
+            class: 'ai-select-view-card-retry',
+            hidden: true
+        });
+        i18n.bindText(retryButton, 'ai-select.views.retry-render');
+        if (onRetry !== null) {
+            retryButton.on('click', (event: Event) => {
+                event.stopPropagation();
+                onRetry();
+            });
+        }
+        root.dom.appendChild(image);
+        root.append(title);
+        root.append(status);
+        root.append(retryButton);
+        root.dom.addEventListener('pointerdown', (event) =>
+            event.stopPropagation()
+        );
+        root.dom.addEventListener('click', () => onClick());
+        return { root, image, title, status, retryButton };
+    }
+
+    private renderGallery(presentation: AnchorDockPresentation): void {
+        const generated = this.generatedState;
+        const showGallery =
+            this.state.context !== null &&
+            (generated.plannerStatus !== 'idle' || generated.views.length > 0);
+        this.gallery.hidden = !showGallery;
+        if (!showGallery) {
+            return;
+        }
+
+        if (generated.plannerStatus === 'planning') {
+            this.plannerLine.hidden = false;
+            this.plannerStatus.text = i18n.t(
+                'ai-select.views.planner.planning'
+            );
+            this.plannerRetryButton.hidden = true;
+        } else if (generated.plannerStatus === 'failed') {
+            this.plannerLine.hidden = false;
+            this.plannerStatus.text =
+                generated.plannerErrorMessage ??
+                i18n.t('ai-select.views.planner.failed');
+            this.plannerRetryButton.hidden = false;
+        } else {
+            this.plannerLine.hidden = true;
+        }
+
+        // The Anchor card mirrors the Anchor's own render surface.
+        const anchorStatusKey = {
+            idle: 'ai-select.panel.idle',
+            ready: 'ai-select.anchor.ready',
+            previewing: 'ai-select.anchor.previewing',
+            rendering: 'ai-select.anchor.rendering',
+            failed: 'ai-select.anchor.failed'
+        }[presentation.status];
+        this.anchorCard.title.text = i18n.t('ai-select.views.anchor');
+        this.anchorCard.status.text = i18n.t(anchorStatusKey);
+        this.anchorCard.retryButton.hidden = true;
+        if (presentation.rgb !== undefined) {
+            if (this.anchorCard.rgbDigest !== presentation.rgb.digest) {
+                this.anchorCard.rgbDigest = presentation.rgb.digest;
+                this.anchorCard.image.src = `data:image/png;base64,${presentation.rgb.pngBase64}`;
+            }
+            this.anchorCard.image.hidden = false;
+        } else {
+            this.anchorCard.image.hidden = true;
+        }
+        this.anchorCard.root.dom.classList.toggle(
+            'selected',
+            this.generatedState.selectedViewId === null
+        );
+
+        const seen = new Set<string>();
+        generated.views.forEach((view, index) => {
+            seen.add(view.viewId);
+            let card = this.generatedCards.get(view.viewId);
+            if (card === undefined) {
+                card = this.createCard(
+                    () => this.selectGeneratedView(view.viewId),
+                    () => this.retryGeneratedViewRender(view.viewId)
+                );
+                this.generatedCards.set(view.viewId, card);
+                this.galleryCards.append(card.root);
+            }
+            this.updateGeneratedCard(card, view, index);
+        });
+        for (const [viewId, card] of this.generatedCards) {
+            if (!seen.has(viewId)) {
+                card.root.destroy();
+                this.generatedCards.delete(viewId);
+            }
+        }
+    }
+
+    private updateGeneratedCard(
+        card: GeneratedCardElements,
+        view: GeneratedAIView,
+        index: number
+    ): void {
+        card.title.text = `${i18n.t('ai-select.views.generated')} ${index + 1}`;
+        const lines: string[] = [
+            i18n.t(`ai-select.views.status.${view.renderStatus}`)
+        ];
+        if (
+            view.renderStatus === 'failed' &&
+            view.renderErrorMessage !== undefined
+        ) {
+            lines.push(view.renderErrorMessage);
+        }
+        if (view.renderStatus === 'ready') {
+            lines.push(
+                i18n.t(`ai-select.views.status.mask-${view.maskStatus}`)
+            );
+            if (
+                view.maskStatus === 'failed' &&
+                view.maskErrorMessage !== undefined
+            ) {
+                lines.push(view.maskErrorMessage);
+            }
+            // Ticket 06 never requests Evidence; later statuses arrive with
+            // the formal Evidence path and their own localized keys.
+            if (view.evidenceStatus === 'not-requested') {
+                lines.push(
+                    i18n.t('ai-select.views.status.evidence-not-requested')
+                );
+            }
+        }
+        card.status.text = lines.join('\n');
+        card.retryButton.hidden = view.renderStatus !== 'failed';
+        if (view.rgb !== undefined) {
+            if (card.rgbDigest !== view.rgb.digest) {
+                card.rgbDigest = view.rgb.digest;
+                card.image.src = `data:image/png;base64,${view.rgb.pngBase64}`;
+            }
+            card.image.hidden = false;
+        } else {
+            card.image.hidden = true;
+        }
+        card.root.dom.classList.toggle('selected', view.selected);
+    }
+
+    private selectGeneratedView(viewId: string | null): void {
+        try {
+            this.generatedViews.selectView(viewId);
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    private retryGeneratedViewRender(viewId: string): void {
+        try {
+            this.generatedViews.retryViewRender(viewId);
+        } catch (error) {
+            console.error(error);
+        }
     }
 
     private renderEditingActions(presentation: AnchorDockPresentation): void {

@@ -4,6 +4,17 @@ import type {
     AnchorRenderResponse
 } from './ai-select/anchor-render-service';
 import type {
+    AIViewRenderRequest,
+    AIViewRenderResponse,
+    AISelectGeneratedViewMaskProvider,
+    AISelectGeneratedViewPlanner,
+    AISelectViewRenderer,
+    GeneratedViewMaskRequest,
+    GeneratedViewMaskResponse,
+    GeneratedViewPlanRequest,
+    GeneratedViewPlanResponse
+} from './ai-select/generated-view-service';
+import type {
     AISelectMaskProvider,
     AIViewMaskRequest,
     MaskResultResponse
@@ -872,7 +883,10 @@ class ReadinessGatedSelectionServiceAdapter
         SelectionServiceAdapter,
         AISelectAnchorRenderer,
         AISelectMaskProvider,
-        AISelectSupportProbeProvider
+        AISelectSupportProbeProvider,
+        AISelectGeneratedViewPlanner,
+        AISelectViewRenderer,
+        AISelectGeneratedViewMaskProvider
 {
     private readiness: SelectionServiceReadinessInterface;
     private adapter: SelectionServiceAdapter | null;
@@ -936,6 +950,31 @@ class ReadinessGatedSelectionServiceAdapter
         );
     }
 
+    async planGeneratedViews(
+        request: GeneratedViewPlanRequest
+    ): Promise<GeneratedViewPlanResponse> {
+        this.readiness.requireReady();
+        return await this.requireGeneratedViewPlanner().planGeneratedViews(
+            request
+        );
+    }
+
+    async renderView(
+        request: AIViewRenderRequest
+    ): Promise<AIViewRenderResponse> {
+        this.readiness.requireReady();
+        return await this.requireViewRenderer().renderView(request);
+    }
+
+    async produceGeneratedViewMask(
+        request: GeneratedViewMaskRequest
+    ): Promise<GeneratedViewMaskResponse> {
+        this.readiness.requireReady();
+        return await this.requireGeneratedViewMaskProvider().produceGeneratedViewMask(
+            request
+        );
+    }
+
     private requireAdapter() {
         if (this.adapter === null) {
             throw new SelectionServiceAdapterNotConfiguredError();
@@ -975,6 +1014,41 @@ class ReadinessGatedSelectionServiceAdapter
         }
         return adapter as SelectionServiceAdapter &
             AISelectSupportProbeProvider;
+    }
+
+    private requireGeneratedViewPlanner(): AISelectGeneratedViewPlanner {
+        const adapter = this.requireAdapter();
+        if (
+            typeof (adapter as Partial<AISelectGeneratedViewPlanner>)
+                .planGeneratedViews !== 'function'
+        ) {
+            throw new SelectionServiceAdapterNotConfiguredError();
+        }
+        return adapter as SelectionServiceAdapter &
+            AISelectGeneratedViewPlanner;
+    }
+
+    private requireViewRenderer(): AISelectViewRenderer {
+        const adapter = this.requireAdapter();
+        if (
+            typeof (adapter as Partial<AISelectViewRenderer>).renderView !==
+            'function'
+        ) {
+            throw new SelectionServiceAdapterNotConfiguredError();
+        }
+        return adapter as SelectionServiceAdapter & AISelectViewRenderer;
+    }
+
+    private requireGeneratedViewMaskProvider(): AISelectGeneratedViewMaskProvider {
+        const adapter = this.requireAdapter();
+        if (
+            typeof (adapter as Partial<AISelectGeneratedViewMaskProvider>)
+                .produceGeneratedViewMask !== 'function'
+        ) {
+            throw new SelectionServiceAdapterNotConfiguredError();
+        }
+        return adapter as SelectionServiceAdapter &
+            AISelectGeneratedViewMaskProvider;
     }
 }
 

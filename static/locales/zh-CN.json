@@ -382,5 +382,20 @@
   "ai-select.validation.soft.fragmented-mask": "Mask 碎片化。",
   "ai-select.validation.soft.weak-visible-support": "可见 Gaussian 支撑较弱。",
   "ai-select.restart-confirm-message": "重启当前目标？锚点、AI 视图、Mask 和验证进度将被丢弃。原生选择不会改变。",
-  "ai-select.anchor-discard-message": "更改锚点将丢弃未确认的提示点和 Mask 编辑。继续吗？"
+  "ai-select.anchor-discard-message": "更改锚点将丢弃未确认的提示点和 Mask 编辑。继续吗？",
+  "ai-select.views.anchor": "锚点",
+  "ai-select.views.generated": "视图",
+  "ai-select.views.planner.planning": "正在规划生成视图…",
+  "ai-select.views.planner.failed": "生成视图规划失败。",
+  "ai-select.views.planner.retry": "重试规划",
+  "ai-select.views.retry-render": "重试渲染",
+  "ai-select.views.status.pending": "等待中",
+  "ai-select.views.status.rendering": "渲染中…",
+  "ai-select.views.status.ready": "RGB 就绪",
+  "ai-select.views.status.failed": "渲染失败",
+  "ai-select.views.status.mask-none": "尚无 Mask",
+  "ai-select.views.status.mask-generating": "正在生成 Mask…",
+  "ai-select.views.status.mask-ready": "Mask 就绪",
+  "ai-select.views.status.mask-failed": "Mask 失败",
+  "ai-select.views.status.evidence-not-requested": "Evidence 未请求"
 }

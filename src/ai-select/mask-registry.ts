@@ -29,6 +29,14 @@ export interface ApplyBrushInput {
     readonly height: number;
 }
 
+export interface PublishAutoStableMaskInput {
+    readonly viewId: string;
+    /** The authoritative RGB digest this automatic Mask was produced from. */
+    readonly rgbDigest: string;
+    readonly artifact: MaskArtifact;
+    readonly source: 'propagated';
+}
+
 /**
  * The derived per-view mask surface: only annotations bound to the current
  * authoritative RGB digest are current; older versions stay retained for
@@ -208,6 +216,34 @@ export class MaskAnnotationRegistry {
                 : { prompts: editing.prompts }),
             parentMaskId: editing.maskId,
             createdFromRgbDigest: editing.createdFromRgbDigest
+        });
+        view.versions.set(stable.maskId, stable);
+        view.stableMaskId = stable.maskId;
+        return stable;
+    }
+
+    /**
+     * Atomically publish an automatic cross-view Mask directly as the Stable
+     * revision, chained from any previous Stable version. Automatic
+     * publication never creates or disturbs the Editing Mask, and it never
+     * waits for user confirmation: until Ticket 07's evidence-backed View
+     * Assessment refines the label, the unassessed automatic Mask publishes as
+     * `auto-review`, the fail-closed default that stays Excluded from Lift.
+     */
+    publishAutoStable(input: PublishAutoStableMaskInput): MaskAnnotation {
+        assertDigestBoundArtifact(input.artifact);
+        const view = this.requireView(input.viewId);
+        const previousStable = view.stableMaskId;
+        const stable = copyAnnotation({
+            maskId: this.mintMaskId(),
+            viewId: input.viewId,
+            source: input.source,
+            status: 'auto-review',
+            artifact: input.artifact,
+            ...(previousStable === null
+                ? {}
+                : { parentMaskId: previousStable }),
+            createdFromRgbDigest: input.rgbDigest
         });
         view.versions.set(stable.maskId, stable);
         view.stableMaskId = stable.maskId;

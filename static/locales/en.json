@@ -382,5 +382,20 @@
   "ai-select.validation.soft.fragmented-mask": "The Mask is fragmented.",
   "ai-select.validation.soft.weak-visible-support": "Visible Gaussian support is weak.",
   "ai-select.restart-confirm-message": "Restart the Current Target? The Anchor, AI Views, Masks, and validation progress are discarded. Native Selection does not change.",
-  "ai-select.anchor-discard-message": "Changing the Anchor discards unconfirmed prompt and Mask edits. Continue?"
+  "ai-select.anchor-discard-message": "Changing the Anchor discards unconfirmed prompt and Mask edits. Continue?",
+  "ai-select.views.anchor": "Anchor",
+  "ai-select.views.generated": "View",
+  "ai-select.views.planner.planning": "Planning Generated Views…",
+  "ai-select.views.planner.failed": "Generated View planning failed.",
+  "ai-select.views.planner.retry": "Retry Planning",
+  "ai-select.views.retry-render": "Retry Render",
+  "ai-select.views.status.pending": "Pending",
+  "ai-select.views.status.rendering": "Rendering…",
+  "ai-select.views.status.ready": "RGB Ready",
+  "ai-select.views.status.failed": "Render Failed",
+  "ai-select.views.status.mask-none": "No Mask yet",
+  "ai-select.views.status.mask-generating": "Generating Mask…",
+  "ai-select.views.status.mask-ready": "Mask Ready",
+  "ai-select.views.status.mask-failed": "Mask Failed",
+  "ai-select.views.status.evidence-not-requested": "Evidence Not Requested"
 }

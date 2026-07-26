@@ -18,6 +18,26 @@ import {
     isAIRequestBinding
 } from './ai-select/current-target-context';
 import {
+    generatedViewMaskResponseMatchesRequest,
+    generatedViewPlanResponseMatchesRequest,
+    isAIViewRenderRequest,
+    isAIViewRenderResponse,
+    isGeneratedViewMaskRequest,
+    isGeneratedViewMaskResponse,
+    isGeneratedViewPlanRequest,
+    isGeneratedViewPlanResponse,
+    viewRenderResponseMatchesRequest,
+    type AIViewRenderRequest,
+    type AIViewRenderResponse,
+    type AISelectGeneratedViewMaskProvider,
+    type AISelectGeneratedViewPlanner,
+    type AISelectViewRenderer,
+    type GeneratedViewMaskRequest,
+    type GeneratedViewMaskResponse,
+    type GeneratedViewPlanRequest,
+    type GeneratedViewPlanResponse
+} from './ai-select/generated-view-service';
+import {
     isAIViewMaskRequest,
     isMaskResultResponse,
     maskResponseMatchesRequest,
@@ -237,7 +257,10 @@ class FetchSelectionServiceAdapter
         SelectionServiceAdapter,
         AISelectAnchorRenderer,
         AISelectMaskProvider,
-        AISelectSupportProbeProvider
+        AISelectSupportProbeProvider,
+        AISelectGeneratedViewPlanner,
+        AISelectViewRenderer,
+        AISelectGeneratedViewMaskProvider
 {
     private getConfiguration: () => SelectionServiceTransportConfiguration;
     private supportsCameraAwareSpatialWorkingSet: () => boolean;
@@ -396,7 +419,11 @@ class FetchSelectionServiceAdapter
         }
     }
 
-    async releaseSceneSnapshot(request: AnchorRenderRequest): Promise<void> {
+    async releaseSceneSnapshot(
+        request:
+            | AnchorRenderRequest
+            | Pick<AIViewRenderRequest, 'snapshot' | 'target'>
+    ): Promise<void> {
         if (!isPackedSceneSnapshot(request.snapshot)) {
             return;
         }
@@ -637,6 +664,9 @@ class FetchSelectionServiceAdapter
         request:
             | AnchorRenderRequest
             | Pick<AnchorSupportProbeRequest, 'snapshot' | 'target'>
+            | Pick<GeneratedViewPlanRequest, 'snapshot' | 'target'>
+            | Pick<AIViewRenderRequest, 'snapshot' | 'target'>
+            | Pick<GeneratedViewMaskRequest, 'snapshot' | 'target'>
     ): SpatialSceneSnapshot {
         const key = this.spatialSnapshotKey(
             request.snapshot,
@@ -1362,6 +1392,602 @@ class FetchSelectionServiceAdapter
         );
     }
 
+    /**
+     * Plan the first planner-owned Generated Views from the exact confirmed
+     * Anchor identity. Scene cache/chunk misses recover exactly like the
+     * Anchor support-probe path: one re-registration or chunk upload, then
+     * one bounded retry.
+     */
+    async planGeneratedViews(
+        request: GeneratedViewPlanRequest
+    ): Promise<GeneratedViewPlanResponse> {
+        if (!isGeneratedViewPlanRequest(request)) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select requires a complete bound Generated View plan request.'
+            );
+        }
+        if (this.supportsCameraAwareSpatialWorkingSet()) {
+            return this.planSpatialGeneratedViews(request);
+        }
+        await this.registerPackedSnapshot(request.snapshot);
+        const first = await this.sendGeneratedViewPlan(request);
+        if (first.status === 'complete') {
+            return first.response;
+        }
+        await this.registerPackedSnapshot(request.snapshot, true);
+        const retry = await this.sendGeneratedViewPlan(request);
+        if (retry.status !== 'complete') {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion repeated a Generated View plan Scene Snapshot cache miss after the editor resent the snapshot.'
+            );
+        }
+        return retry.response;
+    }
+
+    private async planSpatialGeneratedViews(
+        request: GeneratedViewPlanRequest
+    ): Promise<GeneratedViewPlanResponse> {
+        const spatialSnapshot = this.spatialSnapshotFor(request);
+        await this.registerSpatialSceneManifest(spatialSnapshot);
+
+        let manifestRecoveryAttempts = 0;
+        let chunkRecoveryAttempts = 0;
+        for (;;) {
+            const result = await this.sendGeneratedViewPlan(
+                request,
+                'spatial-v1'
+            );
+            if (result.status === 'complete') {
+                return result.response;
+            }
+            if (result.status === 'sceneCacheMiss') {
+                if (manifestRecoveryAttempts >= 1) {
+                    throw transportError(
+                        'invalidResponse',
+                        'The Selection Service Companion repeated a Generated View plan Spatial Scene manifest cache miss after the editor resent the manifest.'
+                    );
+                }
+                manifestRecoveryAttempts += 1;
+                await this.registerSpatialSceneManifest(spatialSnapshot, true);
+                continue;
+            }
+            if (chunkRecoveryAttempts >= 1) {
+                throw transportError(
+                    'invalidResponse',
+                    'The Selection Service Companion repeated a Generated View plan Spatial Scene chunk miss after the editor uploaded its validated working set.'
+                );
+            }
+            chunkRecoveryAttempts += 1;
+            await this.uploadSpatialSceneChunks(
+                spatialSnapshot,
+                result.missingChunkIds
+            );
+        }
+    }
+
+    private async sendGeneratedViewPlan(
+        request: GeneratedViewPlanRequest,
+        sceneTransport: 'packed-v1' | 'spatial-v1' = 'packed-v1'
+    ): Promise<
+        | {
+              readonly status: 'complete';
+              readonly response: GeneratedViewPlanResponse;
+          }
+        | { readonly status: 'sceneCacheMiss' }
+        | {
+              readonly status: 'sceneChunkMiss';
+              readonly missingChunkIds: readonly string[];
+          }
+    > {
+        const result = await this.requestJson(
+            '/ai-select/generated-view-plans',
+            'POST',
+            {
+                requestBinding: request.requestBinding,
+                targetSplatId: request.target.splatId,
+                sceneId: request.sceneId,
+                sceneVersion: request.sceneVersion,
+                renderConfigVersion:
+                    request.snapshot.renderConfiguration.version,
+                planAttemptId: request.planAttemptId,
+                anchorCameraBinding: request.anchorCameraBinding,
+                anchorRgbDigest: request.anchorRgbDigest,
+                anchorStableMask: request.anchorStableMask,
+                plannerPolicyVersion: request.plannerPolicyVersion,
+                ...(sceneTransport === 'spatial-v1' ? { sceneTransport } : {})
+            }
+        );
+        if (!isRecord(result)) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an invalid Generated View plan response.'
+            );
+        }
+        if (result.status === 'sceneCacheMiss') {
+            if (!this.hasMatchingPlanBindings(result, request)) {
+                throw transportError(
+                    'invalidResponse',
+                    'The Selection Service Companion returned stale Generated View plan cache-miss bindings.'
+                );
+            }
+            return { status: 'sceneCacheMiss' };
+        }
+        if (result.status === 'sceneChunkMiss') {
+            if (
+                sceneTransport !== 'spatial-v1' ||
+                !this.isMatchingPlanSceneChunkMiss(result, request)
+            ) {
+                throw transportError(
+                    'invalidResponse',
+                    'The Selection Service Companion returned stale or invalid Generated View plan chunk-miss bindings.'
+                );
+            }
+            return {
+                status: 'sceneChunkMiss',
+                missingChunkIds: result.missingChunkIds
+            };
+        }
+        if (
+            result.status !== 'complete' ||
+            !isGeneratedViewPlanResponse(result) ||
+            !generatedViewPlanResponseMatchesRequest(result, request)
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an incomplete or stale Generated View plan.'
+            );
+        }
+        return {
+            status: 'complete',
+            response: result
+        };
+    }
+
+    private hasMatchingPlanBindings(
+        value: Record<string, unknown>,
+        request: GeneratedViewPlanRequest
+    ): boolean {
+        return (
+            isAIRequestBinding(value.requestBinding) &&
+            value.requestBinding.targetContextId ===
+                request.requestBinding.targetContextId &&
+            value.requestBinding.contextRevision ===
+                request.requestBinding.contextRevision &&
+            areTargetDependencyTokensEqual(
+                value.requestBinding.dependencyToken,
+                request.requestBinding.dependencyToken
+            ) &&
+            value.targetSplatId === request.target.splatId &&
+            value.sceneId === request.sceneId &&
+            value.sceneVersion === request.sceneVersion &&
+            value.renderConfigVersion ===
+                request.snapshot.renderConfiguration.version &&
+            value.planAttemptId === request.planAttemptId &&
+            value.plannerPolicyVersion === request.plannerPolicyVersion
+        );
+    }
+
+    private isMatchingPlanSceneChunkMiss(
+        value: Record<string, unknown>,
+        request: GeneratedViewPlanRequest
+    ): value is Record<string, unknown> & {
+        missingChunkIds: readonly string[];
+    } {
+        return (
+            value.status === 'sceneChunkMiss' &&
+            this.hasMatchingPlanBindings(value, request) &&
+            isSha256Digest(value.workingSetToken) &&
+            isSortedUniqueChunkIds(value.missingChunkIds, true)
+        );
+    }
+
+    /**
+     * Render one planner-owned Generated View through the locked gsplat
+     * renderer. The response is untrusted until every bound identity and the
+     * authoritative PNG digest verify; the debug reference Contributor stays
+     * off this path exactly like the Anchor render.
+     */
+    async renderView(
+        request: AIViewRenderRequest
+    ): Promise<AIViewRenderResponse> {
+        if (!isAIViewRenderRequest(request)) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select requires a complete bound Generated View render request.'
+            );
+        }
+        if (!isPackedSceneSnapshot(request.snapshot)) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select requires a Binary SceneSnapshot Registration v1 payload.'
+            );
+        }
+        if (
+            request.requestBinding.dependencyToken.splatId !==
+            request.target.splatId
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select Generated View request target and dependency bindings must match.'
+            );
+        }
+
+        if (this.supportsCameraAwareSpatialWorkingSet()) {
+            return this.renderSpatialView(request);
+        }
+
+        await this.registerPackedSnapshot(request.snapshot);
+        const first = await this.sendViewRender(request);
+        if (first.status === 'complete') {
+            return first.response;
+        }
+
+        await this.registerPackedSnapshot(request.snapshot, true);
+        const retry = await this.sendViewRender(request);
+        if (retry.status !== 'complete') {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion repeated a Generated View Scene Snapshot cache miss after the editor resent the snapshot.'
+            );
+        }
+        return retry.response;
+    }
+
+    private async renderSpatialView(
+        request: AIViewRenderRequest
+    ): Promise<AIViewRenderResponse> {
+        const spatialSnapshot = this.spatialSnapshotFor(request);
+        await this.registerSpatialSceneManifest(spatialSnapshot);
+
+        let manifestRecoveryAttempts = 0;
+        let chunkRecoveryAttempts = 0;
+        for (;;) {
+            const result = await this.sendViewRender(request, 'spatial-v1');
+            if (result.status === 'complete') {
+                return result.response;
+            }
+            if (result.status === 'sceneCacheMiss') {
+                if (manifestRecoveryAttempts >= 1) {
+                    throw transportError(
+                        'invalidResponse',
+                        'The Selection Service Companion repeated a Generated View Spatial Scene manifest cache miss after the editor resent the manifest.'
+                    );
+                }
+                manifestRecoveryAttempts += 1;
+                await this.registerSpatialSceneManifest(spatialSnapshot, true);
+                continue;
+            }
+            if (chunkRecoveryAttempts >= 1) {
+                throw transportError(
+                    'invalidResponse',
+                    'The Selection Service Companion repeated a Generated View Spatial Scene chunk miss after the editor uploaded its validated working set.'
+                );
+            }
+            chunkRecoveryAttempts += 1;
+            await this.uploadSpatialSceneChunks(
+                spatialSnapshot,
+                result.missingChunkIds
+            );
+        }
+    }
+
+    private async sendViewRender(
+        request: AIViewRenderRequest,
+        sceneTransport: 'packed-v1' | 'spatial-v1' = 'packed-v1'
+    ): Promise<
+        | {
+              readonly status: 'complete';
+              readonly response: AIViewRenderResponse;
+          }
+        | { readonly status: 'sceneCacheMiss' }
+        | {
+              readonly status: 'sceneChunkMiss';
+              readonly missingChunkIds: readonly string[];
+          }
+    > {
+        const result = await this.requestJson(
+            '/ai-select/view-renders',
+            'POST',
+            {
+                requestBinding: request.requestBinding,
+                targetSplatId: request.target.splatId,
+                sceneId: request.snapshot.sceneId,
+                sceneVersion: request.snapshot.sceneVersion,
+                renderConfigVersion:
+                    request.snapshot.renderConfiguration.version,
+                renderAttemptId: request.renderAttemptId,
+                viewId: request.viewId,
+                cameraBinding: request.cameraBinding,
+                ...(sceneTransport === 'spatial-v1' ? { sceneTransport } : {})
+                // The production render never sets the explicit
+                // referenceContributor debug capability, exactly like the Anchor.
+            }
+        );
+        if (!isRecord(result)) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an invalid Generated View render response.'
+            );
+        }
+        if (result.status === 'sceneCacheMiss') {
+            if (!this.hasMatchingViewRenderBindings(result, request)) {
+                throw transportError(
+                    'invalidResponse',
+                    'The Selection Service Companion returned stale Generated View cache-miss bindings.'
+                );
+            }
+            return { status: 'sceneCacheMiss' };
+        }
+        if (result.status === 'sceneChunkMiss') {
+            if (
+                sceneTransport !== 'spatial-v1' ||
+                !this.isMatchingViewRenderSceneChunkMiss(result, request)
+            ) {
+                throw transportError(
+                    'invalidResponse',
+                    'The Selection Service Companion returned stale or invalid Generated View chunk-miss bindings.'
+                );
+            }
+            return {
+                status: 'sceneChunkMiss',
+                missingChunkIds: result.missingChunkIds
+            };
+        }
+        if (result.status !== 'complete' || !isAIViewRenderResponse(result)) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an incomplete or stale Generated View render.'
+            );
+        }
+        await this.assertViewRgbDigest(result, request);
+        if (!viewRenderResponseMatchesRequest(result, request)) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an incomplete or stale Generated View render.'
+            );
+        }
+        return {
+            status: 'complete',
+            response: result
+        };
+    }
+
+    private hasMatchingViewRenderBindings(
+        value: Record<string, unknown>,
+        request: AIViewRenderRequest
+    ): boolean {
+        return (
+            isAIRequestBinding(value.requestBinding) &&
+            value.requestBinding.targetContextId ===
+                request.requestBinding.targetContextId &&
+            value.requestBinding.contextRevision ===
+                request.requestBinding.contextRevision &&
+            areTargetDependencyTokensEqual(
+                value.requestBinding.dependencyToken,
+                request.requestBinding.dependencyToken
+            ) &&
+            value.targetSplatId === request.target.splatId &&
+            value.sceneId === request.snapshot.sceneId &&
+            value.sceneVersion === request.snapshot.sceneVersion &&
+            value.renderConfigVersion ===
+                request.snapshot.renderConfiguration.version &&
+            value.renderAttemptId === request.renderAttemptId &&
+            value.viewId === request.viewId &&
+            isCameraBinding(value.cameraBinding) &&
+            areCameraBindingsEqual(value.cameraBinding, request.cameraBinding)
+        );
+    }
+
+    private isMatchingViewRenderSceneChunkMiss(
+        value: Record<string, unknown>,
+        request: AIViewRenderRequest
+    ): value is Record<string, unknown> & {
+        missingChunkIds: readonly string[];
+    } {
+        return (
+            value.status === 'sceneChunkMiss' &&
+            this.hasMatchingViewRenderBindings(value, request) &&
+            isSha256Digest(value.workingSetToken) &&
+            isSortedUniqueChunkIds(value.missingChunkIds, true)
+        );
+    }
+
+    /**
+     * Produce the automatic Mask of one RGB Ready Generated View, conditioned
+     * on the confirmed Anchor Stable Mask identity. The Companion projects
+     * the Anchor's Gaussian support into the Generated View camera and runs
+     * one single-frame SAM pass; the response is untrusted until every bound
+     * identity and the artifact digest verify.
+     */
+    async produceGeneratedViewMask(
+        request: GeneratedViewMaskRequest
+    ): Promise<GeneratedViewMaskResponse> {
+        if (!isGeneratedViewMaskRequest(request)) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select requires a complete bound Generated View Mask request.'
+            );
+        }
+        this.assertConfiguredModelManifest(request.modelManifestDigest);
+        if (this.supportsCameraAwareSpatialWorkingSet()) {
+            return this.produceSpatialGeneratedViewMask(request);
+        }
+        await this.registerPackedSnapshot(request.snapshot);
+        const first = await this.sendGeneratedViewMask(request);
+        if (first.status === 'complete') {
+            return first.response;
+        }
+        await this.registerPackedSnapshot(request.snapshot, true);
+        const retry = await this.sendGeneratedViewMask(request);
+        if (retry.status !== 'complete') {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion repeated a Generated View Mask Scene Snapshot cache miss after the editor resent the snapshot.'
+            );
+        }
+        return retry.response;
+    }
+
+    private async produceSpatialGeneratedViewMask(
+        request: GeneratedViewMaskRequest
+    ): Promise<GeneratedViewMaskResponse> {
+        const spatialSnapshot = this.spatialSnapshotFor(request);
+        await this.registerSpatialSceneManifest(spatialSnapshot);
+
+        let manifestRecoveryAttempts = 0;
+        let chunkRecoveryAttempts = 0;
+        for (;;) {
+            const result = await this.sendGeneratedViewMask(
+                request,
+                'spatial-v1'
+            );
+            if (result.status === 'complete') {
+                return result.response;
+            }
+            if (result.status === 'sceneCacheMiss') {
+                if (manifestRecoveryAttempts >= 1) {
+                    throw transportError(
+                        'invalidResponse',
+                        'The Selection Service Companion repeated a Generated View Mask Spatial Scene manifest cache miss after the editor resent the manifest.'
+                    );
+                }
+                manifestRecoveryAttempts += 1;
+                await this.registerSpatialSceneManifest(spatialSnapshot, true);
+                continue;
+            }
+            if (chunkRecoveryAttempts >= 1) {
+                throw transportError(
+                    'invalidResponse',
+                    'The Selection Service Companion repeated a Generated View Mask Spatial Scene chunk miss after the editor uploaded its validated working set.'
+                );
+            }
+            chunkRecoveryAttempts += 1;
+            await this.uploadSpatialSceneChunks(
+                spatialSnapshot,
+                result.missingChunkIds
+            );
+        }
+    }
+
+    private async sendGeneratedViewMask(
+        request: GeneratedViewMaskRequest,
+        sceneTransport: 'packed-v1' | 'spatial-v1' = 'packed-v1'
+    ): Promise<
+        | {
+              readonly status: 'complete';
+              readonly response: GeneratedViewMaskResponse;
+          }
+        | { readonly status: 'sceneCacheMiss' }
+        | {
+              readonly status: 'sceneChunkMiss';
+              readonly missingChunkIds: readonly string[];
+          }
+    > {
+        const result = await this.requestJson(
+            '/ai-select/generated-view-masks',
+            'POST',
+            {
+                requestBinding: request.requestBinding,
+                targetSplatId: request.target.splatId,
+                sceneId: request.sceneId,
+                sceneVersion: request.sceneVersion,
+                renderConfigVersion:
+                    request.snapshot.renderConfiguration.version,
+                viewId: request.viewId,
+                viewCameraBinding: request.viewCameraBinding,
+                maskAttemptId: request.maskAttemptId,
+                rgb: request.rgb,
+                anchor: request.anchor,
+                modelManifestDigest: request.modelManifestDigest,
+                ...(sceneTransport === 'spatial-v1' ? { sceneTransport } : {})
+            }
+        );
+        if (!isRecord(result)) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an invalid Generated View Mask response.'
+            );
+        }
+        if (result.status === 'sceneCacheMiss') {
+            if (!this.hasMatchingGeneratedMaskBindings(result, request)) {
+                throw transportError(
+                    'invalidResponse',
+                    'The Selection Service Companion returned stale Generated View Mask cache-miss bindings.'
+                );
+            }
+            return { status: 'sceneCacheMiss' };
+        }
+        if (result.status === 'sceneChunkMiss') {
+            if (
+                sceneTransport !== 'spatial-v1' ||
+                !this.isMatchingGeneratedMaskSceneChunkMiss(result, request)
+            ) {
+                throw transportError(
+                    'invalidResponse',
+                    'The Selection Service Companion returned stale or invalid Generated View Mask chunk-miss bindings.'
+                );
+            }
+            return {
+                status: 'sceneChunkMiss',
+                missingChunkIds: result.missingChunkIds
+            };
+        }
+        if (
+            result.status !== 'complete' ||
+            !isGeneratedViewMaskResponse(result) ||
+            !generatedViewMaskResponseMatchesRequest(result, request)
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an incomplete or stale Generated View Mask result.'
+            );
+        }
+        return {
+            status: 'complete',
+            response: result
+        };
+    }
+
+    private hasMatchingGeneratedMaskBindings(
+        value: Record<string, unknown>,
+        request: GeneratedViewMaskRequest
+    ): boolean {
+        return (
+            isAIRequestBinding(value.requestBinding) &&
+            value.requestBinding.targetContextId ===
+                request.requestBinding.targetContextId &&
+            value.requestBinding.contextRevision ===
+                request.requestBinding.contextRevision &&
+            areTargetDependencyTokensEqual(
+                value.requestBinding.dependencyToken,
+                request.requestBinding.dependencyToken
+            ) &&
+            value.targetSplatId === request.target.splatId &&
+            value.sceneId === request.sceneId &&
+            value.sceneVersion === request.sceneVersion &&
+            value.renderConfigVersion ===
+                request.snapshot.renderConfiguration.version &&
+            value.viewId === request.viewId &&
+            value.maskAttemptId === request.maskAttemptId
+        );
+    }
+
+    private isMatchingGeneratedMaskSceneChunkMiss(
+        value: Record<string, unknown>,
+        request: GeneratedViewMaskRequest
+    ): value is Record<string, unknown> & {
+        missingChunkIds: readonly string[];
+    } {
+        return (
+            value.status === 'sceneChunkMiss' &&
+            this.hasMatchingGeneratedMaskBindings(value, request) &&
+            isSha256Digest(value.workingSetToken) &&
+            isSortedUniqueChunkIds(value.missingChunkIds, true)
+        );
+    }
+
     private hasMatchingProbeBindings(
         value: Record<string, unknown>,
         request: AnchorSupportProbeRequest
@@ -1430,27 +2056,50 @@ class FetchSelectionServiceAdapter
         response: AnchorRenderResponse,
         request: AnchorRenderRequest
     ): Promise<void> {
+        await this.assertRgbDigestMatchesBinding(
+            response.rgb,
+            request.cameraBinding,
+            'Anchor'
+        );
+    }
+
+    private async assertViewRgbDigest(
+        response: AIViewRenderResponse,
+        request: AIViewRenderRequest
+    ): Promise<void> {
+        await this.assertRgbDigestMatchesBinding(
+            response.rgb,
+            request.cameraBinding,
+            'Generated View'
+        );
+    }
+
+    private async assertRgbDigestMatchesBinding(
+        rgb: AnchorRenderResponse['rgb'],
+        cameraBinding: AnchorRenderRequest['cameraBinding'],
+        viewKind: 'Anchor' | 'Generated View'
+    ): Promise<void> {
         if (
             typeof globalThis.atob !== 'function' ||
             globalThis.crypto?.subtle === undefined
         ) {
             throw transportError(
                 'browserTransport',
-                'This editor context cannot verify the authoritative Anchor PNG digest.'
+                `This editor context cannot verify the authoritative ${viewKind} PNG digest.`
             );
         }
         let pngBytes: Uint8Array<ArrayBuffer>;
         try {
-            pngBytes = decodePngBase64(response.rgb.pngBase64);
+            pngBytes = decodePngBase64(rgb.pngBase64);
             const dimensions = parsePngDimensions(pngBytes);
             if (
-                dimensions.width !== response.rgb.width ||
-                dimensions.height !== response.rgb.height ||
-                dimensions.width !== request.cameraBinding.projection.width ||
-                dimensions.height !== request.cameraBinding.projection.height
+                dimensions.width !== rgb.width ||
+                dimensions.height !== rgb.height ||
+                dimensions.width !== cameraBinding.projection.width ||
+                dimensions.height !== cameraBinding.projection.height
             ) {
                 throw new Error(
-                    'Anchor PNG dimensions do not match its bound CameraBinding.'
+                    `${viewKind} PNG dimensions do not match its bound CameraBinding.`
                 );
             }
         } catch (error) {
@@ -1462,7 +2111,7 @@ class FetchSelectionServiceAdapter
             }
             throw transportError(
                 'invalidResponse',
-                'The Selection Service Companion returned an invalid Anchor PNG artifact.'
+                `The Selection Service Companion returned an invalid ${viewKind} PNG artifact.`
             );
         }
         const digest = await globalThis.crypto.subtle.digest(
@@ -1473,10 +2122,10 @@ class FetchSelectionServiceAdapter
         const digestHex = digestBytes
             .map((byte) => byte.toString(16).padStart(2, '0'))
             .join('');
-        if (response.rgb.digest.toLowerCase() !== `sha256:${digestHex}`) {
+        if (rgb.digest.toLowerCase() !== `sha256:${digestHex}`) {
             throw transportError(
                 'invalidResponse',
-                'The authoritative Anchor PNG digest does not match the returned bytes.'
+                `The authoritative ${viewKind} PNG digest does not match the returned bytes.`
             );
         }
         try {
@@ -1484,7 +2133,7 @@ class FetchSelectionServiceAdapter
         } catch {
             throw transportError(
                 'invalidResponse',
-                'The Selection Service Companion returned an invalid Anchor PNG artifact.'
+                `The Selection Service Companion returned an invalid ${viewKind} PNG artifact.`
             );
         }
     }

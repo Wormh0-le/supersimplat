@@ -251,11 +251,20 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/ai-select/anchor-renders":
             self._render_ai_select_anchor()
             return
+        if self.path == "/ai-select/view-renders":
+            self._render_ai_select_view()
+            return
         if self.path == "/ai-select/anchor-support-probes":
             self._probe_ai_select_anchor_support()
             return
         if self.path == "/ai-select/masks":
             self._produce_ai_select_mask()
+            return
+        if self.path == "/ai-select/generated-view-plans":
+            self._plan_ai_select_generated_views()
+            return
+        if self.path == "/ai-select/generated-view-masks":
+            self._produce_ai_select_generated_view_mask()
             return
         if self.path == "/object-selection-sessions":
             self._open_object_selection_session()
@@ -318,6 +327,102 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
                 HTTPStatus.CONFLICT,
                 {
                     "status": "supportProbeError",
+                    "code": error.code,
+                    "message": str(error),
+                },
+            )
+            return
+        except ValueError as error:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"status": "invalidRequest", "message": str(error)},
+            )
+            return
+        self._send_json(HTTPStatus.OK, response)
+
+    def _render_ai_select_view(self) -> None:
+        """Route one planner-owned Generated View through the locked renderer."""
+
+        timing = AnchorServerTiming()
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error), server_timing=timing)
+            return
+        try:
+            request = self._read_json_body()
+            response = self._state.render_ai_select_view(request, timing=timing)
+        except MaskSessionError as error:
+            # MaskSessionError subclasses ValueError, so the actionable 409
+            # branch must be matched before the generic 400 validation branch.
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {
+                    "status": "viewRenderError",
+                    "code": error.code,
+                    "message": str(error),
+                },
+                server_timing=timing,
+            )
+            return
+        except ValueError as error:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"status": "invalidRequest", "message": str(error)},
+                server_timing=timing,
+            )
+            return
+        self._send_json(HTTPStatus.OK, response, server_timing=timing)
+
+    def _plan_ai_select_generated_views(self) -> None:
+        """Route the first planner-owned Generated View camera planning."""
+
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            request = self._read_json_body()
+            response = self._state.plan_ai_select_generated_views(request)
+        except MaskSessionError as error:
+            # MaskSessionError subclasses ValueError, so the actionable 409
+            # branch must be matched before the generic 400 validation branch.
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {
+                    "status": "plannerError",
+                    "code": error.code,
+                    "message": str(error),
+                },
+            )
+            return
+        except ValueError as error:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"status": "invalidRequest", "message": str(error)},
+            )
+            return
+        self._send_json(HTTPStatus.OK, response)
+
+    def _produce_ai_select_generated_view_mask(self) -> None:
+        """Route one propagated automatic Generated View Mask request."""
+
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            request = self._read_json_body()
+            response = self._state.produce_ai_select_generated_view_mask(request)
+        except MaskSessionError as error:
+            # MaskSessionError subclasses ValueError, so the actionable 409
+            # branch must be matched before the generic 400 validation branch.
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {
+                    "status": "maskError",
                     "code": error.code,
                     "message": str(error),
                 },

@@ -443,6 +443,37 @@ class GsplatContributorRendererTests(unittest.TestCase):
         with Image.open(BytesIO(artifact.image_png)) as image:
             self.assertEqual(image.size, (frame.width, frame.height))
 
+    def test_render_anchor_accepts_a_generated_view_identity(self) -> None:
+        backend = StaticTypedAnchorBackend()
+        backend.rasterization = replace(
+            backend.rasterization,
+            contributor_ids=None,
+            contributor_weights=None,
+            stable_ids=None,
+        )
+        renderer = GsplatContributorRenderer(backend=backend)
+        frame = anchor_frame()
+        assert frame.camera is not None
+
+        artifact = renderer.render_anchor(
+            scene_snapshot=supported_snapshot(),
+            view_id='generated-00',
+            camera=frame.camera,
+            width=frame.width,
+            height=frame.height,
+        )
+
+        # Generated Views render through the same locked authoritative path;
+        # the view identity is a label, never a rasterization difference.
+        self.assertEqual(backend.calls, 1)
+        self.assertEqual(backend.reference_contributor_requests, [False])
+        self.assertEqual(
+            artifact.rgb_digest,
+            f'sha256:{hashlib.sha256(artifact.image_png).hexdigest()}',
+        )
+        with Image.open(BytesIO(artifact.image_png)) as image:
+            self.assertEqual(image.size, (frame.width, frame.height))
+
     def test_reference_contributor_failure_stays_diagnostic_beside_valid_rgb(self) -> None:
         backend = StaticTypedAnchorBackend()
         backend.rasterization = replace(

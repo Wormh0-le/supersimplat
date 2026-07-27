@@ -1342,9 +1342,12 @@ class GsplatContributorRenderer:
         timing: AnchorServerTiming | None = None,
         include_reference_contributor: bool = False,
     ) -> AnchorRenderArtifact:
-        """Render the v1 Anchor from gsplat, never from editor framebuffer data.
+        """Render one authoritative AI View from gsplat, never editor pixels.
 
-        The production path publishes authoritative RGB only; it never invokes,
+        The same locked raster path serves the Anchor View and planner-owned
+        Generated Views; ``view_id`` is the product's view identity, echoed
+        into camera validation and any reference Contributor frame. The
+        production path publishes authoritative RGB only; it never invokes,
         allocates, reconciles, or hashes complete per-pixel Contributor data.
         The explicit ``include_reference_contributor`` opt-in is the only way
         to reach the reference Contributor backend, and its failure stays
@@ -1352,9 +1355,9 @@ class GsplatContributorRenderer:
         as a compatibility/reference fallback for non-typed backends.
         """
 
-        if view_id != 'anchor-view':
+        if not isinstance(view_id, str) or not view_id:
             raise MaskSessionError(
-                'rendererFailure', 'AI Select can render only the Anchor View here.'
+                'rendererFailure', 'AI Select View identity is invalid.'
             )
         if (
             isinstance(width, bool)
@@ -1368,6 +1371,7 @@ class GsplatContributorRenderer:
                 'rendererFailure', 'AI Select Anchor resolution is invalid.'
             )
 
+        frame_source = 'anchor' if view_id == 'anchor-view' else 'generated'
         stable_ids = validate_supported_snapshot(scene_snapshot)
         immutable_camera = dict(camera)
         # Validate before dispatching the expensive CUDA operation. The frame
@@ -1378,7 +1382,7 @@ class GsplatContributorRenderer:
                 frame_digest='sha256:' + ('0' * 64),
                 width=width,
                 height=height,
-                source='anchor',
+                source=frame_source,
                 camera=immutable_camera,
             )
         )
@@ -1431,7 +1435,7 @@ class GsplatContributorRenderer:
                 width=width,
                 height=height,
                 image_png=image_png,
-                source='anchor',
+                source=frame_source,
                 camera=immutable_camera,
             )
             with (

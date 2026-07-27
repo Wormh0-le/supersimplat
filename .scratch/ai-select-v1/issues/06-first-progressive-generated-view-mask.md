@@ -104,3 +104,9 @@ Known gaps / handoff notes:
 - The fetch-adapter scene-miss recovery loops now exist in five near-identical copies (Anchor render/probe + these three); extraction deferred as cross-ticket churn. Timing: fold the dedup into Ticket 19 (scene/render data-path hardening) or a standalone cleanup right after Ticket 14 — the consumer set completes at 14, and 19 is the declared hardening ticket for this seam.
 - The legacy Anchor render route maps renderer failures to 400 (ValueError before MaskSessionError — its 409 branch is unreachable); left untouched here, the new view-render route maps them to 409 correctly.
 - No GPU validation ran in this environment: planning/propagation policies are pure CPU and the render path reuses the locked-renderer seam with a fixture renderer, but production GPU behavior (RGB Ready → Mask Generating → Auto Stable/Failed on the locked runtime) is unverified. No manual browser walkthrough of the Gallery/frustum picking in this environment.
+
+## Walkthrough fixes recorded — 2026-07-26
+
+GPU walkthrough against the locked production renderer surfaced one defect, fixed:
+
+- **Generated View renders rejected in production**: `GsplatContributorRenderer.render_anchor` hard-rejected any `view_id != 'anchor-view'` (Ticket 02's anchor-only guard), so the first Generated View render failed with `rendererFailure: AI Select can render only the Anchor View here.` The fixture renderer used in tests has no such guard, which is why suites did not catch it. The guard now validates only a non-empty view identity; the same locked raster path serves Anchor and Generated Views, with the reference-Contributor frame source labelled accordingly. Regression coverage: renderer-level generated-view test plus the existing 235-test companion suite.

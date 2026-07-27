@@ -41,6 +41,7 @@ Build Gallery and frustum synchronization while preserving state boundaries. Nav
 - [ ] Filtering de-emphasizes nonmatching frustums without deleting/reclassifying them.
 - [ ] Card↔frustum selection sync works without moving Editor Camera.
 - [ ] Inspect AI Cameras reuses Camera Inspection and never retargets Anchor.
+- [ ] A selected off-screen frustum has an explicit user-invoked locate/inspect path; automatic View generation never moves the Editor Camera merely to reveal it.
 - [ ] Generated frustums remain read-only in v1.1.
 - [ ] Stable viewId, never array index, is identity.
 - [ ] Thumbnail/resource handling supports 10–20+ Views without one full Mask Editor per card.
@@ -61,6 +62,7 @@ Build Gallery and frustum synchronization while preserving state boundaries. Nav
 - npm run build
 - Manual 10–20+ View walkthrough including RGB Ready + Evidence Failed
 - Frustum↔card tests
+- Browser walkthrough starting with every Generated Frustum behind the current Camera Inspection observer
 
 ## Non-goals
 

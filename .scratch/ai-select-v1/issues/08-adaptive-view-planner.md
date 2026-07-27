@@ -34,6 +34,7 @@ Replace fixed View-count UX with bounded adaptive planning. Planning may use low
 - [ ] View candidates, RGB, Mask, and later Evidence publish independently/progressively.
 - [ ] Planner uses target-scoped observation and directional gain, not whole-scene Gaussian denominator.
 - [ ] Planner may use declared low-cost diagnostics before formal P/N/V exists; it does not fabricate production Evidence.
+- [ ] Candidate preflight detects overly distant or low-value orbit candidates and rejects/replaces them by target visibility and directional gain; it does not clamp cameras into the Scene bound merely to keep frustums near Gaussian content.
 - [ ] Stop Generation cancels pending/future work without deleting completed Views/RGB/Stable Masks/review state.
 - [ ] Generate More is incremental from current observation/directional gaps.
 - [ ] maxAutoViews is a hard batch bound; user may authorize another bounded batch.
@@ -55,6 +56,7 @@ Replace fixed View-count UX with bounded adaptive planning. Planning may use low
 - npm run lint
 - Locked GPU planner smoke
 - Frozen-scene marginal observation/diversity/early-stop benchmark
+- Large-orbit regression captured from the Ticket 06 browser walkthrough (`12.918`-unit orbit, `18.269`-unit candidate separation)
 
 ## Non-goals
 

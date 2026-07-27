@@ -520,6 +520,7 @@ const main = async () => {
         }
         const cameraPosition = scene.camera.mainCamera.getPosition();
         const cameraForward = scene.camera.mainCamera.forward;
+        const viewportSpan = Math.max(rect.width, rect.height);
         const viewId = pickGeneratedViewFrustum(
             aiSelectGeneratedViews.state.views.map((view) => ({
                 viewId: view.viewId,
@@ -534,7 +535,8 @@ const main = async () => {
             },
             (event.clientX - rect.left) / rect.width,
             (event.clientY - rect.top) / rect.height,
-            10 / Math.max(rect.width, rect.height)
+            10 / viewportSpan,
+            32 / viewportSpan
         );
         if (viewId === null) {
             return;

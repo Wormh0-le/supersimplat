@@ -2,7 +2,7 @@ import { Color, Vec3 } from 'playcanvas';
 
 import type { CameraBinding } from './ai-select/camera-binding';
 import {
-    generatedFrustumDisplayDepth,
+    generatedFrustumDisplayDepthForProjection,
     generatedFrustumLines
 } from './ai-select/generated-frustum-picking';
 import { Element, ElementType } from './element';
@@ -15,6 +15,10 @@ export interface GeneratedFrustumView {
 
 const frustumColor = new Color(0.35, 0.9, 0.55, 0.7);
 const selectedFrustumColor = new Color(0.55, 1.0, 0.35, 1.0);
+const minimumFrustumDisplayPixels = 32;
+const projectedWorld = new Vec3();
+const projectedScreen = new Vec3();
+const projectedOffset = new Vec3();
 
 /**
  * Draws every Generated View frustum from its exact immutable CameraBinding.
@@ -50,8 +54,34 @@ export class GeneratedViewFrustums extends Element {
         if (!this.visible) {
             return;
         }
+        const cameraPosition = this.scene.camera.mainCamera.getPosition();
+        const cameraForward = this.scene.camera.mainCamera.forward;
+        const viewportSpan = Math.max(
+            this.scene.canvas.clientWidth,
+            this.scene.canvas.clientHeight
+        );
+        const minimumDisplaySize =
+            viewportSpan > 0 ? minimumFrustumDisplayPixels / viewportSpan : 0;
+        const projector = (x: number, y: number, z: number) => {
+            projectedWorld.set(x, y, z);
+            projectedOffset.sub2(projectedWorld, cameraPosition);
+            const inFront = projectedOffset.dot(cameraForward) > 0;
+            this.scene.camera.worldToScreen(
+                projectedWorld,
+                projectedScreen
+            );
+            return {
+                x: projectedScreen.x,
+                y: projectedScreen.y,
+                inFront
+            };
+        };
         for (const view of this.views) {
-            const depth = generatedFrustumDisplayDepth(view.cameraBinding);
+            const depth = generatedFrustumDisplayDepthForProjection(
+                view.cameraBinding,
+                projector,
+                minimumDisplaySize
+            );
             const color = view.selected ? selectedFrustumColor : frustumColor;
             for (const [start, end] of generatedFrustumLines(
                 view.cameraBinding,

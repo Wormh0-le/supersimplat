@@ -92,6 +92,74 @@ export const generatedFrustumLines = (
     ];
 };
 
+/**
+ * Scale one frustum to a minimum normalized screen footprint under the current
+ * Editor Camera. This changes only debug geometry length: every line still
+ * follows the exact immutable CameraBinding rays used by the Companion.
+ */
+export const generatedFrustumDisplayDepthForProjection = (
+    binding: CameraBinding,
+    projector: GeneratedFrustumProjector,
+    minimumDisplaySize: number
+): number => {
+    const baseDepth = generatedFrustumDisplayDepth(binding);
+    if (!Number.isFinite(minimumDisplaySize) || minimumDisplaySize <= 0) {
+        return baseDepth;
+    }
+    const projectedSpan = (depth: number): number | null => {
+        const projected = generatedFrustumLines(binding, depth)
+            .flat()
+            .map(([x, y, z]) => projector(x, y, z));
+        if (
+            projected.length === 0 ||
+            projected.some((point) => !point.inFront)
+        ) {
+            return null;
+        }
+        const xs = projected.map((point) => point.x);
+        const ys = projected.map((point) => point.y);
+        const span = Math.max(
+            Math.max(...xs) - Math.min(...xs),
+            Math.max(...ys) - Math.min(...ys)
+        );
+        return Number.isFinite(span) && span > 0 ? span : null;
+    };
+    const baseSpan = projectedSpan(baseDepth);
+    if (baseSpan === null || baseSpan >= minimumDisplaySize) {
+        return baseDepth;
+    }
+
+    let lowerDepth = baseDepth;
+    let upperDepth = baseDepth;
+    for (let step = 0; step < 12; step++) {
+        upperDepth = Math.min(binding.projection.far, upperDepth * 2);
+        const upperSpan = projectedSpan(upperDepth);
+        if (upperSpan === null) {
+            return lowerDepth;
+        }
+        if (upperSpan >= minimumDisplaySize) {
+            for (let refinement = 0; refinement < 8; refinement++) {
+                const candidateDepth = (lowerDepth + upperDepth) * 0.5;
+                const candidateSpan = projectedSpan(candidateDepth);
+                if (
+                    candidateSpan !== null &&
+                    candidateSpan >= minimumDisplaySize
+                ) {
+                    upperDepth = candidateDepth;
+                } else {
+                    lowerDepth = candidateDepth;
+                }
+            }
+            return upperDepth;
+        }
+        lowerDepth = upperDepth;
+        if (upperDepth === binding.projection.far) {
+            return upperDepth;
+        }
+    }
+    return lowerDepth;
+};
+
 const segmentDistance = (
     px: number,
     py: number,
@@ -125,12 +193,17 @@ export const pickGeneratedViewFrustum = (
     projector: GeneratedFrustumProjector,
     x: number,
     y: number,
-    maxDistance: number
+    maxDistance: number,
+    minimumDisplaySize = 0
 ): string | null => {
     let best: string | null = null;
     let bestDistance = maxDistance;
     for (const target of targets) {
-        const depth = generatedFrustumDisplayDepth(target.cameraBinding);
+        const depth = generatedFrustumDisplayDepthForProjection(
+            target.cameraBinding,
+            projector,
+            minimumDisplaySize
+        );
         for (const [start, end] of generatedFrustumLines(
             target.cameraBinding,
             depth

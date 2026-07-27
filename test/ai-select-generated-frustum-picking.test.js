@@ -6,6 +6,7 @@ const {
 } = require('../.test-dist/src/ai-select/camera-binding.js');
 const {
     generatedFrustumDisplayDepth,
+    generatedFrustumDisplayDepthForProjection,
     generatedFrustumLines,
     pickGeneratedViewFrustum
 } = require('../.test-dist/src/ai-select/generated-frustum-picking.js');
@@ -24,6 +25,40 @@ const bindingAt = (x, y, z) => {
     return binding;
 };
 
+const largeOrbitBinding = {
+    revision: 0,
+    cameraToWorld: [
+        0.7902635425392411,
+        0.1960471730936363,
+        -0.5805592469811524,
+        7.431272613145292,
+        0.6127671118241651,
+        -0.2528349360209104,
+        0.7487262261961799,
+        -4.453261235388459,
+        0,
+        -0.9474386529212834,
+        -0.3199374922554467,
+        4.137180519247002,
+        0,
+        0,
+        0,
+        1
+    ],
+    projection: {
+        model: 'pinhole',
+        fx: 816.4706960850153,
+        fy: 816.4706960850153,
+        cx: 626.5,
+        cy: 575,
+        width: 1253,
+        height: 1150,
+        near: 0.001667584778475318,
+        far: 27.32170901053961
+    },
+    conventionVersion: 'opencv-camera-to-world/v1'
+};
+
 test('frustum lines derive from the exact CameraBinding pose and projection', () => {
     const binding = bindingAt(2, 3, 4);
     const depth = generatedFrustumDisplayDepth(binding);
@@ -35,6 +70,40 @@ test('frustum lines derive from the exact CameraBinding pose and projection', ()
     }
     const moved = generatedFrustumLines(bindingAt(9, 9, 9), depth);
     assert.notDeepEqual(moved[0][0], lines[0][0]);
+});
+
+test('a real large-orbit CameraBinding keeps a minimum projected display size', () => {
+    const originalBinding = structuredClone(largeOrbitBinding);
+    const viewportSize = 1000;
+    const minimumDisplaySize = 32 / viewportSize;
+    const projector = (x, y, z) => {
+        const perspectiveDepth = 10 - z;
+        return {
+            x: (x * 0.1) / perspectiveDepth,
+            y: (y * 0.1) / perspectiveDepth,
+            inFront: perspectiveDepth > 0
+        };
+    };
+    const depth = generatedFrustumDisplayDepthForProjection(
+        largeOrbitBinding,
+        projector,
+        minimumDisplaySize
+    );
+    const projected = generatedFrustumLines(largeOrbitBinding, depth)
+        .flat()
+        .map(([x, y, z]) => projector(x, y, z));
+    const width =
+        Math.max(...projected.map((point) => point.x)) -
+        Math.min(...projected.map((point) => point.x));
+    const height =
+        Math.max(...projected.map((point) => point.y)) -
+        Math.min(...projected.map((point) => point.y));
+
+    assert.ok(
+        Math.max(width, height) * viewportSize >= 32 - 1e-6,
+        'expected the frustum to span at least 32 pixels'
+    );
+    assert.deepEqual(largeOrbitBinding, originalBinding);
 });
 
 test('picking selects the nearest frustum and ignores far-away clicks', () => {

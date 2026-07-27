@@ -1,6 +1,6 @@
 # 06 — First progressive Generated AIView + Initial Auto Mask
 
-Status: implemented — 2026-07-25
+Status: complete
 
 Blocked by: 05
 
@@ -103,10 +103,33 @@ Known gaps / handoff notes:
 - The planner publishes a fixed first ring-neighbour pair (`GENERATED_VIEW_PLAN_COUNT = 2`); Ticket 08 owns the adaptive coverage-driven stop policy and larger budgets.
 - The fetch-adapter scene-miss recovery loops now exist in five near-identical copies (Anchor render/probe + these three); extraction deferred as cross-ticket churn. Timing: fold the dedup into Ticket 19 (scene/render data-path hardening) or a standalone cleanup right after Ticket 14 — the consumer set completes at 14, and 19 is the declared hardening ticket for this seam.
 - The legacy Anchor render route maps renderer failures to 400 (ValueError before MaskSessionError — its 409 branch is unreachable); left untouched here, the new view-render route maps them to 409 correctly.
-- No GPU validation ran in this environment: planning/propagation policies are pure CPU and the render path reuses the locked-renderer seam with a fixture renderer, but production GPU behavior (RGB Ready → Mask Generating → Auto Stable/Failed on the locked runtime) is unverified. No manual browser walkthrough of the Gallery/frustum picking in this environment.
+- No production GPU validation was run by the implementing agent: planning/propagation policies are pure CPU and the render path reuses the locked-renderer seam with a fixture renderer. The operator subsequently completed the manual browser walkthrough, including Gallery/frustum picking and selection synchronization.
 
 ## Walkthrough fixes recorded — 2026-07-26
 
 GPU walkthrough against the locked production renderer surfaced one defect, fixed:
 
 - **Generated View renders rejected in production**: `GsplatContributorRenderer.render_anchor` hard-rejected any `view_id != 'anchor-view'` (Ticket 02's anchor-only guard), so the first Generated View render failed with `rendererFailure: AI Select can render only the Anchor View here.` The fixture renderer used in tests has no such guard, which is why suites did not catch it. The guard now validates only a non-empty view identity; the same locked raster path serves Anchor and Generated Views, with the reference-Contributor frame source labelled accordingly. Regression coverage: renderer-level generated-view test plus the existing 235-test companion suite.
+
+## Frustum walkthrough defect recorded — 2026-07-27
+
+A real browser walkthrough published two RGB/Mask Ready Generated Views but
+could not initially locate either Generated Frustum. A live Scene probe proved
+that the element was attached, visible, held both Views, and submitted eight
+lines per View; both frustums were behind the current Camera Inspection observer
+and were found only after returning to the Scene View and navigating far outside
+the Gaussian content.
+
+The captured CameraBinding used `near=0.001667584778475318` and
+`far=27.32170901053961`. The former fixed display-depth rule collapsed to
+`0.05`, producing a roughly `0.07`-unit frustum on a `12.918`-unit orbit.
+Display depth now derives a minimum 32-pixel footprint from the current Editor
+Camera projection while preserving the exact CameraBinding pose and projective
+rays. Drawing and picking consume the same projected display depth, and the
+captured binding is retained as a regression fixture.
+
+Operator browser re-verification passed on 2026-07-27: Generated Frustums were
+visible at the corrected scale, selectable and read-only, and Gallery↔frustum
+selection synchronization worked in both directions. Explicitly locating an
+off-screen AI Camera remains Ticket 09; adaptive candidate distance/quality
+policy remains Ticket 08.

@@ -449,9 +449,15 @@ class Sam3PointMaskAdapter:
         )
         anchor_outcome = outcomes[anchor_view.view_id]
         if anchor_outcome["status"] != "accepted":
+            reason = anchor_outcome.get("rejectionReason")
+            detail = (
+                reason
+                if isinstance(reason, str) and reason.strip()
+                else "The prompted view did not produce an accepted SAM 3.1 mask."
+            )
             raise MaskSessionError(
                 "anchorMaskUnavailable",
-                "The Anchor View did not produce an accepted SAM 3.1 mask; adjust the point prompts and retry.",
+                f"{detail} Adjust the point prompts and retry.",
             )
         tracking_confidence_by_view = {
             view.view_id: self._tracking_confidence_from_candidate_diagnostics(

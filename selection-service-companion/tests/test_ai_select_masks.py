@@ -314,6 +314,8 @@ class AISelectMaskTests(unittest.TestCase):
         with self.assertRaises(MaskSessionError) as error:
             self.state.produce_ai_select_mask(self.request_body())
         self.assertEqual(error.exception.code, 'anchorMaskUnavailable')
+        # The model-level reason travels with the failure, not a generic message.
+        self.assertIn('found no foreground mask', str(error.exception))
         self.assertEqual(self.predictor.session_starts, 1)
 
         # The bound failure replays for the same attempt without re-running SAM.
@@ -329,6 +331,19 @@ class AISelectMaskTests(unittest.TestCase):
             self.state.produce_ai_select_mask(retry)
         self.assertEqual(retried.exception.code, 'anchorMaskUnavailable')
         self.assertEqual(self.predictor.session_starts, 2)
+
+    def test_reports_a_point_inconsistent_anchor_mask_with_its_reason(self) -> None:
+        # The candidate covers (1, 0) only; prompting (0, 1) rejects it.
+        request = self.request_body()
+        request['prompts'] = [
+            {'promptId': 'prompt-1', 'xPx': 0, 'yPx': 1, 'polarity': 'include'},
+        ]
+
+        with self.assertRaises(MaskSessionError) as error:
+            self.state.produce_ai_select_mask(request)
+
+        self.assertEqual(error.exception.code, 'anchorMaskUnavailable')
+        self.assertIn('did not return an Anchor View mask that satisfied', str(error.exception))
 
     def test_replays_a_matching_mask_request_without_a_second_sam_pass(self) -> None:
         first = self.state.produce_ai_select_mask(self.request_body())

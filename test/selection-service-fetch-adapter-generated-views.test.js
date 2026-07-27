@@ -257,6 +257,28 @@ const maskResponse = (request, overrides = {}) => ({
         projectedSupportCount: 7,
         promptCount: 3
     },
+    assessment: {
+        status: 'good',
+        reasons: [],
+        actionableReasons: [],
+        policyVersion: 'local-view-assessment/v1',
+        inputIdentity: {
+            rgbDigest: request.rgb.digest,
+            stableMaskDigest: maskArtifact.digest,
+            assessmentPolicyVersion: 'local-view-assessment/v1',
+            supportPolicyVersion: 'local-view-support-probe/v1',
+            propagationPolicyVersion: aiSelectGeneratedViewMaskPolicyVersion
+        },
+        diagnostics: {
+            foregroundPixels: 2,
+            boundaryContactRatio: 0,
+            connectedComponents: 1,
+            largestComponentRatio: 1,
+            observedGaussianCount: 30,
+            projectedSupportCount: 7,
+            promptCount: 3
+        }
+    },
     modelManifestDigest: request.modelManifestDigest,
     ...overrides
 });

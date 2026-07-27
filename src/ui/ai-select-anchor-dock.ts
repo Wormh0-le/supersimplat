@@ -23,6 +23,7 @@ import {
     type AISelectMaskController,
     type AISelectMaskState
 } from '../ai-select/mask-controller';
+import { reviewReasonActionKeys } from '../ai-select/view-assessment';
 
 export interface AISelectAnchorDockOptions {
     readonly onRetry: () => Promise<void>;
@@ -45,6 +46,9 @@ interface GeneratedCardElements {
     readonly title: Label;
     readonly status: Label;
     readonly retryButton: Button;
+    readonly retryMaskButton: Button;
+    readonly confirmReviewButton: Button;
+    readonly participationButton: Button;
     rgbDigest?: string;
 }
 
@@ -410,22 +414,69 @@ export class AISelectAnchorDock extends Container {
             class: 'ai-select-view-card-retry',
             hidden: true
         });
+        const retryMaskButton = new Button({
+            class: 'ai-select-view-card-retry-mask',
+            hidden: true
+        });
+        const confirmReviewButton = new Button({
+            class: 'ai-select-view-card-confirm-review',
+            hidden: true
+        });
+        const participationButton = new Button({
+            class: 'ai-select-view-card-participation',
+            hidden: true
+        });
         i18n.bindText(retryButton, 'ai-select.views.retry-render');
+        i18n.bindText(retryMaskButton, 'ai-select.views.retry-mask');
+        i18n.bindText(confirmReviewButton, 'ai-select.review.confirm-as-is');
         if (onRetry !== null) {
             retryButton.on('click', (event: Event) => {
                 event.stopPropagation();
                 onRetry();
             });
         }
+        retryMaskButton.on('click', (event: Event) => {
+            event.stopPropagation();
+            const viewId = root.dom.dataset.viewId;
+            if (viewId !== undefined) {
+                this.retryGeneratedViewMask(viewId);
+            }
+        });
+        confirmReviewButton.on('click', (event: Event) => {
+            event.stopPropagation();
+            const viewId = root.dom.dataset.viewId;
+            if (viewId !== undefined) {
+                this.confirmGeneratedReview(viewId);
+            }
+        });
+        participationButton.on('click', (event: Event) => {
+            event.stopPropagation();
+            const viewId = root.dom.dataset.viewId;
+            if (viewId !== undefined) {
+                this.toggleGeneratedViewParticipation(viewId);
+            }
+        });
         root.dom.appendChild(image);
         root.append(title);
         root.append(status);
         root.append(retryButton);
+        root.append(retryMaskButton);
+        root.append(confirmReviewButton);
+        root.append(participationButton);
         root.dom.addEventListener('pointerdown', (event) =>
             event.stopPropagation()
         );
         root.dom.addEventListener('click', () => onClick());
-        return { root, image, title, status, retryButton };
+        return {
+            root,
+            image,
+            title,
+            status,
+            retryButton,
+            retryMaskButton,
+            confirmReviewButton,
+            participationButton
+        };
     }
 
     private renderGallery(presentation: AnchorDockPresentation): void {
@@ -465,6 +516,9 @@ export class AISelectAnchorDock extends Container {
         this.anchorCard.title.text = i18n.t('ai-select.views.anchor');
         this.anchorCard.status.text = i18n.t(anchorStatusKey);
         this.anchorCard.retryButton.hidden = true;
+        this.anchorCard.retryMaskButton.hidden = true;
+        this.anchorCard.confirmReviewButton.hidden = true;
+        this.anchorCard.participationButton.hidden = true;
         if (presentation.rgb !== undefined) {
             if (this.anchorCard.rgbDigest !== presentation.rgb.digest) {
                 this.anchorCard.rgbDigest = presentation.rgb.digest;
@@ -507,6 +561,7 @@ export class AISelectAnchorDock extends Container {
         index: number
     ): void {
         card.title.text = `${i18n.t('ai-select.views.generated')} ${index + 1}`;
+        card.root.dom.dataset.viewId = view.viewId;
         const lines: string[] = [
             i18n.t(`ai-select.views.status.${view.renderStatus}`)
         ];
@@ -525,6 +580,7 @@ export class AISelectAnchorDock extends Container {
                 view.maskErrorMessage !== undefined
             ) {
                 lines.push(view.maskErrorMessage);
+                lines.push(i18n.t('ai-select.review.mask-failure-options'));
             }
             // Ticket 06 never requests Evidence; later statuses arrive with
             // the formal Evidence path and their own localized keys.
@@ -533,9 +589,35 @@ export class AISelectAnchorDock extends Container {
                     i18n.t('ai-select.views.status.evidence-not-requested')
                 );
             }
+            lines.push(i18n.t(`ai-select.review.quality.${view.maskQuality}`));
+            lines.push(i18n.t(`ai-select.participation.${view.participation}`));
+            if (view.assessment?.status === 'review') {
+                for (const reason of view.assessment.actionableReasons) {
+                    lines.push(i18n.t(`ai-select.review.reason.${reason}`));
+                    for (const actionKey of reviewReasonActionKeys(reason)) {
+                        lines.push(`• ${i18n.t(actionKey)}`);
+                    }
+                }
+                lines.push(i18n.t('ai-select.review.correction-options'));
+            }
         }
         card.status.text = lines.join('\n');
         card.retryButton.hidden = view.renderStatus !== 'failed';
+        card.retryMaskButton.hidden =
+            view.renderStatus !== 'ready' || view.maskStatus !== 'failed';
+        card.confirmReviewButton.hidden =
+            view.maskStatus !== 'ready' ||
+            view.assessment?.status !== 'review' ||
+            view.maskQuality === 'user-confirmed';
+        const canToggleParticipation =
+            view.participation === 'included' ||
+            view.maskQuality === 'auto-good' ||
+            view.maskQuality === 'user-confirmed';
+        card.participationButton.hidden = !canToggleParticipation;
+        card.participationButton.text =
+            view.participation === 'included'
+                ? i18n.t('ai-select.participation.exclude')
+                : i18n.t('ai-select.participation.include');
         if (view.rgb !== undefined) {
             if (card.rgbDigest !== view.rgb.digest) {
                 card.rgbDigest = view.rgb.digest;
@@ -559,6 +641,39 @@ export class AISelectAnchorDock extends Container {
     private retryGeneratedViewRender(viewId: string): void {
         try {
             this.generatedViews.retryViewRender(viewId);
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    private retryGeneratedViewMask(viewId: string): void {
+        try {
+            this.generatedViews.retryViewMask(viewId);
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    private confirmGeneratedReview(viewId: string): void {
+        try {
+            this.generatedViews.confirmReviewAsIs(viewId);
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    private toggleGeneratedViewParticipation(viewId: string): void {
+        try {
+            const view = this.generatedState.views.find(
+                (entry) => entry.viewId === viewId
+            );
+            if (view === undefined) {
+                return;
+            }
+            this.generatedViews.setViewParticipation(
+                viewId,
+                view.participation === 'included' ? 'excluded' : 'included'
+            );
         } catch (error) {
             console.error(error);
         }

@@ -35,6 +35,7 @@ export interface PublishAutoStableMaskInput {
     readonly rgbDigest: string;
     readonly artifact: MaskArtifact;
     readonly source: 'propagated';
+    readonly status: 'auto-good' | 'auto-review';
 }
 
 /**
@@ -227,8 +228,8 @@ export class MaskAnnotationRegistry {
      * revision, chained from any previous Stable version. Automatic
      * publication never creates or disturbs the Editing Mask, and it never
      * waits for user confirmation: until Ticket 07's evidence-backed View
-     * Assessment refines the label, the unassessed automatic Mask publishes as
-     * `auto-review`, the fail-closed default that stays Excluded from Lift.
+     * Assessment binds and supplies the automatic quality label; Review stays
+     * the fail-closed default and is Excluded from Lift.
      */
     publishAutoStable(input: PublishAutoStableMaskInput): MaskAnnotation {
         assertDigestBoundArtifact(input.artifact);
@@ -238,7 +239,7 @@ export class MaskAnnotationRegistry {
             maskId: this.mintMaskId(),
             viewId: input.viewId,
             source: input.source,
-            status: 'auto-review',
+            status: input.status,
             artifact: input.artifact,
             ...(previousStable === null
                 ? {}
@@ -248,6 +249,44 @@ export class MaskAnnotationRegistry {
         view.versions.set(stable.maskId, stable);
         view.stableMaskId = stable.maskId;
         return stable;
+    }
+
+    /**
+     * Confirm the current automatic Stable Mask without changing its pixels.
+     * The new immutable revision records user authority and stays bound to the
+     * same RGB/artifact identity; later automatic assessment cannot overwrite
+     * or down-weight it.
+     */
+    confirmStableAsIs(viewId: string, rgbDigest: string): MaskAnnotation {
+        const view = this.requireView(viewId);
+        const current = this.currentAnnotation(
+            view,
+            view.stableMaskId,
+            rgbDigest
+        );
+        if (
+            current === null ||
+            (current.status !== 'auto-good' && current.status !== 'auto-review')
+        ) {
+            throw new Error(
+                'AI Select Confirm as-is requires a current automatic Stable Mask.'
+            );
+        }
+        const confirmed = copyAnnotation({
+            maskId: this.mintMaskId(),
+            viewId,
+            source: current.source,
+            status: 'user-confirmed',
+            artifact: current.artifact,
+            ...(current.prompts === undefined
+                ? {}
+                : { prompts: current.prompts }),
+            parentMaskId: current.maskId,
+            createdFromRgbDigest: rgbDigest
+        });
+        view.versions.set(confirmed.maskId, confirmed);
+        view.stableMaskId = confirmed.maskId;
+        return confirmed;
     }
 
     /**

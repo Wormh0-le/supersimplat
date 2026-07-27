@@ -323,28 +323,55 @@ const viewRenderResponseFor = (request, digest = rgbDigest('b')) => ({
     rendererId: 'gsplat'
 });
 
-const maskResponseFor = (request) => ({
-    requestBinding: request.requestBinding,
-    targetSplatId: request.target.splatId,
-    sceneId: request.sceneId,
-    sceneVersion: request.sceneVersion,
-    viewId: request.viewId,
-    maskAttemptId: request.maskAttemptId,
-    rgbDigest: request.rgb.digest,
-    anchorRgbDigest: request.anchor.rgbDigest,
-    mask: bitsetArtifact(64, 48, [
+const maskResponseFor = (request, assessmentOverrides = {}) => {
+    const mask = bitsetArtifact(64, 48, [
         [4, 4],
         [5, 4],
         [6, 4]
-    ]),
-    maskSource: 'propagated',
-    maskPropagation: {
-        policyVersion: aiSelectGeneratedViewMaskPolicyVersion,
-        projectedSupportCount: 9,
-        promptCount: 3
-    },
-    modelManifestDigest: request.modelManifestDigest
-});
+    ]);
+    return {
+        requestBinding: request.requestBinding,
+        targetSplatId: request.target.splatId,
+        sceneId: request.sceneId,
+        sceneVersion: request.sceneVersion,
+        viewId: request.viewId,
+        maskAttemptId: request.maskAttemptId,
+        rgbDigest: request.rgb.digest,
+        anchorRgbDigest: request.anchor.rgbDigest,
+        mask,
+        maskSource: 'propagated',
+        maskPropagation: {
+            policyVersion: aiSelectGeneratedViewMaskPolicyVersion,
+            projectedSupportCount: 9,
+            promptCount: 3
+        },
+        assessment: {
+            status: 'review',
+            primaryReason: 'fragmented-mask',
+            reasons: ['fragmented-mask'],
+            actionableReasons: ['fragmented-mask'],
+            policyVersion: 'local-view-assessment/v1',
+            inputIdentity: {
+                rgbDigest: request.rgb.digest,
+                stableMaskDigest: mask.digest,
+                assessmentPolicyVersion: 'local-view-assessment/v1',
+                supportPolicyVersion: 'local-view-support-probe/v1',
+                propagationPolicyVersion: aiSelectGeneratedViewMaskPolicyVersion
+            },
+            diagnostics: {
+                foregroundPixels: 3,
+                boundaryContactRatio: 0,
+                connectedComponents: 1,
+                largestComponentRatio: 1,
+                observedGaussianCount: 9,
+                projectedSupportCount: 9,
+                promptCount: 3
+            },
+            ...assessmentOverrides
+        },
+        modelManifestDigest: request.modelManifestDigest
+    };
+};
 
 /** Drive the whole happy path to two fully published Generated Views. */
 const completeTwoViews = async (harness) => {
@@ -484,6 +511,105 @@ test('a successful automatic Mask atomically publishes an auto Stable Mask bound
 
     // Publishing the Stable Mask marks Evidence missing/dirty only; no Lift.
     assert.equal(views[0].evidenceStatus, 'not-requested');
+    assert.equal(views[0].assessment.status, 'review');
+    assert.deepEqual(views[0].assessment.reasons, ['fragmented-mask']);
+    assert.equal(views[0].maskQuality, 'auto-review');
+    assert.equal(views[0].participation, 'excluded');
+});
+
+test('Auto Good defaults Included while View source remains non-authoritative', async () => {
+    const harness = createHarness();
+    await startAnchor(harness);
+    harness.confirmation.confirm(confirmedAnchorFor(harness.anchorController));
+    await flush();
+    harness.planner.next.resolve(planResponseFor(harness.planner.calls[0]));
+    await flush();
+    harness.viewRenderer.deferreds[0].resolve(
+        viewRenderResponseFor(harness.viewRenderer.calls[0])
+    );
+    await flush();
+    harness.maskProvider.deferreds[0].resolve(
+        maskResponseFor(harness.maskProvider.calls[0], {
+            status: 'good',
+            primaryReason: undefined,
+            reasons: [],
+            actionableReasons: []
+        })
+    );
+    await flush();
+
+    const view = harness.controller.state.views[0];
+    assert.equal(view.source, 'auto-generated');
+    assert.equal(view.maskQuality, 'auto-good');
+    assert.equal(view.participation, 'included');
+});
+
+test('Assessment Failed preserves the Stable Mask but remains Excluded without reasons', async () => {
+    const harness = createHarness();
+    await startAnchor(harness);
+    harness.confirmation.confirm(confirmedAnchorFor(harness.anchorController));
+    await flush();
+    harness.planner.next.resolve(planResponseFor(harness.planner.calls[0]));
+    await flush();
+    harness.viewRenderer.deferreds[0].resolve(
+        viewRenderResponseFor(harness.viewRenderer.calls[0])
+    );
+    await flush();
+    const response = maskResponseFor(harness.maskProvider.calls[0], {
+        status: 'failed',
+        primaryReason: undefined,
+        reasons: [],
+        actionableReasons: [],
+        diagnostics: undefined
+    });
+    response.assessment.inputIdentity.supportPolicyVersion = null;
+    harness.maskProvider.deferreds[0].resolve(response);
+    await flush();
+
+    const view = harness.controller.state.views[0];
+    assert.equal(view.renderStatus, 'ready');
+    assert.equal(view.maskStatus, 'ready');
+    assert.ok(view.stableMaskId);
+    assert.equal(view.assessment.status, 'failed');
+    assert.deepEqual(view.assessment.reasons, []);
+    assert.equal(view.maskQuality, 'failed');
+    assert.equal(view.participation, 'excluded');
+});
+
+test('Confirm Review as-is publishes User Confirmed authority and Included participation', async () => {
+    const harness = createHarness();
+    await startAnchor(harness);
+    harness.confirmation.confirm(confirmedAnchorFor(harness.anchorController));
+    await flush();
+    harness.planner.next.resolve(planResponseFor(harness.planner.calls[0]));
+    await flush();
+    harness.viewRenderer.deferreds[0].resolve(
+        viewRenderResponseFor(harness.viewRenderer.calls[0])
+    );
+    await flush();
+    harness.maskProvider.deferreds[0].resolve(
+        maskResponseFor(harness.maskProvider.calls[0])
+    );
+    await flush();
+
+    harness.controller.confirmReviewAsIs('generated-00');
+
+    const view = harness.controller.state.views[0];
+    assert.equal(view.assessment.status, 'review');
+    assert.equal(view.maskQuality, 'user-confirmed');
+    assert.equal(view.participation, 'included');
+    const stable = harness.maskRegistry.viewState(
+        'generated-00',
+        rgbDigest('b')
+    ).stableMask;
+    assert.equal(stable.status, 'user-confirmed');
+
+    harness.controller.setViewParticipation('generated-00', 'excluded');
+    assert.equal(harness.controller.state.views[0].participation, 'excluded');
+    assert.equal(
+        harness.controller.state.views[0].maskQuality,
+        'user-confirmed'
+    );
 });
 
 test('Mask failure keeps the AIView, RGB, and frustum binding: RGB Ready + Mask Failed', async () => {
@@ -506,6 +632,19 @@ test('Mask failure keeps the AIView, RGB, and frustum binding: RGB Ready + Mask 
     assert.match(view.maskErrorMessage, /SAM exploded/);
     assert.equal(view.rgbDigest, rgbDigest('b'));
     assert.equal(view.stableMaskId, undefined);
+    assert.equal(view.participation, 'excluded');
+    assert.equal(view.maskQuality, 'failed');
+
+    harness.viewRenderer.deferreds[1].reject(new Error('skip second view'));
+    await flush();
+    harness.controller.retryViewMask('generated-00');
+    await flush();
+    assert.equal(harness.maskProvider.calls.length, 2);
+    assert.notEqual(
+        harness.maskProvider.calls[1].maskAttemptId,
+        harness.maskProvider.calls[0].maskAttemptId
+    );
+    assert.equal(harness.controller.state.views[0].maskStatus, 'generating');
 });
 
 test('Render failure preserves a distinct failed View record; completed Views survive', async () => {

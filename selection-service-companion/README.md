@@ -141,6 +141,32 @@ contract tests. Production state neither registers nor advertises it. It is
 not image or model inference and must not be selected as a substitute for the
 SAM 3.1 adapter.
 
+## Assess automatic Generated View Masks
+
+`POST /ai-select/generated-view-masks` publishes a Companion-owned
+`local-view-assessment/v1` result with the automatic Stable Mask. The result
+binds the exact RGB digest, Stable Mask digest, assessment policy,
+`generated-view-mask/v1` propagation policy, and any support diagnostic policy.
+It emits only `good`, `review`, or `failed` and the P0 structured reasons
+`target-at-boundary`, `fragmented-mask`, `weak-gaussian-support`, and
+`propagation-uncertain`. It never publishes a unified confidence percentage or
+requires complete Contributor output.
+
+The v1 constants are version-owned: any boundary contact is actionable;
+fragmentation requires multiple 4-connected components with the largest below
+90% of foreground; fewer than 25 observed Gaussians is weak support; and fewer
+than four projected supports or two propagation prompts is propagation
+uncertain. Weak support is emitted only when `local-view-support-probe/v1`
+actually ran. Packed snapshots provide complete-scene planes for this probe.
+The current spatial propagation path resolves an Anchor working set, so it
+deliberately omits Generated-View support instead of undercounting unseen
+chunks and fabricating a weak-support claim.
+
+Assessment failure does not discard a valid RGB or automatic Stable Mask. It
+publishes `failed` with no invented reasons, and the browser keeps that View
+Excluded. Auto Good defaults Included; Review and Failed default Excluded;
+Confirm as-is creates a User Confirmed Stable Mask and Included participation.
+
 ## Start the control plane
 
 The default profile listens only on loopback. The editor must be configured

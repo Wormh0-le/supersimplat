@@ -71,6 +71,13 @@ from .support_probe import (
     count_observed_gaussians,
     probe_camera_from_renderer_camera,
 )
+from .view_assessment import (
+    AI_SELECT_LOCAL_VIEW_SUPPORT_POLICY_VERSION,
+    AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
+    PropagationDiagnostic,
+    SupportDiagnostic,
+    assess_local_view,
+)
 from .generated_view_planning import (
     AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION,
     AI_SELECT_GENERATED_VIEW_PLANNER_VERSION,
@@ -81,6 +88,92 @@ from .generated_view_planning import (
 
 
 DEFAULT_STATE_DIRECTORY = Path.home() / ".local" / "state" / "supersplat-selection-service"
+
+
+def _local_view_assessment_payload(
+    *,
+    rgb_digest: str,
+    stable_mask_digest: str,
+    width: int,
+    height: int,
+    mask: bytes,
+    projected_support_count: int,
+    prompt_count: int,
+    observed_gaussian_count: int | None,
+) -> dict[str, object]:
+    assessment = assess_local_view(
+        width=width,
+        height=height,
+        mask=mask,
+        propagation=PropagationDiagnostic(
+            policy_version=AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION,
+            projected_support_count=projected_support_count,
+            prompt_count=prompt_count,
+        ),
+        support=(
+            None
+            if observed_gaussian_count is None
+            else SupportDiagnostic(
+                policy_version=AI_SELECT_LOCAL_VIEW_SUPPORT_POLICY_VERSION,
+                observed_gaussian_count=observed_gaussian_count,
+            )
+        ),
+    )
+    payload: dict[str, object] = {
+        'status': assessment.status,
+        'reasons': list(assessment.reasons),
+        'actionableReasons': list(assessment.actionable_reasons),
+        'policyVersion': assessment.policy_version,
+        'inputIdentity': {
+            'rgbDigest': rgb_digest,
+            'stableMaskDigest': stable_mask_digest,
+            'assessmentPolicyVersion': assessment.policy_version,
+            'supportPolicyVersion': assessment.support_policy_version,
+            'propagationPolicyVersion': assessment.propagation_policy_version,
+        },
+        'diagnostics': {
+            'foregroundPixels': assessment.diagnostics.foreground_pixels,
+            'boundaryContactRatio': (
+                assessment.diagnostics.boundary_contact_ratio
+            ),
+            'connectedComponents': assessment.diagnostics.connected_components,
+            'largestComponentRatio': (
+                assessment.diagnostics.largest_component_ratio
+            ),
+            'observedGaussianCount': (
+                assessment.diagnostics.observed_gaussian_count
+            ),
+            'projectedSupportCount': (
+                assessment.diagnostics.projected_support_count
+            ),
+            'promptCount': assessment.diagnostics.prompt_count,
+        },
+    }
+    if assessment.primary_reason is not None:
+        payload['primaryReason'] = assessment.primary_reason
+    return payload
+
+
+def _failed_local_view_assessment_payload(
+    *,
+    rgb_digest: str,
+    stable_mask_digest: str,
+) -> dict[str, object]:
+    return {
+        'status': 'failed',
+        'reasons': [],
+        'actionableReasons': [],
+        'policyVersion': AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
+        'inputIdentity': {
+            'rgbDigest': rgb_digest,
+            'stableMaskDigest': stable_mask_digest,
+            'assessmentPolicyVersion': AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
+            'supportPolicyVersion': None,
+            'propagationPolicyVersion': (
+                AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION
+            ),
+        },
+    }
 
 
 def _is_torch_out_of_memory(error: BaseException) -> bool:
@@ -3751,6 +3844,43 @@ class CompanionState:
                     'A propagated Generated View mask must use the bitset-lsb-v1 encoding.',
                 )
             mask_bytes = base64.b64decode(binary_mask['data'], validate=True)
+            mask_digest = f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}'
+            try:
+                # Packed snapshots expose the complete scene. The current
+                # spatial Mask path resolves the Anchor working set for
+                # propagation; using it as Generated-View visibility truth
+                # could undercount missing off-anchor chunks, so support stays
+                # explicitly unavailable until a view-bound working set is
+                # resolved.
+                observed_gaussian_count = (
+                    None
+                    if mask_request.scene_transport == 'spatial-v1'
+                    else count_observed_gaussians(
+                        planes=planes,
+                        camera=mask_request.view_probe_camera,
+                        mask=mask_bytes,
+                    )
+                )
+                assessment_payload = _local_view_assessment_payload(
+                    rgb_digest=mask_request.rgb_digest,
+                    stable_mask_digest=mask_digest,
+                    width=mask_request.width,
+                    height=mask_request.height,
+                    mask=mask_bytes,
+                    projected_support_count=(
+                        synthesized.projected_support_count
+                    ),
+                    prompt_count=len(synthesized.prompts),
+                    observed_gaussian_count=observed_gaussian_count,
+                )
+            except Exception:
+                # Assessment is derived from an already valid automatic Mask.
+                # Its failure must fail closed without discarding that Mask or
+                # inventing a user-visible cause.
+                assessment_payload = _failed_local_view_assessment_payload(
+                    rgb_digest=mask_request.rgb_digest,
+                    stable_mask_digest=mask_digest,
+                )
             response = {
                 'status': 'complete',
                 **mask_request.response_fields(),
@@ -3761,7 +3891,7 @@ class CompanionState:
                     'width': mask_request.width,
                     'height': mask_request.height,
                     'data': binary_mask['data'],
-                    'digest': f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}',
+                    'digest': mask_digest,
                 },
                 'maskSource': 'propagated',
                 'maskPropagation': {
@@ -3769,6 +3899,7 @@ class CompanionState:
                     'projectedSupportCount': synthesized.projected_support_count,
                     'promptCount': len(synthesized.prompts),
                 },
+                'assessment': assessment_payload,
                 'modelManifestDigest': mask_request.model_manifest_digest,
             }
         except MaskSessionError as error:

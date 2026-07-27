@@ -395,12 +395,12 @@ test('publishAutoStable publishes an auto-review Stable Mask without an Editing 
         viewId: 'generated-00',
         rgbDigest: rgbDigest('g'),
         artifact: samArtifact(8, 8, 0b110),
-        source: 'propagated'
+        source: 'propagated',
+        status: 'auto-review'
     });
     assert.equal(stable.viewId, 'generated-00');
     assert.equal(stable.source, 'propagated');
-    // Unassessed automatic Masks publish as auto-review (fail-closed default);
-    // Ticket 07 refines the label with evidence-backed View Assessment.
+    // The Companion assessment explicitly selected the fail-closed label.
     assert.equal(stable.status, 'auto-review');
     assert.equal(stable.createdFromRgbDigest, rgbDigest('g'));
     const view = registry.viewState('generated-00', rgbDigest('g'));
@@ -414,13 +414,15 @@ test('publishAutoStable atomically replaces the previous Stable revision', () =>
         viewId: 'generated-00',
         rgbDigest: rgbDigest('g'),
         artifact: samArtifact(8, 8, 0b110),
-        source: 'propagated'
+        source: 'propagated',
+        status: 'auto-review'
     });
     const second = registry.publishAutoStable({
         viewId: 'generated-00',
         rgbDigest: rgbDigest('g'),
         artifact: samArtifact(8, 8, 0b111),
-        source: 'propagated'
+        source: 'propagated',
+        status: 'auto-review'
     });
     assert.notEqual(second.maskId, first.maskId);
     assert.equal(second.parentMaskId, first.maskId);
@@ -441,7 +443,8 @@ test('publishAutoStable rejects artifacts whose bytes do not match their digest'
             viewId: 'generated-00',
             rgbDigest: rgbDigest('g'),
             artifact: { ...artifact, digest: rgbDigest('f') },
-            source: 'propagated'
+            source: 'propagated',
+            status: 'auto-review'
         })
     );
     assert.equal(
@@ -456,7 +459,8 @@ test('an auto-published Stable Mask stops being current when RGB identity change
         viewId: 'generated-00',
         rgbDigest: rgbDigest('g'),
         artifact: samArtifact(8, 8, 0b110),
-        source: 'propagated'
+        source: 'propagated',
+        status: 'auto-review'
     });
     assert.equal(
         registry.viewState('generated-00', rgbDigest('h')).stableMask,

@@ -37,6 +37,7 @@ import {
     type GeneratedViewPlanResponse
 } from './generated-view-service';
 import type { MaskAnnotationRegistry } from './mask-registry';
+import type { ReviewReason, ViewAssessmentResult } from './view-assessment';
 
 export type GeneratedViewRenderStatus =
     'pending' | 'rendering' | 'ready' | 'failed';
@@ -47,13 +48,16 @@ export type GeneratedViewMaskStatus =
 export type GeneratedViewPlannerStatus =
     'idle' | 'planning' | 'active' | 'failed';
 
+export type GeneratedViewMaskQuality =
+    'none' | 'auto-good' | 'auto-review' | 'user-confirmed' | 'failed';
+
 /**
  * The §7 per-view surface of one planner-owned Generated AIView. Render,
  * Mask, and Evidence states are independent: RGB Ready never implies Mask
  * Ready, and a Mask or render failure never demotes a completed View.
- * Participation stays `excluded` until Ticket 07's evidence-backed View
- * Assessment; unassessed automatic Masks publish as `auto-review`, which the
- * spec defaults to Excluded (Final Spec v1.1 §13).
+ * Companion-owned View Assessment supplies automatic quality and the default
+ * Participation; user confirmation and explicit exclusion remain independent
+ * authority (Final Spec v1.1 §§13, 26).
  */
 export interface GeneratedAIView {
     readonly viewId: string;
@@ -68,6 +72,8 @@ export interface GeneratedAIView {
     readonly maskStatus: GeneratedViewMaskStatus;
     readonly maskErrorMessage?: string;
     readonly stableMaskId?: string;
+    readonly maskQuality: GeneratedViewMaskQuality;
+    readonly assessment?: ViewAssessmentResult;
     readonly evidenceStatus: EvidenceStatus;
     readonly selected: boolean;
 }
@@ -109,6 +115,9 @@ interface GeneratedViewRecord {
     renderErrorMessage?: string;
     maskStatus: GeneratedViewMaskStatus;
     maskErrorMessage?: string;
+    assessment?: ViewAssessmentResult;
+    participation: AIViewParticipation;
+    userConfirmed: boolean;
 }
 
 const copyRgb = (rgb: AnchorRgbArtifact): AnchorRgbArtifact => {
@@ -122,6 +131,50 @@ const copyRgb = (rgb: AnchorRgbArtifact): AnchorRgbArtifact => {
 
 const errorMessage = (error: unknown, fallback: string): string => {
     return error instanceof Error && error.message ? error.message : fallback;
+};
+
+const copyAssessment = (
+    assessment: ViewAssessmentResult
+): ViewAssessmentResult => {
+    const copyReasons = (
+        reasons: readonly ReviewReason[]
+    ): readonly ReviewReason[] => Object.freeze([...reasons]);
+    return Object.freeze({
+        status: assessment.status,
+        ...(assessment.primaryReason === undefined
+            ? {}
+            : { primaryReason: assessment.primaryReason }),
+        reasons: copyReasons(assessment.reasons),
+        actionableReasons: copyReasons(assessment.actionableReasons),
+        policyVersion: assessment.policyVersion,
+        inputIdentity: Object.freeze({
+            rgbDigest: assessment.inputIdentity.rgbDigest,
+            stableMaskDigest: assessment.inputIdentity.stableMaskDigest,
+            assessmentPolicyVersion:
+                assessment.inputIdentity.assessmentPolicyVersion,
+            supportPolicyVersion: assessment.inputIdentity.supportPolicyVersion,
+            propagationPolicyVersion:
+                assessment.inputIdentity.propagationPolicyVersion
+        }),
+        ...(assessment.diagnostics === undefined
+            ? {}
+            : {
+                  diagnostics: Object.freeze({
+                      foregroundPixels: assessment.diagnostics.foregroundPixels,
+                      boundaryContactRatio:
+                          assessment.diagnostics.boundaryContactRatio,
+                      connectedComponents:
+                          assessment.diagnostics.connectedComponents,
+                      largestComponentRatio:
+                          assessment.diagnostics.largestComponentRatio,
+                      observedGaussianCount:
+                          assessment.diagnostics.observedGaussianCount,
+                      projectedSupportCount:
+                          assessment.diagnostics.projectedSupportCount,
+                      promptCount: assessment.diagnostics.promptCount
+                  })
+              })
+    });
 };
 
 /**
@@ -247,6 +300,81 @@ export class AISelectGeneratedViewController {
         this.enqueue((run) => this.renderAndMaskView(run, viewId));
     }
 
+    /** Retry only automatic Mask production; the valid RGB/View survives. */
+    retryViewMask(viewId: string): void {
+        const view = this.requireView(viewId);
+        if (
+            view.renderStatus !== 'ready' ||
+            view.rgb === undefined ||
+            view.maskStatus !== 'failed'
+        ) {
+            throw new Error(
+                'AI Select can retry only a Mask Failed RGB Ready AIView.'
+            );
+        }
+        const rgb = view.rgb;
+        this.enqueue(async (run) => {
+            const snapshot = this.anchor.getAnchorSnapshot();
+            if (snapshot === null) {
+                this.failViewMask(
+                    view,
+                    'AI Select requires the confirmed Anchor Scene Snapshot before a Mask Retry.'
+                );
+                return;
+            }
+            await this.produceViewMask(run, view, rgb, snapshot);
+        });
+    }
+
+    /**
+     * Confirm one Auto Review Stable Mask without changing its pixels. This
+     * rotates the Stable Mask revision to User Confirmed and grants Included
+     * participation; the original assessment remains inspectable.
+     */
+    confirmReviewAsIs(viewId: string): void {
+        const view = this.requireView(viewId);
+        if (
+            view.rgb === undefined ||
+            view.maskStatus !== 'ready' ||
+            view.assessment?.status !== 'review'
+        ) {
+            throw new Error(
+                'AI Select Confirm as-is requires an Auto Review Stable Mask.'
+            );
+        }
+        this.maskRegistry.confirmStableAsIs(viewId, view.rgb.digest);
+        view.userConfirmed = true;
+        view.participation = 'included';
+        this.publish();
+    }
+
+    /** User Participation authority is independent from automatic quality. */
+    setViewParticipation(
+        viewId: string,
+        participation: AIViewParticipation
+    ): void {
+        const view = this.requireView(viewId);
+        if (participation === 'included') {
+            const stable =
+                view.rgb === undefined
+                    ? null
+                    : this.maskRegistry.viewState(viewId, view.rgb.digest)
+                          .stableMask;
+            if (
+                view.renderStatus !== 'ready' ||
+                stable === null ||
+                (stable.status !== 'auto-good' &&
+                    stable.status !== 'user-confirmed')
+            ) {
+                throw new Error(
+                    'AI Select can include only an Auto Good or User Confirmed RGB Ready Stable View.'
+                );
+            }
+        }
+        view.participation = participation;
+        this.publish();
+    }
+
     /** Re-run automatic planning after a planner failure; Views are kept. */
     retryPlanning(): void {
         if (this.identity === null || this.plannerStatus !== 'failed') {
@@ -355,7 +483,9 @@ export class AISelectGeneratedViewController {
             viewId: planned.viewId,
             cameraBinding: copyCameraBinding(planned.cameraBinding),
             renderStatus: 'pending',
-            maskStatus: 'none'
+            maskStatus: 'none',
+            participation: 'excluded',
+            userConfirmed: false
         }));
         this.plannerStatus = 'active';
         this.publish();
@@ -462,6 +592,10 @@ export class AISelectGeneratedViewController {
         }
         view.maskStatus = 'generating';
         view.maskErrorMessage = undefined;
+        if (!view.userConfirmed) {
+            view.assessment = undefined;
+            view.participation = 'excluded';
+        }
         this.publish();
         const modelManifestDigest = this.getModelManifestDigest();
         if (modelManifestDigest === null || modelManifestDigest.length === 0) {
@@ -528,7 +662,11 @@ export class AISelectGeneratedViewController {
                 viewId: view.viewId,
                 rgbDigest: rgb.digest,
                 artifact: response.mask,
-                source: 'propagated'
+                source: 'propagated',
+                status:
+                    response.assessment.status === 'good'
+                        ? 'auto-good'
+                        : 'auto-review'
             });
         } catch (error) {
             this.failViewMask(
@@ -540,6 +678,10 @@ export class AISelectGeneratedViewController {
             );
             return;
         }
+        view.assessment = copyAssessment(response.assessment);
+        view.participation =
+            response.assessment.status === 'good' ? 'included' : 'excluded';
+        view.userConfirmed = false;
         view.maskStatus = 'ready';
         this.publish();
     }
@@ -554,13 +696,27 @@ export class AISelectGeneratedViewController {
         view.renderStatus = 'failed';
         view.renderErrorMessage = message;
         view.maskStatus = 'none';
+        view.assessment = undefined;
+        view.participation = 'excluded';
+        view.userConfirmed = false;
         this.publish();
     }
 
     private failViewMask(view: GeneratedViewRecord, message: string): void {
         view.maskStatus = 'failed';
         view.maskErrorMessage = message;
+        view.assessment = undefined;
+        view.participation = 'excluded';
+        view.userConfirmed = false;
         this.publish();
+    }
+
+    private requireView(viewId: string): GeneratedViewRecord {
+        const view = this.views.find((entry) => entry.viewId === viewId);
+        if (view === undefined) {
+            throw new Error('AI Select requires a known Generated AIView.');
+        }
+        return view;
     }
 
     private isRunCurrent(run: number): boolean {
@@ -612,12 +768,27 @@ export class AISelectGeneratedViewController {
             ...(view.renderErrorMessage === undefined
                 ? {}
                 : { renderErrorMessage: view.renderErrorMessage }),
-            participation: 'excluded',
+            participation: view.participation,
             maskStatus: view.maskStatus,
             ...(view.maskErrorMessage === undefined
                 ? {}
                 : { maskErrorMessage: view.maskErrorMessage }),
             ...(stableMask === null ? {} : { stableMaskId: stableMask.maskId }),
+            maskQuality:
+                view.renderStatus === 'failed' || view.maskStatus === 'failed'
+                    ? 'failed'
+                    : stableMask === null
+                      ? 'none'
+                      : stableMask.status === 'user-confirmed'
+                        ? 'user-confirmed'
+                        : view.assessment?.status === 'good'
+                          ? 'auto-good'
+                          : view.assessment?.status === 'review'
+                            ? 'auto-review'
+                            : 'failed',
+            ...(view.assessment === undefined
+                ? {}
+                : { assessment: copyAssessment(view.assessment) }),
             evidenceStatus: this.evidenceStatusFor(
                 view,
                 stableMask?.artifact.digest ?? null

@@ -26,6 +26,12 @@ import {
     maskBitsetEncoding,
     type MaskArtifact
 } from './mask-annotation';
+import {
+    aiSelectLocalViewSupportPolicyVersion,
+    aiSelectViewAssessmentPolicyVersion,
+    isViewAssessmentResult,
+    type ViewAssessmentResult
+} from './view-assessment';
 
 /**
  * The versioned Generated View planner contract (Final Spec v1.1 §27). The
@@ -157,6 +163,7 @@ export interface GeneratedViewMaskResponse {
     readonly mask: MaskArtifact;
     readonly maskSource: 'propagated';
     readonly maskPropagation: GeneratedViewMaskPropagation;
+    readonly assessment: ViewAssessmentResult;
     readonly modelManifestDigest: string;
 }
 
@@ -436,6 +443,7 @@ export const isGeneratedViewMaskResponse = (
         isMaskArtifact(value.mask) &&
         value.maskSource === 'propagated' &&
         isGeneratedViewMaskPropagation(value.maskPropagation) &&
+        isViewAssessmentResult(value.assessment) &&
         isNonEmptyString(value.modelManifestDigest)
     );
 };
@@ -479,6 +487,19 @@ export const generatedViewMaskResponseMatchesRequest = (
         response.mask.width === request.rgb.width &&
         response.mask.height === request.rgb.height &&
         response.mask.encoding === maskBitsetEncoding &&
+        response.assessment.inputIdentity.rgbDigest === response.rgbDigest &&
+        response.assessment.inputIdentity.stableMaskDigest ===
+            response.mask.digest &&
+        response.assessment.inputIdentity.assessmentPolicyVersion ===
+            aiSelectViewAssessmentPolicyVersion &&
+        (response.assessment.inputIdentity.supportPolicyVersion === null ||
+            response.assessment.inputIdentity.supportPolicyVersion ===
+                aiSelectLocalViewSupportPolicyVersion) &&
+        (!response.assessment.reasons.includes('weak-gaussian-support') ||
+            response.assessment.inputIdentity.supportPolicyVersion ===
+                aiSelectLocalViewSupportPolicyVersion) &&
+        response.assessment.inputIdentity.propagationPolicyVersion ===
+            response.maskPropagation.policyVersion &&
         response.modelManifestDigest === request.modelManifestDigest &&
         artifactDigestMatchesBytes(response.mask)
     );

@@ -35,6 +35,10 @@ from selection_service_companion.masking import (
 from selection_service_companion.server import create_server
 from selection_service_companion.state import CompanionState
 from selection_service_companion.support_probe import AnchorSupportProbeCamera
+from selection_service_companion.view_assessment import (
+    AI_SELECT_LOCAL_VIEW_SUPPORT_POLICY_VERSION,
+    AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
+)
 
 
 EDITOR_ORIGIN = 'https://editor.example'
@@ -789,6 +793,42 @@ class GeneratedViewRouteTests(unittest.TestCase):
         mask_bytes = base64.b64decode(mask['data'])
         self.assertEqual(
             mask['digest'], f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}'
+        )
+        assessment = response['assessment']
+        self.assertEqual(assessment['status'], 'review')
+        self.assertEqual(
+            assessment['reasons'],
+            [
+                'target-at-boundary',
+                'fragmented-mask',
+                'weak-gaussian-support',
+                'propagation-uncertain',
+            ],
+        )
+        self.assertEqual(
+            assessment['actionableReasons'],
+            ['target-at-boundary', 'fragmented-mask'],
+        )
+        self.assertEqual(assessment['primaryReason'], 'target-at-boundary')
+        self.assertEqual(
+            assessment['policyVersion'],
+            AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
+        )
+        self.assertEqual(
+            assessment['inputIdentity'],
+            {
+                'rgbDigest': body['rgb']['digest'],
+                'stableMaskDigest': mask['digest'],
+                'assessmentPolicyVersion': (
+                    AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION
+                ),
+                'supportPolicyVersion': (
+                    AI_SELECT_LOCAL_VIEW_SUPPORT_POLICY_VERSION
+                ),
+                'propagationPolicyVersion': (
+                    AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION
+                ),
+            },
         )
         # SAM ran exactly one single-frame pass with the synthesized prompts.
         self.assertEqual(self.predictor.session_starts, 1)

@@ -204,25 +204,51 @@ const maskRequest = (overrides = {}) => ({
     ...overrides
 });
 
-const maskResponseFor = (request, overrides = {}) => ({
-    requestBinding: request.requestBinding,
-    targetSplatId: request.target.splatId,
-    sceneId: request.sceneId,
-    sceneVersion: request.sceneVersion,
-    viewId: request.viewId,
-    maskAttemptId: request.maskAttemptId,
-    rgbDigest: request.rgb.digest,
-    anchorRgbDigest: request.anchor.rgbDigest,
-    mask: maskArtifact(64, 48, 0b110),
-    maskSource: 'propagated',
-    maskPropagation: {
-        policyVersion: aiSelectGeneratedViewMaskPolicyVersion,
-        projectedSupportCount: 17,
-        promptCount: 3
-    },
-    modelManifestDigest: request.modelManifestDigest,
-    ...overrides
-});
+const maskResponseFor = (request, overrides = {}) => {
+    const mask = maskArtifact(64, 48, 0b110);
+    return {
+        requestBinding: request.requestBinding,
+        targetSplatId: request.target.splatId,
+        sceneId: request.sceneId,
+        sceneVersion: request.sceneVersion,
+        viewId: request.viewId,
+        maskAttemptId: request.maskAttemptId,
+        rgbDigest: request.rgb.digest,
+        anchorRgbDigest: request.anchor.rgbDigest,
+        mask,
+        maskSource: 'propagated',
+        maskPropagation: {
+            policyVersion: aiSelectGeneratedViewMaskPolicyVersion,
+            projectedSupportCount: 17,
+            promptCount: 3
+        },
+        assessment: {
+            status: 'review',
+            primaryReason: 'fragmented-mask',
+            reasons: ['fragmented-mask', 'weak-gaussian-support'],
+            actionableReasons: ['fragmented-mask', 'weak-gaussian-support'],
+            policyVersion: 'local-view-assessment/v1',
+            inputIdentity: {
+                rgbDigest: request.rgb.digest,
+                stableMaskDigest: mask.digest,
+                assessmentPolicyVersion: 'local-view-assessment/v1',
+                supportPolicyVersion: 'local-view-support-probe/v1',
+                propagationPolicyVersion: aiSelectGeneratedViewMaskPolicyVersion
+            },
+            diagnostics: {
+                foregroundPixels: 2,
+                boundaryContactRatio: 0,
+                connectedComponents: 2,
+                largestComponentRatio: 0.5,
+                observedGaussianCount: 17,
+                projectedSupportCount: 17,
+                promptCount: 3
+            }
+        },
+        modelManifestDigest: request.modelManifestDigest,
+        ...overrides
+    };
+};
 
 test('a complete Generated View plan request validates', () => {
     assert.ok(isGeneratedViewPlanRequest(planRequest()));
@@ -455,6 +481,35 @@ test('mask response rejects stale bindings, wrong sources, and bad artifacts', (
                     policyVersion: aiSelectGeneratedViewMaskPolicyVersion,
                     projectedSupportCount: -1,
                     promptCount: 3
+                }
+            })
+        )
+    );
+    assert.ok(
+        !isGeneratedViewMaskResponse(
+            maskResponseFor(request, { assessment: undefined })
+        )
+    );
+    assert.ok(
+        !generatedViewMaskResponseMatchesRequest(
+            maskResponseFor(request, {
+                assessment: {
+                    ...maskResponseFor(request).assessment,
+                    inputIdentity: {
+                        ...maskResponseFor(request).assessment.inputIdentity,
+                        stableMaskDigest: rgbDigest('f')
+                    }
+                }
+            }),
+            request
+        )
+    );
+    assert.ok(
+        !isGeneratedViewMaskResponse(
+            maskResponseFor(request, {
+                assessment: {
+                    ...maskResponseFor(request).assessment,
+                    reasons: ['identity-drift']
                 }
             })
         )

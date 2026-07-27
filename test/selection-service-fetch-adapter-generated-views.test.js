@@ -14,6 +14,9 @@ const {
     maskBitsetEncoding
 } = require('../.test-dist/src/ai-select/mask-annotation.js');
 const {
+    localViewSupportDiagnosticId
+} = require('../.test-dist/src/ai-select/view-assessment.js');
+const {
     buildPackedSceneSnapshot,
     sha256Digest
 } = require('../.test-dist/src/scene-snapshot-binary.js');
@@ -267,6 +270,14 @@ const maskResponse = (request, overrides = {}) => ({
             stableMaskDigest: maskArtifact.digest,
             assessmentPolicyVersion: 'local-view-assessment/v1',
             supportPolicyVersion: 'local-view-support-probe/v1',
+            supportDiagnosticId: localViewSupportDiagnosticId({
+                sceneId: request.sceneId,
+                sceneVersion: request.sceneVersion,
+                viewId: request.viewId,
+                rgbDigest: request.rgb.digest,
+                stableMaskDigest: maskArtifact.digest,
+                observedGaussianCount: 30
+            }),
             propagationPolicyVersion: aiSelectGeneratedViewMaskPolicyVersion
         },
         diagnostics: {

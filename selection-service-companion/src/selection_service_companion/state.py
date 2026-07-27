@@ -77,6 +77,7 @@ from .view_assessment import (
     PropagationDiagnostic,
     SupportDiagnostic,
     assess_local_view,
+    local_view_support_diagnostic_id,
 )
 from .generated_view_planning import (
     AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION,
@@ -94,6 +95,9 @@ def _local_view_assessment_payload(
     *,
     rgb_digest: str,
     stable_mask_digest: str,
+    scene_id: str,
+    scene_version: str,
+    view_id: str,
     width: int,
     height: int,
     mask: bytes,
@@ -119,6 +123,18 @@ def _local_view_assessment_payload(
             )
         ),
     )
+    support_diagnostic_id = (
+        None
+        if observed_gaussian_count is None
+        else local_view_support_diagnostic_id(
+            scene_id=scene_id,
+            scene_version=scene_version,
+            view_id=view_id,
+            rgb_digest=rgb_digest,
+            stable_mask_digest=stable_mask_digest,
+            observed_gaussian_count=observed_gaussian_count,
+        )
+    )
     payload: dict[str, object] = {
         'status': assessment.status,
         'reasons': list(assessment.reasons),
@@ -129,6 +145,7 @@ def _local_view_assessment_payload(
             'stableMaskDigest': stable_mask_digest,
             'assessmentPolicyVersion': assessment.policy_version,
             'supportPolicyVersion': assessment.support_policy_version,
+            'supportDiagnosticId': support_diagnostic_id,
             'propagationPolicyVersion': assessment.propagation_policy_version,
         },
         'diagnostics': {
@@ -169,6 +186,7 @@ def _failed_local_view_assessment_payload(
             'stableMaskDigest': stable_mask_digest,
             'assessmentPolicyVersion': AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
             'supportPolicyVersion': None,
+            'supportDiagnosticId': None,
             'propagationPolicyVersion': (
                 AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION
             ),
@@ -3864,6 +3882,9 @@ class CompanionState:
                 assessment_payload = _local_view_assessment_payload(
                     rgb_digest=mask_request.rgb_digest,
                     stable_mask_digest=mask_digest,
+                    scene_id=mask_request.scene_id,
+                    scene_version=mask_request.scene_version,
+                    view_id=mask_request.view_id,
                     width=mask_request.width,
                     height=mask_request.height,
                     mask=mask_bytes,

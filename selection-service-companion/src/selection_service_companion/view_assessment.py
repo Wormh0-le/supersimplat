@@ -9,6 +9,7 @@ produce a unified confidence score.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from typing import Literal
 
 
@@ -71,6 +72,31 @@ class LocalViewAssessment:
     policy_version: str
     support_policy_version: str | None
     propagation_policy_version: str | None
+
+
+def local_view_support_diagnostic_id(
+    *,
+    scene_id: str,
+    scene_version: str,
+    view_id: str,
+    rgb_digest: str,
+    stable_mask_digest: str,
+    observed_gaussian_count: int,
+) -> str:
+    """Hash the exact local support inputs and published diagnostic result."""
+
+    payload = "\0".join(
+        (
+            AI_SELECT_LOCAL_VIEW_SUPPORT_POLICY_VERSION,
+            scene_id,
+            scene_version,
+            view_id,
+            rgb_digest,
+            stable_mask_digest,
+            str(observed_gaussian_count),
+        )
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(payload).hexdigest()}"
 
 
 def _is_foreground(mask: bytes, pixel: int) -> bool:
@@ -238,4 +264,5 @@ __all__ = [
     "ReviewReason",
     "SupportDiagnostic",
     "assess_local_view",
+    "local_view_support_diagnostic_id",
 ]

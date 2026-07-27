@@ -117,7 +117,6 @@ interface GeneratedViewRecord {
     maskErrorMessage?: string;
     assessment?: ViewAssessmentResult;
     participation: AIViewParticipation;
-    userConfirmed: boolean;
 }
 
 const copyRgb = (rgb: AnchorRgbArtifact): AnchorRgbArtifact => {
@@ -153,6 +152,7 @@ const copyAssessment = (
             assessmentPolicyVersion:
                 assessment.inputIdentity.assessmentPolicyVersion,
             supportPolicyVersion: assessment.inputIdentity.supportPolicyVersion,
+            supportDiagnosticId: assessment.inputIdentity.supportDiagnosticId,
             propagationPolicyVersion:
                 assessment.inputIdentity.propagationPolicyVersion
         }),
@@ -175,6 +175,35 @@ const copyAssessment = (
                   })
               })
     });
+};
+
+const automaticAssessmentDefaults = (
+    assessment: ViewAssessmentResult
+): {
+    readonly stableMaskStatus: 'auto-good' | 'auto-review';
+    readonly maskQuality: GeneratedViewMaskQuality;
+    readonly participation: AIViewParticipation;
+} => {
+    switch (assessment.status) {
+        case 'good':
+            return {
+                stableMaskStatus: 'auto-good',
+                maskQuality: 'auto-good',
+                participation: 'included'
+            };
+        case 'review':
+            return {
+                stableMaskStatus: 'auto-review',
+                maskQuality: 'auto-review',
+                participation: 'excluded'
+            };
+        case 'failed':
+            return {
+                stableMaskStatus: 'auto-review',
+                maskQuality: 'failed',
+                participation: 'excluded'
+            };
+    }
 };
 
 /**
@@ -343,7 +372,6 @@ export class AISelectGeneratedViewController {
             );
         }
         this.maskRegistry.confirmStableAsIs(viewId, view.rgb.digest);
-        view.userConfirmed = true;
         view.participation = 'included';
         this.publish();
     }
@@ -484,8 +512,7 @@ export class AISelectGeneratedViewController {
             cameraBinding: copyCameraBinding(planned.cameraBinding),
             renderStatus: 'pending',
             maskStatus: 'none',
-            participation: 'excluded',
-            userConfirmed: false
+            participation: 'excluded'
         }));
         this.plannerStatus = 'active';
         this.publish();
@@ -590,12 +617,17 @@ export class AISelectGeneratedViewController {
         ) {
             return;
         }
+        const currentStable = this.maskRegistry.viewState(
+            view.viewId,
+            rgb.digest
+        ).stableMask;
+        if (currentStable?.status === 'user-confirmed') {
+            return;
+        }
         view.maskStatus = 'generating';
         view.maskErrorMessage = undefined;
-        if (!view.userConfirmed) {
-            view.assessment = undefined;
-            view.participation = 'excluded';
-        }
+        view.assessment = undefined;
+        view.participation = 'excluded';
         this.publish();
         const modelManifestDigest = this.getModelManifestDigest();
         if (modelManifestDigest === null || modelManifestDigest.length === 0) {
@@ -658,15 +690,13 @@ export class AISelectGeneratedViewController {
         try {
             // Atomic Stable Mask publication: Evidence derives missing/dirty
             // by identity; no formal Lift is triggered here.
+            const defaults = automaticAssessmentDefaults(response.assessment);
             this.maskRegistry.publishAutoStable({
                 viewId: view.viewId,
                 rgbDigest: rgb.digest,
                 artifact: response.mask,
                 source: 'propagated',
-                status:
-                    response.assessment.status === 'good'
-                        ? 'auto-good'
-                        : 'auto-review'
+                status: defaults.stableMaskStatus
             });
         } catch (error) {
             this.failViewMask(
@@ -679,9 +709,9 @@ export class AISelectGeneratedViewController {
             return;
         }
         view.assessment = copyAssessment(response.assessment);
-        view.participation =
-            response.assessment.status === 'good' ? 'included' : 'excluded';
-        view.userConfirmed = false;
+        view.participation = automaticAssessmentDefaults(
+            response.assessment
+        ).participation;
         view.maskStatus = 'ready';
         this.publish();
     }
@@ -698,7 +728,6 @@ export class AISelectGeneratedViewController {
         view.maskStatus = 'none';
         view.assessment = undefined;
         view.participation = 'excluded';
-        view.userConfirmed = false;
         this.publish();
     }
 
@@ -707,7 +736,6 @@ export class AISelectGeneratedViewController {
         view.maskErrorMessage = message;
         view.assessment = undefined;
         view.participation = 'excluded';
-        view.userConfirmed = false;
         this.publish();
     }
 
@@ -755,6 +783,32 @@ export class AISelectGeneratedViewController {
                 ? null
                 : this.maskRegistry.viewState(view.viewId, view.rgb.digest)
                       .stableMask;
+        const assessment =
+            view.rgb !== undefined &&
+            stableMask !== null &&
+            stableMask.status !== 'user-confirmed' &&
+            view.assessment?.inputIdentity.rgbDigest === view.rgb.digest &&
+            view.assessment.inputIdentity.stableMaskDigest ===
+                stableMask.artifact.digest
+                ? view.assessment
+                : undefined;
+        const maskQuality: GeneratedViewMaskQuality =
+            view.renderStatus === 'failed' || view.maskStatus === 'failed'
+                ? 'failed'
+                : stableMask === null
+                  ? 'none'
+                  : stableMask.status === 'user-confirmed'
+                    ? 'user-confirmed'
+                    : assessment === undefined
+                      ? 'auto-review'
+                      : automaticAssessmentDefaults(assessment).maskQuality;
+        const participation: AIViewParticipation =
+            view.participation === 'included' &&
+            (maskQuality === 'auto-good' || maskQuality === 'user-confirmed') &&
+            view.renderStatus === 'ready' &&
+            stableMask !== null
+                ? 'included'
+                : 'excluded';
         return Object.freeze({
             viewId: view.viewId,
             source: 'auto-generated',
@@ -768,27 +822,16 @@ export class AISelectGeneratedViewController {
             ...(view.renderErrorMessage === undefined
                 ? {}
                 : { renderErrorMessage: view.renderErrorMessage }),
-            participation: view.participation,
+            participation,
             maskStatus: view.maskStatus,
             ...(view.maskErrorMessage === undefined
                 ? {}
                 : { maskErrorMessage: view.maskErrorMessage }),
             ...(stableMask === null ? {} : { stableMaskId: stableMask.maskId }),
-            maskQuality:
-                view.renderStatus === 'failed' || view.maskStatus === 'failed'
-                    ? 'failed'
-                    : stableMask === null
-                      ? 'none'
-                      : stableMask.status === 'user-confirmed'
-                        ? 'user-confirmed'
-                        : view.assessment?.status === 'good'
-                          ? 'auto-good'
-                          : view.assessment?.status === 'review'
-                            ? 'auto-review'
-                            : 'failed',
-            ...(view.assessment === undefined
+            maskQuality,
+            ...(assessment === undefined
                 ? {}
-                : { assessment: copyAssessment(view.assessment) }),
+                : { assessment: copyAssessment(assessment) }),
             evidenceStatus: this.evidenceStatusFor(
                 view,
                 stableMask?.artifact.digest ?? null

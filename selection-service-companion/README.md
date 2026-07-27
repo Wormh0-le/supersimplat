@@ -147,6 +147,9 @@ SAM 3.1 adapter.
 `local-view-assessment/v1` result with the automatic Stable Mask. The result
 binds the exact RGB digest, Stable Mask digest, assessment policy,
 `generated-view-mask/v1` propagation policy, and any support diagnostic policy.
+When support runs, `supportDiagnosticId` also hashes its Scene/View/RGB/Mask
+inputs and observed-Gaussian result; the browser recomputes this identity and
+rejects contradictory counts or propagation diagnostics.
 It emits only `good`, `review`, or `failed` and the P0 structured reasons
 `target-at-boundary`, `fragmented-mask`, `weak-gaussian-support`, and
 `propagation-uncertain`. It never publishes a unified confidence percentage or

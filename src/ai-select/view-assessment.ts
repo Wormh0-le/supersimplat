@@ -1,3 +1,5 @@
+import { sha256Digest } from '../scene-snapshot-binary';
+
 export const aiSelectViewAssessmentPolicyVersion = 'local-view-assessment/v1';
 export const aiSelectLocalViewSupportPolicyVersion =
     'local-view-support-probe/v1';
@@ -46,8 +48,33 @@ export interface ViewAssessmentInputIdentity {
     readonly stableMaskDigest: string;
     readonly assessmentPolicyVersion: string;
     readonly supportPolicyVersion: string | null;
+    readonly supportDiagnosticId: string | null;
     readonly propagationPolicyVersion: string | null;
 }
+
+export interface LocalViewSupportDiagnosticIdentityInput {
+    readonly sceneId: string;
+    readonly sceneVersion: string;
+    readonly viewId: string;
+    readonly rgbDigest: string;
+    readonly stableMaskDigest: string;
+    readonly observedGaussianCount: number;
+}
+
+export const localViewSupportDiagnosticId = (
+    input: LocalViewSupportDiagnosticIdentityInput
+): string => {
+    const payload = [
+        aiSelectLocalViewSupportPolicyVersion,
+        input.sceneId,
+        input.sceneVersion,
+        input.viewId,
+        input.rgbDigest,
+        input.stableMaskDigest,
+        String(input.observedGaussianCount)
+    ].join('\u0000');
+    return sha256Digest(new TextEncoder().encode(payload));
+};
 
 export interface ViewAssessmentDiagnostics {
     readonly foregroundPixels: number;
@@ -142,6 +169,8 @@ const isInputIdentity = (
         isDigest(value.stableMaskDigest) &&
         value.assessmentPolicyVersion === aiSelectViewAssessmentPolicyVersion &&
         isNullableNonEmptyString(value.supportPolicyVersion) &&
+        (value.supportDiagnosticId === null ||
+            isDigest(value.supportDiagnosticId)) &&
         isNullableNonEmptyString(value.propagationPolicyVersion)
     );
 };

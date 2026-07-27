@@ -24,6 +24,9 @@ const {
 const {
     MaskAnnotationRegistry
 } = require('../.test-dist/src/ai-select/mask-registry.js');
+const {
+    localViewSupportDiagnosticId
+} = require('../.test-dist/src/ai-select/view-assessment.js');
 const { sha256Digest } = require('../.test-dist/src/scene-snapshot-binary.js');
 
 const dependency = (overrides = {}) => ({
@@ -356,6 +359,14 @@ const maskResponseFor = (request, assessmentOverrides = {}) => {
                 stableMaskDigest: mask.digest,
                 assessmentPolicyVersion: 'local-view-assessment/v1',
                 supportPolicyVersion: 'local-view-support-probe/v1',
+                supportDiagnosticId: localViewSupportDiagnosticId({
+                    sceneId: request.sceneId,
+                    sceneVersion: request.sceneVersion,
+                    viewId: request.viewId,
+                    rgbDigest: request.rgb.digest,
+                    stableMaskDigest: mask.digest,
+                    observedGaussianCount: 9
+                }),
                 propagationPolicyVersion: aiSelectGeneratedViewMaskPolicyVersion
             },
             diagnostics: {
@@ -563,6 +574,7 @@ test('Assessment Failed preserves the Stable Mask but remains Excluded without r
         diagnostics: undefined
     });
     response.assessment.inputIdentity.supportPolicyVersion = null;
+    response.assessment.inputIdentity.supportDiagnosticId = null;
     harness.maskProvider.deferreds[0].resolve(response);
     await flush();
 
@@ -595,7 +607,7 @@ test('Confirm Review as-is publishes User Confirmed authority and Included parti
     harness.controller.confirmReviewAsIs('generated-00');
 
     const view = harness.controller.state.views[0];
-    assert.equal(view.assessment.status, 'review');
+    assert.equal(view.assessment, undefined);
     assert.equal(view.maskQuality, 'user-confirmed');
     assert.equal(view.participation, 'included');
     const stable = harness.maskRegistry.viewState(
@@ -610,6 +622,42 @@ test('Confirm Review as-is publishes User Confirmed authority and Included parti
         harness.controller.state.views[0].maskQuality,
         'user-confirmed'
     );
+});
+
+test('a replacement Stable Mask hides assessment reasons bound to the previous revision', async () => {
+    const harness = createHarness();
+    await startAnchor(harness);
+    harness.confirmation.confirm(confirmedAnchorFor(harness.anchorController));
+    await flush();
+    harness.planner.next.resolve(planResponseFor(harness.planner.calls[0]));
+    await flush();
+    harness.viewRenderer.deferreds[0].resolve(
+        viewRenderResponseFor(harness.viewRenderer.calls[0])
+    );
+    await flush();
+    harness.maskProvider.deferreds[0].resolve(
+        maskResponseFor(harness.maskProvider.calls[0], {
+            status: 'good',
+            primaryReason: undefined,
+            reasons: [],
+            actionableReasons: []
+        })
+    );
+    await flush();
+    assert.equal(harness.controller.state.views[0].participation, 'included');
+
+    harness.maskRegistry.publishAutoStable({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('b'),
+        artifact: bitsetArtifact(64, 48, [[20, 20]]),
+        source: 'propagated',
+        status: 'auto-review'
+    });
+
+    const view = harness.controller.state.views[0];
+    assert.equal(view.assessment, undefined);
+    assert.equal(view.maskQuality, 'auto-review');
+    assert.equal(view.participation, 'excluded');
 });
 
 test('Mask failure keeps the AIView, RGB, and frustum binding: RGB Ready + Mask Failed', async () => {

@@ -38,6 +38,7 @@ from selection_service_companion.support_probe import AnchorSupportProbeCamera
 from selection_service_companion.view_assessment import (
     AI_SELECT_LOCAL_VIEW_SUPPORT_POLICY_VERSION,
     AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
+    local_view_support_diagnostic_id,
 )
 
 
@@ -824,6 +825,14 @@ class GeneratedViewRouteTests(unittest.TestCase):
                 ),
                 'supportPolicyVersion': (
                     AI_SELECT_LOCAL_VIEW_SUPPORT_POLICY_VERSION
+                ),
+                'supportDiagnosticId': local_view_support_diagnostic_id(
+                    scene_id='splat-1',
+                    scene_version=self.manifest.scene_version,
+                    view_id='generated-00',
+                    rgb_digest=body['rgb']['digest'],
+                    stable_mask_digest=mask['digest'],
+                    observed_gaussian_count=3,
                 ),
                 'propagationPolicyVersion': (
                     AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION

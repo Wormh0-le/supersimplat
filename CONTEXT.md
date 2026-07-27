@@ -141,7 +141,7 @@ The atomic publication that promotes the current Editing Mask to the new Stable 
 _Avoid_: Selection Commit
 
 **Automatic Mask Publication**  
-The atomic publication of an automatic (propagated) Mask directly as a Stable Mask for a Generated View, without an Editing Mask or user confirmation. Until evidence-backed View Assessment refines the label, the unassessed automatic Mask publishes as Auto Review, the fail-closed default whose Participation stays Excluded.  
+The atomic publication of an automatic (propagated) Mask directly as a Stable Mask for a Generated View, without an Editing Mask or user confirmation. Its version-bound Companion View Assessment publishes in the same response: Auto Good defaults Included, while Auto Review or assessment failure stays Excluded. An assessment failure preserves the valid automatic Stable Mask and invents no Review Reason.
 _Avoid_: auto-confirm, hidden Lift participation
 
 **Mask Quality / View Assessment**  
@@ -153,7 +153,7 @@ A structured evidence-backed reason explaining why an automatic Mask/View needs 
 _Avoid_: free-form AI guess
 
 **ViewAssessmentPolicy**  
-The Companion-side versioned policy deriving Good/Review/Failed plus Review Reasons. It does not override a user-confirmed Stable Mask.  
+The Companion-side versioned policy deriving Good/Review/Failed plus Review Reasons from exact RGB/Stable-Mask, policy, propagation, and available support-diagnostic identity. Missing support produces no weak-support claim. It does not override a user-confirmed Stable Mask.
 _Avoid_: SAM confidence passthrough
 
 **Participation**  

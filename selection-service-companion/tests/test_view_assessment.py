@@ -7,6 +7,7 @@ from selection_service_companion.view_assessment import (
     PropagationDiagnostic,
     SupportDiagnostic,
     assess_local_view,
+    local_view_support_diagnostic_id,
 )
 
 
@@ -19,6 +20,32 @@ def _mask(width: int, height: int, foreground: set[tuple[int, int]]) -> bytes:
 
 
 class LocalViewAssessmentPolicyTests(unittest.TestCase):
+    def test_support_diagnostic_identity_binds_its_inputs_and_result(self) -> None:
+        diagnostic_id = local_view_support_diagnostic_id(
+            scene_id="splat-1",
+            scene_version="scene-v1",
+            view_id="generated-00",
+            rgb_digest="sha256:" + "a" * 64,
+            stable_mask_digest="sha256:" + "b" * 64,
+            observed_gaussian_count=3,
+        )
+
+        self.assertEqual(
+            diagnostic_id,
+            "sha256:0d59600b3bee614e7721059c893536652a13e7c25e3f834e166dcec4c54d0eee",
+        )
+        self.assertNotEqual(
+            diagnostic_id,
+            local_view_support_diagnostic_id(
+                scene_id="splat-1",
+                scene_version="scene-v1",
+                view_id="generated-00",
+                rgb_digest="sha256:" + "a" * 64,
+                stable_mask_digest="sha256:" + "b" * 64,
+                observed_gaussian_count=4,
+            ),
+        )
+
     def test_emits_multiple_reasons_in_deterministic_action_order(self) -> None:
         width = 8
         height = 8

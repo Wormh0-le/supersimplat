@@ -21,6 +21,9 @@ const {
 const {
     maskBitsetEncoding
 } = require('../.test-dist/src/ai-select/mask-annotation.js');
+const {
+    localViewSupportDiagnosticId
+} = require('../.test-dist/src/ai-select/view-assessment.js');
 const { sha256Digest } = require('../.test-dist/src/scene-snapshot-binary.js');
 
 const dependency = (overrides = {}) => ({
@@ -233,6 +236,14 @@ const maskResponseFor = (request, overrides = {}) => {
                 stableMaskDigest: mask.digest,
                 assessmentPolicyVersion: 'local-view-assessment/v1',
                 supportPolicyVersion: 'local-view-support-probe/v1',
+                supportDiagnosticId: localViewSupportDiagnosticId({
+                    sceneId: request.sceneId,
+                    sceneVersion: request.sceneVersion,
+                    viewId: request.viewId,
+                    rgbDigest: request.rgb.digest,
+                    stableMaskDigest: mask.digest,
+                    observedGaussianCount: 17
+                }),
                 propagationPolicyVersion: aiSelectGeneratedViewMaskPolicyVersion
             },
             diagnostics: {
@@ -457,6 +468,34 @@ test('mask response rejects stale bindings, wrong sources, and bad artifacts', (
                 mask: {
                     ...maskResponseFor(request).mask,
                     digest: rgbDigest('9')
+                }
+            }),
+            request
+        )
+    );
+    assert.ok(
+        !generatedViewMaskResponseMatchesRequest(
+            maskResponseFor(request, {
+                assessment: {
+                    ...maskResponseFor(request).assessment,
+                    diagnostics: {
+                        ...maskResponseFor(request).assessment.diagnostics,
+                        projectedSupportCount: 99
+                    }
+                }
+            }),
+            request
+        )
+    );
+    assert.ok(
+        !generatedViewMaskResponseMatchesRequest(
+            maskResponseFor(request, {
+                assessment: {
+                    ...maskResponseFor(request).assessment,
+                    diagnostics: {
+                        ...maskResponseFor(request).assessment.diagnostics,
+                        observedGaussianCount: 18
+                    }
                 }
             }),
             request

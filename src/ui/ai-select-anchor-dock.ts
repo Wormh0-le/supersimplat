@@ -314,13 +314,22 @@ export class AISelectAnchorDock extends Container {
         this.galleryCards.append(this.anchorCard.root);
 
         this.append(title);
-        this.append(this.status);
-        this.dom.appendChild(imageWrap);
-        this.append(this.maskStatus);
-        this.append(this.maskActions);
-        this.append(this.anchorActions);
-        this.append(this.validationStatus);
-        this.append(this.failureActions);
+        // The main area is a horizontal row: the image can never underflow
+        // the control rows (the old vertical stack let an overflowing image
+        // slide beneath them, swallowing clicks and clipping buttons).
+        const mainRow = new Container({ id: 'ai-select-anchor-dock-main' });
+        mainRow.dom.appendChild(imageWrap);
+        const controls = new Container({
+            id: 'ai-select-anchor-dock-controls'
+        });
+        controls.append(this.status);
+        controls.append(this.maskStatus);
+        controls.append(this.maskActions);
+        controls.append(this.anchorActions);
+        controls.append(this.validationStatus);
+        controls.append(this.failureActions);
+        mainRow.append(controls);
+        this.append(mainRow);
         this.append(this.gallery);
 
         controller.subscribe((state) => {

@@ -108,5 +108,14 @@ Decisions recorded:
 
 Known gaps / handoff notes:
 
-- `_render_ai_select_anchor` in `server.py` lists `except ValueError` before `except MaskSessionError`, making its 409 `anchorRenderError` branch unreachable (pre-existing, discovered during 04). Candidate for Ticket 19 hardening.
+- `_render_ai_select_anchor` in `server.py` listed `except ValueError` before `except MaskSessionError`, making its 409 `anchorRenderError` branch unreachable (pre-existing, discovered during 04). **Fixed 2026-07-26 in `aa74484`** with HTTP regression tests (renderer failure and `capacityFull` now map to 409).
 - Manual browser walkthrough of the Dock prompt/brush/Confirm flow (with a live Companion) has not run in this environment.
+
+## Walkthrough fixes recorded — 2026-07-26
+
+Manual walkthrough against a live Companion surfaced two defects, both fixed:
+
+- **Dock layout overflow** (image bottom unclickable + buttons clipped): the vertical dock stack (~360px of content) exceeded its 260px max-height; the flex-shrunk `imageWrap` let the fixed-height `img` overflow beneath the transparent status/button rows, so the photo's lower strip swallowed no clicks and showed no crosshair cursor, and the Validate/Confirm row was clipped at the panel edge. The dock is now a horizontal main row (image left with `height: 100%` + `overflow: hidden`, a 340px scrollable controls column right), and panel/dock max-height is `min(280px, 50vh)`.
+- **Mask 409 on rapid prompting**: every prompt click submitted a new concurrent SAM attempt, which the Companion's single operation slot rejects with `409 capacityFull`. `AISelectMaskController` now serializes per-view SAM attempts: a prompt arriving mid-flight supersedes the in-flight attempt locally and resubmits the latest full prompt set as a fresh `maskAttemptId` when it settles. The test that encoded concurrent submission was replaced with serialized semantics; regression tests cover failure-then-resubmit and no-spurious-resubmit.
+
+Follow-up note: if a mask request still returns 409 with `code` other than `capacityFull` (e.g. `anchorMaskUnavailable` — SAM rejected the prompt candidate), that is a genuine model-level failure surfaced by design; check the response body / Companion log for the `code` before treating it as a transport bug.

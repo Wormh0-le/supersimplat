@@ -219,7 +219,7 @@ test('a prompt change automatically requests single-frame SAM feedback', async (
     assert.equal(mask.state.evidence.status, 'not-requested');
 });
 
-test('each new prompt submits the full prompt set as the latest-only request', async () => {
+test('each new prompt serializes SAM attempts and resubmits the latest prompt set', async () => {
     const gate = deferred();
     const maskRequests = [];
     const { mask } = await setup({
@@ -233,6 +233,16 @@ test('each new prompt submits the full prompt set as the latest-only request', a
     });
     const first = mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
     const second = mask.addPrompt({ xPx: 20, yPx: 22, polarity: 'exclude' });
+    // One in-flight SAM attempt per view: the Companion's single operation
+    // slot never sees concurrent attempts from rapid prompting.
+    assert.equal(maskRequests.length, 1);
+    // The superseded first response is stale and must not publish.
+    const staleMask = bitsetArtifact(64, 48, [[40, 40]]);
+    gate.resolve(maskResponseFor(maskRequests[0], { mask: staleMask }));
+    await first;
+    await second;
+    // Once the slot settles, the latest full prompt set resubmits as a new
+    // attempt and is the one that publishes.
     assert.equal(maskRequests.length, 2);
     assert.deepEqual(
         maskRequests[1].prompts.map((prompt) => [prompt.xPx, prompt.yPx]),
@@ -241,14 +251,50 @@ test('each new prompt submits the full prompt set as the latest-only request', a
             [20, 22]
         ]
     );
-    // The superseded first response is stale and must not publish.
-    const staleMask = bitsetArtifact(64, 48, [[40, 40]]);
-    gate.resolve(maskResponseFor(maskRequests[0], { mask: staleMask }));
-    await first;
-    await second;
+    assert.notEqual(
+        maskRequests[1].maskAttemptId,
+        maskRequests[0].maskAttemptId
+    );
     const editing = mask.state.editingMask;
     assert.equal(editing.prompts.length, 2);
     assert.notEqual(editing.artifact.digest, staleMask.digest);
+    assert.equal(mask.state.requestStatus, 'idle');
+});
+
+test('a failed in-flight attempt still resubmits the latest prompt set once', async () => {
+    const maskRequests = [];
+    const { mask } = await setup({
+        produceMask: (request) => {
+            maskRequests.push(request);
+            return maskRequests.length === 1
+                ? Promise.reject(new Error('transient SAM failure'))
+                : Promise.resolve(maskResponseFor(request));
+        }
+    });
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    await mask.addPrompt({ xPx: 20, yPx: 22, polarity: 'exclude' });
+    assert.equal(maskRequests.length, 2);
+    assert.deepEqual(
+        maskRequests[1].prompts.map((prompt) => [prompt.xPx, prompt.yPx]),
+        [
+            [10, 12],
+            [20, 22]
+        ]
+    );
+    assert.equal(mask.state.editingMask.prompts.length, 2);
+    assert.equal(mask.state.requestStatus, 'idle');
+});
+
+test('a single prompt with no concurrency never resubmits', async () => {
+    const maskRequests = [];
+    const { mask } = await setup({
+        produceMask: (request) => {
+            maskRequests.push(request);
+            return Promise.resolve(maskResponseFor(request));
+        }
+    });
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    assert.equal(maskRequests.length, 1);
     assert.equal(mask.state.requestStatus, 'idle');
 });
 

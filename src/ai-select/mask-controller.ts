@@ -117,6 +117,13 @@ export class AISelectMaskController {
      * never overwrite a newer local brush edit.
      */
     private editingRevision = 0;
+    /**
+     * Set when prompting arrives while a SAM attempt is still in flight. The
+     * Companion reserves one global operation slot and rejects a concurrent
+     * attempt with 409 capacityFull, so the latest prompt set resubmits only
+     * after the in-flight attempt settles.
+     */
+    private resubmitMaskRequested = false;
     private nextMaskAttemptOrdinal = 0;
     private nextPromptOrdinal = 0;
     /**
@@ -329,6 +336,15 @@ export class AISelectMaskController {
     }
 
     private async submitMaskRequest(): Promise<void> {
+        if (this.activeMaskRequest !== null) {
+            // One in-flight SAM attempt per view: a concurrent attempt would
+            // hit the Companion's single operation slot as a 409. Supersede
+            // the in-flight response locally and resubmit the latest prompt
+            // set as a fresh attempt once the slot settles.
+            this.resubmitMaskRequested = true;
+            this.editingRevision += 1;
+            return;
+        }
         const modelManifestDigest = this.getModelManifestDigest();
         if (modelManifestDigest === null || modelManifestDigest.length === 0) {
             this.failMaskRequest(
@@ -361,18 +377,22 @@ export class AISelectMaskController {
             response = await this.maskProvider.produceMask(request);
         } catch (error) {
             if (!this.isCurrentMaskRequest(pending)) {
+                this.discardStaleMaskRequest(pending);
                 return;
             }
             this.failMaskRequest(errorMessage(error));
+            this.resubmitLatestPromptSet();
             return;
         }
         if (!this.isCurrentMaskRequest(pending)) {
+            this.discardStaleMaskRequest(pending);
             return;
         }
         if (!this.anchor.acceptsMaskResponse(response, request)) {
             this.failMaskRequest(
                 'The Selection Service Companion returned an invalid or stale Mask binding.'
             );
+            this.resubmitLatestPromptSet();
             return;
         }
         try {
@@ -386,11 +406,38 @@ export class AISelectMaskController {
         } catch (error) {
             this.undoStack.pop();
             this.failMaskRequest(errorMessage(error));
+            this.resubmitLatestPromptSet();
             return;
         }
         this.activeMaskRequest = null;
         this.requestStatus = 'idle';
         this.publish();
+        this.resubmitLatestPromptSet();
+    }
+
+    /**
+     * A superseded attempt settled: release the slot it held (only when the
+     * tracked request is still this one) so the latest prompt set can
+     * actually resubmit instead of deferring against itself.
+     */
+    private discardStaleMaskRequest(pending: PendingMaskRequest): void {
+        if (this.activeMaskRequest === pending) {
+            this.activeMaskRequest = null;
+        }
+        this.resubmitLatestPromptSet();
+    }
+
+    private resubmitLatestPromptSet(): void {
+        if (!this.resubmitMaskRequested) {
+            return;
+        }
+        this.resubmitMaskRequested = false;
+        if (this.prompts.length === 0) {
+            return;
+        }
+        this.submitMaskRequest().catch((error: unknown) => {
+            console.error(error);
+        });
     }
 
     private isCurrentMaskRequest(pending: PendingMaskRequest): boolean {
@@ -433,6 +480,7 @@ export class AISelectMaskController {
         this.lastRgbDigest = rgbDigest;
         this.prompts = [];
         this.activeMaskRequest = null;
+        this.resubmitMaskRequested = false;
         this.requestStatus = 'idle';
         this.lastErrorMessage = undefined;
         this.editingRevision += 1;

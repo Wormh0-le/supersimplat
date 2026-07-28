@@ -21,6 +21,7 @@ Final Spec v1.0 中未被本规格显式修改的产品、交互、生命周期�
 本规格的规范性补充（Normative Amendments）作为本规格的一部分发布，对其修订的条款具有同等规范效力。当前有效补充：
 
 - `docs/specs/ai-select-final-spec-v1.1-amendment-001-renderer-evidence-identity.md` — Amendment 001：Renderer / Evidence Implementation Identity and RGB Continuity（2026-07-24，修订 §§5.4, 16, 18, 30, 31, 32）。
+- `docs/specs/[ai-select-final-spec-v1.1-amendment-002-anchor-mask-pipeline.md](http://ai-select-final-spec-v1.1-amendment-002-anchor-mask-pipeline.md)` — Amendment 002：Prompt Authoring and Three-Stage Anchor Mask Pipeline （2026-07-28，修订 §§0, 1–4, 7, 10–13, 23–24, 26, 28, 30–32）。
 
 当文档发生冲突时，权威顺序为：
 
@@ -61,6 +62,15 @@ v1.1 主要修订：
 7. 完整 Contributor 降为 debug/reference backend；
 8. 生产 Direct Evidence 必须与权威 RGB 共享 raster decision source。
 
+Amendment 002 进一步补充：
+
+9. Anchor Mask 输入由 point-only 扩展为显式 Prompt Authoring；
+10. Prompt Layer 与直接 Pixel Edit Layer 分离；
+11. Anchor Mask 使用 Proposal Generation → 2D-first Ranking → Acceptance / Editing / Confirm 三阶段流程；
+12. 多个合理候选进入 Ambiguous 状态，不再静默按模型分数强选；
+13. Text / Box / Mask Prompt 由 Adapter Capability 显式控制；
+14. Ticket 07A 成为 Three-Stage Anchor Mask Pipeline 的完成 owner。
+
 ## 0.2 Decision Gate 状态
 
 v1.0 已关闭的 DG-01～DG-19 继续有效，其中 DG-14 仍为 Deferred。
@@ -70,6 +80,9 @@ v1.0 已关闭的 DG-01～DG-19 继续有效，其中 DG-14 仍为 Deferred。
 ```text
 DG-20  CLOSED
 Mask-Conditioned Direct Gaussian Evidence
+
+DG-21  CLOSED
+Prompt Authoring Layer + Three-Stage Anchor Mask Pipeline
 ```
 
 DG-20 决定：
@@ -79,6 +92,16 @@ DG-20 决定：
 - 正式 Lift 直接使用 P/N/V Evidence；
 - 完整 Contributor 不再处于产品关键路径；
 - 生产 Evidence 与 RGB 必须共享权威 acceptance / transmittance / termination 决策。
+
+DG-21 决定： 
+
+- Prompt Authoring 与直接 Mask Pixel Editing 是两套独立交互模式； 
+- Prompt 支持由版本化 Adapter Capability 显式声明； 
+- 模型返回多个候选时，不得只按原始模型分数直接选中； 
+- Anchor Mask 采用 Proposal Generation、2D-first Proposal Ranking、 Candidate Acceptance / Editing / Confirm 三阶段流程； 
+- 歧义是正式的 pre-Stable 状态； 
+- Ticket 04A 建设 Prompt / Proposal 基础； 
+- Ticket 07A 完成 Ranking、Ambiguity、Acceptance 和真实模型质量验证。
 
 ---
 
@@ -95,21 +118,24 @@ Camera View
     ↓
 Authoritative gsplat RGB
     ↓
-Independent Versioned Mask
+PromptState
+    ↓
+AutoMaskProposalSet
+    ↓
+ProposalDecision
+    ├── Selected
+    ├── Ambiguous
+    └── Unavailable
+    ↓
+Editing Mask
+    ↓
+Confirm Mask
+    ↓
+Stable Mask
     ↓
 Included Stable View Annotations
     ↓
 Mask-Conditioned Gaussian Evidence (P / N / V)
-    ↓
-Multi-view Evidence Aggregation
-    ↓
-Gaussian Lifting
-    ↓
-AI Candidate + Uncertain
-    ↓
-Set / Add / Remove / Intersect
-    ↓
-Native SuperSplat Selection
 ```
 
 其中：
@@ -188,7 +214,13 @@ Candidate Ready
 - View Participation；
 - Candidate / Uncertain visualization；
 - Native Selection / EditHistory；
-- Set / Add / Remove / Intersect。
+- Set / Add / Remove / Intersect;
+- PromptState;
+- active Prompt/Edit tool;
+- Prompt-local history;
+- proposal presentation and user choice;
+- Editing Mask pixel history;
+- Stable Mask confirmation。
 
 ## 4.2 Selection Service Companion owns
 
@@ -202,7 +234,13 @@ Candidate Ready
 - Gaussian Lifting policy；
 - renderer/model/runtime readiness；
 - disposable runtime caches；
-- debug/reference complete Contributor backend。
+- debug/reference complete Contributor backend;
+- Prompt Adapter capabilities;
+- prompt-conditioned;
+- proposal generation;
+- bounded AutoMaskProposalSet;
+- versioned proposal-ranking;
+- policy ProposalDecision diagnostics。
 
 Companion 可以缓存 scene tensors、RGB、Evidence、reference Contributor 与 model state，但缓存不是用户可见产品状态。
 
@@ -569,9 +607,9 @@ Review 不得以隐藏低权重偷偷参与 Lift。
 
 对于 View `v`、Pixel `p`、Gaussian `g`：
 
-\[
+
 w_{v,p,g}=\alpha_{v,p,g}T_{v,p,g}
-\]
+
 
 其中：
 
@@ -581,17 +619,17 @@ w_{v,p,g}=\alpha_{v,p,g}T_{v,p,g}
 
 定义：
 
-\[
-P_{v,g}=\sum_p m^+_{v,p}w_{v,p,g}
-\]
 
-\[
-N_{v,g}=\sum_p m^-_{v,p}w_{v,p,g}
-\]
+P_{v,g}=\sum_p m^+*{v,p}w*{v,p,g}
 
-\[
+
+
+N_{v,g}=\sum_p m^-*{v,p}w*{v,p,g}
+
+
+
 V_{v,g}=\sum_p m^V_{v,p}w_{v,p,g}
-\]
+
 
 语义：
 
@@ -669,9 +707,9 @@ visibleWeight  = 0
 
 正、负、可见权重可以是连续值，彼此独立，不要求：
 
-\[
+
 m^+ + m^- = 1
-\]
+
 
 必须允许显式 ignore 区域。
 
@@ -888,17 +926,17 @@ Reference Contributor 失败不得让已成功 RGB 变为 View Render Failed。
 
 基础聚合：
 
-\[
+
 P_g=\sum_vP_{v,g},\quad
 N_g=\sum_vN_{v,g},\quad
 V_g=\sum_vV_{v,g}
-\]
+
 
 可以按 View 计算 ownership：
 
-\[
+
 q_{v,g}=\frac{P_{v,g}}{P_{v,g}+N_{v,g}+\epsilon}
-\]
+
 
 并结合：
 
@@ -1045,17 +1083,19 @@ interface AIComputeDirtyState {
 
 ## 24.2 操作依赖
 
-| 操作                            | Propagation | Per-view Evidence      | Lift  |
-| ------------------------------- | ----------- | ---------------------- | ----- |
-| 编辑 Editing Mask，未 Confirm   | 不变        | 不变                   | 不变  |
-| Confirm 普通 View Stable Mask   | 不变        | 对应 View Dirty        | Dirty |
-| Confirm Anchor / Reference Mask | Dirty       | Anchor Dirty           | Dirty |
-| Exclude Included View           | 不变        | artifact 可保留        | Dirty |
-| Include 有 Stable Mask 的 View  | 不变        | 缺失/旧 artifact Dirty | Dirty |
-| Add View，无 Stable Mask        | 不变        | 不变                   | 不变  |
-| 新 View Stable Mask + Included  | 不变        | 对应 View Dirty        | Dirty |
-| CameraBinding / RGB 新 revision | 依赖策略    | 对应 View Dirty        | Dirty |
-| Gallery / Frustum 浏览          | 不变        | 不变                   | 不变  |
+
+| 操作                              | Propagation | Per-view Evidence   | Lift  |
+| ------------------------------- | ----------- | ------------------- | ----- |
+| 编辑 Editing Mask，未 Confirm       | 不变          | 不变                  | 不变    |
+| Confirm 普通 View Stable Mask     | 不变          | 对应 View Dirty       | Dirty |
+| Confirm Anchor / Reference Mask | Dirty       | Anchor Dirty        | Dirty |
+| Exclude Included View           | 不变          | artifact 可保留        | Dirty |
+| Include 有 Stable Mask 的 View    | 不变          | 缺失/旧 artifact Dirty | Dirty |
+| Add View，无 Stable Mask          | 不变          | 不变                  | 不变    |
+| 新 View Stable Mask + Included   | 不变          | 对应 View Dirty       | Dirty |
+| CameraBinding / RGB 新 revision  | 依赖策略        | 对应 View Dirty       | Dirty |
+| Gallery / Frustum 浏览            | 不变          | 不变                  | 不变    |
+
 
 ## 24.3 Update 3D Candidate
 
@@ -1460,3 +1500,4 @@ RGB
 - 新 implementation、issue、traceability 与 audit 以 v1.1 和 ADR 0013 为准；
 - reference PoC 和 production gate 通过前不得删除 Contributor fixtures/backend；
 - 正式 Candidate publication 始终 fail-closed 且 atomic。
+

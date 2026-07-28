@@ -1,86 +1,98 @@
-# Five-Pass Bidirectional Traceability Audit — v2.2
+# Five-Pass Bidirectional Traceability Audit — v2.3
 
-The filename is retained for compatibility with the v2.1 artifact, but the v2.2 audit adds an explicit outcome-to-prerequisite reverse dependency pass.
+The filename is retained for compatibility. v2.3 adds Final Spec v1.1 Amendment 002, DG-21, retrofit Tickets 04A/07A, and the Ticket 08 camera-validity prerequisite.
 
 ## Pass 1 — Graph / dependency audit
 
-- Ticket count: 22
+- Ticket count: 24 total — 22 numbered + 04A + 07A
 - Missing blocker references: 0
 - Cycle detected: False
-- Structural initial frontier: [1]
-- Topological order length: 22/22
+- Structural initial frontier: [01]
+- Topological order length: 24/24
 - Result: **PASS**
 
 One valid topological order:
 
-`01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
+`01 → 02 → 03 → 04 → 05 → 04A → 06 → 07 → 07A → 08 → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
 
-Important dependency corrections from v2.1:
+v2.3 dependency corrections:
 
-- Ticket 14 defines/reference-validates P/N/V before Ticket 10 cross-view assessment or Ticket 13 Coverage consumes the Evidence contract.
-- Ticket 14 no longer depends on Ticket 13, avoiding the semantic cycle where readiness required Evidence not yet defined.
-- Tickets 10 and 13 are parallel consumers of Ticket 14; P1 assessment is optional enrichment, not a hard prerequisite for base readiness.
-- Ticket 20 productionizes same-decision Direct Evidence only after Ticket 14 reference semantics and Ticket 19 authoritative render/working-set hardening.
+- Ticket 04A consumes the already implemented Ticket 05 Mask editor/Undo/Confirm seams; it is not placed before Ticket 05.
+- Ticket 04A and Ticket 06 may proceed after Ticket 05 and converge at Ticket 07A through completed Ticket 07 semantics.
+- Ticket 07A is the completion owner for the Three-Stage Anchor Mask Pipeline.
+- Ticket 08 depends on Ticket 07A and owns Generated View camera validity plus adaptive information gain.
+- Ticket 14 still defines/reference-validates P/N/V before Tickets 10 and 13 consume formal Evidence.
+- Ticket 20 still productionizes same-decision Direct Evidence only after Tickets 14 and 19.
 
-## Pass 2 — Final Spec v1.1 → tickets
+## Pass 2 — Final Spec / Amendments → tickets
 
-A curated catalog of **127** inherited and new requirements is mapped in `TRACEABILITY.md`, including Final Spec v1.1 Amendment 001.
+A curated catalog of **142** inherited and new requirements is mapped in `TRACEABILITY.md`.
 
 Checks:
 
 - Invalid ticket references: 0
 - Unmapped DG-20 requirements: 0
+- Unmapped DG-21 requirements: 0
 - Unmapped Amendment 001 requirements: 0
-- Known v1.1 architecture gaps have explicit owners
+- Unmapped Amendment 002 requirements: 0
 - Result: **PASS**
 
-Newly mapped requirement groups include:
+Amendment 002 requirement groups include:
 
-- RGB Ready independent from Contributor/Evidence;
-- true same-CameraBinding Retry attempts;
-- P/N/V and positive/boundary/local-negative Mask policy;
-- same-decision production Evidence;
-- Render Working Set versus Evidence Working Set;
-- per-view Evidence artifact identity/invalidation;
-- explicit rasterImplementationId / Evidence backend / runtimeBuildId binding;
-- RGB-only versus later RGB+Evidence implementation continuity;
-- incompatible renderer migration invalidation and explicit recovery;
-- reference Contributor debug-only role;
-- mixed/unobserved Uncertain semantics;
-- atomic accumulation classification stability.
+- versioned exact-RGB-bound PromptState;
+- explicit Prompt versus Pixel Edit tools and histories;
+- capability-gated positive/negative Point, Box, mask, and Text prompts;
+- deterministic bounded AutoMaskProposalSet;
+- no model-score-only proposal selection;
+- 2D-first ranking and candidate hierarchy;
+- optional bounded Gaussian support sanity, never ownership Evidence;
+- first-class Ambiguous / Unavailable states;
+- ProposalDecision separate from ViewAssessmentPolicy;
+- Stable Mask replacement only on Confirm;
+- real-model locked-runtime quality validation;
+- Anchor-only mandatory Three-Stage scope;
+- Ticket 08 valid indoor observation-pose preflight.
 
-## Pass 3 — tickets → Final Spec / reverse traceability and scope audit
+## Pass 3 — tickets → Final Spec / reverse scope audit
 
-- Orphan tickets with no normative/migration/hardening owner: []
-- Every active ticket names a Final Spec v1.1/Amendment/ADR/inherited v1.0 mapping
-- Tickets 19–21 are justified by Final Spec v1.1 Stages 3–4, Amendment 001, and engineering/benchmark gates
-- Ticket 22 is justified by migration contraction after replacement validation
-- DG-14 remains excluded
+- Orphan tickets: []
+- Every active ticket maps to Final Spec v1.1, an amendment, DG, inherited v1.0, migration, or hardening requirement.
+- Ticket 04A maps to Amendment 002 Stage M1 and DG-21.
+- Ticket 07A maps to Amendment 002 Stage M2 and is the declared completion gate.
+- Ticket 08 maps to adaptive planning plus Amendment 002's resolved-Anchor prerequisite.
+- Tickets 19–21 remain justified by Stages 3–4, Amendment 001, and benchmark gates.
+- DG-14 remains deferred.
 - Result: **PASS**
 
 No ticket introduces:
 
-- persistent AI target-session stack;
+- persistent target-session stack;
 - fixed user View count;
 - direct Candidate 3D patching;
 - unified fake Confidence percentage;
 - identity-drift requirement;
-- new workspace;
+- separate workspace;
 - nearest/top-k/distance attribution fallback;
-- complete Contributor as a production View/Lift gate.
+- complete Contributor as a production gate;
+- mandatory semantic detector or semantic object database;
+- implicit conversion of Paint strokes into Prompt constraints.
 
 ## Pass 4 — final outcome → prerequisite reverse dependency audit
 
-Starting from Native Set/Add/Remove/Intersect and tracing backward:
+Native Selection backtrace:
 
 ```text
-Ticket 16 native operation + backend/readiness gate
+Ticket 16 native operation
 ← Ticket 15 current atomic Candidate / explicit Re-Lift
 ← Ticket 13 base Lift Readiness
-← Ticket 14 reference Evidence/Lift contract + implementation identity
-← Tickets 11/12 Included Stable View and exact dirty identity
-← Tickets 03–09 authoritative RGB, Mask, Participation, Gallery/planning
-← Tickets 01/02 Stable identity, context, authoritative renderer
+← Ticket 14 reference Evidence/Lift contract
+← Tickets 11/12 Included Stable View and dirty identity
+← Ticket 09 Gallery / selected View correction
+← Ticket 08 valid-pose adaptive planning
+← Ticket 07A resolved Three-Stage Anchor Mask
+← Ticket 04A Prompt/proposal foundation + Tickets 05/07 lifecycle/assessment
+← Tickets 03/04 authoritative RGB and Mask lifecycle
+← Tickets 01/02 context and authoritative renderer
 ```
 
 Optional assessment branch:
@@ -88,38 +100,37 @@ Optional assessment branch:
 ```text
 Ticket 10 P1 cross-view assessment
 ← Ticket 14 per-view P/N/V
-← Tickets 07/09 assessment and presentation foundations
+← Tickets 07/09 assessment/presentation foundations
 ```
 
-Ticket 10 may enrich review/readiness diagnostics but does not block Ticket 13's base readiness implementation. Ticket 21 waits for both branches before final calibration.
-
-Production-path backtrace:
+Production Evidence backtrace:
 
 ```text
 Ticket 21 calibrated/hardened production
 ← Ticket 20 same-decision Direct Evidence + RGB continuity
-← Ticket 19 authoritative RGB + renderer identity + conservative Render Working Set
-← Ticket 14 reference P/N/V semantics, backend identity, and fixtures
+← Ticket 19 authoritative RGB + renderer identity + Render Working Set
+← Ticket 14 reference P/N/V semantics and fixtures
 ```
 
 Reverse checks:
 
 - No consumer precedes definition of its formal artifact.
-- Cross-view assessment cannot consume P/N/V before Ticket 14.
-- Coverage cannot require formal Visible Evidence before Ticket 14.
-- P1 assessment is not an unjustified hard blocker for base readiness.
-- Production Direct Evidence cannot precede reference policy/fixtures or render-working-set parity.
-- RGB-only and later Evidence paths cannot silently cross incompatible raster implementations.
-- Reference and production Evidence/Candidates cannot collide in identity or readiness.
-- Complete Contributor is not on the mandatory path from Camera View to Native Selection.
-- Every destructive/stale transition has a retained-state and recovery owner.
+- Ticket 04A cannot claim ranking/quality completion.
+- Ticket 07A cannot close with point-only fake-predictor contract tests.
+- Prompt/proposal changes do not invalidate formal Evidence before Confirm.
+- ProposalDecision cannot replace post-Stable ViewAssessmentPolicy.
+- Ticket 08 cannot plan from unresolved Anchor proposal state.
+- Candidate pose validity precedes information-gain ranking.
+- Cross-view assessment and Coverage cannot consume P/N/V before Ticket 14.
+- Reference and production Evidence/Candidates cannot collide in identity/readiness.
+- Complete Contributor is absent from the mandatory Camera→Native Selection path.
 - Result: **PASS**
 
-## Pass 5 — realistic workflows + failures
+## Pass 5 — workflows + failures
 
 - Typical inherited flows checked: 9
-- New v1.1 architecture flows checked: 4
-- Error/degradation flows checked: 12
+- Architecture / Amendment flows checked: 5
+- Error/degradation flows checked: 15
 - Invalid workflow references: 0
 - Invalid error references: 0
 - Result: **PASS**
@@ -127,33 +138,40 @@ Reverse checks:
 Critical closure checks:
 
 - Camera Inspection can publish RGB while Mask/Evidence are absent.
-- Explicit Retry reruns the same CameraBinding under a new attempt identity.
+- Prompt and Paint tools have explicit non-overlapping pointer semantics.
+- Stage 1 preserves bounded proposal alternatives and score semantics.
+- Stage 2 is 2D-first and may return Ambiguous instead of false success/failure.
+- Stage 3 publishes Stable only through Confirm.
+- Prior Stable/Evidence/Candidate remain valid during unconfirmed work.
+- Generated View automatic Mask publication is not silently changed by the Anchor amendment.
+- Ticket 08 rejects outside-room/behind-wall/blank-content candidates before gain ranking.
 - Stable Mask publication invalidates exact per-view Evidence but does not auto-Lift.
 - Reference P/N/V precedes production same-decision CUDA.
-- Full Render Working Set preserves occlusion while Evidence Working Set limits writes.
-- RGB-only and RGB+Evidence bind the same compatible rasterImplementationId.
-- Incompatible renderer migration requires explicit rerender/review rather than silent Mask rebinding.
 - Evidence failure preserves RGB/View/Mask/Gallery/previous Candidate.
-- Reference Contributor failure is diagnostic only.
-- Scene mutation preserves artifacts read-only and requires exact semantic restoration.
+- Reference Contributor failure remains diagnostic only.
 
 ## Mechanical critical-phrase audit
 
-Critical acceptance/failure phrases were checked in Tickets 03, 04, 05, 06, 07, 10, 12, 13, 14, 15, 16, 18, 19, 20, 21, and 22.
+Critical semantics were checked in Tickets 03, 04, 04A, 05, 06, 07, 07A, 08, 10, 12, 13, 14, 15, 16, 18, 19, 20, 21, and 22.
 
 Required phrases/semantics include:
 
 - `RGB Ready` without Contributor/Evidence;
-- `new render attempt` on explicit Retry;
+- explicit new attempt on Retry;
+- `PromptState` exact RGB binding;
+- explicit adapter capabilities;
+- bounded `AutoMaskProposalSet`;
+- 2D-first ranking;
+- `ambiguous` / `unavailable` distinction;
+- ProposalDecision versus ViewAssessment separation;
+- Confirm-only Stable publication;
+- valid observation pose before information gain;
 - `P/N/V` and `alpha × incoming transmittance`;
-- `Render Working Set` / `Evidence Working Set` separation;
-- `same decision source`;
-- `rasterImplementationId`, Evidence backend identity, and `runtimeBuildId`;
-- RGB-only versus RGB+Evidence implementation continuity;
-- incompatible renderer migration invalidation;
-- complete Contributor `debug/reference` only;
-- `Uncertain` for mixed/unobserved;
-- no partial Evidence/Candidate publication.
+- Render/Evidence Working Set separation;
+- same decision source;
+- renderer/Evidence/runtime implementation identity;
+- complete Contributor debug/reference only;
+- no partial proposal/Evidence/Candidate publication.
 
 Failures: []
 
@@ -161,6 +179,6 @@ Result: **PASS**
 
 ## Conclusion
 
-No known traceability, reverse-dependency, workflow, or scope gap remains after the v2.2 audit plus Final Spec v1.1 Amendment 001.
+No known graph, traceability, reverse-dependency, workflow, or scope gap remains in the v2.3 implementation plan after Amendment 002 integration.
 
-This audit validates the implementation plan, not future code. Every implementation run must still satisfy ticket acceptance criteria, locked-runtime requirements, Final Spec v1.1, Amendment 001, and ADR 0013 authority.
+This audit validates documentation and implementation ordering, not future code or real-model quality. Ticket 07A still requires locked real-model/GPU/browser validation, and Ticket 08 still requires indoor camera-validity benchmarks before either may claim completion.

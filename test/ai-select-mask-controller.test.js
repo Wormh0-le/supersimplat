@@ -17,6 +17,12 @@ const {
 const {
     maskBitsetEncoding
 } = require('../.test-dist/src/ai-select/mask-annotation.js');
+const {
+    autoMaskProposalSetDigest
+} = require('../.test-dist/src/ai-select/mask-proposal.js');
+const {
+    createPromptAdapterCapabilities
+} = require('../.test-dist/src/ai-select/prompt-state.js');
 const { sha256Digest } = require('../.test-dist/src/scene-snapshot-binary.js');
 
 const dependency = (overrides = {}) => ({
@@ -125,19 +131,72 @@ const bitsetArtifact = (width, height, foreground = [[2, 2]]) => {
     });
 };
 
-const maskResponseFor = (request, overrides = {}) => ({
-    requestBinding: request.requestBinding,
-    targetSplatId: request.target.splatId,
-    sceneId: request.sceneId,
-    sceneVersion: request.sceneVersion,
-    viewId: request.viewId,
-    maskAttemptId: request.maskAttemptId,
-    rgbDigest: request.rgb.digest,
-    mask: bitsetArtifact(request.rgb.width, request.rgb.height),
-    maskSource: 'single-frame-sam',
-    modelManifestDigest: request.modelManifestDigest,
-    ...overrides
-});
+const maskResponseFor = (request, overrides = {}) => {
+    const artifact =
+        overrides.mask ?? bitsetArtifact(request.rgb.width, request.rgb.height);
+    const proposalPayload = {
+        schemaVersion: 1,
+        viewId: request.viewId,
+        rgbDigest: request.rgb.digest,
+        promptStateDigest: request.promptState.digest,
+        modelManifestDigest: request.modelManifestDigest,
+        adapterCapabilityDigest: request.adapterCapabilityDigest,
+        proposalPolicyVersion: request.proposalPolicyVersion,
+        proposalAttemptId: request.proposalAttemptId,
+        proposals: [
+            {
+                proposalId: 'proposal-0',
+                mask: artifact,
+                sourceIndex: 0,
+                promptConsistency: {
+                    positivePointsSatisfied: true,
+                    negativePointsSatisfied: true
+                }
+            }
+        ]
+    };
+    const proposalSet = {
+        ...proposalPayload,
+        digest: autoMaskProposalSetDigest(proposalPayload)
+    };
+    const { mask: ignoredMask, ...responseOverrides } = overrides;
+    return {
+        requestBinding: request.requestBinding,
+        targetSplatId: request.target.splatId,
+        sceneId: request.sceneId,
+        sceneVersion: request.sceneVersion,
+        viewId: request.viewId,
+        cameraBindingDigest: request.cameraBindingDigest,
+        rgbDigest: request.rgb.digest,
+        promptStateDigest: request.promptState.digest,
+        modelManifestDigest: request.modelManifestDigest,
+        adapterCapabilityDigest: request.adapterCapabilityDigest,
+        proposalPolicyVersion: request.proposalPolicyVersion,
+        proposalAttemptId: request.proposalAttemptId,
+        proposalSet,
+        ...responseOverrides
+    };
+};
+
+const emptyProposalResponseFor = (request) => {
+    const payload = {
+        schemaVersion: 1,
+        viewId: request.viewId,
+        rgbDigest: request.rgb.digest,
+        promptStateDigest: request.promptState.digest,
+        modelManifestDigest: request.modelManifestDigest,
+        adapterCapabilityDigest: request.adapterCapabilityDigest,
+        proposalPolicyVersion: request.proposalPolicyVersion,
+        proposalAttemptId: request.proposalAttemptId,
+        proposals: []
+    };
+    return maskResponseFor(request, {
+        proposalSet: {
+            ...payload,
+            digest: autoMaskProposalSetDigest(payload)
+        }
+    });
+};
 
 const setup = async (options = {}) => {
     let rgbDigest = options.rgbDigest ?? `sha256:${'a'.repeat(64)}`;
@@ -170,7 +229,7 @@ const setup = async (options = {}) => {
     };
     const maskRequests = [];
     const maskProvider = {
-        produceMask:
+        produceMaskProposals:
             options.produceMask ??
             ((request) => {
                 maskRequests.push(request);
@@ -186,6 +245,11 @@ const setup = async (options = {}) => {
             'modelManifestDigest' in options
                 ? options.modelManifestDigest
                 : 'manifest-digest-1',
+        ...(options.promptCapabilities === undefined
+            ? {}
+            : {
+                  getPromptAdapterCapabilities: () => options.promptCapabilities
+              }),
         ...(options.isAnchorLocked === undefined
             ? {}
             : { isAnchorLocked: options.isAnchorLocked })
@@ -208,15 +272,27 @@ test('a prompt change automatically requests single-frame SAM feedback', async (
     assert.equal(maskRequests.length, 1);
     const request = maskRequests[0];
     assert.equal(request.viewId, 'anchor-view');
-    assert.equal(request.prompts.length, 1);
-    assert.equal(request.prompts[0].polarity, 'include');
-    assert.ok(request.maskAttemptId.length > 0);
+    assert.equal(request.promptState.points.length, 1);
+    assert.equal(request.promptState.points[0].polarity, 'include');
+    assert.ok(request.proposalAttemptId.length > 0);
     assert.equal(request.rgb.digest, `sha256:${'a'.repeat(64)}`);
     assert.equal(mask.state.editingMask.source, 'single-frame-sam');
     assert.equal(mask.state.editingMask.status, 'draft');
     assert.equal(mask.state.stableMask, null);
     assert.equal(mask.state.requestStatus, 'idle');
     assert.equal(mask.state.evidence.status, 'not-requested');
+});
+
+const richPromptCapabilities = createPromptAdapterCapabilities({
+    points: true,
+    negativePoints: true,
+    boxes: true,
+    negativeBoxes: true,
+    maskInput: true,
+    negativeMaskConstraints: true,
+    text: true,
+    negativeText: true,
+    multiCandidateOutput: true
 });
 
 test('each new prompt serializes SAM attempts and resubmits the latest prompt set', async () => {
@@ -245,15 +321,18 @@ test('each new prompt serializes SAM attempts and resubmits the latest prompt se
     // attempt and is the one that publishes.
     assert.equal(maskRequests.length, 2);
     assert.deepEqual(
-        maskRequests[1].prompts.map((prompt) => [prompt.xPx, prompt.yPx]),
+        maskRequests[1].promptState.points.map((prompt) => [
+            prompt.xPx,
+            prompt.yPx
+        ]),
         [
             [10, 12],
             [20, 22]
         ]
     );
     assert.notEqual(
-        maskRequests[1].maskAttemptId,
-        maskRequests[0].maskAttemptId
+        maskRequests[1].proposalAttemptId,
+        maskRequests[0].proposalAttemptId
     );
     const editing = mask.state.editingMask;
     assert.equal(editing.prompts.length, 2);
@@ -275,7 +354,10 @@ test('a failed in-flight attempt still resubmits the latest prompt set once', as
     await mask.addPrompt({ xPx: 20, yPx: 22, polarity: 'exclude' });
     assert.equal(maskRequests.length, 2);
     assert.deepEqual(
-        maskRequests[1].prompts.map((prompt) => [prompt.xPx, prompt.yPx]),
+        maskRequests[1].promptState.points.map((prompt) => [
+            prompt.xPx,
+            prompt.yPx
+        ]),
         [
             [10, 12],
             [20, 22]
@@ -407,8 +489,8 @@ test('Mask failure keeps the RGB Ready view and permits retry and manual recover
     assert.equal(maskRequests.length, 2);
     // An explicit Retry mints a new attempt identity for the same prompt set.
     assert.notEqual(
-        maskRequests[1].maskAttemptId,
-        maskRequests[0].maskAttemptId
+        maskRequests[1].proposalAttemptId,
+        maskRequests[0].proposalAttemptId
     );
     assert.equal(mask.state.requestStatus, 'idle');
     assert.equal(mask.state.editingMask.source, 'single-frame-sam');
@@ -418,7 +500,7 @@ test('an invalid SAM response binding fails the request, not the View', async ()
     const { anchor, mask } = await setup({
         produceMask: (request) =>
             Promise.resolve(
-                maskResponseFor(request, { maskAttemptId: 'stale-attempt' })
+                maskResponseFor(request, { proposalAttemptId: 'stale-attempt' })
             )
     });
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
@@ -456,6 +538,32 @@ test('Restart Current Target disposes all target-local Mask state', async () => 
     assert.equal(mask.state.prompts.length, 0);
     assert.equal(mask.state.requestStatus, 'idle');
     assert.equal(mask.state.evidence.status, 'not-requested');
+});
+
+test('Restart logically cancels an in-flight proposal and discards its late result', async () => {
+    const gate = deferred();
+    const maskRequests = [];
+    const { anchor, mask } = await setup({
+        produceMask: (request) => {
+            maskRequests.push(request);
+            return gate.promise;
+        }
+    });
+    const pending = mask.addPrompt({
+        xPx: 10,
+        yPx: 12,
+        polarity: 'include'
+    });
+
+    await anchor.restart(input());
+    gate.resolve(maskResponseFor(maskRequests[0]));
+    await pending;
+
+    assert.equal(mask.state.promptState.revision, 0);
+    assert.equal(mask.state.proposalSet, null);
+    assert.equal(mask.state.editingMask, null);
+    assert.equal(mask.state.stableMask, null);
+    assert.equal(mask.state.requestStatus, 'idle');
 });
 
 test('a new Anchor RGB identity resets prompts and Mask currency', async () => {
@@ -624,4 +732,149 @@ test('a locked confirmed Anchor rejects every Mask mutation', async () => {
     locked = false;
     mask.applyBrushStroke({ xPx: 4, yPx: 4, radiusPx: 2, mode: 'add' });
     assert.equal(mask.state.editingMask.source, 'hybrid');
+});
+
+test('unsupported prompt families are rejected before transport', async () => {
+    const { mask, maskRequests } = await setup();
+    await assert.rejects(
+        mask.addBoxPrompt({
+            x0Px: 1,
+            y0Px: 1,
+            x1Px: 10,
+            y1Px: 10,
+            polarity: 'include'
+        }),
+        /does not support positive-box/
+    );
+    await assert.rejects(
+        mask.addTextPrompt({ text: 'chair', polarity: 'include' }),
+        /does not support positive-text/
+    );
+    assert.equal(maskRequests.length, 0);
+    assert.equal(mask.state.promptState.boxes.length, 0);
+    assert.equal(mask.state.promptState.textPrompts.length, 0);
+});
+
+test('Box and Prompt Brush revise PromptState without editing pixels', async () => {
+    const { mask, maskRequests } = await setup({
+        promptCapabilities: richPromptCapabilities
+    });
+    await mask.addBoxPrompt({
+        x0Px: 20,
+        y0Px: 20,
+        x1Px: 4,
+        y1Px: 5,
+        polarity: 'exclude'
+    });
+    assert.equal(mask.state.promptState.boxes.length, 1);
+    assert.deepEqual(
+        [
+            mask.state.promptState.boxes[0].x0Px,
+            mask.state.promptState.boxes[0].y0Px,
+            mask.state.promptState.boxes[0].x1Px,
+            mask.state.promptState.boxes[0].y1Px
+        ],
+        [4, 5, 20, 20]
+    );
+    assert.equal(mask.state.editingMask, null);
+
+    await mask.addPromptBrushConstraint(
+        [
+            {
+                xPx: 8,
+                yPx: 9,
+                radiusPx: 2,
+                mode: 'add'
+            }
+        ],
+        'include'
+    );
+    assert.equal(maskRequests.length, 2);
+    assert.equal(mask.state.promptState.maskConstraints.length, 1);
+    assert.equal(mask.state.editingMask, null);
+    assert.equal(mask.state.stableMask, null);
+    assert.equal(mask.state.evidence.status, 'not-requested');
+});
+
+test('Paint changes Editing Mask without rewriting PromptState', async () => {
+    const { mask } = await setup();
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    const promptDigest = mask.state.promptState.digest;
+    const promptRevision = mask.state.promptState.revision;
+
+    mask.applyBrushStroke({
+        xPx: 20,
+        yPx: 20,
+        radiusPx: 2,
+        mode: 'add'
+    });
+
+    assert.equal(mask.state.promptState.digest, promptDigest);
+    assert.equal(mask.state.promptState.revision, promptRevision);
+    assert.equal(mask.state.editingMask.source, 'hybrid');
+});
+
+test('Prompt Undo and Mask Undo are independent histories', async () => {
+    const { mask } = await setup({
+        promptCapabilities: richPromptCapabilities
+    });
+    await mask.addBoxPrompt({
+        x0Px: 1,
+        y0Px: 1,
+        x1Px: 10,
+        y1Px: 10,
+        polarity: 'include'
+    });
+    const promptDigest = mask.state.promptState.digest;
+    mask.applyBrushStroke({
+        xPx: 20,
+        yPx: 20,
+        radiusPx: 1,
+        mode: 'add'
+    });
+    const editingId = mask.state.editingMask.maskId;
+
+    mask.undoPromptEdit();
+    assert.notEqual(mask.state.promptState.digest, promptDigest);
+    assert.equal(mask.state.editingMask.maskId, editingId);
+
+    mask.undoMaskEdit();
+    assert.equal(mask.state.editingMask, null);
+    assert.equal(mask.state.promptState.boxes.length, 0);
+    mask.redoPromptEdit();
+    assert.equal(mask.state.promptState.digest, promptDigest);
+    assert.equal(mask.state.editingMask, null);
+});
+
+test('unconfirmed Prompt and proposal work leaves Stable Mask and Evidence current', async () => {
+    const { mask } = await setup();
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    mask.confirmEditingMask();
+    const stable = mask.state.stableMask;
+    const identity = {
+        viewId: 'anchor-view',
+        rgbDigest: stable.createdFromRgbDigest,
+        stableMaskDigest: stable.artifact.digest,
+        evidencePolicyDigest: aiSelectEvidencePolicyVersion
+    };
+    mask.evidenceRegistry.markReady(identity, 'evidence-1');
+
+    await mask.addPrompt({ xPx: 20, yPx: 20, polarity: 'exclude' });
+
+    assert.equal(mask.state.stableMask.maskId, stable.maskId);
+    assert.equal(mask.state.evidence.status, 'ready');
+});
+
+test('no-candidate output is proposal unavailable, not render or technical failure', async () => {
+    const { anchor, mask } = await setup({
+        produceMask: (request) =>
+            Promise.resolve(emptyProposalResponseFor(request))
+    });
+
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+
+    assert.equal(mask.state.proposalStatus, 'unavailable');
+    assert.equal(mask.state.requestStatus, 'idle');
+    assert.equal(mask.state.editingMask, null);
+    assert.equal(anchor.state.anchor.renderStatus, 'ready');
 });

@@ -6,6 +6,9 @@ const {
   SelectionServiceReadiness,
   SelectionServiceTransportError,
 } = require("../.test-dist/src/selection-service-readiness.js");
+const {
+  createPromptAdapterCapabilities,
+} = require("../.test-dist/src/ai-select/prompt-state.js");
 
 const editorOrigin = "https://editor.example";
 const selectedModelDigest = "sha256:model-v1";
@@ -29,6 +32,7 @@ const capabilities = (overrides = {}) => ({
   supportedPromptKinds: ["point"],
   supportedOperations: [
     "aiSelectAnchorRender",
+    "aiSelectMaskProposals",
     "binarySceneSnapshotRegistrationV1",
   ],
   modelManifests: [
@@ -37,6 +41,17 @@ const capabilities = (overrides = {}) => ({
       adapterId: "sam3.1",
       modelName: "SAM 3.1",
       weightsBundled: false,
+      promptCapabilities: createPromptAdapterCapabilities({
+        points: true,
+        negativePoints: true,
+        boxes: false,
+        negativeBoxes: false,
+        maskInput: false,
+        negativeMaskConstraints: false,
+        text: false,
+        negativeText: false,
+        multiCandidateOutput: false,
+      }),
     },
   ],
   capacity: {
@@ -205,7 +220,10 @@ test("does not admit AI Select when the Companion lacks Binary SceneSnapshot Reg
   const readiness = new SelectionServiceReadiness({
     probe: new DeterministicReadinessProbe({
       capabilitiesResult: capabilities({
-        supportedOperations: ["aiSelectAnchorRender"],
+        supportedOperations: [
+          "aiSelectAnchorRender",
+          "aiSelectMaskProposals",
+        ],
       }),
     }),
     configuration: configuration(),

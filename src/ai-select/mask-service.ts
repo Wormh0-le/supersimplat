@@ -1,4 +1,3 @@
-import { sha256Digest } from '../scene-snapshot-binary';
 import type { AnchorRgbArtifact } from './anchor-render-service';
 import {
     areTargetDependencyTokensEqual,
@@ -7,19 +6,15 @@ import {
     type AITarget
 } from './current-target-context';
 import {
-    decodeMaskBitsetBase64,
-    isMaskArtifact,
-    isMaskPrompt,
-    maskBitsetEncoding,
-    type MaskArtifact,
-    type MaskPrompt
-} from './mask-annotation';
+    isAutoMaskProposalSet,
+    type AutoMaskProposalSet
+} from './mask-proposal';
+import { isPromptState, type PromptState } from './prompt-state';
 
 /**
- * The single-frame SAM mask contract. Every request binds the full async
- * identity plus the exact authoritative RGB artifact the prompts were placed
- * on, so a stale or partial response can never attach to changed
- * RGB/CameraBinding. The artifact digest pins the decoded bitset bytes.
+ * The generic single-frame proposal contract. Every request binds the full
+ * async identity, exact RGB/CameraBinding, immutable PromptState, selected
+ * model/capability identity, bounded proposal policy, and execution attempt.
  */
 export interface AIViewMaskRequest {
     readonly requestBinding: AIRequestBinding;
@@ -31,10 +26,13 @@ export interface AIViewMaskRequest {
      * The identity of one actual mask-production attempt. Same-attempt
      * replay is idempotent; an explicit user Retry submits a new attempt.
      */
-    readonly maskAttemptId: string;
+    readonly cameraBindingDigest: string;
     readonly rgb: AnchorRgbArtifact;
-    readonly prompts: readonly MaskPrompt[];
+    readonly promptState: PromptState;
     readonly modelManifestDigest: string;
+    readonly adapterCapabilityDigest: string;
+    readonly proposalPolicyVersion: string;
+    readonly proposalAttemptId: string;
 }
 
 export interface MaskResultResponse {
@@ -43,16 +41,20 @@ export interface MaskResultResponse {
     readonly sceneId: string;
     readonly sceneVersion: string;
     readonly viewId: string;
-    readonly maskAttemptId: string;
-    /** The exact RGB digest the mask was produced from. */
+    readonly cameraBindingDigest: string;
     readonly rgbDigest: string;
-    readonly mask: MaskArtifact;
-    readonly maskSource: 'single-frame-sam';
+    readonly promptStateDigest: string;
     readonly modelManifestDigest: string;
+    readonly adapterCapabilityDigest: string;
+    readonly proposalPolicyVersion: string;
+    readonly proposalAttemptId: string;
+    readonly proposalSet: AutoMaskProposalSet;
 }
 
 export interface AISelectMaskProvider {
-    produceMask(request: AIViewMaskRequest): Promise<MaskResultResponse>;
+    produceMaskProposals(
+        request: AIViewMaskRequest
+    ): Promise<MaskResultResponse>;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -92,6 +94,26 @@ const isAnchorRgbReference = (value: unknown): value is AnchorRgbArtifact => {
     );
 };
 
+const promptStateMatchesRgb = (
+    promptState: PromptState,
+    rgb: AnchorRgbArtifact
+): boolean => {
+    return (
+        promptState.rgbDigest === rgb.digest &&
+        promptState.points.every(
+            (point) => point.xPx < rgb.width && point.yPx < rgb.height
+        ) &&
+        promptState.boxes.every(
+            (box) => box.x1Px < rgb.width && box.y1Px < rgb.height
+        ) &&
+        promptState.maskConstraints.every(
+            (constraint) =>
+                constraint.artifact.width === rgb.width &&
+                constraint.artifact.height === rgb.height
+        )
+    );
+};
+
 export const isAIViewMaskRequest = (
     value: unknown
 ): value is AIViewMaskRequest => {
@@ -104,12 +126,15 @@ export const isAIViewMaskRequest = (
         isNonEmptyString(value.sceneId) &&
         isNonEmptyString(value.sceneVersion) &&
         isNonEmptyString(value.viewId) &&
-        isNonEmptyString(value.maskAttemptId) &&
+        isDigest(value.cameraBindingDigest) &&
         isAnchorRgbReference(value.rgb) &&
-        Array.isArray(value.prompts) &&
-        value.prompts.length > 0 &&
-        value.prompts.every(isMaskPrompt) &&
-        isNonEmptyString(value.modelManifestDigest)
+        isPromptState(value.promptState) &&
+        value.promptState.viewId === value.viewId &&
+        promptStateMatchesRgb(value.promptState, value.rgb) &&
+        isNonEmptyString(value.modelManifestDigest) &&
+        isDigest(value.adapterCapabilityDigest) &&
+        isNonEmptyString(value.proposalPolicyVersion) &&
+        isNonEmptyString(value.proposalAttemptId)
     );
 };
 
@@ -123,23 +148,15 @@ export const isMaskResultResponse = (
         isNonEmptyString(value.sceneId) &&
         isNonEmptyString(value.sceneVersion) &&
         isNonEmptyString(value.viewId) &&
-        isNonEmptyString(value.maskAttemptId) &&
+        isDigest(value.cameraBindingDigest) &&
         isDigest(value.rgbDigest) &&
-        isMaskArtifact(value.mask) &&
-        value.maskSource === 'single-frame-sam' &&
-        isNonEmptyString(value.modelManifestDigest)
+        isDigest(value.promptStateDigest) &&
+        isNonEmptyString(value.modelManifestDigest) &&
+        isDigest(value.adapterCapabilityDigest) &&
+        isNonEmptyString(value.proposalPolicyVersion) &&
+        isNonEmptyString(value.proposalAttemptId) &&
+        isAutoMaskProposalSet(value.proposalSet)
     );
-};
-
-const artifactDigestMatchesBytes = (artifact: MaskArtifact): boolean => {
-    let bytes: Uint8Array;
-    try {
-        bytes = decodeMaskBitsetBase64(artifact.data);
-    } catch {
-        return false;
-    }
-    // A response whose bytes do not match its digest is stale or corrupt.
-    return sha256Digest(bytes) === artifact.digest;
 };
 
 /**
@@ -164,12 +181,27 @@ export const maskResponseMatchesRequest = (
         response.sceneId === request.sceneId &&
         response.sceneVersion === request.sceneVersion &&
         response.viewId === request.viewId &&
-        response.maskAttemptId === request.maskAttemptId &&
+        response.cameraBindingDigest === request.cameraBindingDigest &&
         response.rgbDigest === request.rgb.digest &&
-        response.mask.width === request.rgb.width &&
-        response.mask.height === request.rgb.height &&
-        response.mask.encoding === maskBitsetEncoding &&
+        response.promptStateDigest === request.promptState.digest &&
         response.modelManifestDigest === request.modelManifestDigest &&
-        artifactDigestMatchesBytes(response.mask)
+        response.adapterCapabilityDigest === request.adapterCapabilityDigest &&
+        response.proposalPolicyVersion === request.proposalPolicyVersion &&
+        response.proposalAttemptId === request.proposalAttemptId &&
+        response.proposalSet.viewId === request.viewId &&
+        response.proposalSet.rgbDigest === request.rgb.digest &&
+        response.proposalSet.promptStateDigest === request.promptState.digest &&
+        response.proposalSet.modelManifestDigest ===
+            request.modelManifestDigest &&
+        response.proposalSet.adapterCapabilityDigest ===
+            request.adapterCapabilityDigest &&
+        response.proposalSet.proposalPolicyVersion ===
+            request.proposalPolicyVersion &&
+        response.proposalSet.proposalAttemptId === request.proposalAttemptId &&
+        response.proposalSet.proposals.every(
+            (proposal) =>
+                proposal.mask.width === request.rgb.width &&
+                proposal.mask.height === request.rgb.height
+        )
     );
 };

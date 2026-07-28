@@ -257,8 +257,8 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/ai-select/anchor-support-probes":
             self._probe_ai_select_anchor_support()
             return
-        if self.path == "/ai-select/masks":
-            self._produce_ai_select_mask()
+        if self.path == "/ai-select/mask-proposals":
+            self._produce_ai_select_mask_proposals()
             return
         if self.path == "/ai-select/generated-view-plans":
             self._plan_ai_select_generated_views()
@@ -438,8 +438,8 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json(HTTPStatus.OK, response)
 
-    def _produce_ai_select_mask(self) -> None:
-        """Route one bound single-frame SAM mask request through the adapter."""
+    def _produce_ai_select_mask_proposals(self) -> None:
+        """Route one bound PromptState proposal request through the adapter."""
 
         try:
             self._state.require_release()
@@ -455,7 +455,7 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             self._send_json(
                 HTTPStatus.CONFLICT,
                 {
-                    "status": "maskError",
+                    "status": "maskProposalError",
                     "code": error.code,
                     "message": str(error),
                 },

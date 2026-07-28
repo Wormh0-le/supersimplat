@@ -19,6 +19,10 @@ import type {
     AIViewMaskRequest,
     MaskResultResponse
 } from './ai-select/mask-service';
+import {
+    isPromptAdapterCapabilities,
+    type PromptAdapterCapabilities
+} from './ai-select/prompt-state';
 import type {
     AISelectSupportProbeProvider,
     AnchorSupportProbeRequest,
@@ -60,6 +64,7 @@ type SelectionServiceReadinessDiagnosticCode =
     | 'rendererMismatch'
     | 'pointPromptUnsupported'
     | 'aiSelectAnchorUnsupported'
+    | 'maskProposalUnsupported'
     | 'binarySceneSnapshotRegistrationUnsupported'
     | 'modelNotSelected'
     | 'modelUnavailable'
@@ -99,6 +104,7 @@ interface SelectionServiceModelManifest {
     adapterId: string;
     modelName: string;
     weightsBundled: boolean;
+    promptCapabilities: PromptAdapterCapabilities;
 }
 
 interface SelectionServiceCapacity {
@@ -131,6 +137,7 @@ interface SelectionServiceReadinessRequirements {
     rendererId: string;
     modelAdapterId: string;
     aiSelectAnchorOperation: string;
+    maskProposalOperation: string;
     binarySceneSnapshotRegistrationOperation: string;
 }
 
@@ -224,6 +231,7 @@ const defaultRequirements: SelectionServiceReadinessRequirements = {
     rendererId: 'gsplat',
     modelAdapterId: 'sam3.1',
     aiSelectAnchorOperation: 'aiSelectAnchorRender',
+    maskProposalOperation: 'aiSelectMaskProposals',
     binarySceneSnapshotRegistrationOperation:
         'binarySceneSnapshotRegistrationV1'
 };
@@ -267,7 +275,8 @@ const copyCapabilities = (
         digest: manifest.digest,
         adapterId: manifest.adapterId,
         modelName: manifest.modelName,
-        weightsBundled: manifest.weightsBundled
+        weightsBundled: manifest.weightsBundled,
+        promptCapabilities: { ...manifest.promptCapabilities }
     })),
     capacity: {
         maximumActiveSessions: capabilities.capacity.maximumActiveSessions,
@@ -440,7 +449,8 @@ const validateCapabilities = (
                 typeof manifest.digest === 'string' &&
                 typeof manifest.adapterId === 'string' &&
                 typeof manifest.modelName === 'string' &&
-                typeof manifest.weightsBundled === 'boolean'
+                typeof manifest.weightsBundled === 'boolean' &&
+                isPromptAdapterCapabilities(manifest.promptCapabilities)
             );
         })
     ) {
@@ -722,6 +732,18 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
 
         if (
             !capabilities.supportedOperations.includes(
+                this.requirements.maskProposalOperation
+            )
+        ) {
+            return diagnostic(
+                'maskProposalUnsupported',
+                'The Companion does not advertise prompt-conditioned Mask proposal production.',
+                'Install the compatible Companion release with AI Select Mask proposal support, then refresh readiness.'
+            );
+        }
+
+        if (
+            !capabilities.supportedOperations.includes(
                 this.requirements.binarySceneSnapshotRegistrationOperation
             )
         ) {
@@ -936,9 +958,11 @@ class ReadinessGatedSelectionServiceAdapter
         return await this.requireAnchorRenderer().renderAnchor(request);
     }
 
-    async produceMask(request: AIViewMaskRequest): Promise<MaskResultResponse> {
+    async produceMaskProposals(
+        request: AIViewMaskRequest
+    ): Promise<MaskResultResponse> {
         this.readiness.requireReady();
-        return await this.requireMaskProvider().produceMask(request);
+        return await this.requireMaskProvider().produceMaskProposals(request);
     }
 
     async probeAnchorSupport(
@@ -996,8 +1020,8 @@ class ReadinessGatedSelectionServiceAdapter
     private requireMaskProvider(): AISelectMaskProvider {
         const adapter = this.requireAdapter();
         if (
-            typeof (adapter as Partial<AISelectMaskProvider>).produceMask !==
-            'function'
+            typeof (adapter as Partial<AISelectMaskProvider>)
+                .produceMaskProposals !== 'function'
         ) {
             throw new SelectionServiceAdapterNotConfiguredError();
         }

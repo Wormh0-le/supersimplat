@@ -12,6 +12,13 @@ const {
 const {
     buildSpatialSceneSnapshot
 } = require('../.test-dist/src/spatial-scene-snapshot.js');
+const {
+    createEmptyPromptState,
+    revisePromptState
+} = require('../.test-dist/src/ai-select/prompt-state.js');
+const {
+    autoMaskProposalSetDigest
+} = require('../.test-dist/src/ai-select/mask-proposal.js');
 
 const snapshot = {
     protocolVersion: '1',
@@ -1281,21 +1288,38 @@ test('rejects a Mask Set with a malformed accepted binary mask', async () => {
     );
 });
 
+const maskPromptState = revisePromptState(
+    createEmptyPromptState('anchor-view', `sha256:${'a'.repeat(64)}`),
+    {
+        points: [
+            {
+                promptId: 'prompt-1',
+                xPx: 10,
+                yPx: 12,
+                polarity: 'include'
+            }
+        ]
+    }
+);
+
 const maskRequest = {
     requestBinding: anchorRequest.requestBinding,
     target: anchorRequest.target,
     sceneId: anchorSnapshot.sceneId,
     sceneVersion: anchorSnapshot.sceneVersion,
     viewId: 'anchor-view',
-    maskAttemptId: 'mask-attempt-1',
+    cameraBindingDigest: `sha256:${'c'.repeat(64)}`,
     rgb: {
         pngBase64: anchorPng(64, 48).pngBase64,
         digest: `sha256:${'a'.repeat(64)}`,
         width: 64,
         height: 48
     },
-    prompts: [{ promptId: 'prompt-1', xPx: 10, yPx: 12, polarity: 'include' }],
-    modelManifestDigest: 'sha256:model-v1'
+    promptState: maskPromptState,
+    modelManifestDigest: 'sha256:model-v1',
+    adapterCapabilityDigest: `sha256:${'d'.repeat(64)}`,
+    proposalPolicyVersion: 'auto-mask-proposals/bounded-source-order-v1',
+    proposalAttemptId: 'proposal-attempt-1'
 };
 
 const maskBitset = (width, height, foreground = [[10, 12]]) => {
@@ -1313,20 +1337,53 @@ const maskBitset = (width, height, foreground = [[10, 12]]) => {
     };
 };
 
-const maskReply = (request, overrides = {}) => ({
-    status: 'complete',
-    requestBinding: request.requestBinding,
-    targetSplatId: request.target.splatId,
-    sceneId: request.sceneId,
-    sceneVersion: request.sceneVersion,
-    viewId: request.viewId,
-    maskAttemptId: request.maskAttemptId,
-    rgbDigest: request.rgb.digest,
-    mask: maskBitset(request.rgb.width, request.rgb.height),
-    maskSource: 'single-frame-sam',
-    modelManifestDigest: request.modelManifestDigest,
-    ...overrides
-});
+const maskReply = (request, overrides = {}) => {
+    const proposalPayload = {
+        schemaVersion: 1,
+        viewId: request.viewId,
+        rgbDigest: request.rgb.digest,
+        promptStateDigest: request.promptState.digest,
+        modelManifestDigest: request.modelManifestDigest,
+        adapterCapabilityDigest: request.adapterCapabilityDigest,
+        proposalPolicyVersion: request.proposalPolicyVersion,
+        proposalAttemptId: request.proposalAttemptId,
+        proposals: [
+            {
+                proposalId: 'proposal-0',
+                sourceIndex: 0,
+                mask:
+                    overrides.mask ??
+                    maskBitset(request.rgb.width, request.rgb.height),
+                promptConsistency: {
+                    positivePointsSatisfied: true,
+                    negativePointsSatisfied: true
+                }
+            }
+        ]
+    };
+    const proposalSet = {
+        ...proposalPayload,
+        digest: autoMaskProposalSetDigest(proposalPayload)
+    };
+    const { mask: ignoredMask, ...responseOverrides } = overrides;
+    return {
+        status: 'complete',
+        requestBinding: request.requestBinding,
+        targetSplatId: request.target.splatId,
+        sceneId: request.sceneId,
+        sceneVersion: request.sceneVersion,
+        viewId: request.viewId,
+        cameraBindingDigest: request.cameraBindingDigest,
+        rgbDigest: request.rgb.digest,
+        promptStateDigest: request.promptState.digest,
+        modelManifestDigest: request.modelManifestDigest,
+        adapterCapabilityDigest: request.adapterCapabilityDigest,
+        proposalPolicyVersion: request.proposalPolicyVersion,
+        proposalAttemptId: request.proposalAttemptId,
+        proposalSet,
+        ...responseOverrides
+    };
+};
 
 test('sends a bound single-frame Mask request and returns the validated Mask result', async () => {
     const calls = [];
@@ -1343,16 +1400,18 @@ test('sends a bound single-frame Mask request and returns the validated Mask res
         }
     });
 
-    const response = await adapter.produceMask(maskRequest);
+    const response = await adapter.produceMaskProposals(maskRequest);
 
     assert.equal(calls.length, 1);
-    assert.match(calls[0].url, /\/ai-select\/masks$/);
+    assert.match(calls[0].url, /\/ai-select\/mask-proposals$/);
     assert.equal(calls[0].init.method, 'POST');
     assert.deepEqual(calls[0].body.requestBinding, maskRequest.requestBinding);
-    assert.deepEqual(calls[0].body.prompts, maskRequest.prompts);
-    assert.equal(calls[0].body.maskAttemptId, 'mask-attempt-1');
-    assert.equal(response.mask.digest, maskReply(maskRequest).mask.digest);
-    assert.equal(response.maskSource, 'single-frame-sam');
+    assert.deepEqual(calls[0].body.promptState, maskRequest.promptState);
+    assert.equal(calls[0].body.proposalAttemptId, 'proposal-attempt-1');
+    assert.equal(
+        response.proposalSet.digest,
+        maskReply(maskRequest).proposalSet.digest
+    );
 });
 
 test('rejects a Mask response bound to a stale attempt or RGB identity', async () => {
@@ -1364,13 +1423,15 @@ test('rejects a Mask response bound to a stale attempt or RGB identity', async (
         fetch: async () =>
             new Response(
                 JSON.stringify(
-                    maskReply(maskRequest, { maskAttemptId: 'mask-attempt-2' })
+                    maskReply(maskRequest, {
+                        proposalAttemptId: 'proposal-attempt-2'
+                    })
                 ),
                 { status: 200 }
             )
     });
     await assert.rejects(
-        staleAttempt.produceMask(maskRequest),
+        staleAttempt.produceMaskProposals(maskRequest),
         /incomplete or stale Mask result/
     );
 
@@ -1390,7 +1451,7 @@ test('rejects a Mask response bound to a stale attempt or RGB identity', async (
             )
     });
     await assert.rejects(
-        staleRgb.produceMask(maskRequest),
+        staleRgb.produceMaskProposals(maskRequest),
         /incomplete or stale Mask result/
     );
 });
@@ -1412,7 +1473,7 @@ test('rejects a Mask artifact whose bytes do not match its digest', async () => 
             )
     });
     await assert.rejects(
-        adapter.produceMask(maskRequest),
+        adapter.produceMaskProposals(maskRequest),
         /incomplete or stale Mask result/
     );
 });
@@ -1426,14 +1487,14 @@ test('surfaces a Companion Mask error without publishing anything', async () => 
         fetch: async () =>
             new Response(
                 JSON.stringify({
-                    status: 'maskError',
-                    code: 'anchorMaskUnavailable',
+                    status: 'maskProposalError',
+                    code: 'maskProposalFailed',
                     message: 'SAM found no foreground mask for the prompts.'
                 }),
                 { status: 409 }
             )
     });
-    await assert.rejects(adapter.produceMask(maskRequest), /HTTP 409/);
+    await assert.rejects(adapter.produceMaskProposals(maskRequest), /HTTP 409/);
 });
 
 test('rejects a Mask request that is not bound to the configured Model Manifest', async () => {
@@ -1446,5 +1507,5 @@ test('rejects a Mask request that is not bound to the configured Model Manifest'
             throw new Error('must not be called');
         }
     });
-    await assert.rejects(adapter.produceMask(maskRequest));
+    await assert.rejects(adapter.produceMaskProposals(maskRequest));
 });

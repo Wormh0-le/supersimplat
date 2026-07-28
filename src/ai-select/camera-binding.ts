@@ -1,3 +1,5 @@
+import { sha256Digest } from '../scene-snapshot-binary';
+
 /**
  * The immutable camera truth shared by the AI renderer and the editor-side
  * frustum. Camera coordinates use OpenCV's right/down/forward axes so the
@@ -164,6 +166,21 @@ export const copyCameraBinding = (binding: CameraBinding): CameraBinding => {
         projection: copyProjection(binding.projection),
         conventionVersion: binding.conventionVersion
     });
+};
+
+/** Stable semantic digest used by Prompt/proposal artifacts and retries. */
+export const cameraBindingDigest = (binding: CameraBinding): string => {
+    const copied = copyCameraBinding(binding);
+    return sha256Digest(
+        new TextEncoder().encode(
+            JSON.stringify({
+                revision: copied.revision,
+                cameraToWorld: copied.cameraToWorld,
+                projection: copied.projection,
+                conventionVersion: copied.conventionVersion
+            })
+        )
+    );
 };
 
 /**

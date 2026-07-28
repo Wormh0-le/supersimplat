@@ -202,6 +202,7 @@ class AISelectAnchorRouteTests(unittest.TestCase):
                 'aiSelectAnchorRender',
                 'aiSelectAnchorReferenceContributor',
                 'aiSelectAnchorSupportProbe',
+                'aiSelectMaskProposals',
                 'aiSelectGeneratedViewPlanning',
                 'binarySceneSnapshotRegistrationV1',
                 'cameraAwareSpatialWorkingSetV1',

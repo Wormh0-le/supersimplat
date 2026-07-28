@@ -199,9 +199,15 @@ unspecified, and loopback listeners are rejected.
 
 This release exposes `/health`, `/capabilities`,
 `/scene-snapshot-uploads/v1`, and the AI Select Anchor route
-`/ai-select/anchor-renders`; `/capabilities` must advertise both
+`/ai-select/anchor-renders` and the prompt-conditioned proposal route
+`/ai-select/mask-proposals`; `/capabilities` must advertise
+`aiSelectMaskProposals`, an exact digest-bound `promptCapabilities` record for
+each usable Model Manifest, and both
 `aiSelectAnchorRender` and `binarySceneSnapshotRegistrationV1` before the
-browser enables AI Select. `/scene-snapshots/...` remains a legacy fixture
+browser enables AI Select. The current SAM 3.1 adapter explicitly advertises
+positive/negative Point support and singleton proposal output; unsupported
+Box, Mask Constraint, and Text inputs fail closed rather than being ignored.
+`/scene-snapshots/...` remains a legacy fixture
 compatibility endpoint only. It also keeps the legacy
 Object Selection Session admission lease during migration. It verifies the
 locked gsplat/CUDA runtime from the current Companion process only. Whenever

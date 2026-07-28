@@ -395,20 +395,25 @@ class AISelectMaskPrompt:
 
 @dataclass(frozen=True)
 class AISelectMaskRequest:
-    """Validated browser binding for one single-frame SAM mask attempt."""
+    """Validated binding for one prompt-conditioned proposal attempt."""
 
     request_binding: dict[str, object]
     target_splat_id: str
     scene_id: str
     scene_version: str
     view_id: str
-    mask_attempt_id: str
+    camera_binding_digest: str
     rgb_png: bytes
     rgb_digest: str
     width: int
     height: int
     prompts: tuple[AISelectMaskPrompt, ...]
+    prompt_state: dict[str, object]
+    prompt_state_digest: str
     model_manifest_digest: str
+    adapter_capability_digest: str
+    proposal_policy_version: str
+    proposal_attempt_id: str
 
     def response_fields(self) -> dict[str, object]:
         return {
@@ -417,15 +422,19 @@ class AISelectMaskRequest:
             'sceneId': self.scene_id,
             'sceneVersion': self.scene_version,
             'viewId': self.view_id,
-            'maskAttemptId': self.mask_attempt_id,
+            'cameraBindingDigest': self.camera_binding_digest,
             'rgbDigest': self.rgb_digest,
+            'promptStateDigest': self.prompt_state_digest,
             'modelManifestDigest': self.model_manifest_digest,
+            'adapterCapabilityDigest': self.adapter_capability_digest,
+            'proposalPolicyVersion': self.proposal_policy_version,
+            'proposalAttemptId': self.proposal_attempt_id,
         }
 
     def identity_fields(self) -> dict[str, object]:
         return {
             **self.response_fields(),
-            'prompts': [prompt.response_fields() for prompt in self.prompts],
+            'promptState': self.prompt_state,
         }
 
 
@@ -678,6 +687,27 @@ def _mask_request_positive_integer(value: object, field_name: str) -> int:
     if integer <= 0:
         raise ValueError(f'AI Select Mask {field_name} must be greater than zero')
     return integer
+
+
+def _point_prompt_capabilities() -> dict[str, object]:
+    payload: dict[str, object] = {
+        'points': True,
+        'negativePoints': True,
+        'boxes': False,
+        'negativeBoxes': False,
+        'maskInput': False,
+        'negativeMaskConstraints': False,
+        'text': False,
+        'negativeText': False,
+        'multiCandidateOutput': False,
+    }
+    encoded = json.dumps(
+        payload, separators=(',', ':'), sort_keys=True, allow_nan=False
+    ).encode('utf-8')
+    return {
+        **payload,
+        'capabilityDigest': f'sha256:{hashlib.sha256(encoded).hexdigest()}',
+    }
 
 
 @dataclass
@@ -1813,14 +1843,15 @@ class CompanionState:
         return mask, digest
 
     def produce_ai_select_mask(self, request: Mapping[str, object]) -> dict[str, object]:
-        """Publish one bound single-frame SAM mask or replay its outcome.
+        """Publish one bound single-frame proposal set or replay its outcome.
 
-        The browser owns target identity, the authoritative Anchor RGB, and the
-        point prompts. This state method validates those untrusted bindings,
-        reserves the single Companion operation slot, then runs the promptable
-        mask adapter outside every state lock before atomically publishing the
-        immutable result. The synthetic single-view Frame Set makes the adapter
-        perform exactly one SAM pass with no video propagation.
+        The browser owns target identity, authoritative Anchor RGB, and
+        PromptState. This method validates those untrusted bindings and the
+        negotiated adapter capability identity, reserves the single Companion
+        operation slot, then runs the point-only compatibility adapter outside
+        every state lock before atomically publishing the immutable bounded
+        result. The synthetic single-view Frame Set makes the adapter perform
+        exactly one SAM pass with no video propagation.
         """
 
         mask_request = self._parse_ai_select_mask_request(request)
@@ -1828,6 +1859,35 @@ class CompanionState:
         mask_key, admission, owns_admission = self._admit_mask_request(mask_request)
         if not owns_admission:
             return self._replay_mask_request(admission)
+
+        def proposal_response(
+            proposals: list[dict[str, object]]
+        ) -> dict[str, object]:
+            proposal_set: dict[str, object] = {
+                'schemaVersion': 1,
+                'viewId': mask_request.view_id,
+                'rgbDigest': mask_request.rgb_digest,
+                'promptStateDigest': mask_request.prompt_state_digest,
+                'modelManifestDigest': mask_request.model_manifest_digest,
+                'adapterCapabilityDigest': mask_request.adapter_capability_digest,
+                'proposalPolicyVersion': mask_request.proposal_policy_version,
+                'proposalAttemptId': mask_request.proposal_attempt_id,
+                'proposals': proposals,
+            }
+            encoded = json.dumps(
+                proposal_set,
+                separators=(',', ':'),
+                sort_keys=True,
+                allow_nan=False,
+            ).encode('utf-8')
+            proposal_set['digest'] = (
+                f'sha256:{hashlib.sha256(encoded).hexdigest()}'
+            )
+            return {
+                'status': 'complete',
+                **mask_request.response_fields(),
+                'proposalSet': proposal_set,
+            }
 
         try:
             try:
@@ -1869,17 +1929,22 @@ class CompanionState:
                     prompt_log=prompt_log,
                     cancelled=lambda: False,
                 )
-            except MaskSessionError:
-                raise
+            except MaskSessionError as error:
+                if error.code != 'anchorMaskUnavailable':
+                    raise
+                response = proposal_response([])
+                self._complete_mask_request(
+                    mask_key, admission, response=response
+                )
+                return response
             except Exception as error:
                 raise MaskSessionError(
                     'modelFailure',
                     'The promptable-mask adapter failed; verify the installed model runtime and retry.',
                 ) from error
-            tracks, _diagnostics, _threshold = self._normalise_mask_production(
+            tracks, diagnostics, _threshold = self._normalise_mask_production(
                 production
             )
-            self._validate_complete_tracks(frame_set, prompt_log, tracks)
             primary_track = next(
                 track for track in tracks if track['trackId'] == 'primary'
             )
@@ -1888,6 +1953,13 @@ class CompanionState:
                 for frame in primary_track['frames']
                 if frame['viewId'] == mask_request.view_id
             )
+            if anchor_frame.get('status') in ('not_found', 'rejected'):
+                response = proposal_response([])
+                self._complete_mask_request(
+                    mask_key, admission, response=response
+                )
+                return response
+            self._validate_complete_tracks(frame_set, prompt_log, tracks)
             binary_mask = anchor_frame['binaryMask']
             # The single-frame product contract publishes bitset bytes only;
             # dimensions, payload length, and trailing bits were validated
@@ -1898,18 +1970,58 @@ class CompanionState:
                     'A single-frame SAM mask must use the bitset-lsb-v1 encoding.',
                 )
             mask_bytes = base64.b64decode(binary_mask['data'], validate=True)
-            response = {
-                'status': 'complete',
-                **mask_request.response_fields(),
-                'mask': {
-                    'encoding': 'bitset-lsb-v1',
-                    'width': mask_request.width,
-                    'height': mask_request.height,
-                    'data': binary_mask['data'],
-                    'digest': f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}',
-                },
-                'maskSource': 'single-frame-sam',
+            mask_artifact = {
+                'encoding': 'bitset-lsb-v1',
+                'width': mask_request.width,
+                'height': mask_request.height,
+                'data': binary_mask['data'],
+                'digest': f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}',
             }
+            source_index = 0
+            model_score: float | None = None
+            score_semantics: str | None = None
+            if isinstance(diagnostics, dict):
+                candidate_selection = diagnostics.get('candidateSelection')
+                if isinstance(candidate_selection, dict):
+                    selected = candidate_selection.get('selectedCandidateIndex')
+                    if (
+                        isinstance(selected, int)
+                        and not isinstance(selected, bool)
+                        and selected >= 0
+                    ):
+                        source_index = selected
+                    semantics = candidate_selection.get('scoreSemantics')
+                    if isinstance(semantics, str) and semantics.strip():
+                        score_semantics = semantics
+                    alternatives = candidate_selection.get('alternatives')
+                    if isinstance(alternatives, list):
+                        for alternative in alternatives:
+                            if (
+                                isinstance(alternative, dict)
+                                and alternative.get('candidateIndex') == source_index
+                            ):
+                                score = alternative.get('qualityScore')
+                                if (
+                                    isinstance(score, (int, float))
+                                    and not isinstance(score, bool)
+                                    and math.isfinite(score)
+                                ):
+                                    model_score = float(score)
+                                break
+            proposal: dict[str, object] = {
+                'proposalId': f'proposal-{source_index}',
+                'mask': mask_artifact,
+                'sourceIndex': source_index,
+                'promptConsistency': {
+                    'positivePointsSatisfied': True,
+                    'negativePointsSatisfied': True,
+                },
+            }
+            if model_score is not None:
+                proposal['modelScore'] = model_score
+            if score_semantics is not None:
+                proposal['modelScoreSemantics'] = score_semantics
+            response = proposal_response([proposal])
         except MaskSessionError as error:
             self._complete_mask_request(mask_key, admission, failure=error)
             raise
@@ -1973,17 +2085,46 @@ class CompanionState:
         scene_id = _mask_request_string(request.get('sceneId'), 'sceneId')
         scene_version = _mask_request_string(request.get('sceneVersion'), 'sceneVersion')
         view_id = _mask_request_string(request.get('viewId'), 'viewId')
-        mask_attempt_id = _mask_request_string(
-            request.get('maskAttemptId'), 'maskAttemptId'
+        camera_binding_digest = _anchor_sha256_digest(
+            request.get('cameraBindingDigest'), 'Mask cameraBindingDigest'
         )
         model_manifest_digest = _mask_request_string(
             request.get('modelManifestDigest'), 'modelManifestDigest'
         )
+        adapter_capability_digest = _anchor_sha256_digest(
+            request.get('adapterCapabilityDigest'),
+            'Mask adapterCapabilityDigest',
+        )
+        expected_capability_digest = _point_prompt_capabilities()[
+            'capabilityDigest'
+        ]
+        if adapter_capability_digest != expected_capability_digest:
+            raise MaskSessionError(
+                'capabilityMismatch',
+                'The selected point adapter capability identity does not match the proposal request.',
+            )
+        proposal_policy_version = _mask_request_string(
+            request.get('proposalPolicyVersion'), 'proposalPolicyVersion'
+        )
+        if proposal_policy_version != 'auto-mask-proposals/bounded-source-order-v1':
+            raise MaskSessionError(
+                'capabilityMismatch',
+                'The point adapter does not support this Mask proposal policy.',
+            )
+        proposal_attempt_id = _mask_request_string(
+            request.get('proposalAttemptId'), 'proposalAttemptId'
+        )
         rgb_png, rgb_digest, width, height = self._parse_ai_select_mask_rgb(
             request.get('rgb')
         )
-        prompts = self._parse_ai_select_mask_prompts(
-            request.get('prompts'), width=width, height=height
+        prompt_state, prompts, prompt_state_digest = (
+            self._parse_ai_select_prompt_state(
+                request.get('promptState'),
+                view_id=view_id,
+                rgb_digest=rgb_digest,
+                width=width,
+                height=height,
+            )
         )
         return AISelectMaskRequest(
             request_binding=request_binding,
@@ -1991,13 +2132,18 @@ class CompanionState:
             scene_id=scene_id,
             scene_version=scene_version,
             view_id=view_id,
-            mask_attempt_id=mask_attempt_id,
+            camera_binding_digest=camera_binding_digest,
             rgb_png=rgb_png,
             rgb_digest=rgb_digest,
             width=width,
             height=height,
             prompts=prompts,
+            prompt_state=prompt_state,
+            prompt_state_digest=prompt_state_digest,
             model_manifest_digest=model_manifest_digest,
+            adapter_capability_digest=adapter_capability_digest,
+            proposal_policy_version=proposal_policy_version,
+            proposal_attempt_id=proposal_attempt_id,
         )
 
     @staticmethod
@@ -2035,12 +2181,16 @@ class CompanionState:
     def _parse_ai_select_mask_prompts(
         value: object, *, width: int, height: int
     ) -> tuple[AISelectMaskPrompt, ...]:
-        if not isinstance(value, list) or not value:
-            raise ValueError('AI Select Mask prompts must be a non-empty list')
+        if not isinstance(value, list):
+            raise ValueError('AI Select Mask points must be a list')
         prompts: list[AISelectMaskPrompt] = []
         for index, entry in enumerate(value):
             if not isinstance(entry, dict):
                 raise ValueError(f'AI Select Mask prompts[{index}] must be an object')
+            if set(entry) != {'promptId', 'xPx', 'yPx', 'polarity'}:
+                raise ValueError(
+                    f'AI Select Mask prompts[{index}] fields are invalid'
+                )
             prompt_id = _mask_request_string(
                 entry.get('promptId'), f'prompts[{index}] promptId'
             )
@@ -2065,6 +2215,174 @@ class CompanionState:
                 )
             )
         return tuple(prompts)
+
+    @classmethod
+    def _parse_ai_select_prompt_state(
+        cls,
+        value: object,
+        *,
+        view_id: str,
+        rgb_digest: str,
+        width: int,
+        height: int,
+    ) -> tuple[dict[str, object], tuple[AISelectMaskPrompt, ...], str]:
+        if not isinstance(value, dict):
+            raise ValueError('AI Select Mask promptState must be an object')
+        required = {
+            'schemaVersion',
+            'viewId',
+            'rgbDigest',
+            'revision',
+            'points',
+            'boxes',
+            'maskConstraints',
+            'textPrompts',
+            'digest',
+        }
+        if set(value) != required:
+            raise ValueError(
+                'AI Select Mask promptState must contain exactly the versioned PromptState fields'
+            )
+        if value.get('schemaVersion') != 1:
+            raise ValueError('AI Select Mask promptState schemaVersion must be 1')
+        if value.get('viewId') != view_id or value.get('rgbDigest') != rgb_digest:
+            raise ValueError(
+                'AI Select Mask promptState must bind the exact View and authoritative RGB'
+            )
+        _mask_request_nonnegative_integer(
+            value.get('revision'), 'promptState revision'
+        )
+        prompts = cls._parse_ai_select_mask_prompts(
+            value.get('points'), width=width, height=height
+        )
+        for family in ('boxes', 'maskConstraints', 'textPrompts'):
+            entries = value.get(family)
+            if not isinstance(entries, list):
+                raise ValueError(f'AI Select Mask promptState {family} must be a list')
+            if entries:
+                cls._validate_unsupported_prompt_family(
+                    family, entries, width=width, height=height
+                )
+                raise MaskSessionError(
+                    'unsupportedPromptType',
+                    f'The selected point-only adapter does not support {family}.',
+                )
+        if not prompts:
+            raise ValueError(
+                'AI Select Mask promptState must contain at least one supported prompt'
+            )
+        prompt_ids = [prompt.prompt_id for prompt in prompts]
+        if len(set(prompt_ids)) != len(prompt_ids):
+            raise ValueError('AI Select Mask Prompt IDs must be unique')
+        digest = _anchor_sha256_digest(
+            value.get('digest'), 'Mask promptState digest'
+        )
+        payload = {key: item for key, item in value.items() if key != 'digest'}
+        encoded = json.dumps(
+            payload, separators=(',', ':'), sort_keys=True, allow_nan=False
+        ).encode('utf-8')
+        if f'sha256:{hashlib.sha256(encoded).hexdigest()}' != digest:
+            raise ValueError(
+                'AI Select Mask promptState digest does not match its exact payload'
+            )
+        return dict(value), prompts, digest
+
+    @staticmethod
+    def _validate_unsupported_prompt_family(
+        family: str,
+        entries: list[object],
+        *,
+        width: int,
+        height: int,
+    ) -> None:
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                raise ValueError(
+                    f'AI Select Mask promptState {family}[{index}] must be an object'
+                )
+            _mask_request_string(
+                entry.get('promptId'), f'{family}[{index}] promptId'
+            )
+            if entry.get('polarity') not in ('include', 'exclude'):
+                raise ValueError(
+                    f'AI Select Mask promptState {family}[{index}] polarity is invalid'
+                )
+            if family == 'boxes':
+                expected = {
+                    'promptId', 'polarity', 'x0Px', 'y0Px', 'x1Px', 'y1Px'
+                }
+                if set(entry) != expected:
+                    raise ValueError(
+                        f'AI Select Mask promptState boxes[{index}] fields are invalid'
+                    )
+                x0 = _mask_request_nonnegative_integer(
+                    entry.get('x0Px'), f'boxes[{index}] x0Px'
+                )
+                y0 = _mask_request_nonnegative_integer(
+                    entry.get('y0Px'), f'boxes[{index}] y0Px'
+                )
+                x1 = _mask_request_nonnegative_integer(
+                    entry.get('x1Px'), f'boxes[{index}] x1Px'
+                )
+                y1 = _mask_request_nonnegative_integer(
+                    entry.get('y1Px'), f'boxes[{index}] y1Px'
+                )
+                if not (x0 < x1 < width and y0 < y1 < height):
+                    raise ValueError(
+                        f'AI Select Mask promptState boxes[{index}] must be non-empty and in bounds'
+                    )
+            elif family == 'maskConstraints':
+                if set(entry) != {'promptId', 'polarity', 'artifact'}:
+                    raise ValueError(
+                        f'AI Select Mask promptState maskConstraints[{index}] fields are invalid'
+                    )
+                artifact = entry.get('artifact')
+                if not isinstance(artifact, dict):
+                    raise ValueError(
+                        f'AI Select Mask promptState maskConstraints[{index}] artifact must be an object'
+                    )
+                if (
+                    artifact.get('encoding') != 'bitset-lsb-v1'
+                    or artifact.get('width') != width
+                    or artifact.get('height') != height
+                    or not isinstance(artifact.get('data'), str)
+                ):
+                    raise ValueError(
+                        f'AI Select Mask promptState maskConstraints[{index}] artifact is incompatible with RGB'
+                    )
+                try:
+                    mask = base64.b64decode(artifact['data'], validate=True)
+                except (ValueError, binascii.Error) as error:
+                    raise ValueError(
+                        f'AI Select Mask promptState maskConstraints[{index}] data is invalid'
+                    ) from error
+                if len(mask) != (width * height + 7) // 8:
+                    raise ValueError(
+                        f'AI Select Mask promptState maskConstraints[{index}] data length is invalid'
+                    )
+                digest = _anchor_sha256_digest(
+                    artifact.get('digest'),
+                    f'Mask maskConstraints[{index}] digest',
+                )
+                if f'sha256:{hashlib.sha256(mask).hexdigest()}' != digest:
+                    raise ValueError(
+                        f'AI Select Mask promptState maskConstraints[{index}] digest is invalid'
+                    )
+            else:
+                if set(entry) not in (
+                    {'promptId', 'polarity', 'text'},
+                    {'promptId', 'polarity', 'text', 'locale'},
+                ):
+                    raise ValueError(
+                        f'AI Select Mask promptState textPrompts[{index}] fields are invalid'
+                    )
+                _mask_request_string(
+                    entry.get('text'), f'textPrompts[{index}] text'
+                )
+                if 'locale' in entry:
+                    _mask_request_string(
+                        entry.get('locale'), f'textPrompts[{index}] locale'
+                    )
 
     def register_frame_set(self, payload: dict[str, Any]) -> RegisteredFrameSet:
         """Cache one immutable Frame Set without exposing model-private handles."""
@@ -4636,6 +4954,7 @@ class CompanionState:
                 "adapterId": model["adapterId"],
                 "modelName": model["modelName"],
                 "weightsBundled": False,
+                "promptCapabilities": _point_prompt_capabilities(),
             }
             for model in self.available_models()
             if (
@@ -4653,6 +4972,7 @@ class CompanionState:
                 "aiSelectAnchorRender",
                 "aiSelectAnchorReferenceContributor",
                 "aiSelectAnchorSupportProbe",
+                "aiSelectMaskProposals",
                 "aiSelectGeneratedViewPlanning",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",

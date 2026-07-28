@@ -1182,7 +1182,9 @@ class FetchSelectionServiceAdapter
      * and the artifact digest verify; anything less is a transport failure,
      * never a publishable Mask.
      */
-    async produceMask(request: AIViewMaskRequest): Promise<MaskResultResponse> {
+    async produceMaskProposals(
+        request: AIViewMaskRequest
+    ): Promise<MaskResultResponse> {
         if (!isAIViewMaskRequest(request)) {
             throw transportError(
                 'invalidResponse',
@@ -1190,17 +1192,24 @@ class FetchSelectionServiceAdapter
             );
         }
         this.assertConfiguredModelManifest(request.modelManifestDigest);
-        const result = await this.requestJson('/ai-select/masks', 'POST', {
-            requestBinding: request.requestBinding,
-            targetSplatId: request.target.splatId,
-            sceneId: request.sceneId,
-            sceneVersion: request.sceneVersion,
-            viewId: request.viewId,
-            maskAttemptId: request.maskAttemptId,
-            rgb: request.rgb,
-            prompts: request.prompts,
-            modelManifestDigest: request.modelManifestDigest
-        });
+        const result = await this.requestJson(
+            '/ai-select/mask-proposals',
+            'POST',
+            {
+                requestBinding: request.requestBinding,
+                targetSplatId: request.target.splatId,
+                sceneId: request.sceneId,
+                sceneVersion: request.sceneVersion,
+                viewId: request.viewId,
+                cameraBindingDigest: request.cameraBindingDigest,
+                rgb: request.rgb,
+                promptState: request.promptState,
+                modelManifestDigest: request.modelManifestDigest,
+                adapterCapabilityDigest: request.adapterCapabilityDigest,
+                proposalPolicyVersion: request.proposalPolicyVersion,
+                proposalAttemptId: request.proposalAttemptId
+            }
+        );
         if (
             !isRecord(result) ||
             result.status !== 'complete' ||

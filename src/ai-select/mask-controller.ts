@@ -8,26 +8,63 @@ import {
     type EvidenceDependencyIdentity,
     type ViewEvidenceState
 } from './evidence-state';
-import type {
-    BrushStroke,
-    MaskAnnotation,
-    MaskPolarity,
-    MaskPrompt
+import {
+    applyBrushStroke as applyMaskBrushStroke,
+    createEmptyMaskArtifact,
+    type MaskArtifact,
+    type BrushStroke,
+    type MaskAnnotation,
+    type MaskPolarity,
+    type MaskPrompt
 } from './mask-annotation';
+import {
+    autoMaskProposalPolicyVersion,
+    type AutoMaskProposalSet
+} from './mask-proposal';
 import { MaskAnnotationRegistry } from './mask-registry';
 import type {
     AISelectMaskProvider,
     AIViewMaskRequest,
     MaskResultResponse
 } from './mask-service';
+import {
+    createEmptyPromptState,
+    createPromptAdapterCapabilities,
+    promptStateHasConstraints,
+    promptToolCapabilityReason,
+    revisePromptState,
+    type BoxPrompt,
+    type MaskConstraintPrompt,
+    type PointPrompt,
+    type PromptAdapterCapabilities,
+    type PromptState,
+    type PromptTool,
+    type TextPrompt
+} from './prompt-state';
 
 const ANCHOR_VIEW_ID = 'anchor-view';
 
 export type MaskRequestStatus = 'idle' | 'pending' | 'failed';
+export type MaskProposalStatus =
+    'none' | 'pending' | 'ready' | 'unavailable' | 'failed';
 
 export interface AddMaskPromptInput {
     readonly xPx: number;
     readonly yPx: number;
+    readonly polarity: MaskPolarity;
+}
+
+export interface AddBoxPromptInput {
+    readonly x0Px: number;
+    readonly y0Px: number;
+    readonly x1Px: number;
+    readonly y1Px: number;
+    readonly polarity: MaskPolarity;
+}
+
+export interface AddTextPromptInput {
+    readonly text: string;
+    readonly locale?: string;
     readonly polarity: MaskPolarity;
 }
 
@@ -40,12 +77,19 @@ export interface AISelectMaskState {
     readonly stableMask: MaskAnnotation | null;
     /** The current prompt set for the current RGB identity. */
     readonly prompts: readonly MaskPrompt[];
+    readonly promptState: PromptState | null;
+    readonly promptCapabilities: PromptAdapterCapabilities | null;
+    readonly proposalSet: AutoMaskProposalSet | null;
+    readonly acceptedProposalId: string | null;
+    readonly proposalStatus: MaskProposalStatus;
     readonly requestStatus: MaskRequestStatus;
     readonly errorMessage?: string;
     readonly evidence: ViewEvidenceState;
     /** Mask-local Undo/Redo availability for the current RGB identity. */
     readonly canUndo: boolean;
     readonly canRedo: boolean;
+    readonly canUndoPrompt: boolean;
+    readonly canRedoPrompt: boolean;
     /** A restorable automatic Mask version exists for the current RGB. */
     readonly canRestoreAuto: boolean;
     /**
@@ -61,18 +105,32 @@ export type AISelectMaskListener = (state: AISelectMaskState) => void;
 interface PendingMaskRequest {
     readonly request: AIViewMaskRequest;
     readonly editingRevision: number;
+    readonly promptRevision: number;
 }
 
 export interface AISelectMaskControllerOptions {
     readonly anchor: AISelectAnchorController;
     readonly maskProvider: AISelectMaskProvider;
     readonly getModelManifestDigest?: () => string | null;
+    readonly getPromptAdapterCapabilities?: () => PromptAdapterCapabilities | null;
     /**
      * A confirmed Anchor locks Mask authoring until an explicit adjustment or
      * restart flow unlocks it (Final Spec v1.1 §12.4).
      */
     readonly isAnchorLocked?: () => boolean;
 }
+
+const pointOnlyCapabilities = createPromptAdapterCapabilities({
+    points: true,
+    negativePoints: true,
+    boxes: false,
+    negativeBoxes: false,
+    maskInput: false,
+    negativeMaskConstraints: false,
+    text: false,
+    negativeText: false,
+    multiCandidateOutput: false
+});
 
 const errorMessage = (error: unknown): string => {
     return error instanceof Error && error.message
@@ -91,6 +149,7 @@ export class AISelectMaskController {
     private readonly anchor: AISelectAnchorController;
     private readonly maskProvider: AISelectMaskProvider;
     private readonly getModelManifestDigest: () => string | null;
+    private readonly getPromptAdapterCapabilities: () => PromptAdapterCapabilities | null;
     private readonly isAnchorLocked: () => boolean;
     /**
      * The one versioned Mask registry for every AI View in the Current Target
@@ -108,7 +167,9 @@ export class AISelectMaskController {
     private anchorState: AISelectAnchorState = { context: null, anchor: null };
     private targetContextId: string | null = null;
     private lastRgbDigest: string | null = null;
-    private prompts: MaskPrompt[] = [];
+    private promptState: PromptState | null = null;
+    private proposalSet: AutoMaskProposalSet | null = null;
+    private acceptedProposalId: string | null = null;
     private requestStatus: MaskRequestStatus = 'idle';
     private lastErrorMessage: string | undefined;
     private activeMaskRequest: PendingMaskRequest | null = null;
@@ -126,6 +187,8 @@ export class AISelectMaskController {
     private resubmitMaskRequested = false;
     private nextMaskAttemptOrdinal = 0;
     private nextPromptOrdinal = 0;
+    private promptUndoStack: PromptState[] = [];
+    private promptRedoStack: PromptState[] = [];
     /**
      * The mask-local history: Editing-chain maskIds (or null for the empty
      * start state) for the current RGB identity. It is independent from
@@ -139,6 +202,9 @@ export class AISelectMaskController {
         this.maskProvider = options.maskProvider;
         this.getModelManifestDigest =
             options.getModelManifestDigest ?? (() => null);
+        this.getPromptAdapterCapabilities =
+            options.getPromptAdapterCapabilities ??
+            (() => pointOnlyCapabilities);
         this.isAnchorLocked = options.isAnchorLocked ?? (() => false);
         this.anchor.subscribe((state) => this.handleAnchorState(state));
     }
@@ -157,11 +223,30 @@ export class AISelectMaskController {
             rgbDigest === null
                 ? null
                 : this.maskRegistry.latestAutoMask(ANCHOR_VIEW_ID, rgbDigest);
+        const promptCapabilities = this.getPromptAdapterCapabilities();
         return Object.freeze({
             viewId: ANCHOR_VIEW_ID,
             editingMask: view.editingMask,
             stableMask: view.stableMask,
-            prompts: Object.freeze([...this.prompts]),
+            prompts: Object.freeze(
+                (this.promptState?.points ?? []).map((point) =>
+                    Object.freeze({ ...point })
+                )
+            ),
+            promptState: this.promptState,
+            promptCapabilities,
+            proposalSet: this.proposalSet,
+            acceptedProposalId: this.acceptedProposalId,
+            proposalStatus:
+                this.requestStatus === 'pending'
+                    ? 'pending'
+                    : this.requestStatus === 'failed'
+                      ? 'failed'
+                      : this.proposalSet === null
+                        ? 'none'
+                        : this.proposalSet.proposals.length === 0
+                          ? 'unavailable'
+                          : 'ready',
             requestStatus: this.requestStatus,
             ...(this.lastErrorMessage === undefined
                 ? {}
@@ -172,6 +257,8 @@ export class AISelectMaskController {
             ),
             canUndo: this.undoStack.length > 0,
             canRedo: this.redoStack.length > 0,
+            canUndoPrompt: this.promptUndoStack.length > 0,
+            canRedoPrompt: this.promptRedoStack.length > 0,
             canRestoreAuto:
                 restorableAuto !== null &&
                 restorableAuto.maskId !== view.editingMask?.maskId,
@@ -192,6 +279,9 @@ export class AISelectMaskController {
     async addPrompt(input: AddMaskPromptInput): Promise<void> {
         this.requireUnlocked();
         const rgb = this.requireReadyRgb();
+        const tool: PromptTool =
+            input.polarity === 'include' ? 'positive-point' : 'negative-point';
+        this.requirePromptCapability(tool);
         if (
             !Number.isSafeInteger(input.xPx) ||
             !Number.isSafeInteger(input.yPx) ||
@@ -204,16 +294,182 @@ export class AISelectMaskController {
                 'AI Select prompts must be integer pixels inside the Anchor RGB bounds.'
             );
         }
-        this.prompts = [
-            ...this.prompts,
-            Object.freeze({
-                promptId: this.mintPromptId(),
-                xPx: input.xPx,
-                yPx: input.yPx,
-                polarity: input.polarity
+        const current = this.requirePromptState(rgb.digest);
+        const point: PointPrompt = Object.freeze({
+            promptId: this.mintPromptId(),
+            xPx: input.xPx,
+            yPx: input.yPx,
+            polarity: input.polarity
+        });
+        this.publishPromptRevision(
+            revisePromptState(current, {
+                points: [...current.points, point]
             })
-        ];
+        );
         await this.submitMaskRequest();
+    }
+
+    async addBoxPrompt(input: AddBoxPromptInput): Promise<void> {
+        this.requireUnlocked();
+        const rgb = this.requireReadyRgb();
+        const tool: PromptTool =
+            input.polarity === 'include' ? 'positive-box' : 'negative-box';
+        this.requirePromptCapability(tool);
+        const x0Px = Math.min(input.x0Px, input.x1Px);
+        const y0Px = Math.min(input.y0Px, input.y1Px);
+        const x1Px = Math.max(input.x0Px, input.x1Px);
+        const y1Px = Math.max(input.y0Px, input.y1Px);
+        if (
+            ![x0Px, y0Px, x1Px, y1Px].every(Number.isSafeInteger) ||
+            x0Px < 0 ||
+            y0Px < 0 ||
+            x1Px >= rgb.width ||
+            y1Px >= rgb.height ||
+            x0Px === x1Px ||
+            y0Px === y1Px
+        ) {
+            throw new Error(
+                'AI Select Box prompts must have a non-empty in-bounds pixel area.'
+            );
+        }
+        const current = this.requirePromptState(rgb.digest);
+        const box: BoxPrompt = Object.freeze({
+            promptId: this.mintPromptId(),
+            polarity: input.polarity,
+            x0Px,
+            y0Px,
+            x1Px,
+            y1Px
+        });
+        this.publishPromptRevision(
+            revisePromptState(current, {
+                boxes: [...current.boxes, box]
+            })
+        );
+        await this.submitMaskRequest();
+    }
+
+    async addMaskConstraint(
+        artifact: MaskArtifact,
+        polarity: MaskPolarity
+    ): Promise<void> {
+        this.requireUnlocked();
+        const rgb = this.requireReadyRgb();
+        this.requirePromptCapability(
+            polarity === 'include'
+                ? 'positive-mask-constraint'
+                : 'negative-mask-constraint'
+        );
+        if (artifact.width !== rgb.width || artifact.height !== rgb.height) {
+            throw new Error(
+                'AI Select Prompt Brush must match the exact Anchor RGB dimensions.'
+            );
+        }
+        const current = this.requirePromptState(rgb.digest);
+        const constraint: MaskConstraintPrompt = Object.freeze({
+            promptId: this.mintPromptId(),
+            polarity,
+            artifact
+        });
+        this.publishPromptRevision(
+            revisePromptState(current, {
+                maskConstraints: [...current.maskConstraints, constraint]
+            })
+        );
+        await this.submitMaskRequest();
+    }
+
+    async addPromptBrushConstraint(
+        strokes: readonly BrushStroke[],
+        polarity: MaskPolarity
+    ): Promise<void> {
+        const rgb = this.requireReadyRgb();
+        let artifact = createEmptyMaskArtifact(rgb.width, rgb.height);
+        for (const stroke of strokes) {
+            artifact = applyMaskBrushStroke(artifact, {
+                ...stroke,
+                mode: 'add'
+            });
+        }
+        await this.addMaskConstraint(artifact, polarity);
+    }
+
+    async addTextPrompt(input: AddTextPromptInput): Promise<void> {
+        this.requireUnlocked();
+        const rgb = this.requireReadyRgb();
+        this.requirePromptCapability(
+            input.polarity === 'include' ? 'positive-text' : 'negative-text'
+        );
+        if (!input.text.trim()) {
+            throw new Error('AI Select Text prompts cannot be empty.');
+        }
+        const current = this.requirePromptState(rgb.digest);
+        const prompt: TextPrompt = Object.freeze({
+            promptId: this.mintPromptId(),
+            polarity: input.polarity,
+            text: input.text.trim(),
+            ...(input.locale === undefined ? {} : { locale: input.locale })
+        });
+        this.publishPromptRevision(
+            revisePromptState(current, {
+                textPrompts: [...current.textPrompts, prompt]
+            })
+        );
+        await this.submitMaskRequest();
+    }
+
+    clearPrompts(): void {
+        this.requireUnlocked();
+        const rgb = this.requireReadyRgb();
+        const current = this.requirePromptState(rgb.digest);
+        this.publishPromptRevision(
+            revisePromptState(current, {
+                points: [],
+                boxes: [],
+                maskConstraints: [],
+                textPrompts: []
+            })
+        );
+        this.requestStatus = 'idle';
+        this.resubmitMaskRequested = false;
+        this.publish();
+    }
+
+    undoPromptEdit(): void {
+        this.restorePromptHistory(this.promptUndoStack, this.promptRedoStack);
+    }
+
+    redoPromptEdit(): void {
+        this.restorePromptHistory(this.promptRedoStack, this.promptUndoStack);
+    }
+
+    acceptProposal(proposalId: string): void {
+        this.requireUnlocked();
+        const rgb = this.requireReadyRgb();
+        const proposal = this.proposalSet?.proposals.find(
+            (candidate) => candidate.proposalId === proposalId
+        );
+        if (proposal === undefined) {
+            throw new Error(
+                'AI Select cannot accept an unknown or stale Mask proposal.'
+            );
+        }
+        this.recordEdit(rgb.digest);
+        this.maskRegistry.registerSamResult({
+            viewId: ANCHOR_VIEW_ID,
+            rgbDigest: rgb.digest,
+            artifact: proposal.mask,
+            prompts: (this.promptState?.points ?? []).map((point) => ({
+                promptId: point.promptId,
+                xPx: point.xPx,
+                yPx: point.yPx,
+                polarity: point.polarity
+            }))
+        });
+        this.acceptedProposalId = proposalId;
+        this.editingRevision += 1;
+        this.lastErrorMessage = undefined;
+        this.publish();
     }
 
     /**
@@ -329,7 +585,10 @@ export class AISelectMaskController {
     async retryMaskRequest(): Promise<void> {
         this.requireUnlocked();
         this.requireReadyRgb();
-        if (this.prompts.length === 0) {
+        if (
+            this.promptState === null ||
+            !promptStateHasConstraints(this.promptState)
+        ) {
             throw new Error('AI Select has no Mask prompt set to retry.');
         }
         await this.submitMaskRequest();
@@ -352,10 +611,19 @@ export class AISelectMaskController {
             );
             return;
         }
+        const promptCapabilities = this.getPromptAdapterCapabilities();
+        if (promptCapabilities === null || this.promptState === null) {
+            this.failMaskRequest(
+                'AI Select requires negotiated Prompt Adapter capabilities before proposal production.'
+            );
+            return;
+        }
         const request = this.anchor.createAnchorMaskRequest(
-            this.prompts,
+            this.promptState,
             this.mintMaskAttemptId(),
-            modelManifestDigest
+            modelManifestDigest,
+            promptCapabilities.capabilityDigest,
+            autoMaskProposalPolicyVersion
         );
         if (request === null) {
             this.failMaskRequest(
@@ -365,7 +633,8 @@ export class AISelectMaskController {
         }
         const pending: PendingMaskRequest = {
             request,
-            editingRevision: this.editingRevision
+            editingRevision: this.editingRevision,
+            promptRevision: this.promptState.revision
         };
         this.activeMaskRequest = pending;
         this.requestStatus = 'pending';
@@ -374,7 +643,7 @@ export class AISelectMaskController {
 
         let response: MaskResultResponse;
         try {
-            response = await this.maskProvider.produceMask(request);
+            response = await this.maskProvider.produceMaskProposals(request);
         } catch (error) {
             if (!this.isCurrentMaskRequest(pending)) {
                 this.discardStaleMaskRequest(pending);
@@ -396,15 +665,22 @@ export class AISelectMaskController {
             return;
         }
         try {
-            this.recordEdit(request.rgb.digest);
-            this.maskRegistry.registerSamResult({
-                viewId: request.viewId,
-                rgbDigest: request.rgb.digest,
-                artifact: response.mask,
-                prompts: request.prompts
-            });
+            this.proposalSet = response.proposalSet;
+            this.acceptedProposalId = null;
+            const capabilities = this.getPromptAdapterCapabilities();
+            if (
+                capabilities !== null &&
+                !capabilities.multiCandidateOutput &&
+                response.proposalSet.proposals.length === 1
+            ) {
+                // Compatibility seam for the installed point-only adapter:
+                // its declared singleton output continues to seed Editing
+                // Mask, but remains unpublished until Confirm Mask.
+                this.acceptProposal(
+                    response.proposalSet.proposals[0].proposalId
+                );
+            }
         } catch (error) {
-            this.undoStack.pop();
             this.failMaskRequest(errorMessage(error));
             this.resubmitLatestPromptSet();
             return;
@@ -432,7 +708,10 @@ export class AISelectMaskController {
             return;
         }
         this.resubmitMaskRequested = false;
-        if (this.prompts.length === 0) {
+        if (
+            this.promptState === null ||
+            !promptStateHasConstraints(this.promptState)
+        ) {
             return;
         }
         this.submitMaskRequest().catch((error: unknown) => {
@@ -443,7 +722,8 @@ export class AISelectMaskController {
     private isCurrentMaskRequest(pending: PendingMaskRequest): boolean {
         return (
             this.activeMaskRequest === pending &&
-            pending.editingRevision === this.editingRevision
+            pending.editingRevision === this.editingRevision &&
+            pending.promptRevision === this.promptState?.revision
         );
     }
 
@@ -478,7 +758,12 @@ export class AISelectMaskController {
 
     private resetForNewRgbIdentity(rgbDigest: string | null): void {
         this.lastRgbDigest = rgbDigest;
-        this.prompts = [];
+        this.promptState =
+            rgbDigest === null
+                ? null
+                : createEmptyPromptState(ANCHOR_VIEW_ID, rgbDigest);
+        this.proposalSet = null;
+        this.acceptedProposalId = null;
         this.activeMaskRequest = null;
         this.resubmitMaskRequested = false;
         this.requestStatus = 'idle';
@@ -486,6 +771,8 @@ export class AISelectMaskController {
         this.editingRevision += 1;
         this.undoStack = [];
         this.redoStack = [];
+        this.promptUndoStack = [];
+        this.promptRedoStack = [];
         this.publish();
     }
 
@@ -543,7 +830,6 @@ export class AISelectMaskController {
     private supersedeLocalEditing(): void {
         this.editingRevision += 1;
         if (this.activeMaskRequest !== null) {
-            this.activeMaskRequest = null;
             this.requestStatus = 'idle';
         }
         this.lastErrorMessage = undefined;
@@ -563,7 +849,11 @@ export class AISelectMaskController {
                 view.stableMask?.artifact.digest
             );
         }
-        return view.stableMask === null && this.prompts.length > 0;
+        return (
+            view.stableMask === null &&
+            this.promptState !== null &&
+            promptStateHasConstraints(this.promptState)
+        );
     }
 
     private requireReadyRgb() {
@@ -587,7 +877,7 @@ export class AISelectMaskController {
             );
         }
         this.nextMaskAttemptOrdinal += 1;
-        return `mask-attempt-${this.nextMaskAttemptOrdinal}`;
+        return `proposal-attempt-${this.nextMaskAttemptOrdinal}`;
     }
 
     private mintPromptId(): string {
@@ -595,7 +885,66 @@ export class AISelectMaskController {
             throw new Error('AI Select prompt identity cannot advance safely.');
         }
         this.nextPromptOrdinal += 1;
-        return `mask-prompt-${this.nextPromptOrdinal}`;
+        return `prompt-${this.nextPromptOrdinal}`;
+    }
+
+    private requirePromptState(rgbDigest: string): PromptState {
+        if (
+            this.promptState === null ||
+            this.promptState.rgbDigest !== rgbDigest
+        ) {
+            throw new Error(
+                'AI Select PromptState is not bound to the current Anchor RGB.'
+            );
+        }
+        return this.promptState;
+    }
+
+    private requirePromptCapability(tool: PromptTool): void {
+        const capabilities = this.getPromptAdapterCapabilities();
+        if (capabilities === null) {
+            throw new Error(
+                'AI Select Prompt Adapter capabilities are unavailable.'
+            );
+        }
+        const reason = promptToolCapabilityReason(tool, capabilities);
+        if (reason !== null) {
+            throw new Error(reason);
+        }
+    }
+
+    private publishPromptRevision(next: PromptState): void {
+        if (this.promptState !== null) {
+            this.promptUndoStack.push(this.promptState);
+        }
+        this.promptState = next;
+        this.promptRedoStack = [];
+        this.proposalSet = null;
+        this.acceptedProposalId = null;
+        this.editingRevision += 1;
+        this.lastErrorMessage = undefined;
+        this.publish();
+    }
+
+    private restorePromptHistory(
+        source: PromptState[],
+        destination: PromptState[]
+    ): void {
+        this.requireUnlocked();
+        this.requireReadyRgb();
+        const target = source.pop();
+        if (target === undefined || this.promptState === null) {
+            throw new Error('AI Select has no Prompt edit to restore.');
+        }
+        destination.push(this.promptState);
+        this.promptState = target;
+        this.proposalSet = null;
+        this.acceptedProposalId = null;
+        this.resubmitMaskRequested = false;
+        this.requestStatus = 'idle';
+        this.editingRevision += 1;
+        this.lastErrorMessage = undefined;
+        this.publish();
     }
 
     private publish(): void {

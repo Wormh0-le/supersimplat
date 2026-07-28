@@ -1,6 +1,6 @@
 # 04A — Prompt Authoring Layer + Multi-Prompt Proposal Foundation
 
-Status: ready-for-agent — DG-21 / Final Spec v1.1 Amendment 002 approved
+Status: implemented — 2026-07-28
 
 Blocked by: 03, 04, 05
 
@@ -299,46 +299,46 @@ Required behavior:
 
 ### Domain and protocol
 
-- [ ] PromptState is per-view, immutable-by-revision, RGB-bound, digest-bound, and stale-result safe.
-- [ ] Point, Box, mask-constraint, and Text prompts have distinct validated payloads.
-- [ ] Positive/negative capability is explicit for each prompt family.
-- [ ] Adapter capabilities participate in request/result identity.
-- [ ] Unsupported prompt types are disabled/rejected, never silently dropped.
-- [ ] Same-attempt replay and new-attempt Retry match existing RGB/Mask semantics.
-- [ ] Proposal output preserves a bounded candidate set and declared score semantics.
+- [x] PromptState is per-view, immutable-by-revision, RGB-bound, digest-bound, and stale-result safe.
+- [x] Point, Box, mask-constraint, and Text prompts have distinct validated payloads.
+- [x] Positive/negative capability is explicit for each prompt family.
+- [x] Adapter capabilities participate in request/result identity.
+- [x] Unsupported prompt types are disabled/rejected, never silently dropped.
+- [x] Same-attempt replay and new-attempt Retry match existing RGB/Mask semantics.
+- [x] Proposal output preserves a bounded candidate set and declared score semantics.
 
 ### Interaction
 
-- [ ] Click/drag behavior is determined only by selected tool.
-- [ ] Default image drag does not implicitly paint the Mask.
-- [ ] Box drag cannot produce Paint/Erase edits.
-- [ ] Prompt Brush does not directly edit the bitmap.
-- [ ] Paint/Erase does not rewrite PromptState.
-- [ ] Prompt and Mask Undo/Redo are independent and focus-routed.
-- [ ] Restore Accepted Auto refers to an explicitly accepted proposal, not the current highest raw score.
+- [x] Click/drag behavior is determined only by selected tool.
+- [x] Default image drag does not implicitly paint the Mask.
+- [x] Box drag cannot produce Paint/Erase edits.
+- [x] Prompt Brush does not directly edit the bitmap.
+- [x] Paint/Erase does not rewrite PromptState.
+- [x] Prompt and Mask Undo/Redo are independent and focus-routed.
+- [x] Restore Accepted Auto refers to an explicitly accepted proposal, not the current highest raw score.
 
 ### Lifecycle
 
-- [ ] Prompt revisions update proposal state only.
-- [ ] A proposal may seed Editing Mask but cannot become Stable without Confirm.
-- [ ] Existing Stable Mask and dependent Evidence remain current during unconfirmed work.
-- [ ] RGB/context/restart changes dispose incompatible Prompt/proposal state.
-- [ ] Local pixel edits supersede late inference unless the user explicitly applies the late proposal.
+- [x] Prompt revisions update proposal state only.
+- [x] A proposal may seed Editing Mask but cannot become Stable without Confirm.
+- [x] Existing Stable Mask and dependent Evidence remain current during unconfirmed work.
+- [x] RGB/context/restart changes dispose incompatible Prompt/proposal state.
+- [x] Local pixel edits supersede late inference unless the user explicitly applies the late proposal.
 
 ### Compatibility
 
-- [ ] Existing point-only SAM remains usable through the generic capability contract.
-- [ ] Text and negative Box/Text remain capability-gated.
-- [ ] No complete Contributor or formal P/N/V Evidence is required.
-- [ ] Existing Generated View automatic Stable Mask publication remains unchanged by this ticket.
+- [x] Existing point-only SAM remains usable through the generic capability contract.
+- [x] Text and negative Box/Text remain capability-gated.
+- [x] No complete Contributor or formal P/N/V Evidence is required.
+- [x] Existing Generated View automatic Stable Mask publication remains unchanged by this ticket.
 
 ## Failure / recovery criteria
 
-- [ ] Model/runtime failure preserves RGB, PromptState, prior Stable Mask, and local Editing Mask.
-- [ ] No-candidate output is proposal-unavailable, not View Render Failed.
-- [ ] Capability/protocol mismatch publishes no partial proposal set.
-- [ ] Cancellation/OOM publishes no partial proposal set.
-- [ ] Every failure permits Retry, prompt revision, or manual Empty → Paint recovery.
+- [x] Model/runtime failure preserves RGB, PromptState, prior Stable Mask, and local Editing Mask.
+- [x] No-candidate output is proposal-unavailable, not View Render Failed.
+- [x] Capability/protocol mismatch publishes no partial proposal set.
+- [x] Cancellation/OOM publishes no partial proposal set.
+- [x] Every failure permits Retry, prompt revision, or manual Empty → Paint recovery.
 
 ## Validation
 
@@ -363,6 +363,30 @@ Required behavior:
 - No Generated View camera planning changes.
 - No requirement to enable Text in Phase A.
 - No direct Candidate or Native Selection mutation.
+
+## Implementation record
+
+Implemented on 2026-07-28:
+
+- Added immutable, revisioned, exact-RGB-bound `PromptState` for positive/negative points, boxes, mask constraints, and text prompts, with a digest-bound adapter capability declaration.
+- Replaced the Anchor point-mask transport with a generic, fully bound Mask proposal request/response contract and `POST /ai-select/mask-proposals`. Same-attempt replay remains idempotent; Retry mints a new attempt.
+- Added deterministic `AutoMaskProposalSet` validation, a four-proposal bound, source-order truncation records, raw score-semantics preservation, explicit no-candidate state, and atomic fail-closed publication.
+- Kept the installed point-only SAM adapter operational through an explicit singleton capability declaration. Its one proposal may seed Editing Mask for compatibility but cannot become Stable without Confirm Mask. Generated View automatic Mask publication was not changed.
+- Split Prompt and Edit interactions in the AI View Dock. Point, Box, Prompt Brush / Mask Constraint, capability-gated Text, Paint, and Erase have selected-tool-only routing; Prompt and Mask histories remain independent.
+- Preserved Stable Mask, Evidence, and Candidate currency until Confirm Mask. RGB/context/restart changes dispose incompatible Prompt/proposal state, and late or logically cancelled results cannot replace newer local work.
+- Updated `CONTEXT.md`, Companion capability/route documentation, all nine locale sources, and editor/Companion protocol fixtures. Final Spec, ADRs, runtime lock, Evidence/Assessment policy, calibration, Generated View planning, and Ticket 07A behavior were not changed.
+
+Validation on 2026-07-28:
+
+- Clean baseline before implementation: 277 editor tests and 240 Companion tests passed; lint, locales, and build passed.
+- `npm test`: 292 editor tests and 242 Companion tests passed.
+- `npm run test:companion`: 242 tests passed.
+- `npm run lint`: passed, including Prettier/ESLint compatibility for 184 TypeScript source files.
+- `npm run lint:locales`: all eight translated locales match the 439-key English source.
+- `npm run build`: passed with the pre-existing Sass deprecation and `mediabunny` warnings.
+- Headless Chrome loaded the development build, rendered the editor, exposed the complete Prompt/Edit toolbar, and verified that unavailable adapter capabilities disable Prompt tools with an explicit reason. A live model/scene walkthrough was not possible without an installed locked Companion model and target scene; selected-tool pointer behavior and independent histories are covered by deterministic interaction/controller tests.
+
+This is editor/Companion protocol and UI foundation work, not Ticket 07A ranking or production quality calibration. No production GPU/SAM quality validation ran, and no same-decision P/N/V Evidence or Complete Contributor path changed.
 
 ## Handoff to Ticket 07A
 

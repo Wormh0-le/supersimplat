@@ -23,6 +23,12 @@ const {
 const {
     maskBitsetEncoding
 } = require('../.test-dist/src/ai-select/mask-annotation.js');
+const {
+    autoMaskProposalSetDigest
+} = require('../.test-dist/src/ai-select/mask-proposal.js');
+const {
+    createPromptAdapterCapabilities
+} = require('../.test-dist/src/ai-select/prompt-state.js');
 const { sha256Digest } = require('../.test-dist/src/scene-snapshot-binary.js');
 
 const dependency = (overrides = {}) => ({
@@ -144,22 +150,61 @@ const solidForeground = (width, height) => {
     return foreground;
 };
 
-const maskResponseFor = (request, overrides = {}) => ({
-    requestBinding: request.requestBinding,
-    targetSplatId: request.target.splatId,
-    sceneId: request.sceneId,
-    sceneVersion: request.sceneVersion,
-    viewId: request.viewId,
-    maskAttemptId: request.maskAttemptId,
-    rgbDigest: request.rgb.digest,
-    mask: bitsetArtifact(
-        request.rgb.width,
-        request.rgb.height,
-        solidForeground(request.rgb.width, request.rgb.height)
-    ),
-    maskSource: 'single-frame-sam',
-    modelManifestDigest: request.modelManifestDigest,
-    ...overrides
+const maskResponseFor = (request, overrides = {}) => {
+    const proposalPayload = {
+        schemaVersion: 1,
+        viewId: request.viewId,
+        rgbDigest: request.rgb.digest,
+        promptStateDigest: request.promptState.digest,
+        modelManifestDigest: request.modelManifestDigest,
+        adapterCapabilityDigest: request.adapterCapabilityDigest,
+        proposalPolicyVersion: request.proposalPolicyVersion,
+        proposalAttemptId: request.proposalAttemptId,
+        proposals: [{
+            proposalId: 'proposal-0',
+            sourceIndex: 0,
+            mask: bitsetArtifact(
+                request.rgb.width,
+                request.rgb.height,
+                solidForeground(request.rgb.width, request.rgb.height)
+            ),
+            promptConsistency: {
+                positivePointsSatisfied: true,
+                negativePointsSatisfied: true
+            }
+        }]
+    };
+    return {
+        requestBinding: request.requestBinding,
+        targetSplatId: request.target.splatId,
+        sceneId: request.sceneId,
+        sceneVersion: request.sceneVersion,
+        viewId: request.viewId,
+        cameraBindingDigest: request.cameraBindingDigest,
+        rgbDigest: request.rgb.digest,
+        promptStateDigest: request.promptState.digest,
+        modelManifestDigest: request.modelManifestDigest,
+        adapterCapabilityDigest: request.adapterCapabilityDigest,
+        proposalPolicyVersion: request.proposalPolicyVersion,
+        proposalAttemptId: request.proposalAttemptId,
+        proposalSet: {
+            ...proposalPayload,
+            digest: autoMaskProposalSetDigest(proposalPayload)
+        },
+        ...overrides
+    };
+};
+
+const pointCapabilities = createPromptAdapterCapabilities({
+    points: true,
+    negativePoints: true,
+    boxes: false,
+    negativeBoxes: false,
+    maskInput: false,
+    negativeMaskConstraints: false,
+    text: false,
+    negativeText: false,
+    multiCandidateOutput: false
 });
 
 const probeResponseFor = (request, overrides = {}) => ({
@@ -208,7 +253,7 @@ const setup = async (options = {}) => {
     };
     const maskRequests = [];
     const maskProvider = {
-        produceMask: (request) => {
+        produceMaskProposals: (request) => {
             maskRequests.push(request);
             return Promise.resolve(maskResponseFor(request));
         }
@@ -223,6 +268,7 @@ const setup = async (options = {}) => {
         anchor,
         maskProvider,
         getModelManifestDigest: () => 'manifest-digest-1',
+        getPromptAdapterCapabilities: () => pointCapabilities,
         isAnchorLocked: () => confirmation?.locked ?? false
     });
     const probeRequests = [];

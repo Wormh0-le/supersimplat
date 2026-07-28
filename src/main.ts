@@ -404,6 +404,15 @@ const main = async () => {
         maskProvider: selectionServiceAdapter,
         getModelManifestDigest: () =>
             selectionServiceReadiness.state.configuration.modelManifestDigest,
+        getPromptAdapterCapabilities: () => {
+            const readiness = selectionServiceReadiness.state;
+            const selectedDigest = readiness.configuration.modelManifestDigest;
+            return (
+                readiness.capabilities?.modelManifests.find(
+                    (manifest) => manifest.digest === selectedDigest
+                )?.promptCapabilities ?? null
+            );
+        },
         isAnchorLocked: isAISelectAnchorLocked
     });
     aiSelectConfirmation = new AISelectAnchorConfirmationController({

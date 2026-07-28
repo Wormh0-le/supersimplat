@@ -11,6 +11,7 @@ import {
 } from './anchor-render-service';
 import {
     areCameraBindingsEqual,
+    cameraBindingDigest,
     copyCameraBinding,
     scaleCameraBindingForPreview,
     withCameraBindingPose,
@@ -24,17 +25,14 @@ import {
     type CurrentTargetContext,
     type TargetDependencyToken
 } from './current-target-context';
-import {
-    isMaskArtifact,
-    type MaskArtifact,
-    type MaskPrompt
-} from './mask-annotation';
+import { isMaskArtifact, type MaskArtifact } from './mask-annotation';
 import {
     isMaskResultResponse,
     maskResponseMatchesRequest,
     type AIViewMaskRequest,
     type MaskResultResponse
 } from './mask-service';
+import type { PromptState } from './prompt-state';
 import {
     aiSelectSupportProbePolicyVersion,
     isAnchorSupportProbeResponse,
@@ -380,9 +378,11 @@ export class AISelectAnchorController {
      * current: a mask must never be produced for superseded RGB.
      */
     createAnchorMaskRequest(
-        prompts: readonly MaskPrompt[],
-        maskAttemptId: string,
-        modelManifestDigest: string
+        promptState: PromptState,
+        proposalAttemptId: string,
+        modelManifestDigest: string,
+        adapterCapabilityDigest: string,
+        proposalPolicyVersion: string
     ): AIViewMaskRequest | null {
         const anchor = this.anchor;
         const activeRequest = this.activeRequest;
@@ -392,7 +392,8 @@ export class AISelectAnchorController {
             this.contexts.current?.lifecycle !== 'active' ||
             anchor.renderStatus !== 'ready' ||
             anchor.rgb === undefined ||
-            prompts.length === 0
+            promptState.viewId !== anchor.viewId ||
+            promptState.rgbDigest !== anchor.rgb.digest
         ) {
             return null;
         }
@@ -404,19 +405,13 @@ export class AISelectAnchorController {
             sceneId: activeRequest.snapshot.sceneId,
             sceneVersion: activeRequest.snapshot.sceneVersion,
             viewId: anchor.viewId,
-            maskAttemptId,
+            cameraBindingDigest: cameraBindingDigest(anchor.cameraBinding),
             rgb: copyRgb(anchor.rgb),
-            prompts: Object.freeze(
-                prompts.map((prompt) =>
-                    Object.freeze({
-                        promptId: prompt.promptId,
-                        xPx: prompt.xPx,
-                        yPx: prompt.yPx,
-                        polarity: prompt.polarity
-                    })
-                )
-            ),
-            modelManifestDigest
+            promptState,
+            modelManifestDigest,
+            adapterCapabilityDigest,
+            proposalPolicyVersion,
+            proposalAttemptId
         });
     }
 

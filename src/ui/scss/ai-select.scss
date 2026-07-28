@@ -146,6 +146,47 @@
     image-rendering: pixelated;
 }
 
+#ai-select-anchor-dock-box-preview {
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid #ffb020;
+    background: rgba(255, 176, 32, 0.12);
+    pointer-events: none;
+}
+
+#ai-select-anchor-dock-tools {
+    gap: 4px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    align-items: center;
+
+    &:not(.pcui-hidden) {
+        display: flex;
+    }
+
+    .ai-select-tool-selected {
+        outline: 2px solid #4da3ff;
+        outline-offset: -2px;
+    }
+
+    #ai-select-anchor-tool-paint {
+        margin-left: 6px;
+        border-left: 2px solid $bcg-lighter;
+    }
+
+    #ai-select-anchor-brush-size {
+        width: 88px;
+    }
+
+    #ai-select-anchor-text-prompt {
+        min-width: 120px;
+        height: 24px;
+        border: 1px solid $bcg-lighter;
+        background: $bcg-darkest;
+        color: $text-primary;
+    }
+}
+
 #ai-select-anchor-dock-mask-actions {
     gap: 6px;
     flex-shrink: 0;

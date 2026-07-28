@@ -2,6 +2,7 @@ import type { AISelectAnchorState } from './anchor-controller';
 import type { AnchorRgbArtifact } from './anchor-render-service';
 import type { EvidenceStatus } from './evidence-state';
 import type { AISelectMaskState } from './mask-controller';
+import { promptStateHasConstraints } from './prompt-state';
 
 export type AnchorDockStatus =
     'idle' | 'ready' | 'previewing' | 'rendering' | 'failed';
@@ -18,6 +19,7 @@ export interface AnchorDockMaskPresentation {
     readonly status: AnchorDockMaskStatus;
     readonly promptCount: number;
     readonly evidenceStatus: EvidenceStatus;
+    readonly proposalStatus: AISelectMaskState['proposalStatus'];
     /** A current Editing Mask exists and can be atomically published. */
     readonly showConfirm: boolean;
     /** The failed SAM request can be retried with its prompt set. */
@@ -52,6 +54,7 @@ const emptyMaskPresentation = (
         status,
         promptCount: 0,
         evidenceStatus: 'not-requested',
+        proposalStatus: 'none',
         showConfirm: false,
         showRetry: false
     });
@@ -77,12 +80,18 @@ export const getAnchorDockMaskPresentation = (
     }
     return Object.freeze({
         status,
-        promptCount: maskState.prompts.length,
+        promptCount:
+            (maskState.promptState?.points.length ?? 0) +
+            (maskState.promptState?.boxes.length ?? 0) +
+            (maskState.promptState?.maskConstraints.length ?? 0) +
+            (maskState.promptState?.textPrompts.length ?? 0),
         evidenceStatus: maskState.evidence.status,
+        proposalStatus: maskState.proposalStatus ?? 'none',
         showConfirm: maskState.editingMask !== null,
         showRetry:
             maskState.requestStatus === 'failed' &&
-            maskState.prompts.length > 0,
+            maskState.promptState != null &&
+            promptStateHasConstraints(maskState.promptState),
         ...(maskState.errorMessage === undefined
             ? {}
             : { errorMessage: maskState.errorMessage })

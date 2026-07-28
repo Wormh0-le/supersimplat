@@ -123,7 +123,38 @@ class AISelectMaskTests(unittest.TestCase):
         self.thread.join()
         self.temporary_directory.cleanup()
 
+    @staticmethod
+    def prompt_state_digest(prompt_state: dict[str, object]) -> str:
+        payload = {
+            key: value
+            for key, value in prompt_state.items()
+            if key != 'digest'
+        }
+        encoded = json.dumps(
+            payload,
+            separators=(',', ':'),
+            sort_keys=True,
+        ).encode()
+        return f'sha256:{hashlib.sha256(encoded).hexdigest()}'
+
     def request_body(self) -> dict[str, object]:
+        points = [
+            {'promptId': 'prompt-1', 'xPx': 1, 'yPx': 0, 'polarity': 'include'},
+        ]
+        prompt_state: dict[str, object] = {
+            'schemaVersion': 1,
+            'viewId': 'anchor-view',
+            'rgbDigest': IMAGE_DIGEST,
+            'revision': 1,
+            'points': points,
+            'boxes': [],
+            'maskConstraints': [],
+            'textPrompts': [],
+        }
+        prompt_state['digest'] = self.prompt_state_digest(prompt_state)
+        prompt_capabilities = self.state.capabilities([EDITOR_ORIGIN])[
+            'modelManifests'
+        ][0]['promptCapabilities']
         return {
             'requestBinding': {
                 'targetContextId': 'context-1',
@@ -140,22 +171,23 @@ class AISelectMaskTests(unittest.TestCase):
             'sceneId': 'splat-1',
             'sceneVersion': 'snapshot-v1',
             'viewId': 'anchor-view',
-            'maskAttemptId': 'mask-attempt-1',
+            'cameraBindingDigest': f'sha256:{"1" * 64}',
+            'proposalAttemptId': 'proposal-attempt-1',
             'rgb': {
                 'pngBase64': base64.b64encode(IMAGE_PNG).decode('ascii'),
                 'digest': IMAGE_DIGEST,
                 'width': IMAGE_WIDTH,
                 'height': IMAGE_HEIGHT,
             },
-            'prompts': [
-                {'promptId': 'prompt-1', 'xPx': 1, 'yPx': 0, 'polarity': 'include'},
-            ],
+            'promptState': prompt_state,
             'modelManifestDigest': self.model_manifest_digest,
+            'adapterCapabilityDigest': prompt_capabilities['capabilityDigest'],
+            'proposalPolicyVersion': 'auto-mask-proposals/bounded-source-order-v1',
         }
 
-    def post_mask(self, body: dict[str, object]) -> dict[str, object]:
+    def post_proposals(self, body: dict[str, object]) -> dict[str, object]:
         with urlopen(Request(
-            f'{self.endpoint}/ai-select/masks',
+            f'{self.endpoint}/ai-select/mask-proposals',
             data=json.dumps(body).encode(),
             method='POST',
             headers={'Origin': EDITOR_ORIGIN, 'Content-Type': 'application/json'},
@@ -163,10 +195,12 @@ class AISelectMaskTests(unittest.TestCase):
             self.assertEqual(response.status, HTTPStatus.OK)
             return json.load(response)
 
-    def post_mask_error(self, body: dict[str, object]) -> tuple[int, dict[str, object]]:
+    def post_proposal_error(
+        self, body: dict[str, object]
+    ) -> tuple[int, dict[str, object]]:
         with self.assertRaises(HTTPError) as error:
             urlopen(Request(
-                f'{self.endpoint}/ai-select/masks',
+                f'{self.endpoint}/ai-select/mask-proposals',
                 data=json.dumps(body).encode(),
                 method='POST',
                 headers={'Origin': EDITOR_ORIGIN, 'Content-Type': 'application/json'},
@@ -174,15 +208,15 @@ class AISelectMaskTests(unittest.TestCase):
         return error.exception.code, json.load(error.exception)
 
     def assert_invalid_request(self, body: dict[str, object]) -> None:
-        status, payload = self.post_mask_error(body)
+        status, payload = self.post_proposal_error(body)
         self.assertEqual(status, HTTPStatus.BAD_REQUEST)
         self.assertEqual(payload['status'], 'invalidRequest')
         self.assertEqual(self.predictor.requests, [])
 
-    def test_produces_a_bound_single_frame_sam_mask(self) -> None:
+    def test_produces_a_bound_single_frame_sam_proposal(self) -> None:
         request = self.request_body()
 
-        response = self.post_mask(request)
+        response = self.post_proposals(request)
 
         self.assertEqual(response['status'], 'complete')
         self.assertEqual(response['requestBinding'], request['requestBinding'])
@@ -190,11 +224,27 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(response['sceneId'], 'splat-1')
         self.assertEqual(response['sceneVersion'], 'snapshot-v1')
         self.assertEqual(response['viewId'], 'anchor-view')
-        self.assertEqual(response['maskAttemptId'], 'mask-attempt-1')
+        self.assertEqual(response['cameraBindingDigest'], request['cameraBindingDigest'])
+        self.assertEqual(response['proposalAttemptId'], 'proposal-attempt-1')
         self.assertEqual(response['rgbDigest'], IMAGE_DIGEST)
+        self.assertEqual(
+            response['promptStateDigest'],
+            request['promptState']['digest'],  # type: ignore[index]
+        )
         self.assertEqual(response['modelManifestDigest'], self.model_manifest_digest)
-        self.assertEqual(response['maskSource'], 'single-frame-sam')
-        mask = response['mask']
+        proposal_set = response['proposalSet']
+        self.assertEqual(proposal_set['proposalAttemptId'], 'proposal-attempt-1')
+        self.assertEqual(len(proposal_set['proposals']), 1)
+        proposal = proposal_set['proposals'][0]
+        self.assertEqual(proposal['sourceIndex'], 0)
+        self.assertEqual(
+            proposal['promptConsistency'],
+            {
+                'positivePointsSatisfied': True,
+                'negativePointsSatisfied': True,
+            },
+        )
+        mask = proposal['mask']
         self.assertEqual(mask['encoding'], 'bitset-lsb-v1')
         self.assertEqual(mask['width'], IMAGE_WIDTH)
         self.assertEqual(mask['height'], IMAGE_HEIGHT)
@@ -223,9 +273,9 @@ class AISelectMaskTests(unittest.TestCase):
 
         self.assert_invalid_request(request)
 
-    def test_rejects_a_request_without_a_mask_attempt_identity(self) -> None:
+    def test_rejects_a_request_without_a_proposal_attempt_identity(self) -> None:
         request = self.request_body()
-        del request['maskAttemptId']
+        del request['proposalAttemptId']
 
         self.assert_invalid_request(request)
 
@@ -251,20 +301,29 @@ class AISelectMaskTests(unittest.TestCase):
         ):
             with self.subTest(prompt=prompt):
                 request = self.request_body()
-                request['prompts'] = [prompt]
+                request['promptState']['points'] = [prompt]  # type: ignore[index]
+                request['promptState']['digest'] = self.prompt_state_digest(  # type: ignore[index]
+                    request['promptState']  # type: ignore[arg-type]
+                )
                 self.assert_invalid_request(request)
 
     def test_rejects_an_empty_prompt_list(self) -> None:
         request = self.request_body()
-        request['prompts'] = []
+        request['promptState']['points'] = []  # type: ignore[index]
+        request['promptState']['digest'] = self.prompt_state_digest(  # type: ignore[index]
+            request['promptState']  # type: ignore[arg-type]
+        )
 
         self.assert_invalid_request(request)
 
     def test_rejects_an_unknown_prompt_polarity(self) -> None:
         request = self.request_body()
-        request['prompts'] = [
+        request['promptState']['points'] = [  # type: ignore[index]
             {'promptId': 'prompt-1', 'xPx': 1, 'yPx': 0, 'polarity': 'maybe'},
         ]
+        request['promptState']['digest'] = self.prompt_state_digest(  # type: ignore[index]
+            request['promptState']  # type: ignore[arg-type]
+        )
 
         self.assert_invalid_request(request)
 
@@ -272,10 +331,10 @@ class AISelectMaskTests(unittest.TestCase):
         request = self.request_body()
         request['modelManifestDigest'] = 'sha256:missing-manifest'
 
-        status, payload = self.post_mask_error(request)
+        status, payload = self.post_proposal_error(request)
 
         self.assertEqual(status, HTTPStatus.CONFLICT)
-        self.assertEqual(payload['status'], 'maskError')
+        self.assertEqual(payload['status'], 'maskProposalError')
         self.assertEqual(payload['code'], 'modelUnavailable')
         self.assertEqual(self.predictor.requests, [])
 
@@ -301,49 +360,77 @@ class AISelectMaskTests(unittest.TestCase):
         request = self.request_body()
         request['modelManifestDigest'] = incompatible_digest
 
-        status, payload = self.post_mask_error(request)
+        status, payload = self.post_proposal_error(request)
 
         self.assertEqual(status, HTTPStatus.CONFLICT)
-        self.assertEqual(payload['status'], 'maskError')
+        self.assertEqual(payload['status'], 'maskProposalError')
         self.assertEqual(payload['code'], 'incompatibleManifest')
         self.assertEqual(self.predictor.requests, [])
 
-    def test_reports_a_missing_anchor_mask_without_publishing(self) -> None:
+    def test_rejects_a_stale_adapter_capability_identity(self) -> None:
+        request = self.request_body()
+        request['adapterCapabilityDigest'] = f'sha256:{"f" * 64}'
+
+        status, payload = self.post_proposal_error(request)
+
+        self.assertEqual(status, HTTPStatus.CONFLICT)
+        self.assertEqual(payload['status'], 'maskProposalError')
+        self.assertEqual(payload['code'], 'capabilityMismatch')
+        self.assertEqual(self.predictor.requests, [])
+
+    def test_rejects_a_well_formed_unsupported_box_prompt(self) -> None:
+        request = self.request_body()
+        request['promptState']['boxes'] = [{  # type: ignore[index]
+            'promptId': 'box-1',
+            'polarity': 'include',
+            'x0Px': 0,
+            'y0Px': 0,
+            'x1Px': 1,
+            'y1Px': 1,
+        }]
+        request['promptState']['digest'] = self.prompt_state_digest(  # type: ignore[index]
+            request['promptState']  # type: ignore[arg-type]
+        )
+
+        status, payload = self.post_proposal_error(request)
+
+        self.assertEqual(status, HTTPStatus.CONFLICT)
+        self.assertEqual(payload['status'], 'maskProposalError')
+        self.assertEqual(payload['code'], 'unsupportedPromptType')
+        self.assertEqual(self.predictor.requests, [])
+
+    def test_publishes_an_empty_proposal_set_when_the_adapter_finds_no_mask(
+        self,
+    ) -> None:
         self.predictor.masks = [[[False, False], [False, False]]]
 
-        with self.assertRaises(MaskSessionError) as error:
-            self.state.produce_ai_select_mask(self.request_body())
-        self.assertEqual(error.exception.code, 'anchorMaskUnavailable')
-        # The model-level reason travels with the failure, not a generic message.
-        self.assertIn('found no foreground mask', str(error.exception))
+        first = self.state.produce_ai_select_mask(self.request_body())
+        self.assertEqual(first['proposalSet']['proposals'], [])
         self.assertEqual(self.predictor.session_starts, 1)
 
-        # The bound failure replays for the same attempt without re-running SAM.
-        with self.assertRaises(MaskSessionError) as replayed:
-            self.state.produce_ai_select_mask(self.request_body())
-        self.assertEqual(replayed.exception.code, 'anchorMaskUnavailable')
-        self.assertEqual(str(replayed.exception), str(error.exception))
+        replayed = self.state.produce_ai_select_mask(self.request_body())
+        self.assertEqual(replayed, first)
         self.assertEqual(self.predictor.session_starts, 1)
 
         retry = self.request_body()
-        retry['maskAttemptId'] = 'mask-attempt-2'
-        with self.assertRaises(MaskSessionError) as retried:
-            self.state.produce_ai_select_mask(retry)
-        self.assertEqual(retried.exception.code, 'anchorMaskUnavailable')
+        retry['proposalAttemptId'] = 'proposal-attempt-2'
+        retried = self.state.produce_ai_select_mask(retry)
+        self.assertEqual(retried['proposalSet']['proposals'], [])
         self.assertEqual(self.predictor.session_starts, 2)
 
-    def test_reports_a_point_inconsistent_anchor_mask_with_its_reason(self) -> None:
+    def test_publishes_no_proposal_for_a_point_inconsistent_mask(self) -> None:
         # The candidate covers (1, 0) only; prompting (0, 1) rejects it.
         request = self.request_body()
-        request['prompts'] = [
+        request['promptState']['points'] = [  # type: ignore[index]
             {'promptId': 'prompt-1', 'xPx': 0, 'yPx': 1, 'polarity': 'include'},
         ]
+        request['promptState']['digest'] = self.prompt_state_digest(  # type: ignore[index]
+            request['promptState']  # type: ignore[arg-type]
+        )
 
-        with self.assertRaises(MaskSessionError) as error:
-            self.state.produce_ai_select_mask(request)
+        response = self.state.produce_ai_select_mask(request)
 
-        self.assertEqual(error.exception.code, 'anchorMaskUnavailable')
-        self.assertIn('did not return an Anchor View mask that satisfied', str(error.exception))
+        self.assertEqual(response['proposalSet']['proposals'], [])
 
     def test_replays_a_matching_mask_request_without_a_second_sam_pass(self) -> None:
         first = self.state.produce_ai_select_mask(self.request_body())
@@ -355,11 +442,14 @@ class AISelectMaskTests(unittest.TestCase):
         # An explicit Retry mints a new attempt identity for the same RGB and
         # prompts and really reruns the adapter.
         retry_request = self.request_body()
-        retry_request['maskAttemptId'] = 'mask-attempt-2'
+        retry_request['proposalAttemptId'] = 'proposal-attempt-2'
         retry = self.state.produce_ai_select_mask(retry_request)
 
-        self.assertEqual(retry['maskAttemptId'], 'mask-attempt-2')
-        self.assertEqual(retry['mask'], first['mask'])
+        self.assertEqual(retry['proposalAttemptId'], 'proposal-attempt-2')
+        self.assertEqual(
+            retry['proposalSet']['proposals'],
+            first['proposalSet']['proposals'],
+        )
         self.assertEqual(self.predictor.session_starts, 2)
 
     def test_a_concurrent_matching_request_joins_the_same_sam_pass(self) -> None:
@@ -413,7 +503,7 @@ class AISelectMaskTests(unittest.TestCase):
         )
 
         competing_request = self.request_body()
-        competing_request['maskAttemptId'] = 'mask-attempt-2'
+        competing_request['proposalAttemptId'] = 'proposal-attempt-2'
         with self.assertRaisesRegex(MaskSessionError, 'already serving another'):
             self.state.produce_ai_select_mask(competing_request)
 
@@ -463,18 +553,32 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(replayed.exception.code, 'incompleteMaskSet')
         self.assertEqual(broken_adapter.invocations, 1)
 
-    def test_an_adapter_crash_is_reported_as_a_model_failure(self) -> None:
-        class FailingMaskAdapter:
+    def test_adapter_oom_publishes_no_partial_proposal_set(self) -> None:
+        class OutOfMemoryMaskAdapter:
+            def __init__(self) -> None:
+                self.invocations = 0
+
             def produce_tracks(self, **_kwargs: Any) -> MaskProduction:
-                raise RuntimeError('model runtime stopped')
+                self.invocations += 1
+                raise RuntimeError('CUDA out of memory')
 
-        self.state.mask_adapters['sam3.1'] = FailingMaskAdapter()  # type: ignore[assignment]
+        adapter = OutOfMemoryMaskAdapter()
+        self.state.mask_adapters['sam3.1'] = adapter  # type: ignore[assignment]
 
-        status, payload = self.post_mask_error(self.request_body())
+        status, payload = self.post_proposal_error(self.request_body())
 
         self.assertEqual(status, HTTPStatus.CONFLICT)
-        self.assertEqual(payload['status'], 'maskError')
+        self.assertEqual(payload['status'], 'maskProposalError')
         self.assertEqual(payload['code'], 'modelFailure')
+
+        # The failed attempt contains no proposalSet and replays atomically
+        # without a second adapter execution.
+        self.assertNotIn('proposalSet', payload)
+        status, replay = self.post_proposal_error(self.request_body())
+        self.assertEqual(status, HTTPStatus.CONFLICT)
+        self.assertEqual(replay['code'], 'modelFailure')
+        self.assertNotIn('proposalSet', replay)
+        self.assertEqual(adapter.invocations, 1)
 
 
 if __name__ == '__main__':

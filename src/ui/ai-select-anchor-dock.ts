@@ -13,16 +13,24 @@ import {
     getAnchorDockPresentation,
     type AnchorDockPresentation
 } from '../ai-select/anchor-dock-presentation';
+import {
+    pointerActionForTool,
+    type AuthoringTool
+} from '../ai-select/authoring-interaction';
 import type {
     AISelectGeneratedViewController,
     AISelectGeneratedViewState,
     GeneratedAIView
 } from '../ai-select/generated-view-controller';
-import { decodeMaskArtifact } from '../ai-select/mask-annotation';
+import {
+    decodeMaskArtifact,
+    type BrushStroke
+} from '../ai-select/mask-annotation';
 import {
     type AISelectMaskController,
     type AISelectMaskState
 } from '../ai-select/mask-controller';
+import { promptToolCapabilityReason } from '../ai-select/prompt-state';
 import { reviewReasonActionKeys } from '../ai-select/view-assessment';
 
 export interface AISelectAnchorDockOptions {
@@ -53,6 +61,7 @@ interface GeneratedCardElements {
 }
 
 const CLICK_TOLERANCE_PX = 4;
+type DockAuthoringTool = Exclude<AuthoringTool, 'inspect'>;
 
 /** The first AI View Dock: authoritative RGB plus the Anchor Mask surface. */
 export class AISelectAnchorDock extends Container {
@@ -65,6 +74,16 @@ export class AISelectAnchorDock extends Container {
     private readonly overlay: HTMLCanvasElement;
     private readonly failureActions: Container;
     private readonly maskActions: Container;
+    private readonly toolActions: Container;
+    private readonly toolButtons = new Map<DockAuthoringTool, Button>();
+    private readonly promptUndoButton: Button;
+    private readonly promptRedoButton: Button;
+    private readonly clearPromptsButton: Button;
+    private readonly acceptProposalButton: Button;
+    private readonly brushSizeInput: HTMLInputElement;
+    private readonly textPromptInput: HTMLInputElement;
+    private readonly textPromptApply: Button;
+    private readonly boxPreview: HTMLDivElement;
     private readonly confirmMaskButton: Button;
     private readonly retryMaskButton: Button;
     private readonly clearMaskButton: Button;
@@ -88,7 +107,10 @@ export class AISelectAnchorDock extends Container {
     private confirmationState: AISelectAnchorConfirmationState;
     private generatedState: AISelectGeneratedViewState;
     private dragStart: { x: number; y: number } | null = null;
+    private gestureStartPixel: ImagePixel | null = null;
     private lastStrokePixel: ImagePixel | null = null;
+    private promptBrushStrokes: BrushStroke[] = [];
+    private activeTool: DockAuthoringTool = 'positive-point';
 
     constructor(
         controller: AISelectAnchorController,
@@ -131,8 +153,12 @@ export class AISelectAnchorDock extends Container {
         this.overlay = document.createElement('canvas');
         this.overlay.id = 'ai-select-anchor-dock-mask-overlay';
         this.overlay.hidden = true;
+        this.boxPreview = document.createElement('div');
+        this.boxPreview.id = 'ai-select-anchor-dock-box-preview';
+        this.boxPreview.hidden = true;
         imageWrap.appendChild(this.image);
         imageWrap.appendChild(this.overlay);
+        imageWrap.appendChild(this.boxPreview);
         imageWrap.addEventListener('pointerdown', (event) =>
             this.beginStroke(event)
         );
@@ -144,7 +170,10 @@ export class AISelectAnchorDock extends Container {
         );
         imageWrap.addEventListener('pointercancel', () => {
             this.dragStart = null;
+            this.gestureStartPixel = null;
             this.lastStrokePixel = null;
+            this.promptBrushStrokes = [];
+            this.boxPreview.hidden = true;
         });
 
         this.maskStatus = new Label({
@@ -156,6 +185,122 @@ export class AISelectAnchorDock extends Container {
             id: 'ai-select-anchor-dock-mask-actions',
             hidden: true
         });
+        this.toolActions = new Container({
+            id: 'ai-select-anchor-dock-tools',
+            hidden: true
+        });
+        const toolKeys: readonly [DockAuthoringTool, string][] = [
+            ['positive-point', 'ai-select.prompt.point-positive'],
+            ['negative-point', 'ai-select.prompt.point-negative'],
+            ['positive-box', 'ai-select.prompt.box-positive'],
+            ['negative-box', 'ai-select.prompt.box-negative'],
+            ['positive-mask-constraint', 'ai-select.prompt.brush-positive'],
+            ['negative-mask-constraint', 'ai-select.prompt.brush-negative'],
+            ['positive-text', 'ai-select.prompt.text-positive'],
+            ['negative-text', 'ai-select.prompt.text-negative'],
+            ['paint', 'ai-select.edit.paint'],
+            ['erase', 'ai-select.edit.erase']
+        ];
+        for (const [tool, key] of toolKeys) {
+            const button = new Button({
+                id: `ai-select-anchor-tool-${tool}`
+            });
+            i18n.bindText(button, key);
+            button.on('click', () => {
+                this.activeTool = tool;
+                this.renderTools();
+            });
+            this.toolButtons.set(tool, button);
+            this.toolActions.append(button);
+        }
+        this.brushSizeInput = document.createElement('input');
+        this.brushSizeInput.id = 'ai-select-anchor-brush-size';
+        this.brushSizeInput.type = 'range';
+        this.brushSizeInput.min = '1';
+        this.brushSizeInput.max = '64';
+        this.brushSizeInput.value = '8';
+        this.brushSizeInput.setAttribute(
+            'aria-label',
+            i18n.t('ai-select.edit.brush-size')
+        );
+        this.toolActions.dom.appendChild(this.brushSizeInput);
+        this.textPromptInput = document.createElement('input');
+        this.textPromptInput.id = 'ai-select-anchor-text-prompt';
+        this.textPromptInput.type = 'text';
+        this.textPromptInput.placeholder = i18n.t(
+            'ai-select.prompt.text-placeholder'
+        );
+        this.textPromptApply = new Button({
+            id: 'ai-select-anchor-text-apply'
+        });
+        i18n.bindText(this.textPromptApply, 'ai-select.prompt.text-apply');
+        this.textPromptApply.on('click', () => {
+            const polarity =
+                this.activeTool === 'negative-text' ? 'exclude' : 'include';
+            this.mask
+                .addTextPrompt({
+                    text: this.textPromptInput.value,
+                    polarity
+                })
+                .then(() => {
+                    this.textPromptInput.value = '';
+                })
+                .catch((error) => console.error(error));
+        });
+        this.toolActions.dom.appendChild(this.textPromptInput);
+        this.toolActions.append(this.textPromptApply);
+        this.promptUndoButton = new Button({
+            id: 'ai-select-anchor-prompt-undo'
+        });
+        this.promptRedoButton = new Button({
+            id: 'ai-select-anchor-prompt-redo'
+        });
+        this.clearPromptsButton = new Button({
+            id: 'ai-select-anchor-prompt-clear'
+        });
+        this.acceptProposalButton = new Button({
+            id: 'ai-select-anchor-proposal-accept'
+        });
+        i18n.bindText(this.promptUndoButton, 'ai-select.prompt.undo');
+        i18n.bindText(this.promptRedoButton, 'ai-select.prompt.redo');
+        i18n.bindText(this.clearPromptsButton, 'ai-select.prompt.clear');
+        i18n.bindText(this.acceptProposalButton, 'ai-select.proposal.accept');
+        this.promptUndoButton.on('click', () => {
+            try {
+                this.mask.undoPromptEdit();
+            } catch (error) {
+                console.error(error);
+            }
+        });
+        this.promptRedoButton.on('click', () => {
+            try {
+                this.mask.redoPromptEdit();
+            } catch (error) {
+                console.error(error);
+            }
+        });
+        this.clearPromptsButton.on('click', () => {
+            try {
+                this.mask.clearPrompts();
+            } catch (error) {
+                console.error(error);
+            }
+        });
+        this.acceptProposalButton.on('click', () => {
+            const proposal = this.maskState.proposalSet?.proposals[0];
+            if (proposal === undefined) {
+                return;
+            }
+            try {
+                this.mask.acceptProposal(proposal.proposalId);
+            } catch (error) {
+                console.error(error);
+            }
+        });
+        this.toolActions.append(this.promptUndoButton);
+        this.toolActions.append(this.promptRedoButton);
+        this.toolActions.append(this.clearPromptsButton);
+        this.toolActions.append(this.acceptProposalButton);
         this.confirmMaskButton = new Button({
             id: 'ai-select-anchor-dock-confirm-mask'
         });
@@ -328,6 +473,7 @@ export class AISelectAnchorDock extends Container {
         });
         controls.append(this.status);
         controls.append(this.maskStatus);
+        controls.append(this.toolActions);
         controls.append(this.maskActions);
         controls.append(this.anchorActions);
         controls.append(this.validationStatus);
@@ -384,7 +530,12 @@ export class AISelectAnchorDock extends Container {
             this.maskStatus.text =
                 mask.status === 'failed' && mask.errorMessage !== undefined
                     ? mask.errorMessage
-                    : i18n.t(`ai-select.mask.${mask.status}`);
+                    : mask.proposalStatus === 'unavailable'
+                      ? i18n.t('ai-select.proposal.unavailable')
+                      : mask.proposalStatus === 'ready' &&
+                          this.maskState.editingMask === null
+                        ? i18n.t('ai-select.proposal.ready')
+                        : i18n.t(`ai-select.mask.${mask.status}`);
         }
         this.confirmMaskButton.hidden = !mask.showConfirm;
         this.retryMaskButton.hidden = !mask.showRetry;
@@ -393,6 +544,7 @@ export class AISelectAnchorDock extends Container {
         this.retryMaskButton.enabled =
             mask.showRetry && !this.confirmation.locked;
         this.renderEditingActions(presentation);
+        this.renderTools();
         this.renderAnchorActions(presentation);
         this.renderMaskOverlay(presentation);
         this.renderGallery(presentation);
@@ -698,6 +850,62 @@ export class AISelectAnchorDock extends Container {
             !editingReady;
     }
 
+    private renderTools(): void {
+        const ready =
+            getAnchorDockPresentation(this.state, this.maskState).status ===
+                'ready' && !this.confirmation.locked;
+        this.toolActions.hidden = !ready;
+        const capabilities = this.maskState.promptCapabilities;
+        for (const [tool, button] of this.toolButtons) {
+            const reason =
+                tool === 'paint' || tool === 'erase'
+                    ? null
+                    : capabilities === null
+                      ? 'Prompt Adapter capabilities are unavailable.'
+                      : promptToolCapabilityReason(tool, capabilities);
+            button.enabled = ready && reason === null;
+            button.dom.title = reason ?? '';
+            button.dom.classList.toggle(
+                'ai-select-tool-selected',
+                tool === this.activeTool
+            );
+        }
+        const activeButton = this.toolButtons.get(this.activeTool);
+        if (activeButton !== undefined && !activeButton.enabled) {
+            this.activeTool =
+                capabilities?.points === true ? 'positive-point' : 'paint';
+            this.toolButtons
+                .get(this.activeTool)
+                ?.dom.classList.add('ai-select-tool-selected');
+        }
+        const brushActive =
+            this.activeTool === 'paint' ||
+            this.activeTool === 'erase' ||
+            this.activeTool === 'positive-mask-constraint' ||
+            this.activeTool === 'negative-mask-constraint';
+        this.brushSizeInput.hidden = !brushActive;
+        const textActive =
+            this.activeTool === 'positive-text' ||
+            this.activeTool === 'negative-text';
+        this.textPromptInput.hidden = !textActive;
+        this.textPromptApply.hidden = !textActive;
+        this.promptUndoButton.enabled = ready && this.maskState.canUndoPrompt;
+        this.promptRedoButton.enabled = ready && this.maskState.canRedoPrompt;
+        this.clearPromptsButton.enabled =
+            ready &&
+            this.maskState.promptState !== null &&
+            (this.maskState.promptState.points.length > 0 ||
+                this.maskState.promptState.boxes.length > 0 ||
+                this.maskState.promptState.maskConstraints.length > 0 ||
+                this.maskState.promptState.textPrompts.length > 0);
+        const proposal = this.maskState.proposalSet?.proposals[0];
+        this.acceptProposalButton.hidden =
+            proposal === undefined ||
+            proposal.proposalId === this.maskState.acceptedProposalId;
+        this.acceptProposalButton.enabled =
+            ready && !this.acceptProposalButton.hidden;
+    }
+
     private renderAnchorActions(presentation: AnchorDockPresentation): void {
         const confirmation = this.confirmationState;
         const confirmed = confirmation.confirmedAnchor !== null;
@@ -741,7 +949,7 @@ export class AISelectAnchorDock extends Container {
         this.validationStatus.text = lines.join('\n');
     }
 
-    /** Mask Editor keyboard focus routing for mask-local Undo/Redo. */
+    /** Focus-routed Prompt history and Mask edit history remain independent. */
     private routeEditingKeys(event: KeyboardEvent): void {
         if (!(event.ctrlKey || event.metaKey)) {
             return;
@@ -753,16 +961,28 @@ export class AISelectAnchorDock extends Container {
         if (!undo && !redo) {
             return;
         }
-        const available = redo
-            ? this.maskState.canRedo
-            : this.maskState.canUndo;
+        const promptMode =
+            this.activeTool !== 'paint' && this.activeTool !== 'erase';
+        const available = promptMode
+            ? redo
+                ? this.maskState.canRedoPrompt
+                : this.maskState.canUndoPrompt
+            : redo
+              ? this.maskState.canRedo
+              : this.maskState.canUndo;
         if (!available) {
             return;
         }
         event.preventDefault();
         event.stopPropagation();
         try {
-            if (redo) {
+            if (promptMode) {
+                if (redo) {
+                    this.mask.redoPromptEdit();
+                } else {
+                    this.mask.undoPromptEdit();
+                }
+            } else if (redo) {
                 this.mask.redoMaskEdit();
             } else {
                 this.mask.undoMaskEdit();
@@ -775,21 +995,27 @@ export class AISelectAnchorDock extends Container {
     private renderMaskOverlay(presentation: AnchorDockPresentation): void {
         const annotation =
             this.maskState.editingMask ?? this.maskState.stableMask;
+        const proposal =
+            this.maskState.acceptedProposalId === null
+                ? this.maskState.proposalSet?.proposals[0]
+                : undefined;
+        const artifact = annotation?.artifact ?? proposal?.mask;
         const rgb = presentation.rgb;
         if (
             presentation.status !== 'ready' ||
-            annotation === null ||
+            artifact === undefined ||
             rgb === undefined ||
-            annotation.artifact.width !== rgb.width ||
-            annotation.artifact.height !== rgb.height
+            artifact.width !== rgb.width ||
+            artifact.height !== rgb.height
         ) {
             this.overlay.hidden = true;
             return;
         }
-        const { width, height } = annotation.artifact;
-        const bits = decodeMaskArtifact(annotation.artifact);
+        const { width, height } = artifact;
+        const bits = decodeMaskArtifact(artifact);
         const pixels = new Uint8ClampedArray(width * height * 4);
-        const editing = this.maskState.editingMask !== null;
+        const editing =
+            this.maskState.editingMask !== null || proposal !== undefined;
         for (let index = 0; index < width * height; index += 1) {
             if ((bits[index >> 3] & (1 << (index % 8))) === 0) {
                 continue;
@@ -894,18 +1120,22 @@ export class AISelectAnchorDock extends Container {
         }
         event.preventDefault();
         this.dragStart = { x: event.clientX, y: event.clientY };
+        this.gestureStartPixel = pixel;
         this.lastStrokePixel = pixel;
+        this.promptBrushStrokes = [];
         this.image.setPointerCapture(event.pointerId);
+        const action = pointerActionForTool(this.activeTool);
+        if (action === 'pixel-edit') {
+            this.applyPixelEdit(pixel);
+        } else if (action === 'prompt-constraint') {
+            this.promptBrushStrokes.push(this.promptBrushStroke(pixel));
+        } else if (action === 'box') {
+            this.updateBoxPreview(pixel, pixel);
+        }
     }
 
     private continueStroke(event: PointerEvent): void {
         if (this.dragStart === null) {
-            return;
-        }
-        const moved =
-            Math.abs(event.clientX - this.dragStart.x) +
-            Math.abs(event.clientY - this.dragStart.y);
-        if (moved <= CLICK_TOLERANCE_PX) {
             return;
         }
         const pixel = this.toImagePixel(event);
@@ -918,15 +1148,13 @@ export class AISelectAnchorDock extends Container {
             return;
         }
         this.lastStrokePixel = pixel;
-        try {
-            this.mask.applyBrushStroke({
-                xPx: pixel.xPx,
-                yPx: pixel.yPx,
-                radiusPx: this.brushRadius(),
-                mode: event.shiftKey ? 'erase' : 'add'
-            });
-        } catch (error) {
-            console.error(error);
+        const action = pointerActionForTool(this.activeTool);
+        if (action === 'pixel-edit') {
+            this.applyPixelEdit(pixel);
+        } else if (action === 'prompt-constraint') {
+            this.promptBrushStrokes.push(this.promptBrushStroke(pixel));
+        } else if (action === 'box' && this.gestureStartPixel !== null) {
+            this.updateBoxPreview(this.gestureStartPixel, pixel);
         }
     }
 
@@ -937,25 +1165,121 @@ export class AISelectAnchorDock extends Container {
         const moved =
             Math.abs(event.clientX - this.dragStart.x) +
             Math.abs(event.clientY - this.dragStart.y);
+        const startPixel = this.gestureStartPixel;
+        const strokes = this.promptBrushStrokes;
         this.dragStart = null;
+        this.gestureStartPixel = null;
         this.lastStrokePixel = null;
-        if (moved > CLICK_TOLERANCE_PX) {
+        this.promptBrushStrokes = [];
+        this.boxPreview.hidden = true;
+        const action = pointerActionForTool(this.activeTool);
+        if (action === 'pixel-edit') {
             return;
         }
         const pixel = this.toImagePixel(event);
-        if (pixel === null) {
+        if (pixel === null || startPixel === null) {
             return;
         }
-        this.mask
-            .addPrompt({
-                xPx: pixel.xPx,
-                yPx: pixel.yPx,
-                polarity: event.shiftKey ? 'exclude' : 'include'
-            })
-            .catch((error) => console.error(error));
+        if (action === 'point') {
+            if (moved > CLICK_TOLERANCE_PX) {
+                return;
+            }
+            this.mask
+                .addPrompt({
+                    xPx: pixel.xPx,
+                    yPx: pixel.yPx,
+                    polarity:
+                        this.activeTool === 'negative-point'
+                            ? 'exclude'
+                            : 'include'
+                })
+                .catch((error) => console.error(error));
+            return;
+        }
+        if (action === 'box') {
+            if (startPixel.xPx === pixel.xPx || startPixel.yPx === pixel.yPx) {
+                return;
+            }
+            this.mask
+                .addBoxPrompt({
+                    x0Px: startPixel.xPx,
+                    y0Px: startPixel.yPx,
+                    x1Px: pixel.xPx,
+                    y1Px: pixel.yPx,
+                    polarity:
+                        this.activeTool === 'negative-box'
+                            ? 'exclude'
+                            : 'include'
+                })
+                .catch((error) => console.error(error));
+            return;
+        }
+        if (action === 'prompt-constraint') {
+            if (strokes.length === 0) {
+                strokes.push(this.promptBrushStroke(pixel));
+            }
+            this.mask
+                .addPromptBrushConstraint(
+                    strokes,
+                    this.activeTool === 'negative-mask-constraint'
+                        ? 'exclude'
+                        : 'include'
+                )
+                .catch((error) => console.error(error));
+        }
     }
 
     private brushRadius(): number {
-        return Math.max(3, Math.round(this.image.naturalWidth / 128));
+        return Number(this.brushSizeInput.value);
+    }
+
+    private promptBrushStroke(pixel: ImagePixel): BrushStroke {
+        return {
+            xPx: pixel.xPx,
+            yPx: pixel.yPx,
+            radiusPx: this.brushRadius(),
+            mode: 'add'
+        };
+    }
+
+    private applyPixelEdit(pixel: ImagePixel): void {
+        try {
+            this.mask.applyBrushStroke({
+                xPx: pixel.xPx,
+                yPx: pixel.yPx,
+                radiusPx: this.brushRadius(),
+                mode: this.activeTool === 'erase' ? 'erase' : 'add'
+            });
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    private updateBoxPreview(start: ImagePixel, current: ImagePixel): void {
+        const rect = this.image.getBoundingClientRect();
+        const painted = this.paintedRect(rect);
+        if (painted === null) {
+            this.boxPreview.hidden = true;
+            return;
+        }
+        const leftPx =
+            painted.left +
+            (Math.min(start.xPx, current.xPx) / this.image.naturalWidth) *
+                painted.width;
+        const topPx =
+            painted.top +
+            (Math.min(start.yPx, current.yPx) / this.image.naturalHeight) *
+                painted.height;
+        const widthPx =
+            (Math.abs(start.xPx - current.xPx) / this.image.naturalWidth) *
+            painted.width;
+        const heightPx =
+            (Math.abs(start.yPx - current.yPx) / this.image.naturalHeight) *
+            painted.height;
+        this.boxPreview.style.left = `${leftPx}px`;
+        this.boxPreview.style.top = `${topPx}px`;
+        this.boxPreview.style.width = `${widthPx}px`;
+        this.boxPreview.style.height = `${heightPx}px`;
+        this.boxPreview.hidden = false;
     }
 }

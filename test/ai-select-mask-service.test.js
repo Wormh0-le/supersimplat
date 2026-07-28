@@ -7,6 +7,13 @@ const {
     maskResponseMatchesRequest
 } = require('../.test-dist/src/ai-select/mask-service.js');
 const {
+    autoMaskProposalSetDigest
+} = require('../.test-dist/src/ai-select/mask-proposal.js');
+const {
+    createEmptyPromptState,
+    revisePromptState
+} = require('../.test-dist/src/ai-select/prompt-state.js');
+const {
     maskBitsetEncoding
 } = require('../.test-dist/src/ai-select/mask-annotation.js');
 const { sha256Digest } = require('../.test-dist/src/scene-snapshot-binary.js');
@@ -29,6 +36,18 @@ const bitsetArtifact = (width, height, firstByte) => {
     };
 };
 
+const promptState = () =>
+    revisePromptState(createEmptyPromptState('anchor-view', digest('a')), {
+        points: [
+            {
+                promptId: 'p-1',
+                xPx: 2,
+                yPx: 2,
+                polarity: 'include'
+            }
+        ]
+    });
+
 const request = (overrides = {}) => ({
     requestBinding: {
         targetContextId: 'ai-target-context-1',
@@ -45,17 +64,48 @@ const request = (overrides = {}) => ({
     sceneId: 'editor-splat:1',
     sceneVersion: 'snapshot-v1',
     viewId: 'anchor-view',
-    maskAttemptId: 'mask-attempt-7',
+    cameraBindingDigest: digest('e'),
     rgb: {
         pngBase64: 'aGVsbG8=',
         digest: digest('a'),
         width: 8,
         height: 8
     },
-    prompts: [{ promptId: 'p-1', xPx: 2, yPx: 2, polarity: 'include' }],
+    promptState: promptState(),
     modelManifestDigest: 'modelscope-facebook-sam31-616acbee',
+    adapterCapabilityDigest: digest('d'),
+    proposalPolicyVersion: 'auto-mask-proposals/bounded-source-order-v1',
+    proposalAttemptId: 'proposal-attempt-7',
     ...overrides
 });
+
+const proposalSetFor = (req, overrides = {}) => {
+    const payload = {
+        schemaVersion: 1,
+        viewId: req.viewId,
+        rgbDigest: req.rgb.digest,
+        promptStateDigest: req.promptState.digest,
+        modelManifestDigest: req.modelManifestDigest,
+        adapterCapabilityDigest: req.adapterCapabilityDigest,
+        proposalPolicyVersion: req.proposalPolicyVersion,
+        proposalAttemptId: req.proposalAttemptId,
+        proposals: [
+            {
+                proposalId: 'proposal-0',
+                sourceIndex: 0,
+                mask: bitsetArtifact(req.rgb.width, req.rgb.height, 0b101),
+                modelScore: 2.5,
+                modelScoreSemantics: 'adapter-local score',
+                promptConsistency: {
+                    positivePointsSatisfied: true,
+                    negativePointsSatisfied: true
+                }
+            }
+        ],
+        ...overrides
+    };
+    return { ...payload, digest: autoMaskProposalSetDigest(payload) };
+};
 
 const responseFor = (req, overrides = {}) => ({
     requestBinding: req.requestBinding,
@@ -63,32 +113,36 @@ const responseFor = (req, overrides = {}) => ({
     sceneId: req.sceneId,
     sceneVersion: req.sceneVersion,
     viewId: req.viewId,
-    maskAttemptId: req.maskAttemptId,
+    cameraBindingDigest: req.cameraBindingDigest,
     rgbDigest: req.rgb.digest,
-    mask: bitsetArtifact(req.rgb.width, req.rgb.height, 0b101),
-    maskSource: 'single-frame-sam',
+    promptStateDigest: req.promptState.digest,
     modelManifestDigest: req.modelManifestDigest,
+    adapterCapabilityDigest: req.adapterCapabilityDigest,
+    proposalPolicyVersion: req.proposalPolicyVersion,
+    proposalAttemptId: req.proposalAttemptId,
+    proposalSet: proposalSetFor(req),
     ...overrides
 });
 
-test('a complete bound mask response matches its request', () => {
+test('a complete bound proposal response matches its request', () => {
     const req = request();
     const response = responseFor(req);
     assert.ok(isMaskResultResponse(response));
     assert.ok(maskResponseMatchesRequest(response, req));
 });
 
-test('the request contract requires bound identity, RGB, and prompts', () => {
+test('the request requires exact RGB, PromptState, capability, policy, and attempt identity', () => {
     assert.ok(isAIViewMaskRequest(request()));
-    assert.ok(!isAIViewMaskRequest(request({ prompts: [] })));
-    assert.ok(!isAIViewMaskRequest(request({ maskAttemptId: '' })));
+    assert.ok(!isAIViewMaskRequest(request({ proposalAttemptId: '' })));
+    assert.ok(!isAIViewMaskRequest(request({ adapterCapabilityDigest: '' })));
     assert.ok(!isAIViewMaskRequest(request({ modelManifestDigest: '' })));
     assert.ok(
         !isAIViewMaskRequest(
             request({
-                prompts: [
-                    { promptId: 'p', xPx: -1, yPx: 0, polarity: 'include' }
-                ]
+                promptState: {
+                    ...promptState(),
+                    rgbDigest: digest('b')
+                }
             })
         )
     );
@@ -97,7 +151,7 @@ test('the request contract requires bound identity, RGB, and prompts', () => {
     assert.ok(!isAIViewMaskRequest(mismatchedTarget));
 });
 
-test('stale or partial responses are rejected', () => {
+test('stale, corrupt, or partial proposal responses are rejected', () => {
     const req = request();
     assert.ok(
         !maskResponseMatchesRequest(
@@ -107,12 +161,17 @@ test('stale or partial responses are rejected', () => {
     );
     assert.ok(
         !maskResponseMatchesRequest(
-            responseFor(req, { maskAttemptId: 'mask-attempt-8' }),
+            responseFor(req, {
+                proposalAttemptId: 'proposal-attempt-8'
+            }),
             req
         )
     );
     assert.ok(
-        !maskResponseMatchesRequest(responseFor(req, { viewId: 'view-2' }), req)
+        !maskResponseMatchesRequest(
+            responseFor(req, { adapterCapabilityDigest: digest('c') }),
+            req
+        )
     );
     const wrongRevision = responseFor(req);
     wrongRevision.requestBinding = {
@@ -120,28 +179,12 @@ test('stale or partial responses are rejected', () => {
         contextRevision: 4
     };
     assert.ok(!maskResponseMatchesRequest(wrongRevision, req));
-    assert.ok(
-        !maskResponseMatchesRequest(
-            responseFor(req, {
-                mask: bitsetArtifact(req.rgb.width + 8, req.rgb.height, 0b101)
-            }),
-            req
-        )
-    );
-    const tamperedBytes = bitsetArtifact(req.rgb.width, req.rgb.height, 0b101);
-    tamperedBytes.data = bitsetArtifact(
+    const proposalSet = proposalSetFor(req);
+    proposalSet.proposals[0].mask.data = bitsetArtifact(
         req.rgb.width,
         req.rgb.height,
         0b111
     ).data;
-    assert.ok(
-        !maskResponseMatchesRequest(
-            responseFor(req, { mask: tamperedBytes }),
-            req
-        )
-    );
-    assert.ok(
-        !isMaskResultResponse(responseFor(req, { maskSource: 'propagated' }))
-    );
-    assert.ok(!isMaskResultResponse({ status: 'maskError' }));
+    assert.ok(!isMaskResultResponse(responseFor(req, { proposalSet })));
+    assert.ok(!isMaskResultResponse({ status: 'maskProposalError' }));
 });

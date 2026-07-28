@@ -124,6 +124,26 @@ _Avoid_: implicit renderer swap
 
 ## Mask Vocabulary
 
+**Prompt Authoring**
+The pre-Stable interaction layer that records explicit model constraints on one exact authoritative RGB. Point, Box, Prompt Brush / Mask Constraint, and capability-gated Text tools revise PromptState; they do not directly change Editing Mask pixels.
+_Avoid_: Paint/Erase, implicit long-press brush
+
+**PromptState**
+An immutable-by-revision, per-View set of positive/negative Point, Box, Mask Constraint, and Text prompts bound to one exact authoritative RGB digest. PromptState has its own digest and history and is neither an Editing Mask nor a Stable Mask.
+_Avoid_: legacy Prompt Log, bitmap edit history
+
+**Prompt Adapter Capabilities**
+The versioned, digest-bound declaration of which positive/negative prompt families and multi-candidate output an installed model adapter supports. The editor never infers these capabilities from a model name; unsupported tools are disabled or rejected explicitly.
+_Avoid_: best-effort ignored prompts, model-name feature detection
+
+**AutoMaskProposalSet**
+A deterministic bounded set of structurally valid model Mask alternatives bound to exact target/context, Camera/RGB, PromptState, model, adapter capability, policy, and attempt identities. A proposal may seed Editing Mask but is never Stable without Confirm Mask. Raw adapter scores retain their declared semantics and are not correctness confidence.
+_Avoid_: Stable Mask, highest-score auto-confirm, ProposalDecision
+
+**Pixel Editing**
+Explicit Paint/Erase mutation of the unpublished Editing Mask. Pixel edits use Mask-local history and never rewrite PromptState or silently rerun proposal ranking.
+_Avoid_: Prompt Brush, model constraint
+
 **MaskAnnotation**  
 A versioned 2D annotation bound to one AI View and the RGB digest from which it was authored/generated. It may originate from SAM, propagation, manual authoring, or a hybrid workflow.  
 _Avoid_: Gaussian Selection, 3D mask

@@ -4,6 +4,10 @@ const test = require('node:test');
 const {
     getAnchorDockPresentation
 } = require('../.test-dist/src/ai-select/anchor-dock-presentation.js');
+const {
+    createEmptyPromptState,
+    revisePromptState
+} = require('../.test-dist/src/ai-select/prompt-state.js');
 
 const binding = {
     targetContextId: 'context-1',
@@ -111,11 +115,28 @@ const maskState = (overrides = {}) => ({
     viewId: 'anchor-view',
     editingMask: null,
     stableMask: null,
-    prompts: [],
+    promptState: createEmptyPromptState(
+        'anchor-view',
+        'sha256:formal'
+    ),
     requestStatus: 'idle',
+    proposalStatus: 'none',
     evidence: { viewId: 'anchor-view', status: 'not-requested' },
     ...overrides
 });
+
+const promptState = (count) =>
+    revisePromptState(
+        createEmptyPromptState('anchor-view', 'sha256:formal'),
+        {
+            points: Array.from({ length: count }, (_, index) => ({
+                promptId: `p-${index + 1}`,
+                polarity: 'include',
+                xPx: index,
+                yPx: index
+            }))
+        }
+    );
 
 test('AI View Dock Mask surface stays none when no Mask exists', () => {
     const result = getAnchorDockPresentation(state(baseAnchor()), maskState());
@@ -132,7 +153,7 @@ test('AI View Dock Mask surface exposes an Editing Mask draft with prompts', () 
         state(baseAnchor()),
         maskState({
             editingMask: { maskId: 'mask-1', status: 'draft' },
-            prompts: [{ promptId: 'p-1' }, { promptId: 'p-2' }]
+            promptState: promptState(2)
         })
     );
     assert.equal(result.mask.status, 'draft');
@@ -160,7 +181,7 @@ test('AI View Dock Mask surface keeps Mask failure distinct from render state', 
         maskState({
             requestStatus: 'failed',
             errorMessage: 'SAM failed.',
-            prompts: [{ promptId: 'p-1' }]
+            promptState: promptState(1)
         })
     );
     assert.equal(result.status, 'ready');
@@ -175,7 +196,7 @@ test('AI View Dock Mask surface shows pending SAM feedback', () => {
         state(baseAnchor()),
         maskState({
             requestStatus: 'pending',
-            prompts: [{ promptId: 'p-1' }],
+            promptState: promptState(1),
             editingMask: { maskId: 'mask-1', status: 'draft' }
         })
     );

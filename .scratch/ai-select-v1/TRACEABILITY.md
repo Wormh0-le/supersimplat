@@ -1,6 +1,6 @@
 # Final Spec v1.1 → Ticket Traceability Matrix
 
-A requirement counts as covered only when the mapped ticket contains an explicit acceptance/failure/validation criterion. A neighboring-subsystem mention does not count. Final Spec v1.0 requirements inherited by v1.1 remain in the matrix; DG-20 and Final Spec v1.1 Amendment 001 additions are included explicitly.
+A requirement counts as covered only when the mapped ticket contains an explicit acceptance/failure/validation criterion. A neighboring-subsystem mention does not count. Final Spec v1.0 requirements inherited by v1.1 remain in the matrix; DG-20, DG-21, and Final Spec v1.1 Amendments 001–002 are included explicitly.
 
 | ID | Requirement | Ticket(s) |
 |---|---|---|
@@ -21,14 +21,14 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R015 | View may be RGB Ready without Mask or Evidence | 04, 06, 11 |
 | R016 | Render, Mask, Evidence, and Lift failures are distinct | 03, 04, 06, 09, 21 |
 | R017 | Stable/Editing Mask isolation | 04, 05, 12 |
-| R018 | Prompt triggers single-frame SAM feedback | 04, 05 |
-| R019 | Brush updates Editing Mask locally | 04, 05 |
-| R020 | Clear Mask and Restore Auto are distinct | 05 |
-| R021 | Fully manual Mask is legal | 05, 11 |
-| R022 | Mask-local Undo/Redo routes by focus | 05 |
-| R023 | Anchor hard validation blocks Confirm | 05 |
-| R024 | Anchor soft warning is user-overridable | 05 |
-| R025 | Confirm Anchor atomically binds coherent Camera/RGB/Mask/policy/dependency identity | 05 |
+| R018 | Prompt changes request model feedback without an extra hidden apply step | 04, 05, 04A |
+| R019 | Direct Paint/Erase updates Editing Mask locally | 04, 05, 04A |
+| R020 | Clear Mask and Restore Auto are distinct | 05, 04A, 07A |
+| R021 | Fully manual Mask is legal | 05, 11, 07A |
+| R022 | Mask-local Undo/Redo routes by focus | 05, 04A |
+| R023 | Anchor hard validation blocks Confirm | 05, 07A |
+| R024 | Anchor soft warning is user-overridable | 05, 07A |
+| R025 | Confirm Anchor atomically binds coherent Camera/RGB/Mask/policy/dependency identity | 05, 07A |
 | R026 | Confirm Anchor starts adaptive multi-view/initial auto-complete | 06, 08 |
 | R027 | Generated View publishes progressively at RGB Ready | 06 |
 | R028 | Initial Generated View automatic Mask production exists | 06 |
@@ -49,18 +49,18 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R043 | User-added View: Adjust New View via Camera Inspection | 11 |
 | R044 | User-added View may have No Mask and supports Auto/Manual/Exclude | 11 |
 | R045 | View source does not determine trust | 07, 11 |
-| R046 | Mask Quality/Assessment and Participation are separate | 07 |
+| R046 | Mask Quality/Assessment and Participation are separate | 07, 07A |
 | R047 | Auto Good defaults Included | 07 |
 | R048 | Auto Review defaults Excluded and does not secretly Lift | 07 |
 | R049 | Review need not globally block Lift | 13 |
 | R050 | ViewAssessmentPolicy is backend-owned and evidence-backed | 07, 10 |
 | R051 | P0 Review reasons implemented | 07 |
 | R052 | P1 cross-view/visible-support reasons implemented | 10 |
-| R053 | No unified uncalibrated Confidence percentage | 07, 10 |
-| R054 | User Confirmed authority cannot be overridden by assessor | 07, 10 |
+| R053 | No unified uncalibrated Confidence percentage | 07, 10, 07A |
+| R054 | User Confirmed authority cannot be overridden by assessor | 07, 10, 07A |
 | R055 | Review reason maps to localized recommended action | 07, 10 |
 | R056 | Explicit propagation/Evidence/Lift dirty and Suspended model | 12, 18 |
-| R057 | Editing Mask not Confirmed does not dirty/stale formal artifacts | 12, 15 |
+| R057 | Editing Mask not Confirmed does not dirty/stale formal artifacts | 12, 15, 04A, 07A |
 | R058 | Anchor/reference Stable change dirties propagation, Anchor Evidence, and Lift | 12 |
 | R059 | Normal View Stable/Participation changes dirty Evidence/Lift as specified | 12 |
 | R060 | Repropagate is explicit | 12 |
@@ -95,20 +95,20 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R089 | No cross-dependency partial artifact repair | 18 |
 | R090 | Companion Offline leaves native SuperSplat functional | 02, 21 |
 | R091 | Preview failure preserves last valid preview as stale/not-current + retry | 03, 21 |
-| R092 | Mask failure preserves View and offers retry/manual/exclude | 06, 07, 11, 21 |
+| R092 | Mask failure preserves View and offers retry/manual/exclude | 06, 07, 11, 21, 07A |
 | R093 | View Render Failure offers retry/replacement/exclude | 06, 08, 11, 21 |
 | R094 | Evidence/Lift failure preserves stable inputs and previous Candidate | 14, 15, 20, 21 |
-| R095 | Cancellation/OOM cannot publish partial Ready artifacts | 20, 21 |
+| R095 | Cancellation/OOM cannot publish partial Ready artifacts | 20, 21, 04A |
 | R096 | Large SceneSnapshot/tensor/RGB data path is production-validated | 19 |
 | R097 | Production Direct Evidence path is GPU-validated | 20, 21 |
-| R098 | Mask/Evidence/thumbnail lifecycle is bounded | 20 |
+| R098 | Mask/Evidence/thumbnail lifecycle is bounded | 20, 04A |
 | R099 | Planner/assessment/readiness/Evidence policies are benchmark-calibrated | 21 |
 | R100 | Legacy product path contracts only after v1.1 replacement validation | 22 |
 | R101 | RGB Ready does not require Contributor, Stable Mask, Evidence, or Candidate | 03, 04, 06, 11 |
 | R102 | Explicit Retry creates a real new attempt for the same CameraBinding | 03, 21 |
 | R103 | Same attempt may replay idempotently; CameraBinding is not jittered to bypass cache | 03, 21 |
 | R104 | Successful RGB cannot be converted into View Failure by Evidence/reference Contributor failure | 03, 04, 06, 20, 21 |
-| R105 | Stable Mask publication invalidates exact dependent per-view Evidence | 04, 12, 15 |
+| R105 | Stable Mask publication invalidates exact dependent per-view Evidence | 04, 12, 15, 07A |
 | R106 | Formal Evidence channels are per-view per-Gaussian P/N/V using alpha×incoming-T | 14, 20 |
 | R107 | Mask policy includes strong positive, boundary/ignore, local negative, and far neutral regions | 14 |
 | R108 | Soft weights and explicit ignore are allowed; positive/negative need not sum to one | 14 |
@@ -131,7 +131,24 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R125 | Reference Contributor failure does not block RGB or successful Direct Evidence | 03, 14, 20, 21, 22 |
 | R126 | RGB/Evidence artifacts explicitly bind rasterImplementationId, evidenceBackend identity, and runtimeBuildId | 14, 16, 19, 20, 21 |
 | R127 | RGB-only and later RGB+Evidence use the same compatible raster implementation; incompatible migration invalidates reuse and requires explicit rerender/review | 19, 20, 21 |
+| R128 | PromptState is versioned, exact-RGB-bound, and cannot mutate Stable Mask directly | 04A, 07A |
+| R129 | Prompt/Edit tools and pointer semantics are explicit; Box/Prompt Brush/Paint cannot be conflated | 04A |
+| R130 | Prompt support is declared by capability, including positive/negative support per prompt family | 04A |
+| R131 | Unsupported Point/Box/mask/Text prompt types are disabled or rejected, never silently ignored | 04A |
+| R132 | Stage 1 preserves a deterministic bounded proposal set and raw score semantics | 04A, 07A |
+| R133 | Proposal selection cannot collapse solely to the highest raw model score | 07A |
+| R134 | Stage 2 ranking is 2D-first and compares prompt consistency, candidate hierarchy, and structural quality | 07A |
+| R135 | Low-cost Gaussian support is optional bounded sanity/tie-break data, not ownership Evidence or primary selector | 07A |
+| R136 | Ambiguity is a first-class pre-Stable state that preserves alternatives and corrective actions | 07A |
+| R137 | ProposalDecision is distinct from post-Stable ViewAssessmentPolicy and Participation | 07, 07A |
+| R138 | Only Confirm Mask publishes Stable Mask; Prompt/proposal/unconfirmed edits do not dirty formal Evidence/Candidate | 04A, 07A, 12 |
+| R139 | Proposal failed, unavailable, ambiguous, and artifact-invalid states are distinct and preserve RGB/Prompt/prior Stable state | 07A, 21 |
+| R140 | Ticket 07A closure requires locked real-model quality validation and cannot rely only on fake predictor tests | 07A |
+| R141 | The mandatory Three-Stage pipeline applies to Anchor; Generated View automatic publication remains unchanged unless explicitly revised | 04A, 07A |
+| R142 | Adaptive planning follows 07A and rejects implausible indoor/outside-room camera poses before information-gain ranking | 08 |
 
 ## Reverse mapping result
 
-Every active ticket maps back to at least one Final Spec v1.1, Final Spec v1.1 Amendment 001, inherited v1.0, ADR 0013, migration, or hardening requirement. No orphan ticket remains. Tickets 14 and 20 are intentionally separate: Ticket 14 proves the Evidence model through a reference path; Ticket 20 owns the locked same-decision production implementation.
+Every active ticket, including retrofit Tickets 04A and 07A, maps back to Final Spec v1.1, Amendments 001–002, DG-20/DG-21, inherited v1.0, migration, or hardening requirements. No orphan ticket remains.
+
+Ticket 04A owns Prompt/proposal infrastructure but cannot claim the Three-Stage Anchor Mask Pipeline complete. Ticket 07A owns completion and locked-runtime quality validation. Ticket 08 owns Generated View camera validity/adaptive planning. Tickets 14 and 20 remain intentionally separate: Ticket 14 proves the Evidence model through a reference path; Ticket 20 owns locked same-decision production implementation.

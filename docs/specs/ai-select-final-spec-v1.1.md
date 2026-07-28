@@ -148,6 +148,8 @@ Set / Add / Remove / Intersect
 Native SuperSplat Selection
 ```
 
+范围说明：Three-Stage Pipeline 对 Anchor Mask 强制；Generated View automatic Stable Mask + ViewAssessment 契约保持不变；Prompt/Edit 工具可复用于其他 AI View 修正。
+
 其中：
 
 ```text
@@ -620,7 +622,9 @@ Review 不得以隐藏低权重偷偷参与 Lift。
 
 对于 View `v`、Pixel `p`、Gaussian `g`：
 
+$$
 w_{v,p,g}=\alpha_{v,p,g}T_{v,p,g}
+$$
 
 其中：
 
@@ -630,11 +634,17 @@ w_{v,p,g}=\alpha_{v,p,g}T_{v,p,g}
 
 定义：
 
+$$
 P_{v,g}=\sum_p m^+_{v,p}w_{v,p,g}
+$$
 
+$$
 N_{v,g}=\sum_p m^-_{v,p}w_{v,p,g}
+$$
 
+$$
 V_{v,g}=\sum_p m^V_{v,p}w_{v,p,g}
+$$
 
 语义：
 
@@ -712,7 +722,9 @@ visibleWeight  = 0
 
 正、负、可见权重可以是连续值，彼此独立，不要求：
 
+$$
 m^+ + m^- = 1
+$$
 
 必须允许显式 ignore 区域。
 
@@ -929,13 +941,17 @@ Reference Contributor 失败不得让已成功 RGB 变为 View Render Failed。
 
 基础聚合：
 
+$$
 P_g=\sum_vP_{v,g},\quad
 N_g=\sum_vN_{v,g},\quad
 V_g=\sum_vV_{v,g}
+$$
 
 可以按 View 计算 ownership：
 
+$$
 q_{v,g}=\frac{P_{v,g}}{P_{v,g}+N_{v,g}+\epsilon}
+$$
 
 并结合：
 

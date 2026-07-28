@@ -1,6 +1,6 @@
 # AI Select v1 — Implementation Ticket Graph v2.3
 
-Status: **ready-for-agent after Amendment 002 graph and bidirectional traceability audit**
+Status: **ready-for-agent — Ticket 04A implemented; Ticket 07A is the next completion gate**
 
 Authoritative source order:
 
@@ -26,10 +26,11 @@ v2.3 supersedes the v2.2 local ticket graph. It retains the 22 numbered tickets 
 
 - Ticket 04A separates Prompt Authoring from direct Pixel Editing and introduces versioned PromptState, explicit adapter capabilities, and bounded multi-candidate proposal artifacts.
 - Ticket 04A depends on existing Ticket 05 Mask editor/Undo/Confirm seams; it is not incorrectly placed before Ticket 05.
-- Ticket 07A is the completion owner for 2D-first proposal ranking, Ambiguous/Unavailable states, proposal acceptance, Editing/Confirm integration, and locked real-model quality validation.
-- ProposalDecision remains pre-Stable and distinct from Ticket 07 ViewAssessmentPolicy.
+- Ticket 04A is implemented. Its browser validation found interaction-hardening work that is now an explicit Phase 0 entry gate in Ticket 07A: atomic Paint/Erase strokes, stroke-level Undo/Redo, persistent prompt markers, active cursors, and visible proposal state.
+- Ticket 07A is the completion owner for interaction hardening, 2D-first proposal ranking, Ambiguous/Unavailable states, proposal acceptance, Editing/Confirm integration, compact Proposal UX, and locked real-model quality validation.
+- `ProposalDecision` remains pre-Stable and distinct from Ticket 07 `ViewAssessmentPolicy`.
 - The mandatory Three-Stage pipeline applies to the Anchor; Generated View automatic Stable Mask publication remains unchanged unless explicitly revised later.
-- Ticket 08 now depends on Ticket 07A and owns candidate-camera validity as well as information gain, including indoor/outside-room rejection.
+- Ticket 08 depends on Ticket 07A and owns candidate-camera validity as well as information gain, including indoor/outside-room rejection.
 - Camera Inspection and AIView RGB Ready remain independent from complete Contributor and formal Evidence.
 - Ticket 14 owns reference P/N/V semantics; Ticket 20 owns production same-decision Direct Evidence.
 - Complete Contributor remains an explicit debug/reference backend only.
@@ -57,7 +58,7 @@ v2.3 supersedes the v2.2 local ticket graph. It retains the 22 numbered tickets 
  │                      07 Local Assessment + Participation
  └──────────────┬────────┘
                 ▼
-07A Three-Stage Anchor Mask Ranking / Ambiguity / Acceptance
+07A Interaction hardening + Three-Stage Anchor Ranking / Ambiguity / Acceptance
                 │
                 ▼
 08 Adaptive Planner + valid indoor observation poses
@@ -100,7 +101,7 @@ v2.3 supersedes the v2.2 local ticket graph. It retains the 22 numbered tickets 
 22 Contract legacy product and Contributor paths
 ```
 
-Ticket 04A and the existing Ticket 06→07 path can proceed after Ticket 05 and converge at Ticket 07A. Ticket 08 cannot start until 07A completes. Tickets 10 and 13 remain parallel consumers of Ticket 14.
+Ticket 04A and the existing Ticket 06→07 path converge at Ticket 07A. Ticket 08 cannot start until 07A completes. Tickets 10 and 13 remain parallel consumers of Ticket 14.
 
 Structural graph root: **Ticket 01**. Ticket status remains recorded in each ticket; graph audit validates scope/dependency correctness rather than inferring implementation completion.
 
@@ -117,7 +118,8 @@ Structural graph root: **Ticket 01**. Ticket status remains recorded in each tic
 
 ## Implementation rules
 
-- Ticket 04A is a foundation ticket, not the final quality gate.
+- Ticket 04A is an implemented foundation ticket, not the final quality gate.
+- Ticket 07A begins with Phase 0 interaction hardening; ranking must not be considered complete while Paint/Erase remains stamp-based or Prompt feedback remains ambiguous.
 - Ticket 07A is the only ticket permitted to claim the Three-Stage Anchor Mask Pipeline complete.
 - Ticket 08 owns Generated View camera validity/adaptive planning, not Anchor proposal ranking.
 - Ticket 14 is a reference correctness/quality gate, not production GPU completion.

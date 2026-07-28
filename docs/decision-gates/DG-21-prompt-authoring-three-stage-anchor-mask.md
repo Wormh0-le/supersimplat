@@ -9,7 +9,7 @@
 
 ## Decision question
 
-How should AI Select turn user intent on an authoritative Anchor RGB into a Stable Anchor Mask when one point may correspond to several valid SAM proposals, the current point-only adapter may return an oversized mask or `anchorMaskUnavailable`, and direct pixel editing currently conflicts with Box-drag interaction?
+How should AI Select turn user intent on an authoritative Anchor RGB into a Stable Anchor Mask when one point can correspond to several plausible SAM proposals, the current point-only path may return an oversized Mask or overloaded `anchorMaskUnavailable`, and direct pixel editing conflicts with Box-drag interaction?
 
 ## Context
 
@@ -23,9 +23,9 @@ Evidence
 Candidate
 ```
 
-It also provides positive/negative point prompts, direct Brush Add/Erase, atomic Stable Mask confirmation, and Anchor support validation.
+It provides positive/negative point prompts, direct Brush Add/Erase, atomic Stable Mask confirmation, and Anchor support validation.
 
-However, the current interaction and model contract collapse several distinct concerns:
+The remaining weakness is the pre-Stable decision path:
 
 ```text
 click
@@ -34,20 +34,20 @@ click
 → Editing Mask
 ```
 
-Problems observed in real scenes include:
+Observed problems:
 
-- a point on a table top yields a mask covering neighbouring chairs;
-- several plausible nested masks exist but only one is returned to the UI;
-- raw model score is used as the main ordering signal;
-- all candidates may be rejected and surfaced as the overloaded `anchorMaskUnavailable`;
-- image drag is already bound to pixel Brush, so Box prompt authoring has no clean gesture;
-- prompt constraints and direct bitmap edits are not separate user modes.
+- a point on a table top may include neighbouring chairs;
+- nested part/object/group proposals are collapsed before the user can inspect them;
+- raw model score is the main ordering signal;
+- several distinct causes are reported as `anchorMaskUnavailable`;
+- drag is already bound to pixel Brush, leaving no unambiguous Box gesture;
+- Prompt constraints and direct bitmap corrections share one interaction mode.
 
-Ticket 07 ViewAssessmentPolicy begins only after a Stable Mask exists. It cannot decide which pre-Stable model proposal should seed the Editing Mask.
+Ticket 07 ViewAssessmentPolicy starts after Stable Mask publication and cannot choose the pre-Stable proposal.
 
 ## Decision
 
-Adopt a Three-Stage Anchor Mask Pipeline:
+Adopt:
 
 ```text
 Prompt Authoring
@@ -61,75 +61,76 @@ Stage 3 — Candidate Acceptance / Editing / Confirm
 Stable Anchor Mask
 ```
 
-### Ticket ownership
+Ownership:
 
 ```text
 Ticket 04A
-= Prompt Authoring + generic multi-prompt protocol + bounded proposal set
+= PromptState + explicit Prompt/Edit tools
+  + adapter capability contract + bounded proposal set
 
 Ticket 07A
-= Stage 2 ranking + ambiguity UX + Stage 3 integration
-  + end-to-end production validation
+= 2D-first ranking + ambiguity UX
+  + acceptance/editing integration
+  + locked-runtime quality validation
 ```
 
-Ticket 07A is the completion owner for the full pipeline.
+Ticket 07A is the completion owner.
 
-## Decision 1 — Prompt Authoring and pixel editing are separate modes
+## Decision 1 — Anchor scope and reusable tooling
+
+The mandatory Three-Stage pipeline applies to the Anchor Mask.
+
+PromptState and the Prompt/Edit toolbar should be reusable for Generated and User-added View correction, but DG-21 does not silently replace the current Generated View automatic Stable Mask + ViewAssessment publication contract.
+
+## Decision 2 — Prompt Authoring and Pixel Editing are separate
 
 Prompt Authoring expresses model constraints:
 
 ```text
-Positive Point
-Negative Point
-Box
+Positive/Negative Point
+Positive/Negative Box when supported
 Positive/Negative Mask Constraint
-Text Prompt when capability exists
+Positive/Negative Text when supported
 ```
 
-Pixel Editing directly changes the current Editing Mask:
+Pixel Editing directly changes Editing Mask:
 
 ```text
 Paint
 Erase
 ```
 
-The two modes have separate state and histories.
+The two modes have separate state and histories. Pointer behavior is explicit: Box drag only in Box mode, prompt stroke only in Prompt Brush mode, pixel edit only in Paint/Erase mode.
 
-No pointer gesture has hidden semantics. Drag means Box only in Box mode, prompt stroke only in Prompt Brush mode, and bitmap edit only in Paint/Erase mode.
+## Decision 3 — Capabilities are explicit
 
-## Decision 2 — Model capabilities are explicit
+Prompt support is declared by a versioned adapter capability contract, not inferred from model name.
 
-Prompt support is determined by a versioned adapter capability contract, not by the model name or UI assumption.
+Positive and negative support is explicit per prompt family. Unsupported tools are disabled/rejected and never silently ignored.
 
-The current point-only SAM 3.1 adapter remains valid. Box, mask input, negative mask constraints, text, and multi-candidate support are enabled only when the selected adapter advertises and implements them.
+The current point-only adapter remains a valid compatibility backend. A one-candidate result is a legal proposal set, but it cannot by itself satisfy Ticket 07A's production multi-candidate quality gate unless a separate versioned proposal generator supplies meaningful alternatives.
 
-The UI must not accept unsupported prompts and silently ignore them.
+## Decision 4 — Preserve proposals before selection
 
-## Decision 3 — Preserve proposals before selection
-
-A model response may contain multiple plausible masks. The Companion preserves a bounded, identity-bound proposal set.
-
-Every proposal binds:
+The Companion preserves a deterministic bounded proposal set. Every proposal binds:
 
 ```text
-Target / context dependency
+Target/context dependency
 View and RGB digest
 PromptState digest
 model manifest
 adapter capability identity
 proposal policy
 attempt identity
-mask artifact digest
-raw model score and score semantics where available
+Mask artifact digest
+raw model score and declared semantics
 ```
 
-No proposal becomes Stable automatically.
+No proposal becomes Stable automatically on the Anchor path.
 
-## Decision 4 — Ranking is 2D-first
+## Decision 5 — Ranking is 2D-first
 
-Anchor Mask authoring is primarily an interactive 2D segmentation problem.
-
-Stage 2 must prioritize:
+Stage 2 prioritizes:
 
 1. hard prompt consistency;
 2. relative candidate geometry and nesting;
@@ -137,54 +138,45 @@ Stage 2 must prioritize:
 4. model-declared score;
 5. optional low-cost Gaussian support sanity.
 
-The system may use low-cost Gaussian support to detect gross incompatibility or as a bounded tie-breaker. It may not use support-probe center projection as the sole selector, formal ownership evidence, or a replacement for P/N/V.
+Low-cost Gaussian support may detect gross incompatibility or break a tie between otherwise comparable 2D candidates. It cannot be the primary selector, formal ownership Evidence, or a replacement for P/N/V.
 
-This decision avoids making Anchor Mask quality depend on an approximate 3D attribution path while still allowing scene information to catch obvious failures.
+This preserves the Anchor problem as interactive 2D segmentation while allowing bounded scene-aware sanity checks.
 
-## Decision 5 — Ambiguity is a first-class product state
+## Decision 6 — Ambiguity is a first-class state
 
-When several materially different candidates remain plausible and no calibrated margin separates them:
+When materially different candidates remain plausible without a calibrated stable margin:
 
 ```text
 ProposalDecision = ambiguous
 ```
 
-The system must:
+The system preserves alternatives and allows:
 
-- preserve alternatives;
-- show an actionable reason;
-- allow candidate selection;
-- allow additional point/box/mask/text prompts;
-- allow manual Paint/Erase recovery.
+- candidate choice;
+- Point/Box/mask/Text refinement where supported;
+- manual Paint/Erase recovery.
 
-It must not silently choose an oversized mask or convert ambiguity into a technical failure.
+It must not silently choose an oversized Mask or report ambiguity as a technical failure.
 
-## Decision 6 — Proposal decision and View Assessment are different
+## Decision 7 — ProposalDecision and ViewAssessment are distinct
 
 ```text
 ProposalDecision
-= which proposal should seed Editing Mask?
+= which pre-Stable proposal seeds Editing Mask?
 
 ViewAssessmentPolicy
 = is the confirmed Stable Mask suitable for participation?
 ```
 
-They remain separate state machines and must not be merged into a single confidence number.
+They remain separate and do not form one confidence value. Ticket 07 continues to own Good / Review / Failed and Participation after Stable publication.
 
-Ticket 07 continues to own Good / Review / Failed and Participation defaults after Stable Mask publication.
-
-## Decision 7 — Stable Mask authority is unchanged
-
-The existing lifecycle remains normative:
+## Decision 8 — Stable Mask authority is unchanged
 
 ```text
 Prompt / Proposal changes
-→ no Stable Mask mutation
+→ Stable Mask unchanged
 
-Accepted proposal
-→ Editing Mask only
-
-Paint / Erase
+Accepted proposal / Paint / Erase
 → Editing Mask only
 
 Confirm Mask
@@ -192,11 +184,9 @@ Confirm Mask
 → exact dependent Evidence/Candidate invalidation
 ```
 
-A prior Stable Mask remains current until a replacement Confirm succeeds.
+A prior Stable Mask remains authoritative until replacement Confirm succeeds.
 
-## Decision 8 — Error taxonomy is refined
-
-Replace overloaded product use of `anchorMaskUnavailable` with distinct states:
+## Decision 9 — Error taxonomy is refined
 
 ```text
 maskProposalFailed
@@ -205,81 +195,75 @@ maskProposalAmbiguous
 maskArtifactInvalid
 ```
 
-Legacy transport codes may be mapped during migration, but the browser/domain state must preserve the difference.
+Legacy transport codes may be mapped during migration, but browser/domain state preserves the distinction.
 
-## Decision 9 — Text Prompt is capability-gated
+## Decision 10 — Text is capability-gated
 
-Text/concept prompting is a planned prompt type, not a mandatory Phase A backend requirement.
+Text/concept prompting is planned, not mandatory in Phase A. It becomes usable only when a locked versioned adapter advertises support and passes runtime validation.
 
-The data model and toolbar may reserve it. It becomes usable only when a locked, versioned adapter advertises support and passes model/runtime validation.
+No external detector or semantic object database is required.
 
-No external detector or semantic object database is required by this decision.
+## Decision 11 — Ticket 08 follows 07A
 
-## Decision 10 — Ticket 08 follows the completed Anchor pipeline
+Adaptive Generated View planning should consume a confirmed Anchor from the completed Three-Stage pipeline. Ticket 08 therefore depends on Ticket 07A.
 
-Adaptive Generated View planning should consume a confirmed Anchor from the completed Three-Stage pipeline.
-
-Ticket 08 therefore depends on Ticket 07A. This does not make proposal ranking part of the planner; it prevents planner evaluation from being dominated by a known weak point-only Anchor input.
+This does not make ranking part of the planner; it prevents planner quality evaluation from being dominated by the known point-only Anchor weakness.
 
 ## Rejected alternatives
 
-### A. Keep point-only inference and tune thresholds
+### Tune point-only thresholds
 
-Rejected because threshold tuning does not resolve nested part/object/group ambiguity and can increase `anchorMaskUnavailable`.
+Rejected because threshold tuning cannot resolve nested part/object/group ambiguity and may increase unavailable results.
 
-### B. Select the highest raw model score
+### Select the highest raw model score
 
 Rejected because the score is adapter-local and not established as calibrated user-intent correctness.
 
-### C. Always select the smallest point-containing mask
+### Always select smallest or largest point-containing Mask
 
-Rejected because users may intend a whole object, and thin/fragmented parts make smallest-mask bias unstable.
+Rejected because either bias fails for part-versus-whole intent and neighbouring-object leakage.
 
-### D. Always select the largest point-containing mask
+### Make Gaussian support the primary selector
 
-Rejected because it causes neighbouring-object leakage.
+Rejected because the current support probe is a computability diagnostic, not same-decision ownership Evidence.
 
-### E. Make Gaussian support the primary selector
+### Require a semantic detector first
 
-Rejected because the current support probe is an approximate computability diagnostic, not same-decision ownership Evidence.
+Rejected for v1 because arbitrary parts and unknown objects do not require category semantics. Text/concept adapters remain optional.
 
-### F. Run a semantic detector first as a mandatory dependency
+### Treat Paint strokes as prompts automatically
 
-Rejected for v1 because category semantics are not necessary for arbitrary parts and unknown objects. Text/concept adapters remain optional extensions.
-
-### G. Treat direct Brush edits as model prompts automatically
-
-Rejected because it destroys the distinction between prompt constraints and explicit user-authored pixel corrections.
+Rejected because it destroys the distinction between model constraints and explicit pixel correction.
 
 ## Consequences
 
 ### Positive
 
-- richer user intent with fewer accidental masks;
+- richer intent with fewer accidental masks;
 - Box and negative prompts become first-class;
-- multiple SAM proposals are not discarded prematurely;
-- ambiguity becomes recoverable rather than a false success/failure;
-- existing Stable Mask and Evidence lifecycles remain intact;
-- text/concept support can be added without another product rewrite;
+- multiple proposals are not discarded prematurely;
+- ambiguity is recoverable;
+- existing Stable/Evidence lifecycle remains intact;
+- future text/concept support does not require a product rewrite;
 - Ticket 08 receives a more reliable Anchor.
 
 ### Costs
 
-- new prompt and candidate domain state;
-- a generic adapter protocol beyond points;
-- proposal-ranking policy and benchmark dataset;
-- a candidate-choice UI;
-- additional runtime latency/VRAM for multiple proposals;
-- affected Ticket 05/07 tests must be rerun.
+- new prompt/proposal domain state;
+- generic adapter protocol;
+- ranking policy and real-scene benchmark;
+- candidate-choice UI;
+- additional inference latency/VRAM;
+- affected Ticket 05/07 regressions must be rerun.
 
 ### Risks and controls
 
-- ranking overfit → frozen real-scene benchmark and versioned policy;
-- too many alternatives → bounded material-distinct proposal set;
-- support-probe misuse → explicit 2D-first and no-ownership constraints;
-- text capability drift → explicit capability and runtime identity;
-- stale UI results → exact Prompt/RGB/attempt binding;
-- confusing toolbar → explicit Prompt/Edit mode separation.
+- ranking overfit → frozen benchmark + versioned policy;
+- too many alternatives → bounded material-distinct set;
+- support-probe misuse → 2D-first/no-ownership constraints;
+- capability drift → capability digest + runtime identity;
+- stale UI → exact Prompt/RGB/attempt binding;
+- confusing interaction → explicit Prompt/Edit tools.
 
 ## Non-goals
 
@@ -288,13 +272,16 @@ DG-21 does not:
 - change the AI Select tool model;
 - change Stable Mask confirmation semantics;
 - require semantic labels;
-- implement adaptive Generated View planning;
+- implement Adaptive Generated View planning;
+- change Generated View automatic Mask publication;
 - implement formal P/N/V Evidence;
 - make Candidate provenance UI normative;
 - create a second 3D editor;
-- guarantee that every single click produces an unambiguous object.
+- guarantee every single click is unambiguous.
 
 ## Required implementation sequence
+
+Because Tickets 05–07 already exist, the retrofit sequence is:
 
 ```text
 04A Prompt Authoring / Proposal Foundation
@@ -303,3 +290,5 @@ DG-21 does not:
   ↓
 08 Adaptive View Planner
 ```
+
+Ticket 04A consumes existing Ticket 05 editor/Undo/Confirm seams; Ticket 07A integrates existing Ticket 07 assessment semantics.

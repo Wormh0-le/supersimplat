@@ -1,583 +1,316 @@
 # 07A — Complete Three-Stage Anchor Mask Pipeline + Ranking / Ambiguity UX
 
-Status: implemented — Phase 4 browser closure validated 2026-07-29
+Status: reopened — algorithm closure incomplete after 2026-07-29 review; Phase 4 browser layout fixes retained
 
-Blocked by: 04A, 05, 07
+Blocked by: 04A, 04B, 05, 07
 
-Blocks: 08
+Blocks: 07B
 
 ## Final Spec mapping
 
 - Final Spec v1.1 §§10–13, 23, 26, 30–32
 - Final Spec v1.1 Amendment 002 — Prompt Authoring and Three-Stage Anchor Mask Pipeline
 - DG-21 — Prompt Authoring Layer + Three-Stage Anchor Mask Pipeline
-- DG-12 Anchor Validation & Confirm Gate
-- DG-19 Review Reason & Quality Explanation
-- MVP Phase 2/4 Anchor quality hardening
+- Ticket 04B — Visual Prompt Adapter Enablement
+- Ticket 07 — Local ViewAssessmentPolicy + Participation
 
 ## Completion ownership
 
-Ticket 07A is the end-to-end completion owner for:
+Ticket 07A remains the end-to-end completion owner for:
 
 ```text
-Phase 0 — Prompt/Edit interaction hardening inherited from 04A browser validation
 Stage 1 — Prompt-conditioned Proposal Generation integration
 Stage 2 — 2D-first Proposal Ranking / Ambiguity Decision
 Stage 3 — Candidate Acceptance / Editing / Confirm
 ```
 
-Ticket 04A implemented `PromptState`, explicit tools, adapter capability negotiation, the generic proposal protocol, and a bounded `AutoMaskProposalSet` seam. Ticket 07A turns that foundation into a production-quality Anchor Mask workflow and validates all stages together.
+Ticket 04A owns Prompt/proposal infrastructure. Ticket 04B enables real Box and Mask-constraint adapter semantics. Ticket 07B owns the post-07A movable/collapsible floating palette. Ticket 07A alone may claim the Three-Stage Anchor Mask Pipeline complete.
 
-## Context
+## Retained completed work
 
-The current point-only compatibility path can still produce two recurrent failures:
+The following work remains valid and must not regress:
 
-```text
-one click on table top
-→ oversized table + neighbouring chairs mask
+- exact RGB/Prompt/model/adapter/policy/attempt proposal identity;
+- bounded `AutoMaskProposalSet` and explicit `ProposalDecision`;
+- atomic Paint/Erase stroke history;
+- persistent positive/negative prompt markers and active cursors;
+- separate Prompt and Mask histories;
+- explicit Accept Candidate before Editing Mask;
+- Confirm-only Stable Mask publication;
+- stale-result rejection against Prompt and local-edit revisions;
+- distinct proposal/status panel and primary action area;
+- vertically resizable AI Select Dock;
+- fitted image rectangle shared by RGB, Mask, Prompt overlays, box preview, and pointer mapping;
+- neutral non-interactive space outside the fitted image;
+- localized Prompt summary and nonduplicated failure presentation;
+- schema-v2 cross-language ProposalSet digest based on shared binary64 number canonicalization.
 
-otherwise plausible prompt
-→ overloaded proposal-unavailable result
-```
+Ticket 07B may change palette placement behavior but must preserve this fitted-image and lifecycle foundation.
 
-Ticket 07 assesses an already published Stable Mask. It cannot decide which pre-Stable proposal should seed the Editing Mask. `ProposalDecision` therefore remains separate from `ViewAssessmentPolicy`.
+## Reopening findings
 
-Ticket 04A browser validation also exposed interaction problems that must be resolved before Stage 3 can be considered usable:
+The targeted Phase 4 browser closure fixed proposal publication and Dock layout, but algorithm review found that Stage 2 still behaves as a conservative ambiguity heuristic rather than a production-calibrated 2D-first ranking policy.
 
-1. Paint/Erase drag behaves like a sequence of isolated stamps, and Undo operates stamp-by-stamp rather than stroke-by-stroke.
-2. Positive/negative Point prompts have weak on-canvas feedback, so users cannot reliably see the active tool, authored prompts, pending inference, or result state.
-3. Prompt Undo/Redo/Clear are functionally necessary but currently consume excessive primary UI space and are hard to distinguish from Mask Undo/Redo/Clear.
-4. All supported and unsupported tools are presented as text buttons in one dense right-side block, which will not scale once proposal alternatives and ambiguity actions are added.
+Closure blockers:
 
-These are not cosmetic-only issues. Atomic strokes and explicit prompt feedback are required recovery primitives for ambiguous and unavailable proposal states.
-
-## Inputs / preconditions
-
-- Implemented Ticket 04A `PromptState`, adapter capabilities, request/result identity, and bounded `AutoMaskProposalSet`
-- Exact Anchor RGB / CameraBinding / context identity
-- Existing Editing Mask / Stable Mask lifecycle
-- Ticket 05 Anchor validation and support-probe seam
-- Ticket 07 `ViewAssessmentPolicy` and Participation semantics
-- Frozen real-scene Anchor RGB with reviewed reference masks
-- Locked SAM 3.1 or declared replacement adapter/runtime
-
-## Outputs / handoff artifacts
-
-- Atomic stroke editing semantics and browser interaction fixtures
-- Persistent prompt visualization and explicit proposal-state feedback
-- Compact Prompt/Edit toolbar information architecture
-- Versioned `anchor-mask-ranking/v1` policy
-- Per-proposal 2D feature records
-- Optional bounded support-sanity records
-- `ProposalDecision`: selected / ambiguous / unavailable
-- Alternative-proposal chooser and actionable ambiguity UX
-- Accepted proposal → Editing Mask integration
-- Refined proposal failure taxonomy
-- Locked-runtime quality benchmark and thresholds
-- Confirmed Anchor contract safe for Ticket 08
-
-# Phase 0 — Prompt/Edit interaction hardening
-
-Phase 0 is an entry gate for the ranking and acceptance work. It does not change the Prompt/Mask lifecycle established by Tickets 04A and 05.
-
-## 0.1 Atomic Paint/Erase strokes
-
-One pointer gesture MUST be one Mask-history command:
-
-```text
-pointerdown
-→ begin stroke
-
-pointermove / coalesced events
-→ collect samples and interpolate continuously
-
-pointerup
-→ commit one stroke command
-→ push one Mask Undo unit
-```
-
-Required behavior:
-
-- one `pointerdown → pointerup` gesture is one atomic Paint or Erase command;
-- interpolation between samples prevents visible gaps during fast movement;
-- `pointercancel`, tool switch, View switch, Restart, and context disposal cannot publish a partial command;
-- Undo removes one complete stroke;
-- Redo restores one complete stroke;
-- dirty-region patches MAY be used instead of cloning the full Mask per sample;
-- Paint/Erase never mutates `PromptState`;
-- a local committed stroke supersedes a late proposal/ranking result unless the user explicitly accepts that result.
-
-Suggested command shape:
-
-```ts
-interface MaskStrokeCommand {
-    tool: 'paint' | 'erase';
-    radiusPx: number;
-    samples: readonly PixelPoint[];
-    dirtyBounds: PixelRect;
-    beforePatch: BinaryMaskPatch;
-    afterPatch: BinaryMaskPatch;
-}
-```
-
-## 0.2 Persistent prompt feedback
-
-Prompt authoring MUST provide immediate feedback before model inference completes.
-
-Required on-canvas representation:
-
-```text
-Positive Point  → persistent + marker
-Negative Point  → persistent − or × marker
-Positive Box    → solid rectangle
-Negative Box    → dashed rectangle
-Prompt Brush    → polarity-distinct translucent stroke
-```
-
-Color alone is insufficient; polarity must also be represented by shape, icon, or line style.
-
-Required active-tool feedback:
-
-- Point+ and Point− use distinct cursors;
-- Paint/Erase show the effective brush-radius cursor;
-- the selected tool is unambiguous without reading a status paragraph;
-- authored prompt markers remain visible while proposals are pending and after results return.
-
-Required state acknowledgement:
-
-```text
-prompt accepted locally
-→ proposal pending
-→ proposal selected / ambiguous / unavailable / failed
-```
-
-The UI SHOULD expose a compact prompt summary such as:
-
-```text
-+ points 2 · − points 1 · boxes 0 · prompt revision 4
-```
-
-## 0.3 Prompt history versus Mask history
-
-Prompt and Mask histories remain separate domain histories.
-
-Required semantics:
-
-```text
-Prompt Undo / Redo
-→ changes PromptState only
-
-Mask Undo / Redo
-→ changes Editing Mask only
-```
-
-`Clear Prompts` remains necessary but is a secondary/destructive prompt action. It MUST NOT clear Editing Mask, Stable Mask, Evidence, Candidate, or Native Selection.
-
-UI requirements:
-
-- the active history scope is explicit;
-- tooltips or accessible labels distinguish “Undo prompt” from “Undo Mask stroke”;
-- disabled Undo/Redo states reflect the active history only;
-- Clear Prompts is not presented as an equally prominent primary action beside Point/Paint tools;
-- keyboard shortcuts remain deterministic and focus-routed.
-
-## 0.4 Phase 0 acceptance gate
-
-Stage 1–3 implementation may proceed in the same development run, but Ticket 07A cannot close unless:
-
-- one rapid curved Paint/Erase drag produces a continuous stroke;
-- one Undo removes the entire drag;
-- one Redo restores the entire drag;
-- Point+ / Point− markers are persistent and polarity-distinct;
-- pending/result proposal state is visible;
-- Prompt Undo never changes Editing Mask;
-- Mask Undo never changes PromptState;
-- Clear Prompts preserves Stable Mask and downstream artifacts until a later Confirm changes Stable Mask.
+1. A single eligible candidate is selected without structural quality gating, so one oversized table-plus-chairs mask can still silently win.
+2. Multiple materially distinct candidates are generally classified ambiguous without a benchmark-calibrated ranking score or decision margin.
+3. Suggested candidate selection still relies primarily on raw model score.
+4. Unavailable outcomes collapse several distinct causes into a generic prompt conflict.
+5. Candidate truncation occurs before near-duplicate clustering and may discard useful alternatives.
+6. Pure-Python per-pixel feature extraction and pairwise scans are not validated at production image sizes.
+7. Point boundary distance, containment, and neighbour-leak features are coarse heuristics.
+8. Box and Mask Constraint hard consistency cannot be considered complete until Ticket 04B enables and validates their real adapter semantics.
+9. Frozen-scene score/support ablations, stability runs, latency, and peak-VRAM evidence remain incomplete.
 
 # Stage 1 — Proposal Generation integration
 
-Consume Ticket 04A output without collapsing materially distinct alternatives.
+Consume Ticket 04A/04B output without collapsing materially distinct alternatives.
+
+Required flow:
+
+```text
+adapter candidates
+→ structural validation
+→ exact-mask digest deduplication
+→ near-duplicate clustering
+→ materially distinct representative selection
+→ deterministic bounded proposal set
+```
 
 Stage 1 MUST:
 
-- preserve a deterministic bounded candidate set;
-- preserve raw model score and declared semantics;
-- bind every proposal to exact RGB, PromptState, model, adapter, capability, policy, and attempt identities;
-- reject invalid candidates individually without discarding valid alternatives;
-- retain diagnostics explaining why no eligible candidate remained;
-- expose proposal pending/success/failure state independently from RGB and Stable Mask state.
+- preserve raw score name and declared semantics;
+- bind every proposal to RGB, PromptState, model, adapter capability/compiler, proposal policy, ranking policy, and attempt identities;
+- reject invalid candidates individually;
+- retain candidate-level rejection diagnostics;
+- cluster near duplicates before applying the proposal-count bound;
+- record deterministic truncation/cluster policy;
+- publish no partial set on failure or cancellation;
+- preserve same-attempt replay and explicit new-attempt Retry.
 
 Stage 1 MUST NOT:
 
 - publish Stable Mask;
-- select solely because `out_probs` or another raw model score is largest;
-- turn ambiguity into `anchorMaskUnavailable`;
-- require complete Contributor or formal P/N/V.
+- select solely by `out_probs` or another raw model score;
+- turn ambiguity into technical failure;
+- require formal P/N/V Evidence.
 
-A one-element compatibility proposal set is legal for transport regression. Ticket 07A cannot close its production quality gate unless the locked backend can provide materially distinct alternatives, or an explicit versioned proposal-generation layer produces them.
+A one-element proposal set remains legal, but it is not automatically high quality.
 
 # Stage 2 — 2D-first Proposal Ranking
 
-## 2.1 Ranking principle
+## 2.1 Ranking priority
 
-Anchor Mask intent is primarily an interactive 2D segmentation problem. Ranking is therefore 2D-first.
-
-Required feature groups:
+The versioned policy must prioritize:
 
 ```text
-A. Hard prompt consistency
-B. Candidate hierarchy / relative geometry
-C. 2D structural quality
-D. Model-declared score
-E. Optional low-cost Gaussian support sanity
+1. hard prompt consistency
+2. candidate hierarchy and relative geometry
+3. 2D structural quality
+4. declared model score
+5. optional bounded Gaussian support sanity
 ```
 
-No single feature is a correctness probability.
+No field is a calibrated correctness probability unless separately proven.
 
 ## 2.2 Hard prompt consistency
 
-A candidate is ineligible when it violates an active hard constraint, including:
+Candidate eligibility must evaluate every capability-enabled prompt family:
 
-- positive Point outside Mask;
-- negative Point inside Mask;
-- positive Box below required fill/containment policy;
-- negative Box above allowed overlap policy;
-- positive/negative Mask constraint above disagreement threshold;
-- active Text constraint unsupported or unfulfilled under declared adapter semantics;
-- dimensions, RGB, Prompt, adapter, or policy identity mismatch.
+- positive Point inside Mask;
+- negative Point outside Mask;
+- positive Box fill/containment above policy threshold;
+- negative Box overlap below policy threshold;
+- positive Mask Constraint agreement above threshold;
+- negative Mask Constraint disagreement below threshold;
+- supported Text semantics when a future adapter enables Text;
+- exact RGB/Prompt/adapter/policy identity.
 
-Positive and negative support for each prompt family is capability-gated. Hard filters and thresholds MUST be versioned and tested.
+If a capability is advertised but no evaluator exists, fail closed with a structured policy error. Do not silently ignore the prompt.
 
-## 2.3 Candidate hierarchy and relative geometry
-
-Compare candidates to one another, not only against global thresholds.
+## 2.3 Structural features
 
 Record at least:
 
 - area fraction and bounding box;
 - connected-component count;
+- largest-component ratio;
 - component containing each positive Point;
-- containment/nesting graph;
+- soft containment ratio and nesting graph;
 - pairwise IoU and area ratio;
 - boundary-contact fraction;
 - compactness/perimeter proxy;
-- positive-Point distance to boundary;
+- distance-transform-based positive-Point boundary distance;
 - Box fill and spill ratios;
-- prompt-Mask overlap;
-- material-distinctness used to deduplicate alternatives.
+- Mask-constraint overlap/disagreement;
+- near-duplicate cluster identity;
+- materially distinct relation.
 
-For a Point inside nested Masks, the policy must distinguish:
+Exact one-pixel containment is insufficient. Containment thresholds must be benchmark-owned policy data.
+
+## 2.4 Single-candidate quality gate
+
+Exactly one eligible candidate does not imply automatic selection.
+
+A single candidate must enter Review/Ambiguous refinement when structural diagnostics indicate risks such as:
+
+- extreme area fraction;
+- multiple substantial disconnected components;
+- low largest-component ratio;
+- excessive boundary contact;
+- positive Point unnaturally close to candidate boundary;
+- large Box spill;
+- low prompt-constraint agreement;
+- instability across repeated equivalent runs or prompt revisions.
+
+The policy must distinguish:
 
 ```text
-local part
-whole object
-object plus neighbouring objects
+selected — unique and structurally credible
+ambiguous — plausible but suspicious; user refinement/acceptance required
+unavailable — no prompt-consistent editable candidate
 ```
 
-It MUST NOT assume the smallest or largest Point-containing Mask is always correct.
+## 2.5 Multi-candidate ranking and calibrated margin
 
-## 2.4 Model score semantics
+For materially distinct eligible candidates, implement a versioned ranking function or decision tree whose inputs and thresholds are explicit.
 
-The model score is one feature only.
+Automatic Top-1 selection requires:
 
-The policy MUST:
+- no active ambiguity reason;
+- benchmark-calibrated margin over alternatives;
+- stability under declared score/numeric perturbations;
+- no single feature, including model score or optional support, dominating outside policy.
 
-- retain the adapter-declared score name and semantics;
-- avoid exposing it as `Confidence XX%`;
-- avoid treating it as calibrated IoU or user-intent correctness unless separately proven;
-- report score ablations on frozen real scenes.
+When the margin is insufficient, preserve alternatives and return `ambiguous`.
 
-## 2.5 Optional Gaussian support sanity
+## 2.6 Model score semantics
 
-Low-cost Gaussian diagnostics MAY provide:
+The model score:
 
-- proposal computability check;
-- gross support sparsity warning;
-- bounded tie-breaker between otherwise comparable 2D candidates;
-- detection of obviously disconnected projected support.
+- remains declared by adapter semantics;
+- is one ranking feature only;
+- is never shown as a correctness percentage;
+- requires frozen-scene ablation;
+- cannot rescue a prompt-inconsistent or structurally invalid candidate.
 
-They MUST NOT:
+## 2.7 Optional Gaussian support sanity
+
+Low-cost support may provide:
+
+- computability check;
+- gross support-sparsity warning;
+- bounded tie-break between otherwise comparable 2D candidates;
+- projected-support disconnectedness warning.
+
+It MUST NOT:
 
 - become formal P/N/V Evidence;
 - classify Gaussian ownership;
 - be the primary selector;
-- override hard 2D prompt consistency;
+- override prompt consistency;
 - use nearest/top-k/distance attribution as formal semantics;
-- reject all editable candidates merely because center-projection support is weak.
+- destroy all editable candidates solely because center-projection support is weak.
 
-The ranking output MUST record whether optional support participated, its policy identity, and whether removing it changes the decision.
+The decision record must state whether support participated and whether removing it changes the result.
 
-## 2.6 Versioned decision
+## 2.8 Structured unavailable and ambiguity reasons
 
-```ts
-interface ProposalRankingFeatures {
-    promptConsistency: PromptConsistencyFeatures;
-    areaFraction: number;
-    boundingBox: PixelBox;
-    connectedComponentCount: number;
-    positivePointBoundaryDistances: readonly number[];
-    pairwiseRelations: readonly ProposalRelation[];
-    boundaryContactFraction: number;
-    compactness?: number;
-    modelScore?: number;
-    optionalSupportSanity?: {
-        policyId: string;
-        computable: boolean;
-        observedGaussianCount?: number;
-        supportConcentration?: number;
-    };
-}
+Do not collapse all empty outcomes to `prompt-conflict`.
 
-interface ProposalDecision {
-    schemaVersion: number;
-    viewId: string;
-    rgbDigest: string;
-    promptStateDigest: string;
-    proposalSetDigest: string;
-    rankingPolicyVersion: string;
-    status: 'selected' | 'ambiguous' | 'unavailable';
-    selectedProposalId?: string;
-    alternativeProposalIds: readonly string[];
-    reasons: readonly ProposalDecisionReason[];
-}
-```
-
-## 2.7 Automatic selection gate
-
-Auto-select only when:
-
-- exactly one eligible candidate remains; or
-- Top-1 has a benchmark-calibrated decision margin over materially different alternatives;
-- no ambiguity reason is active;
-- the decision is stable under declared numeric/model-score perturbations.
-
-Candidate ambiguity reasons include:
+Required reason families include:
 
 ```text
+no-foreground-candidate
+positive-point-missed
+negative-point-included
+positive-box-underfilled
+negative-box-overlap
+positive-mask-disagreement
+negative-mask-overlap
+all-candidates-full-frame
+all-candidates-structurally-invalid
 nested-part-vs-whole
 similar-score-different-area
 multiple-disconnected-targets
 box-spill
-prompt-conflict
 neighbour-object-leak-risk
 model-score-disagreement
+single-candidate-quality-risk
 insufficient-decision-margin
 ```
 
-Thresholds are policy data, never frontend constants.
+Each reason must carry affected proposal IDs and map to a corrective action.
 
 # Stage 3 — Acceptance / Editing / Confirm
 
-## 3.1 Selected
+## Selected
 
 ```text
-selected AutoMaskProposal
+selected proposal
 → explicit Accept Candidate
-→ seed/replace Editing Mask
+→ Editing Mask
 ```
 
-This remains unconfirmed. The previous Stable Mask remains authoritative until Confirm Mask succeeds.
+Selection never publishes Stable automatically.
 
-## 3.2 Ambiguous
+## Ambiguous
 
-When ambiguous:
+Preserve 2–4 materially distinct alternatives and allow:
 
-- preserve eligible bounded candidates;
-- display 2–4 materially distinct alternatives where available;
-- mark a suggested default without claiming certainty;
-- allow alternative selection, positive/negative Point, Box refinement, prompt constraint, supported Text, Paint/Erase, or prompt reset.
+- explicit alternative selection;
+- Point/Box/Mask prompt refinement according to capability;
+- Paint/Erase manual or hybrid correction;
+- Retry or prompt reset.
 
-An ambiguous proposal MUST NOT publish Stable automatically. Explicit candidate choice resolves proposal ambiguity and seeds Editing Mask.
+A suggested candidate may be shown but must not claim certainty.
 
-## 3.3 Unavailable
+## Unavailable
 
-When no eligible proposal exists:
+Preserve RGB, PromptState, prior Stable Mask, and local Editing Mask. Allow prompt revision, Retry, and manual Empty→Paint. Do not relabel the View as Render Failed.
 
-- preserve RGB and PromptState;
-- expose structured causes;
-- allow prompt revision, Retry, and manual Empty → Paint;
-- do not relabel View as Render Failed.
+## Manual/hybrid editing
 
-Use distinct states:
+Paint/Erase modifies Editing Mask only. Accepted proposal provenance remains recorded. Ranking is not silently rerun and PromptState is not inferred from painted pixels.
 
-```text
-maskProposalFailed       model/runtime/transport failure
-maskProposalUnavailable  no eligible prompt-consistent proposal
-maskProposalAmbiguous    several materially different plausible proposals
-maskArtifactInvalid      invalid proposal artifact
-```
-
-Legacy `anchorMaskUnavailable` may be mapped at transport compatibility boundaries only.
-
-## 3.4 Manual editing
-
-Paint/Erase changes Editing Mask only.
-
-After local editing:
-
-- accepted proposal identity remains available for correctness/debug;
-- source becomes `hybrid` or `manual`;
-- ranking is not silently rerun;
-- PromptState is not inferred or rewritten from pixels;
-- “Use edit as prompt constraint” requires a future explicit action/capability.
-
-## 3.5 Confirm and assessment integration
+## Confirm and Ticket 07 integration
 
 ```text
 Editing Mask
 → Confirm Mask
-→ new Stable Mask revision
+→ Stable Mask revision
 → Ticket 07 ViewAssessmentPolicy
 → Good / Review / Failed
 → Participation default
 ```
 
-Keep the two decisions separate:
+`ProposalDecision` and `ViewAssessmentPolicy` remain distinct.
+
+Confirm Anchor must block pending/unresolved prompt, proposal, ranking, or edit state. A user-confirmed manual/hybrid Mask may proceed after automatic ambiguity/unavailable recovery.
+
+# Performance requirements
+
+The ranking implementation must be validated at production resolutions and bounded proposal count.
+
+Preferred implementation characteristics:
+
+- packed-bit or vectorized area/IoU operations;
+- vectorized connected components/distance transform through an approved dependency or efficient native path;
+- one-pass reusable per-candidate statistics;
+- unordered pair computation reused for both directed relations;
+- no Python `list[bool]` expansion as the production hot path.
+
+Required benchmark cases:
 
 ```text
-ProposalDecision
-= which pre-Stable proposal seeds Editing Mask?
-
-ViewAssessment
-= is the confirmed Stable Mask suitable for participation?
+1280 × 720 × 4 proposals
+1920 × 1080 × 4 proposals
 ```
 
-Confirm Anchor remains governed by Ticket 05 and Amendment 002:
-
-- no latest Prompt/proposal/ranking/edit operation is pending;
-- unresolved ambiguity has been explicitly resolved or bypassed by manual editing;
-- a current Stable Mask exists after Confirm Mask;
-- exact RGB/Mask/Camera identity matches;
-- support computability gate passes;
-- soft warnings remain user-overridable.
-
-A user-confirmed manual/hybrid Mask may proceed even when automatic ranking was ambiguous or unavailable.
-
-# Scope relative to non-Anchor Views
-
-The domain and toolbar may be reused for Generated and User-added View correction. Ticket 07A's mandatory Three-Stage automatic selection and benchmark gate apply to the Anchor path.
-
-This ticket MUST NOT break the current Generated View contract in which an automatic Stable Mask and assessment can publish atomically. Extending proposal alternatives to automatic Generated View publication requires an explicit later policy/ticket or Ticket 12 Repropagate integration.
-
-# UI information architecture
-
-The current dense right-side text-button block is not the target 07A interaction model.
-
-Required structure:
-
-```text
-Image surface
-├─ compact contextual Prompt/Edit toolbar
-├─ persistent prompt and Mask overlays
-└─ active cursor / pending feedback
-
-Proposal / status panel
-├─ current proposal state
-├─ compact Prompt summary
-├─ materially distinct alternatives
-├─ ambiguity/failure reason
-└─ recommended corrective actions
-
-Primary action area
-├─ Retry / Update Proposals
-├─ Accept Candidate
-└─ Confirm Mask
-```
-
-Required toolbar behavior:
-
-- Prompt tools and Edit tools are visually grouped but not mixed;
-- supported primary tools are directly accessible;
-- unsupported capabilities remain discoverable with an explicit reason, but do not occupy the full primary toolbar as a row of disabled text buttons;
-- icon controls MUST provide tooltip and accessible labels;
-- selected tool, active history scope, and destructive actions are visually distinct;
-- Prompt Undo/Redo are contextual secondary controls;
-- Mask Undo/Redo are contextual secondary controls;
-- Clear Prompts and Clear Editing Mask are separate actions with separate effects;
-- brush size is contextual to the active brush tool;
-- proposal alternatives use thumbnails, overlay cycling, or an equivalent bounded chooser;
-- no uncalibrated confidence percentage is shown;
-- Ticket 07 Mask Quality and Participation remain separate rows from `ProposalDecision`.
-
-Visual polish beyond these information-architecture and feedback requirements is not a closure gate. Correct interaction semantics and comprehensibility are closure gates.
-
-# Required proposal states
-
-```text
-No prompts
-Prompt authored
-Generating proposals
-Proposal selected
-Proposal ambiguous
-Proposal unavailable
-Proposal failed
-Editing
-Stable confirmed
-```
-
-# Acceptance criteria
-
-## Phase 0 interaction correctness
-
-- [ ] One Paint/Erase pointer gesture creates one atomic Mask command.
-- [ ] Rapid curved strokes are continuous without visible sampling gaps.
-- [ ] One Mask Undo/Redo removes/restores one complete stroke.
-- [ ] `pointercancel` and lifecycle disposal publish no partial stroke.
-- [ ] Positive/negative Point prompts have persistent polarity-distinct markers.
-- [ ] Point/Paint/Erase active cursors communicate the active operation.
-- [ ] Prompt acknowledgement and proposal pending/result status are visible.
-- [ ] Prompt and Mask histories remain separate and focus-routed.
-- [ ] Clear Prompts preserves Editing Mask, Stable Mask, Evidence, Candidate, and Native Selection.
-
-## Pipeline
-
-- [ ] Stage 1 returns a bounded identity-bound proposal set.
-- [ ] Production validation uses a backend capable of meaningful proposal alternatives or a declared alternative generator.
-- [ ] Stage 2 is versioned, 2D-first, and not model-score-only.
-- [ ] Stage 3 requires explicit proposal acceptance and Stable Mask confirmation.
-- [ ] Pipeline is replayable from RGB + PromptState + model/adapter/policy identities.
-- [ ] Proposal, decision, Editing, and Stable states are distinct.
-
-## Ranking and ambiguity
-
-- [ ] Positive/negative Point, Box, Mask constraints, and supported Text participate according to capability.
-- [ ] Candidate hierarchy and pairwise material-distinctness are computed.
-- [ ] Nested part/whole alternatives can trigger ambiguity.
-- [ ] Neighbour-object leakage can trigger ambiguity rather than silent auto-selection.
-- [ ] Weak optional Gaussian support does not destroy otherwise editable proposals.
-- [ ] Model score remains declared but uncalibrated unless proven.
-- [ ] Auto-selection margins are benchmark-derived and policy-versioned.
-- [ ] Decision stability is tested under repeated model/numeric runs.
-
-## Recovery
-
-- [ ] Ambiguous preserves alternatives and offers selection/refinement/manual editing.
-- [ ] Unavailable preserves RGB and PromptState.
-- [ ] Technical failure is distinct from unavailable/ambiguous.
-- [ ] Existing Stable Mask remains current until replacement Confirm succeeds.
-- [ ] Late proposal/ranking results cannot replace newer Prompt or local edits.
-- [ ] Manual Paint/Erase recovers from every proposal state.
-
-## Ticket 05 / 07 integration
-
-- [ ] Confirm Anchor blocks pending/unresolved Prompt/proposal/ranking/edit state.
-- [ ] Proposal ambiguity and Ticket 07 Review are separate.
-- [ ] User-confirmed authority remains final for Participation defaults.
-- [ ] Stable Mask replacement invalidates only exact dependent Evidence/Candidate state.
-- [ ] Existing Generated View auto-publication and assessment regressions pass.
-
-## UI / comprehensibility
-
-- [ ] The active Prompt/Edit tool is unambiguous on image and toolbar.
-- [ ] Prompt summary and authored prompt overlays match the current PromptState revision.
-- [ ] Unsupported capabilities are discoverable with a reason without dominating the primary toolbar.
-- [ ] Prompt Undo/Redo/Clear and Mask Undo/Redo/Clear have distinct labels and effects.
-- [ ] Suggested candidate, accepted candidate, Editing Mask, and Stable Mask are not visually conflated.
-- [ ] Ambiguity and failure states expose actionable next steps.
+Report latency, peak host memory, and peak VRAM where model inference participates.
 
 # Required real-scene validation
-
-Fake-predictor tests are insufficient for closure.
 
 Frozen authoritative gsplat RGB cases must include:
 
@@ -587,7 +320,7 @@ Frozen authoritative gsplat RGB cases must include:
 - cabinet door versus whole cabinet;
 - monitor versus wall/desk;
 - thin object;
-- object touching image boundary;
+- object touching each image edge;
 - fragmented 3DGS render;
 - small object;
 - no valid proposal;
@@ -600,14 +333,16 @@ first-interaction acceptable-mask rate
 acceptable mask after one refinement
 mean prompt actions
 neighbour-object contamination
-reference-mask IoU where available
+reference IoU where available
 false auto-selection rate
 ambiguous rate
 proposal-unavailable rate
 manual recovery success
-stroke continuity / undo correctness
-latency
-peak VRAM
+decision stability across repeated runs
+ranking latency and host memory
+end-to-end latency and peak VRAM
+model-score ablation
+optional-support ablation
 ```
 
 Mandatory regression:
@@ -617,13 +352,43 @@ one positive click on table top
 → must not silently auto-select table + multiple chairs
 ```
 
-Acceptable outcomes:
+Acceptable outcomes are correct selection, explicit part/whole ambiguity, or prompt refinement request.
 
-- table-top proposal selected;
-- table/part ambiguity shown;
-- prompt refinement requested.
+# Acceptance criteria
 
-An oversized contaminated Mask is not an acceptable silent success.
+## Stage 1
+
+- [ ] Near-duplicate clustering occurs before bounded truncation.
+- [ ] Materially distinct alternatives are retained deterministically.
+- [ ] Candidate-level rejection diagnostics survive to ProposalDecision.
+- [ ] Cross-language schema-v2 digest golden vectors remain valid.
+- [ ] Late/cancelled results cannot publish partial or stale proposals.
+
+## Stage 2
+
+- [ ] Every capability-enabled prompt family participates in hard consistency.
+- [ ] Single-candidate structural quality gate is implemented.
+- [ ] Multi-candidate ranking has explicit versioned policy and calibrated margin.
+- [ ] Model score is not the sole selector and has ablation evidence.
+- [ ] Optional support is bounded and has ablation evidence.
+- [ ] Decision stability is tested under repeated runs/perturbations.
+- [ ] Structured ambiguity/unavailable reasons map to corrective actions.
+- [ ] 720p/1080p performance gates pass.
+
+## Stage 3
+
+- [ ] Accept Candidate is explicit.
+- [ ] Proposal, Editing, Stable, Assessment, and Participation states remain distinct.
+- [ ] Existing Stable/Evidence/Candidate remain current until replacement Confirm.
+- [ ] Manual Paint/Erase recovers from every proposal state.
+- [ ] Generated View automatic publication remains unchanged.
+
+## Ticket 04B integration
+
+- [ ] Positive Box and Positive Mask Constraint real adapter paths pass.
+- [ ] Negative Box/Mask capabilities are truthfully enabled or remain explicitly disabled.
+- [ ] Box/Mask constraint diagnostics reach ranking.
+- [ ] Text remains capability-gated and is not required for closure.
 
 # Validation
 
@@ -632,126 +397,50 @@ An oversized contaminated Mask is not an acceptable silent success.
 - `npm run lint`
 - `npm run lint:locales`
 - `npm run build`
-- Locked SAM 3.1/replacement adapter GPU benchmark
-- Real browser Point+/Point− marker and proposal-state walkthrough
-- Real browser continuous Paint/Erase stroke + one-step Undo/Redo walkthrough
-- Real browser Prompt/Edit history-scope walkthrough
-- Real browser proposal alternative-selection walkthrough
-- Frozen-scene ranking and model-score/support ablations
-- Stale async and Retry stress
+- cross-language proposal digest golden fixtures
+- locked real-model/GPU benchmark
+- frozen-scene ranking benchmark
+- model-score and optional-support ablations
+- 720p/1080p ranking performance benchmark
+- real browser proposal selection/refinement/manual-recovery walkthrough
 - Ticket 05 Confirm and Ticket 07 Assessment integration
 - Generated View automatic publication regression
 
-# Suggested implementation sequence
-
-```text
-Phase 0A  atomic stroke transaction + interpolation + Mask history
-Phase 0B  prompt markers, cursors, summary, pending/result feedback
-Phase 1   preserve/generate materially distinct proposals
-Phase 2A  2D feature extraction and pairwise hierarchy
-Phase 2B  versioned ranking and ambiguity policy
-Phase 3A  proposal chooser and Accept Candidate
-Phase 3B  manual/hybrid Editing and Confirm integration
-Phase 3C  toolbar/status/action information-architecture pass
-Phase 4   frozen-scene benchmark, ablations, locked-runtime validation
-```
-
-Do not defer Phase 0 until after ranking. Stage 3 recovery depends on correct stroke and history semantics.
-
 # Non-goals
 
+- No floating palette drag/collapse/Space-hide work; Ticket 07B owns it.
 - No Adaptive Generated View planner; Ticket 08 owns it.
 - No cross-view proposal ranking.
 - No formal P/N/V Evidence.
 - No semantic object database.
-- No requirement to enable Text in Phase A.
+- No mandatory Text Prompt enablement.
 - No direct 3D Candidate editing.
-- No use of support probe as Gaussian ownership classification.
-- No broad visual redesign of SuperSplat outside the AI View Dock.
-- No requirement for final-production icon artwork or animation polish.
 
-# Dependency update
-
-The v2.3 retrofit graph remains:
+# Dependency graph segment
 
 ```text
-03 + 04 → 05 → 06 → 07
-          │         │
-          └→ 04A ──┘
-                ↓
-               07A
-                ↓
-               08
+04A → 04B ───────────────┐
+                          ▼
+05 → 06 → 07 ─────────── 07A
+                          │
+                          ▼
+                         07B
+                          │
+                          ▼
+                          08
 ```
 
-Ticket 04A depends on the existing Ticket 05 Mask editor/Undo/Confirm seams. Ticket 07A depends on Ticket 04A and completed Ticket 07 assessment semantics. Ticket 08 MUST depend on 07A.
+## Phase 4 retained implementation record — 2026-07-29
 
-## Phase 4 implementation record — 2026-07-29
+The completed Phase 4 pass:
 
-Ticket 07A was reopened after browser validation exposed Dock layout,
-interaction-rectangle, failure-presentation, and proposal-publication defects.
-The closure pass changed the editor UI and the browser/Companion proposal
-identity seam; Ticket 08 was not started.
+- moved the Prompt/Edit toolbar into the fitted image surface;
+- separated scrollable proposal/status information and fixed primary actions;
+- added native vertical Dock resizing;
+- unified RGB/Mask/Prompt/box/pointer mapping on one `ResizeObserver`-driven fitted rectangle;
+- made outside space neutral and non-interactive;
+- localized Prompt summaries and collapsed technical failure details;
+- fixed `maskArtifactInvalid` through schema-v2 shared binary64 numeric canonicalization;
+- validated a real gsplat Anchor and installed SAM 3.1 proposal path.
 
-Implemented:
-
-- moved the Prompt/Edit toolbar into the exact fitted image surface;
-- split proposal/status information into its own scrollable region and kept
-  primary actions in a separate fixed region;
-- added a native pointer/keyboard vertical Dock separator;
-- added a `ResizeObserver`-driven contain rectangle shared exactly by the
-  authoritative RGB, Mask canvas, Prompt overlay, box preview, and pointer
-  mapping;
-- made the space outside that rectangle neutral and non-interactive;
-- localized the compact Prompt summary and reduced failure presentation to
-  one user-facing message plus collapsed technical details;
-- moved the generated-view Gallery into the scrollable information region and
-  isolated toolbar pointer events from image authoring;
-- fixed `maskArtifactInvalid` at its source. Python serialized an exact model
-  score as `1.0`, while the browser parsed and reserialized the same Number as
-  `1`, so the two runtimes computed different proposal-set digests. Proposal
-  identity now canonicalizes every number by its IEEE-754 binary64 value, with
-  a shared cross-language digest vector. `AutoMaskProposalSet` is explicitly
-  schema v2 so recorded v1 artifacts cannot be mistaken for the new identity
-  contract. Companion capabilities advertise
-  `autoMaskProposalSetSchemaV2`, and editor readiness rejects an older
-  Companion before any proposal request.
-
-Real browser closure validation used
-`/home/ubuntu/wormh01e/gaussian/restroom/test_breakroom.ply` (176,594 splats)
-with the locked gsplat renderer and installed SAM 3.1 model:
-
-```text
-Dock height:                 419 px → 503 px by native separator drag
-authoritative fitted rect:   x 148.421875, y 361, 795.140625 × 455
-RGB / Mask / interaction:    exact shared rectangle
-normal positive point:       HTTP 200, schema v2, 1 proposal, selected
-toolbar click isolation:     0 Mask proposal requests
-invalid-artifact injection:  1 localized message; technical details collapsed
-```
-
-Evidence is captured by
-`.scratch/ai-select-v1/browser-validation/07a-browser-loop.mjs`; the successful
-and injected-failure screenshots were inspected in the form consumed by the
-browser.
-
-Validation:
-
-```text
-npm test              315 TypeScript/Node tests + 245 Companion tests passed
-npm run lint          passed
-npm run lint:locales  464 keys synchronized
-npm run build         passed (existing dependency warnings only)
-real browser/GPU      authoritative gsplat Anchor + real SAM proposal passed
-```
-
-This closure did not change Final Spec, ADRs, the runtime lock, ranking policy,
-Evidence/Assessment policy, or calibration. It is production prompt/Mask-path
-work, not a reference Contributor or mocked GPU path. The reference/debug
-Contributor backend and legacy migration code remain intact.
-
-The targeted browser closure above does not manufacture new frozen-scene
-quality metrics, ablations, latency, or peak-VRAM results beyond the real
-breakroom regression. Those broader benchmark requirements remain governed by
-the existing locked-runtime validation records and should not be inferred from
-this targeted closure run alone.
+Those fixes remain accepted. They do not substitute for the reopened algorithm, calibration, performance, and multi-prompt closure requirements above.

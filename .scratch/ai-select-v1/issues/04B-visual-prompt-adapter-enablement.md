@@ -47,11 +47,25 @@ Ticket 04B owns model-adapter enablement only:
 PromptState visual constraints
 → deterministic adapter compilation
 → locked model/runtime request
-→ bounded proposal alternatives
+→ unranked adapter proposal candidates
 → truthful capability advertisement
 ```
 
-Ticket 04B does not own final proposal ranking, ambiguity policy, candidate acceptance, or Stable Mask confirmation. Ticket 07A consumes the enabled capabilities and remains the Three-Stage Pipeline completion owner.
+Ticket 04B does not own proposal ranking, candidate clustering, bounded representative selection, ambiguity policy, candidate acceptance, or Stable Mask confirmation. Ticket 07A consumes the enabled capabilities and remains the Three-Stage Pipeline completion owner.
+
+### Strict ownership boundary
+
+Ticket 04B MUST NOT:
+
+- assign a cross-candidate ranking score or choose Ranking weights;
+- perform exact/near-duplicate clustering for representative selection;
+- define material-distinctness or bounded-set truncation policy beyond validating the existing transport bound;
+- choose a suggested or selected proposal;
+- publish `ProposalDecision`;
+- classify `selected`, `ambiguous`, or `unavailable`;
+- define automatic-selection margins or ambiguity reasons.
+
+04B may validate each adapter-returned candidate independently and attach prompt-family diagnostics. It forwards structurally valid candidates to the existing proposal seam without comparing candidates against one another. Ticket 07A owns every cross-candidate operation.
 
 ## Inputs / preconditions
 
@@ -70,7 +84,7 @@ Ticket 04B does not own final proposal ranking, ambiguity policy, candidate acce
 - Real-model proposal fixtures for Box and Mask Constraint prompts
 - Combined-prompt contract fixtures
 - Browser/Companion end-to-end evidence
-- Ticket 07A ranking-evaluator handoff
+- Per-candidate prompt-family diagnostics for Ticket 07A
 
 # 1. Verify and lock backend semantics
 
@@ -168,17 +182,19 @@ Unsupported combinations must return `unsupportedPromptCombination` or an equiva
 
 # 6. Proposal publication
 
-Visual prompts must feed the same bounded proposal contract established by 04A.
+Visual prompts must feed the same bounded proposal transport contract established by 04A.
 
 Required properties:
 
-- all structurally valid materially useful alternatives remain available to 07A;
-- invalid alternatives are rejected individually;
-- score name and semantics are preserved;
+- adapter-returned structurally valid candidates are forwarded without cross-candidate ranking or clustering;
+- invalid candidates are rejected individually;
+- score name and semantics are preserved without interpreting them as a selection score;
 - proposal identities bind model, adapter capability, compiler policy, RGB, PromptState, and attempt;
 - no proposal becomes Editing or Stable automatically;
 - same-attempt replay remains idempotent;
 - explicit Retry mints a new attempt.
+
+Candidate comparison, near-duplicate clustering, material-distinct representative selection, and deterministic truncation policy belong exclusively to Ticket 07A.
 
 # 7. Capability publication
 
@@ -206,14 +222,14 @@ unless a separate later ticket explicitly enables them.
 
 04B must provide enough structured prompt facts for 07A to evaluate:
 
-- Positive Box fill/containment and spill;
-- Negative Box overlap;
-- Positive Mask agreement;
-- Negative Mask disagreement;
-- prompt-family-specific rejection causes;
+- Positive Box fill/containment and spill inputs;
+- Negative Box overlap inputs;
+- Positive Mask agreement inputs;
+- Negative Mask disagreement inputs;
+- prompt-family-specific candidate rejection causes;
 - capability/compiler identity.
 
-04B does not choose Ranking thresholds or automatic selection margins.
+04B does not choose Ranking thresholds, combine these facts into a score, compare candidates, cluster candidates, select representatives, or define automatic-selection margins.
 
 # Acceptance criteria
 
@@ -239,9 +255,10 @@ unless a separate later ticket explicitly enables them.
 
 ## Proposal handoff
 
-- [ ] Visual prompts produce bounded proposal alternatives through the existing schema.
+- [ ] Visual prompts produce adapter candidates through the existing proposal schema.
 - [ ] Proposal diagnostics retain per-family consistency facts.
 - [ ] Ticket 07A can reject candidates that violate enabled Box/Mask constraints.
+- [ ] 04B performs no cross-candidate ranking, clustering, representative selection, or `ProposalDecision` publication.
 - [ ] A one-element compatibility result does not falsely claim multi-candidate quality closure.
 
 ## Browser validation
@@ -265,11 +282,16 @@ unless a separate later ticket explicitly enables them.
 - Point + Box + Mask combined-prompt walkthrough
 - capability rotation/replay incompatibility test
 - Ticket 07A hard-consistency contract tests
+- ownership regression proving 04B does not rank, cluster, select, or publish `ProposalDecision`
 
 # Non-goals
 
 - No Text Prompt enablement.
-- No final Ranking weights, calibrated margin, or ambiguity policy.
+- No proposal ranking or cross-candidate scoring.
+- No exact/near-duplicate clustering or representative selection.
+- No material-distinctness or bounded-set truncation policy.
+- No suggested/selected candidate or `ProposalDecision` publication.
+- No automatic-selection margin or ambiguity policy.
 - No Generated View planner changes.
 - No formal P/N/V Evidence.
 - No automatic Stable Mask publication on the Anchor path.

@@ -1,20 +1,21 @@
 # 08 — Adaptive progressive View planner + Stop / Generate More / Regenerate Auto Views
 
-Status: ready-for-agent — v2.3 Amendment 002 re-audited
+Status: blocked — waits for reopened 07A and Ticket 07B
 
-Blocked by: 07A
+Blocked by: 07B
 
 ## Final Spec mapping
 
 - Final Spec v1.1 §§23, 27
 - Final Spec v1.1 Amendment 002 — completed Anchor Mask pipeline prerequisite
-- DG-13, DG-20, DG-21
+- DG-13, DG-20, DG-21, DG-22
 - MVP Phase 3
 
 ## Inputs / preconditions
 
 - Confirmed Anchor produced by the completed Three-Stage Anchor Mask Pipeline
 - Resolved Prompt/proposal state and current Stable Anchor Mask
+- No permanent fitted-image Prompt/Edit blind region after Ticket 07B
 - Published AIViews/Masks/assessment
 - Compatible camera/preflight primitives
 - Low-cost target support/visibility diagnostics
@@ -74,7 +75,9 @@ A high theoretical angular gain cannot make an invalid indoor/outside-room camer
 
 ### Anchor-quality dependency
 
+- [ ] Planner starts only after Ticket 07A has completed algorithm/calibration closure.
 - [ ] Planner starts only from a confirmed Anchor with no unresolved ProposalDecision.
+- [ ] Ticket 07B palette behavior no longer blocks editing any fitted-image edge or corner.
 - [ ] Anchor Prompt/proposal changes after confirmation follow the explicit Adjust/Restart/Recompute lifecycle; planner never consumes an unconfirmed proposal.
 - [ ] Ticket 07A proposal diagnostics are not reused as formal planner Evidence.
 
@@ -98,6 +101,7 @@ A high theoretical angular gain cannot make an invalid indoor/outside-room camer
 - Conservative fallback when no free-space/manifold data exists
 - Large-orbit regression captured from the Ticket 06 browser walkthrough (`12.918`-unit orbit, `18.269`-unit candidate separation)
 - Ticket 07A confirmed-Anchor prerequisite regression
+- Ticket 07B edge/corner authoring prerequisite regression
 
 ## Non-goals
 

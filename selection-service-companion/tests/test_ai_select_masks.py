@@ -19,10 +19,30 @@ from selection_service_companion.masking import (
     Sam3PointMaskAdapter,
 )
 from selection_service_companion.server import create_server
-from selection_service_companion.state import CompanionState
+from selection_service_companion.state import (
+    CompanionState,
+    _proposal_identity_digest,
+)
 
 
 EDITOR_ORIGIN = 'https://editor.example'
+
+
+class ProposalIdentityDigestTests(unittest.TestCase):
+    def test_canonicalizes_json_numbers_by_binary64_value(self) -> None:
+        self.assertEqual(
+            _proposal_identity_digest(
+                {
+                    'integer': 1,
+                    'negativeZero': -0.0,
+                    'smallExponent': 1e-7,
+                    'fixed': 1e-5,
+                    'large': 1e20,
+                    'values': [0.1, -2],
+                }
+            ),
+            'sha256:a64229f647814d4cff1565284ed59b3cba0fd8ea7001249fc11f20da65163e58',
+        )
 
 # The fake SAM predictor never decodes the frame; these bytes only need a
 # stable identity so the RGB digest binding can be verified end to end.
@@ -276,6 +296,25 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(add_prompt['frame_index'], 0)
         self.assertEqual(add_prompt['points'], [[1, 0]])
         self.assertEqual(add_prompt['point_labels'], [1])
+
+    def test_proposal_digest_survives_browser_json_number_round_trip(self) -> None:
+        # The locked adapter can publish an exact 1.0 score. The digest binds
+        # its binary64 value instead of a Python- or JavaScript-specific
+        # lexical JSON spelling.
+        self.predictor.probs = [1.0]
+
+        response = self.post_proposals(self.request_body())
+        proposal_set = response['proposalSet']
+        payload = {
+            key: value
+            for key, value in proposal_set.items()
+            if key != 'digest'
+        }
+
+        self.assertEqual(
+            proposal_set['digest'],
+            _proposal_identity_digest(payload),
+        )
 
     def test_rejects_a_request_whose_target_and_dependency_bindings_disagree(self) -> None:
         request = self.request_body()

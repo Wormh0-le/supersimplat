@@ -140,6 +140,78 @@ class EditorUI {
             id: 'ai-select-panel',
             hidden: true
         });
+        const aiSelectResizeHandle = document.createElement('div');
+        aiSelectResizeHandle.id = 'ai-select-panel-resize-handle';
+        aiSelectResizeHandle.setAttribute('role', 'separator');
+        aiSelectResizeHandle.setAttribute('aria-orientation', 'horizontal');
+        aiSelectResizeHandle.setAttribute('aria-valuemin', '280');
+        aiSelectResizeHandle.tabIndex = 0;
+        aiSelectPanel.dom.appendChild(aiSelectResizeHandle);
+        let resizingAISelectPanel = false;
+        let aiSelectResizeStartY = 0;
+        let aiSelectResizeStartHeight = 0;
+        const resizeAISelectPanel = (clientY: number): void => {
+            const availableHeight = mainContainer.dom.clientHeight;
+            const maximumHeight = Math.max(280, availableHeight - 160);
+            const height = Math.max(
+                280,
+                Math.min(
+                    maximumHeight,
+                    aiSelectResizeStartHeight + aiSelectResizeStartY - clientY
+                )
+            );
+            aiSelectPanel.dom.style.height = `${height}px`;
+            aiSelectResizeHandle.setAttribute(
+                'aria-valuenow',
+                Math.round(height).toString()
+            );
+        };
+        aiSelectResizeHandle.addEventListener(
+            'pointerdown',
+            (event: PointerEvent) => {
+                if (!event.isPrimary) {
+                    return;
+                }
+                resizingAISelectPanel = true;
+                aiSelectResizeStartY = event.clientY;
+                aiSelectResizeStartHeight = aiSelectPanel.dom.offsetHeight;
+                aiSelectResizeHandle.setPointerCapture(event.pointerId);
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        );
+        aiSelectResizeHandle.addEventListener(
+            'pointermove',
+            (event: PointerEvent) => {
+                if (resizingAISelectPanel) {
+                    resizeAISelectPanel(event.clientY);
+                }
+            }
+        );
+        aiSelectResizeHandle.addEventListener(
+            'pointerup',
+            (event: PointerEvent) => {
+                if (resizingAISelectPanel && event.isPrimary) {
+                    aiSelectResizeHandle.releasePointerCapture(event.pointerId);
+                }
+            }
+        );
+        aiSelectResizeHandle.addEventListener('lostpointercapture', () => {
+            resizingAISelectPanel = false;
+        });
+        aiSelectResizeHandle.addEventListener(
+            'keydown',
+            (event: KeyboardEvent) => {
+                if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+                    return;
+                }
+                aiSelectResizeStartY = 0;
+                aiSelectResizeStartHeight = aiSelectPanel.dom.offsetHeight;
+                resizeAISelectPanel(event.key === 'ArrowUp' ? -24 : 24);
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        );
 
         timelinePanel.hidden = true;
 
@@ -456,9 +528,9 @@ class EditorUI {
             progress.setText('');
             progress.setProgress(0);
             progress.showCancelButton(!!cancellable);
-            progress.onCancel = cancellable ?
-                () => events.fire('progressCancel') :
-                null;
+            progress.onCancel = cancellable
+                ? () => events.fire('progressCancel')
+                : null;
         });
 
         events.on(

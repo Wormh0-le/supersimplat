@@ -138,6 +138,7 @@ interface SelectionServiceReadinessRequirements {
     modelAdapterId: string;
     aiSelectAnchorOperation: string;
     maskProposalOperation: string;
+    maskProposalSetSchemaOperation: string;
     binarySceneSnapshotRegistrationOperation: string;
 }
 
@@ -235,6 +236,7 @@ const defaultRequirements: SelectionServiceReadinessRequirements = {
     modelAdapterId: 'sam3.1',
     aiSelectAnchorOperation: 'aiSelectAnchorRender',
     maskProposalOperation: 'aiSelectMaskProposals',
+    maskProposalSetSchemaOperation: 'autoMaskProposalSetSchemaV2',
     binarySceneSnapshotRegistrationOperation:
         'binarySceneSnapshotRegistrationV1'
 };
@@ -742,6 +744,18 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
                 'maskProposalUnsupported',
                 'The Companion does not advertise prompt-conditioned Mask proposal production.',
                 'Install the compatible Companion release with AI Select Mask proposal support, then refresh readiness.'
+            );
+        }
+
+        if (
+            !capabilities.supportedOperations.includes(
+                this.requirements.maskProposalSetSchemaOperation
+            )
+        ) {
+            return diagnostic(
+                'maskProposalUnsupported',
+                'The Companion does not advertise AutoMaskProposalSet schema v2.',
+                'Install the compatible Companion release with schema-v2 Mask proposal identity, then refresh readiness.'
             );
         }
 

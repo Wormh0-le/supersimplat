@@ -83,7 +83,7 @@ const request = (overrides = {}) => ({
 
 const proposalSetFor = (req, overrides = {}) => {
     const payload = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         viewId: req.viewId,
         rgbDigest: req.rgb.digest,
         promptStateDigest: req.promptState.digest,

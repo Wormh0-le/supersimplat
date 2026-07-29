@@ -5,10 +5,26 @@ const {
     anchorMaskRankingPolicyVersion,
     autoMaskProposalSetDigest,
     isAutoMaskProposalSet,
-    isProposalDecision
+    isProposalDecision,
+    proposalIdentityDigest
 } = require('../.test-dist/src/ai-select/mask-proposal.js');
 
 const digest = (character) => `sha256:${character.repeat(64)}`;
+
+test('proposal identity canonicalizes browser numbers by binary64 value', () => {
+    assert.equal(
+        proposalIdentityDigest({
+            integer: 1,
+            negativeZero: -0,
+            smallExponent: 1e-7,
+            fixed: 1e-5,
+            large: 1e20,
+            values: [0.1, -2]
+        }),
+        'sha256:a64229f647814d4cff1565284ed59b3cba0fd8ea7001249fc11f20da65163e58'
+    );
+});
+
 const mask = {
     encoding: 'bitset-lsb-v1',
     width: 1,
@@ -43,7 +59,7 @@ const rankingFeatures = {
 
 const proposalSet = () => {
     const value = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         viewId: 'anchor-view',
         rgbDigest: digest('a'),
         promptStateDigest: digest('b'),

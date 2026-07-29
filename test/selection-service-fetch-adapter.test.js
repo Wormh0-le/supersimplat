@@ -1341,7 +1341,7 @@ const maskBitset = (width, height, foreground = [[10, 12]]) => {
 
 const maskReply = (request, overrides = {}) => {
     const proposalPayload = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         viewId: request.viewId,
         rgbDigest: request.rgb.digest,
         promptStateDigest: request.promptState.digest,

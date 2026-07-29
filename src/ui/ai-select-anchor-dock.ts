@@ -24,6 +24,11 @@ import type {
     GeneratedAIView
 } from '../ai-select/generated-view-controller';
 import {
+    fitImageRect,
+    mapClientPointToImagePixel,
+    type ImagePixel
+} from '../ai-select/image-viewport';
+import {
     decodeMaskArtifact,
     type BrushStroke
 } from '../ai-select/mask-annotation';
@@ -42,11 +47,6 @@ export interface AISelectAnchorDockOptions {
     readonly onConfirmAnchor: () => Promise<void>;
     readonly onAdjustAnchor: () => void;
     readonly generatedViews: AISelectGeneratedViewController;
-}
-
-interface ImagePixel {
-    readonly xPx: number;
-    readonly yPx: number;
 }
 
 interface GeneratedCardElements {
@@ -89,8 +89,12 @@ export class AISelectAnchorDock extends Container {
     private readonly status: Label;
     private readonly maskStatus: Label;
     private readonly promptStatus: Label;
+    private readonly imageViewport: HTMLDivElement;
+    private readonly imageSurface: HTMLDivElement;
     private readonly image: HTMLImageElement;
     private readonly overlay: HTMLCanvasElement;
+    private readonly technicalDetails: HTMLDetailsElement;
+    private readonly technicalDetailsBody: HTMLPreElement;
     private readonly failureActions: Container;
     private readonly maskActions: Container;
     private readonly toolActions: Container;
@@ -167,8 +171,10 @@ export class AISelectAnchorDock extends Container {
         i18n.bindText(title, 'ai-select.panel.title');
         this.status = new Label({ id: 'ai-select-anchor-dock-status' });
 
-        const imageWrap = document.createElement('div');
-        imageWrap.id = 'ai-select-anchor-dock-image-wrap';
+        this.imageViewport = document.createElement('div');
+        this.imageViewport.id = 'ai-select-anchor-dock-image-viewport';
+        this.imageSurface = document.createElement('div');
+        this.imageSurface.id = 'ai-select-anchor-dock-image-wrap';
         this.image = document.createElement('img');
         this.image.id = 'ai-select-anchor-dock-image';
         this.image.alt = '';
@@ -179,21 +185,25 @@ export class AISelectAnchorDock extends Container {
         this.boxPreview = document.createElement('div');
         this.boxPreview.id = 'ai-select-anchor-dock-box-preview';
         this.boxPreview.hidden = true;
-        imageWrap.appendChild(this.image);
-        imageWrap.appendChild(this.overlay);
-        imageWrap.appendChild(this.boxPreview);
-        imageWrap.addEventListener('pointerdown', (event) =>
+        this.imageSurface.appendChild(this.image);
+        this.imageSurface.appendChild(this.overlay);
+        this.imageSurface.appendChild(this.boxPreview);
+        this.imageViewport.appendChild(this.imageSurface);
+        this.imageSurface.addEventListener('pointerdown', (event) =>
             this.beginStroke(event)
         );
-        imageWrap.addEventListener('pointermove', (event) =>
+        this.imageSurface.addEventListener('pointermove', (event) =>
             this.continueStroke(event)
         );
-        imageWrap.addEventListener('pointerup', (event) =>
+        this.imageSurface.addEventListener('pointerup', (event) =>
             this.endStroke(event)
         );
-        imageWrap.addEventListener('pointercancel', () =>
+        this.imageSurface.addEventListener('pointercancel', () =>
             this.cancelPointerGesture()
         );
+        const resizeImageSurface = () => this.updateImageSurfaceRect();
+        new ResizeObserver(resizeImageSurface).observe(this.imageViewport);
+        this.image.addEventListener('load', resizeImageSurface);
 
         this.maskStatus = new Label({
             id: 'ai-select-anchor-dock-mask-status'
@@ -203,6 +213,20 @@ export class AISelectAnchorDock extends Container {
             id: 'ai-select-anchor-dock-prompt-status',
             hidden: true
         });
+        this.technicalDetails = document.createElement('details');
+        this.technicalDetails.id = 'ai-select-anchor-technical-details';
+        const technicalSummary = document.createElement('summary');
+        i18n.onChange(() => {
+            technicalSummary.textContent = i18n.t(
+                'ai-select.failure.technical-details'
+            );
+        }, this);
+        this.technicalDetailsBody = document.createElement('pre');
+        this.technicalDetails.append(
+            technicalSummary,
+            this.technicalDetailsBody
+        );
+        this.technicalDetails.hidden = true;
 
         this.maskActions = new Container({
             id: 'ai-select-anchor-dock-mask-actions',
@@ -211,6 +235,9 @@ export class AISelectAnchorDock extends Container {
         this.toolActions = new Container({
             id: 'ai-select-anchor-dock-tools',
             hidden: true
+        });
+        this.toolActions.dom.addEventListener('pointerdown', (event) => {
+            event.stopPropagation();
         });
         const toolKeys: readonly [DockAuthoringTool, string][] = [
             ['positive-point', 'ai-select.prompt.point-positive'],
@@ -351,7 +378,7 @@ export class AISelectAnchorDock extends Container {
         this.toolActions.append(this.promptRedoButton);
         this.toolActions.append(this.clearPromptsButton);
         this.toolActions.dom.appendChild(this.proposalSelect);
-        this.toolActions.append(this.acceptProposalButton);
+        this.imageSurface.appendChild(this.toolActions.dom);
         this.confirmMaskButton = new Button({
             id: 'ai-select-anchor-dock-confirm-mask'
         });
@@ -514,25 +541,34 @@ export class AISelectAnchorDock extends Container {
         this.galleryCards.append(this.anchorCard.root);
 
         this.append(title);
-        // The main area is a horizontal row: the image can never underflow
-        // the control rows (the old vertical stack let an overflowing image
-        // slide beneath them, swallowing clicks and clipping buttons).
+        // Image, information, and primary actions have separate ownership.
+        // Only the exact fitted image surface accepts pointer authoring.
         const mainRow = new Container({ id: 'ai-select-anchor-dock-main' });
-        mainRow.dom.appendChild(imageWrap);
-        const controls = new Container({
-            id: 'ai-select-anchor-dock-controls'
+        mainRow.dom.appendChild(this.imageViewport);
+        const sidePanel = new Container({
+            id: 'ai-select-anchor-dock-side-panel'
         });
-        controls.append(this.status);
-        controls.append(this.promptStatus);
-        controls.append(this.maskStatus);
-        controls.append(this.toolActions);
-        controls.append(this.maskActions);
-        controls.append(this.anchorActions);
-        controls.append(this.validationStatus);
-        controls.append(this.failureActions);
-        mainRow.append(controls);
+        const information = new Container({
+            id: 'ai-select-anchor-dock-information'
+        });
+        information.append(this.status);
+        information.append(this.promptStatus);
+        information.append(this.maskStatus);
+        information.dom.appendChild(this.technicalDetails);
+        information.dom.appendChild(this.proposalSelect);
+        information.append(this.validationStatus);
+        information.append(this.gallery);
+        const primaryActions = new Container({
+            id: 'ai-select-anchor-dock-primary-actions'
+        });
+        primaryActions.append(this.acceptProposalButton);
+        primaryActions.append(this.maskActions);
+        primaryActions.append(this.anchorActions);
+        primaryActions.append(this.failureActions);
+        sidePanel.append(information);
+        sidePanel.append(primaryActions);
+        mainRow.append(sidePanel);
         this.append(mainRow);
-        this.append(this.gallery);
 
         controller.subscribe((state) => {
             if (
@@ -574,8 +610,14 @@ export class AISelectAnchorDock extends Container {
         if (presentation.rgb) {
             this.image.src = `data:image/png;base64,${presentation.rgb.pngBase64}`;
             this.image.hidden = false;
+            this.imageSurface.hidden = false;
+            this.updateImageSurfaceRect(
+                presentation.rgb.width,
+                presentation.rgb.height
+            );
         } else {
             this.image.hidden = true;
+            this.imageSurface.hidden = true;
         }
         const textKey = {
             idle: 'ai-select.panel.idle',
@@ -593,8 +635,12 @@ export class AISelectAnchorDock extends Container {
         } else {
             this.maskStatus.hidden = false;
             this.maskStatus.text =
-                mask.status === 'failed' && mask.errorMessage !== undefined
-                    ? mask.errorMessage
+                mask.status === 'failed'
+                    ? i18n.t(
+                          this.maskState.failureKind === 'maskArtifactInvalid'
+                              ? 'ai-select.mask.artifact-invalid'
+                              : 'ai-select.mask.failed'
+                      )
                     : mask.proposalStatus === 'unavailable'
                       ? i18n.t('ai-select.proposal.unavailable')
                       : mask.proposalStatus === 'ambiguous'
@@ -604,6 +650,11 @@ export class AISelectAnchorDock extends Container {
                           ? i18n.t('ai-select.proposal.selected')
                           : i18n.t(`ai-select.mask.${mask.status}`);
         }
+        const technicalMessage =
+            mask.status === 'failed' ? mask.errorMessage : undefined;
+        this.technicalDetails.hidden =
+            technicalMessage === undefined || technicalMessage.length === 0;
+        this.technicalDetailsBody.textContent = technicalMessage ?? '';
         this.confirmMaskButton.hidden = !mask.showConfirm;
         this.retryMaskButton.hidden = !mask.showRetry;
         this.confirmMaskButton.enabled =
@@ -1023,28 +1074,17 @@ export class AISelectAnchorDock extends Container {
             this.promptStatus.hidden = true;
             return;
         }
-        const feedback =
-            prompt.proposalFeedback === 'accepted'
-                ? i18n.t('ai-select.prompt.accepted')
-                : prompt.proposalFeedback === 'pending'
-                  ? i18n.t('ai-select.mask.pending')
-                  : prompt.proposalFeedback === 'selected'
-                    ? i18n.t('ai-select.proposal.selected')
-                    : prompt.proposalFeedback === 'ambiguous'
-                      ? i18n.t('ai-select.proposal.ambiguous')
-                      : prompt.proposalFeedback === 'editing'
-                        ? i18n.t('ai-select.proposal.editing')
-                        : prompt.proposalFeedback === 'unavailable'
-                          ? i18n.t('ai-select.proposal.unavailable')
-                          : prompt.proposalFeedback === 'failed'
-                            ? (this.maskState.errorMessage ??
-                              i18n.t('ai-select.mask.failed'))
-                            : '';
-        const summary = `+ ${i18n.formatInteger(prompt.positivePointCount)} · − ${i18n.formatInteger(prompt.negativePointCount)} · □ ${i18n.formatInteger(prompt.boxCount)} · ▧ ${i18n.formatInteger(prompt.maskConstraintCount)} · #${i18n.formatInteger(prompt.promptRevision)}`;
+        const summary = [
+            `${i18n.t('ai-select.prompt.summary-positive-points')} ${i18n.formatInteger(prompt.positivePointCount)}`,
+            `${i18n.t('ai-select.prompt.summary-negative-points')} ${i18n.formatInteger(prompt.negativePointCount)}`,
+            `${i18n.t('ai-select.prompt.summary-boxes')} ${i18n.formatInteger(prompt.boxCount)}`,
+            `${i18n.t('ai-select.prompt.summary-brushes')} ${i18n.formatInteger(prompt.maskConstraintCount)}`,
+            `${i18n.t('ai-select.prompt.summary-revision')} ${i18n.formatInteger(prompt.promptRevision)}`
+        ].join(' · ');
         const reasons = (this.maskState.proposalDecision?.reasons ?? []).map(
             (reason) => i18n.t(`ai-select.proposal.reason.${reason.code}`)
         );
-        this.promptStatus.text = [summary, feedback, ...reasons]
+        this.promptStatus.text = [summary, ...reasons]
             .filter((entry) => entry.length > 0)
             .join(' · ');
         this.promptStatus.hidden = false;
@@ -1306,64 +1346,44 @@ export class AISelectAnchorDock extends Container {
 
     /** Align the overlay with the object-fit: contain painted image area. */
     private positionOverlay(): void {
-        const rect = this.image.getBoundingClientRect();
-        const painted = this.paintedRect(rect);
-        if (painted === null) {
-            this.overlay.hidden = true;
-            return;
-        }
-        this.overlay.style.left = `${(painted.left / rect.width) * 100}%`;
-        this.overlay.style.top = `${(painted.top / rect.height) * 100}%`;
-        this.overlay.style.width = `${(painted.width / rect.width) * 100}%`;
-        this.overlay.style.height = `${(painted.height / rect.height) * 100}%`;
+        this.overlay.style.inset = '0';
+        this.overlay.style.width = '100%';
+        this.overlay.style.height = '100%';
     }
 
-    private paintedRect(rect: DOMRect) {
-        if (
-            rect.width === 0 ||
-            rect.height === 0 ||
-            this.image.naturalWidth === 0 ||
-            this.image.naturalHeight === 0
-        ) {
-            return null;
-        }
-        const scale = Math.min(
-            rect.width / this.image.naturalWidth,
-            rect.height / this.image.naturalHeight
+    private updateImageSurfaceRect(
+        imageWidth = this.image.naturalWidth,
+        imageHeight = this.image.naturalHeight
+    ): void {
+        const fitted = fitImageRect(
+            this.imageViewport.clientWidth,
+            this.imageViewport.clientHeight,
+            imageWidth,
+            imageHeight
         );
-        const width = this.image.naturalWidth * scale;
-        const height = this.image.naturalHeight * scale;
-        return {
-            left: (rect.width - width) / 2,
-            top: (rect.height - height) / 2,
-            width,
-            height
-        };
+        if (fitted === null) {
+            return;
+        }
+        this.imageSurface.style.left = `${fitted.left}px`;
+        this.imageSurface.style.top = `${fitted.top}px`;
+        this.imageSurface.style.width = `${fitted.width}px`;
+        this.imageSurface.style.height = `${fitted.height}px`;
     }
 
     private toImagePixel(event: PointerEvent): ImagePixel | null {
-        const rect = this.image.getBoundingClientRect();
-        const painted = this.paintedRect(rect);
-        if (painted === null) {
-            return null;
-        }
-        const xPx = Math.floor(
-            ((event.clientX - rect.left - painted.left) / painted.width) *
-                this.image.naturalWidth
+        const rect = this.imageSurface.getBoundingClientRect();
+        return mapClientPointToImagePixel(
+            event.clientX,
+            event.clientY,
+            {
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height
+            },
+            this.image.naturalWidth,
+            this.image.naturalHeight
         );
-        const yPx = Math.floor(
-            ((event.clientY - rect.top - painted.top) / painted.height) *
-                this.image.naturalHeight
-        );
-        if (
-            xPx < 0 ||
-            yPx < 0 ||
-            xPx >= this.image.naturalWidth ||
-            yPx >= this.image.naturalHeight
-        ) {
-            return null;
-        }
-        return { xPx, yPx };
     }
 
     private beginStroke(event: PointerEvent): void {
@@ -1553,26 +1573,28 @@ export class AISelectAnchorDock extends Container {
     }
 
     private updateBoxPreview(start: ImagePixel, current: ImagePixel): void {
-        const rect = this.image.getBoundingClientRect();
-        const painted = this.paintedRect(rect);
-        if (painted === null) {
+        const rect = this.imageSurface.getBoundingClientRect();
+        if (
+            rect.width === 0 ||
+            rect.height === 0 ||
+            this.image.naturalWidth === 0 ||
+            this.image.naturalHeight === 0
+        ) {
             this.boxPreview.hidden = true;
             return;
         }
         const leftPx =
-            painted.left +
             (Math.min(start.xPx, current.xPx) / this.image.naturalWidth) *
-                painted.width;
+            rect.width;
         const topPx =
-            painted.top +
             (Math.min(start.yPx, current.yPx) / this.image.naturalHeight) *
-                painted.height;
+            rect.height;
         const widthPx =
             (Math.abs(start.xPx - current.xPx) / this.image.naturalWidth) *
-            painted.width;
+            rect.width;
         const heightPx =
             (Math.abs(start.yPx - current.yPx) / this.image.naturalHeight) *
-            painted.height;
+            rect.height;
         this.boxPreview.style.left = `${leftPx}px`;
         this.boxPreview.style.top = `${topPx}px`;
         this.boxPreview.style.width = `${widthPx}px`;

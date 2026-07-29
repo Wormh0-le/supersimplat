@@ -111,6 +111,10 @@ class CompanionControlPlaneTests(unittest.TestCase):
             "promptCapabilities": prompt_capabilities,
         }])
         self.assertIn("aiSelectMaskProposals", capabilities["supportedOperations"])
+        self.assertIn(
+            "autoMaskProposalSetSchemaV2",
+            capabilities["supportedOperations"],
+        )
         self.assertEqual(capabilities["renderer"]["status"], "unavailable")
 
     def test_keeps_the_reference_point_adapter_out_of_production_capabilities(self) -> None:

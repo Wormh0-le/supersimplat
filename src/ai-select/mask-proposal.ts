@@ -5,7 +5,9 @@ import {
     type MaskArtifact
 } from './mask-annotation';
 
-export const autoMaskProposalSetSchemaVersion = 1;
+// Schema v2 binds numbers by binary64 value instead of language-specific JSON
+// spelling, keeping browser and Companion artifact identity deterministic.
+export const autoMaskProposalSetSchemaVersion = 2;
 export const autoMaskProposalPolicyVersion =
     'auto-mask-proposals/bounded-source-order-v1';
 export const maximumAutoMaskProposalCount = 4;
@@ -132,6 +134,17 @@ const isNonEmptyString = (value: unknown): value is string => {
     return typeof value === 'string' && value.trim().length > 0;
 };
 
+const canonicalNumber = (value: number): string => {
+    if (!Number.isFinite(value)) {
+        throw new Error('Proposal identity numbers must be finite.');
+    }
+    const bytes = new Uint8Array(8);
+    new DataView(bytes.buffer).setFloat64(0, value, false);
+    return `n${Array.from(bytes, (byte) =>
+        byte.toString(16).padStart(2, '0')
+    ).join('')}`;
+};
+
 const canonicalJson = (value: unknown): string => {
     if (Array.isArray(value)) {
         return `[${value.map(canonicalJson).join(',')}]`;
@@ -146,13 +159,20 @@ const canonicalJson = (value: unknown): string => {
             )
             .join(',')}}`;
     }
+    if (typeof value === 'number') {
+        return canonicalNumber(value);
+    }
     return JSON.stringify(value);
+};
+
+export const proposalIdentityDigest = (value: unknown): string => {
+    return sha256Digest(encoder.encode(canonicalJson(value)));
 };
 
 export const autoMaskProposalSetDigest = (
     value: Omit<AutoMaskProposalSet, 'digest'>
 ): string => {
-    return sha256Digest(encoder.encode(canonicalJson(value)));
+    return proposalIdentityDigest(value);
 };
 
 const artifactDigestMatchesBytes = (artifact: MaskArtifact): boolean => {

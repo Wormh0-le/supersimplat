@@ -12,6 +12,7 @@ import math
 import os
 from pathlib import Path
 import secrets
+import struct
 from threading import Event, Lock
 import time
 from typing import Any, Callable, Mapping
@@ -94,6 +95,43 @@ from .generated_view_planning import (
 
 
 DEFAULT_STATE_DIRECTORY = Path.home() / ".local" / "state" / "supersplat-selection-service"
+
+
+def _proposal_identity_json(value: object) -> str:
+    """Canonicalize proposal identity with explicit IEEE-754 number tokens."""
+    if value is None:
+        return 'null'
+    if value is True:
+        return 'true'
+    if value is False:
+        return 'false'
+    if isinstance(value, (int, float)):
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError('Proposal identity numbers must be finite')
+        return f'n{struct.pack(">d", number).hex()}'
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+    if isinstance(value, list):
+        return '[' + ','.join(
+            _proposal_identity_json(entry) for entry in value
+        ) + ']'
+    if isinstance(value, dict):
+        entries: list[str] = []
+        for key in sorted(value):
+            if not isinstance(key, str):
+                raise TypeError('Proposal identity object keys must be strings')
+            entries.append(
+                f'{json.dumps(key, ensure_ascii=False)}:'
+                f'{_proposal_identity_json(value[key])}'
+            )
+        return f'{{{",".join(entries)}}}'
+    raise TypeError(f'Unsupported proposal identity value: {type(value).__name__}')
+
+
+def _proposal_identity_digest(value: object) -> str:
+    encoded = _proposal_identity_json(value).encode('utf-8')
+    return f'sha256:{hashlib.sha256(encoded).hexdigest()}'
 
 
 def _local_view_assessment_payload(
@@ -1879,7 +1917,8 @@ class CompanionState:
                 prompt_state=mask_request.prompt_state,
             )
             proposal_set: dict[str, object] = {
-                'schemaVersion': 1,
+                # v2 makes the binary64 proposal identity encoding explicit.
+                'schemaVersion': 2,
                 'viewId': mask_request.view_id,
                 'rgbDigest': mask_request.rgb_digest,
                 'promptStateDigest': mask_request.prompt_state_digest,
@@ -1895,15 +1934,7 @@ class CompanionState:
                     'retainedCount': len(ranked_proposals),
                     'policy': 'source-order-first-4',
                 }
-            encoded = json.dumps(
-                proposal_set,
-                separators=(',', ':'),
-                sort_keys=True,
-                allow_nan=False,
-            ).encode('utf-8')
-            proposal_set['digest'] = (
-                f'sha256:{hashlib.sha256(encoded).hexdigest()}'
-            )
+            proposal_set['digest'] = _proposal_identity_digest(proposal_set)
             return {
                 'status': 'complete',
                 **mask_request.response_fields(),
@@ -5025,6 +5056,7 @@ class CompanionState:
                 "aiSelectAnchorReferenceContributor",
                 "aiSelectAnchorSupportProbe",
                 "aiSelectMaskProposals",
+                "autoMaskProposalSetSchemaV2",
                 "aiSelectGeneratedViewPlanning",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",

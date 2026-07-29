@@ -1,6 +1,6 @@
 # 07A — Complete Three-Stage Anchor Mask Pipeline + Ranking / Ambiguity UX
 
-Status: ready-for-agent — Ticket 04A implemented; Phase 0 interaction hardening is part of this ticket
+Status: implemented — Phase 4 browser closure validated 2026-07-29
 
 Blocked by: 04A, 05, 07
 
@@ -685,3 +685,73 @@ The v2.3 retrofit graph remains:
 ```
 
 Ticket 04A depends on the existing Ticket 05 Mask editor/Undo/Confirm seams. Ticket 07A depends on Ticket 04A and completed Ticket 07 assessment semantics. Ticket 08 MUST depend on 07A.
+
+## Phase 4 implementation record — 2026-07-29
+
+Ticket 07A was reopened after browser validation exposed Dock layout,
+interaction-rectangle, failure-presentation, and proposal-publication defects.
+The closure pass changed the editor UI and the browser/Companion proposal
+identity seam; Ticket 08 was not started.
+
+Implemented:
+
+- moved the Prompt/Edit toolbar into the exact fitted image surface;
+- split proposal/status information into its own scrollable region and kept
+  primary actions in a separate fixed region;
+- added a native pointer/keyboard vertical Dock separator;
+- added a `ResizeObserver`-driven contain rectangle shared exactly by the
+  authoritative RGB, Mask canvas, Prompt overlay, box preview, and pointer
+  mapping;
+- made the space outside that rectangle neutral and non-interactive;
+- localized the compact Prompt summary and reduced failure presentation to
+  one user-facing message plus collapsed technical details;
+- moved the generated-view Gallery into the scrollable information region and
+  isolated toolbar pointer events from image authoring;
+- fixed `maskArtifactInvalid` at its source. Python serialized an exact model
+  score as `1.0`, while the browser parsed and reserialized the same Number as
+  `1`, so the two runtimes computed different proposal-set digests. Proposal
+  identity now canonicalizes every number by its IEEE-754 binary64 value, with
+  a shared cross-language digest vector. `AutoMaskProposalSet` is explicitly
+  schema v2 so recorded v1 artifacts cannot be mistaken for the new identity
+  contract. Companion capabilities advertise
+  `autoMaskProposalSetSchemaV2`, and editor readiness rejects an older
+  Companion before any proposal request.
+
+Real browser closure validation used
+`/home/ubuntu/wormh01e/gaussian/restroom/test_breakroom.ply` (176,594 splats)
+with the locked gsplat renderer and installed SAM 3.1 model:
+
+```text
+Dock height:                 419 px → 503 px by native separator drag
+authoritative fitted rect:   x 148.421875, y 361, 795.140625 × 455
+RGB / Mask / interaction:    exact shared rectangle
+normal positive point:       HTTP 200, schema v2, 1 proposal, selected
+toolbar click isolation:     0 Mask proposal requests
+invalid-artifact injection:  1 localized message; technical details collapsed
+```
+
+Evidence is captured by
+`.scratch/ai-select-v1/browser-validation/07a-browser-loop.mjs`; the successful
+and injected-failure screenshots were inspected in the form consumed by the
+browser.
+
+Validation:
+
+```text
+npm test              315 TypeScript/Node tests + 245 Companion tests passed
+npm run lint          passed
+npm run lint:locales  464 keys synchronized
+npm run build         passed (existing dependency warnings only)
+real browser/GPU      authoritative gsplat Anchor + real SAM proposal passed
+```
+
+This closure did not change Final Spec, ADRs, the runtime lock, ranking policy,
+Evidence/Assessment policy, or calibration. It is production prompt/Mask-path
+work, not a reference Contributor or mocked GPU path. The reference/debug
+Contributor backend and legacy migration code remain intact.
+
+The targeted browser closure above does not manufacture new frozen-scene
+quality metrics, ablations, latency, or peak-VRAM results beyond the real
+breakroom regression. Those broader benchmark requirements remain governed by
+the existing locked-runtime validation records and should not be inferred from
+this targeted closure run alone.

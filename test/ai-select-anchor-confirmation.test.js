@@ -153,7 +153,7 @@ const solidForeground = (width, height) => {
 
 const maskResponseFor = (request, overrides = {}) => {
     const proposalPayload = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         viewId: request.viewId,
         rgbDigest: request.rgb.digest,
         promptStateDigest: request.promptState.digest,

@@ -1,6 +1,6 @@
 # Final Spec v1.1 → Ticket Traceability Matrix
 
-A requirement counts as covered only when the mapped ticket contains an explicit acceptance/failure/validation criterion. A neighboring-subsystem mention does not count. Final Spec v1.0 requirements inherited by v1.1 remain in the matrix; DG-20, DG-21, and Final Spec v1.1 Amendments 001–002 are included explicitly.
+A requirement counts as covered only when the mapped ticket contains an explicit acceptance/failure/validation criterion. A neighboring-subsystem mention does not count. Final Spec v1.0 requirements inherited by v1.1 remain in the matrix; DG-20, DG-21, DG-22, and Final Spec v1.1 Amendments 001–002 are included explicitly.
 
 | ID | Requirement | Ticket(s) |
 |---|---|---|
@@ -98,10 +98,10 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R092 | Mask failure preserves View and offers retry/manual/exclude | 06, 07, 11, 21, 07A |
 | R093 | View Render Failure offers retry/replacement/exclude | 06, 08, 11, 21 |
 | R094 | Evidence/Lift failure preserves stable inputs and previous Candidate | 14, 15, 20, 21 |
-| R095 | Cancellation/OOM cannot publish partial Ready artifacts | 20, 21, 04A |
+| R095 | Cancellation/OOM cannot publish partial Ready artifacts | 20, 21, 04A, 04B |
 | R096 | Large SceneSnapshot/tensor/RGB data path is production-validated | 19 |
 | R097 | Production Direct Evidence path is GPU-validated | 20, 21 |
-| R098 | Mask/Evidence/thumbnail lifecycle is bounded | 20, 04A |
+| R098 | Mask/Evidence/thumbnail lifecycle is bounded | 20, 04A, 07A |
 | R099 | Planner/assessment/readiness/Evidence policies are benchmark-calibrated | 21 |
 | R100 | Legacy product path contracts only after v1.1 replacement validation | 22 |
 | R101 | RGB Ready does not require Contributor, Stable Mask, Evidence, or Candidate | 03, 04, 06, 11 |
@@ -132,10 +132,10 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R126 | RGB/Evidence artifacts explicitly bind rasterImplementationId, evidenceBackend identity, and runtimeBuildId | 14, 16, 19, 20, 21 |
 | R127 | RGB-only and later RGB+Evidence use the same compatible raster implementation; incompatible migration invalidates reuse and requires explicit rerender/review | 19, 20, 21 |
 | R128 | PromptState is versioned, exact-RGB-bound, and cannot mutate Stable Mask directly | 04A, 07A |
-| R129 | Prompt/Edit tools and pointer semantics are explicit; Box/Prompt Brush/Paint cannot be conflated | 04A |
-| R130 | Prompt support is declared by capability, including positive/negative support per prompt family | 04A |
-| R131 | Unsupported Point/Box/mask/Text prompt types are disabled or rejected, never silently ignored | 04A |
-| R132 | Stage 1 preserves a deterministic bounded proposal set and raw score semantics | 04A, 07A |
+| R129 | Prompt/Edit tools and pointer semantics are explicit; Box/Prompt Brush/Paint cannot be conflated | 04A, 04B, 07B |
+| R130 | Prompt support is declared by capability, including positive/negative support per prompt family | 04A, 04B |
+| R131 | Unsupported Point/Box/mask/Text prompt types are disabled or rejected, never silently ignored | 04A, 04B |
+| R132 | Stage 1 preserves a deterministic bounded proposal set and raw score semantics | 04A, 04B, 07A |
 | R133 | Proposal selection cannot collapse solely to the highest raw model score | 07A |
 | R134 | Stage 2 ranking is 2D-first and compares prompt consistency, candidate hierarchy, and structural quality | 07A |
 | R135 | Low-cost Gaussian support is optional bounded sanity/tie-break data, not ownership Evidence or primary selector | 07A |
@@ -145,10 +145,15 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R139 | Proposal failed, unavailable, ambiguous, and artifact-invalid states are distinct and preserve RGB/Prompt/prior Stable state | 07A, 21 |
 | R140 | Ticket 07A closure requires locked real-model quality validation and cannot rely only on fake predictor tests | 07A |
 | R141 | The mandatory Three-Stage pipeline applies to Anchor; Generated View automatic publication remains unchanged unless explicitly revised | 04A, 07A |
-| R142 | Adaptive planning follows 07A and rejects implausible indoor/outside-room camera poses before information-gain ranking | 08 |
+| R142 | Adaptive planning follows resolved Anchor authoring and rejects implausible indoor/outside-room camera poses before information-gain ranking | 08 |
+| R143 | Positive/negative Box and Mask Constraint capabilities are enabled only by a locked real adapter with truthful separate capability flags; Text remains optional | 04B |
+| R144 | Supported visual prompts compile deterministically; unsupported families/combinations fail closed and are never silently dropped or converted to Points | 04B |
+| R145 | The Prompt/Edit palette remains inside the fitted image rect while supporting drag, edge snap, collapse, and Space temporary hide so no permanent blind spot remains | 07B |
+| R146 | Palette move/collapse/hide immediately restores Prompt/Edit hit testing at the previously covered image region | 07B |
+| R147 | Palette position/mode are Target Context-scoped, survive local authoring changes, and reset on Restart Target/context rotation without changing Prompt/Mask/Evidence state | 07B |
 
 ## Reverse mapping result
 
-Every active ticket, including retrofit Tickets 04A and 07A, maps back to Final Spec v1.1, Amendments 001–002, DG-20/DG-21, inherited v1.0, migration, or hardening requirements. No orphan ticket remains.
+Every active ticket, including retrofit Tickets 04A, 04B, 07A, and 07B, maps back to Final Spec v1.1, Amendments 001–002, DG-20/DG-21/DG-22, inherited v1.0, migration, or hardening requirements. No orphan ticket remains.
 
-Ticket 04A owns Prompt/proposal infrastructure but cannot claim the Three-Stage Anchor Mask Pipeline complete. Ticket 07A owns completion and locked-runtime quality validation. Ticket 08 owns Generated View camera validity/adaptive planning. Tickets 14 and 20 remain intentionally separate: Ticket 14 proves the Evidence model through a reference path; Ticket 20 owns locked same-decision production implementation.
+Ticket 04A owns Prompt/proposal infrastructure. Ticket 04B owns real non-text visual-prompt adapter enablement. Reopened Ticket 07A owns algorithmic Three-Stage completion and locked-runtime quality validation. Ticket 07B owns fitted-image floating-palette interaction. Ticket 08 owns Generated View camera validity/adaptive planning. Tickets 14 and 20 remain intentionally separate: Ticket 14 proves the Evidence model through a reference path; Ticket 20 owns locked same-decision production implementation.

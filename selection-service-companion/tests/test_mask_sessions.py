@@ -2626,6 +2626,12 @@ class MaskSessionContractTests(unittest.TestCase):
                     "areaValid": True,
                     "pointConsistent": False,
                     "selected": False,
+                    "binaryMask": {
+                        "encoding": "bitset-lsb-v1",
+                        "width": 2,
+                        "height": 2,
+                        "data": "AQ==",
+                    },
                     "qualityScore": 0.1,
                 },
                 {
@@ -2634,6 +2640,12 @@ class MaskSessionContractTests(unittest.TestCase):
                     "areaValid": True,
                     "pointConsistent": True,
                     "selected": True,
+                    "binaryMask": {
+                        "encoding": "bitset-lsb-v1",
+                        "width": 2,
+                        "height": 2,
+                        "data": "Ag==",
+                    },
                     "qualityScore": 0.9,
                 },
             ],

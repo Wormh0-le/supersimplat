@@ -28,6 +28,7 @@ export type AnchorHardBlock =
     | 'mask-below-minimum-area'
     | 'camera-rgb-mask-mismatch'
     | 'mask-revision-pending'
+    | 'proposal-decision-unresolved'
     | 'stable-id-mapping-unavailable'
     | 'render-working-set-unavailable'
     | 'gaussian-support-unproven'
@@ -51,6 +52,8 @@ export interface AnchorValidationInput {
     readonly stableMask: MaskAnnotation | null;
     /** The latest Mask/SAM revision is still computing. */
     readonly maskRevisionPending: boolean;
+    /** Any ambiguous pre-Stable proposal was accepted or manually replaced. */
+    readonly proposalDecisionResolved: boolean;
     readonly stableIdMappingValid: boolean;
     readonly renderWorkingSetValid: boolean;
     /**
@@ -104,6 +107,9 @@ export const evaluateAnchorValidation = (
     }
     if (input.maskRevisionPending) {
         hardBlocks.push('mask-revision-pending');
+    }
+    if (!input.proposalDecisionResolved) {
+        hardBlocks.push('proposal-decision-unresolved');
     }
     if (!input.stableIdMappingValid) {
         hardBlocks.push('stable-id-mapping-unavailable');

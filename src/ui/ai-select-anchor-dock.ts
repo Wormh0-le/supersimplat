@@ -70,10 +70,8 @@ const cursorForTool = (tool: DockAuthoringTool): string => {
             '<circle cx="16" cy="16" r="10" fill="white" stroke="#20c878" stroke-width="2"/><path d="M16 10v12M10 16h12" stroke="#087840" stroke-width="2"/>',
         'negative-point':
             '<circle cx="16" cy="16" r="10" fill="white" stroke="#f05b66" stroke-width="2"/><path d="M10 16h12" stroke="#a01420" stroke-width="2"/>',
-        paint:
-            '<circle cx="16" cy="16" r="11" fill="none" stroke="#ff8c20" stroke-width="2"/><path d="M16 11v10M11 16h10" stroke="#ff8c20" stroke-width="2"/>',
-        erase:
-            '<circle cx="16" cy="16" r="11" fill="none" stroke="#50c8ff" stroke-width="2"/><path d="m12 12 8 8m0-8-8 8" stroke="#50c8ff" stroke-width="2"/>'
+        paint: '<circle cx="16" cy="16" r="11" fill="none" stroke="#ff8c20" stroke-width="2"/><path d="M16 11v10M11 16h10" stroke="#ff8c20" stroke-width="2"/>',
+        erase: '<circle cx="16" cy="16" r="11" fill="none" stroke="#50c8ff" stroke-width="2"/><path d="m12 12 8 8m0-8-8 8" stroke="#50c8ff" stroke-width="2"/>'
     };
     const svg = cursors[tool];
     if (svg === undefined) {
@@ -97,10 +95,13 @@ export class AISelectAnchorDock extends Container {
     private readonly maskActions: Container;
     private readonly toolActions: Container;
     private readonly toolButtons = new Map<DockAuthoringTool, Button>();
+    private readonly unsupportedToolsDetails: HTMLDetailsElement;
+    private readonly unsupportedToolsList: HTMLSpanElement;
     private readonly promptUndoButton: Button;
     private readonly promptRedoButton: Button;
     private readonly clearPromptsButton: Button;
     private readonly acceptProposalButton: Button;
+    private readonly proposalSelect: HTMLSelectElement;
     private readonly brushSizeInput: HTMLInputElement;
     private readonly textPromptInput: HTMLInputElement;
     private readonly textPromptApply: Button;
@@ -236,6 +237,18 @@ export class AISelectAnchorDock extends Container {
             this.toolButtons.set(tool, button);
             this.toolActions.append(button);
         }
+        this.unsupportedToolsDetails = document.createElement('details');
+        this.unsupportedToolsDetails.id = 'ai-select-anchor-unsupported-tools';
+        const unsupportedSummary = document.createElement('summary');
+        unsupportedSummary.textContent = i18n.t(
+            'ai-select.prompt.unsupported-tools'
+        );
+        this.unsupportedToolsList = document.createElement('span');
+        this.unsupportedToolsDetails.append(
+            unsupportedSummary,
+            this.unsupportedToolsList
+        );
+        this.toolActions.dom.appendChild(this.unsupportedToolsDetails);
         this.brushSizeInput = document.createElement('input');
         this.brushSizeInput.id = 'ai-select-anchor-brush-size';
         this.brushSizeInput.type = 'range';
@@ -284,6 +297,17 @@ export class AISelectAnchorDock extends Container {
         this.acceptProposalButton = new Button({
             id: 'ai-select-anchor-proposal-accept'
         });
+        this.proposalSelect = document.createElement('select');
+        this.proposalSelect.id = 'ai-select-anchor-proposal-select';
+        this.proposalSelect.setAttribute(
+            'aria-label',
+            i18n.t('ai-select.proposal.choose')
+        );
+        this.proposalSelect.addEventListener('change', () => {
+            this.renderMaskOverlay(
+                getAnchorDockPresentation(this.state, this.maskState)
+            );
+        });
         i18n.bindText(this.promptUndoButton, 'ai-select.prompt.undo');
         i18n.bindText(this.promptRedoButton, 'ai-select.prompt.redo');
         i18n.bindText(this.clearPromptsButton, 'ai-select.prompt.clear');
@@ -310,7 +334,10 @@ export class AISelectAnchorDock extends Container {
             }
         });
         this.acceptProposalButton.on('click', () => {
-            const proposal = this.maskState.proposalSet?.proposals[0];
+            const proposal = this.maskState.proposalSet?.proposals.find(
+                (candidate) =>
+                    candidate.proposalId === this.proposalSelect.value
+            );
             if (proposal === undefined) {
                 return;
             }
@@ -323,6 +350,7 @@ export class AISelectAnchorDock extends Container {
         this.toolActions.append(this.promptUndoButton);
         this.toolActions.append(this.promptRedoButton);
         this.toolActions.append(this.clearPromptsButton);
+        this.toolActions.dom.appendChild(this.proposalSelect);
         this.toolActions.append(this.acceptProposalButton);
         this.confirmMaskButton = new Button({
             id: 'ai-select-anchor-dock-confirm-mask'
@@ -507,6 +535,13 @@ export class AISelectAnchorDock extends Container {
         this.append(this.gallery);
 
         controller.subscribe((state) => {
+            if (
+                state.context?.targetContextId !==
+                    this.state.context?.targetContextId ||
+                state.anchor?.rgb?.digest !== this.state.anchor?.rgb?.digest
+            ) {
+                this.cancelPointerGesture();
+            }
             this.state = state;
             this.render();
         });
@@ -519,6 +554,12 @@ export class AISelectAnchorDock extends Container {
             this.render();
         });
         options.generatedViews.subscribe((generatedState) => {
+            if (
+                generatedState.selectedViewId !==
+                this.generatedState.selectedViewId
+            ) {
+                this.cancelPointerGesture();
+            }
             this.generatedState = generatedState;
             this.render();
         });
@@ -556,10 +597,12 @@ export class AISelectAnchorDock extends Container {
                     ? mask.errorMessage
                     : mask.proposalStatus === 'unavailable'
                       ? i18n.t('ai-select.proposal.unavailable')
-                      : mask.proposalStatus === 'ready' &&
-                          this.maskState.editingMask === null
-                        ? i18n.t('ai-select.proposal.ready')
-                        : i18n.t(`ai-select.mask.${mask.status}`);
+                      : mask.proposalStatus === 'ambiguous'
+                        ? i18n.t('ai-select.proposal.ambiguous')
+                        : mask.proposalStatus === 'selected' &&
+                            this.maskState.editingMask === null
+                          ? i18n.t('ai-select.proposal.selected')
+                          : i18n.t(`ai-select.mask.${mask.status}`);
         }
         this.confirmMaskButton.hidden = !mask.showConfirm;
         this.retryMaskButton.hidden = !mask.showRetry;
@@ -881,6 +924,7 @@ export class AISelectAnchorDock extends Container {
                 'ready' && !this.confirmation.locked;
         this.toolActions.hidden = !ready;
         const capabilities = this.maskState.promptCapabilities;
+        const unsupportedTools: string[] = [];
         for (const [tool, button] of this.toolButtons) {
             const reason =
                 tool === 'paint' || tool === 'erase'
@@ -889,12 +933,21 @@ export class AISelectAnchorDock extends Container {
                       ? 'Prompt Adapter capabilities are unavailable.'
                       : promptToolCapabilityReason(tool, capabilities);
             button.enabled = ready && reason === null;
-            button.dom.title = reason ?? '';
+            button.hidden = reason !== null;
+            if (reason !== null) {
+                unsupportedTools.push(button.dom.textContent?.trim() ?? tool);
+            }
+            button.dom.title = reason ?? button.dom.textContent ?? '';
             button.dom.classList.toggle(
                 'ai-select-tool-selected',
                 tool === this.activeTool
             );
         }
+        this.unsupportedToolsDetails.hidden = unsupportedTools.length === 0;
+        this.unsupportedToolsList.textContent =
+            unsupportedTools.length === 0
+                ? ''
+                : `${i18n.t('ai-select.prompt.unsupported-by-adapter')}: ${unsupportedTools.join(', ')}`;
         const activeButton = this.toolButtons.get(this.activeTool);
         if (activeButton !== undefined && !activeButton.enabled) {
             this.activeTool =
@@ -923,7 +976,31 @@ export class AISelectAnchorDock extends Container {
                 this.maskState.promptState.boxes.length > 0 ||
                 this.maskState.promptState.maskConstraints.length > 0 ||
                 this.maskState.promptState.textPrompts.length > 0);
-        const proposal = this.maskState.proposalSet?.proposals[0];
+        const proposalIds =
+            this.maskState.proposalDecision?.alternativeProposalIds ?? [];
+        const previousSelection = this.proposalSelect.value;
+        this.proposalSelect.replaceChildren(
+            ...proposalIds.map((proposalId, index) => {
+                const proposal = this.maskState.proposalSet?.proposals.find(
+                    (candidate) => candidate.proposalId === proposalId
+                );
+                const option = document.createElement('option');
+                option.value = proposalId;
+                option.text = `${i18n.t('ai-select.proposal.option')} ${i18n.formatInteger(index + 1)} · ${i18n.formatInteger(Math.round((proposal?.rankingFeatures.areaFraction ?? 0) * 100))}% · ${i18n.formatInteger(proposal?.rankingFeatures.connectedComponentCount ?? 0)} ${i18n.t('ai-select.proposal.components')}`;
+                return option;
+            })
+        );
+        const preferredProposalId = proposalIds.includes(previousSelection)
+            ? previousSelection
+            : (this.maskState.acceptedProposalId ??
+              this.maskState.proposalDecision?.selectedProposalId ??
+              proposalIds[0] ??
+              '');
+        this.proposalSelect.value = preferredProposalId;
+        const proposal = this.maskState.proposalSet?.proposals.find(
+            (candidate) => candidate.proposalId === preferredProposalId
+        );
+        this.proposalSelect.hidden = proposalIds.length === 0;
         this.acceptProposalButton.hidden =
             proposal === undefined ||
             proposal.proposalId === this.maskState.acceptedProposalId;
@@ -951,18 +1028,25 @@ export class AISelectAnchorDock extends Container {
                 ? i18n.t('ai-select.prompt.accepted')
                 : prompt.proposalFeedback === 'pending'
                   ? i18n.t('ai-select.mask.pending')
-                  : prompt.proposalFeedback === 'ready'
-                    ? i18n.t('ai-select.proposal.ready')
-                    : prompt.proposalFeedback === 'unavailable'
-                      ? i18n.t('ai-select.proposal.unavailable')
-                      : prompt.proposalFeedback === 'failed'
-                        ? (this.maskState.errorMessage ??
-                          i18n.t('ai-select.mask.failed'))
-                        : '';
-        const summary = `+ ${i18n.formatInteger(prompt.positivePointCount)} · − ${i18n.formatInteger(prompt.negativePointCount)} · #${i18n.formatInteger(prompt.promptRevision)}`;
-        this.promptStatus.text = feedback
-            ? `${summary} · ${feedback}`
-            : summary;
+                  : prompt.proposalFeedback === 'selected'
+                    ? i18n.t('ai-select.proposal.selected')
+                    : prompt.proposalFeedback === 'ambiguous'
+                      ? i18n.t('ai-select.proposal.ambiguous')
+                      : prompt.proposalFeedback === 'editing'
+                        ? i18n.t('ai-select.proposal.editing')
+                        : prompt.proposalFeedback === 'unavailable'
+                          ? i18n.t('ai-select.proposal.unavailable')
+                          : prompt.proposalFeedback === 'failed'
+                            ? (this.maskState.errorMessage ??
+                              i18n.t('ai-select.mask.failed'))
+                            : '';
+        const summary = `+ ${i18n.formatInteger(prompt.positivePointCount)} · − ${i18n.formatInteger(prompt.negativePointCount)} · □ ${i18n.formatInteger(prompt.boxCount)} · ▧ ${i18n.formatInteger(prompt.maskConstraintCount)} · #${i18n.formatInteger(prompt.promptRevision)}`;
+        const reasons = (this.maskState.proposalDecision?.reasons ?? []).map(
+            (reason) => i18n.t(`ai-select.proposal.reason.${reason.code}`)
+        );
+        this.promptStatus.text = [summary, feedback, ...reasons]
+            .filter((entry) => entry.length > 0)
+            .join(' · ');
         this.promptStatus.hidden = false;
     }
 
@@ -1058,19 +1142,25 @@ export class AISelectAnchorDock extends Container {
     }
 
     private renderMaskOverlay(presentation: AnchorDockPresentation): void {
-        const annotation =
-            this.maskState.editingMask ?? this.maskState.stableMask;
+        const selectedProposal = this.maskState.proposalSet?.proposals.find(
+            (candidate) => candidate.proposalId === this.proposalSelect.value
+        );
         const proposal =
-            this.maskState.acceptedProposalId === null
-                ? this.maskState.proposalSet?.proposals[0]
+            selectedProposal?.proposalId !== this.maskState.acceptedProposalId
+                ? selectedProposal
                 : undefined;
+        const annotation =
+            proposal === undefined
+                ? (this.maskState.editingMask ?? this.maskState.stableMask)
+                : null;
         const artifact = annotation?.artifact ?? proposal?.mask;
         const rgb = presentation.rgb;
         if (
             presentation.status !== 'ready' ||
             rgb === undefined ||
             (artifact !== undefined &&
-                (artifact.width !== rgb.width || artifact.height !== rgb.height))
+                (artifact.width !== rgb.width ||
+                    artifact.height !== rgb.height))
         ) {
             this.overlay.hidden = true;
             return;
@@ -1107,13 +1197,61 @@ export class AISelectAnchorDock extends Container {
             return;
         }
         context.putImageData(new ImageData(pixels, width, height), 0, 0);
+        this.renderMaskConstraintPrompts(context, width, height);
         this.renderPendingPixelStroke(context);
+        this.renderBoxPrompts(context);
         this.renderPointMarkers(context);
         this.positionOverlay();
         this.overlay.hidden =
             artifact === undefined &&
             (this.maskState.promptState?.points.length ?? 0) === 0 &&
+            (this.maskState.promptState?.boxes.length ?? 0) === 0 &&
+            (this.maskState.promptState?.maskConstraints.length ?? 0) === 0 &&
             this.pixelStroke.previewSamples.length === 0;
+    }
+
+    private renderMaskConstraintPrompts(
+        context: CanvasRenderingContext2D,
+        width: number,
+        height: number
+    ): void {
+        for (const constraint of this.maskState.promptState?.maskConstraints ??
+            []) {
+            const bits = decodeMaskArtifact(constraint.artifact);
+            context.save();
+            context.fillStyle =
+                constraint.polarity === 'include'
+                    ? 'rgba(32, 200, 120, 0.28)'
+                    : 'rgba(240, 91, 102, 0.28)';
+            for (let index = 0; index < width * height; index += 1) {
+                if ((bits[index >> 3] & (1 << (index % 8))) === 0) {
+                    continue;
+                }
+                const x = index % width;
+                const y = Math.floor(index / width);
+                if (constraint.polarity === 'include' || (x + y) % 4 < 2) {
+                    context.fillRect(x, y, 1, 1);
+                }
+            }
+            context.restore();
+        }
+    }
+
+    private renderBoxPrompts(context: CanvasRenderingContext2D): void {
+        for (const box of this.maskState.promptState?.boxes ?? []) {
+            const include = box.polarity === 'include';
+            context.save();
+            context.lineWidth = 3;
+            context.strokeStyle = include ? '#20c878' : '#f05b66';
+            context.setLineDash(include ? [] : [7, 5]);
+            context.strokeRect(
+                box.x0Px,
+                box.y0Px,
+                box.x1Px - box.x0Px,
+                box.y1Px - box.y0Px
+            );
+            context.restore();
+        }
     }
 
     private renderPointMarkers(context: CanvasRenderingContext2D): void {

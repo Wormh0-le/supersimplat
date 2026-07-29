@@ -183,6 +183,7 @@ class AISelectMaskTests(unittest.TestCase):
             'modelManifestDigest': self.model_manifest_digest,
             'adapterCapabilityDigest': prompt_capabilities['capabilityDigest'],
             'proposalPolicyVersion': 'auto-mask-proposals/bounded-source-order-v1',
+            'rankingPolicyVersion': 'anchor-mask-ranking/v1',
         }
 
     def post_proposals(self, body: dict[str, object]) -> dict[str, object]:
@@ -252,6 +253,15 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(
             mask['digest'],
             f'sha256:{hashlib.sha256(base64.b64decode(mask["data"])).hexdigest()}',
+        )
+        self.assertEqual(response['proposalDecision']['status'], 'selected')
+        self.assertEqual(
+            response['proposalDecision']['selectedProposalId'],
+            proposal['proposalId'],
+        )
+        self.assertEqual(
+            response['proposalDecision']['rankingPolicyVersion'],
+            'anchor-mask-ranking/v1',
         )
 
         # A single-view Frame Set is one SAM pass: start, prompt frame zero,
@@ -406,6 +416,7 @@ class AISelectMaskTests(unittest.TestCase):
 
         first = self.state.produce_ai_select_mask(self.request_body())
         self.assertEqual(first['proposalSet']['proposals'], [])
+        self.assertEqual(first['proposalDecision']['status'], 'unavailable')
         self.assertEqual(self.predictor.session_starts, 1)
 
         replayed = self.state.produce_ai_select_mask(self.request_body())
@@ -416,7 +427,54 @@ class AISelectMaskTests(unittest.TestCase):
         retry['proposalAttemptId'] = 'proposal-attempt-2'
         retried = self.state.produce_ai_select_mask(retry)
         self.assertEqual(retried['proposalSet']['proposals'], [])
+        self.assertEqual(retried['proposalDecision']['status'], 'unavailable')
         self.assertEqual(self.predictor.session_starts, 2)
+
+    def test_preserves_nested_part_and_whole_candidates_as_ambiguous(self) -> None:
+        # Both candidates contain the positive point. The first is a local
+        # part; the second strictly contains it and adds neighbouring area.
+        self.predictor.masks = [
+            [[False, True], [False, False]],
+            [[True, True], [True, False]],
+        ]
+        # The oversized candidate deliberately has the much higher raw model
+        # score. Ranking must still surface the geometric ambiguity.
+        self.predictor.probs = [0.1, 0.99]
+
+        response = self.state.produce_ai_select_mask(self.request_body())
+
+        proposals = response['proposalSet']['proposals']
+        self.assertEqual(
+            [proposal['sourceIndex'] for proposal in proposals],
+            [0, 1],
+        )
+        self.assertEqual(
+            [proposal['modelScore'] for proposal in proposals],
+            [0.1, 0.99],
+        )
+        decision = response['proposalDecision']
+        self.assertEqual(decision['status'], 'ambiguous')
+        self.assertEqual(
+            decision['alternativeProposalIds'],
+            ['proposal-0', 'proposal-1'],
+        )
+        self.assertIn(
+            'nested-part-vs-whole',
+            [reason['code'] for reason in decision['reasons']],
+        )
+        self.assertIn(
+            'neighbour-object-leak-risk',
+            [reason['code'] for reason in decision['reasons']],
+        )
+        self.assertEqual(
+            proposals[0]['rankingFeatures']['optionalSupportSanity'],
+            {'participated': False, 'changedDecision': False},
+        )
+        self.assertTrue(
+            proposals[0]['rankingFeatures']['pairwiseRelations'][0][
+                'materiallyDistinct'
+            ]
+        )
 
     def test_publishes_no_proposal_for_a_point_inconsistent_mask(self) -> None:
         # The candidate covers (1, 0) only; prompting (0, 1) rejects it.

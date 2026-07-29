@@ -9,6 +9,8 @@ export const autoMaskProposalSetSchemaVersion = 1;
 export const autoMaskProposalPolicyVersion =
     'auto-mask-proposals/bounded-source-order-v1';
 export const maximumAutoMaskProposalCount = 4;
+export const proposalDecisionSchemaVersion = 1;
+export const anchorMaskRankingPolicyVersion = 'anchor-mask-ranking/v1';
 
 export interface PromptConsistencyFacts {
     readonly positivePointsSatisfied: boolean;
@@ -26,6 +28,77 @@ export interface AutoMaskProposal {
     readonly modelScore?: number;
     readonly modelScoreSemantics?: string;
     readonly promptConsistency: PromptConsistencyFacts;
+    readonly rankingFeatures: ProposalRankingFeatures;
+}
+
+export interface PixelBox {
+    readonly x0Px: number;
+    readonly y0Px: number;
+    readonly x1Px: number;
+    readonly y1Px: number;
+}
+
+export interface ProposalRelation {
+    readonly proposalId: string;
+    readonly intersectionOverUnion: number;
+    readonly areaRatio: number;
+    readonly containment: 'contains' | 'contained-by' | 'none';
+    readonly materiallyDistinct: boolean;
+}
+
+export interface ProposalRankingFeatures {
+    readonly promptConsistency: PromptConsistencyFacts;
+    readonly eligible: boolean;
+    readonly areaFraction: number;
+    readonly boundingBox: PixelBox;
+    readonly connectedComponentCount: number;
+    readonly positivePointComponentIds: readonly number[];
+    readonly positivePointBoundaryDistances: readonly number[];
+    readonly pairwiseRelations: readonly ProposalRelation[];
+    readonly boundaryContactFraction: number;
+    readonly compactness: number;
+    readonly boxFillRatios: readonly number[];
+    readonly boxSpillRatios: readonly number[];
+    readonly promptMaskOverlap: number;
+    readonly modelScore?: number;
+    readonly optionalSupportSanity: {
+        readonly participated: boolean;
+        readonly changedDecision: boolean;
+        readonly policyId?: string;
+        readonly computable?: boolean;
+        readonly observedGaussianCount?: number;
+        readonly supportConcentration?: number;
+    };
+}
+
+export type ProposalDecisionStatus = 'selected' | 'ambiguous' | 'unavailable';
+export type ProposalDecisionReasonCode =
+    | 'nested-part-vs-whole'
+    | 'similar-score-different-area'
+    | 'multiple-disconnected-targets'
+    | 'box-spill'
+    | 'prompt-conflict'
+    | 'neighbour-object-leak-risk'
+    | 'model-score-disagreement'
+    | 'insufficient-decision-margin';
+
+export interface ProposalDecisionReason {
+    readonly code: ProposalDecisionReasonCode;
+    readonly proposalIds: readonly string[];
+}
+
+export interface ProposalDecision {
+    readonly schemaVersion: typeof proposalDecisionSchemaVersion;
+    readonly viewId: string;
+    readonly rgbDigest: string;
+    readonly promptStateDigest: string;
+    readonly proposalSetDigest: string;
+    readonly rankingPolicyVersion: typeof anchorMaskRankingPolicyVersion;
+    readonly status: ProposalDecisionStatus;
+    /** Suggested proposal for selected/ambiguous; acceptance remains explicit. */
+    readonly selectedProposalId?: string;
+    readonly alternativeProposalIds: readonly string[];
+    readonly reasons: readonly ProposalDecisionReason[];
 }
 
 export interface ProposalTruncationRecord {
@@ -115,6 +188,117 @@ const exactBooleanFacts = (value: unknown): boolean => {
     );
 };
 
+const isFiniteNumber = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(value);
+
+const isUnitNumber = (value: unknown): value is number =>
+    isFiniteNumber(value) && value >= 0 && value <= 1;
+
+const isNumberArray = (
+    value: unknown,
+    predicate: (entry: number) => boolean = () => true
+): value is number[] =>
+    Array.isArray(value) &&
+    value.every((entry) => isFiniteNumber(entry) && predicate(entry as number));
+
+const isPixelBox = (value: unknown): value is PixelBox =>
+    isRecord(value) &&
+    Object.keys(value).length === 4 &&
+    ['x0Px', 'y0Px', 'x1Px', 'y1Px'].every((key) =>
+        Number.isSafeInteger(value[key])
+    ) &&
+    (value.x0Px as number) >= 0 &&
+    (value.y0Px as number) >= 0 &&
+    (value.x1Px as number) >= (value.x0Px as number) &&
+    (value.y1Px as number) >= (value.y0Px as number);
+
+const isProposalRelation = (value: unknown): value is ProposalRelation =>
+    isRecord(value) &&
+    Object.keys(value).length === 5 &&
+    isNonEmptyString(value.proposalId) &&
+    isUnitNumber(value.intersectionOverUnion) &&
+    isFiniteNumber(value.areaRatio) &&
+    value.areaRatio >= 1 &&
+    ['contains', 'contained-by', 'none'].includes(
+        value.containment as string
+    ) &&
+    typeof value.materiallyDistinct === 'boolean';
+
+const isProposalRankingFeatures = (
+    value: unknown
+): value is ProposalRankingFeatures =>
+    isRecord(value) &&
+    Object.keys(value).every((key) =>
+        [
+            'promptConsistency',
+            'eligible',
+            'areaFraction',
+            'boundingBox',
+            'connectedComponentCount',
+            'positivePointComponentIds',
+            'positivePointBoundaryDistances',
+            'pairwiseRelations',
+            'boundaryContactFraction',
+            'compactness',
+            'boxFillRatios',
+            'boxSpillRatios',
+            'promptMaskOverlap',
+            'modelScore',
+            'optionalSupportSanity'
+        ].includes(key)
+    ) &&
+    exactBooleanFacts(value.promptConsistency) &&
+    typeof value.eligible === 'boolean' &&
+    isUnitNumber(value.areaFraction) &&
+    isPixelBox(value.boundingBox) &&
+    Number.isSafeInteger(value.connectedComponentCount) &&
+    (value.connectedComponentCount as number) >= 0 &&
+    isNumberArray(
+        value.positivePointComponentIds,
+        (entry) => Number.isSafeInteger(entry) && entry >= -1
+    ) &&
+    isNumberArray(
+        value.positivePointBoundaryDistances,
+        (entry) => entry >= 0
+    ) &&
+    Array.isArray(value.pairwiseRelations) &&
+    value.pairwiseRelations.every(isProposalRelation) &&
+    isUnitNumber(value.boundaryContactFraction) &&
+    isFiniteNumber(value.compactness) &&
+    value.compactness >= 0 &&
+    isNumberArray(value.boxFillRatios, (entry) => entry >= 0 && entry <= 1) &&
+    isNumberArray(value.boxSpillRatios, (entry) => entry >= 0 && entry <= 1) &&
+    isUnitNumber(value.promptMaskOverlap) &&
+    (value.modelScore === undefined || isFiniteNumber(value.modelScore)) &&
+    isRecord(value.optionalSupportSanity) &&
+    Object.keys(value.optionalSupportSanity).every((key) =>
+        [
+            'participated',
+            'changedDecision',
+            'policyId',
+            'computable',
+            'observedGaussianCount',
+            'supportConcentration'
+        ].includes(key)
+    ) &&
+    typeof value.optionalSupportSanity.participated === 'boolean' &&
+    typeof value.optionalSupportSanity.changedDecision === 'boolean' &&
+    (value.optionalSupportSanity.policyId === undefined ||
+        isNonEmptyString(value.optionalSupportSanity.policyId)) &&
+    (value.optionalSupportSanity.computable === undefined ||
+        typeof value.optionalSupportSanity.computable === 'boolean') &&
+    (value.optionalSupportSanity.observedGaussianCount === undefined ||
+        (Number.isSafeInteger(
+            value.optionalSupportSanity.observedGaussianCount
+        ) &&
+            (value.optionalSupportSanity.observedGaussianCount as number) >=
+                0)) &&
+    (value.optionalSupportSanity.supportConcentration === undefined ||
+        isUnitNumber(value.optionalSupportSanity.supportConcentration));
+
+const promptConsistencyMatches = (left: unknown, right: unknown): boolean =>
+    canonicalJson(left) === canonicalJson(right);
+
 export const isAutoMaskProposalSet = (
     value: unknown
 ): value is AutoMaskProposalSet => {
@@ -151,6 +335,14 @@ export const isAutoMaskProposalSet = (
             !isMaskArtifact(proposal.mask) ||
             !artifactDigestMatchesBytes(proposal.mask) ||
             !exactBooleanFacts(proposal.promptConsistency) ||
+            !isProposalRankingFeatures(proposal.rankingFeatures) ||
+            !promptConsistencyMatches(
+                proposal.promptConsistency,
+                proposal.rankingFeatures.promptConsistency
+            ) ||
+            proposal.rankingFeatures.boundingBox.x1Px >= proposal.mask.width ||
+            proposal.rankingFeatures.boundingBox.y1Px >= proposal.mask.height ||
+            proposal.rankingFeatures.modelScore !== proposal.modelScore ||
             (proposal.modelScore !== undefined &&
                 (typeof proposal.modelScore !== 'number' ||
                     !Number.isFinite(proposal.modelScore))) ||
@@ -161,6 +353,22 @@ export const isAutoMaskProposalSet = (
         }
         proposalIds.add(proposal.proposalId);
         sourceIndexes.add(proposal.sourceIndex as number);
+    }
+    for (const proposal of value.proposals) {
+        const relatedIds = new Set<string>();
+        for (const relation of proposal.rankingFeatures.pairwiseRelations) {
+            if (
+                relation.proposalId === proposal.proposalId ||
+                !proposalIds.has(relation.proposalId) ||
+                relatedIds.has(relation.proposalId)
+            ) {
+                return false;
+            }
+            relatedIds.add(relation.proposalId);
+        }
+        if (relatedIds.size !== value.proposals.length - 1) {
+            return false;
+        }
     }
     if (
         value.truncation !== undefined &&
@@ -179,5 +387,94 @@ export const isAutoMaskProposalSet = (
         autoMaskProposalSetDigest(
             payload as Omit<AutoMaskProposalSet, 'digest'>
         ) === digest
+    );
+};
+
+const proposalDecisionReasonCodes = new Set<ProposalDecisionReasonCode>([
+    'nested-part-vs-whole',
+    'similar-score-different-area',
+    'multiple-disconnected-targets',
+    'box-spill',
+    'prompt-conflict',
+    'neighbour-object-leak-risk',
+    'model-score-disagreement',
+    'insufficient-decision-margin'
+]);
+
+export const isProposalDecision = (
+    value: unknown,
+    proposalSet: AutoMaskProposalSet
+): value is ProposalDecision => {
+    if (
+        !isRecord(value) ||
+        value.schemaVersion !== proposalDecisionSchemaVersion ||
+        value.viewId !== proposalSet.viewId ||
+        value.rgbDigest !== proposalSet.rgbDigest ||
+        value.promptStateDigest !== proposalSet.promptStateDigest ||
+        value.proposalSetDigest !== proposalSet.digest ||
+        value.rankingPolicyVersion !== anchorMaskRankingPolicyVersion ||
+        Object.keys(value).some(
+            (key) =>
+                ![
+                    'schemaVersion',
+                    'viewId',
+                    'rgbDigest',
+                    'promptStateDigest',
+                    'proposalSetDigest',
+                    'rankingPolicyVersion',
+                    'status',
+                    'selectedProposalId',
+                    'alternativeProposalIds',
+                    'reasons'
+                ].includes(key)
+        ) ||
+        !['selected', 'ambiguous', 'unavailable'].includes(
+            value.status as string
+        ) ||
+        !Array.isArray(value.alternativeProposalIds) ||
+        !Array.isArray(value.reasons)
+    ) {
+        return false;
+    }
+    const proposalIds = new Set(
+        proposalSet.proposals.map((proposal) => proposal.proposalId)
+    );
+    const alternatives = value.alternativeProposalIds;
+    if (
+        alternatives.some(
+            (proposalId) =>
+                !isNonEmptyString(proposalId) || !proposalIds.has(proposalId)
+        ) ||
+        new Set(alternatives).size !== alternatives.length
+    ) {
+        return false;
+    }
+    if (value.status === 'unavailable') {
+        if (
+            value.selectedProposalId !== undefined ||
+            alternatives.length !== 0
+        ) {
+            return false;
+        }
+    } else if (
+        !isNonEmptyString(value.selectedProposalId) ||
+        !proposalIds.has(value.selectedProposalId) ||
+        !alternatives.includes(value.selectedProposalId)
+    ) {
+        return false;
+    }
+    return value.reasons.every(
+        (reason) =>
+            isRecord(reason) &&
+            Object.keys(reason).length === 2 &&
+            proposalDecisionReasonCodes.has(
+                reason.code as ProposalDecisionReasonCode
+            ) &&
+            Array.isArray(reason.proposalIds) &&
+            reason.proposalIds.every(
+                (proposalId) =>
+                    isNonEmptyString(proposalId) && proposalIds.has(proposalId)
+            ) &&
+            new Set(reason.proposalIds).size === reason.proposalIds.length
     );
 };

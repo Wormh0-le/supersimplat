@@ -6,8 +6,11 @@ import {
     type AITarget
 } from './current-target-context';
 import {
+    anchorMaskRankingPolicyVersion,
     isAutoMaskProposalSet,
-    type AutoMaskProposalSet
+    isProposalDecision,
+    type AutoMaskProposalSet,
+    type ProposalDecision
 } from './mask-proposal';
 import { isPromptState, type PromptState } from './prompt-state';
 
@@ -32,6 +35,7 @@ export interface AIViewMaskRequest {
     readonly modelManifestDigest: string;
     readonly adapterCapabilityDigest: string;
     readonly proposalPolicyVersion: string;
+    readonly rankingPolicyVersion: typeof anchorMaskRankingPolicyVersion;
     readonly proposalAttemptId: string;
 }
 
@@ -47,8 +51,10 @@ export interface MaskResultResponse {
     readonly modelManifestDigest: string;
     readonly adapterCapabilityDigest: string;
     readonly proposalPolicyVersion: string;
+    readonly rankingPolicyVersion: typeof anchorMaskRankingPolicyVersion;
     readonly proposalAttemptId: string;
     readonly proposalSet: AutoMaskProposalSet;
+    readonly proposalDecision: ProposalDecision;
 }
 
 export interface AISelectMaskProvider {
@@ -134,6 +140,7 @@ export const isAIViewMaskRequest = (
         isNonEmptyString(value.modelManifestDigest) &&
         isDigest(value.adapterCapabilityDigest) &&
         isNonEmptyString(value.proposalPolicyVersion) &&
+        value.rankingPolicyVersion === anchorMaskRankingPolicyVersion &&
         isNonEmptyString(value.proposalAttemptId)
     );
 };
@@ -141,22 +148,26 @@ export const isAIViewMaskRequest = (
 export const isMaskResultResponse = (
     value: unknown
 ): value is MaskResultResponse => {
-    return (
-        isRecord(value) &&
-        isAIRequestBinding(value.requestBinding) &&
-        isNonEmptyString(value.targetSplatId) &&
-        isNonEmptyString(value.sceneId) &&
-        isNonEmptyString(value.sceneVersion) &&
-        isNonEmptyString(value.viewId) &&
-        isDigest(value.cameraBindingDigest) &&
-        isDigest(value.rgbDigest) &&
-        isDigest(value.promptStateDigest) &&
-        isNonEmptyString(value.modelManifestDigest) &&
-        isDigest(value.adapterCapabilityDigest) &&
-        isNonEmptyString(value.proposalPolicyVersion) &&
-        isNonEmptyString(value.proposalAttemptId) &&
-        isAutoMaskProposalSet(value.proposalSet)
-    );
+    if (
+        !isRecord(value) ||
+        !isAIRequestBinding(value.requestBinding) ||
+        !isNonEmptyString(value.targetSplatId) ||
+        !isNonEmptyString(value.sceneId) ||
+        !isNonEmptyString(value.sceneVersion) ||
+        !isNonEmptyString(value.viewId) ||
+        !isDigest(value.cameraBindingDigest) ||
+        !isDigest(value.rgbDigest) ||
+        !isDigest(value.promptStateDigest) ||
+        !isNonEmptyString(value.modelManifestDigest) ||
+        !isDigest(value.adapterCapabilityDigest) ||
+        !isNonEmptyString(value.proposalPolicyVersion) ||
+        value.rankingPolicyVersion !== anchorMaskRankingPolicyVersion ||
+        !isNonEmptyString(value.proposalAttemptId) ||
+        !isAutoMaskProposalSet(value.proposalSet)
+    ) {
+        return false;
+    }
+    return isProposalDecision(value.proposalDecision, value.proposalSet);
 };
 
 /**
@@ -187,6 +198,7 @@ export const maskResponseMatchesRequest = (
         response.modelManifestDigest === request.modelManifestDigest &&
         response.adapterCapabilityDigest === request.adapterCapabilityDigest &&
         response.proposalPolicyVersion === request.proposalPolicyVersion &&
+        response.rankingPolicyVersion === request.rankingPolicyVersion &&
         response.proposalAttemptId === request.proposalAttemptId &&
         response.proposalSet.viewId === request.viewId &&
         response.proposalSet.rgbDigest === request.rgb.digest &&
@@ -198,6 +210,8 @@ export const maskResponseMatchesRequest = (
         response.proposalSet.proposalPolicyVersion ===
             request.proposalPolicyVersion &&
         response.proposalSet.proposalAttemptId === request.proposalAttemptId &&
+        response.proposalDecision.rankingPolicyVersion ===
+            request.rankingPolicyVersion &&
         response.proposalSet.proposals.every(
             (proposal) =>
                 proposal.mask.width === request.rgb.width &&

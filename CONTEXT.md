@@ -140,6 +140,14 @@ _Avoid_: best-effort ignored prompts, model-name feature detection
 A deterministic bounded set of structurally valid model Mask alternatives bound to exact target/context, Camera/RGB, PromptState, model, adapter capability, policy, and attempt identities. A proposal may seed Editing Mask but is never Stable without Confirm Mask. Raw adapter scores retain their declared semantics and are not correctness confidence.
 _Avoid_: Stable Mask, highest-score auto-confirm, ProposalDecision
 
+**Proposal Ranking Features**
+A versioned per-proposal 2D record containing hard prompt consistency, area/bounds, connected components, Point/Box geometry, pairwise containment/IoU/material-distinctness, boundary contact, compactness, and declared model score semantics. Optional Gaussian support participation and its decision effect are recorded explicitly; support is never the primary selector or formal Evidence.
+_Avoid_: calibrated confidence, Gaussian ownership, score-only ranking
+
+**ProposalDecision**
+The versioned pre-Stable result that binds one exact AutoMaskProposalSet and classifies it as Selected, Ambiguous, or Unavailable with structured reasons and bounded alternatives. A suggested proposal is not accepted automatically; explicit acceptance or manual replacement creates the Editing Mask.
+_Avoid_: ViewAssessment, Stable Mask, highest-score auto-confirm
+
 **Pixel Editing**
 Explicit Paint/Erase mutation of the unpublished Editing Mask. Pixel edits use Mask-local history and never rewrite PromptState or silently rerun proposal ranking.
 _Avoid_: Prompt Brush, model constraint

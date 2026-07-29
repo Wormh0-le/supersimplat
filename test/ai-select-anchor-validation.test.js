@@ -60,6 +60,7 @@ const input = (overrides = {}) => ({
     cameraBindingCurrent: true,
     stableMask: stableMask(solidMask()),
     maskRevisionPending: false,
+    proposalDecisionResolved: true,
     stableIdMappingValid: true,
     renderWorkingSetValid: true,
     support: { computable: true, observedGaussianCount: 500 },
@@ -129,6 +130,14 @@ test('a pending latest Mask/SAM revision blocks Confirm', () => {
         input({ maskRevisionPending: true })
     );
     assert.ok(result.hardBlocks.includes('mask-revision-pending'));
+});
+
+test('an unresolved ambiguous proposal decision blocks Confirm', () => {
+    const result = evaluateAnchorValidation(
+        input({ proposalDecisionResolved: false })
+    );
+    assert.ok(result.hardBlocks.includes('proposal-decision-unresolved'));
+    assert.equal(result.canConfirm, false);
 });
 
 test('invalid Stable ID mapping or Render Working Set blocks Confirm', () => {

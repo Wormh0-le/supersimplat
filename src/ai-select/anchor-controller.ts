@@ -26,6 +26,7 @@ import {
     type TargetDependencyToken
 } from './current-target-context';
 import { isMaskArtifact, type MaskArtifact } from './mask-annotation';
+import { anchorMaskRankingPolicyVersion } from './mask-proposal';
 import {
     isMaskResultResponse,
     maskResponseMatchesRequest,
@@ -411,6 +412,7 @@ export class AISelectAnchorController {
             modelManifestDigest,
             adapterCapabilityDigest,
             proposalPolicyVersion,
+            rankingPolicyVersion: anchorMaskRankingPolicyVersion,
             proposalAttemptId
         });
     }

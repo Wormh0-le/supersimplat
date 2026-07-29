@@ -115,10 +115,7 @@ const maskState = (overrides = {}) => ({
     viewId: 'anchor-view',
     editingMask: null,
     stableMask: null,
-    promptState: createEmptyPromptState(
-        'anchor-view',
-        'sha256:formal'
-    ),
+    promptState: createEmptyPromptState('anchor-view', 'sha256:formal'),
     requestStatus: 'idle',
     proposalStatus: 'none',
     evidence: { viewId: 'anchor-view', status: 'not-requested' },
@@ -126,17 +123,14 @@ const maskState = (overrides = {}) => ({
 });
 
 const promptState = (count) =>
-    revisePromptState(
-        createEmptyPromptState('anchor-view', 'sha256:formal'),
-        {
-            points: Array.from({ length: count }, (_, index) => ({
-                promptId: `p-${index + 1}`,
-                polarity: 'include',
-                xPx: index,
-                yPx: index
-            }))
-        }
-    );
+    revisePromptState(createEmptyPromptState('anchor-view', 'sha256:formal'), {
+        points: Array.from({ length: count }, (_, index) => ({
+            promptId: `p-${index + 1}`,
+            polarity: 'include',
+            xPx: index,
+            yPx: index
+        }))
+    });
 
 test('AI View Dock Mask surface stays none when no Mask exists', () => {
     const result = getAnchorDockPresentation(state(baseAnchor()), maskState());
@@ -224,7 +218,9 @@ test('AI View Dock acknowledges a local Prompt revision before a proposal result
 
 test('AI View Dock exposes proposal result states independently from Mask pixels', () => {
     for (const [proposalStatus, expected] of [
-        ['ready', 'ready'],
+        ['selected', 'selected'],
+        ['ambiguous', 'ambiguous'],
+        ['editing', 'editing'],
         ['unavailable', 'unavailable']
     ]) {
         const result = getAnchorDockPresentation(

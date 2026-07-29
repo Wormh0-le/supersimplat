@@ -743,6 +743,12 @@ class Sam3PointMaskAdapter:
                 "areaValid": area_valid,
                 "pointConsistent": point_consistent,
                 "selected": False,
+                "binaryMask": {
+                    "encoding": "bitset-lsb-v1",
+                    "width": view.width,
+                    "height": view.height,
+                    "data": base64.b64encode(bits).decode("ascii"),
+                },
             }
             if scores[index] is not None:
                 diagnostic["qualityScore"] = scores[index]

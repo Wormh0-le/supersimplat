@@ -18,7 +18,9 @@ export type ProposalFeedback =
     | 'none'
     | 'accepted'
     | 'pending'
-    | 'ready'
+    | 'selected'
+    | 'ambiguous'
+    | 'editing'
     | 'unavailable'
     | 'failed';
 
@@ -27,6 +29,8 @@ export interface AnchorDockMaskPresentation {
     readonly promptCount: number;
     readonly positivePointCount: number;
     readonly negativePointCount: number;
+    readonly boxCount: number;
+    readonly maskConstraintCount: number;
     readonly promptRevision: number;
     readonly proposalFeedback: ProposalFeedback;
     readonly evidenceStatus: EvidenceStatus;
@@ -66,6 +70,8 @@ const emptyMaskPresentation = (
         promptCount: 0,
         positivePointCount: 0,
         negativePointCount: 0,
+        boxCount: 0,
+        maskConstraintCount: 0,
         promptRevision: 0,
         proposalFeedback: 'none',
         evidenceStatus: 'not-requested',
@@ -104,13 +110,17 @@ export const getAnchorDockMaskPresentation = (
             ? 'pending'
             : maskState.requestStatus === 'failed'
               ? 'failed'
-              : maskState.proposalStatus === 'ready'
-                ? 'ready'
-                : maskState.proposalStatus === 'unavailable'
-                  ? 'unavailable'
-                  : promptCount > 0
-                    ? 'accepted'
-                    : 'none';
+              : maskState.proposalStatus === 'selected'
+                ? 'selected'
+                : maskState.proposalStatus === 'ambiguous'
+                  ? 'ambiguous'
+                  : maskState.proposalStatus === 'editing'
+                    ? 'editing'
+                    : maskState.proposalStatus === 'unavailable'
+                      ? 'unavailable'
+                      : promptCount > 0
+                        ? 'accepted'
+                        : 'none';
     return Object.freeze({
         status,
         promptCount,
@@ -120,6 +130,8 @@ export const getAnchorDockMaskPresentation = (
         negativePointCount:
             promptState?.points.filter((point) => point.polarity === 'exclude')
                 .length ?? 0,
+        boxCount: promptState?.boxes.length ?? 0,
+        maskConstraintCount: promptState?.maskConstraints.length ?? 0,
         promptRevision: promptState?.revision ?? 0,
         proposalFeedback,
         evidenceStatus: maskState.evidence.status,

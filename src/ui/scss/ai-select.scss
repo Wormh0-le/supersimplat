@@ -192,6 +192,25 @@
         background: $bcg-darkest;
         color: $text-primary;
     }
+
+    #ai-select-anchor-proposal-select {
+        min-width: 180px;
+        height: 24px;
+        border: 1px solid $bcg-lighter;
+        background: $bcg-darkest;
+        color: $text-primary;
+    }
+
+    #ai-select-anchor-unsupported-tools {
+        color: $text-secondary;
+
+        span {
+            display: block;
+            max-width: 320px;
+            padding: 4px 0;
+            white-space: normal;
+        }
+    }
 }
 
 #ai-select-anchor-dock-mask-actions {

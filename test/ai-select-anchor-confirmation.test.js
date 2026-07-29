@@ -24,6 +24,7 @@ const {
     maskBitsetEncoding
 } = require('../.test-dist/src/ai-select/mask-annotation.js');
 const {
+    anchorMaskRankingPolicyVersion,
     autoMaskProposalSetDigest
 } = require('../.test-dist/src/ai-select/mask-proposal.js');
 const {
@@ -160,19 +161,53 @@ const maskResponseFor = (request, overrides = {}) => {
         adapterCapabilityDigest: request.adapterCapabilityDigest,
         proposalPolicyVersion: request.proposalPolicyVersion,
         proposalAttemptId: request.proposalAttemptId,
-        proposals: [{
-            proposalId: 'proposal-0',
-            sourceIndex: 0,
-            mask: bitsetArtifact(
-                request.rgb.width,
-                request.rgb.height,
-                solidForeground(request.rgb.width, request.rgb.height)
-            ),
-            promptConsistency: {
-                positivePointsSatisfied: true,
-                negativePointsSatisfied: true
+        proposals: [
+            {
+                proposalId: 'proposal-0',
+                sourceIndex: 0,
+                mask: bitsetArtifact(
+                    request.rgb.width,
+                    request.rgb.height,
+                    solidForeground(request.rgb.width, request.rgb.height)
+                ),
+                promptConsistency: {
+                    positivePointsSatisfied: true,
+                    negativePointsSatisfied: true
+                },
+                rankingFeatures: {
+                    promptConsistency: {
+                        positivePointsSatisfied: true,
+                        negativePointsSatisfied: true
+                    },
+                    eligible: true,
+                    areaFraction:
+                        256 / (request.rgb.width * request.rgb.height),
+                    boundingBox: {
+                        x0Px: request.rgb.width / 2 - 8,
+                        y0Px: request.rgb.height / 2 - 8,
+                        x1Px: request.rgb.width / 2 + 7,
+                        y1Px: request.rgb.height / 2 + 7
+                    },
+                    connectedComponentCount: 1,
+                    positivePointComponentIds: [0],
+                    positivePointBoundaryDistances: [1],
+                    pairwiseRelations: [],
+                    boundaryContactFraction: 0,
+                    compactness: Math.PI / 4,
+                    boxFillRatios: [],
+                    boxSpillRatios: [],
+                    promptMaskOverlap: 1,
+                    optionalSupportSanity: {
+                        participated: false,
+                        changedDecision: false
+                    }
+                }
             }
-        }]
+        ]
+    };
+    const proposalSet = {
+        ...proposalPayload,
+        digest: autoMaskProposalSetDigest(proposalPayload)
     };
     return {
         requestBinding: request.requestBinding,
@@ -186,10 +221,20 @@ const maskResponseFor = (request, overrides = {}) => {
         modelManifestDigest: request.modelManifestDigest,
         adapterCapabilityDigest: request.adapterCapabilityDigest,
         proposalPolicyVersion: request.proposalPolicyVersion,
+        rankingPolicyVersion: request.rankingPolicyVersion,
         proposalAttemptId: request.proposalAttemptId,
-        proposalSet: {
-            ...proposalPayload,
-            digest: autoMaskProposalSetDigest(proposalPayload)
+        proposalSet,
+        proposalDecision: {
+            schemaVersion: 1,
+            viewId: request.viewId,
+            rgbDigest: request.rgb.digest,
+            promptStateDigest: request.promptState.digest,
+            proposalSetDigest: proposalSet.digest,
+            rankingPolicyVersion: anchorMaskRankingPolicyVersion,
+            status: 'selected',
+            selectedProposalId: 'proposal-0',
+            alternativeProposalIds: ['proposal-0'],
+            reasons: []
         },
         ...overrides
     };

@@ -310,6 +310,11 @@ export class AISelectAnchorConfirmationController {
             cameraBindingCurrent: contextActive === true,
             stableMask,
             maskRevisionPending: this.maskState?.requestStatus === 'pending',
+            proposalDecisionResolved:
+                this.maskState?.proposalDecision?.status !== 'ambiguous' ||
+                this.maskState.acceptedProposalId !== null ||
+                this.maskState.editingMask?.source === 'manual' ||
+                this.maskState.editingMask?.source === 'hybrid',
             stableIdMappingValid: this.getStableIdMappingValid(),
             renderWorkingSetValid: this.getRenderWorkingSetValid(),
             support

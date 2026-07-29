@@ -19,6 +19,7 @@ const {
     maskBitsetEncoding
 } = require('../.test-dist/src/ai-select/mask-annotation.js');
 const {
+    anchorMaskRankingPolicyVersion,
     autoMaskProposalSetDigest
 } = require('../.test-dist/src/ai-select/mask-proposal.js');
 const {
@@ -132,9 +133,45 @@ const bitsetArtifact = (width, height, foreground = [[2, 2]]) => {
     });
 };
 
+const rankingFeatures = (relations = [], modelScore) => ({
+    promptConsistency: {
+        positivePointsSatisfied: true,
+        negativePointsSatisfied: true
+    },
+    eligible: true,
+    areaFraction: 1 / (64 * 48),
+    boundingBox: { x0Px: 2, y0Px: 2, x1Px: 2, y1Px: 2 },
+    connectedComponentCount: 1,
+    positivePointComponentIds: [0],
+    positivePointBoundaryDistances: [1],
+    pairwiseRelations: relations,
+    boundaryContactFraction: 0,
+    compactness: Math.PI / 4,
+    boxFillRatios: [],
+    boxSpillRatios: [],
+    promptMaskOverlap: 1,
+    optionalSupportSanity: {
+        participated: false,
+        changedDecision: false
+    },
+    ...(modelScore === undefined ? {} : { modelScore })
+});
+
 const maskResponseFor = (request, overrides = {}) => {
     const artifact =
         overrides.mask ?? bitsetArtifact(request.rgb.width, request.rgb.height);
+    const proposals = overrides.proposals ?? [
+        {
+            proposalId: 'proposal-0',
+            mask: artifact,
+            sourceIndex: 0,
+            promptConsistency: {
+                positivePointsSatisfied: true,
+                negativePointsSatisfied: true
+            },
+            rankingFeatures: rankingFeatures()
+        }
+    ];
     const proposalPayload = {
         schemaVersion: 1,
         viewId: request.viewId,
@@ -144,23 +181,44 @@ const maskResponseFor = (request, overrides = {}) => {
         adapterCapabilityDigest: request.adapterCapabilityDigest,
         proposalPolicyVersion: request.proposalPolicyVersion,
         proposalAttemptId: request.proposalAttemptId,
-        proposals: [
-            {
-                proposalId: 'proposal-0',
-                mask: artifact,
-                sourceIndex: 0,
-                promptConsistency: {
-                    positivePointsSatisfied: true,
-                    negativePointsSatisfied: true
-                }
-            }
-        ]
+        proposals
     };
-    const proposalSet = {
+    const proposalSet = overrides.proposalSet ?? {
         ...proposalPayload,
         digest: autoMaskProposalSetDigest(proposalPayload)
     };
-    const { mask: ignoredMask, ...responseOverrides } = overrides;
+    const proposalDecision =
+        overrides.proposalDecision ??
+        (proposalSet.proposals.length === 0
+            ? {
+                  schemaVersion: 1,
+                  viewId: request.viewId,
+                  rgbDigest: request.rgb.digest,
+                  promptStateDigest: request.promptState.digest,
+                  proposalSetDigest: proposalSet.digest,
+                  rankingPolicyVersion: anchorMaskRankingPolicyVersion,
+                  status: 'unavailable',
+                  alternativeProposalIds: [],
+                  reasons: [{ code: 'prompt-conflict', proposalIds: [] }]
+              }
+            : {
+                  schemaVersion: 1,
+                  viewId: request.viewId,
+                  rgbDigest: request.rgb.digest,
+                  promptStateDigest: request.promptState.digest,
+                  proposalSetDigest: proposalSet.digest,
+                  rankingPolicyVersion: anchorMaskRankingPolicyVersion,
+                  status: 'selected',
+                  selectedProposalId: proposalSet.proposals[0].proposalId,
+                  alternativeProposalIds: [proposalSet.proposals[0].proposalId],
+                  reasons: []
+              });
+    const {
+        mask: ignoredMask,
+        proposals: ignoredProposals,
+        proposalDecision: ignoredDecision,
+        ...responseOverrides
+    } = overrides;
     return {
         requestBinding: request.requestBinding,
         targetSplatId: request.target.splatId,
@@ -173,8 +231,10 @@ const maskResponseFor = (request, overrides = {}) => {
         modelManifestDigest: request.modelManifestDigest,
         adapterCapabilityDigest: request.adapterCapabilityDigest,
         proposalPolicyVersion: request.proposalPolicyVersion,
+        rankingPolicyVersion: request.rankingPolicyVersion,
         proposalAttemptId: request.proposalAttemptId,
         proposalSet,
+        proposalDecision,
         ...responseOverrides
     };
 };
@@ -440,7 +500,10 @@ test('stale inference cannot replace a newer committed local gesture', async () 
     await pending;
 
     assert.equal(mask.state.editingMask.maskId, localGesture.maskId);
-    assert.equal(mask.state.editingMask.artifact.digest, localGesture.artifact.digest);
+    assert.equal(
+        mask.state.editingMask.artifact.digest,
+        localGesture.artifact.digest
+    );
 });
 
 test('a brush stroke on a SAM Editing Mask creates a hybrid local revision', async () => {
@@ -992,4 +1055,100 @@ test('no-candidate output is proposal unavailable, not render or technical failu
     assert.equal(mask.state.requestStatus, 'idle');
     assert.equal(mask.state.editingMask, null);
     assert.equal(anchor.state.anchor.renderStatus, 'ready');
+});
+
+test('an ambiguous proposal set preserves alternatives until explicit acceptance', async () => {
+    const firstMask = bitsetArtifact(64, 48, [[10, 12]]);
+    const secondMask = bitsetArtifact(64, 48, [
+        [10, 12],
+        [11, 12],
+        [10, 13]
+    ]);
+    const proposals = [
+        {
+            proposalId: 'proposal-0',
+            mask: firstMask,
+            sourceIndex: 0,
+            modelScore: 0.91,
+            modelScoreSemantics: 'adapter-local score',
+            promptConsistency: {
+                positivePointsSatisfied: true,
+                negativePointsSatisfied: true
+            },
+            rankingFeatures: rankingFeatures(
+                [
+                    {
+                        proposalId: 'proposal-1',
+                        intersectionOverUnion: 1 / 3,
+                        areaRatio: 3,
+                        containment: 'contained-by',
+                        materiallyDistinct: true
+                    }
+                ],
+                0.91
+            )
+        },
+        {
+            proposalId: 'proposal-1',
+            mask: secondMask,
+            sourceIndex: 1,
+            modelScore: 0.89,
+            modelScoreSemantics: 'adapter-local score',
+            promptConsistency: {
+                positivePointsSatisfied: true,
+                negativePointsSatisfied: true
+            },
+            rankingFeatures: rankingFeatures(
+                [
+                    {
+                        proposalId: 'proposal-0',
+                        intersectionOverUnion: 1 / 3,
+                        areaRatio: 3,
+                        containment: 'contains',
+                        materiallyDistinct: true
+                    }
+                ],
+                0.89
+            )
+        }
+    ];
+    const { mask } = await setup({
+        promptCapabilities: richPromptCapabilities,
+        produceMask: (request) => {
+            const response = maskResponseFor(request, { proposals });
+            response.proposalDecision = {
+                schemaVersion: 1,
+                viewId: request.viewId,
+                rgbDigest: request.rgb.digest,
+                promptStateDigest: request.promptState.digest,
+                proposalSetDigest: response.proposalSet.digest,
+                rankingPolicyVersion: anchorMaskRankingPolicyVersion,
+                status: 'ambiguous',
+                selectedProposalId: 'proposal-0',
+                alternativeProposalIds: ['proposal-0', 'proposal-1'],
+                reasons: [
+                    {
+                        code: 'nested-part-vs-whole',
+                        proposalIds: ['proposal-0', 'proposal-1']
+                    }
+                ]
+            };
+            return Promise.resolve(response);
+        }
+    });
+
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+
+    assert.equal(mask.state.proposalStatus, 'ambiguous');
+    assert.equal(mask.state.editingMask, null);
+    assert.equal(
+        mask.state.proposalDecision.reasons[0].code,
+        'nested-part-vs-whole'
+    );
+
+    mask.acceptProposal('proposal-1');
+
+    assert.equal(mask.state.acceptedProposalId, 'proposal-1');
+    assert.equal(mask.state.editingMask.artifact.digest, secondMask.digest);
+    assert.equal(mask.state.stableMask, null);
 });

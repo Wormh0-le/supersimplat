@@ -19,7 +19,8 @@ import {
 } from './mask-annotation';
 import {
     autoMaskProposalPolicyVersion,
-    type AutoMaskProposalSet
+    type AutoMaskProposalSet,
+    type ProposalDecision
 } from './mask-proposal';
 import { MaskAnnotationRegistry } from './mask-registry';
 import type {
@@ -46,7 +47,13 @@ const ANCHOR_VIEW_ID = 'anchor-view';
 
 export type MaskRequestStatus = 'idle' | 'pending' | 'failed';
 export type MaskProposalStatus =
-    'none' | 'pending' | 'ready' | 'unavailable' | 'failed';
+    | 'none'
+    | 'pending'
+    | 'selected'
+    | 'ambiguous'
+    | 'unavailable'
+    | 'editing'
+    | 'failed';
 
 export interface AddMaskPromptInput {
     readonly xPx: number;
@@ -91,6 +98,7 @@ export interface AISelectMaskState {
     readonly promptState: PromptState | null;
     readonly promptCapabilities: PromptAdapterCapabilities | null;
     readonly proposalSet: AutoMaskProposalSet | null;
+    readonly proposalDecision: ProposalDecision | null;
     readonly acceptedProposalId: string | null;
     readonly proposalStatus: MaskProposalStatus;
     readonly requestStatus: MaskRequestStatus;
@@ -180,6 +188,7 @@ export class AISelectMaskController {
     private lastRgbDigest: string | null = null;
     private promptState: PromptState | null = null;
     private proposalSet: AutoMaskProposalSet | null = null;
+    private proposalDecision: ProposalDecision | null = null;
     private acceptedProposalId: string | null = null;
     private requestStatus: MaskRequestStatus = 'idle';
     private lastErrorMessage: string | undefined;
@@ -247,17 +256,20 @@ export class AISelectMaskController {
             promptState: this.promptState,
             promptCapabilities,
             proposalSet: this.proposalSet,
+            proposalDecision: this.proposalDecision,
             acceptedProposalId: this.acceptedProposalId,
             proposalStatus:
                 this.requestStatus === 'pending'
                     ? 'pending'
                     : this.requestStatus === 'failed'
                       ? 'failed'
-                      : this.proposalSet === null
+                      : this.proposalDecision === null
                         ? 'none'
-                        : this.proposalSet.proposals.length === 0
-                          ? 'unavailable'
-                          : 'ready',
+                        : this.acceptedProposalId !== null ||
+                            view.editingMask?.source === 'manual' ||
+                            view.editingMask?.source === 'hybrid'
+                          ? 'editing'
+                          : this.proposalDecision.status,
             requestStatus: this.requestStatus,
             ...(this.lastErrorMessage === undefined
                 ? {}
@@ -692,6 +704,7 @@ export class AISelectMaskController {
         }
         try {
             this.proposalSet = response.proposalSet;
+            this.proposalDecision = response.proposalDecision;
             this.acceptedProposalId = null;
             const capabilities = this.getPromptAdapterCapabilities();
             if (
@@ -789,6 +802,7 @@ export class AISelectMaskController {
                 ? null
                 : createEmptyPromptState(ANCHOR_VIEW_ID, rgbDigest);
         this.proposalSet = null;
+        this.proposalDecision = null;
         this.acceptedProposalId = null;
         this.activeMaskRequest = null;
         this.resubmitMaskRequested = false;
@@ -995,6 +1009,7 @@ export class AISelectMaskController {
         this.promptState = next;
         this.promptRedoStack = [];
         this.proposalSet = null;
+        this.proposalDecision = null;
         this.acceptedProposalId = null;
         this.editingRevision += 1;
         this.lastErrorMessage = undefined;
@@ -1014,6 +1029,7 @@ export class AISelectMaskController {
         destination.push(this.promptState);
         this.promptState = target;
         this.proposalSet = null;
+        this.proposalDecision = null;
         this.acceptedProposalId = null;
         this.resubmitMaskRequested = false;
         this.requestStatus = 'idle';

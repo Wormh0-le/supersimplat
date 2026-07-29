@@ -205,8 +205,12 @@ This release exposes `/health`, `/capabilities`,
 each usable Model Manifest, and both
 `aiSelectAnchorRender` and `binarySceneSnapshotRegistrationV1` before the
 browser enables AI Select. The current SAM 3.1 adapter explicitly advertises
-positive/negative Point support and singleton proposal output; unsupported
-Box, Mask Constraint, and Text inputs fail closed rather than being ignored.
+positive/negative Point support and bounded multi-candidate output. The
+Companion preserves structurally valid SAM alternatives, computes
+`anchor-mask-ranking/v1` 2D features, and returns a bound Selected, Ambiguous,
+or Unavailable `ProposalDecision`; a raw model score never auto-confirms a
+Mask. Unsupported Box, Mask Constraint, and Text inputs fail closed rather
+than being ignored.
 `/scene-snapshots/...` remains a legacy fixture
 compatibility endpoint only. It also keeps the legacy
 Object Selection Session admission lease during migration. It verifies the

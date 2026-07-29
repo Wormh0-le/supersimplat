@@ -17,6 +17,7 @@ const {
     revisePromptState
 } = require('../.test-dist/src/ai-select/prompt-state.js');
 const {
+    anchorMaskRankingPolicyVersion,
     autoMaskProposalSetDigest
 } = require('../.test-dist/src/ai-select/mask-proposal.js');
 
@@ -1319,6 +1320,7 @@ const maskRequest = {
     modelManifestDigest: 'sha256:model-v1',
     adapterCapabilityDigest: `sha256:${'d'.repeat(64)}`,
     proposalPolicyVersion: 'auto-mask-proposals/bounded-source-order-v1',
+    rankingPolicyVersion: anchorMaskRankingPolicyVersion,
     proposalAttemptId: 'proposal-attempt-1'
 };
 
@@ -1357,6 +1359,33 @@ const maskReply = (request, overrides = {}) => {
                 promptConsistency: {
                     positivePointsSatisfied: true,
                     negativePointsSatisfied: true
+                },
+                rankingFeatures: {
+                    promptConsistency: {
+                        positivePointsSatisfied: true,
+                        negativePointsSatisfied: true
+                    },
+                    eligible: true,
+                    areaFraction: 1 / (request.rgb.width * request.rgb.height),
+                    boundingBox: {
+                        x0Px: 10,
+                        y0Px: 12,
+                        x1Px: 10,
+                        y1Px: 12
+                    },
+                    connectedComponentCount: 1,
+                    positivePointComponentIds: [0],
+                    positivePointBoundaryDistances: [1],
+                    pairwiseRelations: [],
+                    boundaryContactFraction: 0,
+                    compactness: Math.PI / 4,
+                    boxFillRatios: [],
+                    boxSpillRatios: [],
+                    promptMaskOverlap: 1,
+                    optionalSupportSanity: {
+                        participated: false,
+                        changedDecision: false
+                    }
                 }
             }
         ]
@@ -1379,8 +1408,21 @@ const maskReply = (request, overrides = {}) => {
         modelManifestDigest: request.modelManifestDigest,
         adapterCapabilityDigest: request.adapterCapabilityDigest,
         proposalPolicyVersion: request.proposalPolicyVersion,
+        rankingPolicyVersion: request.rankingPolicyVersion,
         proposalAttemptId: request.proposalAttemptId,
         proposalSet,
+        proposalDecision: {
+            schemaVersion: 1,
+            viewId: request.viewId,
+            rgbDigest: request.rgb.digest,
+            promptStateDigest: request.promptState.digest,
+            proposalSetDigest: proposalSet.digest,
+            rankingPolicyVersion: request.rankingPolicyVersion,
+            status: 'selected',
+            selectedProposalId: 'proposal-0',
+            alternativeProposalIds: ['proposal-0'],
+            reasons: []
+        },
         ...responseOverrides
     };
 };

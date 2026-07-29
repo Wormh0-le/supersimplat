@@ -51,6 +51,11 @@ from .masking import (
     Sam3PointMaskAdapter,
     register_frame_set,
 )
+from .proposal_ranking import (
+    RANKING_POLICY_VERSION,
+    add_ranking_features,
+    decide_proposals,
+)
 from .renderer_runtime import (
     EXPECTED_RENDERER_LOCK_DIGEST,
     RendererRuntime,
@@ -413,6 +418,7 @@ class AISelectMaskRequest:
     model_manifest_digest: str
     adapter_capability_digest: str
     proposal_policy_version: str
+    ranking_policy_version: str
     proposal_attempt_id: str
 
     def response_fields(self) -> dict[str, object]:
@@ -428,6 +434,7 @@ class AISelectMaskRequest:
             'modelManifestDigest': self.model_manifest_digest,
             'adapterCapabilityDigest': self.adapter_capability_digest,
             'proposalPolicyVersion': self.proposal_policy_version,
+            'rankingPolicyVersion': self.ranking_policy_version,
             'proposalAttemptId': self.proposal_attempt_id,
         }
 
@@ -699,7 +706,7 @@ def _point_prompt_capabilities() -> dict[str, object]:
         'negativeMaskConstraints': False,
         'text': False,
         'negativeText': False,
-        'multiCandidateOutput': False,
+        'multiCandidateOutput': True,
     }
     encoded = json.dumps(
         payload, separators=(',', ':'), sort_keys=True, allow_nan=False
@@ -1863,6 +1870,14 @@ class CompanionState:
         def proposal_response(
             proposals: list[dict[str, object]]
         ) -> dict[str, object]:
+            original_count = len(proposals)
+            proposals = proposals[:4]
+            ranked_proposals = add_ranking_features(
+                proposals,
+                width=mask_request.width,
+                height=mask_request.height,
+                prompt_state=mask_request.prompt_state,
+            )
             proposal_set: dict[str, object] = {
                 'schemaVersion': 1,
                 'viewId': mask_request.view_id,
@@ -1872,8 +1887,14 @@ class CompanionState:
                 'adapterCapabilityDigest': mask_request.adapter_capability_digest,
                 'proposalPolicyVersion': mask_request.proposal_policy_version,
                 'proposalAttemptId': mask_request.proposal_attempt_id,
-                'proposals': proposals,
+                'proposals': ranked_proposals,
             }
+            if original_count > len(ranked_proposals):
+                proposal_set['truncation'] = {
+                    'originalCount': original_count,
+                    'retainedCount': len(ranked_proposals),
+                    'policy': 'source-order-first-4',
+                }
             encoded = json.dumps(
                 proposal_set,
                 separators=(',', ':'),
@@ -1887,6 +1908,13 @@ class CompanionState:
                 'status': 'complete',
                 **mask_request.response_fields(),
                 'proposalSet': proposal_set,
+                'proposalDecision': decide_proposals(
+                    ranked_proposals,
+                    view_id=mask_request.view_id,
+                    rgb_digest=mask_request.rgb_digest,
+                    prompt_state_digest=mask_request.prompt_state_digest,
+                    proposal_set_digest=str(proposal_set['digest']),
+                ),
             }
 
         try:
@@ -1960,68 +1988,105 @@ class CompanionState:
                 )
                 return response
             self._validate_complete_tracks(frame_set, prompt_log, tracks)
-            binary_mask = anchor_frame['binaryMask']
-            # The single-frame product contract publishes bitset bytes only;
-            # dimensions, payload length, and trailing bits were validated
-            # with the complete tracks above.
-            if binary_mask.get('encoding') != 'bitset-lsb-v1':
-                raise MaskSessionError(
-                    'incompleteMaskSet',
-                    'A single-frame SAM mask must use the bitset-lsb-v1 encoding.',
-                )
-            mask_bytes = base64.b64decode(binary_mask['data'], validate=True)
-            mask_artifact = {
-                'encoding': 'bitset-lsb-v1',
-                'width': mask_request.width,
-                'height': mask_request.height,
-                'data': binary_mask['data'],
-                'digest': f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}',
-            }
-            source_index = 0
-            model_score: float | None = None
+            proposals: list[dict[str, object]] = []
             score_semantics: str | None = None
+            alternatives: list[object] = []
             if isinstance(diagnostics, dict):
                 candidate_selection = diagnostics.get('candidateSelection')
                 if isinstance(candidate_selection, dict):
-                    selected = candidate_selection.get('selectedCandidateIndex')
-                    if (
-                        isinstance(selected, int)
-                        and not isinstance(selected, bool)
-                        and selected >= 0
-                    ):
-                        source_index = selected
                     semantics = candidate_selection.get('scoreSemantics')
                     if isinstance(semantics, str) and semantics.strip():
                         score_semantics = semantics
-                    alternatives = candidate_selection.get('alternatives')
-                    if isinstance(alternatives, list):
-                        for alternative in alternatives:
-                            if (
-                                isinstance(alternative, dict)
-                                and alternative.get('candidateIndex') == source_index
-                            ):
-                                score = alternative.get('qualityScore')
-                                if (
-                                    isinstance(score, (int, float))
-                                    and not isinstance(score, bool)
-                                    and math.isfinite(score)
-                                ):
-                                    model_score = float(score)
-                                break
-            proposal: dict[str, object] = {
-                'proposalId': f'proposal-{source_index}',
-                'mask': mask_artifact,
-                'sourceIndex': source_index,
-                'promptConsistency': {
-                    'positivePointsSatisfied': True,
-                    'negativePointsSatisfied': True,
-                },
-            }
-            if model_score is not None:
-                proposal['modelScore'] = model_score
-            if score_semantics is not None:
-                proposal['modelScoreSemantics'] = score_semantics
-            response = proposal_response([proposal])
+                    candidate_alternatives = candidate_selection.get('alternatives')
+                    if isinstance(candidate_alternatives, list):
+                        alternatives = candidate_alternatives
+            seen_mask_digests: set[str] = set()
+            for alternative in alternatives:
+                if (
+                    not isinstance(alternative, dict)
+                    or alternative.get('areaValid') is not True
+                    or alternative.get('pointConsistent') is not True
+                ):
+                    continue
+                source_index = alternative.get('candidateIndex')
+                binary_mask = alternative.get('binaryMask')
+                if (
+                    not isinstance(source_index, int)
+                    or isinstance(source_index, bool)
+                    or source_index < 0
+                    or not isinstance(binary_mask, dict)
+                    or binary_mask.get('encoding') != 'bitset-lsb-v1'
+                    or binary_mask.get('width') != mask_request.width
+                    or binary_mask.get('height') != mask_request.height
+                    or not isinstance(binary_mask.get('data'), str)
+                ):
+                    continue
+                try:
+                    mask_bytes = base64.b64decode(
+                        binary_mask['data'], validate=True
+                    )
+                except (ValueError, binascii.Error):
+                    continue
+                expected_length = (mask_request.width * mask_request.height + 7) // 8
+                if len(mask_bytes) != expected_length:
+                    continue
+                mask_digest = f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}'
+                if mask_digest in seen_mask_digests:
+                    continue
+                seen_mask_digests.add(mask_digest)
+                proposal: dict[str, object] = {
+                    'proposalId': f'proposal-{source_index}',
+                    'mask': {
+                        'encoding': 'bitset-lsb-v1',
+                        'width': mask_request.width,
+                        'height': mask_request.height,
+                        'data': binary_mask['data'],
+                        'digest': mask_digest,
+                    },
+                    'sourceIndex': source_index,
+                    'promptConsistency': {
+                        'positivePointsSatisfied': True,
+                        'negativePointsSatisfied': True,
+                    },
+                }
+                score = alternative.get('qualityScore')
+                if (
+                    isinstance(score, (int, float))
+                    and not isinstance(score, bool)
+                    and math.isfinite(score)
+                ):
+                    proposal['modelScore'] = float(score)
+                if score_semantics is not None:
+                    proposal['modelScoreSemantics'] = score_semantics
+                proposals.append(proposal)
+            if not proposals:
+                # Compatibility for adapters that publish only the selected
+                # track and no bounded alternative diagnostics.
+                binary_mask = anchor_frame['binaryMask']
+                if binary_mask.get('encoding') != 'bitset-lsb-v1':
+                    raise MaskSessionError(
+                        'incompleteMaskSet',
+                        'A single-frame SAM mask must use the bitset-lsb-v1 encoding.',
+                    )
+                mask_bytes = base64.b64decode(binary_mask['data'], validate=True)
+                proposals.append({
+                    'proposalId': 'proposal-0',
+                    'mask': {
+                        'encoding': 'bitset-lsb-v1',
+                        'width': mask_request.width,
+                        'height': mask_request.height,
+                        'data': binary_mask['data'],
+                        'digest': (
+                            f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}'
+                        ),
+                    },
+                    'sourceIndex': 0,
+                    'promptConsistency': {
+                        'positivePointsSatisfied': True,
+                        'negativePointsSatisfied': True,
+                    },
+                })
+            response = proposal_response(proposals)
         except MaskSessionError as error:
             self._complete_mask_request(mask_key, admission, failure=error)
             raise
@@ -2111,6 +2176,14 @@ class CompanionState:
                 'capabilityMismatch',
                 'The point adapter does not support this Mask proposal policy.',
             )
+        ranking_policy_version = _mask_request_string(
+            request.get('rankingPolicyVersion'), 'rankingPolicyVersion'
+        )
+        if ranking_policy_version != RANKING_POLICY_VERSION:
+            raise MaskSessionError(
+                'capabilityMismatch',
+                'The Companion does not support this Anchor Mask ranking policy.',
+            )
         proposal_attempt_id = _mask_request_string(
             request.get('proposalAttemptId'), 'proposalAttemptId'
         )
@@ -2143,6 +2216,7 @@ class CompanionState:
             model_manifest_digest=model_manifest_digest,
             adapter_capability_digest=adapter_capability_digest,
             proposal_policy_version=proposal_policy_version,
+            ranking_policy_version=ranking_policy_version,
             proposal_attempt_id=proposal_attempt_id,
         )
 

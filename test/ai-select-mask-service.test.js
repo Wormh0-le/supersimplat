@@ -7,6 +7,7 @@ const {
     maskResponseMatchesRequest
 } = require('../.test-dist/src/ai-select/mask-service.js');
 const {
+    anchorMaskRankingPolicyVersion,
     autoMaskProposalSetDigest
 } = require('../.test-dist/src/ai-select/mask-proposal.js');
 const {
@@ -75,6 +76,7 @@ const request = (overrides = {}) => ({
     modelManifestDigest: 'modelscope-facebook-sam31-616acbee',
     adapterCapabilityDigest: digest('d'),
     proposalPolicyVersion: 'auto-mask-proposals/bounded-source-order-v1',
+    rankingPolicyVersion: anchorMaskRankingPolicyVersion,
     proposalAttemptId: 'proposal-attempt-7',
     ...overrides
 });
@@ -99,6 +101,34 @@ const proposalSetFor = (req, overrides = {}) => {
                 promptConsistency: {
                     positivePointsSatisfied: true,
                     negativePointsSatisfied: true
+                },
+                rankingFeatures: {
+                    promptConsistency: {
+                        positivePointsSatisfied: true,
+                        negativePointsSatisfied: true
+                    },
+                    eligible: true,
+                    areaFraction: 2 / 64,
+                    boundingBox: {
+                        x0Px: 0,
+                        y0Px: 0,
+                        x1Px: 2,
+                        y1Px: 0
+                    },
+                    connectedComponentCount: 2,
+                    positivePointComponentIds: [0],
+                    positivePointBoundaryDistances: [1],
+                    pairwiseRelations: [],
+                    boundaryContactFraction: 0.25,
+                    compactness: 0.2,
+                    boxFillRatios: [],
+                    boxSpillRatios: [],
+                    promptMaskOverlap: 1,
+                    optionalSupportSanity: {
+                        participated: false,
+                        changedDecision: false
+                    },
+                    modelScore: 2.5
                 }
             }
         ],
@@ -107,22 +137,38 @@ const proposalSetFor = (req, overrides = {}) => {
     return { ...payload, digest: autoMaskProposalSetDigest(payload) };
 };
 
-const responseFor = (req, overrides = {}) => ({
-    requestBinding: req.requestBinding,
-    targetSplatId: req.target.splatId,
-    sceneId: req.sceneId,
-    sceneVersion: req.sceneVersion,
-    viewId: req.viewId,
-    cameraBindingDigest: req.cameraBindingDigest,
-    rgbDigest: req.rgb.digest,
-    promptStateDigest: req.promptState.digest,
-    modelManifestDigest: req.modelManifestDigest,
-    adapterCapabilityDigest: req.adapterCapabilityDigest,
-    proposalPolicyVersion: req.proposalPolicyVersion,
-    proposalAttemptId: req.proposalAttemptId,
-    proposalSet: proposalSetFor(req),
-    ...overrides
-});
+const responseFor = (req, overrides = {}) => {
+    const proposalSet = overrides.proposalSet ?? proposalSetFor(req);
+    return {
+        requestBinding: req.requestBinding,
+        targetSplatId: req.target.splatId,
+        sceneId: req.sceneId,
+        sceneVersion: req.sceneVersion,
+        viewId: req.viewId,
+        cameraBindingDigest: req.cameraBindingDigest,
+        rgbDigest: req.rgb.digest,
+        promptStateDigest: req.promptState.digest,
+        modelManifestDigest: req.modelManifestDigest,
+        adapterCapabilityDigest: req.adapterCapabilityDigest,
+        proposalPolicyVersion: req.proposalPolicyVersion,
+        rankingPolicyVersion: req.rankingPolicyVersion,
+        proposalAttemptId: req.proposalAttemptId,
+        proposalSet,
+        proposalDecision: {
+            schemaVersion: 1,
+            viewId: req.viewId,
+            rgbDigest: req.rgb.digest,
+            promptStateDigest: req.promptState.digest,
+            proposalSetDigest: proposalSet.digest,
+            rankingPolicyVersion: req.rankingPolicyVersion,
+            status: 'selected',
+            selectedProposalId: 'proposal-0',
+            alternativeProposalIds: ['proposal-0'],
+            reasons: []
+        },
+        ...overrides
+    };
+};
 
 test('a complete bound proposal response matches its request', () => {
     const req = request();
@@ -136,6 +182,7 @@ test('the request requires exact RGB, PromptState, capability, policy, and attem
     assert.ok(!isAIViewMaskRequest(request({ proposalAttemptId: '' })));
     assert.ok(!isAIViewMaskRequest(request({ adapterCapabilityDigest: '' })));
     assert.ok(!isAIViewMaskRequest(request({ modelManifestDigest: '' })));
+    assert.ok(!isAIViewMaskRequest(request({ rankingPolicyVersion: '' })));
     assert.ok(
         !isAIViewMaskRequest(
             request({
@@ -171,6 +218,22 @@ test('stale, corrupt, or partial proposal responses are rejected', () => {
         !maskResponseMatchesRequest(
             responseFor(req, { adapterCapabilityDigest: digest('c') }),
             req
+        )
+    );
+    assert.ok(
+        !maskResponseMatchesRequest(
+            responseFor(req, { rankingPolicyVersion: 'stale-ranking/v0' }),
+            req
+        )
+    );
+    assert.ok(
+        !isMaskResultResponse(
+            responseFor(req, {
+                proposalDecision: {
+                    ...responseFor(req).proposalDecision,
+                    proposalSetDigest: digest('f')
+                }
+            })
         )
     );
     const wrongRevision = responseFor(req);

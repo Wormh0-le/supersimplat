@@ -93,7 +93,7 @@ class CompanionControlPlaneTests(unittest.TestCase):
             "negativeMaskConstraints": False,
             "text": False,
             "negativeText": False,
-            "multiCandidateOutput": False,
+            "multiCandidateOutput": True,
         }
         encoded_capabilities = json.dumps(
             prompt_capabilities,

@@ -1,13 +1,14 @@
 # 10 — Cross-view Review assessment + visible-support reasons
 
-Status: ready-for-agent — v2.2 re-audited
+Status: ready-for-agent — v2.5 DG-23 aligned
 
 Blocked by: 14, 09, 07
 
 ## Final Spec mapping
 
 - Final Spec v1.1 §§18, 20, 22, 26
-- DG-19 P1, DG-20
+- Final Spec v1.1 Amendment 003
+- DG-19 P1, DG-20, DG-23
 - MVP Phase 4 P1
 
 ## Inputs / preconditions
@@ -15,6 +16,7 @@ Blocked by: 14, 09, 07
 - Version-bound per-view P/N/V Evidence from Ticket 14
 - AIView assessments and Participation
 - Gallery/Review UI
+- Tracker-local status as separate upstream diagnostics
 
 ## Outputs / handoff artifacts
 
@@ -25,25 +27,29 @@ Blocked by: 14, 09, 07
 
 ## What to build
 
-Add P1 cross-view assessment over per-view Gaussian Evidence. The v2.2 reverse dependency audit moves this ticket after Ticket 14 because cross-view P/N/V cannot be consumed before the reference Evidence contract exists.
+Add P1 cross-view assessment over per-view Gaussian Evidence. It follows Ticket 14 because cross-view P/N/V cannot be consumed before the reference Evidence contract exists.
+
+DG-23 tracker-local identity drift is not computed here. Ticket 08A may emit `tracking-identity-drift-suspected` from tracker/sequence behavior. Ticket 10 must neither duplicate that signal nor infer semantic identity drift from raw P/N/V alone.
 
 ## Acceptance criteria
 
 - [ ] Cross-view assessment consumes Stable Mask-bound per-view P/N/V/visibility and policy identities.
-- [ ] Complete per-pixel Contributor is not a required production input.
-- [ ] `cross-view-inconsistency` is emitted only from validated Gaussian ownership/conflict logic, not raw 2D area alone.
-- [ ] `low-visible-support` is used instead of claiming semantic occlusion when only V evidence is available.
+- [ ] Complete per-pixel Contributor is not required.
+- [ ] `cross-view-inconsistency` is emitted only from validated Gaussian ownership/conflict logic, not raw 2D area.
+- [ ] `low-visible-support` is used instead of claiming semantic occlusion when only V is available.
 - [ ] Diagnostics may include cross-view precision/recall, visible target ratio, supporting/conflicting View counts, or calibrated equivalents.
-- [ ] Raw Mask-area outlier remains internal unless perspective/visibility normalization supports a user reason.
-- [ ] `identity-drift` remains future taxonomy and is not emitted in v1.1.
+- [ ] Raw Mask-area outlier remains internal unless perspective/visibility normalization supports an action.
+- [ ] A generic P/N/V-derived `identity-drift` reason remains out of scope for v1.1.
+- [ ] Ticket 08A `tracking-identity-drift-suspected` remains a distinct tracker-local Review/status reason and is not renamed or recomputed here.
 - [ ] Assessment refreshes when matching per-view Evidence becomes available but never triggers Repropagate or Re-Lift.
 - [ ] User Confirmed authority cannot be silently revoked or down-weighted.
-- [ ] UI shows only actionable reason(s) through static localized Reason→Action mapping.
+- [ ] UI shows only actionable reasons through static localized Reason→Action mapping.
+- [ ] Bridge/Key role and tracker confidence cannot substitute for P/N/V support/conflict logic.
 
 ## Failure / recovery criteria
 
 - [ ] Insufficient/missing Evidence yields no fabricated cross-view reason.
-- [ ] P1 failure does not corrupt P0 assessment, Participation, View RGB, Stable Mask, or Candidate.
+- [ ] P1 failure does not corrupt P0 assessment, tracker-local status, Participation, View RGB, Stable Mask, or Candidate.
 
 ## Validation
 
@@ -52,10 +58,11 @@ Add P1 cross-view assessment over per-view Gaussian Evidence. The v2.2 reverse d
 - P/N/V cross-view fixtures
 - Missing/stale Evidence fixtures
 - Locked GPU/reference visibility smoke
+- Tracker-local drift versus P/N/V inconsistency separation fixture
 - False-positive/false-negative benchmark inputs for Ticket 21
 
 ## Non-goals
 
-- No new deep model
-- No identity-drift requirement
-- No production Direct Evidence kernel
+- No new deep model.
+- No tracker execution or identity-drift detector.
+- No production Direct Evidence kernel.

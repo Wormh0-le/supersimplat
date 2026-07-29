@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.3
+# AI Select v1 — Implementation Ticket Graph v2.4
 
-Status: **ready-for-agent — Ticket 04A implemented; Ticket 07A is the next completion gate**
+Status: **ready-for-agent — Ticket 04B is the next adapter gate; Ticket 07A is reopened; Ticket 07B follows algorithm closure**
 
 Authoritative source order:
 
@@ -11,29 +11,31 @@ Authoritative source order:
 5. `docs/adr/0012-adopt-ai-select-final-spec-v1.md` where not superseded
 6. `CONTEXT.md`
 7. `docs/decision-gates/DG-21-prompt-authoring-three-stage-anchor-mask.md`
-8. `AGENTS.md`
-9. Current implementation and tests
+8. `docs/decision-gates/DG-22-floating-prompt-edit-palette.md`
+9. `AGENTS.md`
+10. Current implementation and tests
 
-Amendment 001 governs renderer/Evidence implementation identity and RGB continuity. Amendment 002 governs Prompt Authoring and the Three-Stage Anchor Mask Pipeline. DG-21 records the accepted rationale and ticket ownership; the Final Spec and amendments remain authoritative.
+The Final Spec and amendments remain authoritative. DG-21 records Three-Stage Anchor ownership. DG-22 refines fitted-image toolbar interaction without changing Prompt/Mask/Evidence lifecycle semantics.
 
 Branch: `ai-select-v1`
 
 Baseline: `42f6013438f1271fcd35a4bfdc9ba5a3eb719c06`
 
-v2.3 supersedes the v2.2 local ticket graph. It retains the 22 numbered tickets and adds two retrofit hardening tickets: **04A** and **07A**.
+v2.4 retains the 22 numbered tickets and adds four retrofit tickets: **04A**, **04B**, **07A**, and **07B**.
 
-## v2.3 corrections incorporated
+## v2.4 corrections incorporated
 
-- Ticket 04A separates Prompt Authoring from direct Pixel Editing and introduces versioned PromptState, explicit adapter capabilities, and bounded multi-candidate proposal artifacts.
-- Ticket 04A depends on existing Ticket 05 Mask editor/Undo/Confirm seams; it is not incorrectly placed before Ticket 05.
-- Ticket 04A is implemented. Its browser validation found interaction-hardening work that is now an explicit Phase 0 entry gate in Ticket 07A: atomic Paint/Erase strokes, stroke-level Undo/Redo, persistent prompt markers, active cursors, and visible proposal state.
-- Ticket 07A is the completion owner for interaction hardening, 2D-first proposal ranking, Ambiguous/Unavailable states, proposal acceptance, Editing/Confirm integration, compact Proposal UX, and locked real-model quality validation.
+- Ticket 04A remains implemented and owns PromptState, explicit Prompt/Edit tools, capability negotiation, and bounded proposal infrastructure.
+- Ticket 04B owns real non-text visual-prompt adapter enablement: Positive/Negative Box and Positive/Negative Mask Constraint according to truthful locked-runtime capabilities.
+- Text Prompt remains a future capability-gated extension and is not required by Ticket 04B.
+- Ticket 07A is reopened after algorithm review. Its Phase 4 Dock/fitted-image/schema-v2 publication fixes remain accepted.
+- Ticket 07A must still complete single-candidate quality gating, calibrated 2D-first ranking, structured rejection reasons, near-duplicate clustering before truncation, production-resolution performance, and frozen-scene/ablation validation.
+- Ticket 07B owns the draggable, collapsible, auto-avoiding, Space-hide floating Prompt/Edit palette defined by DG-22.
+- Ticket 07B preserves the fitted-image rule and removes permanent interaction blind spots.
+- Ticket 08 follows 07B and continues to own valid indoor Generated View poses plus adaptive information gain.
 - `ProposalDecision` remains pre-Stable and distinct from Ticket 07 `ViewAssessmentPolicy`.
-- The mandatory Three-Stage pipeline applies to the Anchor; Generated View automatic Stable Mask publication remains unchanged unless explicitly revised later.
-- Ticket 08 depends on Ticket 07A and owns candidate-camera validity as well as information gain, including indoor/outside-room rejection.
-- Camera Inspection and AIView RGB Ready remain independent from complete Contributor and formal Evidence.
+- Generated View automatic Stable Mask publication remains unchanged unless explicitly revised later.
 - Ticket 14 owns reference P/N/V semantics; Ticket 20 owns production same-decision Direct Evidence.
-- Complete Contributor remains an explicit debug/reference backend only.
 
 ## Dependency graph
 
@@ -50,20 +52,25 @@ v2.3 supersedes the v2.2 local ticket graph. It retains the 22 numbered tickets 
  └──────────┬──────────┘
             ▼
 05 Anchor editing + support Validation + Confirm + Early Restart
- ├──────────────────────┐
- ▼                      ▼
-04A Prompt Authoring    06 First Generated AIView + Initial Auto Mask
- + Proposal Foundation   │
- │                       ▼
- │                      07 Local Assessment + Participation
- └──────────────┬────────┘
-                ▼
-07A Interaction hardening + Three-Stage Anchor Ranking / Ambiguity / Acceptance
-                │
-                ▼
+ ├──────────────────────────────┐
+ ▼                              ▼
+04A Prompt Authoring            06 First Generated AIView + Initial Auto Mask
+ + Proposal Foundation           │
+ │                               ▼
+ ▼                              07 Local Assessment + Participation
+04B Visual Prompt Adapter        │
+ Enablement                      │
+ └──────────────────┬────────────┘
+                    ▼
+07A Reopened Three-Stage Anchor Ranking / Ambiguity / Acceptance
+                    │
+                    ▼
+07B Floating Prompt/Edit Palette UX Hardening
+                    │
+                    ▼
 08 Adaptive Planner + valid indoor observation poses
-                │
-                ▼
+                    │
+                    ▼
 09 Scalable Gallery + Inspect AI Cameras
  ├──────────────────┐
  ▼                  ▼
@@ -101,27 +108,29 @@ v2.3 supersedes the v2.2 local ticket graph. It retains the 22 numbered tickets 
 22 Contract legacy product and Contributor paths
 ```
 
-Ticket 04A and the existing Ticket 06→07 path converge at Ticket 07A. Ticket 08 cannot start until 07A completes. Tickets 10 and 13 remain parallel consumers of Ticket 14.
+Ticket 04A and Ticket 06 may proceed after Ticket 05. Ticket 04B follows 04A. Ticket 04B and completed Ticket 07 converge at reopened Ticket 07A. Ticket 07B follows 07A and removes the fitted-image toolbar blind spot before Ticket 08 begins.
 
-Structural graph root: **Ticket 01**. Ticket status remains recorded in each ticket; graph audit validates scope/dependency correctness rather than inferring implementation completion.
+Structural graph root: **Ticket 01**. Ticket status remains recorded in each ticket; graph audit validates scope/dependency correctness rather than inferring completion.
 
 ## One valid topological order
 
-`01 → 02 → 03 → 04 → 05 → 04A → 06 → 07 → 07A → 08 → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
+`01 → 02 → 03 → 04 → 05 → 04A → 04B → 06 → 07 → 07A → 07B → 08 → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
 
 ## Audit artifacts
 
-- `TRACEABILITY.md`: 142 Final Spec v1.1 / Amendments 001–002 / inherited requirements mapped to tickets.
-- `FOUR-PASS-AUDIT.md`: five-pass v2.3 graph, spec→ticket, ticket→spec, outcome→prerequisite, and workflow/failure audit. Filename retained for compatibility.
-- `WALKTHROUGHS.md`: inherited workflows, architecture flows, Three-Stage Anchor flow, reverse outcome backtrace, and proposal/planner failure walkthroughs.
-- `manifest.json`: machine-readable v2.3 graph and audit metadata.
+- `TRACEABILITY.md`: Final Spec v1.1 / Amendments 001–002 / DG-20–22 / inherited requirements mapped to tickets.
+- `FOUR-PASS-AUDIT.md`: five-pass v2.4 graph, spec→ticket, ticket→spec, outcome→prerequisite, and workflow/failure audit. Filename retained for compatibility.
+- `WALKTHROUGHS.md`: inherited workflows, visual-prompt adapter flow, Three-Stage Anchor flow, floating-palette flow, reverse outcome backtrace, and proposal/planner failures.
+- `manifest.json`: machine-readable v2.4 graph and audit metadata.
 
 ## Implementation rules
 
 - Ticket 04A is an implemented foundation ticket, not the final quality gate.
-- Ticket 07A begins with Phase 0 interaction hardening; ranking must not be considered complete while Paint/Erase remains stamp-based or Prompt feedback remains ambiguous.
-- Ticket 07A is the only ticket permitted to claim the Three-Stage Anchor Mask Pipeline complete.
-- Ticket 08 owns Generated View camera validity/adaptive planning, not Anchor proposal ranking.
+- Ticket 04B enables real Box/Mask Prompt adapter semantics; it does not own ranking or Stable publication.
+- Ticket 07A is reopened and remains the only ticket permitted to claim the Three-Stage Anchor Mask Pipeline complete.
+- Phase 4 Dock/fitted-image/schema-v2 fixes remain valid but do not satisfy the reopened algorithm/calibration gates.
+- Ticket 07B changes palette presentation and pointer routing only; it must not alter PromptState, ProposalDecision, Mask lifecycle, or Evidence semantics.
+- Ticket 08 owns Generated View camera validity/adaptive planning, not Anchor proposal ranking or palette UX.
 - Ticket 14 is a reference correctness/quality gate, not production GPU completion.
-- Ticket 20 is the first ticket permitted to claim production same-decision Direct Evidence, after locked GPU validation.
-- Complete Contributor is reference/debug only.
+- Ticket 20 is the first ticket permitted to claim production same-decision Direct Evidence after locked GPU validation.
+- Complete Contributor remains reference/debug only.

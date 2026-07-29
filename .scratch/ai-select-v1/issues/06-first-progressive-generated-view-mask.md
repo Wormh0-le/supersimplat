@@ -7,7 +7,8 @@ Blocked by: 05
 ## Final Spec mapping
 
 - Final Spec v1.1 §§7, 13, 27, 28
-- DG-08, DG-13, DG-20
+- Final Spec v1.1 Amendment 003 handoff
+- DG-08, DG-13, DG-20, DG-23
 - MVP Phase 3
 
 ## Inputs / preconditions
@@ -91,45 +92,24 @@ Companion (Python):
 
 ## Validation recorded — 2026-07-25
 
-- `npm test` — 268 editor tests pass, including: registry auto-Stable publication/atomic replacement/digest closure; protocol validators for all three contracts; the full controller lifecycle (automatic planning on Confirm, progressive RGB-Ready-before-Mask publication, auto Stable Mask binding, Mask/Render failure isolation, true render/planning Retry, Adjust/Restart disposal, stale-binding discard, selection); frustum line/picking math; fetch-adapter routes (packed + spatial miss recovery, stale binding rejection).
-- `npm run test:companion` — 232 tests pass (17 new in `tests/test_ai_select_generated_views.py`: seed derivation gating/robust framing, orbit geometry/determinism, prompt synthesis, plan/view-render/generated-mask route behavior, cache miss, replay without a second SAM pass, propagation-unavailable 409, reserved-view-id and digest rejection).
-- `npm run lint` — clean (180 TS files); `npm run lint:locales` — 399 keys in sync across 9 locales; `npm run build` — success.
-- Two-axis `/code-review` (Standards + Spec) ran against the working tree; findings fixed: dead `rgb` parameter in the mask step, undiscriminating pointerdown picking (now click-vs-drag), latent dynamic evidence locale key, misleading admission replay comments.
+- `npm test` — 268 editor tests pass, including registry auto-Stable publication/atomic replacement/digest closure; protocol validators; full controller lifecycle; frustum math; fetch-adapter routes.
+- `npm run test:companion` — 232 tests pass, including seed derivation, orbit determinism, Prompt synthesis, route behavior, cache miss, replay without a second SAM pass, propagation-unavailable, and digest rejection.
+- `npm run lint` and locale lint — clean; `npm run build` — success.
+- Two-axis code review completed and findings were fixed.
 
-Known gaps / handoff notes:
+## Walkthrough fixes recorded — 2026-07-26/27
 
-- Mask Failed exposes Retry Auto Mask / Manual Draw / Exclude only as later tickets add the controls (Ticket 07/12); the failure state itself is preserved with the View.
-- A dependency-token suspension mid-run discards in-flight steps via the kernel gate but leaves their transient states wedged (same behavior as the Ticket 05 Anchor path); Ticket 18 owns suspension/restoration UX.
-- The planner publishes a fixed first ring-neighbour pair (`GENERATED_VIEW_PLAN_COUNT = 2`); Ticket 08 owns the adaptive coverage-driven stop policy and larger budgets.
-- The fetch-adapter scene-miss recovery loops now exist in five near-identical copies (Anchor render/probe + these three); extraction deferred as cross-ticket churn. Timing: fold the dedup into Ticket 19 (scene/render data-path hardening) or a standalone cleanup right after Ticket 14 — the consumer set completes at 14, and 19 is the declared hardening ticket for this seam.
-- The legacy Anchor render route maps renderer failures to 400 (ValueError before MaskSessionError — its 409 branch is unreachable); left untouched here, the new view-render route maps them to 409 correctly.
-- No production GPU validation was run by the implementing agent: planning/propagation policies are pure CPU and the render path reuses the locked-renderer seam with a fixture renderer. The operator subsequently completed the manual browser walkthrough, including Gallery/frustum picking and selection synchronization.
+- Production renderer guard was fixed so the same locked raster path serves Anchor and Generated Views.
+- Generated-frustum display depth now derives a minimum projected footprint while preserving exact CameraBinding rays.
+- Browser re-verification passed for visible/selectable read-only frustums and Gallery↔frustum sync.
 
-## Walkthrough fixes recorded — 2026-07-26
+## DG-23 handoff — 2026-07-29
 
-GPU walkthrough against the locked production renderer surfaced one defect, fixed:
+Ticket 06 remains complete. Its projected-support + one single-frame SAM pass is now explicitly classified as:
 
-- **Generated View renders rejected in production**: `GsplatContributorRenderer.render_anchor` hard-rejected any `view_id != 'anchor-view'` (Ticket 02's anchor-only guard), so the first Generated View render failed with `rendererFailure: AI Select can render only the Anchor View here.` The fixture renderer used in tests has no such guard, which is why suites did not catch it. The guard now validates only a non-empty view identity; the same locked raster path serves Anchor and Generated Views, with the reference-Contributor frame source labelled accordingly. Regression coverage: renderer-level generated-view test plus the existing 235-test companion suite.
+- the progressive publication tracer bullet;
+- the benchmark baseline for Ticket 08A;
+- a production fallback after tracker failure/unsupported runtime;
+- an optional correction initializer.
 
-## Frustum walkthrough defect recorded — 2026-07-27
-
-A real browser walkthrough published two RGB/Mask Ready Generated Views but
-could not initially locate either Generated Frustum. A live Scene probe proved
-that the element was attached, visible, held both Views, and submitted eight
-lines per View; both frustums were behind the current Camera Inspection observer
-and were found only after returning to the Scene View and navigating far outside
-the Gaussian content.
-
-The captured CameraBinding used `near=0.001667584778475318` and
-`far=27.32170901053961`. The former fixed display-depth rule collapsed to
-`0.05`, producing a roughly `0.07`-unit frustum on a `12.918`-unit orbit.
-Display depth now derives a minimum 32-pixel footprint from the current Editor
-Camera projection while preserving the exact CameraBinding pose and projective
-rays. Drawing and picking consume the same projected display depth, and the
-captured binding is retained as a regression fixture.
-
-Operator browser re-verification passed on 2026-07-27: Generated Frustums were
-visible at the corrected scale, selectable and read-only, and Gallery↔frustum
-selection synchronization worked in both directions. Explicitly locating an
-off-screen AI Camera remains Ticket 09; adaptive candidate distance/quality
-policy remains Ticket 08.
+Ticket 08 replaces the fixed pair with 2.5D Key/Bridge sequence planning. Ticket 08A owns the production object-level ordered tracking path and correction memory. Ticket 06 must not be reopened merely because the production propagation architecture is added later.

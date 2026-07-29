@@ -1,5 +1,5 @@
 {
-  "version": "v2.3",
+  "version": "v2.4",
   "feature": "ai-select-v1",
   "spec_version": "ai-select-final-spec-v1.1",
   "spec_amendments": [
@@ -8,25 +8,26 @@
   ],
   "decision_gates": [
     "DG-20-mask-conditioned-direct-gaussian-evidence",
-    "DG-21-prompt-authoring-three-stage-anchor-mask"
+    "DG-21-prompt-authoring-three-stage-anchor-mask",
+    "DG-22-floating-prompt-edit-palette"
   ],
   "adr": "0013-adopt-mask-conditioned-direct-gaussian-evidence",
-  "status": "ready-for-agent-after-amendment-002-five-pass-audit",
+  "status": "ready-for-agent-v2.4-visual-prompts-ranking-floating-palette",
   "branch": "ai-select-v1",
   "baseline": "42f6013438f1271fcd35a4bfdc9ba5a3eb719c06",
-  "ticket_count": 24,
+  "ticket_count": 26,
   "numbered_ticket_count": 22,
-  "retrofit_ticket_ids": ["04A", "07A"],
+  "retrofit_ticket_ids": ["04A", "04B", "07A", "07B"],
   "structural_initial_frontier": ["01"],
   "topological_order": [
-    "01", "02", "03", "04", "05", "04A", "06", "07", "07A", "08", "09",
+    "01", "02", "03", "04", "05", "04A", "04B", "06", "07", "07A", "07B", "08", "09",
     "11", "12", "14", "10", "13", "15", "16", "17", "18", "19", "20", "21", "22"
   ],
   "parallel_after_ticket_05": ["04A", "06"],
   "parallel_after_ticket_14": ["10", "13"],
-  "traceability_requirement_count": 142,
-  "walkthrough_count": 14,
-  "error_walkthrough_count": 15,
+  "traceability_requirement_count": 147,
+  "walkthrough_count": 16,
+  "error_walkthrough_count": 16,
   "audit": {
     "pass1_graph": "PASS",
     "pass2_spec_to_tickets": "PASS",
@@ -38,6 +39,7 @@
     "invalid_requirement_refs": [],
     "unmapped_dg20_requirements": [],
     "unmapped_dg21_requirements": [],
+    "unmapped_dg22_requirements": [],
     "unmapped_amendment_requirements": [],
     "orphan_tickets": [],
     "invalid_workflow_refs": [],
@@ -46,13 +48,16 @@
   },
   "dependency_corrections": [
     "Ticket 04A depends on existing Tickets 03, 04, and 05 rather than being placed before Ticket 05",
-    "Ticket 07A depends on Ticket 04A plus existing Tickets 05 and 07",
-    "Ticket 08 now depends on Ticket 07A",
+    "Ticket 04B depends on Ticket 04A and owns real Box/Mask visual-prompt adapter enablement",
+    "Ticket 07A is reopened and depends on Ticket 04B plus existing Tickets 05 and 07",
+    "Ticket 07B depends on Ticket 07A and owns DG-22 floating-palette interaction",
+    "Ticket 08 now depends on Ticket 07B",
     "Ticket 14 defines reference P/N/V before Tickets 10 and 13 consume Evidence",
     "Ticket 10 and Ticket 13 remain parallel after Ticket 14",
     "Ticket 20 owns production same-decision Evidence after Tickets 14 and 19",
     "Amendment 001 requires renderer/Evidence/runtime identity and RGB continuity",
-    "Amendment 002 requires Prompt/Edit separation, bounded proposals, 2D-first ranking, and explicit ambiguity"
+    "Amendment 002 requires Prompt/Edit separation, bounded proposals, 2D-first ranking, and explicit ambiguity",
+    "DG-22 requires a fitted-image-contained palette with drag, collapse, temporary hide, auto-avoid, and no stale blind region"
   ],
   "tickets": [
     {"id": "01", "number": 1, "slug": "current-target-context-kernel", "title": "CurrentTargetContext lifecycle kernel", "blocked_by": []},
@@ -61,10 +66,12 @@
     {"id": "04", "number": 4, "slug": "anchor-mask-versioning", "title": "Anchor AIView + independent Editing / Stable Mask / Evidence lifecycle", "blocked_by": ["02"]},
     {"id": "05", "number": 5, "slug": "anchor-editing-validation-restart", "title": "Anchor editing + support validation + atomic Confirm Anchor + early Restart", "blocked_by": ["03", "04"]},
     {"id": "04A", "slug": "prompt-authoring-proposal-foundation", "title": "Prompt Authoring Layer + Multi-Prompt Proposal Foundation", "blocked_by": ["03", "04", "05"]},
+    {"id": "04B", "slug": "visual-prompt-adapter-enablement", "title": "Visual Prompt Adapter Enablement", "blocked_by": ["04A"]},
     {"id": "06", "number": 6, "slug": "first-progressive-generated-view-mask", "title": "First progressive Generated AIView + Initial Auto Mask", "blocked_by": ["05"]},
     {"id": "07", "number": 7, "slug": "local-assessment-participation", "title": "Local ViewAssessmentPolicy + Participation + actionable Review", "blocked_by": ["06"]},
-    {"id": "07A", "slug": "three-stage-anchor-mask-pipeline", "title": "Three-Stage Anchor Mask Pipeline + Ranking / Ambiguity UX", "blocked_by": ["04A", "05", "07"]},
-    {"id": "08", "number": 8, "slug": "adaptive-view-planner", "title": "Adaptive progressive View planner + valid observation-pose preflight", "blocked_by": ["07A"]},
+    {"id": "07A", "slug": "three-stage-anchor-mask-pipeline", "title": "Reopened Three-Stage Anchor Mask Pipeline + Ranking / Ambiguity UX", "blocked_by": ["04A", "04B", "05", "07"]},
+    {"id": "07B", "slug": "floating-prompt-edit-palette", "title": "Floating Prompt/Edit Palette UX Hardening", "blocked_by": ["07A"]},
+    {"id": "08", "number": 8, "slug": "adaptive-view-planner", "title": "Adaptive progressive View planner + valid observation-pose preflight", "blocked_by": ["07B"]},
     {"id": "09", "number": 9, "slug": "scalable-gallery-inspect-cameras", "title": "Scalable Gallery + Frustum sync + Inspect AI Cameras", "blocked_by": ["08"]},
     {"id": "10", "number": 10, "slug": "cross-view-assessment", "title": "Cross-view Review assessment + visible-support reasons", "blocked_by": ["14", "09", "07"]},
     {"id": "11", "number": 11, "slug": "user-added-ai-view", "title": "User-added AIView using current or adjusted camera", "blocked_by": ["09", "07", "05"]},

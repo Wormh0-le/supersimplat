@@ -1,52 +1,18 @@
 # DG-21 — Prompt Authoring Layer + Three-Stage Anchor Mask Pipeline
 
-- **Status:** CLOSED
+- **Status:** CLOSED; Stage-2 closure refined by DG-23 / Amendment 003
 - **Date:** 2026-07-28
 - **Applies to:** `ai-select-v1`
-- **Normative spec:** Final Spec v1.1 + Amendment 002
+- **Normative spec:** Final Spec v1.1 + Amendments 002–003
 - **Foundation owner:** Ticket 04A
 - **Visual-prompt adapter owner:** Ticket 04B
-- **Algorithmic completion owner:** Ticket 07A
+- **Anchor completion owner:** Ticket 07A
 - **Interaction follow-up:** Ticket 07B under DG-22
+- **Multi-view continuation:** Tickets 08/08A under DG-23
 
 ## Decision question
 
-How should AI Select turn user intent on an authoritative Anchor RGB into a Stable Anchor Mask when one point can correspond to several plausible SAM proposals, the point-only path may return an oversized Mask or overloaded unavailable result, and direct pixel editing conflicts with Box/Prompt-Brush interaction?
-
-## Context
-
-The product correctly separates:
-
-```text
-RGB
-PromptState
-AutoMaskProposalSet
-ProposalDecision
-Editing Mask
-Stable Mask
-Evidence
-Candidate
-```
-
-The weak path was:
-
-```text
-click
-→ point-only model request
-→ choose highest-scored point-consistent candidate
-→ Editing Mask
-```
-
-Observed problems include:
-
-- a table-top Point including neighbouring chairs;
-- nested part/object/group proposals collapsed before inspection;
-- raw model score acting as the main ordering signal;
-- several causes reported as one unavailable state;
-- drag conflicts between Box, Prompt Brush, and Paint;
-- Prompt constraints and direct bitmap corrections sharing one interaction mode.
-
-Ticket 07 `ViewAssessmentPolicy` starts after Stable Mask publication and cannot choose the pre-Stable proposal.
+How should AI Select turn user intent on an authoritative Anchor RGB into a Stable Anchor Mask when one Prompt can correspond to several plausible model proposals and direct Pixel Editing must remain distinct from Prompt constraints?
 
 ## Decision
 
@@ -54,48 +20,35 @@ Adopt:
 
 ```text
 Prompt Authoring
-    ↓
-Stage 1 — Prompt-conditioned Proposal Generation
-    ↓
-Stage 2 — 2D-first Proposal Ranking / Ambiguity Decision
-    ↓
-Stage 3 — Candidate Acceptance / Editing / Confirm
-    ↓
-Stable Anchor Mask
+→ Stage 1: Prompt-conditioned object proposals
+→ Stage 2: conservative 2D-first ProposalDecision
+→ Stage 3: Accept / Editing / Confirm
+→ object-level Anchor Stable Mask
 ```
 
-Implementation ownership is refined as:
+Ownership:
 
 ```text
-Ticket 04A
-= PromptState + explicit Prompt/Edit tools
-  + adapter capability contract + bounded proposal set
-
-Ticket 04B
-= locked real-adapter Box / Mask Constraint enablement
-  + deterministic visual-prompt compilation
-
-Ticket 07A
-= proposal generation integration
-  + 2D-first ranking / ambiguity
-  + acceptance/editing/confirm integration
-  + locked-runtime quality/calibration/performance validation
-
-Ticket 07B / DG-22
-= fitted-image floating palette with drag/collapse/Space-hide/no blind region
+04A = PromptState + Prompt/Edit tools + capabilities + bounded proposal foundation
+04B = locked real-adapter Box / Mask Constraint enablement
+07A = Anchor proposal integration + conservative decision + Accept/Edit/Confirm
+07B = fitted-image floating palette with drag/collapse/Space-hide/no blind region
+08/08A = 2.5D sequence planning and object-level multi-view tracking
 ```
 
-Ticket 07A remains the completion owner for the Three-Stage Anchor Mask Pipeline. Ticket 07B changes presentation and pointer routing only.
+Ticket 07A remains the completion owner for the Anchor Three-Stage pipeline. DG-23 supersedes the earlier expectation that materially distinct plausible candidates must be automatically resolved through a benchmark-calibrated Top-1 margin.
 
-## Decision 1 — Anchor scope and reusable tooling
+## Anchor scope
 
-The mandatory Three-Stage pipeline applies to the Anchor Mask.
+The mandatory Three-Stage pipeline applies to the Anchor Mask and targets one object instance.
 
-PromptState and Prompt/Edit tools may be reused for Generated and User-added View correction, but this decision does not replace the current Generated View automatic Stable Mask + ViewAssessment publication contract.
+Prompt/Edit tooling may be reused for Generated and User-added View correction. Generated View production Mask acquisition is separately defined by Amendment 003 and Ticket 08A.
 
-## Decision 2 — Prompt Authoring and Pixel Editing are separate
+DG-21 does not require whole-image object inventory, scene-wide semantic discovery, or arbitrary part-level selection.
 
-Prompt Authoring expresses model constraints:
+## Prompt Authoring and Pixel Editing are separate
+
+Prompt constraints:
 
 ```text
 Positive/Negative Point
@@ -104,105 +57,96 @@ Positive/Negative Mask Constraint when supported
 Positive/Negative Text when supported
 ```
 
-Pixel Editing directly changes Editing Mask:
+Pixel edits:
 
 ```text
 Paint
 Erase
 ```
 
-The two modes have separate state and histories. Box drag only acts in Box mode, Prompt Brush only authors Mask constraints, and Paint/Erase only modify Editing Mask.
+They have separate state, histories, and pointer semantics. Unsupported Prompt types are disabled/rejected and never silently ignored or converted to Points.
 
-## Decision 3 — Capabilities are explicit and truthful
+## Capabilities are explicit
 
-Prompt support is declared by a versioned adapter capability contract, not inferred from model name.
+Prompt support is declared by a versioned adapter capability contract. Positive/negative support is explicit per family.
 
-Positive and negative support is explicit per prompt family. Unsupported tools are disabled/rejected and never silently ignored.
+04A establishes the capability/protocol seam. 04B enables real non-text visual prompts only after locked-runtime validation. Text remains optional.
 
-Ticket 04A established the generic capability/protocol seam. Ticket 04B enables real non-text visual prompts only after locked-runtime validation. Text remains an optional later capability.
+## Preserve proposals before decision
 
-A one-candidate point-only result is a legal compatibility proposal set but cannot alone satisfy Ticket 07A production quality closure.
-
-## Decision 4 — Preserve proposals before selection
-
-The Companion preserves a deterministic bounded proposal set. Every proposal binds:
+The Companion preserves a deterministic bounded proposal set. Every proposal binds target/context, View/RGB, PromptState, model, adapter/compiler, proposal/decision policy, attempt, Mask digest, and raw-score semantics.
 
 ```text
-Target/context dependency
-View and RGB digest
-PromptState digest
-model manifest
-adapter capability/compiler identity
-proposal policy
-ranking policy
-attempt identity
-Mask artifact digest
-raw model score and declared semantics
+adapter candidates
+→ validation
+→ exact dedup
+→ near-duplicate clustering
+→ representative per cluster
+→ bounded materially distinct clusters
 ```
 
 No Anchor proposal becomes Stable automatically.
 
-Near-duplicate clustering and materially distinct representative selection occur before bounded truncation under Ticket 07A.
+## Conservative 2D-first decision
 
-## Decision 5 — Ranking is 2D-first
+Priority:
 
-Stage 2 prioritizes:
+1. hard Prompt consistency;
+2. object-instance structural credibility;
+3. relative candidate geometry/nesting;
+4. model score for cluster representative/default preview only;
+5. optional low-cost Gaussian support diagnostics.
 
-1. hard prompt consistency;
-2. relative candidate geometry and nesting;
-3. 2D structural quality;
-4. model-declared score;
-5. optional low-cost Gaussian support sanity.
+A unique candidate is not automatically trustworthy. A structural quality gate must detect excessive area, substantial disconnected components, boundary contact, Box spill, constraint disagreement, neighbour leakage, and equivalent-run instability.
 
-A unique candidate is not automatically trustworthy. Ticket 07A must apply a structural single-candidate quality gate and calibrated decision margin.
-
-Low-cost Gaussian support may detect gross incompatibility or break a tie between otherwise comparable 2D candidates. It cannot be the primary selector, ownership Evidence, or a replacement for P/N/V.
-
-## Decision 6 — Ambiguity is a first-class state
-
-When materially different candidates remain plausible without a calibrated stable margin:
+Minimum policy:
 
 ```text
-ProposalDecision = ambiguous
+0 eligible clusters → unavailable
+1 credible cluster → selected
+1 risky cluster → ambiguous
+2+ materially distinct plausible clusters → ambiguous
 ```
 
-The system preserves alternatives and allows:
+The benchmark validates false-auto-selection, contamination, recovery, stability, and performance. It does not need to establish a general correctness probability or automatic Top-1 margin.
 
-- candidate choice;
-- Point/Box/Mask/Text refinement where supported;
-- manual Paint/Erase recovery.
+## Ambiguity is first-class
 
-It must not silently select an oversized Mask or report ambiguity as a technical failure.
+`ambiguous` preserves alternatives and allows candidate choice, Prompt refinement, and Paint/Erase recovery. It must not be converted into technical failure or silent oversized success.
 
-## Decision 7 — ProposalDecision and ViewAssessment are distinct
+`unavailable` preserves RGB, PromptState, prior Stable Mask, and manual recovery.
+
+## ProposalDecision and ViewAssessment remain distinct
 
 ```text
 ProposalDecision
-= which pre-Stable proposal seeds Editing Mask?
+= which pre-Stable proposal may seed Editing Mask?
 
 ViewAssessmentPolicy
-= is the confirmed Stable Mask suitable for participation?
+= is the confirmed Stable Mask suitable for Participation?
 ```
 
-They remain separate and do not form one confidence value. Ticket 07 continues to own Good / Review / Failed and Participation after Stable publication.
+Ticket 07 continues to own Good / Review / Failed and Participation after Stable publication.
 
-## Decision 8 — Stable Mask authority is unchanged
+## Stable authority is unchanged
 
 ```text
-Prompt / Proposal changes
-→ Stable Mask unchanged
+Prompt/proposal changes
+→ prior Stable Mask unchanged
 
-Accepted proposal / Paint / Erase
+Accept/Paint/Erase
 → Editing Mask only
 
 Confirm Mask
 → new Stable Mask revision
-→ exact dependent Evidence/Candidate invalidation
+→ exact downstream invalidation
 ```
 
-A prior Stable Mask remains authoritative until replacement Confirm succeeds.
+The confirmed Anchor becomes an object-identity seed for DG-23 planning/tracking. It is not formal Gaussian ownership.
 
-## Decision 9 — Error taxonomy is refined
+## Error taxonomy
+
+Keep distinct:
 
 ```text
 maskProposalFailed
@@ -211,95 +155,49 @@ maskProposalAmbiguous
 maskArtifactInvalid
 ```
 
-Candidate-level rejection causes remain structured so unavailable does not collapse every failure into generic prompt conflict.
-
-## Decision 10 — Text remains capability-gated
-
-Text/concept prompting is planned, not mandatory in the current implementation sequence. It becomes usable only when a locked versioned adapter advertises support and passes runtime validation.
-
-No external detector or semantic object database is required.
-
-## Decision 11 — Ticket 08 follows resolved authoring
-
-Adaptive Generated View planning consumes a confirmed Anchor from the completed Three-Stage pipeline and follows DG-22 no-blind-spot palette closure.
-
-This does not make ranking or palette interaction part of the planner. It prevents planner evaluation from being dominated by unresolved Anchor authoring defects.
+Candidate-level rejection causes remain structured and actionable.
 
 ## Rejected alternatives
 
-### Tune point-only thresholds
-
-Rejected because threshold tuning cannot resolve nested part/object/group ambiguity and may increase unavailable results.
-
-### Select the highest raw model score
-
-Rejected because the score is adapter-local and not established as calibrated user-intent correctness.
-
-### Always select smallest or largest Point-containing Mask
-
-Rejected because either bias fails for part-versus-whole intent and neighbouring-object leakage.
-
-### Make Gaussian support the primary selector
-
-Rejected because support diagnostics are not same-decision ownership Evidence.
-
-### Require a semantic detector first
-
-Rejected for v1 because arbitrary parts and unknown objects do not require category semantics. Text/concept adapters remain optional.
-
-### Treat Paint strokes as prompts automatically
-
-Rejected because it destroys the distinction between model constraints and explicit pixel correction.
-
-### Silently convert unsupported Box/Mask prompts into Points
-
-Rejected because it misrepresents adapter capability and loses user intent.
+- Tune point-only thresholds as the full solution.
+- Select highest raw model score.
+- Always choose smallest/largest Point-containing Mask.
+- Make Gaussian support the primary selector.
+- Require a semantic detector or whole-image inventory first.
+- Treat Paint as Prompt automatically.
+- Convert unsupported visual Prompts into Points.
+- Require a generic calibrated Top-1 ranker to resolve material ambiguity.
 
 ## Consequences
 
-### Positive
+Positive:
 
-- richer user intent with explicit visual prompts;
-- multiple proposals preserved before selection;
-- ambiguity becomes recoverable;
-- existing Stable/Evidence lifecycle remains intact;
-- future text/concept support does not require a product rewrite;
-- Ticket 08 receives a reliable confirmed Anchor.
+- richer explicit user intent;
+- proposal alternatives preserved;
+- conservative object-level Anchor acquisition;
+- ambiguity remains recoverable;
+- Stable/Evidence lifecycle preserved;
+- DG-23 receives a confirmed identity seed.
 
-### Costs
+Costs:
 
-- prompt/proposal domain and adapter compiler;
-- ranking policy and frozen-scene benchmark;
-- candidate-choice UI;
-- additional inference and ranking cost;
-- real Box/Mask adapter validation;
-- affected Ticket 05/07 regressions must be rerun.
+- Prompt/proposal domain and adapter compiler;
+- near-duplicate clustering and structural diagnostics;
+- candidate-choice/recovery UI;
+- locked-runtime contamination/performance benchmark;
+- real Box/Mask adapter validation.
+
+## Required sequence
+
+```text
+04A Prompt / Proposal Foundation
+→ 04B Visual Prompt Adapter Enablement
+→ 07A Object-level Anchor Acquisition
+→ 07B Floating Prompt/Edit Palette
+→ 08 2.5D Key/Bridge Sequence Planner
+→ 08A Object-level Mask Tracking
+```
 
 ## Non-goals
 
-DG-21 does not:
-
-- change the AI Select tool model;
-- change Stable Mask confirmation semantics;
-- require semantic labels or Text Prompt;
-- implement Adaptive Generated View planning;
-- change Generated View automatic Mask publication;
-- implement formal P/N/V Evidence;
-- create a second 3D editor;
-- guarantee every single click is unambiguous.
-
-## Required implementation sequence
-
-```text
-04A Prompt Authoring / Proposal Foundation
-  ↓
-04B Visual Prompt Adapter Enablement
-  ↓
-07A Reopened Ranking / Ambiguity / Acceptance / Production Validation
-  ↓
-07B DG-22 Floating Prompt/Edit Palette
-  ↓
-08 Adaptive Generated View Planner
-```
-
-Tickets 04A and 05 provide the existing editor/Undo/Confirm seams. Ticket 04B enables real visual prompts. Ticket 07A integrates Ticket 07 assessment semantics without merging ProposalDecision and ViewAssessment. Ticket 07B preserves the fitted-image rule while removing permanent interaction blind spots.
+DG-21 does not change Confirm-only Stable semantics, implement camera planning/tracking, implement P/N/V Evidence, create a second 3D editor, guarantee every Prompt is unambiguous, or require whole-image object inventory.

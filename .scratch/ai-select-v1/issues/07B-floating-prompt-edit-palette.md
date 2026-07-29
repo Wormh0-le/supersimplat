@@ -10,14 +10,25 @@ Blocks: 08
 
 - Final Spec v1.1 Amendment 002 — Prompt Authoring and Three-Stage Anchor Mask Pipeline
 - DG-21 — Prompt Authoring Layer + Three-Stage Anchor Mask Pipeline
-- DG-22 — Draggable, Collapsible, Auto-Avoiding Prompt/Edit Palette
+- DG-22 — Draggable, Collapsible Prompt/Edit Palette with Temporary Hide
 - Ticket 07A Phase 4 fitted-image layout foundation
 
 ## Purpose
 
 Ticket 07A Phase 4 correctly moved Prompt/Edit controls into the authoritative fitted image surface and aligned RGB, Mask, Prompt overlays, and pointer mapping. A toolbar fixed at the fitted image bottom-center still creates a permanent non-editable blind region.
 
-Ticket 07B replaces that fixed placement with a draggable, collapsible, auto-avoiding floating palette while preserving the fitted-image ownership rule.
+Ticket 07B replaces that fixed placement with a draggable, collapsible floating palette with a guaranteed Space temporary-hide escape hatch while preserving the fitted-image ownership rule.
+
+The closure-critical interaction is:
+
+```text
+drag + edge snap
+collapse / expand
+Space temporary hide
+no stale hit region
+```
+
+A non-relocating visual occlusion assist such as temporary opacity reduction is optional. Automatic palette relocation is not required for Ticket 07B closure.
 
 This ticket is interaction hardening. It does not modify PromptState, adapter inference, proposal ranking, Stable Mask publication, or Evidence semantics.
 
@@ -37,7 +48,7 @@ This ticket is interaction hardening. It does not modify PromptState, adapter in
 - fitted-rect clamp and edge snapping
 - expanded/collapsed presentation
 - Space temporary hide
-- deterministic auto-avoid behavior
+- optional non-relocating occlusion-assist hook
 - shortcut mapping and conflict audit
 - browser interaction and accessibility fixtures
 
@@ -145,25 +156,30 @@ Required safeguards:
 - lost focus / blur / context disposal cannot leave the palette permanently hidden;
 - shortcuts and active tool remain unchanged.
 
-# 5. Auto-avoid
+# 5. Optional non-relocating occlusion assist
 
-Implement a deterministic assistive policy for an active image pointer gesture.
+Ticket 07B does not require the palette to move automatically during image authoring. Automatic relocation can disrupt spatial memory and create unstable UI motion during a precision gesture.
 
-When a captured Paint/Erase/Prompt-Brush/Box gesture approaches or intersects the palette's expanded interaction bounds, the palette may:
+A first implementation MAY provide a visual-only assist when an already captured Paint/Erase/Prompt-Brush/Box gesture approaches or passes beneath the palette's visible bounds:
 
-1. lower opacity; or
-2. relocate to the valid image edge farthest from the current pointer.
+```text
+active captured image gesture near palette
+→ temporarily reduce palette opacity
+→ restore opacity when gesture ends
+```
 
-Policy requirements:
+This assist is optional and is not a closure gate.
 
-- gesture coordinates remain in authoritative image space;
-- moving/fading the palette never modifies PromptState or Mask pixels;
-- relocation is clamped to the fitted rect;
-- relocation does not oscillate repeatedly during one gesture;
-- manual placement is retained after the gesture unless the declared policy explicitly records the new placement;
-- Space remains the guaranteed override when auto-avoid is unsuitable.
+When implemented, it MUST:
 
-The chosen policy and thresholds must be constants owned by the palette module, not scattered CSS/UI literals.
+- leave the palette position unchanged;
+- leave image coordinates, PromptState, Mask pixels, and histories unchanged;
+- avoid opacity-zero pointer interception outside the already captured image gesture;
+- restore the exact prior opacity on pointerup, pointercancel, blur, and context disposal;
+- respect reduced-motion and contrast/accessibility requirements;
+- keep Space temporary hide as the guaranteed user-controlled override.
+
+Automatic relocation to another edge is explicitly deferred. It requires a separate follow-up decision and browser evidence that it does not create oscillation, surprise, or loss of spatial memory.
 
 # 6. No stale blind region
 
@@ -264,12 +280,12 @@ Add a shortcut to reset palette position. Do not overload Restart Target.
 - [ ] Targets touching every image edge and corner can be fully edited.
 - [ ] No transparent wrapper creates a permanent blind area.
 
-## Auto-avoid
+## Optional occlusion assist
 
-- [ ] Active gesture approaching the palette triggers the declared fade/relocation policy.
-- [ ] Auto-avoid does not alter image coordinates, PromptState, or Mask output.
-- [ ] Palette relocation does not oscillate during one gesture.
-- [ ] Space temporary hide remains a reliable manual override.
+- [ ] Ticket 07B can close without automatic fade or relocation when drag, collapse, Space hide, and no-stale-hit-region requirements pass.
+- [ ] When opacity assist is implemented, it does not alter position, image coordinates, PromptState, Mask output, or histories.
+- [ ] Optional opacity state restores on pointerup, pointercancel, blur, and disposal.
+- [ ] Automatic relocation is not required and is not implemented as an undeclared closure dependency.
 
 ## Lifecycle
 
@@ -297,8 +313,8 @@ Validate at minimum:
 - browser resize while palette is snapped/free/collapsed;
 - device pixel ratio 1 and 2;
 - Paint/Erase stroke passing through previous palette position;
-- Box drag crossing the palette auto-avoid zone;
-- Space hide during active editing;
+- drag, collapse, and Space hide while editing bottom-edge content;
+- optional opacity assist lifecycle, only when implemented;
 - Restart Target state reset;
 - localized labels with wider text.
 
@@ -320,6 +336,7 @@ Validate at minimum:
 - No Box/Mask adapter enablement; Ticket 04B owns it.
 - No Text Prompt enablement.
 - No new Stable Mask or Evidence lifecycle.
+- No required automatic palette relocation during active gestures.
 - No global toolbar framework rewrite outside AI Select.
 - No persistence across unrelated scenes or browser sessions.
 - No production animation/artwork requirement beyond clear, accessible interaction.

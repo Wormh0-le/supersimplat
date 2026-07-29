@@ -1,13 +1,14 @@
 # 21 — Retry / cancellation / OOM / atomic publication + calibration hardening
 
-Status: ready-for-agent — v2.2 re-audited
+Status: ready-for-agent — v2.5 DG-23 aligned
 
-Blocked by: 20, 18, 08, 10, 13
+Blocked by: 20, 18, 08, 08A, 10, 13
 
 ## Final Spec mapping
 
 - Final Spec v1.1 §§8, 16.2, 22–23, 28, 30–32
-- Final Spec v1.1 Amendment 001 — Renderer / Evidence Implementation Identity and RGB Continuity
+- Final Spec v1.1 Amendments 001 and 003
+- DG-23
 - ADR 0013
 - MVP Phase 7 hardening
 
@@ -15,71 +16,78 @@ Blocked by: 20, 18, 08, 10, 13
 
 - Complete v1.1 product flow
 - Production Direct Evidence path
-- Locked GPU runtime
-- Frozen benchmark scenes
+- Locked GPU/model/tracker runtime
+- Frozen benchmark scenes and tracking sequences
 - Fault-injection hooks
 
 ## Outputs / handoff artifacts
 
 - End-to-end failure hardening
-- Calibrated policy margins/thresholds
+- Versioned policy thresholds/margins
+- Tracking transition/resource envelope validation
 - Stress and repeatability results
 - Locked production evidence record
 
 ## What to build
 
-Close the production-hardening loop. This ticket calibrates existing semantics and validates retained-state/recovery behavior; it introduces no new product model.
+Close the production-hardening loop. Calibrate existing semantics and validate retained-state/recovery behavior; introduce no new product model or tracker backend.
 
 ## Acceptance criteria
 
-- [ ] Explicit Retry creates a true new render attempt for the same CameraBinding; same-attempt replay remains idempotent.
+- [ ] Explicit Retry creates a true new attempt for render, tracker, and Evidence operations; same-attempt replay remains idempotent.
 - [ ] Cancellation correctness never depends on cancellation completing before stale work returns.
-- [ ] OOM/kernel failure during render/SAM/Evidence/Lift never publishes partial Ready artifacts.
-- [ ] Atomic publication is validated for RGB/View, Stable Mask, per-view Evidence, Repropagate, assessment, and Candidate.
-- [ ] RGB failure preserves last valid preview only as stale/not-current and exposes true Retry.
-- [ ] Evidence failure preserves RGB/View/Stable Mask/Gallery/previous Candidate and exposes Retry Lift / inspect Mask / Exclude / adjust-add View.
+- [ ] OOM/kernel/model failure during render/SAM/tracking/Evidence/Lift never publishes partial Ready artifacts.
+- [ ] Atomic publication is validated for RGB/View, Stable Mask, tracking run/repropagate, per-view Evidence, assessment, and Candidate.
+- [ ] RGB failure preserves last valid preview only as stale/not-current and exposes Retry.
+- [ ] Tracker/Mask failure preserves View/RGB/prior Stable Mask and exposes tracker Retry, declared fallback, manual correction, or Exclude.
+- [ ] Suspected instance switch is Review/fail-closed, never silent Auto Good.
+- [ ] Unsupported Key/Bridge transition preserves completed artifacts and triggers bounded replanning/fallback.
+- [ ] Correction repropagate failure preserves old Stable Masks and matching Evidence/Candidate.
+- [ ] Evidence failure preserves RGB/View/Stable/Gallery/previous Candidate and exposes recovery.
 - [ ] Reference Contributor failure does not block valid RGB or successful Direct Evidence.
-- [ ] Mask failure preserves View/RGB and exposes retry/manual/exclude.
 - [ ] View Render Failure exposes retry/replacement/exclude.
 - [ ] Lift failure preserves stable inputs and leaves Candidate unchanged/not-current.
-- [ ] Repropagate failure preserves old Stable Masks and matching Evidence/Candidate.
-- [ ] Offline/upgrade/incompatible states preserve native SuperSplat and expose readiness/settings recovery.
-- [ ] Stress stale-result rejection across Camera churn, planner Stop, Restart, Suspended/Undo, Evidence recomputation, and cancellation.
-- [ ] Validate RGB-only versus RGB+Evidence parity for the same `rasterImplementationId`, exact inputs, and compatible `runtimeBuildId`.
-- [ ] Inject an Evidence traversal RGB-digest mismatch and verify no Evidence publishes, the Stable Mask is not silently rebound, and historical RGB remains inspectable.
-- [ ] Validate incompatible renderer/runtime migration: old RGB/Mask/Evidence/Candidate reuse is blocked until explicit rerender/review/recompute recovery.
-- [ ] Validate reference and production backend identities cannot collide in cache, Candidate readiness, or Native application state.
+- [ ] Offline/upgrade/incompatible states preserve native SuperSplat and expose recovery.
+- [ ] Stress stale-result rejection across Camera churn, plan replacement, tracker reference revision, Stop, Restart, Suspended/Undo, Evidence recomputation, and cancellation.
+- [ ] Validate RGB-only versus RGB+Evidence parity for same raster identity and inputs.
+- [ ] Inject Evidence RGB-digest mismatch and verify no publication/rebinding.
+- [ ] Validate incompatible renderer/tracker/runtime migration blocks stale reuse until explicit recovery.
+- [ ] Validate reference/production Evidence identities and baseline/production tracking identities cannot collide.
 - [ ] Calibrate Camera observer placement, preview behavior, and inference resolutions.
-- [ ] Calibrate planner budget, marginal Visible Evidence gain, diversity, and early stop.
-- [ ] Calibrate Core/Context/Evidence Working Set construction and Render Working Set parity gate.
+- [ ] Calibrate planner budget, marginal gain, diversity, early stop, and Key/Bridge transition envelope.
+- [ ] Validate tracker resource envelope, sequence length/resolution limits, correction recovery, and fallback threshold.
+- [ ] Calibrate Core/Context/Evidence Working Set and Render Working Set parity.
 - [ ] Calibrate positive/boundary/local-negative Mask policy and P/N/V classification margins.
-- [ ] Validate mixed and unobserved remain stable classifications under repeated atomic accumulation.
-- [ ] Calibrate Observation Coverage, Lift Readiness, P0/P1 assessment, and cross-view false-positive/false-negative behavior.
-- [ ] Record exact `rasterImplementationId`, `evidenceBackendId`, `runtimeBuildId`, source/build/CUDA/PyTorch/GPU/model/renderer/Evidence policy identities.
-- [ ] Clearly distinguish reference/autograd checks from production same-decision GPU validation.
+- [ ] Validate mixed/unobserved classifications under repeated atomic accumulation.
+- [ ] Calibrate Coverage, Readiness, P0/P1 assessment, and cross-view false-positive/false-negative behavior.
+- [ ] Record exact raster/Evidence/runtime/model/tracker/planner/policy identities.
+- [ ] Distinguish tracker diagnostics from formal P/N/V and reference checks from production same-decision validation.
 
 ## Failure / recovery criteria
 
-- [ ] Every injected failure documents retained state, disabled operations, and recovery action.
-- [ ] No failure silently downgrades to a stale-but-applicable Candidate or approximate attribution.
-- [ ] Renderer/backend/runtime incompatibility disables production application without destroying inspectable artifacts or mutating Native Selection.
+- [ ] Every injected failure documents retained state, disabled operations, and recovery.
+- [ ] No failure silently downgrades to stale-but-applicable Candidate, approximate attribution, or untracked fallback.
+- [ ] Renderer/backend/tracker/runtime incompatibility disables production application without destroying inspectable artifacts or mutating Native Selection.
 
 ## Validation
 
 - Full repository checks
-- Locked GPU fault injection
-- Same-CameraBinding Retry/cache tests
-- RGB-only versus RGB+Evidence parity test
-- Stable Mask/RGB digest mismatch test
-- Renderer migration invalidation and explicit recovery test
-- Reference-versus-production backend identity separation test
+- Locked GPU/model/tracker fault injection
+- Same-binding Retry/cache tests
+- Tracker run/reference/plan stale-result tests
+- Key/Bridge transition and fallback tests
+- correction-repropagate atomicity tests
+- RGB-only versus RGB+Evidence parity
+- Stable Mask/RGB digest mismatch
+- Renderer/tracker migration invalidation and recovery
+- Reference/production identity separation
 - Frozen benchmark calibration
-- Atomic repeatability/classification stability suite
-- Stale async stress suite
+- Atomic repeatability/classification stability
+- Stale async stress
 - Review false-positive/false-negative evaluation
 
 ## Non-goals
 
-- No new deep model
-- No identity-drift requirement
-- No Candidate provenance UI
+- No new deep model or tracker selection; Ticket 08A spike/ADR owns backend selection.
+- No new generic cross-view semantic identity classifier.
+- No Candidate provenance UI.

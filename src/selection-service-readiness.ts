@@ -172,12 +172,14 @@ interface SelectionServiceReadinessInterface {
 interface SelectionServiceTransportErrorDetails {
     status?: number;
     serviceMessage?: string;
+    serviceCode?: string;
 }
 
 class SelectionServiceTransportError extends Error {
     readonly code: SelectionServiceTransportErrorCode;
     readonly status?: number;
     readonly serviceMessage?: string;
+    readonly serviceCode?: string;
 
     constructor(
         code: SelectionServiceTransportErrorCode,
@@ -189,6 +191,7 @@ class SelectionServiceTransportError extends Error {
         this.code = code;
         this.status = details.status;
         this.serviceMessage = details.serviceMessage;
+        this.serviceCode = details.serviceCode;
     }
 }
 

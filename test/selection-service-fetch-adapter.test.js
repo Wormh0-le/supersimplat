@@ -1524,6 +1524,25 @@ test('rejects a Mask artifact whose bytes do not match its digest', async () => 
     );
 });
 
+test('keeps malformed Mask decisions distinct from invalid artifacts', async () => {
+    const reply = maskReply(maskRequest);
+    reply.proposalDecision.status = 'made-up';
+    const adapter = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:model-v1'
+        }),
+        fetch: async () =>
+            new Response(JSON.stringify(reply), {
+                status: 200
+            })
+    });
+    await assert.rejects(
+        adapter.produceMaskProposals(maskRequest),
+        /incomplete or stale Mask result/
+    );
+});
+
 test('surfaces a Companion Mask error without publishing anything', async () => {
     const adapter = new FetchSelectionServiceAdapter({
         getConfiguration: () => ({
@@ -1534,13 +1553,20 @@ test('surfaces a Companion Mask error without publishing anything', async () => 
             new Response(
                 JSON.stringify({
                     status: 'maskProposalError',
-                    code: 'maskProposalFailed',
-                    message: 'SAM found no foreground mask for the prompts.'
+                    code: 'incompleteMaskSet',
+                    message: 'The adapter returned an invalid Mask artifact.'
                 }),
                 { status: 409 }
             )
     });
-    await assert.rejects(adapter.produceMaskProposals(maskRequest), /HTTP 409/);
+    await assert.rejects(
+        adapter.produceMaskProposals(maskRequest),
+        (error) =>
+            error.message.includes('HTTP 409') &&
+            error.serviceCode === 'incompleteMaskSet' &&
+            error.serviceMessage ===
+                'The adapter returned an invalid Mask artifact.'
+    );
 });
 
 test('rejects a Mask request that is not bound to the configured Model Manifest', async () => {

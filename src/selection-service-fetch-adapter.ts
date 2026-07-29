@@ -37,6 +37,7 @@ import {
     type GeneratedViewPlanRequest,
     type GeneratedViewPlanResponse
 } from './ai-select/generated-view-service';
+import { isAutoMaskProposalSet } from './ai-select/mask-proposal';
 import {
     MaskArtifactInvalidError,
     isAIViewMaskRequest,
@@ -250,7 +251,11 @@ const browserFetch: SelectionServiceFetch = (url, init) => {
 const transportError = (
     code: 'browserTransport' | 'invalidResponse' | 'http',
     message: string,
-    details: { status?: number; serviceMessage?: string } = {}
+    details: {
+        status?: number;
+        serviceMessage?: string;
+        serviceCode?: string;
+    } = {}
 ) => new SelectionServiceTransportError(code, message, details);
 
 class FetchSelectionServiceAdapter
@@ -1219,7 +1224,16 @@ class FetchSelectionServiceAdapter
             );
         }
         if (!isMaskResultResponse(result)) {
-            throw new MaskArtifactInvalidError();
+            if (
+                isRecord(result.proposalSet) &&
+                !isAutoMaskProposalSet(result.proposalSet)
+            ) {
+                throw new MaskArtifactInvalidError();
+            }
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an incomplete or stale Mask result.'
+            );
         }
         if (!maskResponseMatchesRequest(result, request)) {
             throw transportError(
@@ -2460,10 +2474,16 @@ class FetchSelectionServiceAdapter
 
     private async httpError(response: FetchResponse) {
         let serviceMessage: string | undefined;
+        let serviceCode: string | undefined;
         try {
             const body = await response.json();
-            if (isRecord(body) && typeof body.message === 'string') {
-                serviceMessage = body.message;
+            if (isRecord(body)) {
+                if (typeof body.message === 'string') {
+                    serviceMessage = body.message;
+                }
+                if (typeof body.code === 'string') {
+                    serviceCode = body.code;
+                }
             }
         } catch (error) {
             // A non-JSON response still has a useful HTTP status diagnostic.
@@ -2471,7 +2491,7 @@ class FetchSelectionServiceAdapter
         return transportError(
             'http',
             `The Selection Service Companion returned HTTP ${response.status}.`,
-            { status: response.status, serviceMessage }
+            { status: response.status, serviceMessage, serviceCode }
         );
     }
 

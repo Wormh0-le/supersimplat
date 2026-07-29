@@ -25,6 +25,9 @@ const {
 const {
     createPromptAdapterCapabilities
 } = require('../.test-dist/src/ai-select/prompt-state.js');
+const {
+    SelectionServiceTransportError
+} = require('../.test-dist/src/selection-service-readiness.js');
 const { sha256Digest } = require('../.test-dist/src/scene-snapshot-binary.js');
 
 const dependency = (overrides = {}) => ({
@@ -631,6 +634,28 @@ test('a structurally invalid SAM response fails the request, not the View', asyn
     assert.equal(mask.state.failureKind, 'maskArtifactInvalid');
     assert.equal(mask.state.editingMask, null);
     assert.equal(anchor.state.anchor.renderStatus, 'ready');
+});
+
+test('a Companion incompleteMaskSet error is classified as an invalid artifact', async () => {
+    const { mask } = await setup({
+        produceMask: () =>
+            Promise.reject(
+                new SelectionServiceTransportError(
+                    'http',
+                    'The Selection Service Companion returned HTTP 409.',
+                    {
+                        status: 409,
+                        serviceCode: 'incompleteMaskSet',
+                        serviceMessage: 'Invalid bounded alternative.'
+                    }
+                )
+            )
+    });
+
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+
+    assert.equal(mask.state.requestStatus, 'failed');
+    assert.equal(mask.state.failureKind, 'maskArtifactInvalid');
 });
 
 test('a missing Model Manifest reports a Mask failure without touching RGB', async () => {

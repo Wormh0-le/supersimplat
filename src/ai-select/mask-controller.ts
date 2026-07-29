@@ -1,3 +1,4 @@
+import { SelectionServiceTransportError } from '../selection-service-readiness';
 import type {
     AISelectAnchorController,
     AISelectAnchorState
@@ -737,7 +738,9 @@ export class AISelectMaskController {
             }
             this.failMaskRequest(
                 errorMessage(error),
-                error instanceof MaskArtifactInvalidError
+                error instanceof MaskArtifactInvalidError ||
+                    (error instanceof SelectionServiceTransportError &&
+                        error.serviceCode === 'incompleteMaskSet')
                     ? 'maskArtifactInvalid'
                     : 'maskProposalFailed'
             );

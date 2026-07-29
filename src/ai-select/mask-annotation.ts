@@ -281,49 +281,65 @@ const isBrushStroke = (value: unknown): value is BrushStroke => {
 };
 
 /**
- * Apply one local brush stroke to an Editing Mask. Brush edits never cross
- * the Companion boundary and never touch the Stable Mask.
+ * Apply every stamp in one gesture with one decode and one artifact digest.
+ * Callers can therefore interpolate densely without reprocessing the whole
+ * Mask for every sample.
  */
-export const applyBrushStroke = (
+export const applyBrushStrokes = (
     artifact: MaskArtifact,
-    stroke: BrushStroke
+    strokes: readonly BrushStroke[]
 ): MaskArtifact => {
     if (!isMaskArtifact(artifact)) {
         throw new Error(
             'AI Select brush editing requires a valid Mask artifact.'
         );
     }
-    if (!isBrushStroke(stroke)) {
+    if (strokes.length === 0 || !strokes.every(isBrushStroke)) {
         throw new Error(
             'AI Select brush strokes need integer pixel coordinates, a positive radius, and an add/erase mode.'
         );
     }
-    if (stroke.xPx >= artifact.width || stroke.yPx >= artifact.height) {
+    if (
+        strokes.some(
+            (stroke) =>
+                stroke.xPx >= artifact.width || stroke.yPx >= artifact.height
+        )
+    ) {
         throw new Error(
             'AI Select brush strokes must land inside the Mask artifact bounds.'
         );
     }
     const bytes = decodeMaskArtifact(artifact);
     const { width, height } = artifact;
-    const radiusSquared = stroke.radiusPx * stroke.radiusPx;
-    const minX = Math.max(0, stroke.xPx - stroke.radiusPx);
-    const maxX = Math.min(width - 1, stroke.xPx + stroke.radiusPx);
-    const minY = Math.max(0, stroke.yPx - stroke.radiusPx);
-    const maxY = Math.min(height - 1, stroke.yPx + stroke.radiusPx);
-    for (let y = minY; y <= maxY; y += 1) {
-        for (let x = minX; x <= maxX; x += 1) {
-            const dx = x - stroke.xPx;
-            const dy = y - stroke.yPx;
-            if (dx * dx + dy * dy > radiusSquared) {
-                continue;
-            }
-            const index = y * width + x;
-            if (stroke.mode === 'add') {
-                bytes[index >> 3] |= 1 << (index % 8);
-            } else {
-                bytes[index >> 3] &= ~(1 << (index % 8));
+    for (const stroke of strokes) {
+        const radiusSquared = stroke.radiusPx * stroke.radiusPx;
+        const minX = Math.max(0, stroke.xPx - stroke.radiusPx);
+        const maxX = Math.min(width - 1, stroke.xPx + stroke.radiusPx);
+        const minY = Math.max(0, stroke.yPx - stroke.radiusPx);
+        const maxY = Math.min(height - 1, stroke.yPx + stroke.radiusPx);
+        for (let y = minY; y <= maxY; y += 1) {
+            for (let x = minX; x <= maxX; x += 1) {
+                const dx = x - stroke.xPx;
+                const dy = y - stroke.yPx;
+                if (dx * dx + dy * dy > radiusSquared) {
+                    continue;
+                }
+                const index = y * width + x;
+                if (stroke.mode === 'add') {
+                    bytes[index >> 3] |= 1 << (index % 8);
+                } else {
+                    bytes[index >> 3] &= ~(1 << (index % 8));
+                }
             }
         }
     }
     return artifactFromBytes(bytes, width, height);
+};
+
+/** Apply one local brush stamp through the gesture-capable implementation. */
+export const applyBrushStroke = (
+    artifact: MaskArtifact,
+    stroke: BrushStroke
+): MaskArtifact => {
+    return applyBrushStrokes(artifact, [stroke]);
 };

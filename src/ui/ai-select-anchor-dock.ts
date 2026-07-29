@@ -14,6 +14,7 @@ import {
     type AnchorDockPresentation
 } from '../ai-select/anchor-dock-presentation';
 import {
+    PointerStrokeBuffer,
     pointerActionForTool,
     type AuthoringTool
 } from '../ai-select/authoring-interaction';
@@ -63,6 +64,25 @@ interface GeneratedCardElements {
 const CLICK_TOLERANCE_PX = 4;
 type DockAuthoringTool = Exclude<AuthoringTool, 'inspect'>;
 
+const cursorForTool = (tool: DockAuthoringTool): string => {
+    const cursors: Partial<Record<DockAuthoringTool, string>> = {
+        'positive-point':
+            '<circle cx="16" cy="16" r="10" fill="white" stroke="#20c878" stroke-width="2"/><path d="M16 10v12M10 16h12" stroke="#087840" stroke-width="2"/>',
+        'negative-point':
+            '<circle cx="16" cy="16" r="10" fill="white" stroke="#f05b66" stroke-width="2"/><path d="M10 16h12" stroke="#a01420" stroke-width="2"/>',
+        paint:
+            '<circle cx="16" cy="16" r="11" fill="none" stroke="#ff8c20" stroke-width="2"/><path d="M16 11v10M11 16h10" stroke="#ff8c20" stroke-width="2"/>',
+        erase:
+            '<circle cx="16" cy="16" r="11" fill="none" stroke="#50c8ff" stroke-width="2"/><path d="m12 12 8 8m0-8-8 8" stroke="#50c8ff" stroke-width="2"/>'
+    };
+    const svg = cursors[tool];
+    if (svg === undefined) {
+        return 'crosshair';
+    }
+    const document = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">${svg}</svg>`;
+    return `url("data:image/svg+xml,${encodeURIComponent(document)}") 16 16, crosshair`;
+};
+
 /** The first AI View Dock: authoritative RGB plus the Anchor Mask surface. */
 export class AISelectAnchorDock extends Container {
     private readonly mask: AISelectMaskController;
@@ -70,6 +90,7 @@ export class AISelectAnchorDock extends Container {
     private readonly generatedViews: AISelectGeneratedViewController;
     private readonly status: Label;
     private readonly maskStatus: Label;
+    private readonly promptStatus: Label;
     private readonly image: HTMLImageElement;
     private readonly overlay: HTMLCanvasElement;
     private readonly failureActions: Container;
@@ -110,6 +131,7 @@ export class AISelectAnchorDock extends Container {
     private gestureStartPixel: ImagePixel | null = null;
     private lastStrokePixel: ImagePixel | null = null;
     private promptBrushStrokes: BrushStroke[] = [];
+    private readonly pixelStroke = new PointerStrokeBuffer();
     private activeTool: DockAuthoringTool = 'positive-point';
 
     constructor(
@@ -168,18 +190,18 @@ export class AISelectAnchorDock extends Container {
         imageWrap.addEventListener('pointerup', (event) =>
             this.endStroke(event)
         );
-        imageWrap.addEventListener('pointercancel', () => {
-            this.dragStart = null;
-            this.gestureStartPixel = null;
-            this.lastStrokePixel = null;
-            this.promptBrushStrokes = [];
-            this.boxPreview.hidden = true;
-        });
+        imageWrap.addEventListener('pointercancel', () =>
+            this.cancelPointerGesture()
+        );
 
         this.maskStatus = new Label({
             id: 'ai-select-anchor-dock-mask-status'
         });
         this.maskStatus.hidden = true;
+        this.promptStatus = new Label({
+            id: 'ai-select-anchor-dock-prompt-status',
+            hidden: true
+        });
 
         this.maskActions = new Container({
             id: 'ai-select-anchor-dock-mask-actions',
@@ -207,6 +229,7 @@ export class AISelectAnchorDock extends Container {
             });
             i18n.bindText(button, key);
             button.on('click', () => {
+                this.cancelPointerGesture();
                 this.activeTool = tool;
                 this.renderTools();
             });
@@ -472,6 +495,7 @@ export class AISelectAnchorDock extends Container {
             id: 'ai-select-anchor-dock-controls'
         });
         controls.append(this.status);
+        controls.append(this.promptStatus);
         controls.append(this.maskStatus);
         controls.append(this.toolActions);
         controls.append(this.maskActions);
@@ -543,6 +567,7 @@ export class AISelectAnchorDock extends Container {
             mask.showConfirm && !this.confirmation.locked;
         this.retryMaskButton.enabled =
             mask.showRetry && !this.confirmation.locked;
+        this.renderPromptStatus(presentation);
         this.renderEditingActions(presentation);
         this.renderTools();
         this.renderAnchorActions(presentation);
@@ -904,6 +929,46 @@ export class AISelectAnchorDock extends Container {
             proposal.proposalId === this.maskState.acceptedProposalId;
         this.acceptProposalButton.enabled =
             ready && !this.acceptProposalButton.hidden;
+        this.image.style.cursor = cursorForTool(this.activeTool);
+        const promptUndo = i18n.t('ai-select.prompt.undo');
+        const promptRedo = i18n.t('ai-select.prompt.redo');
+        const maskUndo = i18n.t('ai-select.mask.undo');
+        const maskRedo = i18n.t('ai-select.mask.redo');
+        this.setAccessibleLabel(this.promptUndoButton, promptUndo);
+        this.setAccessibleLabel(this.promptRedoButton, promptRedo);
+        this.setAccessibleLabel(this.undoMaskButton, maskUndo);
+        this.setAccessibleLabel(this.redoMaskButton, maskRedo);
+    }
+
+    private renderPromptStatus(presentation: AnchorDockPresentation): void {
+        const prompt = presentation.mask;
+        if (prompt.promptCount === 0) {
+            this.promptStatus.hidden = true;
+            return;
+        }
+        const feedback =
+            prompt.proposalFeedback === 'accepted'
+                ? i18n.t('ai-select.prompt.accepted')
+                : prompt.proposalFeedback === 'pending'
+                  ? i18n.t('ai-select.mask.pending')
+                  : prompt.proposalFeedback === 'ready'
+                    ? i18n.t('ai-select.proposal.ready')
+                    : prompt.proposalFeedback === 'unavailable'
+                      ? i18n.t('ai-select.proposal.unavailable')
+                      : prompt.proposalFeedback === 'failed'
+                        ? (this.maskState.errorMessage ??
+                          i18n.t('ai-select.mask.failed'))
+                        : '';
+        const summary = `+ ${i18n.formatInteger(prompt.positivePointCount)} · − ${i18n.formatInteger(prompt.negativePointCount)} · #${i18n.formatInteger(prompt.promptRevision)}`;
+        this.promptStatus.text = feedback
+            ? `${summary} · ${feedback}`
+            : summary;
+        this.promptStatus.hidden = false;
+    }
+
+    private setAccessibleLabel(button: Button, label: string): void {
+        button.dom.title = label;
+        button.dom.setAttribute('aria-label', label);
     }
 
     private renderAnchorActions(presentation: AnchorDockPresentation): void {
@@ -1003,21 +1068,24 @@ export class AISelectAnchorDock extends Container {
         const rgb = presentation.rgb;
         if (
             presentation.status !== 'ready' ||
-            artifact === undefined ||
             rgb === undefined ||
-            artifact.width !== rgb.width ||
-            artifact.height !== rgb.height
+            (artifact !== undefined &&
+                (artifact.width !== rgb.width || artifact.height !== rgb.height))
         ) {
             this.overlay.hidden = true;
             return;
         }
-        const { width, height } = artifact;
-        const bits = decodeMaskArtifact(artifact);
+        const { width, height } = rgb;
+        const bits =
+            artifact === undefined ? null : decodeMaskArtifact(artifact);
         const pixels = new Uint8ClampedArray(width * height * 4);
         const editing =
             this.maskState.editingMask !== null || proposal !== undefined;
         for (let index = 0; index < width * height; index += 1) {
-            if ((bits[index >> 3] & (1 << (index % 8))) === 0) {
+            if (
+                bits === null ||
+                (bits[index >> 3] & (1 << (index % 8))) === 0
+            ) {
                 continue;
             }
             const offset = index * 4;
@@ -1039,8 +1107,63 @@ export class AISelectAnchorDock extends Container {
             return;
         }
         context.putImageData(new ImageData(pixels, width, height), 0, 0);
+        this.renderPendingPixelStroke(context);
+        this.renderPointMarkers(context);
         this.positionOverlay();
-        this.overlay.hidden = false;
+        this.overlay.hidden =
+            artifact === undefined &&
+            (this.maskState.promptState?.points.length ?? 0) === 0 &&
+            this.pixelStroke.previewSamples.length === 0;
+    }
+
+    private renderPointMarkers(context: CanvasRenderingContext2D): void {
+        for (const point of this.maskState.promptState?.points ?? []) {
+            const include = point.polarity === 'include';
+            context.save();
+            context.lineWidth = 3;
+            context.strokeStyle = include ? '#20c878' : '#f05b66';
+            context.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            context.beginPath();
+            context.arc(point.xPx, point.yPx, 7, 0, Math.PI * 2);
+            context.fill();
+            context.stroke();
+            context.beginPath();
+            if (include) {
+                context.moveTo(point.xPx - 4, point.yPx);
+                context.lineTo(point.xPx + 4, point.yPx);
+                context.moveTo(point.xPx, point.yPx - 4);
+                context.lineTo(point.xPx, point.yPx + 4);
+            } else {
+                context.moveTo(point.xPx - 4, point.yPx - 4);
+                context.lineTo(point.xPx + 4, point.yPx + 4);
+                context.moveTo(point.xPx + 4, point.yPx - 4);
+                context.lineTo(point.xPx - 4, point.yPx + 4);
+            }
+            context.stroke();
+            context.restore();
+        }
+    }
+
+    private renderPendingPixelStroke(context: CanvasRenderingContext2D): void {
+        const samples = this.pixelStroke.previewSamples;
+        if (samples.length === 0) {
+            return;
+        }
+        context.save();
+        context.lineCap = 'round';
+        context.lineJoin = 'round';
+        context.lineWidth = this.brushRadius() * 2;
+        context.strokeStyle =
+            this.activeTool === 'erase'
+                ? 'rgba(80, 200, 255, 0.75)'
+                : 'rgba(255, 140, 32, 0.75)';
+        context.beginPath();
+        context.moveTo(samples[0].xPx, samples[0].yPx);
+        for (const sample of samples.slice(1)) {
+            context.lineTo(sample.xPx, sample.yPx);
+        }
+        context.stroke();
+        context.restore();
     }
 
     /** Align the overlay with the object-fit: contain painted image area. */
@@ -1126,7 +1249,8 @@ export class AISelectAnchorDock extends Container {
         this.image.setPointerCapture(event.pointerId);
         const action = pointerActionForTool(this.activeTool);
         if (action === 'pixel-edit') {
-            this.applyPixelEdit(pixel);
+            this.pixelStroke.begin(pixel);
+            this.renderCurrentMaskOverlay();
         } else if (action === 'prompt-constraint') {
             this.promptBrushStrokes.push(this.promptBrushStroke(pixel));
         } else if (action === 'box') {
@@ -1136,6 +1260,18 @@ export class AISelectAnchorDock extends Container {
 
     private continueStroke(event: PointerEvent): void {
         if (this.dragStart === null) {
+            return;
+        }
+        if (pointerActionForTool(this.activeTool) === 'pixel-edit') {
+            const samples = event.getCoalescedEvents?.() ?? [event];
+            for (const sampleEvent of samples) {
+                const sample = this.toImagePixel(sampleEvent);
+                if (sample !== null) {
+                    this.pixelStroke.append(sample);
+                    this.lastStrokePixel = sample;
+                }
+            }
+            this.renderCurrentMaskOverlay();
             return;
         }
         const pixel = this.toImagePixel(event);
@@ -1149,9 +1285,7 @@ export class AISelectAnchorDock extends Container {
         }
         this.lastStrokePixel = pixel;
         const action = pointerActionForTool(this.activeTool);
-        if (action === 'pixel-edit') {
-            this.applyPixelEdit(pixel);
-        } else if (action === 'prompt-constraint') {
+        if (action === 'prompt-constraint') {
             this.promptBrushStrokes.push(this.promptBrushStroke(pixel));
         } else if (action === 'box' && this.gestureStartPixel !== null) {
             this.updateBoxPreview(this.gestureStartPixel, pixel);
@@ -1167,15 +1301,33 @@ export class AISelectAnchorDock extends Container {
             Math.abs(event.clientY - this.dragStart.y);
         const startPixel = this.gestureStartPixel;
         const strokes = this.promptBrushStrokes;
+        const action = pointerActionForTool(this.activeTool);
+        if (action === 'pixel-edit') {
+            const pixel = this.toImagePixel(event);
+            if (pixel !== null) {
+                this.pixelStroke.append(pixel);
+            }
+            const samples = this.pixelStroke.commit();
+            this.resetPointerGesture();
+            if (samples === null) {
+                return;
+            }
+            try {
+                this.mask.applyBrushGesture({
+                    samples,
+                    radiusPx: this.brushRadius(),
+                    mode: this.activeTool === 'erase' ? 'erase' : 'add'
+                });
+            } catch (error) {
+                console.error(error);
+            }
+            return;
+        }
         this.dragStart = null;
         this.gestureStartPixel = null;
         this.lastStrokePixel = null;
         this.promptBrushStrokes = [];
         this.boxPreview.hidden = true;
-        const action = pointerActionForTool(this.activeTool);
-        if (action === 'pixel-edit') {
-            return;
-        }
         const pixel = this.toImagePixel(event);
         if (pixel === null || startPixel === null) {
             return;
@@ -1242,17 +1394,24 @@ export class AISelectAnchorDock extends Container {
         };
     }
 
-    private applyPixelEdit(pixel: ImagePixel): void {
-        try {
-            this.mask.applyBrushStroke({
-                xPx: pixel.xPx,
-                yPx: pixel.yPx,
-                radiusPx: this.brushRadius(),
-                mode: this.activeTool === 'erase' ? 'erase' : 'add'
-            });
-        } catch (error) {
-            console.error(error);
-        }
+    private cancelPointerGesture(): void {
+        this.pixelStroke.cancel();
+        this.resetPointerGesture();
+        this.renderCurrentMaskOverlay();
+    }
+
+    private resetPointerGesture(): void {
+        this.dragStart = null;
+        this.gestureStartPixel = null;
+        this.lastStrokePixel = null;
+        this.promptBrushStrokes = [];
+        this.boxPreview.hidden = true;
+    }
+
+    private renderCurrentMaskOverlay(): void {
+        this.renderMaskOverlay(
+            getAnchorDockPresentation(this.state, this.maskState)
+        );
     }
 
     private updateBoxPreview(start: ImagePixel, current: ImagePixel): void {

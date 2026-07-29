@@ -15,6 +15,7 @@ const {
     captureEditorCameraBinding
 } = require('../.test-dist/src/ai-select/camera-binding.js');
 const {
+    decodeMaskArtifact,
     maskBitsetEncoding
 } = require('../.test-dist/src/ai-select/mask-annotation.js');
 const {
@@ -409,6 +410,37 @@ test('a brush stroke updates the Editing Mask locally and supersedes in-flight S
     await pending;
     // The late SAM response must not clobber the local brush edit.
     assert.equal(mask.state.editingMask.maskId, brushed.maskId);
+});
+
+test('stale inference cannot replace a newer committed local gesture', async () => {
+    const gate = deferred();
+    const maskRequests = [];
+    const { mask } = await setup({
+        produceMask: (request) => {
+            maskRequests.push(request);
+            return gate.promise;
+        }
+    });
+    const pending = mask.addPrompt({
+        xPx: 10,
+        yPx: 12,
+        polarity: 'include'
+    });
+    mask.applyBrushGesture({
+        mode: 'add',
+        radiusPx: 2,
+        samples: [
+            { xPx: 8, yPx: 8 },
+            { xPx: 24, yPx: 24 }
+        ]
+    });
+    const localGesture = mask.state.editingMask;
+
+    gate.resolve(maskResponseFor(maskRequests[0]));
+    await pending;
+
+    assert.equal(mask.state.editingMask.maskId, localGesture.maskId);
+    assert.equal(mask.state.editingMask.artifact.digest, localGesture.artifact.digest);
 });
 
 test('a brush stroke on a SAM Editing Mask creates a hybrid local revision', async () => {
@@ -814,6 +846,67 @@ test('Paint changes Editing Mask without rewriting PromptState', async () => {
     assert.equal(mask.state.editingMask.source, 'hybrid');
 });
 
+test('one rapid curved Paint gesture is continuous and one Mask Undo unit', async () => {
+    const { mask } = await setup();
+    const promptDigest = mask.state.promptState.digest;
+
+    mask.applyBrushGesture({
+        mode: 'add',
+        radiusPx: 1,
+        samples: [
+            { xPx: 4, yPx: 4 },
+            { xPx: 20, yPx: 4 },
+            { xPx: 20, yPx: 20 },
+            { xPx: 36, yPx: 20 }
+        ]
+    });
+
+    const painted = decodeMaskArtifact(mask.state.editingMask.artifact);
+    const isPainted = (x, y) =>
+        (painted[(y * 64 + x) >> 3] & (1 << ((y * 64 + x) % 8))) !== 0;
+    for (let x = 4; x <= 20; x += 1) {
+        assert.equal(isPainted(x, 4), true, `horizontal gap at ${x},4`);
+    }
+    for (let y = 4; y <= 20; y += 1) {
+        assert.equal(isPainted(20, y), true, `vertical gap at 20,${y}`);
+    }
+    for (let x = 20; x <= 36; x += 1) {
+        assert.equal(isPainted(x, 20), true, `horizontal gap at ${x},20`);
+    }
+    assert.equal(mask.state.promptState.digest, promptDigest);
+
+    mask.undoMaskEdit();
+    assert.equal(mask.state.editingMask, null);
+    assert.equal(mask.state.canUndo, false);
+    assert.equal(mask.state.promptState.digest, promptDigest);
+
+    mask.redoMaskEdit();
+    assert.deepEqual(
+        decodeMaskArtifact(mask.state.editingMask.artifact),
+        painted
+    );
+});
+
+test('Paint and Erase gestures never revise PromptState', async () => {
+    const { mask } = await setup();
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    const promptDigest = mask.state.promptState.digest;
+    const promptRevision = mask.state.promptState.revision;
+
+    for (const mode of ['add', 'erase']) {
+        mask.applyBrushGesture({
+            mode,
+            radiusPx: 2,
+            samples: [
+                { xPx: 8, yPx: 8 },
+                { xPx: 16, yPx: 16 }
+            ]
+        });
+        assert.equal(mask.state.promptState.digest, promptDigest);
+        assert.equal(mask.state.promptState.revision, promptRevision);
+    }
+});
+
 test('Prompt Undo and Mask Undo are independent histories', async () => {
     const { mask } = await setup({
         promptCapabilities: richPromptCapabilities
@@ -844,6 +937,28 @@ test('Prompt Undo and Mask Undo are independent histories', async () => {
     mask.redoPromptEdit();
     assert.equal(mask.state.promptState.digest, promptDigest);
     assert.equal(mask.state.editingMask, null);
+});
+
+test('Clear Prompts preserves the Stable Mask and current Evidence', async () => {
+    const { mask } = await setup();
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    mask.confirmEditingMask();
+    const stable = mask.state.stableMask;
+    mask.evidenceRegistry.markReady(
+        {
+            viewId: 'anchor-view',
+            rgbDigest: stable.createdFromRgbDigest,
+            stableMaskDigest: stable.artifact.digest,
+            evidencePolicyDigest: aiSelectEvidencePolicyVersion
+        },
+        'evidence-1'
+    );
+
+    mask.clearPrompts();
+
+    assert.equal(mask.state.promptState.points.length, 0);
+    assert.equal(mask.state.stableMask.maskId, stable.maskId);
+    assert.equal(mask.state.evidence.status, 'ready');
 });
 
 test('unconfirmed Prompt and proposal work leaves Stable Mask and Evidence current', async () => {

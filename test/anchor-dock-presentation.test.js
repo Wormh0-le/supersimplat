@@ -201,7 +201,50 @@ test('AI View Dock Mask surface shows pending SAM feedback', () => {
         })
     );
     assert.equal(result.mask.status, 'pending');
+    assert.equal(result.mask.proposalFeedback, 'pending');
+    assert.equal(result.mask.positivePointCount, 1);
+    assert.equal(result.mask.negativePointCount, 0);
+    assert.equal(result.mask.promptRevision, 1);
     assert.equal(result.mask.showConfirm, true);
+});
+
+test('AI View Dock acknowledges a local Prompt revision before a proposal result', () => {
+    const result = getAnchorDockPresentation(
+        state(baseAnchor()),
+        maskState({
+            promptState: promptState(1),
+            requestStatus: 'idle',
+            proposalStatus: 'none'
+        })
+    );
+
+    assert.equal(result.mask.proposalFeedback, 'accepted');
+    assert.equal(result.mask.promptRevision, 1);
+});
+
+test('AI View Dock exposes proposal result states independently from Mask pixels', () => {
+    for (const [proposalStatus, expected] of [
+        ['ready', 'ready'],
+        ['unavailable', 'unavailable']
+    ]) {
+        const result = getAnchorDockPresentation(
+            state(baseAnchor()),
+            maskState({
+                promptState: promptState(1),
+                proposalStatus
+            })
+        );
+        assert.equal(result.mask.proposalFeedback, expected);
+    }
+    const failed = getAnchorDockPresentation(
+        state(baseAnchor()),
+        maskState({
+            promptState: promptState(1),
+            requestStatus: 'failed',
+            errorMessage: 'SAM failed.'
+        })
+    );
+    assert.equal(failed.mask.proposalFeedback, 'failed');
 });
 
 test('AI View Dock Mask surface hides retry when nothing can be retried', () => {

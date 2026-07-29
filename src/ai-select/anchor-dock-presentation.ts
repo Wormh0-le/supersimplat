@@ -14,10 +14,21 @@ export type AnchorDockStatus =
  */
 export type AnchorDockMaskStatus =
     'none' | 'pending' | 'draft' | 'confirmed' | 'failed';
+export type ProposalFeedback =
+    | 'none'
+    | 'accepted'
+    | 'pending'
+    | 'ready'
+    | 'unavailable'
+    | 'failed';
 
 export interface AnchorDockMaskPresentation {
     readonly status: AnchorDockMaskStatus;
     readonly promptCount: number;
+    readonly positivePointCount: number;
+    readonly negativePointCount: number;
+    readonly promptRevision: number;
+    readonly proposalFeedback: ProposalFeedback;
     readonly evidenceStatus: EvidenceStatus;
     readonly proposalStatus: AISelectMaskState['proposalStatus'];
     /** A current Editing Mask exists and can be atomically published. */
@@ -53,6 +64,10 @@ const emptyMaskPresentation = (
     return Object.freeze({
         status,
         promptCount: 0,
+        positivePointCount: 0,
+        negativePointCount: 0,
+        promptRevision: 0,
+        proposalFeedback: 'none',
         evidenceStatus: 'not-requested',
         proposalStatus: 'none',
         showConfirm: false,
@@ -78,13 +93,35 @@ export const getAnchorDockMaskPresentation = (
     } else if (maskState.stableMask !== null) {
         status = 'confirmed';
     }
+    const promptState = maskState.promptState;
+    const promptCount =
+        (promptState?.points.length ?? 0) +
+        (promptState?.boxes.length ?? 0) +
+        (promptState?.maskConstraints.length ?? 0) +
+        (promptState?.textPrompts.length ?? 0);
+    const proposalFeedback: ProposalFeedback =
+        maskState.requestStatus === 'pending'
+            ? 'pending'
+            : maskState.requestStatus === 'failed'
+              ? 'failed'
+              : maskState.proposalStatus === 'ready'
+                ? 'ready'
+                : maskState.proposalStatus === 'unavailable'
+                  ? 'unavailable'
+                  : promptCount > 0
+                    ? 'accepted'
+                    : 'none';
     return Object.freeze({
         status,
-        promptCount:
-            (maskState.promptState?.points.length ?? 0) +
-            (maskState.promptState?.boxes.length ?? 0) +
-            (maskState.promptState?.maskConstraints.length ?? 0) +
-            (maskState.promptState?.textPrompts.length ?? 0),
+        promptCount,
+        positivePointCount:
+            promptState?.points.filter((point) => point.polarity === 'include')
+                .length ?? 0,
+        negativePointCount:
+            promptState?.points.filter((point) => point.polarity === 'exclude')
+                .length ?? 0,
+        promptRevision: promptState?.revision ?? 0,
+        proposalFeedback,
         evidenceStatus: maskState.evidence.status,
         proposalStatus: maskState.proposalStatus ?? 'none',
         showConfirm: maskState.editingMask !== null,

@@ -1,6 +1,6 @@
 import { sha256Digest } from '../scene-snapshot-binary';
 import {
-    applyBrushStroke,
+    applyBrushStrokes,
     createEmptyMaskArtifact,
     decodeMaskArtifact,
     isMaskAnnotation,
@@ -25,6 +25,15 @@ export interface ApplyBrushInput {
     /** The current authoritative RGB digest; stale chains never attach. */
     readonly rgbDigest: string;
     readonly stroke: BrushStroke;
+    readonly width: number;
+    readonly height: number;
+}
+
+export interface ApplyBrushGestureInput {
+    readonly viewId: string;
+    /** The current authoritative RGB digest; stale chains never attach. */
+    readonly rgbDigest: string;
+    readonly strokes: readonly BrushStroke[];
     readonly width: number;
     readonly height: number;
 }
@@ -158,6 +167,23 @@ export class MaskAnnotationRegistry {
     }
 
     applyBrush(input: ApplyBrushInput): MaskAnnotation {
+        return this.applyBrushGesture({
+            ...input,
+            strokes: [input.stroke]
+        });
+    }
+
+    /**
+     * Publish a complete pointer gesture as one Editing Mask revision. The
+     * artifact is built off-registry, then attached once, so observers and
+     * Mask history never see its intermediate stamps.
+     */
+    applyBrushGesture(input: ApplyBrushGestureInput): MaskAnnotation {
+        if (input.strokes.length === 0) {
+            throw new Error(
+                'AI Select brush gestures require at least one stroke sample.'
+            );
+        }
         const view = this.requireView(input.viewId);
         const currentEditing = this.currentAnnotation(
             view,
@@ -168,7 +194,7 @@ export class MaskAnnotationRegistry {
             currentEditing === null
                 ? createEmptyMaskArtifact(input.width, input.height)
                 : currentEditing.artifact;
-        const artifact = applyBrushStroke(baseArtifact, input.stroke);
+        const artifact = applyBrushStrokes(baseArtifact, input.strokes);
         const editing = copyAnnotation({
             maskId: this.mintMaskId(),
             viewId: input.viewId,

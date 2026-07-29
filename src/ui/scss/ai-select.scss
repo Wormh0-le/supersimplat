@@ -119,6 +119,13 @@
         word-break: break-word;
         flex-shrink: 0;
     }
+
+    #ai-select-anchor-dock-prompt-status {
+        color: $text-primary;
+        white-space: normal;
+        word-break: break-word;
+        flex-shrink: 0;
+    }
 }
 
 #ai-select-anchor-dock-image-wrap {

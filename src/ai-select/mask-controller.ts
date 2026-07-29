@@ -68,6 +68,17 @@ export interface AddTextPromptInput {
     readonly polarity: MaskPolarity;
 }
 
+export interface BrushGestureSample {
+    readonly xPx: number;
+    readonly yPx: number;
+}
+
+export interface ApplyBrushGestureInput {
+    readonly mode: BrushStroke['mode'];
+    readonly radiusPx: number;
+    readonly samples: readonly BrushGestureSample[];
+}
+
 /** The Anchor's current Mask/Evidence surface, composed per state read. */
 export interface AISelectMaskState {
     readonly viewId: string;
@@ -477,16 +488,31 @@ export class AISelectMaskController {
      * editor-local, never call SAM, and supersede any in-flight SAM response.
      */
     applyBrushStroke(stroke: BrushStroke): void {
+        this.applyBrushGesture({
+            mode: stroke.mode,
+            radiusPx: stroke.radiusPx,
+            samples: [{ xPx: stroke.xPx, yPx: stroke.yPx }]
+        });
+    }
+
+    /**
+     * Apply one complete pointer gesture atomically. Linear interpolation in
+     * image-pixel space makes the result independent of browser event rate.
+     */
+    applyBrushGesture(input: ApplyBrushGestureInput): void {
         this.requireUnlocked();
         const rgb = this.requireReadyRgb();
-        this.recordEdit(rgb.digest);
-        this.maskRegistry.applyBrush({
+        const strokes = this.interpolateBrushGesture(input);
+        const previousEditingMaskId = this.currentEditingMaskId(rgb.digest);
+        this.maskRegistry.applyBrushGesture({
             viewId: ANCHOR_VIEW_ID,
             rgbDigest: rgb.digest,
-            stroke,
+            strokes,
             width: rgb.width,
             height: rgb.height
         });
+        this.undoStack.push(previousEditingMaskId);
+        this.redoStack = [];
         this.supersedeLocalEditing();
     }
 
@@ -812,6 +838,55 @@ export class AISelectMaskController {
             this.maskRegistry.viewState(ANCHOR_VIEW_ID, rgbDigest).editingMask
                 ?.maskId ?? null
         );
+    }
+
+    private interpolateBrushGesture(
+        input: ApplyBrushGestureInput
+    ): readonly BrushStroke[] {
+        if (
+            !Number.isSafeInteger(input.radiusPx) ||
+            input.radiusPx <= 0 ||
+            input.samples.length === 0
+        ) {
+            throw new Error(
+                'AI Select brush gestures need samples and a positive integer radius.'
+            );
+        }
+        const strokes: BrushStroke[] = [];
+        let previous: BrushGestureSample | null = null;
+        for (const sample of input.samples) {
+            if (
+                !Number.isSafeInteger(sample.xPx) ||
+                !Number.isSafeInteger(sample.yPx)
+            ) {
+                throw new Error(
+                    'AI Select brush gesture samples must use integer pixels.'
+                );
+            }
+            if (previous === null) {
+                strokes.push({
+                    xPx: sample.xPx,
+                    yPx: sample.yPx,
+                    radiusPx: input.radiusPx,
+                    mode: input.mode
+                });
+                previous = sample;
+                continue;
+            }
+            const dx = sample.xPx - previous.xPx;
+            const dy = sample.yPx - previous.yPx;
+            const steps = Math.max(Math.abs(dx), Math.abs(dy));
+            for (let step = 1; step <= steps; step += 1) {
+                strokes.push({
+                    xPx: Math.round(previous.xPx + (dx * step) / steps),
+                    yPx: Math.round(previous.yPx + (dy * step) / steps),
+                    radiusPx: input.radiusPx,
+                    mode: input.mode
+                });
+            }
+            previous = sample;
+        }
+        return Object.freeze(strokes);
     }
 
     /**

@@ -1,25 +1,26 @@
 # 14 — Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain
 
-Status: ready-for-agent — v2.2 FlashSplat-alignment review
+Status: ready-for-agent — v2.5 DG-23 alignment
 
 Blocked by: 11, 12
 
 ## Final Spec mapping
 
 - Final Spec v1.1 §§14–22, 24.3, 30 Stage 1–2
-- Final Spec v1.1 Amendment 001 — Renderer / Evidence Implementation Identity and RGB Continuity
+- Final Spec v1.1 Amendments 001 and 003
 - ADR 0013
+- DG-20, DG-23, and retired DG-03 semantics
 - FlashSplat-style direct-Evidence design: reference/algorithm stage
-- DG-20 and DG-03 retired semantics
 - MVP Phase 5 reference Evidence/Lift
 
 ## Inputs / preconditions
 
-- Included Stable View Annotations
+- Included Stable View Annotations only
 - Stable Gaussian IDs and SceneSnapshot
 - Render Working Set seam
 - Versioned Mask/Evidence Policy
 - Dirty-state and artifact identity model
+- AIView tracking role as diagnostic metadata only
 
 ## Outputs / handoff artifacts
 
@@ -33,41 +34,48 @@ Blocked by: 11, 12
 
 ## What to build
 
-Validate the FlashSplat-style lifting mathematics before production CUDA optimization. Implement a trusted, independently testable reference path using stock gsplat autograd/feature rendering, the existing complete Contributor backend, or another declared reference method.
+Validate FlashSplat-style lifting mathematics before production CUDA optimization. Implement a trusted reference path using stock gsplat autograd/feature rendering, complete Contributor, or another declared reference method.
 
-This ticket defines the mask-conditioned P/N/V contract, per-view artifact, multi-view aggregation, and four-state classification. It does not claim that the reference backend shares the production RGB forward decision chain; Ticket 20 owns that trust boundary.
+This ticket defines Mask-conditioned P/N/V, per-view artifacts, multi-view aggregation, and four-state classification. Ticket 20 owns production RGB-forward decision equivalence.
+
+DG-23 does not alter this ownership boundary. Anchor/bootstrap/tracker artifacts help obtain Stable Masks; they do not become Gaussian ownership inputs.
 
 ## Acceptance criteria
 
 ### Exact Evidence semantics
 
-- [ ] Formal input is exactly current Included Stable View Annotations plus target/dependency/policy/working-set identities.
+- [ ] Formal input is exactly current AIViews with Render Ready + Stable Mask + Participation Included, plus target/dependency/policy/working-set identities.
 - [ ] Excluded Views and Views without Stable Mask do not contribute.
-- [ ] For View `v`, pixel `p`, Gaussian `g`, reference contribution is actual `w(v,p,g) = alpha(v,p,g) × incomingTransmittance(v,p,g)`.
-- [ ] `P(v,g) = Σp positiveWeight(v,p) × w(v,p,g)`.
-- [ ] `N(v,g) = Σp negativeWeight(v,p) × w(v,p,g)`.
-- [ ] `V(v,g) = Σp roiOrVisibleWeight(v,p) × w(v,p,g)`; V is local valid observation mass, not whole-image/frustum membership.
+- [ ] Bridge Views default Excluded; Bridge role alone never contributes Evidence.
+- [ ] A Bridge View contributes only after explicit Included Participation under the same rules as any other View.
+- [ ] For View `v`, pixel `p`, Gaussian `g`, reference contribution is `w(v,p,g) = alpha(v,p,g) × incomingTransmittance(v,p,g)`.
+- [ ] `P(v,g) = Σ positiveWeight(v,p) × w(v,p,g)`.
+- [ ] `N(v,g) = Σ negativeWeight(v,p) × w(v,p,g)`.
+- [ ] `V(v,g) = Σ roiOrVisibleWeight(v,p) × w(v,p,g)`.
 - [ ] Positive, negative, and visible weights are independently versioned and need not sum to one.
-- [ ] The implementation does not assume `P + N = V`, and does not apply Contributor-style alpha mass-conservation admission to P/N/V.
+- [ ] Do not assume `P + N = V` or apply Contributor mass-conservation admission.
 - [ ] Define/version Strong Positive Interior, Boundary/Ignore Band, Local Negative Context Ring, Far Neutral Region, and optional soft weights.
 - [ ] Far image exterior is not automatically strong negative.
+- [ ] Tracker confidence, tracker memory score, Prompt score, and sequence role are not formal ownership Evidence.
 
 ### Scene and Working Set semantics
 
 - [ ] Define Core Target Set, Context Set, and Evidence Working Set.
-- [ ] The full conservative Render Working Set continues to provide all occluders/transmittance contributors required by the authoritative render scope.
-- [ ] Gaussians outside the Evidence Working Set, including non-target occluders, participate in ordering/compositing but receive no P/N/V writes.
-- [ ] Reference fixtures include a target hidden by an out-of-scope/non-target occluder and prove that target-only rasterization would be incorrect.
+- [ ] Full conservative Render Working Set preserves all required occluders/transmittance contributors.
+- [ ] Gaussians outside the Evidence Working Set still participate in compositing but receive no P/N/V writes.
+- [ ] A target hidden by an out-of-scope occluder proves target-only rasterization is incorrect.
+- [ ] TargetBootstrapArtifact may suggest a conservative Working Set hint but cannot classify ownership.
 
 ### Artifact and policy semantics
 
-- [ ] Per-view GaussianEvidenceArtifact binds Camera, RGB, Stable Mask, policy, Render/Evidence Working Sets, Stable IDs, `rasterImplementationId`, `evidenceBackendKind=reference`, `evidenceBackendId`, and `runtimeBuildId`.
-- [ ] Artifact records `backendKind=reference` or an equivalent non-production identity; it cannot be mistaken for Ticket 20 same-decision production Evidence.
-- [ ] Reference artifacts are invalidated by incompatible renderer/runtime/backend identity changes even when Camera/Mask inputs are unchanged.
+- [ ] Per-view artifact binds Camera, RGB, Stable Mask, policy, Render/Evidence Working Sets, Stable IDs, raster implementation, reference backend, and runtime.
+- [ ] Tracking backend/run/reference identity may be recorded as Mask provenance but cannot replace Stable Mask digest or Evidence backend identity.
+- [ ] Reference artifact cannot be mistaken for Ticket 20 production Evidence.
+- [ ] Incompatible renderer/runtime/backend changes invalidate artifacts.
 - [ ] Artifact supports exclude/reinclude, Stable Mask replacement, incremental Re-Lift, and exact invalidation.
-- [ ] Preserve per-view raw P/N/V before cross-view aggregation.
-- [ ] Define/version multi-view aggregation using effective evidence, visible mass, supporting/conflicting Views, and optional boundary/footprint/diversity diagnostics.
-- [ ] Benchmark raw-mass summation and a versioned per-view confidence cap/normalization strategy so one close/high-resolution/large-footprint View cannot dominate without explicit policy.
+- [ ] Preserve per-view raw P/N/V before aggregation.
+- [ ] Define/version aggregation using effective Evidence, Visible Mass, supporting/conflicting Views, and optional boundary/footprint/diversity diagnostics.
+- [ ] Benchmark raw-mass summation and per-view confidence cap/normalization so one close/high-resolution View cannot dominate silently.
 - [ ] Selected, Rejected, Uncertain, and Out of Scope remain distinct.
 - [ ] Unobserved/insufficient V is Uncertain, never default Rejected.
 - [ ] Material positive+negative/mixed support is Uncertain.
@@ -75,32 +83,34 @@ This ticket defines the mask-conditioned P/N/V contract, per-view artifact, mult
 
 ### Reference comparison and quality gate
 
-- [ ] At least one trusted reference method is mandatory; use complete Contributor and stock-gsplat autograd/feature rendering together when both are available.
-- [ ] Reference outputs are compared on declared fixtures; discrepancies are characterized rather than hidden by threshold tuning.
-- [ ] Compare max/p95/p99 absolute error, relative error, nonzero-support differences, threshold-near Gaussian count, and final classification differences.
-- [ ] Include fixtures for strong positive, local background, boundary mixed, unobserved, occlusion, multiple Views, large Gaussian spanning foreground/background, thin structures, and high occlusion.
-- [ ] Report Gaussian precision/recall, novel-view rendered-mask IoU where available, background contamination, mixed ratio, user Add/Remove burden proxy, single-vs-multi-view effect, and View-exclusion incremental correctness.
+- [ ] At least one trusted reference method is mandatory; use Contributor and stock-gsplat autograd together when both are available.
+- [ ] Discrepancies are characterized rather than hidden by threshold tuning.
+- [ ] Compare max/p95/p99 error, relative error, support differences, threshold-near count, and classification differences.
+- [ ] Fixtures cover strong positive, local background, boundary mixed, unobserved, occlusion, multiple Views, large cross-boundary Gaussian, thin structures, and high occlusion.
+- [ ] Include DG-23 Key/Bridge and correction-repropagated Stable Mask fixtures.
+- [ ] Report Gaussian precision/recall, novel-view rendered-mask IoU, background contamination, mixed ratio, user Add/Remove burden proxy, single-vs-multi-view effect, and View-exclusion correctness.
 
 ### Candidate publication
 
 - [ ] Reference Lift publication is atomic and never mutates Native Selection/EditHistory.
-- [ ] Candidate records enough bound identity to determine current/stale state without DG-14 UI.
-- [ ] Candidate retains raster implementation, Evidence backend, runtime build, and policy identity needed for Ticket 16 readiness gating.
-- [ ] Stable input or incompatible renderer/runtime/backend identity change makes Candidate stale/inapplicable; explicit Re-Lift is required.
-- [ ] Reference Candidate is clearly identified as pre-production until Ticket 20/21 production readiness is satisfied.
+- [ ] Candidate records enough bound identity to determine current/stale state.
+- [ ] Candidate retains raster implementation, Evidence backend, runtime, and policy identity.
+- [ ] Stable input or incompatible renderer/runtime/backend change makes Candidate stale; explicit Re-Lift is required.
+- [ ] Reference Candidate is clearly pre-production until Tickets 20/21 close.
 
 ## Failure / recovery criteria
 
-- [ ] Evidence/Lift failure preserves Views, Stable Masks, Gallery, and prior Candidate; no partial replacement publishes.
+- [ ] Evidence/Lift failure preserves Views, Stable Masks, Gallery, and prior Candidate; no partial replacement.
 - [ ] Missing Render Working Set, invalid Stable ID mapping, or non-finite Evidence fails closed.
-- [ ] Complete Contributor reference failure does not relabel valid RGB as Render Failed; it only blocks that reference comparison.
-- [ ] Failure of one reference backend may use another declared trusted reference, but never silently substitutes nearest/top-k/distance/center attribution.
+- [ ] Reference Contributor failure never relabels valid RGB as Render Failed.
+- [ ] One reference backend may fall back to another declared trusted reference, never nearest/top-k/distance/center attribution.
+- [ ] Tracker failure is upstream Mask acquisition failure and cannot be reinterpreted as Evidence output.
 
 ## Affected seams
 
-- Companion evidence.py / reference adapter
+- Companion evidence/reference adapter
 - Companion lifting/aggregation policy
-- src/ai-select Candidate/Evidence identity state
+- Candidate/Evidence identity state
 - Candidate/Uncertain overlays
 - Reference fixtures and benchmark harness
 
@@ -111,15 +121,18 @@ This ticket defines the mask-conditioned P/N/V contract, per-view artifact, mult
 - npm run lint
 - npm run build
 - Reference P/N/V fixtures
-- Contributor and autograd/feature-rendering reference comparison where available
-- P/N/V independence/no-mass-conservation tests
+- Contributor and autograd comparison where available
+- P/N/V independence tests
 - Out-of-scope occluder fixture
-- Multi-view dominance and atomic publication tests
-- Reference backend/raster/runtime identity invalidation tests
+- Key/Bridge Participation fixture
+- correction-repropagated Stable Mask fixture
+- multi-view dominance and atomic publication tests
+- backend/raster/runtime invalidation tests
 
 ## Non-goals
 
-- No Native Set/Add/Remove/Intersect
-- No production same-decision CUDA kernel; Ticket 20 owns it
-- No claim that reference/autograd Evidence is production RGB-equivalent
-- No Candidate provenance/source inspector
+- No Native Set/Add/Remove/Intersect.
+- No tracker confidence or bootstrap support as ownership Evidence.
+- No production same-decision CUDA kernel; Ticket 20 owns it.
+- No claim that reference/autograd Evidence is production RGB-equivalent.
+- No Candidate provenance/source inspector.

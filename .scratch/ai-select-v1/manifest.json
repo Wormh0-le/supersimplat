@@ -48,16 +48,16 @@
   },
   "dependency_corrections": [
     "Ticket 04A depends on existing Tickets 03, 04, and 05 rather than being placed before Ticket 05",
-    "Ticket 04B depends on Ticket 04A and owns real Box/Mask visual-prompt adapter enablement",
+    "Ticket 04B depends on Ticket 04A and owns real Box/Mask visual-prompt adapter enablement without ranking, clustering, representative selection, ambiguity, or ProposalDecision ownership",
     "Ticket 07A is reopened and depends on Ticket 04B plus existing Tickets 05 and 07",
-    "Ticket 07B depends on Ticket 07A and owns DG-22 floating-palette interaction",
+    "Ticket 07B depends on Ticket 07A and owns DG-22 drag, collapse, Space temporary hide, and no-stale-hit-region interaction; automatic relocation is optional and deferred",
     "Ticket 08 now depends on Ticket 07B",
     "Ticket 14 defines reference P/N/V before Tickets 10 and 13 consume Evidence",
     "Ticket 10 and Ticket 13 remain parallel after Ticket 14",
     "Ticket 20 owns production same-decision Evidence after Tickets 14 and 19",
     "Amendment 001 requires renderer/Evidence/runtime identity and RGB continuity",
     "Amendment 002 requires Prompt/Edit separation, bounded proposals, 2D-first ranking, and explicit ambiguity",
-    "DG-22 requires a fitted-image-contained palette with drag, collapse, temporary hide, auto-avoid, and no stale blind region"
+    "DG-22 requires a fitted-image-contained palette with drag, collapse, temporary hide, and no stale blind region; optional opacity assist is non-blocking"
   ],
   "tickets": [
     {"id": "01", "number": 1, "slug": "current-target-context-kernel", "title": "CurrentTargetContext lifecycle kernel", "blocked_by": []},

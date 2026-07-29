@@ -27,10 +27,12 @@ v2.4 retains the 22 numbered tickets and adds four retrofit tickets: **04A**, **
 
 - Ticket 04A remains implemented and owns PromptState, explicit Prompt/Edit tools, capability negotiation, and bounded proposal infrastructure.
 - Ticket 04B owns real non-text visual-prompt adapter enablement: Positive/Negative Box and Positive/Negative Mask Constraint according to truthful locked-runtime capabilities.
+- Ticket 04B forwards independently validated adapter candidates only; all ranking, clustering, representative selection, ambiguity, and `ProposalDecision` ownership remains in Ticket 07A.
 - Text Prompt remains a future capability-gated extension and is not required by Ticket 04B.
 - Ticket 07A is reopened after algorithm review. Its Phase 4 Dock/fitted-image/schema-v2 publication fixes remain accepted.
 - Ticket 07A must still complete single-candidate quality gating, calibrated 2D-first ranking, structured rejection reasons, near-duplicate clustering before truncation, production-resolution performance, and frozen-scene/ablation validation.
-- Ticket 07B owns the draggable, collapsible, auto-avoiding, Space-hide floating Prompt/Edit palette defined by DG-22.
+- Ticket 07B owns the draggable, collapsible, Space-hide floating Prompt/Edit palette defined by DG-22.
+- Ticket 07B may optionally add a non-relocating opacity assist; automatic relocation is not a closure requirement.
 - Ticket 07B preserves the fitted-image rule and removes permanent interaction blind spots.
 - Ticket 08 follows 07B and continues to own valid indoor Generated View poses plus adaptive information gain.
 - `ProposalDecision` remains pre-Stable and distinct from Ticket 07 `ViewAssessmentPolicy`.
@@ -126,10 +128,11 @@ Structural graph root: **Ticket 01**. Ticket status remains recorded in each tic
 ## Implementation rules
 
 - Ticket 04A is an implemented foundation ticket, not the final quality gate.
-- Ticket 04B enables real Box/Mask Prompt adapter semantics; it does not own ranking or Stable publication.
+- Ticket 04B enables real Box/Mask Prompt adapter semantics. It performs no cross-candidate ranking, clustering, representative selection, ambiguity decision, or Stable publication.
 - Ticket 07A is reopened and remains the only ticket permitted to claim the Three-Stage Anchor Mask Pipeline complete.
 - Phase 4 Dock/fitted-image/schema-v2 fixes remain valid but do not satisfy the reopened algorithm/calibration gates.
 - Ticket 07B changes palette presentation and pointer routing only; it must not alter PromptState, ProposalDecision, Mask lifecycle, or Evidence semantics.
+- Ticket 07B closure requires drag, collapse, Space temporary hide, and immediate removal of stale hit regions; automatic relocation is optional and deferred.
 - Ticket 08 owns Generated View camera validity/adaptive planning, not Anchor proposal ranking or palette UX.
 - Ticket 14 is a reference correctness/quality gate, not production GPU completion.
 - Ticket 20 is the first ticket permitted to claim production same-decision Direct Evidence after locked GPU validation.

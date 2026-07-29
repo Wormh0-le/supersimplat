@@ -1,4 +1,4 @@
-# DG-22 — Draggable, Collapsible, Auto-Avoiding Prompt/Edit Palette
+# DG-22 — Draggable, Collapsible Prompt/Edit Palette with Temporary Hide
 
 - **Status:** CLOSED
 - **Date:** 2026-07-29
@@ -37,11 +37,11 @@ Adopt a movable floating Prompt/Edit palette that:
 - snaps to image edges;
 - can collapse to a compact current-tool capsule;
 - can be temporarily hidden while Space is held;
-- can automatically avoid an active image gesture;
+- may provide a non-relocating visual occlusion assist, but does not require automatic movement;
 - remembers its position and collapsed state only within the current Target Context;
 - restores its default state when Target Context rotates, the scene changes, or Restart Target runs.
 
-The minimum interaction model is:
+The minimum closure-critical interaction model is:
 
 ```text
 Expanded
@@ -49,9 +49,12 @@ Expanded
 
 Collapsed
 [current tool icon / polarity] [Expand]
+
+Temporary access
+hold Space → palette hidden and non-hit-testable
 ```
 
-The exact artwork is not normative. The interaction and hit-testing semantics are.
+The exact artwork is not normative. Drag, collapse, temporary hide, and hit-testing semantics are normative.
 
 ## Decision 1 — The palette stays inside the fitted image rect
 
@@ -127,16 +130,27 @@ This behavior is temporary and does not mutate stored palette state.
 
 Space handling must not steal input from a focused text field, modal, or native editor operation that already owns Space.
 
-## Decision 5 — Auto-avoid assists but does not replace manual control
+## Decision 5 — Automatic relocation is not a closure requirement
 
-During an active image pointer gesture, if the captured stroke/box path approaches or intersects the palette's expanded hit region, the palette MAY:
+Automatic movement during a precision gesture can disrupt spatial memory and produce unstable UI motion. Ticket 07B therefore does not require the palette to relocate itself while the user draws or drags a Box.
 
-1. reduce opacity while remaining hit-testable outside the active captured gesture; or
-2. move to the valid fitted-image edge farthest from the current pointer.
+A first implementation MAY provide a non-relocating visual assist:
 
-The policy must be deterministic and must never alter image coordinates, PromptState, or Mask pixels.
+```text
+active captured image gesture near palette
+→ temporarily reduce palette opacity
+→ restore opacity when gesture ends
+```
 
-Auto-avoid is an assistive behavior. Drag, collapse, and Space temporary hide remain the guaranteed controls.
+When implemented, the assist must be deterministic and must never alter:
+
+- palette position;
+- image coordinates;
+- PromptState;
+- Mask pixels;
+- Prompt or Mask history.
+
+Drag, collapse, and Space temporary hide remain the guaranteed controls. Automatic relocation to the farthest edge is deferred to a separate follow-up decision backed by browser evidence that it does not cause surprise, oscillation, or loss of spatial memory.
 
 ## Decision 6 — Hit-testing has no stale blind region
 
@@ -149,7 +163,7 @@ Every area it previously covered MUST become immediately available to Prompt/Edi
 - hides;
 - is removed during context disposal.
 
-No invisible wrapper, full-width toolbar container, stale bounding box, or overlay may continue intercepting image input.
+No invisible wrapper, full-width toolbar container, stale bounding box, opacity-zero pointer target, or overlay may continue intercepting image input.
 
 ## Decision 7 — State is Target Context scoped
 
@@ -213,7 +227,11 @@ Rejected because it creates a permanent non-editable region over valid image con
 
 ### Allow drag only
 
-Rejected because drag does not sufficiently address small images or immediate edge/corner editing.
+Rejected because drag alone does not sufficiently address small images or immediate edge/corner editing. Collapse and Space temporary hide are also required.
+
+### Require automatic relocation during every nearby gesture
+
+Rejected because self-moving controls can disrupt spatial memory and introduce unpredictable movement during precise authoring. It may be reconsidered only as a separately validated enhancement.
 
 ### Move the toolbar outside the fitted image
 
@@ -236,7 +254,8 @@ Rejected because fitted image geometry and task context differ, producing stale 
 - compact operation on small Dock sizes;
 - deterministic temporary access through Space;
 - reduced need to keep the palette expanded;
-- fitted-image coordinate authority remains intact.
+- fitted-image coordinate authority remains intact;
+- no mandatory self-moving UI during precision gestures.
 
 ### Costs
 
@@ -244,7 +263,7 @@ Rejected because fitted image geometry and task context differ, producing stale 
 - drag/snap/reflow logic;
 - shortcut conflict audit;
 - additional pointer-capture and accessibility tests;
-- auto-avoid behavior requires deterministic policy and browser validation.
+- optional opacity assist, when implemented, requires lifecycle and pointer-event validation.
 
 ## Required implementation sequence
 

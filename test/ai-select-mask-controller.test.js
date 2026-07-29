@@ -1119,6 +1119,76 @@ test('published proposal state is isolated from later transport-object mutation'
     );
 });
 
+test('explicit acceptance rejects proposals excluded by the bound decision', async () => {
+    const { mask } = await setup({
+        produceMask: (request) => {
+            const base = maskResponseFor(request);
+            const eligible = {
+                ...base.proposalSet.proposals[0],
+                rankingFeatures: {
+                    ...base.proposalSet.proposals[0].rankingFeatures,
+                    pairwiseRelations: [
+                        {
+                            proposalId: 'proposal-1',
+                            intersectionOverUnion: 1,
+                            areaRatio: 1,
+                            containment: 'none',
+                            materiallyDistinct: false
+                        }
+                    ]
+                }
+            };
+            const ineligibleFacts = {
+                positivePointsSatisfied: false,
+                negativePointsSatisfied: true
+            };
+            const ineligible = {
+                ...eligible,
+                proposalId: 'proposal-1',
+                sourceIndex: 1,
+                promptConsistency: ineligibleFacts,
+                rankingFeatures: {
+                    ...eligible.rankingFeatures,
+                    promptConsistency: ineligibleFacts,
+                    eligible: false,
+                    pairwiseRelations: [
+                        {
+                            proposalId: 'proposal-0',
+                            intersectionOverUnion: 1,
+                            areaRatio: 1,
+                            containment: 'none',
+                            materiallyDistinct: false
+                        }
+                    ]
+                }
+            };
+            const proposalPayload = {
+                ...base.proposalSet,
+                proposals: [eligible, ineligible]
+            };
+            delete proposalPayload.digest;
+            const proposalSet = {
+                ...proposalPayload,
+                digest: autoMaskProposalSetDigest(proposalPayload)
+            };
+            return Promise.resolve({
+                ...base,
+                proposalSet,
+                proposalDecision: {
+                    ...base.proposalDecision,
+                    proposalSetDigest: proposalSet.digest
+                }
+            });
+        }
+    });
+
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+
+    assert.throws(() => mask.acceptProposal('proposal-1'), /ineligible/);
+    mask.acceptProposal('proposal-0');
+    assert.equal(mask.state.acceptedProposalId, 'proposal-0');
+});
+
 test('an ambiguous proposal set preserves alternatives until explicit acceptance', async () => {
     const firstMask = bitsetArtifact(64, 48, [[10, 12]]);
     const secondMask = bitsetArtifact(64, 48, [

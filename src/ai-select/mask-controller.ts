@@ -500,9 +500,13 @@ export class AISelectMaskController {
         const proposal = this.proposalSet?.proposals.find(
             (candidate) => candidate.proposalId === proposalId
         );
-        if (proposal === undefined) {
+        if (
+            proposal === undefined ||
+            !proposal.rankingFeatures.eligible ||
+            !this.proposalDecision?.alternativeProposalIds.includes(proposalId)
+        ) {
             throw new Error(
-                'AI Select cannot accept an unknown or stale Mask proposal.'
+                'AI Select cannot accept an unknown, ineligible, or stale Mask proposal.'
             );
         }
         const promptState = this.promptState;

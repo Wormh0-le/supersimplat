@@ -130,6 +130,30 @@ test('a ProposalDecision binds the exact proposal set and structured ambiguity r
     );
 });
 
+test('a ProposalDecision cannot select or advertise a prompt-ineligible proposal', () => {
+    const base = proposalSet();
+    const proposals = withProposal(base, {
+        ...base.proposals[0],
+        rankingFeatures: {
+            ...base.proposals[0].rankingFeatures,
+            eligible: false
+        }
+    });
+    const decision = {
+        schemaVersion: 1,
+        viewId: proposals.viewId,
+        rgbDigest: proposals.rgbDigest,
+        promptStateDigest: proposals.promptStateDigest,
+        proposalSetDigest: proposals.digest,
+        rankingPolicyVersion: anchorMaskRankingPolicyVersion,
+        status: 'selected',
+        selectedProposalId: 'proposal-0',
+        alternativeProposalIds: ['proposal-0'],
+        reasons: []
+    };
+    assert.equal(isProposalDecision(decision, proposals), false);
+});
+
 test('proposal sets reject duplicate source identity and invalid truncation', () => {
     const value = proposalSet();
     const duplicate = {

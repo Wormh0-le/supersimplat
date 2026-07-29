@@ -23,10 +23,12 @@ import {
     type ProposalDecision
 } from './mask-proposal';
 import { MaskAnnotationRegistry } from './mask-registry';
-import type {
-    AISelectMaskProvider,
-    AIViewMaskRequest,
-    MaskResultResponse
+import {
+    isMaskResultResponse,
+    MaskArtifactInvalidError,
+    type AISelectMaskProvider,
+    type AIViewMaskRequest,
+    type MaskResultResponse
 } from './mask-service';
 import {
     createEmptyPromptState,
@@ -46,6 +48,7 @@ import {
 const ANCHOR_VIEW_ID = 'anchor-view';
 
 export type MaskRequestStatus = 'idle' | 'pending' | 'failed';
+export type MaskFailureKind = 'maskProposalFailed' | 'maskArtifactInvalid';
 export type MaskProposalStatus =
     | 'none'
     | 'pending'
@@ -102,6 +105,7 @@ export interface AISelectMaskState {
     readonly acceptedProposalId: string | null;
     readonly proposalStatus: MaskProposalStatus;
     readonly requestStatus: MaskRequestStatus;
+    readonly failureKind?: MaskFailureKind;
     readonly errorMessage?: string;
     readonly evidence: ViewEvidenceState;
     /** Mask-local Undo/Redo availability for the current RGB identity. */
@@ -157,6 +161,19 @@ const errorMessage = (error: unknown): string => {
         : 'AI Select mask production failed.';
 };
 
+const immutableTransportCopy = <T>(value: T): T => {
+    const copy = structuredClone(value);
+    const freeze = (entry: unknown): void => {
+        if (typeof entry !== 'object' || entry === null) {
+            return;
+        }
+        Object.values(entry as Record<string, unknown>).forEach(freeze);
+        Object.freeze(entry);
+    };
+    freeze(copy);
+    return copy;
+};
+
 /**
  * Owns the Anchor's Mask domain: prompts, single-frame SAM feedback, local
  * brush edits, and atomic Confirm Mask publication, plus the per-view
@@ -190,7 +207,12 @@ export class AISelectMaskController {
     private proposalSet: AutoMaskProposalSet | null = null;
     private proposalDecision: ProposalDecision | null = null;
     private acceptedProposalId: string | null = null;
+    private readonly acceptedProposalMaskIdsByPromptDigest = new Map<
+        string,
+        string
+    >();
     private requestStatus: MaskRequestStatus = 'idle';
+    private failureKind: MaskFailureKind | undefined;
     private lastErrorMessage: string | undefined;
     private activeMaskRequest: PendingMaskRequest | null = null;
     /**
@@ -239,10 +261,12 @@ export class AISelectMaskController {
             rgbDigest,
             view.stableMask
         );
-        const restorableAuto =
-            rgbDigest === null
+        const restorableAutoMaskId =
+            this.promptState === null
                 ? null
-                : this.maskRegistry.latestAutoMask(ANCHOR_VIEW_ID, rgbDigest);
+                : (this.acceptedProposalMaskIdsByPromptDigest.get(
+                      this.promptState.digest
+                  ) ?? null);
         const promptCapabilities = this.getPromptAdapterCapabilities();
         return Object.freeze({
             viewId: ANCHOR_VIEW_ID,
@@ -271,6 +295,9 @@ export class AISelectMaskController {
                           ? 'editing'
                           : this.proposalDecision.status,
             requestStatus: this.requestStatus,
+            ...(this.failureKind === undefined
+                ? {}
+                : { failureKind: this.failureKind }),
             ...(this.lastErrorMessage === undefined
                 ? {}
                 : { errorMessage: this.lastErrorMessage }),
@@ -283,8 +310,8 @@ export class AISelectMaskController {
             canUndoPrompt: this.promptUndoStack.length > 0,
             canRedoPrompt: this.promptRedoStack.length > 0,
             canRestoreAuto:
-                restorableAuto !== null &&
-                restorableAuto.maskId !== view.editingMask?.maskId,
+                restorableAutoMaskId !== null &&
+                restorableAutoMaskId !== view.editingMask?.maskId,
             hasUnconfirmedChanges: this.deriveHasUnconfirmedChanges(view)
         });
     }
@@ -454,6 +481,7 @@ export class AISelectMaskController {
             })
         );
         this.requestStatus = 'idle';
+        this.failureKind = undefined;
         this.resubmitMaskRequested = false;
         this.publish();
     }
@@ -477,8 +505,14 @@ export class AISelectMaskController {
                 'AI Select cannot accept an unknown or stale Mask proposal.'
             );
         }
+        const promptState = this.promptState;
+        if (promptState === null) {
+            throw new Error(
+                'AI Select cannot accept a proposal without its Prompt identity.'
+            );
+        }
         this.recordEdit(rgb.digest);
-        this.maskRegistry.registerSamResult({
+        const editing = this.maskRegistry.registerSamResult({
             viewId: ANCHOR_VIEW_ID,
             rgbDigest: rgb.digest,
             artifact: proposal.mask,
@@ -489,8 +523,13 @@ export class AISelectMaskController {
                 polarity: point.polarity
             }))
         });
+        this.acceptedProposalMaskIdsByPromptDigest.set(
+            promptState.digest,
+            editing.maskId
+        );
         this.acceptedProposalId = proposalId;
         this.editingRevision += 1;
+        this.failureKind = undefined;
         this.lastErrorMessage = undefined;
         this.publish();
     }
@@ -538,6 +577,7 @@ export class AISelectMaskController {
         this.requireUnlocked();
         const rgb = this.requireReadyRgb();
         this.maskRegistry.confirm(ANCHOR_VIEW_ID, rgb.digest);
+        this.failureKind = undefined;
         this.lastErrorMessage = undefined;
         this.publish();
     }
@@ -561,29 +601,32 @@ export class AISelectMaskController {
     }
 
     /**
-     * Restore Auto brings back the latest valid SAM Mask for the current
-     * RGB. It never resurrects masks from a superseded RGB identity.
+     * Restore Auto brings back the explicitly accepted SAM Mask for the
+     * current RGB and exact Prompt identity.
      */
     restoreAutoMask(): void {
         this.requireUnlocked();
         const rgb = this.requireReadyRgb();
-        const latest = this.maskRegistry.latestAutoMask(
-            ANCHOR_VIEW_ID,
-            rgb.digest
-        );
+        const promptState = this.promptState;
+        const latestMaskId =
+            promptState === null
+                ? null
+                : (this.acceptedProposalMaskIdsByPromptDigest.get(
+                      promptState.digest
+                  ) ?? null);
         const currentEditing = this.maskRegistry.viewState(
             ANCHOR_VIEW_ID,
             rgb.digest
         ).editingMask;
-        if (latest === null || latest.maskId === currentEditing?.maskId) {
+        if (latestMaskId === null || latestMaskId === currentEditing?.maskId) {
             throw new Error(
-                'AI Select has no restorable automatic Mask for the current RGB.'
+                'AI Select has no restorable accepted Mask for the current RGB and Prompt identity.'
             );
         }
         this.recordEdit(rgb.digest);
         this.maskRegistry.restoreEditing(
             ANCHOR_VIEW_ID,
-            latest.maskId,
+            latestMaskId,
             rgb.digest
         );
         this.supersedeLocalEditing();
@@ -676,6 +719,7 @@ export class AISelectMaskController {
         };
         this.activeMaskRequest = pending;
         this.requestStatus = 'pending';
+        this.failureKind = undefined;
         this.lastErrorMessage = undefined;
         this.publish();
 
@@ -687,12 +731,25 @@ export class AISelectMaskController {
                 this.discardStaleMaskRequest(pending);
                 return;
             }
-            this.failMaskRequest(errorMessage(error));
+            this.failMaskRequest(
+                errorMessage(error),
+                error instanceof MaskArtifactInvalidError
+                    ? 'maskArtifactInvalid'
+                    : 'maskProposalFailed'
+            );
             this.resubmitLatestPromptSet();
             return;
         }
         if (!this.isCurrentMaskRequest(pending)) {
             this.discardStaleMaskRequest(pending);
+            return;
+        }
+        if (!isMaskResultResponse(response)) {
+            this.failMaskRequest(
+                'The Selection Service Companion returned an invalid Mask artifact publication.',
+                'maskArtifactInvalid'
+            );
+            this.resubmitLatestPromptSet();
             return;
         }
         if (!this.anchor.acceptsMaskResponse(response, request)) {
@@ -703,22 +760,11 @@ export class AISelectMaskController {
             return;
         }
         try {
-            this.proposalSet = response.proposalSet;
-            this.proposalDecision = response.proposalDecision;
+            this.proposalSet = immutableTransportCopy(response.proposalSet);
+            this.proposalDecision = immutableTransportCopy(
+                response.proposalDecision
+            );
             this.acceptedProposalId = null;
-            const capabilities = this.getPromptAdapterCapabilities();
-            if (
-                capabilities !== null &&
-                !capabilities.multiCandidateOutput &&
-                response.proposalSet.proposals.length === 1
-            ) {
-                // Compatibility seam for the installed point-only adapter:
-                // its declared singleton output continues to seed Editing
-                // Mask, but remains unpublished until Confirm Mask.
-                this.acceptProposal(
-                    response.proposalSet.proposals[0].proposalId
-                );
-            }
         } catch (error) {
             this.failMaskRequest(errorMessage(error));
             this.resubmitLatestPromptSet();
@@ -726,6 +772,7 @@ export class AISelectMaskController {
         }
         this.activeMaskRequest = null;
         this.requestStatus = 'idle';
+        this.failureKind = undefined;
         this.publish();
         this.resubmitLatestPromptSet();
     }
@@ -766,9 +813,13 @@ export class AISelectMaskController {
         );
     }
 
-    private failMaskRequest(message: string): void {
+    private failMaskRequest(
+        message: string,
+        failureKind: MaskFailureKind = 'maskProposalFailed'
+    ): void {
         this.activeMaskRequest = null;
         this.requestStatus = 'failed';
+        this.failureKind = failureKind;
         this.lastErrorMessage = message;
         this.publish();
     }
@@ -804,9 +855,11 @@ export class AISelectMaskController {
         this.proposalSet = null;
         this.proposalDecision = null;
         this.acceptedProposalId = null;
+        this.acceptedProposalMaskIdsByPromptDigest.clear();
         this.activeMaskRequest = null;
         this.resubmitMaskRequested = false;
         this.requestStatus = 'idle';
+        this.failureKind = undefined;
         this.lastErrorMessage = undefined;
         this.editingRevision += 1;
         this.undoStack = [];
@@ -921,6 +974,7 @@ export class AISelectMaskController {
         if (this.activeMaskRequest !== null) {
             this.requestStatus = 'idle';
         }
+        this.failureKind = undefined;
         this.lastErrorMessage = undefined;
         this.publish();
     }
@@ -1012,6 +1066,7 @@ export class AISelectMaskController {
         this.proposalDecision = null;
         this.acceptedProposalId = null;
         this.editingRevision += 1;
+        this.failureKind = undefined;
         this.lastErrorMessage = undefined;
         this.publish();
     }
@@ -1034,6 +1089,7 @@ export class AISelectMaskController {
         this.resubmitMaskRequested = false;
         this.requestStatus = 'idle';
         this.editingRevision += 1;
+        this.failureKind = undefined;
         this.lastErrorMessage = undefined;
         this.publish();
     }

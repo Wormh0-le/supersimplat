@@ -63,6 +63,15 @@ export interface AISelectMaskProvider {
     ): Promise<MaskResultResponse>;
 }
 
+export class MaskArtifactInvalidError extends Error {
+    constructor(
+        message = 'The Selection Service Companion returned an invalid Mask artifact publication.'
+    ) {
+        super(message);
+        this.name = 'MaskArtifactInvalidError';
+    }
+}
+
 type UnknownRecord = Record<string, unknown>;
 
 const isRecord = (value: unknown): value is UnknownRecord => {

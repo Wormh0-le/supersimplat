@@ -439,11 +439,18 @@ export const isProposalDecision = (
     const proposalIds = new Set(
         proposalSet.proposals.map((proposal) => proposal.proposalId)
     );
+    const eligibleProposalIds = new Set(
+        proposalSet.proposals
+            .filter((proposal) => proposal.rankingFeatures.eligible)
+            .map((proposal) => proposal.proposalId)
+    );
     const alternatives = value.alternativeProposalIds;
     if (
         alternatives.some(
             (proposalId) =>
-                !isNonEmptyString(proposalId) || !proposalIds.has(proposalId)
+                !isNonEmptyString(proposalId) ||
+                !proposalIds.has(proposalId) ||
+                !eligibleProposalIds.has(proposalId)
         ) ||
         new Set(alternatives).size !== alternatives.length
     ) {
@@ -459,6 +466,7 @@ export const isProposalDecision = (
     } else if (
         !isNonEmptyString(value.selectedProposalId) ||
         !proposalIds.has(value.selectedProposalId) ||
+        !eligibleProposalIds.has(value.selectedProposalId) ||
         !alternatives.includes(value.selectedProposalId)
     ) {
         return false;

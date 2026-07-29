@@ -326,6 +326,12 @@ const setup = async (options = {}) => {
     };
 };
 
+const acceptSuggestedProposal = (mask) => {
+    const proposalId = mask.state.proposalDecision?.selectedProposalId;
+    assert.ok(proposalId);
+    mask.acceptProposal(proposalId);
+};
+
 test('a prompt change automatically requests single-frame SAM feedback', async () => {
     const { mask, maskRequests } = await setup();
     assert.equal(maskRequests.length, 0);
@@ -337,6 +343,9 @@ test('a prompt change automatically requests single-frame SAM feedback', async (
     assert.equal(request.promptState.points[0].polarity, 'include');
     assert.ok(request.proposalAttemptId.length > 0);
     assert.equal(request.rgb.digest, `sha256:${'a'.repeat(64)}`);
+    assert.equal(mask.state.proposalStatus, 'selected');
+    assert.equal(mask.state.editingMask, null);
+    acceptSuggestedProposal(mask);
     assert.equal(mask.state.editingMask.source, 'single-frame-sam');
     assert.equal(mask.state.editingMask.status, 'draft');
     assert.equal(mask.state.stableMask, null);
@@ -395,6 +404,7 @@ test('each new prompt serializes SAM attempts and resubmits the latest prompt se
         maskRequests[1].proposalAttemptId,
         maskRequests[0].proposalAttemptId
     );
+    acceptSuggestedProposal(mask);
     const editing = mask.state.editingMask;
     assert.equal(editing.prompts.length, 2);
     assert.notEqual(editing.artifact.digest, staleMask.digest);
@@ -424,6 +434,7 @@ test('a failed in-flight attempt still resubmits the latest prompt set once', as
             [20, 22]
         ]
     );
+    acceptSuggestedProposal(mask);
     assert.equal(mask.state.editingMask.prompts.length, 2);
     assert.equal(mask.state.requestStatus, 'idle');
 });
@@ -444,6 +455,7 @@ test('a single prompt with no concurrency never resubmits', async () => {
 test('SAM output never silently overwrites the Stable Mask', async () => {
     const { mask } = await setup();
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
     mask.confirmEditingMask();
     const stable = mask.state.stableMask;
     assert.equal(stable.status, 'user-confirmed');
@@ -509,6 +521,7 @@ test('stale inference cannot replace a newer committed local gesture', async () 
 test('a brush stroke on a SAM Editing Mask creates a hybrid local revision', async () => {
     const { mask } = await setup();
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
     const sam = mask.state.editingMask;
     mask.applyBrushStroke({ xPx: 30, yPx: 30, radiusPx: 2, mode: 'add' });
     const hybrid = mask.state.editingMask;
@@ -520,6 +533,7 @@ test('a brush stroke on a SAM Editing Mask creates a hybrid local revision', asy
 test('Confirm Mask atomically publishes the Editing Mask as a new Stable revision', async () => {
     const { mask } = await setup();
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
     const editing = mask.state.editingMask;
     mask.confirmEditingMask();
     const stable = mask.state.stableMask;
@@ -534,6 +548,7 @@ test('Confirm Mask atomically publishes the Editing Mask as a new Stable revisio
 test('Confirm Mask invalidates dependent Evidence only at publication', async () => {
     const { mask } = await setup();
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
     mask.confirmEditingMask();
     const firstStable = mask.state.stableMask;
     mask.evidenceRegistry.markReady({
@@ -576,6 +591,7 @@ test('Mask failure keeps the RGB Ready view and permits retry and manual recover
     });
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
     assert.equal(mask.state.requestStatus, 'failed');
+    assert.equal(mask.state.failureKind, 'maskProposalFailed');
     assert.equal(mask.state.errorMessage, 'SAM failed.');
     assert.equal(mask.state.editingMask, null);
     assert.equal(anchor.state.anchor.renderStatus, 'ready');
@@ -588,6 +604,7 @@ test('Mask failure keeps the RGB Ready view and permits retry and manual recover
         maskRequests[0].proposalAttemptId
     );
     assert.equal(mask.state.requestStatus, 'idle');
+    acceptSuggestedProposal(mask);
     assert.equal(mask.state.editingMask.source, 'single-frame-sam');
 });
 
@@ -600,6 +617,7 @@ test('an invalid SAM response binding fails the request, not the View', async ()
     });
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
     assert.equal(mask.state.requestStatus, 'failed');
+    assert.equal(mask.state.failureKind, 'maskProposalFailed');
     assert.equal(mask.state.editingMask, null);
     assert.equal(anchor.state.anchor.renderStatus, 'ready');
 });
@@ -610,6 +628,7 @@ test('a structurally invalid SAM response fails the request, not the View', asyn
     });
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
     assert.equal(mask.state.requestStatus, 'failed');
+    assert.equal(mask.state.failureKind, 'maskArtifactInvalid');
     assert.equal(mask.state.editingMask, null);
     assert.equal(anchor.state.anchor.renderStatus, 'ready');
 });
@@ -625,6 +644,7 @@ test('a missing Model Manifest reports a Mask failure without touching RGB', asy
 test('Restart Current Target disposes all target-local Mask state', async () => {
     const { anchor, mask } = await setup();
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
     mask.confirmEditingMask();
     assert.ok(mask.state.stableMask);
     await anchor.restart(input());
@@ -664,6 +684,7 @@ test('Restart logically cancels an in-flight proposal and discards its late resu
 test('a new Anchor RGB identity resets prompts and Mask currency', async () => {
     const { anchor, mask, setRgbDigest } = await setup();
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
     mask.confirmEditingMask();
     assert.ok(mask.state.stableMask);
 
@@ -727,11 +748,12 @@ test('Clear replaces only the Editing Mask and supersedes in-flight SAM', async 
     assert.notEqual(mask.state.editingMask.maskId, stable.maskId);
 });
 
-test('Restore Auto restores the latest valid SAM Mask and is disabled when none exists', async () => {
+test('Restore Auto restores only an accepted Mask for the exact Prompt identity', async () => {
     const { mask } = await setup();
     assert.equal(mask.state.canRestoreAuto, false);
     assert.throws(() => mask.restoreAutoMask());
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
     const auto = mask.state.editingMask;
     mask.clearEditingMask();
     assert.equal(mask.state.canRestoreAuto, true);
@@ -739,6 +761,14 @@ test('Restore Auto restores the latest valid SAM Mask and is disabled when none 
     assert.equal(mask.state.editingMask.maskId, auto.maskId);
     // The current draft already is the latest auto Mask: nothing to restore.
     assert.equal(mask.state.canRestoreAuto, false);
+    mask.clearEditingMask();
+    await mask.addPrompt({ xPx: 20, yPx: 20, polarity: 'exclude' });
+    assert.equal(mask.state.canRestoreAuto, false);
+    assert.throws(() => mask.restoreAutoMask());
+    mask.undoPromptEdit();
+    assert.equal(mask.state.canRestoreAuto, true);
+    mask.restoreAutoMask();
+    assert.equal(mask.state.editingMask.maskId, auto.maskId);
 });
 
 test('mask-local Undo/Redo walks Editing history without touching the Stable Mask', async () => {
@@ -746,6 +776,7 @@ test('mask-local Undo/Redo walks Editing history without touching the Stable Mas
     assert.equal(mask.state.canUndo, false);
     assert.equal(mask.state.canRedo, false);
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
     const sam = mask.state.editingMask;
     assert.equal(mask.state.canUndo, true);
     mask.applyBrushStroke({ xPx: 30, yPx: 30, radiusPx: 2, mode: 'add' });
@@ -768,6 +799,7 @@ test('mask-local Undo/Redo walks Editing history without touching the Stable Mas
 test('a new local edit clears the Redo stack and branches from the restored draft', async () => {
     const { mask } = await setup();
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
     const sam = mask.state.editingMask;
     mask.applyBrushStroke({ xPx: 30, yPx: 30, radiusPx: 2, mode: 'add' });
     mask.undoMaskEdit();
@@ -780,6 +812,7 @@ test('a new local edit clears the Redo stack and branches from the restored draf
 test('a confirmed Stable Mask is not an Undo step; Undo walks the draft chain', async () => {
     const { mask } = await setup();
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
     const sam = mask.state.editingMask;
     mask.confirmEditingMask();
     const stable = mask.state.stableMask;
@@ -810,6 +843,7 @@ test('a locked confirmed Anchor rejects every Mask mutation', async () => {
     let locked = false;
     const { mask } = await setup({ isAnchorLocked: () => locked });
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
     mask.confirmEditingMask();
     locked = true;
     await assert.rejects(
@@ -894,6 +928,7 @@ test('Box and Prompt Brush revise PromptState without editing pixels', async () 
 test('Paint changes Editing Mask without rewriting PromptState', async () => {
     const { mask } = await setup();
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
     const promptDigest = mask.state.promptState.digest;
     const promptRevision = mask.state.promptState.revision;
 
@@ -1005,6 +1040,7 @@ test('Prompt Undo and Mask Undo are independent histories', async () => {
 test('Clear Prompts preserves the Stable Mask and current Evidence', async () => {
     const { mask } = await setup();
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
     mask.confirmEditingMask();
     const stable = mask.state.stableMask;
     mask.evidenceRegistry.markReady(
@@ -1027,6 +1063,7 @@ test('Clear Prompts preserves the Stable Mask and current Evidence', async () =>
 test('unconfirmed Prompt and proposal work leaves Stable Mask and Evidence current', async () => {
     const { mask } = await setup();
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
     mask.confirmEditingMask();
     const stable = mask.state.stableMask;
     const identity = {
@@ -1055,6 +1092,31 @@ test('no-candidate output is proposal unavailable, not render or technical failu
     assert.equal(mask.state.requestStatus, 'idle');
     assert.equal(mask.state.editingMask, null);
     assert.equal(anchor.state.anchor.renderStatus, 'ready');
+});
+
+test('published proposal state is isolated from later transport-object mutation', async () => {
+    let transportResponse;
+    const { mask } = await setup({
+        produceMask: (request) => {
+            transportResponse = maskResponseFor(request);
+            return Promise.resolve(transportResponse);
+        }
+    });
+
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    transportResponse.proposalDecision.status = 'unavailable';
+    transportResponse.proposalSet.proposals[0].rankingFeatures.eligible = false;
+
+    assert.equal(mask.state.proposalDecision.status, 'selected');
+    assert.equal(
+        mask.state.proposalSet.proposals[0].rankingFeatures.eligible,
+        true
+    );
+    assert.equal(Object.isFrozen(mask.state.proposalDecision), true);
+    assert.equal(
+        Object.isFrozen(mask.state.proposalSet.proposals[0].rankingFeatures),
+        true
+    );
 });
 
 test('an ambiguous proposal set preserves alternatives until explicit acceptance', async () => {

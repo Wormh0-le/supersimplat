@@ -38,6 +38,7 @@ import {
     type GeneratedViewPlanResponse
 } from './ai-select/generated-view-service';
 import {
+    MaskArtifactInvalidError,
     isAIViewMaskRequest,
     isMaskResultResponse,
     maskResponseMatchesRequest,
@@ -1207,15 +1208,20 @@ class FetchSelectionServiceAdapter
                 modelManifestDigest: request.modelManifestDigest,
                 adapterCapabilityDigest: request.adapterCapabilityDigest,
                 proposalPolicyVersion: request.proposalPolicyVersion,
+                rankingPolicyVersion: request.rankingPolicyVersion,
                 proposalAttemptId: request.proposalAttemptId
             }
         );
-        if (
-            !isRecord(result) ||
-            result.status !== 'complete' ||
-            !isMaskResultResponse(result) ||
-            !maskResponseMatchesRequest(result, request)
-        ) {
+        if (!isRecord(result) || result.status !== 'complete') {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an incomplete or stale Mask result.'
+            );
+        }
+        if (!isMaskResultResponse(result)) {
+            throw new MaskArtifactInvalidError();
+        }
+        if (!maskResponseMatchesRequest(result, request)) {
             throw transportError(
                 'invalidResponse',
                 'The Selection Service Companion returned an incomplete or stale Mask result.'

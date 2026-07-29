@@ -1449,6 +1449,10 @@ test('sends a bound single-frame Mask request and returns the validated Mask res
     assert.equal(calls[0].init.method, 'POST');
     assert.deepEqual(calls[0].body.requestBinding, maskRequest.requestBinding);
     assert.deepEqual(calls[0].body.promptState, maskRequest.promptState);
+    assert.equal(
+        calls[0].body.rankingPolicyVersion,
+        maskRequest.rankingPolicyVersion
+    );
     assert.equal(calls[0].body.proposalAttemptId, 'proposal-attempt-1');
     assert.equal(
         response.proposalSet.digest,
@@ -1516,7 +1520,7 @@ test('rejects a Mask artifact whose bytes do not match its digest', async () => 
     });
     await assert.rejects(
         adapter.produceMaskProposals(maskRequest),
-        /incomplete or stale Mask result/
+        /invalid Mask artifact publication/
     );
 });
 

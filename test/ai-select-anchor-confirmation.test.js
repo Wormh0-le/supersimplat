@@ -335,6 +335,9 @@ const setup = async (options = {}) => {
 
 const confirmStableMask = async (mask) => {
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    const proposalId = mask.state.proposalDecision?.selectedProposalId;
+    assert.ok(proposalId);
+    mask.acceptProposal(proposalId);
     mask.confirmEditingMask();
     return mask.state.stableMask;
 };

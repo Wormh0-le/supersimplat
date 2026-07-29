@@ -2060,32 +2060,10 @@ class CompanionState:
                     proposal['modelScoreSemantics'] = score_semantics
                 proposals.append(proposal)
             if not proposals:
-                # Compatibility for adapters that publish only the selected
-                # track and no bounded alternative diagnostics.
-                binary_mask = anchor_frame['binaryMask']
-                if binary_mask.get('encoding') != 'bitset-lsb-v1':
-                    raise MaskSessionError(
-                        'incompleteMaskSet',
-                        'A single-frame SAM mask must use the bitset-lsb-v1 encoding.',
-                    )
-                mask_bytes = base64.b64decode(binary_mask['data'], validate=True)
-                proposals.append({
-                    'proposalId': 'proposal-0',
-                    'mask': {
-                        'encoding': 'bitset-lsb-v1',
-                        'width': mask_request.width,
-                        'height': mask_request.height,
-                        'data': binary_mask['data'],
-                        'digest': (
-                            f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}'
-                        ),
-                    },
-                    'sourceIndex': 0,
-                    'promptConsistency': {
-                        'positivePointsSatisfied': True,
-                        'negativePointsSatisfied': True,
-                    },
-                })
+                raise MaskSessionError(
+                    'incompleteMaskSet',
+                    'The multi-candidate Prompt Adapter returned no valid bounded alternatives.',
+                )
             response = proposal_response(proposals)
         except MaskSessionError as error:
             self._complete_mask_request(mask_key, admission, failure=error)

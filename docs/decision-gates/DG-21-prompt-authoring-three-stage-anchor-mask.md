@@ -1,14 +1,14 @@
 # DG-21 — Prompt Authoring Layer + Three-Stage Anchor Mask Pipeline
 
-- **Status:** CLOSED; Stage-2 closure refined by DG-23 / Amendment 003
+- **Status:** CLOSED; Stage-2 closure refined by DG-23 / Amendment 003; multi-view continuation superseded by DG-24 / Amendment 004
 - **Date:** 2026-07-28
 - **Applies to:** `ai-select-v1`
-- **Normative spec:** Final Spec v1.1 + Amendments 002–003
+- **Normative spec:** Final Spec v1.1 + Amendments 002–004
 - **Foundation owner:** Ticket 04A
 - **Visual-prompt adapter owner:** Ticket 04B
 - **Anchor completion owner:** Ticket 07A
 - **Interaction follow-up:** Ticket 07B under DG-22
-- **Multi-view continuation:** Tickets 08/08A under DG-23
+- **Multi-view continuation:** Tickets 08/08A under DG-24
 
 ## Decision question
 
@@ -33,16 +33,19 @@ Ownership:
 04B = locked real-adapter Box / Mask Constraint enablement
 07A = Anchor proposal integration + conservative decision + Accept/Edit/Confirm
 07B = fitted-image floating palette with drag/collapse/Space-hide/no blind region
-08/08A = 2.5D sequence planning and object-level multi-view tracking
+08  = 2.5D sparse Key-View planning
+08A = multi-view Mask acquisition spike + 3D-guided per-Key-View SAM
 ```
 
-Ticket 07A remains the completion owner for the Anchor Three-Stage pipeline. DG-23 supersedes the earlier expectation that materially distinct plausible candidates must be automatically resolved through a benchmark-calibrated Top-1 margin.
+Ticket 07A remains the completion owner for the Anchor Three-Stage pipeline. Amendment 003 supersedes the earlier expectation that materially distinct plausible candidates must be automatically resolved through a benchmark-calibrated Top-1 margin.
+
+DG-24 supersedes DG-23's mandatory tracking continuation. The confirmed Anchor seeds sparse 3D-guided multi-view Mask acquisition; tracking is optional and benchmark-gated.
 
 ## Anchor scope
 
 The mandatory Three-Stage pipeline applies to the Anchor Mask and targets one object instance.
 
-Prompt/Edit tooling may be reused for Generated and User-added View correction. Generated View production Mask acquisition is separately defined by Amendment 003 and Ticket 08A.
+Prompt/Edit tooling may be reused for Generated and User-added View correction. Generated View production Mask acquisition is separately defined by Amendment 004 and Ticket 08A.
 
 DG-21 does not require whole-image object inventory, scene-wide semantic discovery, or arbitrary part-level selection.
 
@@ -142,7 +145,7 @@ Confirm Mask
 → exact downstream invalidation
 ```
 
-The confirmed Anchor becomes an object-identity seed for DG-23 planning/tracking. It is not formal Gaussian ownership.
+The confirmed Anchor becomes an object-identity seed for DG-24 bootstrap, sparse Key-View planning, and 3D-guided Prompt synthesis. It is not formal Gaussian ownership.
 
 ## Error taxonomy
 
@@ -177,7 +180,7 @@ Positive:
 - conservative object-level Anchor acquisition;
 - ambiguity remains recoverable;
 - Stable/Evidence lifecycle preserved;
-- DG-23 receives a confirmed identity seed.
+- DG-24 receives a confirmed identity seed.
 
 Costs:
 
@@ -194,10 +197,10 @@ Costs:
 → 04B Visual Prompt Adapter Enablement
 → 07A Object-level Anchor Acquisition
 → 07B Floating Prompt/Edit Palette
-→ 08 2.5D Key/Bridge Sequence Planner
-→ 08A Object-level Mask Tracking
+→ 08 2.5D Sparse Key-View Planner
+→ 08A Multi-view Mask Acquisition
 ```
 
 ## Non-goals
 
-DG-21 does not change Confirm-only Stable semantics, implement camera planning/tracking, implement P/N/V Evidence, create a second 3D editor, guarantee every Prompt is unambiguous, or require whole-image object inventory.
+DG-21 does not change Confirm-only Stable semantics, implement camera planning/Mask acquisition, implement P/N/V Evidence, create a second 3D editor, guarantee every Prompt is unambiguous, or require whole-image object inventory.

@@ -1,16 +1,18 @@
 # 19 — Large SceneSnapshot + authoritative RGB / Render Working Set hardening
 
-Status: ready-for-agent — v2.2 FlashSplat-alignment review; prior 02B observability baseline retained
+Status: ready-for-agent — Final Spec v1.3 mapped; prior 02B observability baseline retained
 
 Blocked by: 18, 14
 
-## Final Spec mapping
+## Current Final Spec mapping
 
-- Final Spec v1.1 §§5, 17–19, 30 Stage 4, 31
-- Final Spec v1.1 Amendment 001 — Renderer / Evidence Implementation Identity and RGB Continuity
+- Final Spec v1.3 §§3–5, 20–21, 24–25
 - ADR 0013
+- Final Spec v1.1 Amendment 001 as historical renderer/Evidence identity rationale only
 - FlashSplat-style full-occlusion requirement
-- MVP Phase 7 performance
+- MVP Phase 7 performance as historical implementation provenance
+
+Final Spec v1.3 is the only current closure source.
 
 ## Inputs / preconditions
 
@@ -45,7 +47,7 @@ The key invariant is not “all target Gaussians” but “all Gaussians in the 
 - [ ] Scene/tensor/cache identity binds exact target/render/dependency versions.
 - [ ] Repeated CameraBindings over the same valid snapshot reuse immutable scene tensors.
 - [ ] RGB cache keys include CameraBinding, raster implementation/policy/runtime, Render Working Set, and dependency identity.
-- [ ] Authoritative RGB artifacts expose `rasterImplementationId` and `runtimeBuildId` required by Final Spec v1.1 Amendment 001.
+- [ ] Authoritative RGB artifacts expose `rasterImplementationId` and `runtimeBuildId` required by Final Spec v1.3 identity and fail-closed rules.
 - [ ] Complete Contributor cache, when retained, is explicitly reference/debug and independently keyed; its absence/failure does not invalidate RGB.
 - [ ] Define the authoritative AI render scope for Active Target Splat plus other visible Splats/scene primitives that can affect the observation.
 - [ ] When non-target visible Gaussians can occlude or alter T, they are present in the Render Working Set as read-only occluders even though they are absent from the target Evidence Working Set.
@@ -81,7 +83,7 @@ The key invariant is not “all target Gaussians” but “all Gaussians in the 
 
 ## Existing observability baseline — 2026-07-23
 
-The Anchor route already exposes `working-set`, `gpu-queue`, `gsplat`, `contributor-digest`, `png`, and `json-base64` phases. `contributor-digest` denotes legacy/reference-path instrumentation and must not define the v1.1 production RGB contract.
+The Anchor route already exposes `working-set`, `gpu-queue`, `gsplat`, `contributor-digest`, `png`, and `json-base64` phases. `contributor-digest` denotes legacy/reference-path instrumentation and must not define the current Final Spec v1.3 production RGB contract.
 
 ## Non-goals
 

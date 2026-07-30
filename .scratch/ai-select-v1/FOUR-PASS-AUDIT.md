@@ -1,358 +1,147 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.10
+# Eight-Pass Bidirectional Traceability Audit — v2.11
 
-The filename is retained for compatibility. v2.10 keeps Final Spec v1.2 as the sole current product specification, adds automatic runtime readiness and minimal Availability presentation through Ticket 02C and ADR 0015, and retains the v2.9 acquisition diagnostics, Decision identity, unavailable-state, and legacy-migration closures.
+The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
-## Pass 1 — Ticket graph / dependency audit
+## Pass 1 — Ticket graph
 
-- Ticket count: 29 total — 22 numbered + 02C + 04A + 04B + 07A + 07B + 08A + 08B
+- Ticket count: 30 total — 22 numbered + 02C + 04A + 04B + 04C + 07A + 07B + 08A + 08B
 - Missing blocker references: 0
-- Ticket cycle detected: False
-- Structural initial frontier: [01]
-- Topological order length: 29/29
+- Ticket cycle: false
+- Topological order length: 30/30
+- Next implementation gate: 04C
 - Result: **PASS**
 
-One valid topological order:
-
-`01 → 02 → 03 → 04 → 05 → 04A → 04B → 02C → 06 → 07 → 07A → 07B → 08 → 08A → 08B → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
-
-Structural parallelism:
+One valid order:
 
 ```text
-05 → 04A
-05 → 06
-
-02 + 04B → 02C → 21
-
-07A → 07B
-07A → 08
-
-14 → 10
-14 → 13
+01 → 02 → 03 → 04 → 05 → 04A → 04B → 04C → 02C
+→ 06 → 07 → 07A → 07B → 08 → 08A → 08B → 09
+→ 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18
+→ 19 → 20 → 21 → 22
 ```
 
-Findings:
-
-- 02C owns automatic readiness, Companion-owned Active Model binding, and minimal Availability presentation.
-- 02C does not block the native editor or ordinary AI artifact implementation, but is required for Ticket 21 closure.
-- 07B does not block 08.
-- 07B blocks complete user correction UX and Ticket 21 release validation through Tickets 11/21.
-- 08A is contract foundation only.
-- 08B is the production acquisition and legacy-contract migration owner.
-- 09 depends on 08B, not merely an abstract contract.
-- Result: **PASS**
-
-## Pass 2 — Artifact producer / consumer graph
-
-Current artifact chain:
-
-```text
-07A Anchor Stable Mask
-→ 08 VisibleTargetSupportArtifact
-→ 08 TargetBootstrapArtifact
-→ 08 SparseKeyViewPlanSegment
-→ 08B KeyViewPromptArtifact
-→ 08B PerViewMaskAcquisitionResult
-    ├── KeyViewMaskProposalSet
-    └── one attempt-level backendDiagnostics authority
-→ 08B KeyViewMaskDecision bound to exact ProposalSet digest + attempt
-→ 07/08B ViewAssessmentResult for selected only
-→ 08B MaskPublication result / Stable Mask
-→ 09/12 Review + Participation + dirty state
-→ 14 per-view P/N/V
-→ 15 current Candidate
-```
-
-Contract-only edges:
-
-```text
-08A MaskAcquisitionBackendDescriptor
-→ MaskAcquisitionBackend bundle
-→ MaskAcquisitionBackendRegistry
-→ MultiViewMaskAcquisitionProvider
-→ optional SequenceMaskAcquisitionExtension
-```
-
-Findings:
-
-- `VisibleTargetSupportArtifact` supplies real replayable 3D samples.
-- Support and bootstrap are non-ownership artifacts.
-- Provider output ends at result envelope + ProposalSet.
-- Attempt-level backend diagnostics are not duplicated in ProposalSet.
-- Decision, Assessment and publication are explicit later artifacts/actions.
-- Decision binds exact ProposalSet digest and acquisition attempt.
-- Ambiguous creates no Stable Mask.
-- Unavailable creates no Stable Mask but remains a completed acquisition Decision.
-- Route-A fallback creates a distinct attempt and reuses the same downstream layers.
-- Sequence schemas create no current artifact dependency.
-- Artifact cycle detected: False
-- Result: **PASS**
-
-## Pass 3 — Final Spec v1.2 / accepted ADRs / current Ticket mapping
-
-The single `TRACEABILITY.md` maps **110** consolidated current requirements.
+## Pass 2 — Specification authority
 
 Checks:
 
-- Invalid ticket references: 0
-- Unmapped Final Spec v1.2 requirements: 0
-- Historical Amendment overlay required: no
-- Current mapping authority: `CURRENT-TICKET-SPEC-MAPPING.md`
-- Ticket IDs missing from current mapping: 0
-- Active ticket requires historical Amendment: 0
-- Accepted ADR references: ADR 0013, ADR 0014, and ADR 0015
-- Missing or invalid accepted ADR references: 0
-- ADR 0014 indexed and subordinate to Final Spec v1.2: yes
-- ADR 0015 indexed and subordinate to Final Spec v1.2: yes
-- Route-B comparison gate retained: no
-- Mandatory tracker/Bridge/reference implementation retained: no
-- Result: **PASS**
+- Final Spec v1.3 exists and is indexed as current.
+- Final Spec v1.2 is marked Historical.
+- ADR 0016 is accepted and indexed.
+- CURRENT-TICKET-SPEC-MAPPING maps all 30 Tickets to v1.3.
+- ADR 0014 / DG-24–26 are historical where conflicting.
 
-Mapping rule:
+Result: **PASS**
 
-```text
-Final Spec v1.2
-→ CURRENT-TICKET-SPEC-MAPPING.md
-→ ticket acceptance/failure/validation criteria
-```
-
-Ticket-local v1.1/Amendment references retained from earlier versions are historical provenance only and have no current normative force.
-
-## Pass 4 — tickets → Final Spec v1.2 / reverse scope audit
-
-- Orphan tickets: []
-- 02C maps to automatic readiness, operator-owned Active Model resolution, and restrained Availability presentation.
-- 04A maps to Prompt/proposal foundation.
-- 04B maps to truthful visual-Prompt adapter capabilities.
-- 07A maps to conservative object-level Anchor acquisition.
-- 07B maps to fitted-image no-blind-spot interaction.
-- 08 maps to support/bootstrap/sparse planner.
-- 08A maps to acquisition artifacts, result envelope, exact Decision identity and registry.
-- 08B maps to route-B production, fallback and legacy acquisition migration.
-- 09/11/12 map to inspection, user Views, refresh and state lifecycle.
-- 14/20 remain the only formal ownership stages.
-- 15–18 map to correction, Native application, Restart/Suspended lifecycle.
-- 19–22 map to rendering/Evidence production hardening and legacy contraction.
-- Result: **PASS**
-
-Scope-leak checks:
-
-- Ticket 02C does not make the browser select/install models or expose technical runtime controls to ordinary users.
-- Ticket 02C does not treat Busy, task progress, or task-local failures as service Availability.
-- Ticket 08 does not run SAM or publish Masks.
-- Ticket 08A does not implement model inference or tracker behavior.
-- Ticket 08B does not generate cameras or compute P/N/V.
-- Ticket 09 does not mutate acquisition/reference state.
-- Ticket 12 does not automatically Re-Lift.
-- Ticket 14 does not consume acquisition confidence or unavailable status as Evidence.
-- Ticket 21 introduces no new product route.
-
-## Pass 5 — outcome → prerequisites audit
-
-```text
-Native operation
-← current Candidate
-← readiness + version-bound P/N/V
-← Included Stable View Annotations
-← publication from selected+assessed per-view Masks
-← exact ProposalSet-bound Decision
-← PerViewMaskAcquisitionResult
-← route-B inference over KeyViewPromptArtifact
-← visible support + bootstrap + sparse valid Key Views
-← confirmed object-level Anchor
-← authoritative RGB / CameraBinding / scene identity
-```
-
-Interaction prerequisite:
-
-```text
-complete Anchor/Generated/User-added correction UX
-← Ticket 07B
-```
-
-Runtime admission prerequisite:
-
-```text
-remote AI request admission
-← Available under current Companion Instance ID
-← full AI Select Runtime Profile validation
-← initialized Companion-owned Active Model Manifest
-← lightweight reachability/instance heartbeat
-```
+## Pass 3 — SAM model and Prompt contract
 
 Checks:
 
-- No remote AI request is admitted from heartbeat reachability alone.
-- No steady heartbeat repeats checkpoint hashing or full compatibility validation.
-- No ordinary user action chooses endpoint or Active Model Manifest.
-- No final outcome depends on route comparison.
-- No final outcome depends on tracker presence.
-- No final outcome depends on complete Contributor publication.
-- No support/bootstrap/Prompt/proposal/backend artifact can directly become Candidate.
-- No ambiguous or unavailable result can silently become Stable.
-- No semantic Review/unavailable outcome can be hidden by automatic route-A fallback.
-- Later Included Views can expand Evidence Working Set beyond Anchor support/bootstrap.
-- Result: **PASS**
+- static production model is SAM 3 Image instance interactivity;
+- static Multiplex/private tracker heads are explicitly non-current;
+- Positive Point, Negative Point and Positive Instance Box are the only v1 Prompt families;
+- Negative Box, Prompt Brush, Mask Constraints and Text are removed;
+- Paint/Erase remain editing only;
+- previous logits are internal same-image refinement state;
+- single-point multimask and Box/multi-point/refinement single-mask rules are consistent across 04C, 07A, 08A, 08B, 11 and 21.
 
-## Pass 6 — walkthrough / failure audit
+Result: **PASS**
 
-- Typical/architecture walkthroughs: 23
-- Error/degradation walkthroughs: 23
-- Automatic readiness, heartbeat/full-validation separation, and minimal Availability UI: covered
-- Companion Instance/runtime/model identity replacement: covered
-- 07B/08 parallel execution: covered
-- Visible support extraction and invalid-support recovery: covered
-- Sparse planning and Generate More preservation: covered
-- 08A contract-only boundary: covered
-- Route-B layered execution: covered
-- Key-View ambiguity without Stable publication: covered
-- Decision unavailable without technical failure/fallback: covered
-- B2 technical fallback: covered
-- semantic Review without fallback: covered
-- User Confirmed authority: covered
-- Prompt-only regeneration versus SAM Retry: covered
-- per-view correction without propagation: covered
-- formal P/N/V ownership boundary: covered
-- legacy generated-view contract migration: covered
-- future C/D extension readiness: covered
-- Result: **PASS**
-
-## Pass 7 — protocol identity and diagnostics authority
+## Pass 4 — Geometry and multi-view scope
 
 Checks:
 
-- `PerViewMaskAcquisitionResult` is explicit: PASS
-- ProposalSet contains candidate artifacts/candidate-local metrics only: PASS
-- Attempt-level `backendDiagnostics` has one authority on result envelope: PASS
-- `KeyViewMaskDecision` binds `proposalSetArtifactDigest`: PASS
-- Decision binds target/context/View/acquisition attempt: PASS
-- Cross-attempt proposal-ID collision is rejected: PASS
-- Publication command validates exact ProposalSet/Decision identity: PASS
-- Empty successful ProposalSet can become Decision unavailable: PASS
-- Result: **PASS**
+- Ticket 08 produces one `TargetGeometryHintArtifact`;
+- no Gaussian ownership fields are required;
+- default plan is 2–4 bounded local Views;
+- adaptive marginal-gain/free-space/room-scale planning is deferred;
+- 08 runs no SAM;
+- 07B and 08 remain parallel after 07A.
 
-Prohibited structures:
+Result: **PASS**
 
-```text
-ProposalSet.backendDiagnostics + Result.backendDiagnostics dual authority
-Decision with proposal IDs but no ProposalSet digest/attempt binding
-provider-returned Decision or ViewAssessmentResult
-```
+## Pass 5 — Per-View Mask architecture
 
-## Pass 8 — legacy acquisition migration
+Checks:
 
-Current legacy seam under migration:
+- 08A defines compact image Prompt/result contracts only;
+- no backend registry, Route B/C/D bundle, sequence extension or automatic fallback is current;
+- 08B generates one Box, 1–3 positive Points and optional negative Points;
+- Generated inference uses SAM 3 Image single-mask mode;
+- provider cannot publish Review, Stable Mask, Participation, Evidence or Candidate;
+- semantic unavailable differs from technical failure.
 
-```text
-GeneratedViewMaskRequest
-→ produceGeneratedViewMask
-→ GeneratedViewMaskResponse {
-     maskSource: 'propagated'
-     maskPropagation
-     mask
-     assessment
-   }
-→ controller direct Stable/Participation publication
-```
+Result: **PASS**
 
-Required migration assertions:
+## Pass 6 — Mask Review and Lift Readiness
 
-- provider-returned Assessment is not current: PASS
-- fixed generic `maskSource: 'propagated'` is not current: PASS
-- `GeneratedViewMaskPropagation` is not the generic diagnostics authority: PASS
-- legacy `generated-view-mask/v1` payload/cache fails current validation: PASS
-- controller direct provider-response publication is an explicit 08B removal target: PASS
-- route-A compatibility uses a new adapter/result/ProposalSet attempt: PASS
-- User Confirmed Stable authority survives migration: PASS
-- Result: **PASS**
+Checks:
 
-## Critical phrase and contradiction audit
+- Ticket 07 owns Prompt consistency, clipping, severe fragmentation and gross spill;
+- `propagation-uncertain` is removed;
+- `weak-gaussian-support` is owned by Ticket 13;
+- Participation defaults remain independent from View role;
+- only Included Stable Masks contribute to P/N/V.
 
-Required current statements:
+Result: **PASS**
+
+## Pass 7 — Legacy migration
+
+Current migration targets:
 
 ```text
-Final Spec v1.2 is the only current specification
-CURRENT-TICKET-SPEC-MAPPING.md is the current Ticket mapping authority
-ADR 0014 is indexed and subordinate to Final Spec v1.2
-ADR 0015 is indexed and subordinate to Final Spec v1.2
-Ticket 02C owns automatic readiness and minimal three-state Availability
-Companion owns one initialized process-lifetime Active Model Manifest
-steady heartbeat is separate from full Runtime Profile validation
-VisibleTargetSupportArtifact precedes TargetBootstrapArtifact
-07B and 08 are parallel after 07A
-08A is contracts/registry only
-08B implements production route B and legacy acquisition migration
-provider returns PerViewMaskAcquisitionResult + ProposalSet only
-backendDiagnostics has one result-envelope authority
-Decision binds exact ProposalSet digest + attempt
-ambiguous publishes no arbitrary Stable Mask
-unavailable is not technical failure and does not auto-fallback
-route-A fallback is technical/capability-only
-route-A Auto Good uses same or stricter gates
-legacy generated-view-mask/v1 cannot validate as current
-support/bootstrap/Prompt/acquisition are not P/N/V
+SAM 3.1 Multiplex static shim
+private tracker-head image prediction
+old Multiplex Model Manifest/runtime digest
+generated-view-mask/v1
+maskSource: propagated
+provider-returned Assessment
+Negative Box / Mask Constraint artifacts
+binary Brush-to-mask_input mapping
+backend registry / sequence / automatic fallback state
 ```
 
-Prohibited active statements:
+Every target is owned by 04C, 08B, 12 or 21. User Confirmed Stable Masks are preserved.
+
+Result: **PASS**
+
+## Pass 8 — Traceability and walkthrough coverage
+
+- Requirements: 48
+- Unmapped requirements: 0
+- Orphan active Tickets: 0
+- Walkthroughs: 14
+- Error walkthroughs: 14
+- Invalid ADR refs: 0
+- Invalid current mapping refs: 0
+- Critical phrase failures: 0
+
+Result: **PASS**
+
+## Critical phrase scan
+
+Active planning MUST NOT require:
+
+- static Multiplex for Anchor/Key Views;
+- Negative Box or Prompt Brush;
+- binary Brush as previous logits;
+- generic near-duplicate/material-distinct cluster framework;
+- adaptive/free-space planner;
+- backend registry or Route C/D seam;
+- automatic Route-A fallback;
+- propagation uncertainty in ordinary Mask Review;
+- weak Gaussian support as Mask quality.
+
+Current active planning contains no such requirement.
+
+## Final audit result
 
 ```text
-browser selects, sorts, remembers, or displays installed Model Manifests
-steady heartbeat invokes full capabilities validation or hashes checkpoints
-Busy, task progress, or one task failure changes AI Select Availability
-ordinary UI exposes endpoint, Ping, Check readiness, or model selector
-07B blocks Ticket 08
-Ticket 08A directly implements production SAM
-TargetBootstrapArtifact precedes VisibleTargetSupportArtifact
-provider returns final Mask + ViewAssessmentResult
-ProposalSet and result both own backendDiagnostics
-Decision omits exact ProposalSet identity
-highest model score is authoritative
-ambiguous or unavailable automatically falls back to route A
-unavailable equals backend/OOM/protocol failure
-support sample Gaussian ID implies ownership
-route B exposes fake sequence/reference methods
-v1.1 Amendment chain is the current implementation specification
-legacy maskSource='propagated' is generic route-B provenance
-accepted current ADR exists outside the specification index or manifest
+Ticket graph                         PASS
+Specification authority             PASS
+SAM model / Prompt contract          PASS
+Geometry / local multi-view scope    PASS
+Per-View Mask architecture           PASS
+Mask Review / Lift Readiness split   PASS
+Legacy migration                     PASS
+Traceability / walkthroughs          PASS
 ```
-
-Audit result: **PASS**
-
-## Residual implementation/calibration unknowns
-
-These are bounded implementation questions, not architecture gates:
-
-- support sample count, spatial sampling and encoding;
-- whether stable Gaussian provenance is needed in the first support version;
-- exact Point/Box/ROI/local-negative/Mask-input synthesis recipe;
-- inference resolution and sparse View budget;
-- proposal near-duplicate clustering metric/threshold;
-- contamination and Review thresholds;
-- route-A stricter fallback thresholds;
-- per-view scheduler concurrency and peak VRAM envelope;
-- Evidence Working Set expansion thresholds.
-
-Future non-blocking research:
-
-- whether route C or D gives enough downstream gain to justify lifecycle complexity;
-- sequence transition/resource envelope;
-- reference-memory and propagation atomicity policy.
-
-## Audit conclusion
-
-v2.10 is internally consistent:
-
-```text
-reliable Anchor
-→ replayable visible support
-→ lightweight bootstrap
-→ sparse Key Views
-→ explicit Prompt artifact
-→ result envelope + ProposalSet
-→ exact ProposalSet-bound Decision
-→ selected-only Assessment
-→ atomic Stable publication
-→ Included Stable Masks
-→ final P/N/V ownership
-```
-
-Ticket 02C is the next implementation gate. Final Spec v1.2 and `CURRENT-TICKET-SPEC-MAPPING.md` govern current implementation; ADR 0015 governs automatic readiness and operator-owned Active Model resolution, while ADR 0014 and DG-26 retain subordinate acquisition rationale.

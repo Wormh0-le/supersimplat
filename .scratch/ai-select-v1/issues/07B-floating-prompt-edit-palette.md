@@ -4,59 +4,47 @@ Status: proposed — ready-for-agent after 07A algorithm closure
 
 Blocked by: 07A
 
-Blocks: 08
+Blocks: 11, 21
+
+Runs in parallel with: 08
 
 ## Final Spec mapping
 
-- Final Spec v1.1 Amendment 002 — Prompt Authoring and Three-Stage Anchor Mask Pipeline
-- DG-21 — Prompt Authoring Layer + Three-Stage Anchor Mask Pipeline
-- DG-22 — Draggable, Collapsible Prompt/Edit Palette with Temporary Hide
-- Ticket 07A Phase 4 fitted-image layout foundation
+- Final Spec v1.2 §7, §§20 and 28–29
+- DG-22
+- DG-26 Decision 7
 
 ## Purpose
 
-Ticket 07A Phase 4 correctly moved Prompt/Edit controls into the authoritative fitted image surface and aligned RGB, Mask, Prompt overlays, and pointer mapping. A toolbar fixed at the fitted image bottom-center still creates a permanent non-editable blind region.
+Replace the fixed fitted-image toolbar with a draggable, collapsible floating Prompt/Edit palette and a guaranteed Space temporary-hide escape hatch.
 
-Ticket 07B replaces that fixed placement with a draggable, collapsible floating palette with a guaranteed Space temporary-hide escape hatch while preserving the fitted-image ownership rule.
+This is interaction hardening. It does not modify PromptState, adapter inference, proposal ranking, Stable Mask publication, acquisition, Evidence, or Candidate semantics.
 
-The closure-critical interaction is:
-
-```text
-drag + edge snap
-collapse / expand
-Space temporary hide
-no stale hit region
-```
-
-A non-relocating visual occlusion assist such as temporary opacity reduction is optional. Automatic palette relocation is not required for Ticket 07B closure.
-
-This ticket is interaction hardening. It does not modify PromptState, adapter inference, proposal ranking, Stable Mask publication, or Evidence semantics.
+Ticket 07B does not block Ticket 08 geometry/planning. It remains mandatory before complete Generated/User-added correction UX and final release validation.
 
 ## Inputs / preconditions
 
-- Ticket 07A fitted-image surface and exact pointer mapping
-- Existing compact Prompt/Edit toolbar controls
-- Existing Prompt and Mask histories
-- Existing Dock resize and `ResizeObserver` flow
-- Existing active-tool state and localized tooltips
-- Current Target Context lifecycle and Restart Target
+- Ticket 07A fitted authoritative image surface;
+- exact RGB/Mask/Prompt coordinate mapping;
+- existing Prompt and Mask histories;
+- Dock resize / `ResizeObserver` flow;
+- current active tool, shortcuts, tooltips and localization;
+- Current Target Context lifecycle.
 
 ## Outputs / handoff artifacts
 
-- Target Context-scoped `FloatingPaletteState`
-- Drag handle and pointer-capture interaction
-- fitted-rect clamp and edge snapping
-- expanded/collapsed presentation
-- Space temporary hide
-- optional non-relocating occlusion-assist hook
-- shortcut mapping and conflict audit
-- browser interaction and accessibility fixtures
+- Target Context-scoped `FloatingPaletteState`;
+- drag handle and pointer-capture interaction;
+- fitted-rect clamp and edge snapping;
+- expanded/collapsed forms;
+- Space temporary hide;
+- optional non-relocating visual occlusion assist;
+- shortcut conflict audit;
+- browser interaction and accessibility fixtures.
 
-# 1. Floating palette state
+# 1. State
 
-Introduce an editor-local state bound to the current Target Context.
-
-Suggested shape:
+Suggested contract:
 
 ```ts
 interface FloatingPaletteState {
@@ -68,72 +56,44 @@ interface FloatingPaletteState {
 }
 ```
 
-Equivalent state is allowed when it provides:
+Equivalent state is allowed when it provides deterministic reflow, complete fitted-rect clamping, target-local persistence and explicit reset.
 
-- deterministic reflow after fitted-rect resize;
-- complete clamping inside the fitted rect;
-- context-local persistence;
-- explicit default restoration.
-
-The state MUST NOT enter PromptState, Mask history, Candidate provenance, or Companion requests.
+Palette state MUST NOT enter PromptState, Mask history, acquisition requests, Evidence, Candidate, or Companion state.
 
 # 2. Dragging and snapping
-
-Add a dedicated drag handle at the leading edge of the expanded palette.
 
 Required behavior:
 
 ```text
-pointerdown on handle
+pointerdown on dedicated handle
 → palette pointer capture
-→ suppress image authoring for this gesture
+→ suppress image authoring for that gesture
 
 pointermove
-→ move palette
-→ continuously clamp full palette bounds to fitted image rect
+→ move and continuously clamp full palette bounds
 
 pointerup
-→ snap to nearest edge when inside snap threshold
+→ snap to nearest edge inside threshold
 → otherwise retain free position
 ```
 
-Constraints:
+Tool buttons never initiate drag. Palette drag never authors Prompt/Mask pixels. Image authoring outside current visible palette bounds remains active.
 
-- tool buttons never initiate palette drag;
-- palette drag never authors a Prompt or Mask stroke;
-- image authoring outside the palette remains active;
-- Dock/image resize reflows and clamps the palette without changing the active tool;
-- dragging works at different device-pixel ratios and browser zoom levels.
-
-Double-clicking the handle or invoking the reset shortcut restores the default placement.
+Dock/image resize reflows and clamps without changing the active tool.
 
 # 3. Expanded and collapsed forms
 
-Expanded form contains the current primary tools and contextual secondary actions.
+Expanded form contains current primary tools and contextual secondary actions.
 
-Recommended information shape:
-
-```text
-[drag] [Point+] [Point−] [Paint] [Erase] [More] [Undo] [Redo] [Clear] [Collapse]
-```
-
-Exact visible tools remain capability- and active-mode-dependent.
-
-Collapsed form is a compact capsule:
-
-```text
-[current tool icon / polarity] [Expand]
-```
+Collapsed form is a compact draggable capsule showing current tool/polarity and Expand.
 
 Requirements:
 
-- minimum pointer target approximately `32 × 32 px`;
-- current tool remains recognizable without relying on color alone;
-- polarity remains recognizable for positive/negative tools;
-- active tool does not change on collapse/expand;
-- Prompt and Mask histories do not change;
-- collapsed palette remains draggable or exposes an equivalent drag affordance;
-- tooltip and accessible label identify current tool and expand action.
+- minimum practical pointer target around `32 × 32 px`;
+- current tool and polarity identifiable without color alone;
+- collapse/expand changes no Prompt/Mask history or active tool;
+- accessible label and expanded state;
+- tooltips/localization remain complete.
 
 # 4. Space temporary hide
 
@@ -145,178 +105,89 @@ Space keydown
 → palette hit testing disabled
 
 Space keyup
-→ restore prior position and mode
+→ exact prior position/mode restored
 ```
 
-Required safeguards:
+Safeguards:
 
-- do not trigger while typing in text input, textarea, contenteditable, modal, or another control that owns Space;
-- do not mutate stored palette state;
+- no trigger in text input, textarea, contenteditable, modal or another Space-owning control;
 - repeated keydown is idempotent;
-- lost focus / blur / context disposal cannot leave the palette permanently hidden;
-- shortcuts and active tool remain unchanged.
+- blur/lost focus/context disposal cannot leave palette hidden;
+- stored palette state is unchanged;
+- active tool and histories are unchanged.
 
-# 5. Optional non-relocating occlusion assist
+# 5. No stale blind region
 
-Ticket 07B does not require the palette to move automatically during image authoring. Automatic relocation can disrupt spatial memory and create unstable UI motion during a precision gesture.
+Every previously covered pixel becomes immediately editable after move, collapse, hide or disposal.
 
-A first implementation MAY provide a visual-only assist when an already captured Paint/Erase/Prompt-Brush/Box gesture approaches or passes beneath the palette's visible bounds:
+Prohibited:
 
-```text
-active captured image gesture near palette
-→ temporarily reduce palette opacity
-→ restore opacity when gesture ends
-```
-
-This assist is optional and is not a closure gate.
-
-When implemented, it MUST:
-
-- leave the palette position unchanged;
-- leave image coordinates, PromptState, Mask pixels, and histories unchanged;
-- avoid opacity-zero pointer interception outside the already captured image gesture;
-- restore the exact prior opacity on pointerup, pointercancel, blur, and context disposal;
-- respect reduced-motion and contrast/accessibility requirements;
-- keep Space temporary hide as the guaranteed user-controlled override.
-
-Automatic relocation to another edge is explicitly deferred. It requires a separate follow-up decision and browser evidence that it does not create oscillation, surprise, or loss of spatial memory.
-
-# 6. No stale blind region
-
-The palette itself intercepts pointer input while visible. Every previously covered pixel must become immediately editable after move, collapse, hide, or disposal.
-
-Prohibited structures:
-
-- a full-width transparent toolbar wrapper over the image;
-- an invisible expanded hit box while collapsed;
-- stale absolute-position overlays at the prior location;
-- pointer-event interception by opacity-zero elements;
-- an image-wide drag layer above Prompt/Mask input.
+- full-width transparent wrapper over image;
+- invisible expanded hit box while collapsed;
+- stale overlay at old position;
+- opacity-zero pointer interception;
+- image-wide drag layer above authoring input.
 
 Required regression:
 
 ```text
-move palette away from target edge
-→ pointerdown at the old palette location
+move palette away
+→ pointerdown at old palette location
 → Prompt/Edit action starts immediately
 ```
 
-# 7. Target Context lifecycle
+# 6. Optional occlusion assist
 
-Palette location and mode persist across:
+Automatic palette relocation is not required.
 
-- Prompt revisions;
-- Retry;
-- proposal state changes;
-- active tool changes;
-- Mask edits;
-- Dock resize, after reflow/clamping.
+An optional assist may temporarily reduce visible opacity during an already captured image gesture near the palette, but it must not change position, coordinates, Prompt/Mask pixels, histories, or hit testing outside the captured gesture.
 
-They reset on:
+Space hide remains the guaranteed user-controlled override.
 
-- Restart Target;
-- targetContextId rotation;
-- target/scene replacement;
-- AI Select disposal.
+# 7. Lifecycle
 
-Do not persist one global palette location in browser storage across unrelated scenes.
+Palette location/mode persist across Prompt revisions, model Retry, proposal changes, active tool changes, Mask edits and Dock resize.
 
-# 8. Keyboard shortcuts
+They reset on Restart Target, targetContextId rotation, target/scene replacement, or AI Select disposal.
 
-Preserve keyboard-first tool selection in expanded, collapsed, and temporarily hidden states.
+Do not persist one global palette location across unrelated targets/scenes.
 
-Audit the intended mapping against existing SuperSplat shortcuts:
+# 8. Shortcuts and accessibility
 
-```text
-1  Positive Point
-2  Negative Point
-B  Paint/Brush candidate mapping
-E  Erase
-```
-
-The final mapping may change to avoid conflicts, but it MUST be:
-
-- deterministic;
-- localized in tooltips/help;
-- focus-aware;
-- disabled in text entry and modal contexts;
-- covered by tests.
-
-Add a shortcut to reset palette position. Do not overload Restart Target.
-
-# 9. Accessibility and localization
-
-- drag handle has an accessible label;
-- collapse/expand state is exposed with `aria-expanded` or equivalent;
-- current tool and polarity are announced;
-- keyboard users can move focus through controls without triggering image authoring;
-- Space temporary hide does not trap focus;
-- all user-visible labels and tooltips use locale keys;
-- reduced-motion preferences suppress nonessential movement animation.
+- preserve keyboard-first tool selection in expanded/collapsed/hidden states;
+- audit conflicts with existing SuperSplat shortcuts;
+- disable image-tool shortcuts in text/modal contexts;
+- add explicit reset-position shortcut;
+- drag handle has accessible label;
+- current tool/polarity and collapse state are announced;
+- Space hide does not trap focus;
+- reduced-motion preferences suppress nonessential animation;
+- all user-visible strings use locale keys.
 
 # Acceptance criteria
 
-## Placement
+- [ ] Palette remains completely inside fitted image after drag, zoom and resize.
+- [ ] Drag starts only from the handle/equivalent affordance.
+- [ ] Palette drag never authors image content.
+- [ ] Expanded/collapsed state preserves current tool and histories.
+- [ ] Collapsed palette remains draggable.
+- [ ] Space keydown hides presentation and hit testing; keyup/blur/disposal restores safely.
+- [ ] Old palette position becomes immediately editable.
+- [ ] No transparent wrapper or stale hit region intercepts input.
+- [ ] Target-local persistence and reset behavior are deterministic.
+- [ ] Palette state does not enter algorithm or artifact identity.
+- [ ] Anchor, Generated View and User-added View correction surfaces reuse the same behavior.
+- [ ] Ticket 08 can proceed independently after 07A.
+- [ ] Ticket 11 and Ticket 21 do not close until this interaction is validated.
 
-- [ ] Expanded and collapsed palette always remain inside the fitted image rect.
-- [ ] Dragging uses a dedicated handle and cannot author Prompt/Mask input.
-- [ ] Edge snapping is deterministic.
-- [ ] Dock/image resize clamps and reflows the palette correctly.
-- [ ] Double-click/reset shortcut restores default placement.
+# Failure / recovery criteria
 
-## Collapse and visibility
-
-- [ ] Collapse retains current tool, polarity, position, and histories.
-- [ ] Collapsed state exposes a compact accessible current-tool capsule.
-- [ ] Space hides the palette only while held and restores it on release.
-- [ ] Blur/context disposal cannot leave hidden state stuck.
-- [ ] Expanded, collapsed, and hidden states preserve shortcut tool selection.
-
-## Editability
-
-- [ ] Moving the palette immediately restores Prompt/Edit at its previous location.
-- [ ] Collapsing removes the expanded hit region.
-- [ ] Hiding removes all palette hit testing.
-- [ ] Targets touching every image edge and corner can be fully edited.
-- [ ] No transparent wrapper creates a permanent blind area.
-
-## Optional occlusion assist
-
-- [ ] Ticket 07B can close without automatic fade or relocation when drag, collapse, Space hide, and no-stale-hit-region requirements pass.
-- [ ] When opacity assist is implemented, it does not alter position, image coordinates, PromptState, Mask output, or histories.
-- [ ] Optional opacity state restores on pointerup, pointercancel, blur, and disposal.
-- [ ] Automatic relocation is not required and is not implemented as an undeclared closure dependency.
-
-## Lifecycle
-
-- [ ] Position/mode survive Prompt, proposal, tool, and Mask changes in one Target Context.
-- [ ] Restart Target and targetContextId rotation restore defaults.
-- [ ] No cross-scene browser-storage persistence is introduced.
-- [ ] Generated View automatic publication behavior remains unchanged.
-
-## Accessibility
-
-- [ ] Drag, collapse, expand, reset, current tool, and polarity are accessible.
-- [ ] Shortcut conflicts are audited and documented.
-- [ ] Text-entry/modal focus prevents palette shortcuts.
-- [ ] Locale and reduced-motion checks pass.
-
-# Browser validation matrix
-
-Validate at minimum:
-
-- target touching bottom edge;
-- target touching each corner;
-- narrow fitted image;
-- wide fitted image;
-- minimum and maximum Dock height;
-- browser resize while palette is snapped/free/collapsed;
-- device pixel ratio 1 and 2;
-- Paint/Erase stroke passing through previous palette position;
-- drag, collapse, and Space hide while editing bottom-edge content;
-- optional opacity assist lifecycle, only when implemented;
-- Restart Target state reset;
-- localized labels with wider text.
+- Pointer capture loss restores a consistent clamped position.
+- `pointercancel`, blur and disposal clear transient drag/hide/opacity state.
+- Invalid stored ratios fall back to default placement.
+- Resize that cannot preserve exact position clamps without changing tool state.
+- Shortcut conflict is resolved explicitly and localized.
+- No failure mutates Prompt, Mask, acquisition, Evidence, Candidate or Native Selection state.
 
 # Validation
 
@@ -324,19 +195,20 @@ Validate at minimum:
 - `npm run lint`
 - `npm run lint:locales`
 - `npm run build`
-- real browser pointer-capture walkthrough
-- keyboard-only walkthrough
-- DPR/resize fitted-rect walkthrough
-- edge/corner target regression screenshots
-- PromptState/Mask artifact before-and-after equality checks for palette-only operations
+- browser drag/snap/collapse tests
+- Space keydown/keyup/repeat/blur tests
+- old-location immediate authoring regression
+- Dock resize / DPR / browser zoom matrix
+- Anchor/Generated/User-added correction walkthrough
+- accessibility keyboard/focus/label audit
+- reduced-motion and localization checks
 
 # Non-goals
 
-- No proposal-ranking changes.
-- No Box/Mask adapter enablement; Ticket 04B owns it.
-- No Text Prompt enablement.
-- No new Stable Mask or Evidence lifecycle.
-- No required automatic palette relocation during active gestures.
-- No global toolbar framework rewrite outside AI Select.
-- No persistence across unrelated scenes or browser sessions.
-- No production animation/artwork requirement beyond clear, accessible interaction.
+- No PromptState changes.
+- No adapter/model changes.
+- No proposal ranking or ambiguity changes.
+- No Stable Mask or acquisition lifecycle changes.
+- No Evidence/Candidate changes.
+- No automatic palette relocation requirement.
+- No blocker relationship from 07B to Ticket 08.

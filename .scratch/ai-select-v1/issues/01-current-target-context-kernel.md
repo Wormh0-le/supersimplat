@@ -1,14 +1,16 @@
 # 01 — CurrentTargetContext lifecycle kernel
 
-Status: ready-for-agent — v2.2 re-audited
+Status: ready-for-agent — current mapping migrated to Final Spec v1.3
 
 Blocked by: none
 
-## Final Spec mapping
+## Current Final Spec mapping
 
-- Final Spec v1.1 §§4, 7, 18, 24, 29 and inherited v1.0 Current Target Context rules
-- DG-16, DG-17, DG-20 identity foundation
-- MVP Phase 0–1
+- Final Spec v1.3 §§1–4, 19, 22, 24
+- DG-16, DG-17 and DG-20 as historical identity rationale where not superseded
+- MVP Phase 0–1 as historical implementation provenance
+
+Any v1.0/v1.1 terminology retained in implementation history is non-normative. Final Spec v1.3 is the only current closure source.
 
 ## Inputs / preconditions
 

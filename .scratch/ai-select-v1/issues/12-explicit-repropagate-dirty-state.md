@@ -53,7 +53,7 @@ There is no current propagation/sequence/reference dirty state.
 
 ### Retry / Refresh Auto Mask
 
-- consumes an exact current Prompt artifact;
+- consumes exact current Prompt artifact and resolvable authoritative RGB artifact/reference;
 - creates a new inference attempt;
 - uses the single Active SAM 3 Image provider from 04C;
 - produces at most one Mask for generated 3D-guided requests;
@@ -63,10 +63,14 @@ There is no current propagation/sequence/reference dirty state.
 
 ## Previous logits lifecycle
 
-- exact previous logits may be reused only for same View/RGB/adapter lineage and explicit Point refinement;
-- camera/RGB, adapter/runtime or selected-candidate change invalidates them;
-- ordinary Retry does not silently reuse stale logits;
-- logits changes do not dirty Evidence until a new Stable Mask is confirmed/published.
+- actual logits tensors remain Companion-local;
+- browser state contains only opaque `PreviousPredictionLogitsRef` metadata;
+- a ref is reusable only for explicit Point refinement in Prompt mode on the same View/RGB/adapter/Companion/candidate lineage;
+- candidate change, camera/RGB change, adapter/runtime change, Companion Instance replacement, state eviction or target disposal invalidates it;
+- ordinary Retry does not silently reuse a ref;
+- missing/expired ref causes fresh inference from current Points/Box without `mask_input`;
+- no binary Prompt Brush or Editing Mask is converted into logits;
+- ref changes do not dirty Evidence until a new Stable Mask is published.
 
 ## Identity and migration
 
@@ -77,6 +81,7 @@ Reject as current:
 - `maskSource: 'propagated'` generic provenance;
 - provider-returned Assessment coupling;
 - Negative Box / Mask Constraint / Prompt Brush artifacts;
+- raw logits tensor in browser Prompt/request payload;
 - backend registry/fallback/sequence identities.
 
 Existing User Confirmed Stable Masks remain current when their own RGB/Mask identity remains valid.
@@ -89,7 +94,9 @@ Existing User Confirmed Stable Masks remain current when their own RGB/Mask iden
 - [ ] unconfirmed Editing changes do not dirty Evidence.
 - [ ] Prompt regeneration and Mask Retry remain separate operations.
 - [ ] explicit Retry creates a new inference attempt.
-- [ ] previous logits validate exact same-image lineage.
+- [ ] every inference request resolves exact authoritative RGB bytes/ref.
+- [ ] previous-logits ref validates exact same-image and same-Companion lineage.
+- [ ] Companion replacement or expired ref falls back to fresh no-logits inference.
 - [ ] semantic unavailable differs from technical failure.
 - [ ] failure preserves prior Stable Mask and matching Evidence/Candidate state.
 - [ ] no backend fallback or propagation dirty state exists.
@@ -100,8 +107,8 @@ Existing User Confirmed Stable Masks remain current when their own RGB/Mask iden
 
 - dirty dependency table tests;
 - Prompt-only regeneration tests;
-- per-View Retry/stale-result tests;
-- previous-logits lineage invalidation;
+- per-View RGB resolution/Retry/stale-result tests;
+- previous-logits ref lineage and Companion-replacement invalidation;
 - semantic-unavailable versus technical failure;
 - User Confirmed preservation;
 - old schema/cache rejection;

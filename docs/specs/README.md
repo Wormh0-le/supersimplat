@@ -1,57 +1,61 @@
-# AI Select v1.1 — Specification Index
+# AI Select Specification Index
 
-This file is a navigation index, not an additional normative layer.
+## Current normative specification
 
-## Authoritative order
+1. [`ai-select-final-spec-v1.2.md`](./ai-select-final-spec-v1.2.md)
+2. [`../adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md`](../adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md), where not superseded by Final Spec v1.2
+3. [`../../CONTEXT.md`](../../CONTEXT.md), where not superseded
+4. implementation tickets and tests
 
-1. [`ai-select-final-spec-v1.1.md`](./ai-select-final-spec-v1.1.md)
-2. [`ai-select-final-spec-v1.1-amendment-001-renderer-evidence-identity.md`](./ai-select-final-spec-v1.1-amendment-001-renderer-evidence-identity.md)
-3. [`ai-select-final-spec-v1.1-amendment-002-anchor-mask-pipeline.md`](./ai-select-final-spec-v1.1-amendment-002-anchor-mask-pipeline.md)
-4. [`ai-select-final-spec-v1.1-amendment-003-object-level-tracking-mask-acquisition.md`](./ai-select-final-spec-v1.1-amendment-003-object-level-tracking-mask-acquisition.md)
-5. [`ai-select-final-spec-v1.1-amendment-004-sparse-key-view-mask-acquisition.md`](./ai-select-final-spec-v1.1-amendment-004-sparse-key-view-mask-acquisition.md)
-6. [`ai-select-final-spec-v1.1-amendment-005-route-b-first-acquisition-extension-seam.md`](./ai-select-final-spec-v1.1-amendment-005-route-b-first-acquisition-extension-seam.md)
-7. [`../adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md`](../adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md)
-8. [`../adr/0012-adopt-ai-select-final-spec-v1.md`](../adr/0012-adopt-ai-select-final-spec-v1.md), where not superseded
-9. [`../../CONTEXT.md`](../../CONTEXT.md)
-10. [`../decision-gates/DG-21-prompt-authoring-three-stage-anchor-mask.md`](../decision-gates/DG-21-prompt-authoring-three-stage-anchor-mask.md)
-11. [`../decision-gates/DG-22-floating-prompt-edit-palette.md`](../decision-gates/DG-22-floating-prompt-edit-palette.md)
-12. [`../decision-gates/DG-23-object-level-tracking-deferred-gaussian-ownership.md`](../decision-gates/DG-23-object-level-tracking-deferred-gaussian-ownership.md)
-13. [`../decision-gates/DG-24-sparse-key-view-mask-acquisition-optional-tracking.md`](../decision-gates/DG-24-sparse-key-view-mask-acquisition-optional-tracking.md)
-14. [`../decision-gates/DG-25-route-b-first-extensible-mask-acquisition.md`](../decision-gates/DG-25-route-b-first-extensible-mask-acquisition.md)
-15. implementation tickets and tests
+`ai-select-final-spec-v1.2.md` is the only current product and engineering specification. Implementation agents, acceptance reviews, and traceability MUST use it directly.
 
-The Final Spec and normative amendments govern conflicts. Amendment 004 / DG-24 supersede the mandatory-tracking parts of Amendment 003 / DG-23. Amendment 005 / DG-25 further supersede the requirement to compare A/B/C/D or accept an acquisition-route ADR before implementing route B.
+## Current decision rationale
 
-Object-level scope, conservative Anchor acquisition, deferred Gaussian ownership, and final P/N/V remain unchanged.
+- [`../decision-gates/DG-20-mask-conditioned-direct-gaussian-evidence.md`](../decision-gates/DG-20-mask-conditioned-direct-gaussian-evidence.md)
+- [`../decision-gates/DG-21-prompt-authoring-three-stage-anchor-mask.md`](../decision-gates/DG-21-prompt-authoring-three-stage-anchor-mask.md)
+- [`../decision-gates/DG-22-floating-prompt-edit-palette.md`](../decision-gates/DG-22-floating-prompt-edit-palette.md)
+- [`../decision-gates/DG-23-object-level-tracking-deferred-gaussian-ownership.md`](../decision-gates/DG-23-object-level-tracking-deferred-gaussian-ownership.md)
+- [`../decision-gates/DG-24-sparse-key-view-mask-acquisition-optional-tracking.md`](../decision-gates/DG-24-sparse-key-view-mask-acquisition-optional-tracking.md)
+- [`../decision-gates/DG-25-route-b-first-extensible-mask-acquisition.md`](../decision-gates/DG-25-route-b-first-extensible-mask-acquisition.md)
+- [`../decision-gates/DG-26-consolidated-v1.2-route-b-acquisition-architecture.md`](../decision-gates/DG-26-consolidated-v1.2-route-b-acquisition-architecture.md)
+
+DGs explain why decisions were made. They are not an alternative current product specification.
+
+## Historical specifications
+
+The following files are retained for decision history only and have no current normative force:
+
+- [`ai-select-final-spec-v1.1.md`](./ai-select-final-spec-v1.1.md)
+- [`ai-select-final-spec-v1.1-amendment-001-renderer-evidence-identity.md`](./ai-select-final-spec-v1.1-amendment-001-renderer-evidence-identity.md)
+- [`ai-select-final-spec-v1.1-amendment-002-anchor-mask-pipeline.md`](./ai-select-final-spec-v1.1-amendment-002-anchor-mask-pipeline.md)
+- [`ai-select-final-spec-v1.1-amendment-003-object-level-tracking-mask-acquisition.md`](./ai-select-final-spec-v1.1-amendment-003-object-level-tracking-mask-acquisition.md)
+- [`ai-select-final-spec-v1.1-amendment-004-sparse-key-view-mask-acquisition.md`](./ai-select-final-spec-v1.1-amendment-004-sparse-key-view-mask-acquisition.md)
+- [`ai-select-final-spec-v1.1-amendment-005-route-b-first-acquisition-extension-seam.md`](./ai-select-final-spec-v1.1-amendment-005-route-b-first-acquisition-extension-seam.md)
+
+Do not merge the historical amendment chain when implementing current work. Final Spec v1.2 already consolidates its retained requirements and current replacements.
 
 ## Current product chain
 
 ```text
 Camera View
-→ Authoritative gsplat RGB
+→ authoritative gsplat RGB
 → PromptState
-→ AutoMaskProposalSet
-→ conservative ProposalDecision
-    ├── Selected
-    ├── Ambiguous
-    └── Unavailable
-→ Editing Mask
-→ Confirm Mask
-→ object-level Anchor Stable Mask
-→ non-ownership 2.5D Target Bootstrap
+→ conservative object-level Anchor Stable Mask
+→ VisibleTargetSupportArtifact
+→ TargetBootstrapArtifact
 → adaptive sparse Key Views
-→ route-B 3D-guided per-Key-View SAM
-→ per-view Review / correction / Participation
+→ KeyViewPromptSynthesizer
+→ route-B per-view SAM ProposalSet
+→ KeyViewMaskDecisionPolicy
+→ ViewAssessmentPolicy
+→ MaskPublicationCoordinator
 → Included Stable View Annotations
-→ Mask-conditioned Gaussian Evidence (P / N / V)
-→ Multi-view Evidence Aggregation
-→ Gaussian Lifting
-→ Candidate + Uncertain
-→ Set / Add / Remove / Intersect
-→ Native SuperSplat Selection
+→ P/N/V Gaussian Evidence
+→ Gaussian Candidate + Uncertain
+→ Native Set / Add / Remove / Intersect
 ```
 
-Routes C/D remain future optional experiments behind versioned sequence/reference extension interfaces and a later experiment-backed ADR.
+Route A remains a technical fallback and regression baseline. Routes C/D remain future optional experiments behind the backend bundle/registry and sequence extension contracts plus a later experiment-backed ADR.
 
 ## Current implementation graph
 
@@ -59,40 +63,32 @@ The machine-readable and audited graph is maintained under:
 
 - [`../../.scratch/ai-select-v1/README.md`](../../.scratch/ai-select-v1/README.md)
 - [`../../.scratch/ai-select-v1/manifest.json`](../../.scratch/ai-select-v1/manifest.json)
-- [`../../.scratch/ai-select-v1/TRACEABILITY.md`](../../.scratch/ai-select-v1/TRACEABILITY.md) plus [`../../.scratch/ai-select-v1/TRACEABILITY-v2.7.md`](../../.scratch/ai-select-v1/TRACEABILITY-v2.7.md)
+- [`../../.scratch/ai-select-v1/TRACEABILITY.md`](../../.scratch/ai-select-v1/TRACEABILITY.md)
 - [`../../.scratch/ai-select-v1/FOUR-PASS-AUDIT.md`](../../.scratch/ai-select-v1/FOUR-PASS-AUDIT.md)
+- [`../../.scratch/ai-select-v1/WALKTHROUGHS.md`](../../.scratch/ai-select-v1/WALKTHROUGHS.md)
 
-The v2.7 retrofit segment is:
+The current acquisition segment is:
 
 ```text
-04A → 04B → 07A → 07B
-                    ↓
-08 2.5D sparse Key-View planner
-                    ↓
-08A route-B per-Key-View SAM + extensible acquisition seam
-                    ↓
-09 → 11/12 → 14 P/N/V Lift
+07A
+├── 07B Floating Palette UX
+└── 08 Visible Support + Bootstrap + Sparse Planner
+    → 08A Contracts + Backend Registry
+    → 08B Route-B Production Acquisition
+    → 09 Gallery / Inspection
+    → 11 / 12
+    → 14 P/N/V Lift
 ```
-
-- 04A owns Prompt/proposal infrastructure.
-- 04B owns locked real-adapter Box/Mask enablement.
-- 07A owns conservative object-level Anchor acquisition; material ambiguity may remain explicit.
-- 07B owns no-blind-spot Prompt/Edit palette interaction.
-- 08 owns non-ownership 2.5D bootstrap, sparse Key Views, and append-only Generate More segments.
-- 08A implements route B directly, retains route A fallback, and defines extension interfaces for future C/D experiments.
-- 12 owns explicit per-view Mask refresh and dirty/stale lifecycle; optional repropagation remains capability-gated.
-- 14/20 remain the only formal Gaussian ownership stages.
 
 ## Scope boundaries
 
-- AI Select v1 targets one object instance; arbitrary part discovery and whole-image inventory are not mandatory.
-- Early depth/first-hit support may guide planning and Prompt synthesis but cannot publish Gaussian ownership.
-- Bootstrap support seeds but does not hard-bound the Evidence Working Set.
+- AI Select v1 targets one object instance.
+- Early support geometry is localization/planning/Prompt context, never ownership.
 - Sparse Key Views are mandatory; dense tracking sequences and Bridge Views are not.
-- Route B is selected and is not blocked by A/B/C/D comparison.
-- Route A remains a declared regression baseline/fallback.
-- C/D sequence/reference methods are defined as optional capability-gated extensions, not current implementations.
-- Mask acquisition backend/score is separate from Lift Participation and P/N/V.
-- Confirmed correction is per-view by default and does not automatically become tracker memory.
+- Prompt synthesis, inference, proposal decision, assessment, publication, Participation, and P/N/V are separate layers.
+- Route B is selected and is not blocked by route comparison.
+- Route-A fallback is automatic only for technical/capability failures and remains fully provenance-bound.
+- C/D sequence/reference methods are optional future extensions, not current implementations.
+- Confirmed correction is per-view by default.
 - Re-Lift remains explicit.
-- Complete per-pixel Contributor remains a debug/reference backend only.
+- Complete Contributor remains reference/debug only.

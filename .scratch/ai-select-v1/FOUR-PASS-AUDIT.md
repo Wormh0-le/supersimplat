@@ -1,115 +1,149 @@
-# Six-Pass Bidirectional Traceability Audit — v2.7
+# Six-Pass Bidirectional Traceability Audit — v2.8
 
-The filename is retained for compatibility. v2.7 adds Amendment 005 and DG-25; selects route B for immediate implementation; removes A/B/C/D comparison and acquisition-route ADR as Ticket 08A closure gates; and requires extension-ready sequence/reference contracts for future C/D experiments.
+The filename is retained for compatibility. v2.8 adopts Final Spec v1.2 as the only current specification, adds `VisibleTargetSupportArtifact`, splits 08A/08B, parallelizes 07B and 08, separates acquisition/decision/assessment/publication, and locks B2 technical-only route-A fallback.
 
 ## Pass 1 — Ticket graph / dependency audit
 
-- Ticket count: 27 total — 22 numbered + 04A + 04B + 07A + 07B + 08A
+- Ticket count: 28 total — 22 numbered + 04A + 04B + 07A + 07B + 08A + 08B
 - Missing blocker references: 0
 - Ticket cycle detected: False
 - Structural initial frontier: [01]
-- Topological order length: 27/27
+- Topological order length: 28/28
 - Result: **PASS**
 
 One valid topological order:
 
-`01 → 02 → 03 → 04 → 05 → 04A → 04B → 06 → 07 → 07A → 07B → 08 → 08A → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
+`01 → 02 → 03 → 04 → 05 → 04A → 04B → 06 → 07 → 07A → 07B → 08 → 08A → 08B → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
 
-v2.7 dependency corrections:
-
-- 04B remains the next implementation ticket.
-- 07A follows 04B/05/07 and owns conservative object-level Anchor acquisition.
-- 07B follows 07A and owns fitted-image palette interaction only.
-- 08 follows 07B and owns non-ownership bootstrap plus sparse Key-View plan segments.
-- 08A follows 08 and directly owns route-B per-view SAM plus acquisition extension seams.
-- 08A no longer contains a route-selection spike or pre-route-B ADR gate.
-- 09 follows 08A so Gallery contracts consume the implemented generic acquisition status.
-- 12 depends on 08A/09 and owns per-view refresh plus optional future propagation capability.
-- 14 consumes only Included Stable Masks and defines reference P/N/V before 10/13.
-- 20 productionizes same-decision P/N/V only after 14/19.
-
-## Pass 2 — Artifact producer / consumer graph
-
-Checked artifact edges:
+Structural parallelism:
 
 ```text
-07A Anchor Stable Mask
-→ 08 TargetBootstrapArtifact
-→ 08 SparseKeyViewPlanSegment
-→ 08A route-B PerViewMaskAcquisitionRequest/Result
-→ 08A per-view Stable Mask / Review / Failed
-→ 09 Review + Participation
-→ 12 refresh / dirty state
-→ 14 per-view P/N/V
-→ 15 current Candidate
-```
+05 → 04A
+05 → 06
 
-Extension-only edges:
+07A → 07B
+07A → 08
 
-```text
-future route C/D backend
-→ SequenceMaskAcquisitionExtension
-→ common acquisition result envelope
-→ existing Mask validation / publication / assessment
+14 → 10
+14 → 13
 ```
 
 Findings:
 
-- Ticket 08 consumes no tracker transition envelope.
-- Ticket 08A route B consumes sparse Key Views and feeds no prerequisite back into Ticket 08.
-- `acquireView` is the mandatory base path.
-- sequence/reference methods are optional capabilities and do not create current artifact dependencies.
-- Route B advertises no sequence/reference capability and cannot create fake sequence artifacts.
-- Generate More appends immutable plan segments and does not rotate prior segment identity.
-- Confirmed correction does not automatically create reference memory.
-- TargetBootstrapArtifact seeds but does not hard-bound Evidence Working Set.
+- 07B no longer blocks 08.
+- 07B blocks complete user correction UX and Ticket 21 release validation through Tickets 11/21.
+- 08A is contract foundation only.
+- 08B is the production acquisition owner.
+- 09 depends on 08B, not merely an abstract contract.
+- Result: **PASS**
+
+## Pass 2 — Artifact producer / consumer graph
+
+Current artifact chain:
+
+```text
+07A Anchor Stable Mask
+→ 08 VisibleTargetSupportArtifact
+→ 08 TargetBootstrapArtifact
+→ 08 SparseKeyViewPlanSegment
+→ 08B KeyViewPromptArtifact
+→ 08B KeyViewMaskProposalSet
+→ 08B KeyViewMaskDecision
+→ 07/08B ViewAssessmentResult
+→ 08B MaskPublication result / Stable Mask
+→ 09/12 Review + Participation + dirty state
+→ 14 per-view P/N/V
+→ 15 current Candidate
+```
+
+Contract-only edges:
+
+```text
+08A MaskAcquisitionBackendDescriptor
+→ MaskAcquisitionBackend bundle
+→ MaskAcquisitionBackendRegistry
+→ MultiViewMaskAcquisitionProvider
+→ optional SequenceMaskAcquisitionExtension
+```
+
+Future-only edges:
+
+```text
+future C/D backend
+→ sequence extension implementation
+→ common ProposalSet/Decision/Assessment/Publication path
+```
+
+Findings:
+
+- `VisibleTargetSupportArtifact` supplies real replayable 3D samples; bootstrap is no longer an insufficient center/extent-only source for projected Point prompts.
+- Support and bootstrap are non-ownership artifacts.
+- 08B consumes Prompt artifacts; providers do not reinterpret raw support.
+- Provider output ends at ProposalSet.
+- Decision, Assessment and publication are explicit later artifacts/actions.
+- Ambiguous creates no Stable Mask.
+- Route-A fallback creates a distinct attempt and reuses the same downstream layers.
+- Sequence schemas create no current artifact dependency.
+- Generate More remains append-only.
 - Artifact cycle detected: False
 - Result: **PASS**
 
-## Pass 3 — Final Spec / Amendments / DGs → tickets
+## Pass 3 — Final Spec v1.2 → tickets
 
-A curated catalog of **166** requirements is mapped by `TRACEABILITY.md` plus the `TRACEABILITY-v2.7.md` overlay.
+The single `TRACEABILITY.md` maps **100** consolidated current requirements.
 
 Checks:
 
 - Invalid ticket references: 0
-- Unmapped DG-20 requirements: 0
-- Unmapped DG-21 requirements: 0
-- Unmapped DG-22 requirements: 0
-- Unmapped DG-23 historical requirements not superseded: 0
-- Unmapped DG-24 requirements not superseded: 0
-- Unmapped DG-25 requirements: 0
-- Unmapped Amendment 001 requirements: 0
-- Unmapped Amendment 002 requirements: 0
-- Unmapped Amendment 003 requirements not superseded: 0
-- Unmapped Amendment 004 requirements not superseded: 0
-- Unmapped Amendment 005 requirements: 0
+- Unmapped Final Spec v1.2 requirements: 0
+- Historical Amendment overlay required: no
+- Unmapped DG-26 decisions: 0
+- Route-B comparison gate retained: no
+- Mandatory tracker/Bridge/reference implementation retained: no
 - Result: **PASS**
 
-New v2.7 requirement groups:
+Key mapped groups:
 
-- route B is selected and implemented directly;
-- no A/B/C/D comparison or route-selection ADR blocks Ticket 08A;
-- route A remains regression baseline/fallback;
-- backend-neutral capabilities and `acquireView` are mandatory;
-- sequence/reference extension contracts exist for future C/D experiments;
-- unsupported extension methods fail closed without state mutation;
-- C/D production still requires a future experiment-backed ADR;
-- correction Confirm remains per-view by default;
-- bootstrap support is not a hard Evidence Working Set upper bound.
+- product scope and Native Selection lifecycle;
+- authoritative RGB and identity fail-closed behavior;
+- Anchor Prompt/proposal/ambiguity/confirmation;
+- Floating Palette interaction;
+- Visible Target Support and bootstrap;
+- sparse planner and append-only segments;
+- acquisition contracts and backend registry;
+- independent Prompt synthesis;
+- ProposalSet/Decision/Assessment/publication separation;
+- B2 technical-only fallback;
+- Gallery/user View/dirty lifecycle;
+- formal P/N/V ownership;
+- future C/D ADR boundary;
+- production failure/calibration hardening.
 
-## Pass 4 — tickets → specification / reverse scope audit
+## Pass 4 — tickets → Final Spec v1.2 / reverse scope audit
 
 - Orphan tickets: []
-- 04A maps to Amendment 002 / DG-21.
-- 04B maps to capability-gated visual Prompts.
-- 07A maps to Amendments 002–003 and DG-21/23.
-- 07B maps to DG-22.
-- 08 maps to Amendment 004 / DG-24 bootstrap and sparse planner requirements.
-- 08A maps to Amendments 004–005 / DG-24–25 route-B and extension-seam requirements.
-- 09/12 map to backend-agnostic review/refresh and optional capability semantics.
+- 04A maps to Prompt/proposal foundation.
+- 04B maps to truthful visual-Prompt adapter capabilities.
+- 07A maps to conservative object-level Anchor acquisition.
+- 07B maps to fitted-image no-blind-spot interaction.
+- 08 maps to support/bootstrap/sparse planner.
+- 08A maps to acquisition artifacts and registry.
+- 08B maps to route-B production execution and fallback.
+- 09/11/12 map to inspection, user Views, refresh and state lifecycle.
 - 14/20 remain the only formal ownership stages.
+- 15–18 map to correction, Native application, Restart/Suspended lifecycle.
+- 19–22 map to rendering/Evidence production hardening and legacy contraction.
 - Result: **PASS**
+
+Scope-leak checks:
+
+- Ticket 08 does not run SAM or publish Masks.
+- Ticket 08A does not implement model inference or tracker behavior.
+- Ticket 08B does not generate cameras or compute P/N/V.
+- Ticket 09 does not mutate acquisition/reference state.
+- Ticket 12 does not automatically Re-Lift.
+- Ticket 14 does not consume acquisition confidence as Evidence.
+- Ticket 21 introduces no new product route.
 
 ## Pass 5 — outcome → prerequisites audit
 
@@ -118,66 +152,117 @@ Native operation
 ← current Candidate
 ← readiness + version-bound P/N/V
 ← Included Stable View Annotations
-← route-B per-view Mask acquisition
-← sparse valid Key Views + bootstrap
+← publication from selected+assessed per-view Masks
+← ProposalSet + conservative KeyViewMaskDecision
+← route-B inference over KeyViewPromptArtifact
+← visible support + bootstrap + sparse valid Key Views
 ← confirmed object-level Anchor
-← authoritative RGB / CameraBinding / Scene identity
+← authoritative RGB / CameraBinding / scene identity
+```
+
+Interaction prerequisite:
+
+```text
+complete Anchor/Generated/User-added correction UX
+← Ticket 07B
 ```
 
 Checks:
 
 - No final outcome depends on route comparison.
 - No final outcome depends on tracker presence.
-- No final outcome depends on complete per-pixel Contributor publication.
-- No early support artifact can directly become Candidate.
-- No Mask/backend confidence authorizes Lift.
-- Later Included Views can expand Evidence search beyond Anchor bootstrap.
+- No final outcome depends on complete Contributor publication.
+- No support/bootstrap/Prompt/proposal/backend artifact can directly become Candidate.
+- No ambiguous per-view result can silently become Stable.
+- No semantic Review can be hidden by automatic route-A fallback.
+- Later Included Views can expand Evidence Working Set beyond Anchor support/bootstrap.
 - Result: **PASS**
 
 ## Pass 6 — walkthrough / failure audit
 
-- Typical walkthroughs: 18
-- Error/degradation walkthroughs: 18
-- D-double-prime route-B sparse Key-View flow: covered
-- Route-B capability and `acquireView`: covered
-- Future C/D sequence/reference extension readiness: covered
-- Per-view correction without propagation: covered
-- Optional future reference/repropagation: capability-gated and covered
-- Generate More segment preservation: covered
-- Per-view acquisition failure retains RGB/prior Stable: covered
-- Unsupported sequence/reference method has no state mutation: covered
-- Bootstrap unavailable and Working Set expansion: covered
-- Result: **PASS**
+- Typical/architecture walkthroughs: 20
+- Error/degradation walkthroughs: 20
+- 07B/08 parallel execution: covered
+- Visible support extraction and invalid-support recovery: covered
+- Sparse planning and Generate More preservation: covered
+- 08A contract-only boundary: covered
+- Route-B layered execution: covered
+- Key-View ambiguity without Stable publication: covered
+- B2 technical fallback: covered
+- semantic Review without fallback: covered
+- User Confirmed authority: covered
+- Prompt-only regeneration versus SAM Retry: covered
+- per-view correction without propagation: covered
+- formal P/N/V ownership boundary: covered
+- future C/D extension readiness: covered
+- result: **PASS**
 
-## Residual implementation unknowns
+## Critical phrase and contradiction audit
 
-These are implementation/calibration questions inside the selected route-B path, not route-selection gates:
+Required current statements:
 
-- exact 3D-guided Prompt synthesis recipe;
-- whether Mask input materially improves route B when supported;
+```text
+Final Spec v1.2 is the only current specification
+07B and 08 are parallel after 07A
+08A is contracts/registry only
+08B implements production route B
+provider returns ProposalSet only
+ambiguous publishes no arbitrary Stable Mask
+route-A fallback is technical/capability-only
+route-A Auto Good uses same or stricter gates
+support/bootstrap/Prompt/acquisition are not P/N/V
+```
+
+Prohibited active statements:
+
+```text
+07B blocks Ticket 08
+Ticket 08A directly implements production SAM
+provider returns final Mask + ViewAssessmentResult
+highest model score is authoritative
+ambiguous automatically falls back to route A
+support sample Gaussian ID implies ownership
+route B exposes fake sequence/reference methods
+v1.1 Amendment chain is the current implementation specification
+```
+
+Audit result: **PASS**
+
+## Residual implementation/calibration unknowns
+
+These are bounded implementation questions, not architecture gates:
+
+- support sample count, spatial sampling and encoding;
+- whether stable Gaussian provenance is needed in the first support version;
+- exact Point/Box/ROI/local-negative/Mask-input synthesis recipe;
 - inference resolution and sparse View budget;
-- per-view scheduler concurrency and VRAM envelope;
-- fallback threshold from route B to route A;
-- exact contamination and Review thresholds.
+- proposal near-duplicate clustering metric/threshold;
+- contamination and Review thresholds;
+- route-A stricter fallback thresholds;
+- per-view scheduler concurrency and peak VRAM envelope;
+- Evidence Working Set expansion thresholds.
 
-Future, non-blocking research questions:
+Future non-blocking research:
 
-- whether route C or D produces enough downstream benefit to justify added lifecycle complexity;
-- optional transition/resource envelope if a later ADR selects C/D;
-- optional propagation atomicity and reference-memory policy.
+- whether route C or D gives enough downstream gain to justify lifecycle complexity;
+- sequence transition/resource envelope;
+- reference-memory and propagation atomicity policy.
 
 ## Audit conclusion
 
-v2.7 is internally consistent:
+v2.8 is internally consistent:
 
 ```text
 reliable Anchor
+→ replayable visible support
 → sparse Key Views
-→ selected route-B 3D-guided independent per-view Masks
+→ explicit Prompt artifact
+→ route-B ProposalSet
+→ conservative Decision
+→ independent Assessment
+→ atomic Stable publication
 → Included Stable Masks
 → final P/N/V ownership
 ```
 
-The code contract is extension-ready for future C/D experiments without making them current dependencies.
-
-Ticket 04B remains the next implementation gate. Ticket 08/08A must follow Amendment 005 / DG-25 where they supersede the route-comparison clauses of Amendment 004 / DG-24.
+Ticket 04B remains the next implementation gate. Final Spec v1.2 and DG-26 govern all future implementation where historical documents conflict.

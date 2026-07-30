@@ -10,6 +10,7 @@ Blocks: 08B
 
 - Final Spec v1.2 §§11, 14–18, 26–29
 - DG-26 Decisions 2–6 and 8
+- ADR 0014 as subordinate Route-B-first rationale
 
 ## Purpose
 
@@ -31,7 +32,8 @@ This ticket is a protocol and registry foundation. It does not implement product
 - canonical acquisition identity envelope;
 - `KeyViewPromptArtifact` schema;
 - `KeyViewMaskProposalSet` schema;
-- `KeyViewMaskDecision` schema;
+- `PerViewMaskAcquisitionResult` schema;
+- `KeyViewMaskDecision` schema bound to an exact ProposalSet;
 - acquisition request/result schemas;
 - attempt and fallback identity schemas;
 - Mask publication command/result schemas;
@@ -117,7 +119,6 @@ interface KeyViewMaskProposalSet {
     attemptId: string;
 
     proposals: readonly KeyViewMaskProposal[];
-    backendDiagnostics: AcquisitionBackendDiagnostics;
     artifactDigest: string;
 }
 
@@ -136,41 +137,73 @@ interface KeyViewMaskProposal {
 
 A proposal set may be empty. The provider does not hide Top-1 selection inside this contract.
 
-# 4. KeyViewMaskDecision contract
+`KeyViewMaskProposalSet` contains candidate artifacts only. Attempt-level timing, resource, compatibility, warning, and technical-failure diagnostics belong exclusively to `PerViewMaskAcquisitionResult`; they MUST NOT be duplicated inside the ProposalSet.
+
+# 4. PerViewMaskAcquisitionResult contract
 
 ```ts
+interface PerViewMaskAcquisitionResult {
+    schemaVersion: number;
+    requestIdentity: PerViewMaskAcquisitionRequestIdentity;
+    proposalSet: KeyViewMaskProposalSet;
+    backendDiagnostics: AcquisitionBackendDiagnostics;
+    resultDigest: string;
+}
+```
+
+Rules:
+
+- `requestIdentity` exactly echoes the accepted request identity;
+- `proposalSet.attemptId`, backend/model/runtime identity, target, View, and Prompt digest match the request;
+- `backendDiagnostics` is the only attempt-level diagnostics authority;
+- diagnostics never select a proposal, publish Stable state, set Participation, or authorize P/N/V;
+- a successful result may contain an empty ProposalSet;
+- technical dispatch/inference failure produces no partial `PerViewMaskAcquisitionResult` or ProposalSet.
+
+# 5. KeyViewMaskDecision contract
+
+Every Decision variant binds the exact ProposalSet it evaluates:
+
+```ts
+interface KeyViewMaskDecisionIdentity {
+    schemaVersion: number;
+    targetContextId: string;
+    contextRevision: number;
+    viewId: string;
+    acquisitionAttemptId: string;
+    proposalSetArtifactDigest: string;
+    decisionPolicyDigest: string;
+    artifactDigest: string;
+}
+
 type KeyViewMaskDecision =
-    | {
+    | (KeyViewMaskDecisionIdentity & {
           status: 'selected';
           selectedProposalId: string;
           reasons: readonly string[];
-          decisionPolicyDigest: string;
-          artifactDigest: string;
-      }
-    | {
+      })
+    | (KeyViewMaskDecisionIdentity & {
           status: 'ambiguous';
           candidateProposalIds: readonly string[];
           reasons: readonly string[];
-          decisionPolicyDigest: string;
-          artifactDigest: string;
-      }
-    | {
+      })
+    | (KeyViewMaskDecisionIdentity & {
           status: 'unavailable';
           reasons: readonly string[];
-          decisionPolicyDigest: string;
-          artifactDigest: string;
-      };
+      });
 ```
 
 Contract invariants:
 
+- Decision target/context/View/attempt exactly match the bound ProposalSet;
+- `proposalSetArtifactDigest` is required and current;
 - selected proposal exists in the exact ProposalSet;
-- ambiguous IDs are unique and exist in the ProposalSet;
+- ambiguous IDs are unique and exist in the exact ProposalSet;
 - unavailable selects nothing;
 - Decision does not contain View Assessment or Participation;
 - raw model score is never represented as correctness probability.
 
-# 5. Attempt and fallback identity
+# 6. Attempt and fallback identity
 
 ```ts
 interface AcquisitionAttemptIdentity {
@@ -193,7 +226,7 @@ Rules:
 - fallback reason is restricted to declared technical/capability categories;
 - semantic/quality outcomes cannot be encoded as technical fallback reasons.
 
-# 6. Backend descriptor, bundle, and registry
+# 7. Backend descriptor, bundle, and registry
 
 ```ts
 type MaskAcquisitionBackendKind =
@@ -251,7 +284,7 @@ hybrid
 
 Descriptor capabilities MUST match actual extension presence. A contradiction fails readiness and registration.
 
-# 7. Per-view provider contract
+# 8. Per-view provider contract
 
 ```ts
 interface MultiViewMaskAcquisitionProvider {
@@ -267,7 +300,7 @@ The result returns:
 
 - exact echoed request identity;
 - `KeyViewMaskProposalSet`;
-- backend diagnostics;
+- one attempt-level `backendDiagnostics` authority;
 - result digest.
 
 It MUST NOT return:
@@ -279,7 +312,7 @@ It MUST NOT return:
 - Candidate or P/N/V;
 - publication side effects.
 
-# 8. Optional sequence extension
+# 9. Optional sequence extension
 
 ```ts
 interface SequenceMaskAcquisitionExtension {
@@ -318,14 +351,14 @@ Route D
 
 Ticket 08A defines and validates these schemas but does not implement a tracker, sequence session, Bridge View, reference memory UI, or propagation.
 
-# 9. Publication contracts
+# 10. Publication contracts
 
 Define backend-neutral commands/results for `MaskPublicationCoordinator`.
 
 Publication input binds:
 
-- exact ProposalSet;
-- exact Decision;
+- exact ProposalSet and `proposalSetArtifactDigest`;
+- exact Decision and Decision artifact digest;
 - exact selected proposal where applicable;
 - exact ViewAssessmentResult where applicable;
 - current RGB/Stable authority;
@@ -337,10 +370,12 @@ Publication result can express:
 published-auto-good
 published-auto-review
 retained-ambiguous-review
-failed-unavailable
+retained-unavailable-no-mask
 rejected-stale
 blocked-user-confirmed
 ```
+
+`retained-unavailable-no-mask` means acquisition completed successfully but no eligible proposal was selected. It is distinct from backend/protocol/inference failure.
 
 The contract does not implement the coordinator; Ticket 08B owns execution.
 
@@ -352,8 +387,16 @@ The contract does not implement the coordinator; Ticket 08B owns execution.
 - [ ] Every artifact has structural validator and canonical digest rules.
 - [ ] Cross-artifact references validate exact digests and View identity.
 - [ ] Sequence-only fields are absent for per-view route B.
-- [ ] Prompt, ProposalSet, Decision, Assessment, Publication, Participation, and P/N/V remain distinct types.
+- [ ] Prompt, ProposalSet, acquisition result, Decision, Assessment, Publication, Participation, and P/N/V remain distinct types.
+- [ ] `KeyViewMaskDecision` requires exact `proposalSetArtifactDigest`, target/context/View, and acquisition attempt identity.
 - [ ] Golden vectors cover valid and invalid identity combinations.
+
+## Diagnostics authority
+
+- [ ] `backendDiagnostics` exists only on `PerViewMaskAcquisitionResult`.
+- [ ] ProposalSet contains candidate artifacts and candidate-local metrics only.
+- [ ] Duplicate or conflicting attempt diagnostics are rejected.
+- [ ] Attempt diagnostics cannot authorize Decision, Stable publication, Participation, or Evidence.
 
 ## Backend registry
 
@@ -372,6 +415,13 @@ The contract does not implement the coordinator; Ticket 08B owns execution.
 - [ ] Request requires immutable Prompt artifact rather than raw support reinterpretation.
 - [ ] Same-attempt replay and new Retry identities are distinguishable.
 - [ ] Fallback parent/reason identity validates.
+- [ ] A successful empty ProposalSet is representable without being mislabeled as technical failure.
+
+## Decision binding
+
+- [ ] selected/ambiguous/unavailable Decisions bind the exact ProposalSet artifact digest.
+- [ ] Proposal membership is rejected across a different attempt or ProposalSet even when proposal IDs collide.
+- [ ] Publication rejects missing, stale, or mismatched Decision-to-ProposalSet identity.
 
 ## Optional extension readiness
 
@@ -386,7 +436,8 @@ The contract does not implement the coordinator; Ticket 08B owns execution.
 - Contradictory backend descriptor/bundle: backend Not Ready.
 - Unknown/stale backend identity: no inference or state mutation.
 - Invalid fallback reason or missing parent attempt: reject.
-- ProposalSet/Decision membership mismatch: reject publication command.
+- ProposalSet/Decision digest, attempt, target, or View mismatch: reject publication command.
+- Duplicate/conflicting diagnostics authority: reject result.
 - Unsupported sequence/reference operation: structured capability failure, no state mutation.
 
 # Validation
@@ -402,6 +453,10 @@ The contract does not implement the coordinator; Ticket 08B owns execution.
 - stale target/support/bootstrap/segment/View/Prompt/backend rejection
 - fallback identity/reason validation
 - provider result boundary tests
+- single diagnostics authority tests
+- Decision-to-ProposalSet digest/attempt membership tests
+- proposal ID collision across attempts regression
+- unavailable-versus-technical-failure contract tests
 - publication command membership tests
 
 # Non-goals

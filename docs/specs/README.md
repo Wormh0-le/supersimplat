@@ -59,7 +59,7 @@ The machine-readable and audited graph is maintained under:
 
 - [`../../.scratch/ai-select-v1/README.md`](../../.scratch/ai-select-v1/README.md)
 - [`../../.scratch/ai-select-v1/manifest.json`](../../.scratch/ai-select-v1/manifest.json)
-- [`../../.scratch/ai-select-v1/TRACEABILITY.md`](../../.scratch/ai-select-v1/TRACEABILITY.md)
+- [`../../.scratch/ai-select-v1/TRACEABILITY.md`](../../.scratch/ai-select-v1/TRACEABILITY.md) plus [`../../.scratch/ai-select-v1/TRACEABILITY-v2.7.md`](../../.scratch/ai-select-v1/TRACEABILITY-v2.7.md)
 - [`../../.scratch/ai-select-v1/FOUR-PASS-AUDIT.md`](../../.scratch/ai-select-v1/FOUR-PASS-AUDIT.md)
 
 The v2.7 retrofit segment is:

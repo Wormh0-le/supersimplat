@@ -8,6 +8,7 @@ Blocked by: 08B, 09, 07, 05
 
 - Final Spec v1.2 §§16–18, 21, 27–29
 - DG-26 Decisions 5 and 8
+- ADR 0014 as subordinate Route-B-first rationale
 
 ## Inputs / preconditions
 
@@ -22,6 +23,7 @@ Blocked by: 08B, 09, 07, 05
 - acquisition backend descriptor/bundle identity;
 - acquisition attempt/fallback identity;
 - ProposalSet/Decision/Assessment/publication identities;
+- current acquisition contract version;
 - optional future sequence/reference identity only when an adopted backend implements it.
 
 ## Outputs / handoff artifacts
@@ -34,6 +36,8 @@ Blocked by: 08B, 09, 07, 05
 - `candidateStale`;
 - explicit per-view `Regenerate Prompts` where needed;
 - explicit per-view `Refresh Auto Mask`;
+- unavailable-versus-technical-failure lifecycle;
+- legacy acquisition-contract invalidation rules;
 - optional `Update Multi-view Masks` only under an adopted propagation capability.
 
 ## What to build
@@ -85,19 +89,32 @@ No refresh action automatically Re-Lifts.
 - [ ] Same-attempt replay may be idempotent; explicit Retry creates a real new attempt.
 - [ ] Refresh affects only the selected View unless a future adopted backend declares wider dependencies.
 - [ ] Provider result traverses ProposalSet → Decision → Assessment → Publication; refresh does not bypass layers.
+- [ ] Every Decision binds the exact ProposalSet artifact digest and acquisition attempt.
 - [ ] Ambiguous refresh retains ProposalSet and publishes no arbitrary Stable Mask.
+- [ ] Unavailable refresh retains a successful acquisition result with no eligible proposal and publishes no Stable Mask.
+- [ ] Technical acquisition failure produces no fabricated `unavailable` Decision.
 - [ ] A refreshed automatic result never silently overwrites a current User Confirmed Stable Mask.
 - [ ] Successful Stable replacement marks only matching per-view Evidence dirty and Lift dirty.
+- [ ] Ambiguous/unavailable with no Stable replacement do not dirty existing exact Evidence solely because a new review artifact exists.
 - [ ] Failure preserves prior Stable Mask and matching Evidence/Candidate state.
 - [ ] Late results with stale target/support/bootstrap/segment/View/RGB/Prompt/backend/attempt identity are discarded.
 
 ### Route-A fallback lifecycle
 
 - [ ] Automatic fallback is permitted only for the Final Spec v1.2 technical/capability reason set.
-- [ ] Ambiguous, Review, contamination, clipping, and fragmentation never mark the View fallback-eligible.
+- [ ] Ambiguous, unavailable, Review, contamination, clipping, and fragmentation never mark the View fallback-eligible.
 - [ ] Fallback creates a separate attempt bound to `fallbackOfAttemptId` and reason.
 - [ ] Route-B failure record remains inspectable after a route-A result.
 - [ ] Route-A result follows the same Decision/Assessment/Publication and dirty rules.
+
+### Legacy acquisition-contract migration
+
+- [ ] `generated-view-mask/v1` and equivalent legacy response identity are incompatible with the new Ticket 08A result contract.
+- [ ] Legacy `maskSource: 'propagated'` cannot determine generic backend provenance or Participation.
+- [ ] Legacy provider-returned Assessment cannot attach to a current acquisition attempt.
+- [ ] Contract migration invalidates only dependent automatic acquisition artifacts; current User Confirmed Stable Masks remain authoritative.
+- [ ] Old cached results are rejected by contract/version identity rather than structurally rebound.
+- [ ] A route-A compatibility adapter creates a new result/ProposalSet/Decision chain and does not reuse a legacy response as current.
 
 ### Correction semantics
 
@@ -118,14 +135,15 @@ No refresh action automatically Re-Lifts.
 ### Evidence/Candidate lifecycle
 
 - [ ] Only confirmed Stable Mask/Participation/Camera changes invalidate formal per-view Evidence.
-- [ ] Prompt, ProposalSet, Decision, model/backend scores, fallback status, and optional tracker confidence are not P/N/V.
+- [ ] Prompt, ProposalSet, Decision, model/backend scores, fallback status, unavailable status, and optional tracker confidence are not P/N/V.
 - [ ] No Prompt regeneration, Mask refresh, fallback, or optional propagation automatically Re-Lifts.
 
 ## Failure / recovery criteria
 
 - No partial Prompt/Proposal/Decision/Mask/Evidence becomes current.
 - Cancellation/restart correctness relies on binding rejection, not cancellation success.
-- Acquisition OOM/unavailable preserves previous Stable Masks and offers eligible fallback/manual/exclude recovery.
+- Acquisition OOM/unavailable-backend preserves previous Stable Masks and offers eligible fallback/manual/exclude recovery.
+- Decision `unavailable` after successful acquisition preserves the result and offers Retry/Prompt/View/manual/exclude recovery without automatic fallback.
 - Ambiguous remains Review state, not a technical failure.
 - Stale support/bootstrap/segment/View/RGB/Prompt/backend result cannot attach to a newer revision.
 - Unsupported sequence/reference call returns structured capability failure without dirty-state mutation.
@@ -139,8 +157,11 @@ No refresh action automatically Re-Lifts.
 - support/bootstrap/segment/Prompt dirty propagation tests
 - Prompt-only regeneration tests
 - per-view Refresh attempt/replay/stale-result tests
+- exact Decision-to-ProposalSet identity tests
 - ambiguous-no-Stable regression
+- unavailable-versus-technical-failure regression
 - technical fallback eligibility matrix
+- legacy contract/cache rejection and User Confirmed preservation
 - correction Confirm without propagation-dirty regression
 - optional reference/repropagate tests only under capability fixture
 - failure preserving prior Stable/Evidence/Candidate

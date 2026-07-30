@@ -1,6 +1,6 @@
 # 13 — Visible Evidence Coverage + View Diversity + Lift Readiness
 
-Status: planned — v1.3 responsibility clarified
+Status: planned — v1.3 visibility/readiness authority
 
 Blocked by: 14, 11, 12, 08
 
@@ -12,7 +12,7 @@ Blocked by: 14, 11, 12, 08
 
 ## Purpose
 
-Own target-scoped readiness for P/N/V Lift after Included Stable Views exist. This ticket is the correct home for weak Gaussian support, visibility coverage and useful view diversity.
+Own target-scoped readiness for P/N/V Lift after Included Stable Views exist. This ticket is the sole current authority for weak Gaussian support, visibility coverage and useful view diversity.
 
 ## Inputs
 
@@ -21,7 +21,7 @@ Own target-scoped readiness for P/N/V Lift after Included Stable Views exist. Th
 - TargetGeometryHint as a non-ownership localization seed;
 - local Key-View completion/stop state;
 - Evidence/Lift dirty state;
-- optional cross-view diagnostics.
+- optional Ticket 10 cross-view conflict diagnostics when available.
 
 ## Outputs
 
@@ -36,18 +36,20 @@ Not Ready / Limited / Ready
 
 - coverage derives from valid V/visible Evidence over the target working set, not whole-scene Gaussian count or frustum inclusion;
 - insufficient or weak Gaussian support is a Lift Readiness condition, never a MaskReview reason;
+- `low-visible-support` and `weak-gaussian-support` readiness classification is owned here, not by Ticket 10;
 - unobserved/insufficient Gaussians remain Uncertain, not negative Evidence;
 - diversity uses useful observation directions, not raw View count;
 - User Confirmed Included Views contribute regardless of historical automatic Review;
 - Auto Review Excluded Views do not contribute;
 - low-cost support diagnostics may provide an early Limited/Not Ready signal but cannot fabricate P/N/V;
 - TargetGeometryHint may seed a working set but cannot hard-bound it;
+- optional Ticket 10 conflict diagnostics may enrich inspection but are not required for base readiness or release;
 - thresholds are versioned calibration inputs.
 
 ## Acceptance criteria
 
 - [ ] `weak-gaussian-support` is emitted only by Lift Readiness or related diagnostics.
-- [ ] MaskReviewPolicy does not emit it.
+- [ ] MaskReviewPolicy and Ticket 10 do not emit weak/low-support readiness claims.
 - [ ] Observation Coverage uses valid visible mass/evidence.
 - [ ] View Diversity is separate from View count.
 - [ ] readiness is Not Ready / Limited / Ready from current exact Included inputs.
@@ -55,13 +57,15 @@ Not Ready / Limited / Ready
 - [ ] unobserved target regions remain Uncertain.
 - [ ] Stable Mask/Participation changes refresh readiness and dirty Lift correctly.
 - [ ] Generate More may respond to coverage/direction gaps without erasing current readiness.
+- [ ] base readiness works without Ticket 10 output.
 - [ ] readiness never mutates Stable Masks, Native Selection or Candidate.
 
 ## Validation
 
 - reference V/Coverage fixtures;
 - low-cost diagnostics versus formal Evidence consistency;
-- weak-support ownership regression;
+- weak-support ownership regression across Tickets 07/10/13;
+- base readiness without Ticket 10 output;
 - Not Ready/Limited/Ready calibration fixtures;
 - view-direction diversity fixtures;
 - TargetGeometryHint seed versus expanded Evidence Working Set fixtures;

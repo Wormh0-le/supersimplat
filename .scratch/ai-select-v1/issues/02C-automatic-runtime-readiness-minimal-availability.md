@@ -30,7 +30,8 @@ The Companion resolves one process-lifetime Active Model Manifest. For the curre
 - three-state Availability presentation;
 - pending activation identity and stale-result rejection;
 - same-instance connection recovery;
-- transition logs.
+- transition logs;
+- invalidation of Companion-local refinement refs when Instance identity changes.
 
 ## Companion ownership
 
@@ -40,6 +41,8 @@ The Companion resolves one process-lifetime Active Model Manifest. For the curre
 - Companion Instance ID;
 - current Runtime Profile capability response;
 - initialized SAM 3 Image adapter readiness;
+- authoritative RGB-reference resolution;
+- Companion-local previous-logits state storage and cleanup;
 - startup/runtime/model diagnostics.
 
 The browser never downloads, chooses, starts, stops or upgrades models.
@@ -50,8 +53,9 @@ Compatibility validation requires:
 
 - current protocol and authoritative renderer;
 - exact SAM 3 Image Model Manifest/checkpoint/runtime/adapter identity from 04C;
-- Positive Point, Negative Point, Positive Instance Box, previous-logits refinement and single-point multimask capabilities;
-- absence/incompatibility of current clients requiring Negative Box, Prompt Brush, Mask Constraints or Text;
+- Positive Point, Negative Point, Positive Instance Box, opaque previous-logits refinement and single-point multimask capabilities;
+- provider support for exact authoritative RGB artifact or Companion-resolvable RGB reference;
+- absence/incompatibility of clients requiring Negative Box, Prompt Brush, Mask Constraints or Text;
 - no requirement for Multiplex video predictor, tracker session, backend registry or sequence extension;
 - origin/security compatibility.
 
@@ -67,6 +71,7 @@ Historical Multiplex-only manifests are Not Ready for the current v1.3 static pr
 - Transport/runtime/profile incompatibility enters Unavailable.
 - Same-instance connection-interrupted work may retry once with a new attempt only when all identities remain current.
 - model failure, semantic unavailable, cancellation, stale input or OOM is never auto-retried as connection recovery.
+- Companion Instance replacement invalidates every opaque previous-logits ref and Companion RGB ref from the prior Instance; it does not invalidate independently persisted User Confirmed Stable Masks.
 
 ## UI requirements
 
@@ -81,11 +86,13 @@ No endpoint, Model Manifest, CUDA, protocol matrix, Ping, Check Readiness, model
 ## Acceptance criteria
 
 - [ ] Browser performs automatic single-flight readiness.
-- [ ] Heartbeat and full compatibility validation remain separate.
-- [ ] One Active Model Manifest crosses the protocol.
-- [ ] Current profile admits only the 04C SAM 3 Image instance adapter.
-- [ ] Historical Multiplex static manifest fails compatibility.
-- [ ] Removed Prompt capabilities are not required or advertised as current.
+- [ ] heartbeat and full compatibility validation remain separate.
+- [ ] one Active Model Manifest crosses the protocol.
+- [ ] current profile admits only the 04C SAM 3 Image instance adapter.
+- [ ] historical Multiplex static manifest fails compatibility.
+- [ ] current provider advertises authoritative RGB resolution and opaque refinement-ref support.
+- [ ] removed Prompt capabilities are not required or advertised as current.
+- [ ] Companion Instance replacement invalidates prior RGB/logits refs.
 - [ ] Busy/task-local failure does not change Availability.
 - [ ] same-instance recovery is fail-closed and identity-bound.
 - [ ] ordinary UI contains no technical/model controls.
@@ -98,6 +105,8 @@ No endpoint, Model Manifest, CUDA, protocol matrix, Ping, Check Readiness, model
 - exact-one/zero/multiple manifest resolution tests;
 - SAM 3 Image current-profile acceptance;
 - Multiplex manifest rejection;
+- authoritative RGB/refinement-ref capability mismatch tests;
+- Instance-replacement ref invalidation;
 - removed-Prompt capability mismatch tests;
 - Busy/task-failure non-interference tests;
 - UI accessibility and no-technical-detail assertions;

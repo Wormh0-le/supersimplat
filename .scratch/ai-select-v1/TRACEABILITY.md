@@ -1,6 +1,6 @@
 # Final Spec v1.3 → Ticket Traceability Matrix — v2.12
 
-A requirement counts as covered only when a mapped Ticket contains explicit acceptance, failure, validation or migration criteria.
+A requirement counts as covered only when a mapped Ticket contains explicit acceptance, failure, validation or migration criteria. Every Ticket-local current mapping now points directly to Final Spec v1.3; older specs are historical provenance only.
 
 | ID | Requirement | Ticket(s) |
 |---|---|---|
@@ -38,7 +38,7 @@ A requirement counts as covered only when a mapped Ticket contains explicit acce
 | R032 | palette drag/collapse/Space-hide leaves no stale hit region | 07B, 11, 21 |
 | R033 | Anchor Stable Mask produces one compact TargetGeometryHintArtifact | 08 |
 | R034 | TargetGeometryHint visible Points are bounded, finite and deterministic | 08, 21 |
-| R035 | TargetGeometryHint is localization context, not Gaussian ownership | 08, 13, 14 |
+| R035 | TargetGeometryHint is localization context, not Gaussian ownership | 08, 13, 14, 20 |
 | R036 | default generated plan contains 2–4 bounded local Views | 08, 21 |
 | R037 | local Views validate projection, clipping and nonblank RGB | 08, 21 |
 | R038 | adaptive/free-space/room-scale planner is deferred | 08, 21 |
@@ -62,6 +62,9 @@ A requirement counts as covered only when a mapped Ticket contains explicit acce
 - requirements: 52;
 - unmapped requirements: 0;
 - orphan active Tickets: 0;
+- Ticket files with direct current Final Spec v1.3 mapping: 30/30;
+- Ticket files with v1.1/v1.2 as current mapping authority: 0;
+- older-spec references outside explicit historical/superseded/migration sections: 0;
 - current ready frontier: 04C, 07;
 - critical migration gate: 04C;
 - optional nonblocking Ticket: 10;

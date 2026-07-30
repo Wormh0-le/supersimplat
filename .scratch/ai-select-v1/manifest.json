@@ -1,23 +1,26 @@
 {
-  "version": "v2.6",
+  "version": "v2.7",
   "feature": "ai-select-v1",
   "spec_version": "ai-select-final-spec-v1.1",
   "spec_amendments": [
     "ai-select-final-spec-v1.1-amendment-001-renderer-evidence-identity",
     "ai-select-final-spec-v1.1-amendment-002-anchor-mask-pipeline",
     "ai-select-final-spec-v1.1-amendment-003-object-level-tracking-mask-acquisition",
-    "ai-select-final-spec-v1.1-amendment-004-sparse-key-view-mask-acquisition"
+    "ai-select-final-spec-v1.1-amendment-004-sparse-key-view-mask-acquisition",
+    "ai-select-final-spec-v1.1-amendment-005-route-b-first-acquisition-extension-seam"
   ],
   "decision_gates": [
     "DG-20-mask-conditioned-direct-gaussian-evidence",
     "DG-21-prompt-authoring-three-stage-anchor-mask",
     "DG-22-floating-prompt-edit-palette",
     "DG-23-object-level-tracking-deferred-gaussian-ownership",
-    "DG-24-sparse-key-view-mask-acquisition-optional-tracking"
+    "DG-24-sparse-key-view-mask-acquisition-optional-tracking",
+    "DG-25-route-b-first-extensible-mask-acquisition"
   ],
   "adr": "0013-adopt-mask-conditioned-direct-gaussian-evidence",
-  "pending_adr": "select-multi-view-mask-acquisition-route-after-08A-spike",
-  "status": "ready-for-agent-v2.6-object-anchor-sparse-key-view-acquisition",
+  "pending_adr": null,
+  "future_optional_adr": "adopt-tracker-or-hybrid-only-after-future-experiment",
+  "status": "ready-for-agent-v2.7-route-b-first-extensible-acquisition",
   "branch": "ai-select-v1",
   "baseline": "42f6013438f1271fcd35a4bfdc9ba5a3eb719c06",
   "ticket_count": 27,
@@ -31,7 +34,7 @@
   ],
   "parallel_after_ticket_05": ["04A", "06"],
   "parallel_after_ticket_14": ["10", "13"],
-  "traceability_requirement_count": 164,
+  "traceability_requirement_count": 166,
   "walkthrough_count": 18,
   "error_walkthrough_count": 18,
   "audit": {
@@ -50,6 +53,7 @@
     "unmapped_dg22_requirements": [],
     "unmapped_dg23_requirements": [],
     "unmapped_dg24_requirements": [],
+    "unmapped_dg25_requirements": [],
     "unmapped_amendment_requirements": [],
     "orphan_tickets": [],
     "invalid_workflow_refs": [],
@@ -62,12 +66,15 @@
     "Ticket 07B depends on 07A and owns drag/collapse/Space-hide/no-stale-hit-region interaction",
     "Ticket 08 depends on 07B and owns non-ownership 2.5D bootstrap plus adaptive sparse Key-View plan segments",
     "Ticket 08 no longer depends on tracker transition envelopes or Bridge semantics",
-    "Ticket 08A depends on 08 and owns the acquisition spike, route ADR, enhanced 3D-guided per-Key-View SAM, and optional tracker/hybrid augmentation only if selected",
-    "Ticket 09 depends on 08A and presents acquisition backend/status separately from Participation",
-    "Ticket 12 depends on 08A/09 and owns generic per-view Mask refresh plus optional propagation when capability exists",
+    "Ticket 08A depends on 08 and directly implements route-B 3D-guided per-Key-View SAM",
+    "Ticket 08A is not blocked by A/B/C/D comparison or an acquisition-route ADR",
+    "Ticket 08A owns a backend-neutral acquireView contract plus optional sequence/reference extension schemas for future C/D experiments",
+    "Route A remains explicit baseline/fallback; C/D require a future experiment-backed ADR before production adoption",
+    "Ticket 09 depends on 08A and presents generic acquisition backend/status separately from Participation",
+    "Ticket 12 depends on 08A/09 and owns generic per-view Mask refresh plus optional propagation only when capability exists",
     "Ticket 14 consumes Included Stable Masks only; acquisition scores and bootstrap support are not ownership Evidence",
     "Ticket 14/20 allow Evidence Working Set expansion beyond the Anchor bootstrap seed",
-    "Amendment 004 supersedes mandatory tracking/Bridge/reference/repropagation clauses from Amendment 003"
+    "Amendment 005 supersedes the route-comparison and route-selection-ADR gate from Amendment 004"
   ],
   "tickets": [
     {"id": "01", "number": 1, "slug": "current-target-context-kernel", "title": "CurrentTargetContext lifecycle kernel", "blocked_by": []},
@@ -82,7 +89,7 @@
     {"id": "07A", "slug": "three-stage-anchor-mask-pipeline", "title": "Object-level Anchor acquisition + conservative ProposalDecision", "blocked_by": ["04A", "04B", "05", "07"]},
     {"id": "07B", "slug": "floating-prompt-edit-palette", "title": "Floating Prompt/Edit Palette UX Hardening", "blocked_by": ["07A"]},
     {"id": "08", "number": 8, "slug": "adaptive-view-planner", "title": "2.5D object bootstrap + adaptive sparse Key-View planner", "blocked_by": ["07B"]},
-    {"id": "08A", "slug": "multi-view-mask-acquisition", "title": "Multi-view Mask acquisition spike + 3D-guided per-Key-View SAM", "blocked_by": ["08"]},
+    {"id": "08A", "slug": "multi-view-mask-acquisition", "title": "3D-guided per-Key-View SAM + extensible acquisition backend seam", "blocked_by": ["08"]},
     {"id": "09", "number": 9, "slug": "scalable-gallery-inspect-cameras", "title": "Scalable Gallery + frustum sync + Mask-acquisition inspection", "blocked_by": ["08A"]},
     {"id": "10", "number": 10, "slug": "cross-view-assessment", "title": "Cross-view Review assessment + visible-support reasons", "blocked_by": ["14", "09", "07"]},
     {"id": "11", "number": 11, "slug": "user-added-ai-view", "title": "User-added AIView using current or adjusted camera", "blocked_by": ["09", "07", "05"]},

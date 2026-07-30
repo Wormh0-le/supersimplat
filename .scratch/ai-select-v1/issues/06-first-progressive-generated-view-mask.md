@@ -1,106 +1,84 @@
-# 06 — First progressive Generated AIView + Initial Auto Mask
+# 06 — Progressive Generated RGB + Legacy Mask Baseline Isolation
 
-Status: complete
+Status: implemented tracer bullet — current Mask path is superseded by Tickets 04C and 08B
 
 Blocked by: 05
 
-## Final Spec mapping
+Blocks: 07
 
-- Final Spec v1.1 §§7, 13, 27, 28
-- Final Spec v1.1 Amendments 003 and 004 handoff
-- DG-08, DG-13, DG-20, DG-24
-- MVP Phase 3
+## Current normative mapping
 
-## Inputs / preconditions
+- Final Spec v1.3 §§5, 13–16, 24–26
+- ADR 0016
 
-- Confirmed coherent Anchor revision
-- Compatible Generated View planner primitives
-- Authoritative gsplat RGB renderer
-- Projected-support + single-frame SAM baseline
+## Retained implementation outcome
 
-## Outputs / handoff artifacts
+Ticket 06 proved the progressive Generated View lifecycle:
 
-- First planner-owned Generated AIView
-- Authoritative RGB identity
-- Initial Auto Mask state
-- Evidence=`not-requested`/later-derived state
-- Generated frustum
+```text
+planned CameraBinding
+→ authoritative gsplat RGB
+→ publish RGB-ready AIView immediately
+→ independent Mask work
+→ independent Evidence state
+```
 
-## What to build
+The following remain current:
 
-Prove progressive multi-view publication end to end. Publish a Generated AIView as soon as authoritative RGB is ready. Produce its Mask independently. Evidence is mask-conditioned and is not part of initial View rendering/publication.
+- stable `viewId` and exact CameraBinding/RGB identity;
+- RGB Ready independent from Mask and Evidence;
+- Generated frustum derived from the exact CameraBinding;
+- progressive publication without moving Editor Camera;
+- Render failure distinct from Mask failure;
+- late/stale result rejection;
+- completed Views retained across later failures;
+- Stable Mask publication dirties Evidence but does not automatically Lift.
 
-## Acceptance criteria
+## Superseded Mask baseline
 
-- [x] Confirm Anchor can start automatic planning without fixed user View count.
-- [x] At least one planner-owned Generated AIView publishes when authoritative gsplat RGB is ready.
-- [x] Generated AIView has stable viewId, source, CameraBinding, RGB identity, independent render/mask/evidence states, and Participation.
-- [x] RGB comes from authoritative gsplat and frustum derives from the exact CameraBinding.
-- [x] View publication does not move Editor Camera.
-- [x] Gallery may show RGB Ready while Mask is Generating and Evidence is Not Requested.
-- [x] Complete Contributor is not required for Generated View Render Ready.
-- [x] Once RGB is ready, automatic Mask production starts without blocking the View.
-- [x] Successful Mask production atomically publishes an auto Stable Mask bound to AIView/RGB.
-- [x] Publishing Stable Mask marks corresponding Evidence missing/dirty; it does not automatically perform formal Lift.
-- [x] Mask failure keeps AIView/RGB/frustum and produces RGB Ready + Mask Failed, not View Failed.
-- [x] Evidence failure, when later attempted, keeps View Render Ready.
-- [x] Render failure remains distinct and preserves a failed View record.
-- [x] Completed Views survive later planner failure.
-- [x] Late render/mask results with obsolete bindings are discarded.
-- [x] Generated frustum is selectable and read-only.
+The implemented Ticket 06 Mask route used projected Anchor support and one independent single-frame pass through the then-current Multiplex-derived adapter. It also coupled the provider response to automatic assessment/publication.
 
-## Failure / recovery criteria
+Under Final Spec v1.3 this path is a legacy migration fixture only. It is not:
 
-- [x] Mask failure exposes retry/manual/exclude as later controls become available.
-- [x] View Render Failure exposes true Retry; replacement and Exclude complete in later tickets.
-- [x] No partial Mask or Evidence is published stable.
+- a current production Mask provider;
+- Route A or an automatic fallback;
+- a valid source of current `generated-view-mask/v1` artifacts;
+- evidence that SAM 3.1 Multiplex is appropriate for static segmentation;
+- a current Prompt synthesis or Mask Review contract.
 
-## Validation
+Tickets 04C and 08B replace it with:
 
-- npm test
-- npm run test:companion
-- npm run lint
-- npm run build
-- Locked GPU: RGB Ready → Mask Generating → Auto Stable/Failed
-- RGB Ready without Contributor/Evidence fixture
+```text
+SAM 3 Image instance adapter
++ current Point/Positive-Box contract
++ TargetGeometryHint-guided per-View Prompt
++ single-mask inference
++ separate MaskReviewPolicy/publication
+```
+
+## Current acceptance criteria
+
+- [x] Generated AIView publishes as soon as authoritative RGB is ready.
+- [x] RGB, Mask and Evidence states remain independent.
+- [x] Render and Mask failure remain distinct.
+- [x] completed View/RGB/frustum state survives later failure.
+- [x] stale results are rejected.
+- [ ] legacy `generated-view-mask/v1`, propagated source and provider-returned assessment are rejected by the current 08B migration.
+- [ ] no current production call reaches the Ticket 06 Multiplex-derived Mask implementation.
+
+## Failure and recovery
+
+- RGB failure preserves a failed View record and offers true Retry.
+- Legacy Mask failure preserves View/RGB and cannot publish a current Stable Mask.
+- User Confirmed Stable Masks remain authoritative through migration.
+
+## Historical implementation record
+
+The previous fixed-pair planner and projected-support Mask implementation remain available in repository history and tests only as migration/regression inputs. Former DG-24 language describing this route as a production fallback is superseded and non-normative.
 
 ## Non-goals
 
-- No full adaptive stop policy
-- No scalable Gallery
-- No formal Evidence production or cross-view assessment
-
-## Implementation recorded — 2026-07-25
-
-Editor (TypeScript):
-
-- `src/ai-select/generated-view-service.ts` — versioned protocol contracts `generated-view-planner/v1` and `generated-view-mask/v1`.
-- `src/ai-select/generated-view-controller.ts` — progressive View publication, exact run identity, per-view render/Mask failure isolation, and true Retry.
-- `src/ai-select/mask-registry.ts` — atomic automatic Stable Mask publication.
-- `src/ai-select/anchor-controller.ts` — shared target stale-result gate and Scene Snapshot seam.
-- `src/ai-select/generated-frustum-picking.ts` / `src/ai-select-generated-frustums.ts` — exact CameraBinding frustums and selection.
-- UI / transport / readiness — Generated View cards, routes, cache-miss recovery, and capability gate.
-
-Companion (Python):
-
-- `generated_view_planning.py` — pure-CPU robust seed, deterministic fixed-pair tracer planner, and projected Prompt synthesis.
-- `state.py` / `server.py` — plan/render/mask routes, replay/Retry identity, single operation admission, and failure mapping.
-- The Mask route projects Anchor support into each Generated View, synthesizes positive points, and runs one independent single-frame SAM pass.
-
-## Validation recorded — 2026-07-25
-
-- `npm test` — 268 editor tests passed.
-- `npm run test:companion` — 232 tests passed.
-- `npm run lint`, locale lint, and build passed.
-- Browser/frustum and renderer re-verification passed.
-
-## DG-24 handoff — 2026-07-30
-
-Ticket 06 remains complete. Its projected-support + one independent single-frame SAM pass is classified as:
-
-- the progressive publication tracer bullet;
-- route A in Ticket 08A's multi-view Mask acquisition spike;
-- a production fallback when the selected route fails or is unavailable;
-- a foundation for enhanced 3D-guided per-Key-View Prompt synthesis.
-
-Ticket 08 replaces the fixed pair with non-ownership 2.5D sparse Key-View planning. Ticket 08A compares and implements acquisition routes. Object tracking is optional and must not be inferred from Ticket 06's completion.
+- No current SAM adapter implementation.
+- No current local Key-View planner.
+- No automatic route fallback.
+- No formal P/N/V Evidence.

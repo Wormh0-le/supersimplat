@@ -1,14 +1,16 @@
 # 15 — Pre-apply Candidate correction + explicit Evidence-aware Re-Lift
 
-Status: ready-for-agent — v2.2 re-audited
+Status: ready-for-agent — Final Spec v1.3 mapped
 
 Blocked by: 14, 13, 12, 09
 
-## Final Spec mapping
+## Current Final Spec mapping
 
-- Final Spec v1.1 §§24–25
-- DG-15, DG-20
-- Typical Flow G
+- Final Spec v1.3 §§19–22, 24
+- DG-15 and DG-20 as historical correction/ownership rationale where not superseded
+- Historical Typical Flow G as implementation provenance
+
+Final Spec v1.3 is the only current closure source.
 
 ## Inputs / preconditions
 

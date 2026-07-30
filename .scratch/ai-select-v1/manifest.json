@@ -34,6 +34,8 @@
   ],
   "parallel_after_ticket_05": ["04A", "06"],
   "parallel_after_ticket_14": ["10", "13"],
+  "traceability_base": "TRACEABILITY.md",
+  "traceability_overlay": "TRACEABILITY-v2.7.md",
   "traceability_requirement_count": 166,
   "walkthrough_count": 18,
   "error_walkthrough_count": 18,

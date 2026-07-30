@@ -2,75 +2,79 @@
 
 ## Current normative specification
 
-1. [`ai-select-final-spec-v1.2.md`](./ai-select-final-spec-v1.2.md)
-2. [`../adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md`](../adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md), where not superseded by Final Spec v1.2
-3. [`../../CONTEXT.md`](../../CONTEXT.md), where not superseded
-4. implementation tickets and tests, interpreted through the current Ticket mapping below
+1. [`ai-select-final-spec-v1.3.md`](./ai-select-final-spec-v1.3.md)
+2. [`../adr/0016-adopt-sam3-image-instance-workflow-and-minimal-multiview.md`](../adr/0016-adopt-sam3-image-instance-workflow-and-minimal-multiview.md)
+3. [`../adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md`](../adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md), where not superseded
+4. [`../adr/0015-automate-readiness-and-keep-model-resolution-operator-owned.md`](../adr/0015-automate-readiness-and-keep-model-resolution-operator-owned.md), where not superseded
+5. [`../../.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md`](../../.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md)
+6. implementation tickets and tests
 
-`ai-select-final-spec-v1.2.md` is the only current product and engineering specification. Implementation agents, acceptance reviews, and traceability MUST use it directly.
+`ai-select-final-spec-v1.3.md` is the only current product and engineering specification.
 
-The current ticket-to-spec mapping authority is:
+## Current product decisions
 
-- [`../../.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md`](../../.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md)
-
-Ticket-local references to Final Spec v1.1 or Amendments 001–005 are historical implementation provenance only and have no current normative force.
-
-## Current decision rationale
-
-- [`../adr/0014-adopt-route-b-first-multiview-mask-acquisition.md`](../adr/0014-adopt-route-b-first-multiview-mask-acquisition.md) — accepted Route-B-first architecture rationale, subordinate to Final Spec v1.2
-- [`../decision-gates/DG-20-mask-conditioned-direct-gaussian-evidence.md`](../decision-gates/DG-20-mask-conditioned-direct-gaussian-evidence.md)
-- [`../decision-gates/DG-21-prompt-authoring-three-stage-anchor-mask.md`](../decision-gates/DG-21-prompt-authoring-three-stage-anchor-mask.md)
-- [`../decision-gates/DG-22-floating-prompt-edit-palette.md`](../decision-gates/DG-22-floating-prompt-edit-palette.md)
-- [`../decision-gates/DG-23-object-level-tracking-deferred-gaussian-ownership.md`](../decision-gates/DG-23-object-level-tracking-deferred-gaussian-ownership.md)
-- [`../decision-gates/DG-24-sparse-key-view-mask-acquisition-optional-tracking.md`](../decision-gates/DG-24-sparse-key-view-mask-acquisition-optional-tracking.md)
-- [`../decision-gates/DG-25-route-b-first-extensible-mask-acquisition.md`](../decision-gates/DG-25-route-b-first-extensible-mask-acquisition.md)
-- [`../decision-gates/DG-26-consolidated-v1.2-route-b-acquisition-architecture.md`](../decision-gates/DG-26-consolidated-v1.2-route-b-acquisition-architecture.md)
-
-ADR 0014 and the DGs explain why decisions were made. They are subordinate rationale, not alternative current product specifications.
-
-## Historical specifications
-
-The following files are retained for decision history only and have no current normative force:
-
-- [`ai-select-final-spec-v1.1.md`](./ai-select-final-spec-v1.1.md)
-- [`ai-select-final-spec-v1.1-amendment-001-renderer-evidence-identity.md`](./ai-select-final-spec-v1.1-amendment-001-renderer-evidence-identity.md)
-- [`ai-select-final-spec-v1.1-amendment-002-anchor-mask-pipeline.md`](./ai-select-final-spec-v1.1-amendment-002-anchor-mask-pipeline.md)
-- [`ai-select-final-spec-v1.1-amendment-003-object-level-tracking-mask-acquisition.md`](./ai-select-final-spec-v1.1-amendment-003-object-level-tracking-mask-acquisition.md)
-- [`ai-select-final-spec-v1.1-amendment-004-sparse-key-view-mask-acquisition.md`](./ai-select-final-spec-v1.1-amendment-004-sparse-key-view-mask-acquisition.md)
-- [`ai-select-final-spec-v1.1-amendment-005-route-b-first-acquisition-extension-seam.md`](./ai-select-final-spec-v1.1-amendment-005-route-b-first-acquisition-extension-seam.md)
-
-Do not merge the historical amendment chain when implementing current work. Final Spec v1.2 already consolidates its retained requirements and current replacements.
+- Static Anchor and Key-View segmentation use the official SAM 3 Image instance path.
+- SAM 3.1 Multiplex is not a current static-image production dependency.
+- v1 Prompt tools are Positive Point, Negative Point, and one Positive Instance Box.
+- Negative Box, Prompt Brush, Mask Constraints, and Text Prompt are removed from v1.
+- Previous-prediction logits are internal refinement state, not a Prompt or binary Brush Mask.
+- One positive point may return up to three candidates; Box, multiple Points, or refinement return one.
+- Paint/Erase remain Editing Mask operations.
+- Anchor-visible geometry is one compact `TargetGeometryHintArtifact`.
+- v1 uses 2–4 bounded local Key Views, not a general adaptive/free-space planner.
+- Generated Views use projected Box/Points and SAM 3 Image single-mask inference.
+- Mask Review is separate from Lift Readiness.
+- No current generic backend registry, Route B/C/D bundle, sequence extension, or automatic Route-A fallback is required.
 
 ## Current product chain
 
 ```text
 Camera View
 → authoritative gsplat RGB
-→ PromptState
-→ conservative object-level Anchor Stable Mask
-→ VisibleTargetSupportArtifact
-→ TargetBootstrapArtifact
-→ adaptive sparse Key Views
-→ KeyViewPromptSynthesizer
-→ route-B PerViewMaskAcquisitionResult
-    ├── KeyViewMaskProposalSet
-    └── one attempt-level backendDiagnostics authority
-→ KeyViewMaskDecisionPolicy bound to exact ProposalSet digest + attempt
-→ selected only: ViewAssessmentPolicy
-→ MaskPublicationCoordinator
-→ Included Stable View Annotations
+→ Positive/Negative Points + optional Positive Instance Box
+→ SAM 3 Image instance prediction
+→ candidate choice where needed
+→ Accept / Edit / Confirm
+→ Anchor Stable Mask
+→ TargetGeometryHintArtifact
+→ bounded local Key Views
+→ projected Box + Points
+→ per-View SAM 3 Image single-mask prediction
+→ Mask Review / Stable Mask / Participation
+→ Included Stable Masks
 → P/N/V Gaussian Evidence
-→ Gaussian Candidate + Uncertain
+→ Candidate + Uncertain
 → Native Set / Add / Remove / Intersect
 ```
 
-A successful Decision `unavailable` means acquisition completed but no eligible proposal exists. It publishes no Stable Mask, remains Excluded, is not a technical failure, and does not trigger automatic Route-A fallback.
-
-Route A remains a technical fallback and regression baseline. Routes C/D remain future optional experiments behind the backend bundle/registry and sequence extension contracts plus a later experiment-backed ADR.
-
 ## Current implementation graph
 
-The machine-readable and audited graph is maintained under:
+```text
+04B historical Multiplex/visual adapter baseline
+→ 04C SAM 3 Image Adapter + Prompt Contract Migration
+   ├→ 02C Automatic Runtime Readiness
+   └→ 07A Simplified Anchor Acquisition
+       ├→ 07B Point/Box + Paint/Erase Palette
+       └→ 08 TargetGeometryHint + Local Key Views
+           → 08A Compact Image Instance Mask Contracts
+           → 08B 3D-guided per-View SAM 3 Image Acquisition
+           → 09 Gallery
+           → 11 / 12
+           → 14 / 13 Lift and Readiness
+```
+
+## Historical specifications and rationale
+
+The following are retained for history only:
+
+- Final Spec v1.1 and Amendments 001–005;
+- Final Spec v1.2;
+- ADR 0014;
+- DG-20 through DG-26 where superseded by ADR 0016 / Final Spec v1.3.
+
+They must not be reconstructed as current requirements. The former v1.2 text remains available in repository history.
+
+## Planning artifacts
 
 - [`../../.scratch/ai-select-v1/README.md`](../../.scratch/ai-select-v1/README.md)
 - [`../../.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md`](../../.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md)
@@ -78,33 +82,3 @@ The machine-readable and audited graph is maintained under:
 - [`../../.scratch/ai-select-v1/TRACEABILITY.md`](../../.scratch/ai-select-v1/TRACEABILITY.md)
 - [`../../.scratch/ai-select-v1/FOUR-PASS-AUDIT.md`](../../.scratch/ai-select-v1/FOUR-PASS-AUDIT.md)
 - [`../../.scratch/ai-select-v1/WALKTHROUGHS.md`](../../.scratch/ai-select-v1/WALKTHROUGHS.md)
-
-The current acquisition segment is:
-
-```text
-07A
-├── 07B Floating Palette UX
-└── 08 Visible Support + Bootstrap + Sparse Planner
-    → 08A Contracts + Backend Registry
-    → 08B Route-B Production Acquisition + legacy-contract migration
-    → 09 Gallery / Inspection
-    → 11 / 12
-    → 14 P/N/V Lift
-```
-
-## Scope boundaries
-
-- AI Select v1 targets one object instance.
-- Early support geometry is localization/planning/Prompt context, never ownership.
-- Sparse Key Views are mandatory; dense tracking sequences and Bridge Views are not.
-- Prompt synthesis, inference, result envelope, proposal decision, assessment, publication, Participation, and P/N/V are separate layers.
-- Attempt-level backend diagnostics exist only on `PerViewMaskAcquisitionResult`.
-- Every Key-View Decision binds the exact ProposalSet artifact digest and acquisition attempt.
-- Route B is selected and is not blocked by route comparison.
-- Route-A fallback is automatic only for technical/capability failures and remains fully provenance-bound.
-- Ambiguous and unavailable Decisions do not trigger automatic fallback.
-- Legacy `generated-view-mask/v1`, provider-returned Assessment, and generic `maskSource: 'propagated'` are not current route-B contracts.
-- C/D sequence/reference methods are optional future extensions, not current implementations.
-- Confirmed correction is per-view by default.
-- Re-Lift remains explicit.
-- Complete Contributor remains reference/debug only.

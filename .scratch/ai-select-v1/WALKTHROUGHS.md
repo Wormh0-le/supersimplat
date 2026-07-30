@@ -1,4 +1,4 @@
-# Final Spec v1.1 Walkthrough Coverage — v2.6
+# Final Spec v1.1 Walkthrough Coverage — v2.7
 
 ## Typical flows A–I
 
@@ -8,7 +8,7 @@
 | WF-B | Adjust Anchor | `02 → 03 RGB Retry → 04A/04B/07A → 07B → 05 Confirm` |
 | WF-C | Add a missing user View | `09 → 11 → Mask publication → 12 Evidence dirty → 14/15 → 13` |
 | WF-D | Redraw bad Mask from scratch | `09 → 04A Paint/Erase → Confirm → 12 dirty → 15 explicit Re-Lift` |
-| WF-E | Refresh one automatic Key-View Mask | `09 → 12 Refresh Auto Mask → 08A → 07/09 reassessment → 14/15` |
+| WF-E | Refresh one automatic Key-View Mask | `09 → 12 Refresh Auto Mask → 08A acquireView → 07/09 reassessment → 14/15` |
 | WF-F | Select multiple objects | `16 → 17 Restart → 02... → 16 → 17` |
 | WF-G | Candidate structural error | `14/15 → 09/07/11/08 correction → 12 dirty → 15` |
 | WF-H | Fix after Candidate applied | `16 → 17 Undo and Fix → 15` |
@@ -25,8 +25,8 @@
 | WF-N | Object-level Anchor acquisition | `04A → 04B → 07A → 05/07 → 07B` | Conservative proposal decision; material ambiguity remains recoverable; Confirm publishes identity seed |
 | WF-O | Visual Prompt Adapter | `04A → 04B → 07A` | Truthful Box/Mask compilation; unsupported combinations fail closed |
 | WF-P | Floating Prompt/Edit Palette | `07A fitted rect → 07B` | Drag/snap/collapse/Space-hide with no stale blind region |
-| WF-Q | D-double-prime sparse Key-View pipeline | `07A/07B → 08 → 08A → 09/12 → 14` | 2.5D bootstrap guides sparse per-view SAM; final ownership waits for P/N/V |
-| WF-R | Optional tracker/hybrid augmentation | `08A spike → ADR → optional capability → 09/12 → 14` | Tracking exists only when downstream benefit justifies it; default per-view route remains available |
+| WF-Q | D-double-prime route-B sparse Key-View pipeline | `07A/07B → 08 → 08A → 09/12 → 14` | 2.5D bootstrap guides route-B per-view SAM; final ownership waits for P/N/V |
+| WF-R | Future C/D extension readiness | `08A contracts → future experiment → optional ADR` | Route B stays stable while future sequence/reference backends reuse common artifacts and publication paths |
 
 ## WF-N — object-level Anchor
 
@@ -93,7 +93,7 @@ Assertions:
 - Old position becomes immediately editable.
 - Palette state never enters PromptState, Mask history, Evidence, or Candidate identity.
 
-## WF-Q — D-double-prime sparse Key-View acquisition
+## WF-Q — route-B sparse Key-View acquisition
 
 ```text
 Confirmed object-level Anchor Stable Mask
@@ -105,7 +105,8 @@ Confirmed object-level Anchor Stable Mask
 → adaptive sparse Key-View selection
 → immutable plan segment
 → authoritative RGB publishes progressively
-→ 08A 3D-guided Prompt synthesis per Key View
+→ 08A deterministic 3D-guided Prompt synthesis per Key View
+→ MultiViewMaskAcquisitionProvider.acquireView
 → independent prompt-conditioned SAM attempt per View
 → Auto Good / Review / Failed
 → Ticket 09 review
@@ -120,43 +121,56 @@ Assertions:
 - Invalid pose cannot win by information gain.
 - Generate More appends a new immutable segment and preserves prior artifacts.
 - Key Views do not require adjacent frames or tracker memory.
+- Route B is selected and does not wait for A/B/C/D comparison.
 - Current projected-support + single-frame SAM remains route A/fallback.
-- Enhanced 3D-guided per-Key-View SAM is route B/default candidate.
-- Tracker/hybrid is optional and requires a benchmark-backed ADR.
+- `MaskAcquisitionCapabilities` truthfully advertises route-B per-view-only support.
+- Unsupported sequence/reference methods fail closed without state mutation.
 - Acquisition backend score does not authorize Lift.
 - Formal ownership occurs only in Tickets 14/20.
 - Later Included Views can expand Evidence Working Set beyond the Anchor bootstrap seed.
 
-## WF-R — acquisition route decision and optional augmentation
+## WF-R — future C/D extension readiness
+
+Current route B:
 
 ```text
-Frozen sparse Key Views / optional dense sequences
-→ compare route A baseline
-→ compare route B enhanced per-view SAM
-→ compare route C tracker
-→ compare route D hybrid
-→ evaluate 2D quality + final Gaussian quality + user effort + latency/VRAM
-    ├── route B meets targets → v1 closes without tracker
-    └── C/D materially improves downstream outcome → ADR enables optional capability
+getCapabilities
+→ supportsIndependentViews = true
+→ supportsSequenceSessions = false
+→ acquireView per Key View
+→ common result envelope
+→ existing Mask validation / publication / assessment
 ```
 
-If optional tracker capability is selected:
+Future route C experiment:
 
 ```text
-User corrects a View
-→ Confirm Stable Mask
-→ per-view Evidence/Lift dirty only
-→ optional explicit Use as Tracking Reference
-→ optional propagationDirty
-→ explicit Update Multi-view Masks
-→ no automatic Re-Lift
+future backend advertises sequence capability
+→ openSequence
+→ acquireSequenceRange
+→ optional updateReferences
+→ closeSequence
+→ common per-view result/publication path
+```
+
+Future route D experiment:
+
+```text
+acquireView establishes high-confidence Key-View references
+→ openSequence between references
+→ updateReferences when explicitly requested
+→ acquireSequenceRange
+→ common per-view result/publication path
 ```
 
 Assertions:
 
+- Route B never fabricates sequence sessions or reference fields.
+- Sequence/reference schemas and validators exist before a C/D backend is enabled.
+- No C/D implementation or comparison is required to close Ticket 08A.
+- A future experiment-backed ADR is mandatory before C/D production adoption.
 - Confirming a correction never automatically enters tracker memory.
-- Optional auxiliary/Bridge frames default Excluded.
-- Optional tracker failure does not disable valid independent per-view acquisition.
+- Optional auxiliary/Bridge frames default Excluded when a future capability introduces them.
 - Tracker confidence is not P/N/V.
 
 ## Reverse outcome-to-prerequisite validation
@@ -166,7 +180,7 @@ Native operation (16)
 ← current Candidate (15/14)
 ← readiness and version-bound per-view P/N/V (13/14/20)
 ← Included Stable View Annotations (09/11/12)
-← multi-view Mask acquisition (08A)
+← route-B multi-view Mask acquisition (08A)
 ← valid sparse Key-View plan + 2.5D bootstrap (08)
 ← no-blind-spot authoring (07B)
 ← confirmed object-level Anchor (04B/07A/05)
@@ -175,7 +189,7 @@ Native operation (16)
 ← Render Working Set + Stable IDs (01/19)
 ```
 
-No final outcome depends on complete per-pixel Contributor publication or mandatory tracking. Reference Contributor remains a validation/debug side path.
+No final outcome depends on complete per-pixel Contributor publication, route comparison, or tracker presence. Reference Contributor remains a validation/debug side path.
 
 ## Error / degradation flows
 
@@ -197,8 +211,8 @@ No final outcome depends on complete per-pixel Contributor publication or mandat
 | ERR-14 | Proposal unavailable | 04A/04B/07A | Preserve RGB/Prompt/prior Stable; Retry/refine/manual |
 | ERR-15 | Invalid indoor camera | 08 | Reject before gain; bounded replacement/local fallback/Limited |
 | ERR-16 | Palette stale blind region/stuck hidden | 07B | Remove stale hit box; restore on keyup/blur |
-| ERR-17 | Per-view acquisition failure | 08A | Preserve RGB/prior Stable; Retry/baseline fallback/manual/exclude |
-| ERR-18 | Optional tracker failure/drift | 08A/09/12 | Capability-gated Review/fallback; default per-view route remains available |
+| ERR-17 | Route-B per-view acquisition failure | 08A | Preserve RGB/prior Stable; Retry/route-A fallback/manual/exclude |
+| ERR-18 | Unsupported sequence/reference operation | 08A/12 | Structured capability failure; no session, Mask, dirty-state, or Candidate mutation |
 
 ## Closure assertions
 
@@ -209,9 +223,10 @@ No final outcome depends on complete per-pixel Contributor publication or mandat
 - Only Confirm replaces Stable Mask.
 - 08 uses geometry for planning and Prompt synthesis, not ownership.
 - 08 outputs sparse immutable Key-View segments without tracker dependency.
-- 08A begins with an acquisition-route spike and may close without tracker.
+- 08A implements route B directly and is not blocked by route comparison.
+- 08A provides a per-view base provider and capability-gated future sequence/reference extension contracts.
 - Confirmed corrections affect the current View by default.
-- Optional reference/repropagation requires an explicit capability and action.
+- Optional reference/repropagation requires a future capability and explicit action.
 - Bootstrap support is not a hard Evidence Working Set bound.
 - Reference P/N/V precedes production same-decision CUDA.
 - Every destructive/recompute action states retained artifacts and recovery.

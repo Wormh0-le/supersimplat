@@ -1,6 +1,6 @@
 # Six-Pass Bidirectional Traceability Audit — v2.8
 
-The filename is retained for compatibility. v2.8 adopts Final Spec v1.2 as the only current specification, adds `VisibleTargetSupportArtifact`, splits 08A/08B, parallelizes 07B and 08, separates acquisition/decision/assessment/publication, and locks B2 technical-only route-A fallback.
+The filename is retained for compatibility. v2.8 adopts Final Spec v1.2 as the only current specification, adds `VisibleTargetSupportArtifact`, splits 08A/08B, parallelizes 07B and 08, separates acquisition/decision/assessment/publication, locks B2 technical-only route-A fallback, and indexes accepted ADR 0014 as subordinate architectural rationale.
 
 ## Pass 1 — Ticket graph / dependency audit
 
@@ -88,7 +88,7 @@ Findings:
 - Artifact cycle detected: False
 - Result: **PASS**
 
-## Pass 3 — Final Spec v1.2 → tickets
+## Pass 3 — Final Spec v1.2 / accepted ADRs → tickets
 
 The single `TRACEABILITY.md` maps **100** consolidated current requirements.
 
@@ -98,6 +98,11 @@ Checks:
 - Unmapped Final Spec v1.2 requirements: 0
 - Historical Amendment overlay required: no
 - Unmapped DG-26 decisions: 0
+- Accepted ADR references: ADR 0013 and ADR 0014
+- Missing or invalid accepted ADR references: 0
+- ADR 0014 indexed in `docs/specs/README.md`: yes
+- ADR 0014 registered in `manifest.json`: yes
+- ADR 0014 explicitly subordinate to Final Spec v1.2: yes
 - Route-B comparison gate retained: no
 - Mandatory tracker/Bridge/reference implementation retained: no
 - Result: **PASS**
@@ -203,6 +208,8 @@ Required current statements:
 
 ```text
 Final Spec v1.2 is the only current specification
+ADR 0014 is indexed and subordinate to Final Spec v1.2
+VisibleTargetSupportArtifact precedes TargetBootstrapArtifact
 07B and 08 are parallel after 07A
 08A is contracts/registry only
 08B implements production route B
@@ -218,12 +225,14 @@ Prohibited active statements:
 ```text
 07B blocks Ticket 08
 Ticket 08A directly implements production SAM
+TargetBootstrapArtifact precedes VisibleTargetSupportArtifact
 provider returns final Mask + ViewAssessmentResult
 highest model score is authoritative
 ambiguous automatically falls back to route A
 support sample Gaussian ID implies ownership
 route B exposes fake sequence/reference methods
 v1.1 Amendment chain is the current implementation specification
+accepted current ADR exists outside the specification index or manifest
 ```
 
 Audit result: **PASS**
@@ -255,6 +264,7 @@ v2.8 is internally consistent:
 ```text
 reliable Anchor
 → replayable visible support
+→ lightweight bootstrap
 → sparse Key Views
 → explicit Prompt artifact
 → route-B ProposalSet
@@ -265,4 +275,4 @@ reliable Anchor
 → final P/N/V ownership
 ```
 
-Ticket 04B remains the next implementation gate. Final Spec v1.2 and DG-26 govern all future implementation where historical documents conflict.
+Ticket 04B remains the next implementation gate. Final Spec v1.2 governs current implementation; ADR 0014 and DG-26 provide subordinate rationale where historical documents conflict.

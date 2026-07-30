@@ -11,8 +11,9 @@ The filename is retained for compatibility. Final Spec v1.3 is the sole current 
 5. the graph described 04C as the only ready work even though reopened Ticket 07 is independently unblocked.
 6. Ticket 10 duplicated visibility/readiness semantics and unnecessarily blocked Ticket 21.
 7. Fourteen Ticket files still named Final Spec v1.1 or v1.2 in their current mapping/status text even though the central mapping had moved to v1.3.
+8. The ArtisanGS influence on 2D-first interaction, visible-surface localization and multi-view Gaussian selection was implicit, leaving dense-view tracking and aggregation divergences undocumented.
 
-All seven are corrected below.
+All eight are corrected below.
 
 ## Pass 1 — Ticket graph and current frontier
 
@@ -48,6 +49,7 @@ Checks:
 - Final Spec v1.3 exists and is indexed as current.
 - Final Spec v1.2 is historical.
 - ADR 0016 is accepted and indexed.
+- ADR 0016 records ArtisanGS as non-normative design provenance and explicitly states that Final Spec v1.3 remains the requirement authority.
 - CURRENT-TICKET-SPEC-MAPPING maps all 30 Tickets to v1.3.
 - every one of the 30 Ticket files contains a direct current mapping to Final Spec v1.3;
 - zero Ticket-local current mapping/status blocks name Final Spec v1.1, an Amendment, or Final Spec v1.2 as current authority;
@@ -80,7 +82,7 @@ Checks:
 
 Result: **PASS**
 
-## Pass 4 — Geometry and multi-view scope
+## Pass 4 — Geometry, multi-view scope and design provenance
 
 Checks:
 
@@ -90,7 +92,11 @@ Checks:
 - adaptive marginal-gain/free-space/room-scale planning is deferred;
 - 08 runs no SAM;
 - Generate More appends only a bounded local batch;
-- 07B and 08 remain parallel after 07A.
+- 07B and 08 remain parallel after 07A;
+- retained ArtisanGS principles are limited to 2D-first user intent, human correction, visible-surface localization, geometry-guided views, renderer-mediated Gaussian selection and explicit 2D/3D operation boundaries;
+- dense full-circle turnaround views, Cutie/VOT memory, and optimized one-channel per-Gaussian Mask features are documented as deliberate divergences, not current requirements;
+- no current `VideoObjectTracker`, `SequenceMaskProvider`, tracker-memory schema or reserved sequence extension is introduced by the provenance record;
+- future `SequenceInstanceTracker` adoption still requires a separate measured ADR.
 
 Result: **PASS**
 
@@ -169,6 +175,8 @@ Result: **PASS**
 Active planning MUST NOT require:
 
 - Final Spec v1.1, an Amendment, or Final Spec v1.2 as a Ticket-local current closure source;
+- ArtisanGS dense turnaround views, Cutie tracking, tracker reference frames or one-channel Gaussian Mask-feature optimization as current v1 requirements;
+- a current video-tracker/sequence interface merely because ArtisanGS is cited as inspiration;
 - static Multiplex for Anchor/Key Views;
 - Negative Box or Prompt Brush;
 - binary Brush/Editing Mask as previous logits;
@@ -193,7 +201,7 @@ Current active planning contains no such requirement.
 Ticket graph / current frontier               PASS
 Specification authority / all-ticket mapping PASS
 SAM model / Prompt / RGB / refinement         PASS
-Geometry / local multi-view scope             PASS
+Geometry / local multi-view / provenance      PASS
 Per-View Mask architecture                    PASS
 Mask Review / Lift Readiness / optional P1    PASS
 Legacy migration                              PASS

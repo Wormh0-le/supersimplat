@@ -4,12 +4,14 @@ Status: implemented — 2026-07-24; observer pose roll fix 2026-07-24 after manu
 
 Blocked by: 02
 
-## Final Spec mapping
+## Current Final Spec mapping
 
-- Final Spec v1.1 §§5.3, 6, 8, 9, 19, 28.1
+- Final Spec v1.3 §§4–5, 16–17, 24–25
 - ADR 0013 observation/Evidence separation
-- DG-05, DG-20
-- MVP Phase 1
+- DG-05 and DG-20 as historical rationale where not superseded
+- MVP Phase 1 as historical implementation provenance
+
+Final Spec v1.3 is the only current closure source. Any v1.1 terminology in the implementation record below is historical only.
 
 ## Inputs / preconditions
 

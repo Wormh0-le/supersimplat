@@ -108,12 +108,13 @@ The Companion records the verified manifest and external checkpoint path. It
 does not copy the checkpoint into the package or send a path to the editor.
 
 For `adapterId: "sam3.1"`, `runtimeConfigDigest` must be
-`sha256:39a47a6b641b55bf967b7b73fb7e76efa900ff69ecfed764bcce1a89683c3cba`.
+`sha256:de51b91ba833a299fa2ebe512daeda439007c7fa181f375c085bf38fa46b502f`.
 It binds the Companion's fixed SAM 3.1 multiplex baseline: eight objects per
 session, multiplex count 16, FA3 and compilation disabled, a 0.5 output
 threshold, rejection of degenerate full-frame candidates, CPU-backed frame
-storage, and GPU-backed tracker state. A changed runtime configuration needs a
-new adapter baseline and Model Manifest digest.
+storage, GPU-backed tracker state, and the Anchor visual-prompt compiler and
+interactive-image adapter semantics described below. A changed runtime
+configuration needs a new adapter baseline and Model Manifest digest.
 
 ## Produce a complete Frame Set Mask Track
 
@@ -205,12 +206,34 @@ This release exposes `/health`, `/capabilities`,
 each usable Model Manifest, and both
 `aiSelectAnchorRender` and `binarySceneSnapshotRegistrationV1` before the
 browser enables AI Select. The current SAM 3.1 adapter explicitly advertises
-positive/negative Point support and bounded multi-candidate output. The
-Companion preserves structurally valid SAM alternatives, computes
-`anchor-mask-ranking/v1` 2D features, and returns a bound Selected, Ambiguous,
-or Unavailable `ProposalDecision`; a raw model score never auto-confirms a
-Mask. Unsupported Box, Mask Constraint, and Text inputs fail closed rather
-than being ignored.
+positive/negative Point, positive Box, positive Mask Constraint, and
+multi-candidate output. Negative Box, negative Mask Constraint, and Text stay
+disabled with an exact adapter-provided reason. The capability record binds
+`sam3.1-visual-prompt-compiler/v1`; changing support or compilation semantics
+rotates its digest so incompatible prompt replay fails closed.
+
+The compiler preserves authoritative RGB pixel coordinates and orders each
+prompt family by `promptId`. Box coordinates use inclusive pixel `XYXY`;
+multiple positive Boxes become deterministic independent model branches.
+Positive Prompt Brush artifacts use exact-dimension `bitset-lsb-v1` masks,
+reject invalid digests or non-zero padding bits, compose by binary union, and
+resize with bilinear antialiasing to the native SAM prompt-encoder size.
+Points remain point prompts; Boxes and Masks are never converted into Points
+or silently discarded. Every structurally valid raw SAM alternative is
+forwarded in source order with its adapter-local IoU prediction semantics and
+per-prompt diagnostics. The existing Ticket 07A seam performs any later
+ranking and publishes the bound `ProposalDecision`; a raw model score never
+auto-confirms a Mask.
+
+Run the opt-in locked real-model check with the operator-owned multiplex
+checkpoint and CUDA:
+
+```sh
+SUPERSPLAT_SAM31_VISUAL_GPU_CHECKPOINT=/secure/models/sam3.1_multiplex.pt \
+  uv run --locked --extra sam3 python -m unittest discover \
+  -s tests -p test_sam31_visual_prompt_gpu.py
+```
+
 `/scene-snapshots/...` remains a legacy fixture
 compatibility endpoint only. It also keeps the legacy
 Object Selection Session admission lease during migration. It verifies the

@@ -82,9 +82,28 @@ test('capability identity is computed from every explicit prompt flag', () => {
         negativeMaskConstraints: false,
         text: false,
         negativeText: false,
-        multiCandidateOutput: false
+        multiCandidateOutput: false,
+        compilerPolicyVersion: 'point-mask-compiler/v1',
+        unsupportedPromptReasons: {
+            'positive-box': 'The adapter supports Points only.',
+            'negative-box': 'The adapter supports Points only.',
+            'positive-mask-constraint': 'The adapter supports Points only.',
+            'negative-mask-constraint': 'The adapter supports Points only.',
+            'positive-text': 'The adapter supports Points only.',
+            'negative-text': 'The adapter supports Points only.'
+        }
     });
     assert.equal(isPromptAdapterCapabilities(capability), true);
+    assert.equal(
+        isPromptAdapterCapabilities({
+            ...capability,
+            unsupportedPromptReasons: {
+                ...capability.unsupportedPromptReasons,
+                'positive-box': undefined
+            }
+        }),
+        false
+    );
     assert.equal(
         isPromptAdapterCapabilities({ ...capability, boxes: true }),
         false
@@ -95,6 +114,47 @@ test('capability identity is computed from every explicit prompt flag', () => {
     );
     assert.match(
         promptToolCapabilityReason('positive-box', capability),
-        /does not support/
+        /Points only/
+    );
+});
+
+test('visual adapter capability identity binds compiler policy and disabled-family reasons', () => {
+    const capabilities = createPromptAdapterCapabilities({
+        points: true,
+        negativePoints: true,
+        boxes: true,
+        negativeBoxes: false,
+        maskInput: true,
+        negativeMaskConstraints: false,
+        text: false,
+        negativeText: false,
+        multiCandidateOutput: true,
+        compilerPolicyVersion: 'sam3.1-visual-prompt-compiler/v1',
+        unsupportedPromptReasons: {
+            'negative-box':
+                'The locked SAM 3.1 adapter has no validated negative Box composition.',
+            'negative-mask-constraint':
+                'The locked SAM 3.1 adapter has no validated negative Mask constraint composition.',
+            'positive-text': 'Text prompts are not enabled by this adapter.',
+            'negative-text': 'Text prompts are not enabled by this adapter.'
+        }
+    });
+
+    assert.equal(
+        capabilities.compilerPolicyVersion,
+        'sam3.1-visual-prompt-compiler/v1'
+    );
+    assert.match(
+        promptToolCapabilityReason('negative-box', capabilities),
+        /no validated negative Box composition/
+    );
+
+    const changedCompiler = createPromptAdapterCapabilities({
+        ...capabilities,
+        compilerPolicyVersion: 'sam3.1-visual-prompt-compiler/v2'
+    });
+    assert.notEqual(
+        capabilities.capabilityDigest,
+        changedCompiler.capabilityDigest
     );
 });

@@ -15,7 +15,7 @@ import secrets
 import struct
 from threading import Event, Lock
 import time
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from . import PACKAGE_VERSION, PROTOCOL_VERSION
 from .anchor_timing import AnchorServerTiming
@@ -44,13 +44,19 @@ from .gsplat_renderer import (
     validate_supported_snapshot,
 )
 from .masking import (
+    AISelectVisualPromptCandidate,
     MaskProduction,
     MaskSessionError,
+    POINT_MASK_PROMPT_COMPILER_POLICY_VERSION,
     PromptableMaskAdapter,
     RegisteredFrameSet,
     SAM31_RUNTIME_CONFIG_DIGEST,
+    Sam31VisualPromptProgram,
     Sam3PointMaskAdapter,
+    compile_point_mask_prompt_program,
+    compile_sam31_visual_prompt_program,
     register_frame_set,
+    sam31_visual_prompt_capabilities,
 )
 from .proposal_ranking import (
     RANKING_POLICY_VERSION,
@@ -451,6 +457,7 @@ class AISelectMaskRequest:
     width: int
     height: int
     prompts: tuple[AISelectMaskPrompt, ...]
+    prompt_program: Sam31VisualPromptProgram
     prompt_state: dict[str, object]
     prompt_state_digest: str
     model_manifest_digest: str
@@ -745,6 +752,19 @@ def _point_prompt_capabilities() -> dict[str, object]:
         'text': False,
         'negativeText': False,
         'multiCandidateOutput': True,
+        'compilerPolicyVersion': POINT_MASK_PROMPT_COMPILER_POLICY_VERSION,
+        'unsupportedPromptReasons': {
+            'positive-box': 'The deterministic Point Mask adapter supports Points only.',
+            'negative-box': 'The deterministic Point Mask adapter supports Points only.',
+            'positive-mask-constraint': (
+                'The deterministic Point Mask adapter supports Points only.'
+            ),
+            'negative-mask-constraint': (
+                'The deterministic Point Mask adapter supports Points only.'
+            ),
+            'positive-text': 'The deterministic Point Mask adapter supports Points only.',
+            'negative-text': 'The deterministic Point Mask adapter supports Points only.',
+        },
     }
     encoded = json.dumps(
         payload, separators=(',', ':'), sort_keys=True, allow_nan=False
@@ -753,6 +773,17 @@ def _point_prompt_capabilities() -> dict[str, object]:
         **payload,
         'capabilityDigest': f'sha256:{hashlib.sha256(encoded).hexdigest()}',
     }
+
+
+def _prompt_capabilities_for_adapter(adapter_id: object) -> dict[str, object]:
+    if adapter_id == 'sam3.1':
+        return sam31_visual_prompt_capabilities()
+    if adapter_id == 'point-mask-v1':
+        return _point_prompt_capabilities()
+    raise MaskSessionError(
+        'incompatibleManifest',
+        'The selected Model Manifest has no supported Prompt capability contract.',
+    )
 
 
 @dataclass
@@ -1893,14 +1924,22 @@ class CompanionState:
         The browser owns target identity, authoritative Anchor RGB, and
         PromptState. This method validates those untrusted bindings and the
         negotiated adapter capability identity, reserves the single Companion
-        operation slot, then runs the point-only compatibility adapter outside
-        every state lock before atomically publishing the immutable bounded
-        result. The synthetic single-view Frame Set makes the adapter perform
-        exactly one SAM pass with no video propagation.
+        operation slot, then runs the negotiated point or visual adapter
+        outside every state lock before atomically publishing the immutable
+        bounded result. Point-only requests retain the synthetic single-view
+        Frame Set compatibility path with no video propagation.
         """
 
-        mask_request = self._parse_ai_select_mask_request(request)
-        model, adapter = self._require_mask_adapter(mask_request.model_manifest_digest)
+        model_manifest_digest = _mask_request_string(
+            request.get('modelManifestDigest'), 'modelManifestDigest'
+        )
+        model, adapter = self._require_mask_adapter(model_manifest_digest)
+        prompt_capabilities = _prompt_capabilities_for_adapter(
+            model.get('adapterId')
+        )
+        mask_request = self._parse_ai_select_mask_request(
+            request, prompt_capabilities=prompt_capabilities
+        )
         mask_key, admission, owns_admission = self._admit_mask_request(mask_request)
         if not owns_admission:
             return self._replay_mask_request(admission)
@@ -1950,6 +1989,35 @@ class CompanionState:
 
         try:
             try:
+                if (
+                    mask_request.prompt_program.boxes
+                    or mask_request.prompt_program.mask_constraints
+                ):
+                    produce_visual_proposals = getattr(
+                        adapter, 'produce_ai_select_visual_proposals', None
+                    )
+                    if not callable(produce_visual_proposals):
+                        raise MaskSessionError(
+                            'unsupportedPromptType',
+                            'The selected Prompt Adapter does not implement visual Prompt inference.',
+                        )
+                    visual_candidates = produce_visual_proposals(
+                        model=model,
+                        rgb_png=mask_request.rgb_png,
+                        width=mask_request.width,
+                        height=mask_request.height,
+                        program=mask_request.prompt_program,
+                        cancelled=lambda: False,
+                    )
+                    response = proposal_response(
+                        self._proposals_from_visual_candidates(
+                            visual_candidates, mask_request
+                        )
+                    )
+                    self._complete_mask_request(
+                        mask_key, admission, response=response
+                    )
+                    return response
                 frame_set = register_frame_set({
                     'frameSetId': f'ai-select-mask-{mask_request.view_id}',
                     'frameSetVersion': (
@@ -2031,7 +2099,6 @@ class CompanionState:
                     candidate_alternatives = candidate_selection.get('alternatives')
                     if isinstance(candidate_alternatives, list):
                         alternatives = candidate_alternatives
-            seen_mask_digests: set[str] = set()
             for alternative in alternatives:
                 if (
                     not isinstance(alternative, dict)
@@ -2062,9 +2129,6 @@ class CompanionState:
                 if len(mask_bytes) != expected_length:
                     continue
                 mask_digest = f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}'
-                if mask_digest in seen_mask_digests:
-                    continue
-                seen_mask_digests.add(mask_digest)
                 proposal: dict[str, object] = {
                     'proposalId': f'proposal-{source_index}',
                     'mask': {
@@ -2111,7 +2175,10 @@ class CompanionState:
         return response
 
     def _parse_ai_select_mask_request(
-        self, request: Mapping[str, object]
+        self,
+        request: Mapping[str, object],
+        *,
+        prompt_capabilities: Mapping[str, object],
     ) -> AISelectMaskRequest:
         request_binding_value = request.get('requestBinding')
         if not isinstance(request_binding_value, dict):
@@ -2169,13 +2236,11 @@ class CompanionState:
             request.get('adapterCapabilityDigest'),
             'Mask adapterCapabilityDigest',
         )
-        expected_capability_digest = _point_prompt_capabilities()[
-            'capabilityDigest'
-        ]
+        expected_capability_digest = prompt_capabilities['capabilityDigest']
         if adapter_capability_digest != expected_capability_digest:
             raise MaskSessionError(
                 'capabilityMismatch',
-                'The selected point adapter capability identity does not match the proposal request.',
+                'The selected Prompt Adapter capability identity does not match the proposal request.',
             )
         proposal_policy_version = _mask_request_string(
             request.get('proposalPolicyVersion'), 'proposalPolicyVersion'
@@ -2199,13 +2264,14 @@ class CompanionState:
         rgb_png, rgb_digest, width, height = self._parse_ai_select_mask_rgb(
             request.get('rgb')
         )
-        prompt_state, prompts, prompt_state_digest = (
+        prompt_state, prompts, prompt_state_digest, prompt_program = (
             self._parse_ai_select_prompt_state(
                 request.get('promptState'),
                 view_id=view_id,
                 rgb_digest=rgb_digest,
                 width=width,
                 height=height,
+                prompt_capabilities=prompt_capabilities,
             )
         )
         return AISelectMaskRequest(
@@ -2220,6 +2286,7 @@ class CompanionState:
             width=width,
             height=height,
             prompts=prompts,
+            prompt_program=prompt_program,
             prompt_state=prompt_state,
             prompt_state_digest=prompt_state_digest,
             model_manifest_digest=model_manifest_digest,
@@ -2228,6 +2295,40 @@ class CompanionState:
             ranking_policy_version=ranking_policy_version,
             proposal_attempt_id=proposal_attempt_id,
         )
+
+    @staticmethod
+    def _proposals_from_visual_candidates(
+        candidates: Sequence[AISelectVisualPromptCandidate],
+        request: AISelectMaskRequest,
+    ) -> list[dict[str, object]]:
+        """Wrap independently validated adapter candidates without comparing them."""
+
+        proposals: list[dict[str, object]] = []
+        for candidate in candidates:
+            mask_digest = f'sha256:{hashlib.sha256(candidate.mask_bits).hexdigest()}'
+            proposal: dict[str, object] = {
+                'proposalId': f'proposal-{candidate.source_index}',
+                'mask': {
+                    'encoding': 'bitset-lsb-v1',
+                    'width': request.width,
+                    'height': request.height,
+                    'data': base64.b64encode(candidate.mask_bits).decode('ascii'),
+                    'digest': mask_digest,
+                },
+                'sourceIndex': candidate.source_index,
+                'promptConsistency': dict(candidate.prompt_consistency),
+                'promptDiagnostics': [
+                    dict(diagnostic) for diagnostic in candidate.prompt_diagnostics
+                ],
+            }
+            if candidate.model_score is not None:
+                proposal['modelScore'] = candidate.model_score
+                proposal['modelScoreSemantics'] = (
+                    'sam3.1 interactive-image IoU prediction; adapter-local '
+                    'candidate diagnostic, not a ranking score.'
+                )
+            proposals.append(proposal)
+        return proposals
 
     @staticmethod
     def _parse_ai_select_mask_rgb(value: object) -> tuple[bytes, str, int, int]:
@@ -2308,7 +2409,13 @@ class CompanionState:
         rgb_digest: str,
         width: int,
         height: int,
-    ) -> tuple[dict[str, object], tuple[AISelectMaskPrompt, ...], str]:
+        prompt_capabilities: Mapping[str, object],
+    ) -> tuple[
+        dict[str, object],
+        tuple[AISelectMaskPrompt, ...],
+        str,
+        Sam31VisualPromptProgram,
+    ]:
         if not isinstance(value, dict):
             raise ValueError('AI Select Mask promptState must be an object')
         required = {
@@ -2335,28 +2442,6 @@ class CompanionState:
         _mask_request_nonnegative_integer(
             value.get('revision'), 'promptState revision'
         )
-        prompts = cls._parse_ai_select_mask_prompts(
-            value.get('points'), width=width, height=height
-        )
-        for family in ('boxes', 'maskConstraints', 'textPrompts'):
-            entries = value.get(family)
-            if not isinstance(entries, list):
-                raise ValueError(f'AI Select Mask promptState {family} must be a list')
-            if entries:
-                cls._validate_unsupported_prompt_family(
-                    family, entries, width=width, height=height
-                )
-                raise MaskSessionError(
-                    'unsupportedPromptType',
-                    f'The selected point-only adapter does not support {family}.',
-                )
-        if not prompts:
-            raise ValueError(
-                'AI Select Mask promptState must contain at least one supported prompt'
-            )
-        prompt_ids = [prompt.prompt_id for prompt in prompts]
-        if len(set(prompt_ids)) != len(prompt_ids):
-            raise ValueError('AI Select Mask Prompt IDs must be unique')
         digest = _anchor_sha256_digest(
             value.get('digest'), 'Mask promptState digest'
         )
@@ -2368,7 +2453,42 @@ class CompanionState:
             raise ValueError(
                 'AI Select Mask promptState digest does not match its exact payload'
             )
-        return dict(value), prompts, digest
+        compiler_policy = prompt_capabilities.get('compilerPolicyVersion')
+        try:
+            if compiler_policy == POINT_MASK_PROMPT_COMPILER_POLICY_VERSION:
+                program = compile_point_mask_prompt_program(
+                    value,
+                    width=width,
+                    height=height,
+                    capabilities=prompt_capabilities,
+                )
+            else:
+                program = compile_sam31_visual_prompt_program(
+                    value,
+                    width=width,
+                    height=height,
+                    capabilities=prompt_capabilities,
+                )
+        except MaskSessionError as error:
+            if error.code == 'invalidPromptState':
+                raise ValueError(str(error)) from error
+            raise
+        if not (
+            program.points or program.boxes or program.mask_constraints
+        ):
+            raise ValueError(
+                'AI Select Mask promptState must contain at least one supported prompt'
+            )
+        prompts = tuple(
+            AISelectMaskPrompt(
+                prompt_id=point.prompt_id,
+                x_px=point.x_px,
+                y_px=point.y_px,
+                polarity=point.polarity,
+            )
+            for point in program.points
+        )
+        return dict(value), prompts, digest, program
 
     @staticmethod
     def _validate_unsupported_prompt_family(
@@ -5037,7 +5157,9 @@ class CompanionState:
                 "adapterId": model["adapterId"],
                 "modelName": model["modelName"],
                 "weightsBundled": False,
-                "promptCapabilities": _point_prompt_capabilities(),
+                "promptCapabilities": _prompt_capabilities_for_adapter(
+                    model["adapterId"]
+                ),
             }
             for model in self.available_models()
             if (
@@ -5050,7 +5172,7 @@ class CompanionState:
             "protocolVersion": PROTOCOL_VERSION,
             "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}+{release['release']}",
             "renderer": renderer_capability,
-            "supportedPromptKinds": ["point"],
+            "supportedPromptKinds": ["point", "box", "mask-constraint"],
             "supportedOperations": [
                 "aiSelectAnchorRender",
                 "aiSelectAnchorReferenceContributor",

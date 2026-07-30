@@ -1,6 +1,6 @@
 # 04B — Visual Prompt Adapter Enablement
 
-Status: proposed — ready-for-agent
+Status: implemented — 2026-07-30
 
 Blocked by: 04A
 
@@ -296,3 +296,42 @@ unless a separate later ticket explicitly enables them.
 - No formal P/N/V Evidence.
 - No automatic Stable Mask publication on the Anchor path.
 - No implicit conversion between Prompt Brush and Paint/Erase.
+
+# Implementation outcome
+
+- The locked SAM 3.1 capability now truthfully enables positive Box and
+  positive Mask Constraint. Negative Box, negative Mask Constraint, and Text
+  remain disabled with precise adapter-owned reasons.
+- `sam3.1-visual-prompt-compiler/v1` binds authoritative RGB dimensions and
+  digest, PromptState digest, capability digest, deterministic prompt order,
+  inclusive pixel Box semantics, independent Box branches, and binary-union
+  Mask composition.
+- The real adapter preserves all structurally valid SAM alternatives in source
+  order and attaches per-prompt consistency diagnostics. This 04B layer does
+  not compare, cluster, rank, truncate, or select candidates; the retained 07A
+  proposal seam remains the downstream decision owner.
+- Browser trust-boundary validation rejects missing or mismatched visual
+  diagnostics, stale capability/compiler identity, malformed Prompt Brush
+  dimensions/digest/padding, and unsupported prompt families before inference.
+- The Model Manifest and runtime digest rotate for the new compiler/adapter
+  semantics. Operators must reinstall the manifest; model weights remain
+  external and unchanged.
+
+# Completion evidence
+
+- Focused browser contract tests cover capability rotation, explicit disabled
+  reasons, visual-diagnostic completeness, replay identity, Prompt Undo/Redo,
+  Retry, Restart Target, and stale-result rejection.
+- Focused Companion tests cover deterministic Point/Box/Mask compilation,
+  inclusive authoritative pixel coordinates, native-coordinate normalization,
+  Mask artifact validation, unsupported-family fail-closed behavior, combined
+  prompts, and the unranked candidate handoff.
+- The opt-in locked GPU fixture uses source commit
+  `5dd401d1c5c1d5c3eedff06d41b77af824517619` and checkpoint SHA-256
+  `0567debeec80ba4ac6369540c6c248025283cb3ff2b92827509e57e2b3541cb6`.
+  It proves Point, positive Box, positive Mask, and combined requests produce
+  materially different real-model candidates while retaining all three raw
+  alternatives and exact prompt diagnostics.
+- Production GPU correctness is established only for this visual-prompt
+  adapter slice. It does not establish Direct Gaussian Evidence correctness,
+  renderer parity, calibration, or a negative visual-prompt implementation.

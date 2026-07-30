@@ -15,8 +15,11 @@ from urllib.request import Request, urlopen
 from selection_service_companion.masking import (
     MaskProduction,
     MaskSessionError,
+    SAM31_VISUAL_PROMPT_COMPILER_POLICY_VERSION,
     SAM31_RUNTIME_CONFIG_DIGEST,
     Sam3PointMaskAdapter,
+    compile_sam31_visual_prompt_program,
+    sam31_visual_prompt_capabilities,
 )
 from selection_service_companion.server import create_server
 from selection_service_companion.state import (
@@ -43,6 +46,119 @@ class ProposalIdentityDigestTests(unittest.TestCase):
             ),
             'sha256:a64229f647814d4cff1565284ed59b3cba0fd8ea7001249fc11f20da65163e58',
         )
+
+
+class Sam31VisualPromptCompilerTests(unittest.TestCase):
+    def test_compiles_visual_prompt_families_in_a_stable_id_order(self) -> None:
+        mask_bytes = bytes([0b00001010, 0])
+        mask_digest = f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}'
+        prompt_state = {
+            'rgbDigest': f'sha256:{"1" * 64}',
+            'digest': f'sha256:{"2" * 64}',
+            'points': [
+                {'promptId': 'point-b', 'xPx': 3, 'yPx': 2, 'polarity': 'exclude'},
+                {'promptId': 'point-a', 'xPx': 1, 'yPx': 1, 'polarity': 'include'},
+            ],
+            'boxes': [
+                {
+                    'promptId': 'box-b',
+                    'polarity': 'include',
+                    'x0Px': 2,
+                    'y0Px': 0,
+                    'x1Px': 3,
+                    'y1Px': 1,
+                },
+                {
+                    'promptId': 'box-a',
+                    'polarity': 'include',
+                    'x0Px': 0,
+                    'y0Px': 1,
+                    'x1Px': 1,
+                    'y1Px': 2,
+                },
+            ],
+            'maskConstraints': [{
+                'promptId': 'mask-a',
+                'polarity': 'include',
+                'artifact': {
+                    'encoding': 'bitset-lsb-v1',
+                    'width': 4,
+                    'height': 3,
+                    'data': base64.b64encode(mask_bytes).decode('ascii'),
+                    'digest': mask_digest,
+                },
+            }],
+            'textPrompts': [],
+        }
+
+        capabilities = sam31_visual_prompt_capabilities()
+        program = compile_sam31_visual_prompt_program(
+            prompt_state,
+            width=4,
+            height=3,
+            capabilities=capabilities,
+        )
+
+        self.assertEqual(
+            program.compiler_policy_version,
+            SAM31_VISUAL_PROMPT_COMPILER_POLICY_VERSION,
+        )
+        self.assertEqual(
+            [point.prompt_id for point in program.points], ['point-a', 'point-b']
+        )
+        self.assertEqual(
+            [box.prompt_id for box in program.boxes], ['box-a', 'box-b']
+        )
+        self.assertEqual(
+            program.boxes[0].normalized_xywh,
+            (0.0, 1 / 3, 0.5, 2 / 3),
+        )
+        self.assertEqual(program.positive_mask_constraint, mask_bytes)
+        self.assertEqual(
+            program.diagnostics['compiledPromptIds'],
+            ['point-a', 'point-b', 'box-a', 'box-b', 'mask-a'],
+        )
+
+    def test_declares_only_validated_visual_support(self) -> None:
+        capabilities = sam31_visual_prompt_capabilities()
+
+        self.assertTrue(capabilities['boxes'])
+        self.assertTrue(capabilities['maskInput'])
+        self.assertFalse(capabilities['negativeBoxes'])
+        self.assertFalse(capabilities['negativeMaskConstraints'])
+        self.assertEqual(capabilities['text'], False)
+        self.assertIn('negative-box', capabilities['unsupportedPromptReasons'])
+
+    def test_rejects_mask_padding_bits_before_inference(self) -> None:
+        mask_bytes = bytes([0b11111111])
+        prompt_state = {
+            'rgbDigest': f'sha256:{"1" * 64}',
+            'digest': f'sha256:{"2" * 64}',
+            'points': [],
+            'boxes': [],
+            'maskConstraints': [{
+                'promptId': 'mask-a',
+                'polarity': 'include',
+                'artifact': {
+                    'encoding': 'bitset-lsb-v1',
+                    'width': 2,
+                    'height': 2,
+                    'data': base64.b64encode(mask_bytes).decode('ascii'),
+                    'digest': f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}',
+                },
+            }],
+            'textPrompts': [],
+        }
+
+        with self.assertRaisesRegex(
+            MaskSessionError, 'outside its dimensions'
+        ):
+            compile_sam31_visual_prompt_program(
+                prompt_state,
+                width=2,
+                height=2,
+                capabilities=sam31_visual_prompt_capabilities(),
+            )
 
 # The fake SAM predictor never decodes the frame; these bytes only need a
 # stable identity so the RGB digest binding can be verified end to end.
@@ -92,6 +208,31 @@ class FakeSam3Predictor:
 
     def request_types(self) -> list[object]:
         return [request['type'] for request in self.requests]
+
+
+class FakeSam3InteractivePredictor:
+    """Records the locked interactive-image API without requiring CUDA."""
+
+    def __init__(self) -> None:
+        prompt_encoder = type(
+            'FakePromptEncoder',
+            (),
+            {'mask_input_size': (IMAGE_HEIGHT, IMAGE_WIDTH)},
+        )()
+        self.model = type(
+            'FakeInteractiveModel',
+            (),
+            {'sam_prompt_encoder': prompt_encoder},
+        )()
+        self.requests: list[dict[str, object]] = []
+        self.masks: list[list[list[bool]]] = [
+            [[False, True], [False, False]],
+        ]
+        self.scores: list[float] = [0.9]
+
+    def predict(self, **request: object) -> tuple[object, object, object]:
+        self.requests.append(request)
+        return self.masks, self.scores, []
 
 
 class AISelectMaskTests(unittest.TestCase):
@@ -427,11 +568,11 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(payload['code'], 'capabilityMismatch')
         self.assertEqual(self.predictor.requests, [])
 
-    def test_rejects_a_well_formed_unsupported_box_prompt(self) -> None:
+    def test_rejects_a_well_formed_unsupported_negative_box_prompt(self) -> None:
         request = self.request_body()
         request['promptState']['boxes'] = [{  # type: ignore[index]
             'promptId': 'box-1',
-            'polarity': 'include',
+            'polarity': 'exclude',
             'x0Px': 0,
             'y0Px': 0,
             'x1Px': 1,
@@ -447,6 +588,68 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(payload['status'], 'maskProposalError')
         self.assertEqual(payload['code'], 'unsupportedPromptType')
         self.assertEqual(self.predictor.requests, [])
+
+    def test_forwards_positive_box_and_mask_constraint_to_the_visual_adapter(self) -> None:
+        interactive_predictor = FakeSam3InteractivePredictor()
+        self.state.mask_adapters['sam3.1'] = Sam3PointMaskAdapter(
+            build_predictor=lambda model: self.predictor,
+            build_interactive_predictor=lambda model, rgb_png: interactive_predictor,
+        )
+        request = self.request_body()
+        request['promptState']['boxes'] = [{  # type: ignore[index]
+            'promptId': 'box-1',
+            'polarity': 'include',
+            'x0Px': 0,
+            'y0Px': 0,
+            'x1Px': 1,
+            'y1Px': 1,
+        }]
+        request['promptState']['maskConstraints'] = [{  # type: ignore[index]
+            'promptId': 'constraint-1',
+            'polarity': 'include',
+            'artifact': {
+                'encoding': 'bitset-lsb-v1',
+                'width': IMAGE_WIDTH,
+                'height': IMAGE_HEIGHT,
+                'data': ACCEPTED_MASK_BASE64,
+                'digest': f'sha256:{hashlib.sha256(ACCEPTED_MASK_BITS).hexdigest()}',
+            },
+        }]
+        request['promptState']['digest'] = self.prompt_state_digest(  # type: ignore[index]
+            request['promptState']  # type: ignore[arg-type]
+        )
+        capabilities = self.state.capabilities([EDITOR_ORIGIN])['modelManifests'][0][
+            'promptCapabilities'
+        ]
+        request['adapterCapabilityDigest'] = capabilities['capabilityDigest']
+
+        response = self.post_proposals(request)
+
+        self.assertTrue(capabilities['boxes'])
+        self.assertTrue(capabilities['maskInput'])
+        self.assertFalse(capabilities['negativeBoxes'])
+        self.assertFalse(capabilities['negativeMaskConstraints'])
+        self.assertEqual(len(interactive_predictor.requests), 1)
+        adapter_request = interactive_predictor.requests[0]
+        self.assertEqual(adapter_request['point_coords'], [[1, 0]])
+        self.assertEqual(adapter_request['point_labels'], [1])
+        self.assertEqual(adapter_request['box'], [[0, 0, 1, 1]])
+        self.assertEqual(
+            adapter_request['mask_input'].tolist(),
+            [[[0.0, 1.0], [0.0, 0.0]]],
+        )
+        self.assertTrue(adapter_request['normalize_coords'])
+        proposal = response['proposalSet']['proposals'][0]
+        self.assertTrue(proposal['promptConsistency']['positiveBoxesSatisfied'])
+        self.assertTrue(proposal['promptConsistency']['maskConstraintsSatisfied'])
+        self.assertEqual(
+            [(item['family'], item['promptId']) for item in proposal['promptDiagnostics']],
+            [
+                ('point', 'prompt-1'),
+                ('box', 'box-1'),
+                ('mask-constraint', 'constraint-1'),
+            ],
+        )
 
     def test_publishes_an_empty_proposal_set_when_the_adapter_finds_no_mask(
         self,

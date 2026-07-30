@@ -160,9 +160,35 @@ const rankingFeatures = (relations = [], modelScore) => ({
     ...(modelScore === undefined ? {} : { modelScore })
 });
 
+const promptDiagnosticsFor = (request) => [
+    ...request.promptState.points.map((prompt) => ({
+        promptId: prompt.promptId,
+        family: 'point',
+        polarity: prompt.polarity,
+        satisfied: true
+    })),
+    ...request.promptState.boxes.map((prompt) => ({
+        promptId: prompt.promptId,
+        family: 'box',
+        polarity: prompt.polarity,
+        satisfied: true,
+        constraintCoverageFraction: 1,
+        candidateCoverageFraction: 1
+    })),
+    ...request.promptState.maskConstraints.map((prompt) => ({
+        promptId: prompt.promptId,
+        family: 'mask-constraint',
+        polarity: prompt.polarity,
+        satisfied: true,
+        constraintCoverageFraction: 1,
+        candidateCoverageFraction: 1
+    }))
+];
+
 const maskResponseFor = (request, overrides = {}) => {
     const artifact =
         overrides.mask ?? bitsetArtifact(request.rgb.width, request.rgb.height);
+    const promptDiagnostics = promptDiagnosticsFor(request);
     const proposals = overrides.proposals ?? [
         {
             proposalId: 'proposal-0',
@@ -172,6 +198,10 @@ const maskResponseFor = (request, overrides = {}) => {
                 positivePointsSatisfied: true,
                 negativePointsSatisfied: true
             },
+            ...(request.promptState.boxes.length === 0 &&
+            request.promptState.maskConstraints.length === 0
+                ? {}
+                : { promptDiagnostics }),
             rankingFeatures: rankingFeatures()
         }
     ];
@@ -365,7 +395,9 @@ const richPromptCapabilities = createPromptAdapterCapabilities({
     negativeMaskConstraints: true,
     text: true,
     negativeText: true,
-    multiCandidateOutput: true
+    multiCandidateOutput: true,
+    compilerPolicyVersion: 'test-rich-prompt-compiler/v1',
+    unsupportedPromptReasons: {}
 });
 
 test('each new prompt serializes SAM attempts and resubmits the latest prompt set', async () => {

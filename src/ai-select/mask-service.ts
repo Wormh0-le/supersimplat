@@ -129,6 +129,50 @@ const promptStateMatchesRgb = (
     );
 };
 
+const visualPromptDiagnosticsMatchRequest = (
+    proposal: AutoMaskProposalSet['proposals'][number],
+    promptState: PromptState
+): boolean => {
+    if (
+        promptState.boxes.length === 0 &&
+        promptState.maskConstraints.length === 0
+    ) {
+        return true;
+    }
+    const diagnostics = proposal.promptDiagnostics;
+    if (diagnostics === undefined) {
+        return false;
+    }
+    const expected = [
+        ...promptState.points.map((prompt) => ({
+            promptId: prompt.promptId,
+            family: 'point' as const,
+            polarity: prompt.polarity
+        })),
+        ...promptState.boxes.map((prompt) => ({
+            promptId: prompt.promptId,
+            family: 'box' as const,
+            polarity: prompt.polarity
+        })),
+        ...promptState.maskConstraints.map((prompt) => ({
+            promptId: prompt.promptId,
+            family: 'mask-constraint' as const,
+            polarity: prompt.polarity
+        }))
+    ];
+    return (
+        diagnostics.length === expected.length &&
+        expected.every((expectedPrompt) =>
+            diagnostics.some(
+                (diagnostic) =>
+                    diagnostic.promptId === expectedPrompt.promptId &&
+                    diagnostic.family === expectedPrompt.family &&
+                    diagnostic.polarity === expectedPrompt.polarity
+            )
+        )
+    );
+};
+
 export const isAIViewMaskRequest = (
     value: unknown
 ): value is AIViewMaskRequest => {
@@ -224,7 +268,11 @@ export const maskResponseMatchesRequest = (
         response.proposalSet.proposals.every(
             (proposal) =>
                 proposal.mask.width === request.rgb.width &&
-                proposal.mask.height === request.rgb.height
+                proposal.mask.height === request.rgb.height &&
+                visualPromptDiagnosticsMatchRequest(
+                    proposal,
+                    request.promptState
+                )
         )
     );
 };

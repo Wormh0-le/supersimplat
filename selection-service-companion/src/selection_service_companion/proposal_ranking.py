@@ -194,11 +194,28 @@ def _base_features(
         for point in negative_points
     )
     area = len(foreground_indexes)
-    features: dict[str, object] = {
-        'promptConsistency': {
+    candidate_prompt_consistency = proposal.get('promptConsistency')
+    if (
+        isinstance(candidate_prompt_consistency, Mapping)
+        and all(
+            isinstance(value, bool)
+            for value in candidate_prompt_consistency.values()
+        )
+        and {'positivePointsSatisfied', 'negativePointsSatisfied'}
+        <= set(candidate_prompt_consistency)
+    ):
+        prompt_consistency = dict(candidate_prompt_consistency)
+    else:
+        prompt_consistency = {
             'positivePointsSatisfied': positive_satisfied,
             'negativePointsSatisfied': negative_satisfied,
-        },
+        }
+    features: dict[str, object] = {
+        # Candidate-local visual facts arrive from the adapter compiler. The
+        # current ranking policy remains unchanged; it merely retains those
+        # facts for Ticket 07A instead of overwriting them with point-only
+        # diagnostics.
+        'promptConsistency': prompt_consistency,
         'eligible': bool(area and positive_satisfied and negative_satisfied),
         'areaFraction': area / (width * height),
         'boundingBox': bounding_box,

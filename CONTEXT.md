@@ -136,6 +136,10 @@ _Avoid_: legacy Prompt Log, bitmap edit history
 The versioned, digest-bound declaration of which positive/negative prompt families and multi-candidate output an installed model adapter supports. The editor never infers these capabilities from a model name; unsupported tools are disabled or rejected explicitly.
 _Avoid_: best-effort ignored prompts, model-name feature detection
 
+**Prompt Compiler Policy**
+The versioned deterministic mapping from one exact PromptState into adapter-native Point, Box, and Mask inputs. Its identity covers ordering, coordinate conventions, prompt-family composition, and Mask resizing; capability identity rotates when these semantics change. The locked SAM 3.1 policy supports positive Box and positive Mask Constraint while keeping negative Box, negative Mask Constraint, and Text explicitly disabled.
+_Avoid_: implicit coordinate conversion, silently ignored prompt, model-name default
+
 **AutoMaskProposalSet**
 A deterministic bounded set of structurally valid model Mask alternatives bound to exact target/context, Camera/RGB, PromptState, model, adapter capability, policy, and attempt identities. A proposal may seed Editing Mask but is never Stable without Confirm Mask. Raw adapter scores retain their declared semantics and are not correctness confidence.
 _Avoid_: Stable Mask, highest-score auto-confirm, ProposalDecision

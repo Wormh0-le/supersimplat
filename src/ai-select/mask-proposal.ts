@@ -23,6 +23,21 @@ export interface PromptConsistencyFacts {
     readonly textConstraintsSatisfied?: boolean;
 }
 
+export type PromptDiagnosticFamily = 'point' | 'box' | 'mask-constraint';
+
+/**
+ * Candidate-local prompt facts preserved for later 2D proposal policy. These
+ * measurements deliberately do not contain a cross-candidate score.
+ */
+export interface PromptFamilyDiagnostic {
+    readonly promptId: string;
+    readonly family: PromptDiagnosticFamily;
+    readonly polarity: 'include' | 'exclude';
+    readonly satisfied: boolean;
+    readonly constraintCoverageFraction?: number;
+    readonly candidateCoverageFraction?: number;
+}
+
 export interface AutoMaskProposal {
     readonly proposalId: string;
     readonly mask: MaskArtifact;
@@ -30,6 +45,7 @@ export interface AutoMaskProposal {
     readonly modelScore?: number;
     readonly modelScoreSemantics?: string;
     readonly promptConsistency: PromptConsistencyFacts;
+    readonly promptDiagnostics?: readonly PromptFamilyDiagnostic[];
     readonly rankingFeatures: ProposalRankingFeatures;
 }
 
@@ -214,6 +230,33 @@ const isFiniteNumber = (value: unknown): value is number =>
 const isUnitNumber = (value: unknown): value is number =>
     isFiniteNumber(value) && value >= 0 && value <= 1;
 
+const isPromptFamilyDiagnostic = (
+    value: unknown
+): value is PromptFamilyDiagnostic => {
+    if (!isRecord(value)) {
+        return false;
+    }
+    const allowed = new Set([
+        'promptId',
+        'family',
+        'polarity',
+        'satisfied',
+        'constraintCoverageFraction',
+        'candidateCoverageFraction'
+    ]);
+    return (
+        Object.keys(value).every((key) => allowed.has(key)) &&
+        isNonEmptyString(value.promptId) &&
+        ['point', 'box', 'mask-constraint'].includes(value.family as string) &&
+        ['include', 'exclude'].includes(value.polarity as string) &&
+        typeof value.satisfied === 'boolean' &&
+        (value.constraintCoverageFraction === undefined ||
+            isUnitNumber(value.constraintCoverageFraction)) &&
+        (value.candidateCoverageFraction === undefined ||
+            isUnitNumber(value.candidateCoverageFraction))
+    );
+};
+
 const isNumberArray = (
     value: unknown,
     predicate: (entry: number) => boolean = () => true
@@ -355,6 +398,16 @@ export const isAutoMaskProposalSet = (
             !isMaskArtifact(proposal.mask) ||
             !artifactDigestMatchesBytes(proposal.mask) ||
             !exactBooleanFacts(proposal.promptConsistency) ||
+            (proposal.promptDiagnostics !== undefined &&
+                (!Array.isArray(proposal.promptDiagnostics) ||
+                    !proposal.promptDiagnostics.every(
+                        isPromptFamilyDiagnostic
+                    ) ||
+                    new Set(
+                        proposal.promptDiagnostics.map(
+                            (diagnostic) => diagnostic.promptId
+                        )
+                    ).size !== proposal.promptDiagnostics.length)) ||
             !isProposalRankingFeatures(proposal.rankingFeatures) ||
             !promptConsistencyMatches(
                 proposal.promptConsistency,

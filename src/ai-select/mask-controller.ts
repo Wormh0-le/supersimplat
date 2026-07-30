@@ -153,7 +153,22 @@ const pointOnlyCapabilities = createPromptAdapterCapabilities({
     negativeMaskConstraints: false,
     text: false,
     negativeText: false,
-    multiCandidateOutput: false
+    multiCandidateOutput: false,
+    compilerPolicyVersion: 'point-mask-compiler/v1',
+    unsupportedPromptReasons: {
+        'positive-box':
+            'The fallback Point Mask adapter does not support positive-box; it supports Points only.',
+        'negative-box':
+            'The fallback Point Mask adapter does not support negative-box; it supports Points only.',
+        'positive-mask-constraint':
+            'The fallback Point Mask adapter does not support positive-mask-constraint; it supports Points only.',
+        'negative-mask-constraint':
+            'The fallback Point Mask adapter does not support negative-mask-constraint; it supports Points only.',
+        'positive-text':
+            'The fallback Point Mask adapter does not support positive-text; it supports Points only.',
+        'negative-text':
+            'The fallback Point Mask adapter does not support negative-text; it supports Points only.'
+    }
 });
 
 const errorMessage = (error: unknown): string => {

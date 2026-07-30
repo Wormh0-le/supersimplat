@@ -249,7 +249,16 @@ const pointCapabilities = createPromptAdapterCapabilities({
     negativeMaskConstraints: false,
     text: false,
     negativeText: false,
-    multiCandidateOutput: false
+    multiCandidateOutput: false,
+    compilerPolicyVersion: 'point-mask-compiler/v1',
+    unsupportedPromptReasons: {
+        'positive-box': 'The adapter supports Points only.',
+        'negative-box': 'The adapter supports Points only.',
+        'positive-mask-constraint': 'The adapter supports Points only.',
+        'negative-mask-constraint': 'The adapter supports Points only.',
+        'positive-text': 'The adapter supports Points only.',
+        'negative-text': 'The adapter supports Points only.'
+    }
 });
 
 const probeResponseFor = (request, overrides = {}) => ({

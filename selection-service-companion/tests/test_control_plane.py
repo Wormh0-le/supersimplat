@@ -21,6 +21,7 @@ from selection_service_companion.evidence import (
 from selection_service_companion.masking import (
     PointMaskAdapter,
     SAM31_RUNTIME_CONFIG_DIGEST,
+    sam31_visual_prompt_capabilities,
 )
 from selection_service_companion.server import create_server
 from selection_service_companion.state import CompanionState
@@ -84,25 +85,7 @@ class CompanionControlPlaneTests(unittest.TestCase):
 
         self.assertEqual(capabilities["protocolVersion"], "1")
         self.assertEqual(capabilities["capacity"], {"maximumActiveSessions": 1, "activeSessions": 0})
-        prompt_capabilities = {
-            "points": True,
-            "negativePoints": True,
-            "boxes": False,
-            "negativeBoxes": False,
-            "maskInput": False,
-            "negativeMaskConstraints": False,
-            "text": False,
-            "negativeText": False,
-            "multiCandidateOutput": True,
-        }
-        encoded_capabilities = json.dumps(
-            prompt_capabilities,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode()
-        prompt_capabilities["capabilityDigest"] = (
-            f"sha256:{hashlib.sha256(encoded_capabilities).hexdigest()}"
-        )
+        prompt_capabilities = sam31_visual_prompt_capabilities()
         self.assertEqual(capabilities["modelManifests"], [{
             "digest": model_digest,
             "adapterId": "sam3.1",

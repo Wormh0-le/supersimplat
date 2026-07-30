@@ -68,6 +68,12 @@ export interface PromptAdapterCapabilities {
     readonly text: boolean;
     readonly negativeText: boolean;
     readonly multiCandidateOutput: boolean;
+    /** Versioned deterministic compilation semantics for this adapter. */
+    readonly compilerPolicyVersion: string;
+    /** Actionable explanations for intentionally unsupported Prompt tools. */
+    readonly unsupportedPromptReasons: Readonly<
+        Partial<Record<PromptTool, string>>
+    >;
     readonly capabilityDigest: string;
 }
 
@@ -311,7 +317,11 @@ const capabilityPayload = (
     negativeMaskConstraints: capabilities.negativeMaskConstraints,
     text: capabilities.text,
     negativeText: capabilities.negativeText,
-    multiCandidateOutput: capabilities.multiCandidateOutput
+    multiCandidateOutput: capabilities.multiCandidateOutput,
+    compilerPolicyVersion: capabilities.compilerPolicyVersion,
+    unsupportedPromptReasons: Object.freeze({
+        ...capabilities.unsupportedPromptReasons
+    })
 });
 
 export const createPromptAdapterCapabilities = (
@@ -320,8 +330,44 @@ export const createPromptAdapterCapabilities = (
     const payload = capabilityPayload(capabilities);
     return Object.freeze({
         ...payload,
+        unsupportedPromptReasons: Object.freeze({
+            ...payload.unsupportedPromptReasons
+        }),
         capabilityDigest: sha256Digest(encoder.encode(canonicalJson(payload)))
     });
+};
+
+const promptTools = new Set<PromptTool>([
+    'positive-point',
+    'negative-point',
+    'positive-box',
+    'negative-box',
+    'positive-mask-constraint',
+    'negative-mask-constraint',
+    'positive-text',
+    'negative-text'
+]);
+
+const promptToolSupported = (
+    tool: PromptTool,
+    capabilities: Omit<PromptAdapterCapabilities, 'capabilityDigest'>
+): boolean => {
+    return tool === 'positive-point'
+        ? capabilities.points
+        : tool === 'negative-point'
+          ? capabilities.points && capabilities.negativePoints
+          : tool === 'positive-box'
+            ? capabilities.boxes
+            : tool === 'negative-box'
+              ? capabilities.boxes && capabilities.negativeBoxes
+              : tool === 'positive-mask-constraint'
+                ? capabilities.maskInput
+                : tool === 'negative-mask-constraint'
+                  ? capabilities.maskInput &&
+                    capabilities.negativeMaskConstraints
+                  : tool === 'positive-text'
+                    ? capabilities.text
+                    : capabilities.text && capabilities.negativeText;
 };
 
 export const isPromptAdapterCapabilities = (
@@ -339,6 +385,8 @@ export const isPromptAdapterCapabilities = (
             'text',
             'negativeText',
             'multiCandidateOutput',
+            'compilerPolicyVersion',
+            'unsupportedPromptReasons',
             'capabilityDigest'
         ])
     ) {
@@ -357,14 +405,37 @@ export const isPromptAdapterCapabilities = (
     ] as const;
     if (
         !booleanKeys.every((key) => typeof value[key] === 'boolean') ||
+        !isNonEmptyString(value.compilerPolicyVersion) ||
+        !isRecord(value.unsupportedPromptReasons) ||
         typeof value.capabilityDigest !== 'string' ||
         !digestPattern.test(value.capabilityDigest)
     ) {
         return false;
     }
-    const expected = createPromptAdapterCapabilities(
-        value as unknown as Omit<PromptAdapterCapabilities, 'capabilityDigest'>
-    );
+    const capabilityPayloadValue = value as unknown as Omit<
+        PromptAdapterCapabilities,
+        'capabilityDigest'
+    >;
+    const unsupportedPromptReasons = value.unsupportedPromptReasons as Record<
+        string,
+        unknown
+    >;
+    if (
+        !Object.entries(unsupportedPromptReasons).every(
+            ([tool, reason]) =>
+                promptTools.has(tool as PromptTool) &&
+                isNonEmptyString(reason) &&
+                !promptToolSupported(tool as PromptTool, capabilityPayloadValue)
+        ) ||
+        [...promptTools].some(
+            (tool) =>
+                !promptToolSupported(tool, capabilityPayloadValue) &&
+                !Object.hasOwn(unsupportedPromptReasons, tool)
+        )
+    ) {
+        return false;
+    }
+    const expected = createPromptAdapterCapabilities(capabilityPayloadValue);
     return expected.capabilityDigest === value.capabilityDigest;
 };
 
@@ -372,26 +443,10 @@ export const promptToolCapabilityReason = (
     tool: PromptTool,
     capabilities: PromptAdapterCapabilities
 ): string | null => {
-    const supported =
-        tool === 'positive-point'
-            ? capabilities.points
-            : tool === 'negative-point'
-              ? capabilities.points && capabilities.negativePoints
-              : tool === 'positive-box'
-                ? capabilities.boxes
-                : tool === 'negative-box'
-                  ? capabilities.boxes && capabilities.negativeBoxes
-                  : tool === 'positive-mask-constraint'
-                    ? capabilities.maskInput
-                    : tool === 'negative-mask-constraint'
-                      ? capabilities.maskInput &&
-                        capabilities.negativeMaskConstraints
-                      : tool === 'positive-text'
-                        ? capabilities.text
-                        : capabilities.text && capabilities.negativeText;
-    return supported
+    return promptToolSupported(tool, capabilities)
         ? null
-        : `The selected Prompt Adapter does not support ${tool}.`;
+        : (capabilities.unsupportedPromptReasons[tool] ??
+              `The selected Prompt Adapter does not support ${tool}.`);
 };
 
 export const promptStateHasConstraints = (state: PromptState): boolean => {

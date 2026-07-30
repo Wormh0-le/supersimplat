@@ -251,3 +251,48 @@ test('stale, corrupt, or partial proposal responses are rejected', () => {
     assert.ok(!isMaskResultResponse(responseFor(req, { proposalSet })));
     assert.ok(!isMaskResultResponse({ status: 'maskProposalError' }));
 });
+
+test('a visual Prompt request requires per-family candidate diagnostics', () => {
+    const base = promptState();
+    const visualPromptState = revisePromptState(base, {
+        boxes: [
+            {
+                promptId: 'box-1',
+                polarity: 'include',
+                x0Px: 1,
+                y0Px: 1,
+                x1Px: 3,
+                y1Px: 3
+            }
+        ]
+    });
+    const req = request({ promptState: visualPromptState });
+
+    assert.ok(isAIViewMaskRequest(req));
+    assert.ok(!maskResponseMatchesRequest(responseFor(req), req));
+
+    const proposalSet = proposalSetFor(req);
+    proposalSet.proposals[0].promptDiagnostics = [
+        {
+            promptId: 'p-1',
+            family: 'point',
+            polarity: 'include',
+            satisfied: true
+        },
+        {
+            promptId: 'box-1',
+            family: 'box',
+            polarity: 'include',
+            satisfied: true,
+            constraintCoverageFraction: 0.75,
+            candidateCoverageFraction: 0.5
+        }
+    ];
+    proposalSet.digest = autoMaskProposalSetDigest({
+        ...proposalSet,
+        digest: undefined
+    });
+    assert.ok(
+        maskResponseMatchesRequest(responseFor(req, { proposalSet }), req)
+    );
+});

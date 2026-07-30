@@ -118,7 +118,7 @@ Ticket 04A and Ticket 06 may proceed after Ticket 05. Ticket 04B follows 04A. Ti
 
 ## Audit artifacts
 
-- `TRACEABILITY.md`: Final Spec v1.1 / Amendments 001–005 / DG-20–25 mapped to tickets.
+- `TRACEABILITY.md` + `TRACEABILITY-v2.7.md`: v2.6 base mapping plus the Amendment 005 / DG-25 route-B-first overlay, totaling 166 requirements.
 - `FOUR-PASS-AUDIT.md`: six-pass v2.7 graph, artifact-dependency, reverse-scope, workflow, and failure audit.
 - `WALKTHROUGHS.md`: inherited flows plus route-B implementation and C/D extension-seam paths.
 - `manifest.json`: machine-readable v2.7 graph and audit metadata.

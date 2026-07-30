@@ -1,4 +1,4 @@
-# 08 — 2.5D object bootstrap + adaptive Key/Bridge View sequence planner
+# 08 — 2.5D object bootstrap + adaptive sparse Key-View planner
 
 Status: blocked — waits for reopened 07A and Ticket 07B
 
@@ -9,8 +9,8 @@ Blocks: 08A
 ## Final Spec mapping
 
 - Final Spec v1.1 §§23, 27, 30–32
-- Final Spec v1.1 Amendments 002 and 003
-- DG-13, DG-20, DG-21, DG-22, DG-23
+- Final Spec v1.1 Amendments 002–004
+- DG-13, DG-20, DG-21, DG-22, DG-24
 - MVP Phase 3
 
 ## Inputs / preconditions
@@ -26,47 +26,53 @@ Blocks: 08A
 ## Outputs / handoff artifacts
 
 - versioned `TargetBootstrapArtifact`;
-- versioned adaptive planner policy;
+- versioned adaptive sparse planner policy;
 - bounded progressive planner jobs;
 - candidate-pose validity/preflight records;
-- ordered `TrackingSequencePlan`;
-- explicit Key View / Bridge View roles;
-- transition-cost diagnostics;
+- immutable `SparseKeyViewPlanSegment` artifacts;
+- deterministic Key-View review order;
 - Stop / Generate More / Regenerate Auto Views.
 
 ## What to build
 
-Replace the Ticket 06 fixed `±45°` pair with a bounded adaptive planner that:
+Replace the Ticket 06 fixed `±45°` pair with a bounded adaptive sparse planner that:
 
 1. derives a conservative visible-target center/extent from the confirmed Anchor;
 2. rejects invalid indoor/outside-room observation poses before gain ranking;
-3. selects useful Key Views by target observation/diversity gain;
-4. orders Key Views into a trackable sequence;
-5. inserts Bridge Views only when needed to keep adjacent transitions within a declared tracking envelope.
+3. selects a small number of useful Key Views by target observation/diversity gain;
+4. publishes an immutable plan segment;
+5. allows `Generate More` to append another segment without invalidating completed segments.
 
-The planner may use low-cost support/visibility diagnostics before formal Lift. It must not fabricate Gaussian ownership, P/N/V Evidence, or tracked Masks.
+The planner may use low-cost support/visibility diagnostics before formal Lift. It must not fabricate Gaussian ownership, P/N/V Evidence, tracked Masks, or a video-like tracking sequence.
 
 # TargetBootstrapArtifact
 
-The bootstrap binds exact Anchor Camera/RGB/Stable Mask and policy identity and records visible support, robust center, extent, quality, and reasons.
+The bootstrap binds exact Anchor Camera/RGB/Stable Mask and policy identity and records visible support, robust center, extent, quality, reasons, and an artifact digest.
 
-It may guide framing, pose generation, ROI, and transition ordering. It cannot publish Owned Gaussian IDs, Candidate, Native Selection, or unseen-surface completion.
+It may guide framing, pose generation, projected ROI/Prompt construction, and an initial conservative Working Set seed.
+
+It cannot publish Owned Gaussian IDs, Candidate, Native Selection, or unseen-surface completion. It cannot become a hard upper bound on later Evidence Working Set expansion.
 
 If bootstrap quality is limited/unavailable, fail conservatively to smaller local moves or user-added Views.
 
-# Key / Bridge semantics
+# Sparse Key-View semantics
 
 ```text
 Key View
 = expected to add useful object observation
   and may later become Included
-
-Bridge View
-= inserted primarily for tracking continuity
-  and defaults Excluded from Lift
 ```
 
-`trackingMembership` is separate from Participation. Planner role never overrides Ticket 07 assessment or user inclusion/exclusion.
+The mandatory v1 planner does not require:
+
+- Bridge Views;
+- tracker transition envelopes;
+- dense continuous camera trajectories;
+- tracker-specific ordering.
+
+A later optional tracker/hybrid ADR may request auxiliary frames through a separate capability contract. Those frames are not part of the default sparse Key-View plan.
+
+Key-View role is separate from Participation. Planner role never overrides Ticket 07 assessment or user inclusion/exclusion.
 
 # Planning decisions
 
@@ -76,23 +82,43 @@ Evaluate separately:
 camera validity
 expected target observation gain
 directional diversity gain
-adjacent transition cost
+expected render / scene-support quality
 resource cost
 ```
 
-A high gain cannot override invalid camera geometry. A low transition cost cannot make a redundant Bridge View a Key View.
+A high gain cannot override invalid camera geometry. View count is not a proxy for coverage.
+
+# Immutable plan segments
+
+Each planner result is an immutable `SparseKeyViewPlanSegment` with:
+
+```text
+segmentId
+targetContextId
+Anchor Stable Mask digest
+TargetBootstrapArtifact digest
+planner policy digest
+ordered Key Views
+attempt identity
+artifact digest
+```
+
+`Generate More` appends a new segment. It does not rewrite prior segments, rotate prior Key-View identities, or invalidate current RGB/Mask artifacts.
+
+`Regenerate Auto Views` is the explicit operation that may supersede planner-owned segments while preserving user-owned Views.
 
 # Acceptance criteria
 
 ## Bootstrap
 
-- [ ] Bootstrap is derived only from the confirmed Anchor revision.
+- [ ] Bootstrap derives only from the confirmed Anchor revision.
 - [ ] Center/extent use robust visible support and reject separated/background-dominated support.
-- [ ] Bootstrap identity includes target/Anchor/RGB/Mask/policy/support digests.
+- [ ] Bootstrap identity includes target/Anchor/RGB/Mask/policy/support/artifact digests.
 - [ ] Bootstrap is explicitly non-ownership and never creates Candidate/P/N/V.
+- [ ] Bootstrap is a Working Set seed, not a hard search-space upper bound.
 - [ ] Limited/unavailable bootstrap has actionable fallback.
 
-## Adaptive Key Views
+## Adaptive sparse Key Views
 
 - [ ] Main flow exposes no fixed user View count or quality preset.
 - [ ] Planner uses bounded min/max, target observation, diversity, marginal gain, low-gain patience, and resource cap.
@@ -102,26 +128,19 @@ A high gain cannot override invalid camera geometry. A low transition cost canno
 - [ ] Training-camera manifold/free-space envelope may constrain candidates under versioned policy.
 - [ ] Absence of reliable free space fails to local moves/user-added Views, not unconstrained orbit jumps.
 - [ ] Target-only visibility is insufficient when the camera lies outside a plausible observation region.
+- [ ] Planner does not require tracker-specific transition limits.
 
-## Sequence ordering and Bridge Views
+## Plan segment lifecycle
 
-- [ ] Output is an ordered sequence, not only an unordered camera set.
-- [ ] Adjacent transition cost is recorded separately from information gain.
-- [ ] Key Views remain selected for observation value.
-- [ ] Bridge Views are inserted only when a Key-to-Key transition exceeds the declared tracking envelope.
-- [ ] Bridge Views default `participation=excluded`.
-- [ ] Planner records role, sequence index, policy, and expected transition cost.
-- [ ] Sequence changes create a new plan identity and invalidate dependent tracking work.
-- [ ] Ticket 08 does not run the tracker or publish Generated View Masks.
-
-## Progressive controls
-
-- [ ] View candidates/RGB/Mask/later Evidence publish independently.
+- [ ] Output is an immutable sparse Key-View segment.
+- [ ] Stable `viewId` is independent from array position.
+- [ ] Generate More appends a new segment and preserves completed segments/artifacts.
 - [ ] Stop cancels pending/future work without deleting completed artifacts.
-- [ ] Generate More continues from current observation/directional/sequence gaps.
 - [ ] `maxAutoViews` remains a hard bounded batch limit.
-- [ ] Regenerate replaces planner-owned Views and preserves user-owned Views.
+- [ ] Regenerate replaces planner-owned segments and preserves user-owned Views.
 - [ ] Manual View confirmation never implicitly resumes planning.
+- [ ] Segment/Anchor/bootstrap changes create explicit new identities and reject stale results.
+- [ ] Ticket 08 does not run Mask acquisition or publish Generated View Masks.
 
 ## Anchor dependency
 
@@ -135,8 +154,8 @@ A high gain cannot override invalid camera geometry. A low transition cost canno
 - Bootstrap failure preserves Anchor and requests local/user-added alternatives.
 - Invalid camera rejection preserves completed Views and uses bounded replacement.
 - No useful Key View yields actionable Limited state.
-- No trackable ordering may insert bounded Bridges, request replanning, or stop Limited.
-- Stop/cancel/restart cannot publish obsolete plans.
+- Stop/cancel/restart cannot publish obsolete segments.
+- Generate More failure preserves every completed segment and View.
 - Missing Evidence never classifies RGB as Render Failed.
 
 # Validation
@@ -145,16 +164,18 @@ A high gain cannot override invalid camera geometry. A low transition cost canno
 - `npm test`
 - `npm run lint`
 - locked GPU planner smoke
-- frozen-scene bootstrap/pose/gain/sequence benchmark
+- frozen-scene bootstrap/pose/gain benchmark
 - indoor-room behind-wall/outside-content regressions
 - conservative no-free-space fallback
-- Key-to-Key transition and Bridge insertion regression
-- plan identity/stale-result regression
+- sparse Key-View marginal-gain regression
+- append-only Generate More segment regression
+- segment identity/stale-result regression
 - existing large-orbit regression
 
 # Non-goals
 
-- No tracker backend or Mask propagation; Ticket 08A owns it.
+- No Mask acquisition backend; Ticket 08A owns it.
+- No mandatory tracker, Bridge View, or transition envelope.
 - No final Lift Readiness calibration.
 - No User-added View UI.
 - No formal Direct Evidence kernel.

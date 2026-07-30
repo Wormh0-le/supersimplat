@@ -1,10 +1,12 @@
 # 07 — Local MaskReviewPolicy + Participation
 
-Status: reopened — v1.3 policy correction required
+Status: ready-for-agent — v1.3 policy correction may run in parallel with Ticket 04C
 
 Blocked by: 06
 
 Blocks: 07A, 08B
+
+Runs in parallel with: 04C
 
 ## Final Spec mapping
 

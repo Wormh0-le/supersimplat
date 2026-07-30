@@ -6,11 +6,13 @@ Blocked by: 14, 09, 07
 
 Blocks: none
 
-## Final Spec mapping
+## Current Final Spec mapping
 
 - Final Spec v1.3 §§14, 20–21, 24–26
 - ADR 0013
 - ADR 0016
+
+Final Spec v1.3 is the only current closure source. Earlier cross-view assessment specifications are historical rationale only.
 
 ## Purpose
 

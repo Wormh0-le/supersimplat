@@ -1,10 +1,12 @@
 # Current Final Spec v1.3 → Ticket Mapping — v2.12
 
-Status: **current normative ticket mapping**
+Status: **current normative ticket mapping — Ticket-local migration complete**
 
 This file maps every active AI Select Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
 Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical. ADR 0016 supersedes conflicting route/backend/planner details in ADR 0014 and DG-24 through DG-26.
+
+All 30 Ticket files now carry a direct current mapping to Final Spec v1.3. An older spec may appear only inside an explicitly labeled historical-provenance, historical-implementation, superseded-surface or migration-input section. Such text is non-normative and cannot satisfy current acceptance or closure criteria.
 
 | Ticket | Final Spec v1.3 mapping | Current responsibility |
 |---|---|---|
@@ -37,7 +39,7 @@ Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical. ADR 00
 | 19 | §§3–5, 20–21, 24–25 | SceneSnapshot, authoritative RGB and Render Working Set |
 | 20 | §§4–5, 20–22, 24–25 | production same-decision P/N/V Evidence |
 | 21 | §§4–6, 14–25 | core failure, calibration and release hardening; Ticket 10 optional |
-| 22 | §§0, 16, 20–25 | legacy product/Contributor contraction |
+| 22 | §§0, 16, 20–25 | legacy product/Contributor/SAM/Prompt contraction |
 
 ## Current implementation frontier
 
@@ -75,13 +77,18 @@ Implementation agents MUST NOT reintroduce current requirements for:
 - `propagation-uncertain` as current Mask Review;
 - `weak-gaussian-support` as Mask quality or Ticket 10 output;
 - Ticket 10 as a core release blocker;
-- Ticket 06 as a current production fallback.
+- Ticket 06 as a current production fallback;
+- `VisibleTargetSupportArtifact` / `TargetBootstrapArtifact` as current v1 geometry contracts;
+- ProposalSet/Decision/fallback identities as current Generated-View ownership or Evidence inputs.
 
 ## Audit rule
 
 The mapping passes only when:
 
 - every Ticket resolves here;
+- every Ticket-local current mapping block points directly to Final Spec v1.3;
+- no Ticket-local current mapping block names Final Spec v1.1, an Amendment, or Final Spec v1.2 as authority;
+- older spec names appear only under explicit historical/superseded/migration labels;
 - 04C and 07 are recognized as the current ready frontier;
 - 04C remains the critical migration gate;
 - no active closure criterion relies on superseded v1.2 architecture;

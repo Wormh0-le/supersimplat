@@ -4,11 +4,13 @@ Status: implemented — 2026-07-25
 
 Blocked by: 03, 04
 
-## Final Spec mapping
+## Current Final Spec mapping
 
-- Final Spec v1.1 §§10–12, 24
-- DG-09, DG-11, DG-12, DG-20
-- MVP Phase 2
+- Final Spec v1.3 §§4–7, 19, 22, 24
+- DG-09, DG-11, DG-12 and DG-20 as historical editing/confirmation rationale where not superseded
+- MVP Phase 2 as historical implementation provenance
+
+Final Spec v1.3 is the only current closure source. Prompt/model details below are historical where superseded by Tickets 04C and 07A.
 
 ## Inputs / preconditions
 
@@ -33,12 +35,12 @@ The support probe is a cheap computability gate, not a hidden lifting implementa
 
 ## Acceptance criteria
 
-- [x] Prompt refine and Brush Add/Erase modify only Editing Mask until Confirm Mask.
+- [x] Prompt refinement and Paint/Erase modify only the pre-confirmation Mask state until Confirm Mask.
 - [x] Clear creates an empty Editing Mask; Restore Auto restores the latest valid auto mask and is disabled when none exists.
-- [x] Fully manual Clear → Brush → Confirm produces User Confirmed Stable Mask.
+- [x] Fully manual Clear → Paint → Confirm produces User Confirmed Stable Mask.
 - [x] Mask Editor has independent Undo/Redo with explicit focus routing.
 - [x] Anchor Validation evaluates computational suitability, not semantic target confidence.
-- [x] Hard validation blocks unavailable authoritative RGB, empty/nearly-empty Mask, no computable Gaussian support, pending latest Mask/SAM revision, invalid Stable ID/Render Working Set, or mismatched Camera/RGB/Mask identity.
+- [x] Hard validation blocks unavailable authoritative RGB, empty/nearly-empty Mask, no computable Gaussian support, pending latest Mask inference revision, invalid Stable ID/Render Working Set, or mismatched Camera/RGB/Mask identity.
 - [x] Gaussian support is obtained from a versioned low-cost support/visibility probe with explicit input identity; it is not complete Contributor publication and is not formal P/N/V Evidence.
 - [x] The support probe may answer only whether useful Gaussian support is computable/observable under the declared policy; it must not classify Selected/Rejected ownership or become a Candidate source.
 - [x] The normal Confirm Anchor path does not invoke the complete Contributor backend. Any reference operation used for diagnostics is explicit, bounded, and outside the product hard gate.
@@ -56,7 +58,7 @@ The support probe is a cheap computability gate, not a hidden lifting implementa
 
 ## Failure / recovery criteria
 
-- [x] Mask/SAM failure preserves View/RGB and supports Retry Auto Mask / Manual Draw / later Exclude.
+- [x] Mask inference failure preserves View/RGB and supports Retry Auto Mask / Manual Draw / later Exclude.
 - [x] Support-probe/validation failure offers Fix Mask / Adjust Anchor / Restart and does not relabel RGB as Render Failed.
 - [x] Unavailable debug/reference Contributor data does not make an otherwise computable Anchor invalid.
 
@@ -66,7 +68,7 @@ The support probe is a cheap computability gate, not a hidden lifting implementa
 - npm run lint
 - npm run lint:locales
 - npm run build
-- npm run test:companion for support-probe/SAM changes
+- npm run test:companion for support-probe/Mask changes
 - Binding mismatch and no-complete-Contributor Confirm tests
 - Test that support probe cannot publish Candidate/Evidence or call the production reference-Contributor path implicitly
 - Manual focus/restart walkthrough
@@ -78,34 +80,33 @@ The support probe is a cheap computability gate, not a hidden lifting implementa
 - No Candidate
 - No complete Contributor production or tolerance tuning
 
-## Implementation recorded — 2026-07-25
+## Historical implementation record — 2026-07-25
 
 Editor (TypeScript):
 
-- `src/ai-select/mask-registry.ts` — `clearEditing`, `restoreEditing`, `latestAutoMask`: Clear publishes an empty manual draft; Restore Auto / mask-local Undo/Redo navigate retained Editing-chain versions only (never Stable versions, never across RGB identity).
-- `src/ai-select/mask-controller.ts` — Clear / Restore Auto / `undoMaskEdit` / `redoMaskEdit` with mask-local Undo/Redo stacks reset on RGB/context identity change; `canUndo`/`canRedo`/`canRestoreAuto`/`hasUnconfirmedChanges` surface; `isAnchorLocked` gate rejects every Mask mutation while the Anchor is confirmed.
-- `src/ai-select/mask-analysis.ts` — union-find 4-connected component/area/boundary analysis (near-linear; review fix replaced the first O(n^2) labelling pass).
-- `src/ai-select/anchor-validation.ts` — versioned `anchor-validation/v1` policy: 11 hard blocks, 5 soft warnings, thresholds as exported constants.
-- `src/ai-select/support-probe.ts` — versioned `anchor-support-probe/v1` contract. The response `support` payload validates to exactly `{computable, observedGaussianCount}`; any Stable-ID/ownership/Evidence-shaped field fails closed at the boundary.
-- `src/ai-select/anchor-confirmation.ts` — `AISelectAnchorConfirmationController`: local hard/soft evaluation → support probe (only when all local prerequisites hold) → fresh re-validation on every Confirm → atomic `ConfirmedAnchor` publication (CameraBinding, RGB digest, Stable Mask+digest, Mask Evidence Policy version, TargetDependencyToken, Scene/Splat identity; no Contributor identity). Locked until `adjustAnchor()` or Restart; stale probe verdicts discarded by identity.
-- `src/ai-select/anchor-controller.ts` — `createAnchorSupportProbeRequest` / `acceptsSupportProbeResponse` / `getAnchorSceneIdentity` seams; CameraBinding changes rejected while locked.
-- Transport — `POST /ai-select/anchor-support-probes` through `selection-service-fetch-adapter.ts` (packed + spatial scene cache/chunk-miss recovery identical to the Anchor render path) and `selection-service-readiness.ts` (readiness gate).
-- UI — Dock: Clear / Restore Auto / Undo / Redo / Validate / Confirm Anchor / Adjust Anchor controls, validation block+warning surface, Mask-Editor keyboard focus routing (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y while the Dock holds focus); Toolbar Restart behind a yes/no popup stating Native Selection does not change; Adjust/Reset Anchor behind a discard warning when unconfirmed Prompt/Editing state exists; 9 locales updated.
+- `src/ai-select/mask-registry.ts` — `clearEditing`, `restoreEditing`, `latestAutoMask`: Clear publishes an empty manual draft; Restore Auto / mask-local Undo/Redo navigate retained Editing-chain versions only.
+- `src/ai-select/mask-controller.ts` — Clear / Restore Auto / `undoMaskEdit` / `redoMaskEdit`, locked-Anchor mutation rejection and exact RGB/context invalidation.
+- `src/ai-select/mask-analysis.ts` — union-find 4-connected component/area/boundary analysis.
+- `src/ai-select/anchor-validation.ts` — versioned validation policy with hard blocks and soft warnings.
+- `src/ai-select/support-probe.ts` — versioned computability probe whose response is restricted to `{computable, observedGaussianCount}`; ownership/Evidence-shaped fields fail closed.
+- `src/ai-select/anchor-confirmation.ts` — local evaluation, support probe, fresh re-validation and atomic ConfirmedAnchor publication.
+- Transport, UI and localization seams for support probe, validation, Confirm, Adjust and Restart.
 
 Companion (Python):
 
-- `selection-service-companion/src/selection_service_companion/support_probe.py` — pure-CPU `anchor-support-probe/v1` policy: OpenCV world→camera transform, near/far gate, rounded pinhole pixel, `logitOpacity >= 0` opacity gate, LSB-first mask-bit test. No torch/numpy/gsplat imports; no renderer involvement; no P/N/V or Contributor computation.
-- `state.py` / `server.py` — request parsing (mask structure + digest verified), packed and spatial scene resolution with `sceneCacheMiss`/`sceneChunkMiss` fail-closed, same-attempt idempotent replay vs new-attempt re-execution, single global operation slot extended to probes (`_operation_slot_in_use_locked`), `aiSelectAnchorSupportProbe` capability, 409 `supportProbeError` / 400 `invalidRequest` mapping.
+- pure-CPU support-probe policy and versioned request/response route;
+- no P/N/V or Contributor computation;
+- same-attempt replay versus new-attempt execution and bounded operation admission.
 
 ## Validation recorded — 2026-07-25
 
-- `npm test` — 224 editor tests pass, including: registry Clear/restore/latest-auto; controller Clear supersedes in-flight SAM, Restore Auto disabled-state, mask-local Undo/Redo chains, locked-Anchor rejection of every Mask mutation; validation hard/soft policy table; support-probe fail-closed protocol (identity drift, ownership payload rejection); Confirm Anchor binding/lock/stale-probe/re-validation cases; fetch-adapter probe route (packed + spatial miss recovery, stale/ownership responses rejected before publication).
-- `npm run test:companion` — 215 tests pass (18 new in `tests/test_ai_select_support_probe.py`: pure-policy projection/opacity/mask semantics, route validation, idempotent replay vs new attempt, packed + spatial paths, chunk miss, exact two-field support payload).
-- `npm run lint` — clean (176 TS files); `npm run lint:locales` — 384 keys in sync across 9 locales; `npm run build` — success.
-- Two-axis `/code-review` (Standards + Spec) ran against the working tree; findings fixed: O(n^2) mask component labelling → union-find, duplicated `copyDependencyToken`/digest-validation/operation-slot predicate extracted, misleading probe-admission comment corrected, missing Adjust Anchor control added to the Dock.
+- `npm test` — 224 editor tests passed.
+- `npm run test:companion` — 215 tests passed.
+- lint, locale lint and build passed.
+- code review findings around component labelling, duplicated helpers and missing Adjust Anchor control were fixed.
 
 Known gaps / handoff notes:
 
-- The support probe is a CPU center-projection visibility probe, as §12.2 permits; it is not the same-decision production Evidence path and must not grow ownership semantics. Ticket 20 owns the formal P/N/V path.
-- `camera-binding-stale` currently fires only through dependency-token suspension; in-context CameraBinding drift is already excluded because RGB re-renders bind the exact current binding.
-- No GPU validation ran (the probe is pure CPU; the locked renderer runtime is not on its path). No manual browser walkthrough of the Dock/Confirm/Restart flows in this environment.
+- The support probe is a CPU computability seam, not the same-decision production Evidence path. Ticket 20 owns formal P/N/V.
+- Current Prompt candidate/refinement semantics are owned by Tickets 04C and 07A.
+- No GPU validation was required for the pure-CPU support probe.

@@ -11,6 +11,7 @@
 
 ## Current decision rationale
 
+- [`../adr/0014-adopt-route-b-first-multiview-mask-acquisition.md`](../adr/0014-adopt-route-b-first-multiview-mask-acquisition.md) — accepted Route-B-first architecture rationale, subordinate to Final Spec v1.2
 - [`../decision-gates/DG-20-mask-conditioned-direct-gaussian-evidence.md`](../decision-gates/DG-20-mask-conditioned-direct-gaussian-evidence.md)
 - [`../decision-gates/DG-21-prompt-authoring-three-stage-anchor-mask.md`](../decision-gates/DG-21-prompt-authoring-three-stage-anchor-mask.md)
 - [`../decision-gates/DG-22-floating-prompt-edit-palette.md`](../decision-gates/DG-22-floating-prompt-edit-palette.md)
@@ -19,7 +20,7 @@
 - [`../decision-gates/DG-25-route-b-first-extensible-mask-acquisition.md`](../decision-gates/DG-25-route-b-first-extensible-mask-acquisition.md)
 - [`../decision-gates/DG-26-consolidated-v1.2-route-b-acquisition-architecture.md`](../decision-gates/DG-26-consolidated-v1.2-route-b-acquisition-architecture.md)
 
-DGs explain why decisions were made. They are not an alternative current product specification.
+ADR 0014 and the DGs explain why decisions were made. They are subordinate rationale, not alternative current product specifications.
 
 ## Historical specifications
 

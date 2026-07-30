@@ -1,232 +1,216 @@
-# Final Spec v1.1 Walkthrough Coverage — v2.7
+# Final Spec v1.2 Walkthrough Coverage — v2.8
 
-## Typical flows A–I
-
-| ID | Flow | Ticket path |
-|---|---|---|
-| WF-A | Fast single-object | `02 → 03/04/05 → 04A → 04B → 07A → 07B → 08 → 08A → 09 → 11/12 → 14 → 10/13 → 15 → 16` |
-| WF-B | Adjust Anchor | `02 → 03 RGB Retry → 04A/04B/07A → 07B → 05 Confirm` |
-| WF-C | Add a missing user View | `09 → 11 → Mask publication → 12 Evidence dirty → 14/15 → 13` |
-| WF-D | Redraw bad Mask from scratch | `09 → 04A Paint/Erase → Confirm → 12 dirty → 15 explicit Re-Lift` |
-| WF-E | Refresh one automatic Key-View Mask | `09 → 12 Refresh Auto Mask → 08A acquireView → 07/09 reassessment → 14/15` |
-| WF-F | Select multiple objects | `16 → 17 Restart → 02... → 16 → 17` |
-| WF-G | Candidate structural error | `14/15 → 09/07/11/08 correction → 12 dirty → 15` |
-| WF-H | Fix after Candidate applied | `16 → 17 Undo and Fix → 15` |
-| WF-I | Scene mutation + Undo | `18 Suspended → exact Native Undo → resume` |
-
-## Architecture walkthroughs
+## Typical and architecture flows A–T
 
 | ID | Flow | Ticket path | Required result |
 |---|---|---|---|
-| WF-J | RGB Ready without Mask/Evidence | `03/06/08A/11` | Authoritative RGB publishes independently; no Contributor gate |
-| WF-K | Stable Mask → Evidence dirty → explicit Lift | `04/05/07A/08A/11 → 12 → 14/15` | Only Confirmed Stable inputs invalidate Evidence; Candidate changes only after explicit Re-Lift |
-| WF-L | Reference Evidence → production Direct Evidence | `14 → 19 → 20 → 21` | P/N/V validated before same-decision CUDA productionization |
-| WF-M | Full occlusion + local Evidence writes | `19 → 20` | Full Render Working Set preserves occlusion; Evidence Working Set limits writes |
-| WF-N | Object-level Anchor acquisition | `04A → 04B → 07A → 05/07 → 07B` | Conservative proposal decision; material ambiguity remains recoverable; Confirm publishes identity seed |
-| WF-O | Visual Prompt Adapter | `04A → 04B → 07A` | Truthful Box/Mask compilation; unsupported combinations fail closed |
-| WF-P | Floating Prompt/Edit Palette | `07A fitted rect → 07B` | Drag/snap/collapse/Space-hide with no stale blind region |
-| WF-Q | D-double-prime route-B sparse Key-View pipeline | `07A/07B → 08 → 08A → 09/12 → 14` | 2.5D bootstrap guides route-B per-view SAM; final ownership waits for P/N/V |
-| WF-R | Future C/D extension readiness | `08A contracts → future experiment → optional ADR` | Route B stays stable while future sequence/reference backends reuse common artifacts and publication paths |
+| WF-A | Fast single-object | `02 → 03/04/05 → 04A/04B/07A → 08 → 08A → 08B → 09 → 12/14 → 15/16` | Route-B layered acquisition reaches Candidate without tracker or Contributor dependency |
+| WF-B | Adjust Anchor | `02 → 03 Retry → 04A/04B/07A → 05 Confirm` | New Anchor identity invalidates all dependent support/planning artifacts |
+| WF-C | Ambiguous Anchor | `04A/04B → 07A` | Multiple material candidates remain ambiguous; no silent Top-1 |
+| WF-D | Floating palette | `07A → 07B` | Drag/collapse/Space-hide leaves no stale blind region |
+| WF-E | 07B and planner parallel | `07A → 07B` and `07A → 08` | UX hardening does not block support/planning artifacts |
+| WF-F | Visible support extraction | `07A → 08` | Bounded replayable support artifact with no ownership semantics |
+| WF-G | Sparse planner | `08 support → bootstrap → segment` | Validity precedes gain; no Bridge/tracker requirement |
+| WF-H | Generate More | `08 → 09/12` | New immutable segment appends without staling prior Views |
+| WF-I | Contract foundation | `08 → 08A` | Prompt/Proposal/Decision/backend bundle schemas validate without production inference |
+| WF-J | Route-B per-view acquisition | `08A → 08B` | Prompt synthesis → ProposalSet → Decision → Assessment → publication are separate |
+| WF-K | Ambiguous Key View | `08B → 09` | ProposalSet retained, no Stable Mask, Excluded, actionable Review |
+| WF-L | Route-B technical fallback | `08B → 09/12` | Distinct route-A attempt with parent/reason; same-or-stricter quality gate |
+| WF-M | Semantic Review no fallback | `08B → 09` | Contamination/clipping/Review remains Review and never auto-fallbacks |
+| WF-N | RGB Ready without Mask/Evidence | `03/06/08B/11` | RGB publishes independently and remains inspectable |
+| WF-O | User-added View | `07B + 09 → 11` | Same Prompt/acquisition/decision/assessment/publication chain and complete correction UX |
+| WF-P | Refresh one View | `09 → 12 → 08B` | Prompt-only regeneration and SAM Retry are distinct; no automatic Re-Lift |
+| WF-Q | Per-view correction | `09/11 → Confirm → 12` | Only that View Evidence/Lift becomes dirty; no tracker memory |
+| WF-R | P/N/V ownership | `11/12 → 14 → 20` | Only Included Stable Masks contribute formal Evidence |
+| WF-S | Native apply and Undo-and-Fix | `14/15 → 16 → 17` | Native EditHistory used; correction returns through explicit Re-Lift |
+| WF-T | Future C/D readiness | `08A contracts → future experiment → ADR` | Current route B remains stable; no fake sequence/reference state |
 
-## WF-N — object-level Anchor
+## WF-F — Visible target support
 
 ```text
-Authoritative Anchor RGB
-→ Point / enabled Box / enabled Mask Constraint
-→ PromptState revision
-→ candidates
-→ exact dedup + near-duplicate clustering
-→ conservative ProposalDecision
-    ├── one credible cluster → selected → Accept → Editing Mask
-    ├── risky or material alternatives → ambiguous → choose/refine/Paint
-    └── no eligible cluster → unavailable → refine/Retry/manual
-→ Confirm Mask
-→ Anchor Stable Mask
-→ Ticket 07 assessment/Participation
-→ Confirm Anchor
+Confirmed Anchor Stable Mask
+→ exact Anchor Camera/RGB/Mask binding
+→ depth / first-hit visible-surface extraction
+→ bounded deterministic support samples
+→ VisibleTargetSupportArtifact
+→ robust center/extent summary
+→ TargetBootstrapArtifact references support digest
 ```
 
 Assertions:
 
-- Prompt and Paint histories are separate.
-- Model score is not correctness probability or sole selector.
-- Suspicious single candidate is gated.
-- Multiple materially distinct plausible clusters remain `ambiguous`.
-- No generic calibrated Top-1 ranker is required.
-- Optional Gaussian support is not ownership Evidence.
-- Anchor Stable Mask is identity seed, not Candidate.
+- support samples are finite and replayable;
+- optional Gaussian IDs are provenance only;
+- separated/background-dominated support degrades or fails closed;
+- support may guide planning/Prompt synthesis but cannot classify ownership;
+- absence from Anchor support cannot imply Rejected/Out of Scope.
 
-## WF-O — Visual Prompt Adapter
+## WF-G — Sparse planning
 
 ```text
-PromptState with Point + Box / Mask Constraint
-→ 04B capability/compiler validation
-    ├── supported → locked adapter inference
-    └── unsupported → fail closed before inference
-→ independently validated candidates
-→ 07A clustering / hard consistency / decision
-```
-
-Assertions:
-
-- Positive and negative capabilities are separate.
-- No Prompt is dropped or converted to Points.
-- 04B performs no ranking/ambiguity decision.
-- Text remains disabled unless later enabled by locked adapter.
-
-## WF-P — Floating palette
-
-```text
-fitted authoritative image
-→ expanded palette inside image
-→ drag / edge snap / collapse
-→ edit edge/corner target
-→ Space hides and removes hit testing
-→ keyup/blur restores prior state
-→ Restart Target restores default palette state
-```
-
-Assertions:
-
-- Palette motion changes no RGB/Mask/Prompt coordinate mapping.
-- Only current visible bounds intercept input.
-- Old position becomes immediately editable.
-- Palette state never enters PromptState, Mask history, Evidence, or Candidate identity.
-
-## WF-Q — route-B sparse Key-View acquisition
-
-```text
-Confirmed object-level Anchor Stable Mask
-→ TargetBootstrapArtifact from depth / first-hit visible support
-    ├── center / extent / ROI / Prompt synthesis seed
-    └── no Gaussian ownership and no hard Working Set bound
+VisibleTargetSupportArtifact
++ TargetBootstrapArtifact
 → candidate cameras
-→ validity gate
-→ adaptive sparse Key-View selection
-→ immutable plan segment
-→ authoritative RGB publishes progressively
-→ 08A deterministic 3D-guided Prompt synthesis per Key View
-→ MultiViewMaskAcquisitionProvider.acquireView
-→ independent prompt-conditioned SAM attempt per View
-→ Auto Good / Review / Failed
-→ Ticket 09 review
-→ Participation remains independent of Key-View/backend status
-→ Included Stable View Annotations
-→ Ticket 14 per-view P/N/V
-→ final Candidate + Uncertain
+→ camera validity / free-space / scene-content gate
+→ observation and directional diversity gain
+→ bounded sparse Key Views
+→ immutable SparseKeyViewPlanSegment
 ```
 
 Assertions:
 
-- Invalid pose cannot win by information gain.
-- Generate More appends a new immutable segment and preserves prior artifacts.
-- Key Views do not require adjacent frames or tracker memory.
-- Route B is selected and does not wait for A/B/C/D comparison.
-- Current projected-support + single-frame SAM remains route A/fallback.
-- `MaskAcquisitionCapabilities` truthfully advertises route-B per-view-only support.
-- Unsupported sequence/reference methods fail closed without state mutation.
-- Acquisition backend score does not authorize Lift.
-- Formal ownership occurs only in Tickets 14/20.
-- Later Included Views can expand Evidence Working Set beyond the Anchor bootstrap seed.
+- invalid camera cannot win by gain;
+- no mandatory Bridge View, dense path, tracker ordering, or transition envelope;
+- Generate More appends another segment;
+- Regenerate is the explicit segment replacement operation.
 
-## WF-R — future C/D extension readiness
-
-Current route B:
+## WF-I — Acquisition foundation
 
 ```text
-getCapabilities
-→ supportsIndependentViews = true
-→ supportsSequenceSessions = false
-→ acquireView per Key View
-→ common result envelope
-→ existing Mask validation / publication / assessment
-```
-
-Future route C experiment:
-
-```text
-future backend advertises sequence capability
-→ openSequence
-→ acquireSequenceRange
-→ optional updateReferences
-→ closeSequence
-→ common per-view result/publication path
-```
-
-Future route D experiment:
-
-```text
-acquireView establishes high-confidence Key-View references
-→ openSequence between references
-→ updateReferences when explicitly requested
-→ acquireSequenceRange
-→ common per-view result/publication path
+08 artifacts
+→ KeyViewPromptArtifact schema
+→ KeyViewMaskProposalSet schema
+→ KeyViewMaskDecision schema
+→ attempt/fallback identity
+→ Backend Descriptor + Bundle + Registry
+→ perView contract + optional sequence schemas
 ```
 
 Assertions:
 
-- Route B never fabricates sequence sessions or reference fields.
-- Sequence/reference schemas and validators exist before a C/D backend is enabled.
-- No C/D implementation or comparison is required to close Ticket 08A.
-- A future experiment-backed ADR is mandatory before C/D production adoption.
-- Confirming a correction never automatically enters tracker memory.
-- Optional auxiliary/Bridge frames default Excluded when a future capability introduces them.
-- Tracker confidence is not P/N/V.
+- 08A runs no production model;
+- bundle structure is capability truth;
+- route B has perView only;
+- provider result cannot contain Decision, Assessment, Stable publication, Participation, P/N/V, or Candidate;
+- unsupported sequence operations fail before mutation.
+
+## WF-J — Route-B layered acquisition
+
+```text
+Visible support + bootstrap + segment + Key-View RGB
+→ KeyViewPromptSynthesizer
+→ immutable KeyViewPromptArtifact
+→ route-B perView provider
+→ bounded KeyViewMaskProposalSet
+→ exact/near-duplicate clustering
+→ KeyViewMaskDecision
+    ├── selected
+    ├── ambiguous
+    └── unavailable
+→ selected only: ViewAssessmentPolicy
+→ MaskPublicationCoordinator
+```
+
+Publication:
+
+```text
+selected + Good   → Auto Good Stable + Included
+selected + Review → Auto Review Stable + Excluded
+ambiguous          → retain ProposalSet, no new Stable, Excluded
+unavailable        → Mask Failed, no Stable
+```
+
+Assertions:
+
+- model score is not sole selector;
+- provider, Decision, Assessment, publication and Participation remain distinct;
+- User Confirmed Stable cannot be overwritten;
+- RGB does not wait for acquisition.
+
+## WF-L — B2 fallback
+
+```text
+route-B technical/capability failure
+→ retain route-B failure
+→ new route-A attempt
+   fallbackOfAttemptId = route-B attempt
+   fallbackReason = declared technical reason
+→ route-A ProposalSet
+→ same Decision
+→ same Assessment
+→ same Publication Coordinator
+```
+
+Assertions:
+
+- fallback is allowed only for backend/capability/technical/OOM classes;
+- ambiguous, contamination, Prompt inconsistency, clipping, fragmentation and Review do not trigger fallback;
+- route-A Auto Good requires same or stricter thresholds;
+- fallback provenance is visible and never represented as route B.
+
+## WF-R — Evidence ownership
+
+```text
+Included + Render Ready + Stable Mask Views
+→ per-view P/N/V
+→ Working Set expansion where required
+→ multi-view aggregation
+→ Selected / Rejected / Uncertain / Out of Scope
+→ Candidate contains Selected only
+```
+
+Assertions:
+
+- support, bootstrap, Prompt, ProposalSet, Decision, backend/fallback and tracker state are not P/N/V;
+- ambiguous Views without Stable Mask contribute nothing;
+- unobserved/mixed support is Uncertain;
+- Re-Lift is explicit.
 
 ## Reverse outcome-to-prerequisite validation
 
 ```text
 Native operation (16)
 ← current Candidate (15/14)
-← readiness and version-bound per-view P/N/V (13/14/20)
+← version-bound P/N/V (14/20)
 ← Included Stable View Annotations (09/11/12)
-← route-B multi-view Mask acquisition (08A)
-← valid sparse Key-View plan + 2.5D bootstrap (08)
-← no-blind-spot authoring (07B)
+← layered route-B acquisition (08B)
+← acquisition contracts and registry (08A)
+← valid support/bootstrap/sparse Key Views (08)
 ← confirmed object-level Anchor (04B/07A/05)
 ← Prompt/proposal foundation (04A)
 ← authoritative RGB + CameraBinding (02/03/06/11)
-← Render Working Set + Stable IDs (01/19)
+← Current Target Context + Stable IDs (01/19)
 ```
 
-No final outcome depends on complete per-pixel Contributor publication, route comparison, or tracker presence. Reference Contributor remains a validation/debug side path.
+07B is a parallel interaction prerequisite for complete correction UX and release hardening, not an artifact prerequisite for Ticket 08.
 
-## Error / degradation flows
+No final outcome depends on route comparison, tracker presence, or complete Contributor publication.
+
+## Error / degradation flows ERR-1–ERR-20
 
 | ID | Failure | Ticket(s) | Required retained state / recovery |
 |---|---|---|---|
-| ERR-1 | Companion Offline/incompatible | 02/21 | Native editor unaffected; reconnect/settings recovery |
-| ERR-2 | RGB/Preview failure | 03/21 | Keep last valid preview stale/not-current; real Retry |
-| ERR-3 | Anchor model failure | 04A/04B/07A/21 | Keep RGB/Prompt/prior Stable/edit state; Retry/manual recovery |
-| ERR-4 | View Render Failure | 06/08/11/21 | Keep View record; retry/replacement/exclude |
-| ERR-5 | Evidence failure | 14/20/21 | Keep RGB/View/Stable/Gallery/prior Candidate |
-| ERR-6 | Lift/aggregation failure | 14/15/21 | Keep stable inputs and previous Candidate |
-| ERR-7 | Mask refresh failure | 08A/12/21 | Keep prior Stable Mask and matching Evidence/Candidate |
-| ERR-8 | Reference Contributor failure | 03/14/20/22 | Diagnostic path fails only |
-| ERR-9 | Cached replay vs Retry | 03/08A/21 | Same attempt idempotent; Retry creates new attempt |
-| ERR-10 | Scene Chunk Miss / incomplete Render Working Set | 19/20/21 | No partial Ready artifact; load/fallback/retry |
-| ERR-11 | OOM/cancellation | 04A/04B/08A/20/21 | No partial proposal/Mask/Evidence/Candidate; old artifacts retained |
-| ERR-12 | Scene dependency mutation | 18 | Suspended/read-only; exact Undo or Restart |
-| ERR-13 | Proposal ambiguous | 07A | Preserve clusters/RGB/Prompt/prior Stable; refine/choose/Paint |
-| ERR-14 | Proposal unavailable | 04A/04B/07A | Preserve RGB/Prompt/prior Stable; Retry/refine/manual |
-| ERR-15 | Invalid indoor camera | 08 | Reject before gain; bounded replacement/local fallback/Limited |
-| ERR-16 | Palette stale blind region/stuck hidden | 07B | Remove stale hit box; restore on keyup/blur |
-| ERR-17 | Route-B per-view acquisition failure | 08A | Preserve RGB/prior Stable; Retry/route-A fallback/manual/exclude |
-| ERR-18 | Unsupported sequence/reference operation | 08A/12 | Structured capability failure; no session, Mask, dirty-state, or Candidate mutation |
+| ERR-1 | Companion offline/incompatible | 02/21 | Native editor unaffected; readiness/reconnect recovery |
+| ERR-2 | RGB/Preview failure | 03/21 | Last valid preview stale/not-current; true Retry |
+| ERR-3 | Anchor model failure | 04A/04B/07A/21 | Keep RGB/Prompt/prior Stable/edit state; Retry/manual |
+| ERR-4 | Anchor ambiguity | 07A | Preserve candidates; choose/refine/Paint; no Top-1 |
+| ERR-5 | Palette stuck/stale hit region | 07B/21 | Clear transient state on cancel/blur/disposal; old pixels editable |
+| ERR-6 | Visible support invalid/background-dominated | 08/21 | Preserve Anchor; Limited/local/user-added fallback |
+| ERR-7 | Invalid indoor camera | 08 | Reject before gain; bounded replacement/local fallback |
+| ERR-8 | Generate More failure | 08/12 | Preserve every prior segment/View/artifact |
+| ERR-9 | Backend descriptor/bundle contradiction | 08A/21 | Backend Not Ready; no dispatch or mutation |
+| ERR-10 | Unsupported sequence/reference call | 08A/12/21 | Structured capability failure; no session/dirty state |
+| ERR-11 | Prompt synthesis insufficient | 08B/21 | Review/Failed; adjusted View/manual Prompt/Exclude |
+| ERR-12 | Route-B technical failure/OOM | 08B/21 | No partial result; eligible B2 fallback or manual recovery |
+| ERR-13 | Key-View ambiguous | 08B/09/12 | Retain ProposalSet; no Stable; no auto-fallback |
+| ERR-14 | Neighbour contamination/quality Review | 08B/09/21 | Review+Excluded; no route-A semantic downgrade |
+| ERR-15 | Publication conflicts with User Confirmed Stable | 08B/12/21 | Retain user authority; automatic result not current Stable |
+| ERR-16 | Stale support/bootstrap/segment/Prompt/backend result | 08/08A/08B/12/21 | Discard; never rebind to newer state |
+| ERR-17 | View Render Failure | 06/08/11/21 | Keep View record; retry/replacement/exclude |
+| ERR-18 | Evidence/Lift failure | 14/20/21 | Preserve RGB/View/Stable/Gallery/proposals/prior Candidate |
+| ERR-19 | Scene dependency mutation | 18 | Suspended/read-only; exact Undo or Restart |
+| ERR-20 | Cached replay vs true Retry | 03/08B/12/21 | Same attempt idempotent; Retry creates new identity |
 
 ## Closure assertions
 
-- RGB publication never requires complete Contributor or Evidence.
-- Prompt Authoring and Pixel Editing remain separate.
-- 04B capabilities are truthful and fail closed.
-- 07A is conservative object-level Anchor acquisition, not a generic calibrated ranker.
-- Only Confirm replaces Stable Mask.
-- 08 uses geometry for planning and Prompt synthesis, not ownership.
-- 08 outputs sparse immutable Key-View segments without tracker dependency.
-- 08A implements route B directly and is not blocked by route comparison.
-- 08A provides a per-view base provider and capability-gated future sequence/reference extension contracts.
-- Confirmed corrections affect the current View by default.
-- Optional reference/repropagation requires a future capability and explicit action.
-- Bootstrap support is not a hard Evidence Working Set bound.
-- Reference P/N/V precedes production same-decision CUDA.
+- Final Spec v1.2 is the only current implementation specification.
+- Ticket 07B and Ticket 08 are parallel after 07A.
+- Ticket 08 owns visible support, bootstrap, and sparse planning only.
+- Ticket 08A owns contracts/registry only.
+- Ticket 08B owns production route-B execution and B2 fallback.
+- Prompt synthesis, provider, Decision, Assessment, publication and Participation remain separate.
+- Ambiguous never publishes an arbitrary Stable Mask or auto-fallbacks.
+- Support/bootstrap/acquisition artifacts never become P/N/V.
+- Confirmed correction is per-view by default.
+- Routes C/D remain future ADR-gated experiments.
 - Every destructive/recompute action states retained artifacts and recovery.

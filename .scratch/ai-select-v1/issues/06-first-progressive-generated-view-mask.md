@@ -7,8 +7,8 @@ Blocked by: 05
 ## Final Spec mapping
 
 - Final Spec v1.1 §§7, 13, 27, 28
-- Final Spec v1.1 Amendment 003 handoff
-- DG-08, DG-13, DG-20, DG-23
+- Final Spec v1.1 Amendments 003 and 004 handoff
+- DG-08, DG-13, DG-20, DG-24
 - MVP Phase 3
 
 ## Inputs / preconditions
@@ -16,7 +16,7 @@ Blocked by: 05
 - Confirmed coherent Anchor revision
 - Compatible Generated View planner primitives
 - Authoritative gsplat RGB renderer
-- SAM propagation/single-frame fallback
+- Projected-support + single-frame SAM baseline
 
 ## Outputs / handoff artifacts
 
@@ -74,42 +74,33 @@ Prove progressive multi-view publication end to end. Publish a Generated AIView 
 
 Editor (TypeScript):
 
-- `src/ai-select/generated-view-service.ts` — versioned protocol contracts `generated-view-planner/v1` and `generated-view-mask/v1`: plan / view-render / propagated-mask request+response types with fail-closed structural validators and request-echo matchers (PNG envelope + dimensions verified against the bound CameraBinding; mask artifact digest verified against decoded bytes; `anchor-view` reserved for the Anchor route).
-- `src/ai-select/generated-view-controller.ts` — `AISelectGeneratedViewController`: Confirm Anchor starts automatic planning bound to the exact confirmed-Anchor identity (context/revision, RGB digest, Stable Mask digest, Scene identity). Each planned View publishes the moment authoritative gsplat RGB is Ready (RGB Ready + Mask Generating + Evidence `not-requested` is a legal Gallery state); automatic Mask production follows per View without blocking publication; a successful Mask atomically publishes an auto Stable Mask (`auto-review`, Participation `excluded` — the §13 fail-closed default until Ticket 07 assessment); Evidence stays derived-missing and no Lift runs. Render and Mask failures are contained per View; completed Views survive; a true render Retry mints a new `renderAttemptId` for the exact same planned CameraBinding; planning Retry mints a new `planAttemptId`. Adjust/Restart rotates the run identity and disposes all target-local Views/Masks; late plan/render/mask results are discarded by run ordinal + the shared target kernel gate (`anchor.acceptsTargetBinding`).
-- `src/ai-select/mask-registry.ts` — `publishAutoStable`: atomic automatic Stable Mask publication (no Editing chain), chained from the previous Stable revision, digest-bound artifact re-verified.
-- `src/ai-select/anchor-controller.ts` — `acceptsTargetBinding` (shared kernel stale-result gate) and `getAnchorSnapshot` (active Scene Snapshot seam).
-- `src/ai-select/mask-controller.ts` — the single per-context Mask registry is now shared as `maskRegistry` so Mask identities never fork across views.
-- `src/ai-select/generated-frustum-picking.ts` — renderer-free frustum line derivation from the exact CameraBinding plus nearest-segment picking with behind-camera culling.
-- `src/ai-select-generated-frustums.ts` — read-only debug element drawing every Generated Frustum with selection highlight; never observes or moves the Editor Camera.
-- UI — `src/ui/ai-select-anchor-dock.ts` AI View Gallery strip: Anchor card + per-View cards (thumbnail, localized Render/Mask/Evidence status lines, Retry Render on failed Views, selection highlight) and the planner status line with Retry Planning; `src/ui/scss/ai-select.scss`; 9 locales.
-- `src/main.ts` — controller composition, Generated Frustum visibility, and click-vs-drag (≤4px) frustum picking for Gallery ↔ Frustum selection sync. The Editor Camera is never moved.
-- Transport — `POST /ai-select/generated-view-plans`, `/ai-select/view-renders`, `/ai-select/generated-view-masks` through `selection-service-fetch-adapter.ts` (packed + spatial scene cache/chunk-miss recovery identical to the Anchor render/support-probe paths; authoritative RGB digest verified browser-side) and `selection-service-readiness.ts` (readiness gate). Older Companions without the additive `aiSelectGeneratedViewPlanning` capability keep the Anchor flow; planning fails closed with an actionable diagnostic.
+- `src/ai-select/generated-view-service.ts` — versioned protocol contracts `generated-view-planner/v1` and `generated-view-mask/v1`.
+- `src/ai-select/generated-view-controller.ts` — progressive View publication, exact run identity, per-view render/Mask failure isolation, and true Retry.
+- `src/ai-select/mask-registry.ts` — atomic automatic Stable Mask publication.
+- `src/ai-select/anchor-controller.ts` — shared target stale-result gate and Scene Snapshot seam.
+- `src/ai-select/generated-frustum-picking.ts` / `src/ai-select-generated-frustums.ts` — exact CameraBinding frustums and selection.
+- UI / transport / readiness — Generated View cards, routes, cache-miss recovery, and capability gate.
 
 Companion (Python):
 
-- `selection-service-companion/src/selection_service_companion/generated_view_planning.py` — pure-CPU `generated-view-planner/v1` + `generated-view-mask/v1` policies: mask-conditioned Gaussian support collection (support-probe gating parity), robust Seed Region (median center, separated-support rejection), deterministic anchor-relative orbit (first ±45° ring neighbours, `GENERATED_VIEW_PLAN_COUNT = 2`), CameraBinding-convention camera construction, and deterministic cross-view prompt synthesis. No torch/numpy/gsplat imports; no renderer involvement; no Stable ID or ownership output.
-- `state.py` / `server.py` — three routes with the established request parsing (digest-verified mask, camera orthonormality), packed + spatial scene resolution shared via `_resolve_ai_select_scene_planes` with `sceneCacheMiss`/`sceneChunkMiss` fail-closed, same-attempt idempotent replay vs new-attempt re-execution, the single global operation slot extended to plans and propagated masks, `aiSelectGeneratedViewPlanning` capability, 409 `plannerError` / `viewRenderError` / `maskError` and 400 `invalidRequest` mapping (the new view-render route matches MaskSessionError before ValueError so renderer failures stay 409). The propagated Mask path projects Anchor support into the Generated View camera, synthesizes include prompts, and runs exactly one single-frame SAM pass; `maskPropagation` diagnostics (projected support count, prompt count) are retained for Ticket 07 assessment. `anchor-view` is rejected on both Generated View routes.
+- `generated_view_planning.py` — pure-CPU robust seed, deterministic fixed-pair tracer planner, and projected Prompt synthesis.
+- `state.py` / `server.py` — plan/render/mask routes, replay/Retry identity, single operation admission, and failure mapping.
+- The Mask route projects Anchor support into each Generated View, synthesizes positive points, and runs one independent single-frame SAM pass.
 
 ## Validation recorded — 2026-07-25
 
-- `npm test` — 268 editor tests pass, including registry auto-Stable publication/atomic replacement/digest closure; protocol validators; full controller lifecycle; frustum math; fetch-adapter routes.
-- `npm run test:companion` — 232 tests pass, including seed derivation, orbit determinism, Prompt synthesis, route behavior, cache miss, replay without a second SAM pass, propagation-unavailable, and digest rejection.
-- `npm run lint` and locale lint — clean; `npm run build` — success.
-- Two-axis code review completed and findings were fixed.
+- `npm test` — 268 editor tests passed.
+- `npm run test:companion` — 232 tests passed.
+- `npm run lint`, locale lint, and build passed.
+- Browser/frustum and renderer re-verification passed.
 
-## Walkthrough fixes recorded — 2026-07-26/27
+## DG-24 handoff — 2026-07-30
 
-- Production renderer guard was fixed so the same locked raster path serves Anchor and Generated Views.
-- Generated-frustum display depth now derives a minimum projected footprint while preserving exact CameraBinding rays.
-- Browser re-verification passed for visible/selectable read-only frustums and Gallery↔frustum sync.
-
-## DG-23 handoff — 2026-07-29
-
-Ticket 06 remains complete. Its projected-support + one single-frame SAM pass is now explicitly classified as:
+Ticket 06 remains complete. Its projected-support + one independent single-frame SAM pass is classified as:
 
 - the progressive publication tracer bullet;
-- the benchmark baseline for Ticket 08A;
-- a production fallback after tracker failure/unsupported runtime;
-- an optional correction initializer.
+- route A in Ticket 08A's multi-view Mask acquisition spike;
+- a production fallback when the selected route fails or is unavailable;
+- a foundation for enhanced 3D-guided per-Key-View Prompt synthesis.
 
-Ticket 08 replaces the fixed pair with 2.5D Key/Bridge sequence planning. Ticket 08A owns the production object-level ordered tracking path and correction memory. Ticket 06 must not be reopened merely because the production propagation architecture is added later.
+Ticket 08 replaces the fixed pair with non-ownership 2.5D sparse Key-View planning. Ticket 08A compares and implements acquisition routes. Object tracking is optional and must not be inferred from Ticket 06's completion.

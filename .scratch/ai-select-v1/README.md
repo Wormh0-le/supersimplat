@@ -1,6 +1,6 @@
 # AI Select v1 — Implementation Ticket Graph v2.12
 
-Status: **ready-for-agent planning graph**
+Status: **ready-for-agent planning graph — all Ticket-local current mappings migrated to Final Spec v1.3**
 
 Branch: `ai-select-v1`
 
@@ -14,6 +14,8 @@ Branch: `ai-select-v1`
 6. implementation and tests
 
 Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical only. ADR 0014 and DG-24 through DG-26 are historical where they conflict with ADR 0016 / Final Spec v1.3.
+
+All 30 Ticket files now contain a current mapping to Final Spec v1.3. Older spec names may remain only inside sections explicitly labeled historical provenance, historical implementation record, superseded surface, or migration input; they cannot be used as current closure sources.
 
 ## v2.12 review closures
 
@@ -33,6 +35,7 @@ Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical only. A
 - Ticket 10 is an optional Evidence-conflict enhancement and does not block core release.
 - Generic backend registry, Route B/C/D, sequence extensions and automatic Route-A fallback are removed from v1.
 - Ticket 04A and Ticket 06 old Prompt/fallback language is explicitly historical.
+- Every Ticket-local `Current Final Spec mapping` or equivalent current mapping resolves directly to Final Spec v1.3.
 
 ## Dependency graph
 

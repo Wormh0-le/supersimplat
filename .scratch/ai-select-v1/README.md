@@ -1,40 +1,38 @@
-# AI Select v1 — Implementation Ticket Graph v2.7
+# AI Select v1 — Implementation Ticket Graph v2.8
 
 Status: **ready-for-agent planning graph — Ticket 04B remains the next implementation gate**
 
 ## Authoritative source order
 
-1. `docs/specs/ai-select-final-spec-v1.1.md`
-2. Amendments 001–005, latest amendment governing conflicts
-3. ADR 0013
-4. ADR 0012 where not superseded
-5. `CONTEXT.md`
-6. DG-21 through DG-25, with DG-25 governing Ticket 08A route selection and extension seams
-7. `AGENTS.md`
-8. Current implementation and tests
+1. `docs/specs/ai-select-final-spec-v1.2.md`
+2. ADR 0013 where not superseded by v1.2
+3. `CONTEXT.md` where not superseded
+4. DG-20 through DG-26 as decision rationale
+5. `AGENTS.md`
+6. Current implementation and tests
+
+Final Spec v1.1 and Amendments 001–005 are historical only. Agents must not reconstruct the old supersession chain.
 
 Branch: `ai-select-v1`
 
 Baseline: `42f6013438f1271fcd35a4bfdc9ba5a3eb719c06`
 
-v2.7 retains 22 numbered tickets and five retrofit tickets: **04A**, **04B**, **07A**, **07B**, and **08A**.
+v2.8 has 22 numbered tickets and six retrofit tickets: **04A**, **04B**, **07A**, **07B**, **08A**, and **08B**.
 
-## v2.7 route-B-first corrections
+## v2.8 architecture corrections
 
-- AI Select v1 targets one object instance; arbitrary part discovery and whole-image inventory are not mandatory.
-- Ticket 07A remains conservative object-level Anchor acquisition; materially distinct plausible alternatives may remain `ambiguous`.
-- Ticket 08 owns a non-ownership TargetBootstrapArtifact and adaptive sparse Key Views.
-- `Generate More` appends immutable plan segments and does not invalidate completed segment artifacts.
-- Ticket 08A now proceeds directly with route B: enhanced 3D-guided independent SAM per Key View.
-- Ticket 08A no longer requires an A/B/C/D comparison or acquisition-route ADR before route-B closure.
-- Current projected-support + single-frame SAM remains route A and fallback.
-- Ticket 08A must implement a backend-neutral per-view provider plus optional sequence/reference extension contracts for future C/D experiments.
-- Route B advertises no sequence/reference/propagation capability; unsupported methods fail closed.
-- Tracker/hybrid production remains a future experiment-backed ADR decision and does not block v1 route B.
-- Bridge Views, transition envelopes, correction memory, and repropagation are not mandatory v1 contracts.
-- Confirming a correction is per-view by default; optional `Use as Tracking Reference` exists only if a future backend advertises it.
-- Target bootstrap seeds but never hard-bounds the final Evidence Working Set.
-- Ticket 14/20 remain the only formal Gaussian ownership stages.
+- Ticket 08 now produces a bounded replayable `VisibleTargetSupportArtifact`.
+- `TargetBootstrapArtifact` is a lightweight summary that references visible support by digest.
+- 07B Floating Palette and 08 support/planner execute in parallel after 07A.
+- 08A is contracts/registry only; it does not run production SAM.
+- 08B implements route-B Prompt synthesis, per-view SAM, ProposalSet, conservative Decision, Assessment integration, publication, and B2 route-A fallback.
+- Prompt synthesis, inference, proposal decision, assessment, publication, Participation, and P/N/V are separate layers.
+- Route-B provider returns a ProposalSet, never a hidden Top-1 Stable Mask or ViewAssessmentResult.
+- Materially distinct plausible proposals remain `ambiguous`; no arbitrary Stable Mask is published.
+- Backend capabilities derive from the actual `MaskAcquisitionBackend` bundle structure.
+- Route B is `perView` only; C/D remain future sequence extension experiments.
+- Route-A fallback is automatic only for declared technical/capability failures and may Auto Good only under the same or stricter gates.
+- Final ownership remains Included Stable Masks → P/N/V in Tickets 14/20.
 
 ## Dependency graph
 
@@ -50,10 +48,10 @@ v2.7 retains 22 numbered tickets and five retrofit tickets: **04A**, **04B**, **
    RGB Retry           │
  └──────────┬──────────┘
             ▼
-05 Anchor editing + support Validation + Confirm + Early Restart
+05 Anchor editing + support validation + Confirm + Early Restart
  ├──────────────────────────────┐
  ▼                              ▼
-04A Prompt Authoring            06 First Generated AIView + baseline Auto Mask
+04A Prompt Authoring            06 First Generated AIView + route-A baseline
  + Proposal Foundation           │
  │                               ▼
  ▼                              07 Local Assessment + Participation
@@ -62,21 +60,24 @@ v2.7 retains 22 numbered tickets and five retrofit tickets: **04A**, **04B**, **
  └──────────────────┬────────────┘
                     ▼
 07A Object-level Anchor Acquisition / Conservative ProposalDecision
-                    │
-                    ▼
-07B Floating Prompt/Edit Palette UX
-                    │
-                    ▼
-08 2.5D Bootstrap + Adaptive Sparse Key-View Planner
-                    │
-                    ▼
-08A Route-B 3D-guided per-Key-View SAM + Extensible Acquisition Seam
-                    │
-                    ▼
-09 Scalable Gallery + Inspect AI Cameras / Acquisition Status
+ ├──────────────────────────────┐
+ ▼                              ▼
+07B Floating Prompt/Edit        08 Visible Support + Bootstrap
+ Palette UX                         + Sparse Key-View Planner
+ │                                  │
+ │                                  ▼
+ │                              08A Acquisition Contracts
+ │                                  + Backend Registry
+ │                                  │
+ │                                  ▼
+ │                              08B Route-B Production Acquisition
+ │                                  │
+ └───────────────┬──────────────────┘
+                 ▼
+09 Scalable Gallery + Frustum / Acquisition Inspection
  ├──────────────────┐
  ▼                  ▼
-11 User-added View  12 Explicit Mask Refresh + Dirty/Stale
+11 User-added View  12 Prompt/Mask Refresh + Dirty/Stale
  └──────────┬───────┘
             ▼
 14 Reference P/N/V Evidence + Gaussian Lifting/Candidate
@@ -104,38 +105,82 @@ v2.7 retains 22 numbered tickets and five retrofit tickets: **04A**, **04B**, **
 20 Same-decision GPU Evidence + artifact/working-set hardening
             │
             ▼
-21 Retry/OOM/atomic publication + calibration hardening
+21 Retry/OOM/atomic publication + calibration/release hardening
             │
             ▼
 22 Contract legacy product and Contributor paths
 ```
 
-Ticket 04A and Ticket 06 may proceed after Ticket 05. Ticket 04B follows 04A. Ticket 04B and completed Ticket 07 converge at 07A. Ticket 07B follows 07A. Ticket 08 produces sparse non-ownership Key Views; Ticket 08A implements route-B Mask acquisition and the future C/D extension seam; Ticket 09/12 consume those artifacts before Ticket 14 final lifting.
+## Dependency notes
+
+- Ticket 04A and Ticket 06 may proceed after Ticket 05.
+- Ticket 04B follows 04A.
+- Ticket 04B and completed Ticket 07 converge at 07A.
+- After 07A, Ticket 07B and Ticket 08 may proceed in parallel.
+- Ticket 08 produces support/bootstrap/planner artifacts.
+- Ticket 08A defines acquisition contracts and registry.
+- Ticket 08B implements route-B production acquisition.
+- Ticket 09 consumes real generic acquisition/proposal/decision states from 08B.
+- Ticket 11 depends on 07B for complete correction UX.
+- Ticket 21 depends on 07B and 08B for final interaction/acquisition release hardening.
 
 ## One valid topological order
 
-`01 → 02 → 03 → 04 → 05 → 04A → 04B → 06 → 07 → 07A → 07B → 08 → 08A → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
+`01 → 02 → 03 → 04 → 05 → 04A → 04B → 06 → 07 → 07A → 07B → 08 → 08A → 08B → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
+
+The order lists 07B before 08 for readability; they are structurally parallel after 07A.
+
+## Artifact chain
+
+```text
+07A Anchor Stable Mask
+→ 08 VisibleTargetSupportArtifact
+→ 08 TargetBootstrapArtifact
+→ 08 SparseKeyViewPlanSegment
+→ 08B KeyViewPromptArtifact
+→ 08B KeyViewMaskProposalSet
+→ 08B KeyViewMaskDecision
+→ 07/08B ViewAssessmentResult
+→ 08B MaskPublication result / Stable Mask
+→ 09/12 Review, Participation, dirty lifecycle
+→ 14 per-view P/N/V
+→ 15 current Candidate
+```
+
+Contract foundation:
+
+```text
+08A Backend Descriptor
+→ Backend Bundle
+→ Backend Registry
+→ perView Provider contract
+→ optional Sequence extension contract
+```
+
+No artifact edge flows from future C/D back into current Ticket 08 planning.
 
 ## Audit artifacts
 
-- `TRACEABILITY.md` + `TRACEABILITY-v2.7.md`: v2.6 base mapping plus the Amendment 005 / DG-25 route-B-first overlay, totaling 166 requirements.
-- `FOUR-PASS-AUDIT.md`: six-pass v2.7 graph, artifact-dependency, reverse-scope, workflow, and failure audit.
-- `WALKTHROUGHS.md`: inherited flows plus route-B implementation and C/D extension-seam paths.
-- `manifest.json`: machine-readable v2.7 graph and audit metadata.
+- `TRACEABILITY.md`: single Final Spec v1.2 mapping; no overlay.
+- `FOUR-PASS-AUDIT.md`: six-pass v2.8 graph, artifact, reverse-scope, workflow, and failure audit.
+- `WALKTHROUGHS.md`: route-B layered pipeline, B2 fallback, ambiguity, and C/D extension readiness.
+- `manifest.json`: machine-readable v2.8 graph and audit metadata.
 
 ## Implementation rules
 
 - Ticket 04B remains the next executable implementation ticket.
-- Ticket 07A must fail conservatively on material ambiguity.
-- Ticket 07B changes presentation/pointer routing only.
-- Ticket 08 may use early geometry for planning/Prompt synthesis but cannot publish ownership or Masks.
-- Ticket 08 must not require a tracker transition envelope.
-- Ticket 08A implements route B directly and is not blocked by route comparison.
-- Ticket 08A must provide `acquireView` plus capability-gated optional sequence/reference contracts for future C/D experiments.
-- Route B must reject sequence/reference operations without state mutation.
-- A later ADR is mandatory only before tracker/hybrid production adoption, not before route B.
+- Ticket 07A fails conservatively on material Anchor ambiguity.
+- Ticket 07B changes interaction/pointer routing only and runs parallel with Ticket 08.
+- Ticket 08 uses early geometry for support/planning/Prompt context, never ownership or Masks.
+- Ticket 08A defines stable types, validators, digests, backend bundle/registry and sequence schemas only.
+- Ticket 08B implements route B directly and is not blocked by route comparison.
+- The provider returns ProposalSet only; Decision, Assessment, Publication and Participation are separate.
+- Ambiguous never publishes an arbitrary Stable Mask.
+- Route-A fallback is technical-only and fully provenance-bound.
+- Route B has no sequence/reference implementation.
+- A later ADR is mandatory before tracker/hybrid production adoption.
 - Confirmed correction does not automatically create reference memory.
-- Key-View role and acquisition backend never imply Lift Participation.
-- Bootstrap support is not a hard Evidence Working Set upper bound.
-- Ticket 14 is the reference correctness/quality gate; Ticket 20 owns production same-decision Evidence.
+- Key-View role and backend never imply Lift Participation.
+- Support/bootstrap are not hard Evidence Working Set bounds.
+- Ticket 14 is the reference correctness gate; Ticket 20 owns production same-decision Evidence.
 - Complete Contributor remains reference/debug only.

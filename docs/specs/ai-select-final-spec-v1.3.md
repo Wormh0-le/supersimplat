@@ -3,7 +3,7 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.11  
+**规划版本：** Ticket Graph v2.12 review-closure revision  
 **日期：** 2026-07-30  
 **适用分支：** `ai-select-v1`  
 **决策依据：** ADR 0013、ADR 0015、ADR 0016
@@ -14,7 +14,7 @@
 
 本文件是 AI Select 当前唯一权威产品与工程规格。
 
-它取代 Final Spec v1.2 的当前规范效力。Final Spec v1.1、Amendment 001–005、Final Spec v1.2、ADR 0014 及 DG-20～DG-26 继续作为历史设计依据，但不得覆盖本文件。
+它取代 Final Spec v1.2 的当前规范效力。Final Spec v1.1、Amendment 001–005、Final Spec v1.2、ADR 0014 及 DG-20～DG-26 继续作为历史依据，但不得覆盖本文件。
 
 当前 Ticket 映射由 `.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md` 维护。发生冲突时，权威顺序为：
 
@@ -23,7 +23,9 @@
 3. ADR 0016；
 4. ADR 0013、ADR 0015；
 5. 未冲突的 Ticket acceptance criteria；
-6. 当前实现和测试。
+6. 当前实现与测试。
+
+历史 Ticket 中的 Negative Box、Prompt Brush、Mask Constraint、Multiplex static path、Route fallback、backend registry 和 adaptive planner 文字均不具有当前规范效力，除非本文件明确保留。
 
 ---
 
@@ -40,7 +42,7 @@ v1 要求：
 - 不重新训练输入 3DGS；
 - 不要求补全不可见背面、底面或内部；
 - 不运行全图对象 inventory；
-- 不把模型分数、2.5D geometry 或 Prompt 当成 Gaussian ownership。
+- 不把模型分数、2.5D geometry、Prompt 或 previous logits 当成 Gaussian ownership。
 
 ---
 
@@ -54,9 +56,10 @@ Current Scene Camera
     ├── Negative Point
     └── optional Positive Instance Box
 → SAM 3 Image instance prediction
-    ├── one positive point only: up to 3 candidates
-    └── Box / multiple points / refinement: one candidate
+    ├── one Positive Point only: up to 3 candidates
+    └── Box / multiple Points / refinement: one candidate
 → user candidate choice where needed
+→ optional Point refinement before Accept
 → basic Prompt/Mask validity and Review
 → Accept
 → Editing Mask
@@ -65,7 +68,7 @@ Current Scene Camera
 → TargetGeometryHintArtifact
 → bounded local Key-View plan
 → authoritative per-View RGB
-→ projected Instance Box + positive/negative Points
+→ projected Positive Instance Box + Points
 → SAM 3 Image instance prediction, single-mask mode
 → per-View Mask Review
 → Stable Mask publication / manual correction
@@ -94,6 +97,7 @@ RGB Ready
 - CurrentTargetContext、CameraBinding 和 stale-result rejection；
 - PromptState、Prompt history 和 Mask editing history；
 - candidate choice、Accept、Paint、Erase、Confirm；
+- opaque previous-logits reference metadata；
 - Stable Mask registry 和 Participation；
 - Gallery、Frustum、Camera Inspection；
 - explicit Retry、Refresh、Re-Lift 和 Restart；
@@ -103,7 +107,8 @@ RGB Ready
 
 - authoritative gsplat RGB rendering；
 - SAM 3 Image model loading and instance prediction；
-- Prompt compilation and internal previous-logits refinement state；
+- authoritative RGB artifact/reference resolution；
+- actual previous-prediction logits tensors and their disposable cache；
 - TargetGeometryHint extraction；
 - bounded local Key-View generation；
 - 3D-guided per-View Prompt synthesis；
@@ -123,11 +128,12 @@ Every asynchronous artifact binds exact current identities where applicable：
 targetContextId + contextRevision
 scene / splat dependency identity
 CameraBinding digest
-RGB digest
+RGB digest + dimensions
 PromptState digest
 SAM image adapter / checkpoint / runtime digest
+Companion Instance ID
 inferenceAttemptId
-previousLogits source-attempt and candidate identity
+previous-logits state ID / source attempt / source candidate
 Stable Mask digest
 TargetGeometryHintArtifact digest
 LocalKeyViewPlan digest
@@ -141,9 +147,11 @@ Rules：
 - explicit Retry creates a new attempt；
 - same-attempt replay may be idempotent；
 - stale or incompatible artifacts fail closed；
-- no partial Mask、Evidence or Candidate becomes current；
+- no partial Mask、refinement state、Evidence or Candidate becomes current；
 - cancellation is a resource optimization, not a correctness mechanism；
-- User Confirmed Stable Mask cannot be silently replaced。
+- User Confirmed Stable Mask cannot be silently replaced；
+- Companion Instance replacement invalidates every Companion-local RGB/logits reference from the prior Instance；
+- independently persisted Stable Masks remain governed by their own exact RGB/Mask identity。
 
 ---
 
@@ -152,6 +160,13 @@ Rules：
 Anchor、Generated Key View 和 User-added View 的 AI observation RGB MUST come from the locked gsplat renderer and exact CameraBinding。
 
 RGB Ready never waits for Mask inference、2.5D geometry、Evidence or Candidate。
+
+Every SAM inference request MUST contain either：
+
+- the exact authoritative RGB artifact bytes；or
+- an immutable Companion-resolvable RGB reference tied to the current Companion Instance。
+
+The resolved bytes MUST match the declared RGB digest、width and height。A digest without resolvable image data is not a valid inference input。
 
 ---
 
@@ -163,11 +178,11 @@ Static Anchor and per-Key-View instance segmentation MUST use the official SAM 3
 
 ```text
 build_sam3_image_model(enable_inst_interactivity=True)
-→ Sam3Processor.set_image(...)
-→ model.predict_inst(...)
+→ Sam3Processor.set_image(authoritativeRgb)
+→ model.predict_inst(inferenceState, ...)
 ```
 
-The SAM 3.1 Multiplex video predictor is not a current static-image production dependency. It may be retained only as a historical benchmark or future video-tracking experiment behind a later ADR。
+SAM 3.1 Multiplex video predictor is not a current static-image production dependency。It may remain only as historical benchmark or future video-tracking experiment behind a later ADR。
 
 Production code MUST NOT depend on Multiplex tracker private heads、private feature extraction or fabricated multiplex state for ordinary static segmentation。
 
@@ -179,7 +194,7 @@ The v1 instance Prompt surface contains only：
 - Negative Point；
 - at most one Positive Instance Box in authoritative-image pixel XYXY coordinates。
 
-The following are removed from v1 PromptState、toolbar、capability contract and Prompt artifacts：
+The following are removed from PromptState、toolbar、capability contract and Prompt artifacts：
 
 - Negative Box；
 - Positive Mask Constraint；
@@ -191,17 +206,35 @@ Paint and Erase remain Mask Editing operations and never enter SAM inference req
 
 ## 6.3 Previous prediction logits
 
-`previousPredictionLogits` is an internal, low-resolution continuous model artifact returned by a prior prediction and bound to the same RGB、adapter、attempt lineage and selected candidate。
+The actual previous-prediction logits tensor is Companion-local, low-resolution, continuous model state。
+
+The browser may receive only an opaque `PreviousPredictionLogitsRef` bound to：
+
+```text
+Companion Instance ID
+stateId
+targetContextId + viewId
+RGB digest
+source inference attempt
+source candidate
+adapter/runtime digest
+shape + dtype + data digest
+```
 
 It is not：
 
-- a user-authored Prompt；
+- a user Prompt；
 - a binary Brush bitmap；
-- a Stable Mask；
 - an Editing Mask；
-- a cross-View artifact。
+- a Stable Mask；
+- a cross-View artifact；
+- browser-persisted tensor data。
 
-Adding Points to refine an accepted candidate may reuse the exact prior logits with `multimask_output=false`。
+A valid ref may refine the currently chosen candidate while still in Prompt mode。The refinement creates a new inference attempt with `multimask_output=false`。
+
+After `Accept`, Paint/Erase operate on Editing Mask。Returning to Prompt mode is explicit and never converts Editing pixels into `mask_input`。
+
+Companion restart/Instance replacement、state eviction、target disposal、RGB change or adapter/runtime change invalidates the ref。An expired ref falls back to fresh inference from current Points/Box without `mask_input`。
 
 ## 6.4 Multimask policy
 
@@ -216,10 +249,10 @@ Positive Instance Box
 or multiple Points
 or previous-logits refinement
 → multimask_output=false
-→ one candidate
+→ retain at most 1 candidate
 ```
 
-Raw model score may choose the default preview among same-request candidates. It is not a correctness probability and never auto-confirms a Stable Mask。
+Raw model score may choose default preview ordering。It is not a correctness probability and never auto-confirms a Stable Mask。
 
 ---
 
@@ -231,6 +264,7 @@ Anchor acquisition is intentionally 2D-first：
 Prompt
 → SAM 3 Image prediction
 → candidate choice when single-click ambiguity exists
+→ optional Point refinement before Accept
 → basic validity / Review
 → Accept
 → Editing Mask
@@ -239,8 +273,8 @@ Prompt
 
 Required validity checks：
 
+- resolvable authoritative RGB and exact dimensions/digest；
 - non-empty and not full-frame；
-- exact RGB dimensions and digest；
 - all Positive Points inside；
 - all Negative Points outside；
 - when Box exists, meaningful overlap and no gross spill；
@@ -249,7 +283,7 @@ Required validity checks：
 
 Generic near-duplicate clustering、material-distinct clustering、automatic Top-1 calibration、Gaussian-support-based Anchor selection and repeated-run stability ranking are not v1 requirements。
 
-For a one-point multimask result, exact duplicate removal is allowed, candidates remain bounded, and the user resolves material ambiguity directly。
+For a one-point multimask result, exact duplicate removal is allowed and the user resolves material ambiguity directly。
 
 ---
 
@@ -265,9 +299,9 @@ Paint
 Erase
 ```
 
-Negative Box and Prompt Brush are absent, not merely disabled placeholders。
+Negative Box and Prompt Brush are absent, not disabled placeholders。
 
-Prompt tools modify PromptState. Paint/Erase modify Editing Mask only. Palette layout state never enters model requests or formal artifacts。
+Prompt tools modify PromptState。Paint/Erase modify Editing Mask only。Palette layout state never enters model requests or formal artifacts。
 
 ---
 
@@ -294,8 +328,8 @@ interface TargetGeometryHintArtifact {
 
 Requirements：
 
-- visible points derive from exact Anchor Mask plus depth、first hit or equivalent visible-surface seam；
-- points are bounded、finite、deterministically ordered and filtered for invalid/background-separated support；
+- visible Points derive from exact Anchor Mask plus depth、first hit or equivalent visible-surface seam；
+- Points are bounded、finite、deterministically ordered and filtered for invalid/background-separated support；
 - center and extent use robust statistics；
 - no Stable Gaussian IDs、weights or ownership labels are required；
 - geometry is localization and Prompt context only；
@@ -305,22 +339,22 @@ Requirements：
 
 # 10. Bounded local Key Views
 
-v1 generates a small fixed-policy set of local views, normally 2–4：
+v1 generates a small fixed-policy set of local Views, normally 2–4：
 
 - left/right local azimuth offsets around the target；
 - optional modest elevation offset；
-- look-at or equivalent framing around `centerWorld` and `extentWorld`；
+- framing around `centerWorld` and `extentWorld`；
 - bounded local movement rather than room-scale orbit planning。
 
 Each candidate performs minimal validity checks：
 
 - finite CameraBinding；
-- target projection intersects the image with sufficient size；
+- target projection intersects image with sufficient size；
 - clipping is valid；
-- rendered RGB is nonblank；
-- gross occlusion or invalid depth may mark the View Limited/Review。
+- authoritative RGB is nonblank；
+- gross occlusion or invalid depth may mark the View Limited or trigger bounded replacement。
 
-Adaptive marginal-gain optimization、general free-space reconstruction、room/outside-room inference、Bridge Views、dense trajectory planning and append-only multi-segment planner frameworks are deferred。
+Adaptive marginal-gain optimization、general free-space reconstruction、room/outside-room inference、Bridge Views、dense trajectories and append-only multi-segment planner frameworks are deferred。
 
 `Generate More` may append another bounded local batch without invalidating completed Views。
 
@@ -328,29 +362,49 @@ Adaptive marginal-gain optimization、general free-space reconstruction、room/o
 
 # 11. Image instance Mask contracts
 
-Ticket 08A defines a small model-specific-but-versioned seam, not a generic backend ecosystem：
+Ticket 08A defines a small versioned seam, not a generic backend ecosystem。
+
+## 11.1 Prompt artifact
 
 ```ts
 interface ImageInstancePromptArtifact {
     schemaVersion: number;
     targetContextId: string;
+    contextRevision: number;
     viewId: string;
     rgbDigest: string;
-    adapterCapabilityDigest: string;
+    cameraBindingDigest: string;
     positivePoints: readonly PixelPoint[];
     negativePoints: readonly PixelPoint[];
     positiveBox?: PixelBoxXYXY;
-    previousLogitsArtifactDigest?: string;
+    previousLogitsRefDigest?: string;
     multimaskOutput: boolean;
     artifactDigest: string;
 }
+```
 
+## 11.2 Provider request
+
+```ts
+interface ImageInstanceMaskRequest {
+    schemaVersion: number;
+    identity: ImageInstanceMaskRequestIdentity;
+    rgb: ImageInstanceRgbInput;
+    prompt: ImageInstancePromptArtifact;
+}
+```
+
+`ImageInstanceRgbInput` contains exactly one of：authoritative RGB artifact bytes or current Companion RGB reference。The provider resolves and verifies bytes before inference。
+
+## 11.3 Result
+
+```ts
 interface ImageInstanceMaskResult {
     schemaVersion: number;
     requestIdentity: ImageInstanceMaskRequestIdentity;
     masks: readonly MaskArtifact[];
     modelScores: readonly number[];
-    lowResolutionLogits?: readonly PreviousPredictionLogitsArtifact[];
+    previousLogitsRefs?: readonly PreviousPredictionLogitsRef[];
     diagnostics: ImageInstanceMaskDiagnostics;
     resultDigest: string;
 }
@@ -359,23 +413,25 @@ interface ImageInstanceMaskResult {
 Invariants：
 
 - result echoes exact request identity；
-- Mask/score/logits cardinality matches；
+- resolved RGB matches digest/dimensions；
+- Mask/score/ref cardinality matches；
 - single-mask mode returns at most one usable Mask；
 - multimask mode returns at most three；
+- raw logits tensors remain Companion-local；
 - technical failure returns no partial result；
 - provider does not publish Stable Mask、Participation、Evidence or Candidate；
-- there is no current backend registry、Route B/C/D bundle、sequence extension or automatic Route-A fallback contract。
+- no current backend registry、Route B/C/D bundle、sequence extension or automatic Route-A fallback exists。
 
-Future tracker work requires a new experiment-backed ADR and a separate `SequenceInstanceTracker` contract。
+Future tracker work requires a new experiment-backed ADR and separate `SequenceInstanceTracker` contract。
 
 ---
 
 # 12. 3D-guided per-View Prompt synthesis
 
-For each Generated Key View, Prompt synthesis projects `TargetGeometryHintArtifact` through the exact Key-View CameraBinding and produces：
+For each Generated Key View, Prompt synthesis projects `TargetGeometryHintArtifact` through the exact CameraBinding and produces：
 
 - one Positive Instance Box；
-- 1–3 visible Positive Points inside projected target support；
+- 1–3 visible Positive Points inside projected support；
 - optionally 0–2 Negative Points in clearly local background or neighbour regions。
 
 Generated per-View inference uses `multimask_output=false`。
@@ -400,19 +456,19 @@ Required behavior：
 
 - no adjacent-frame or tracker-memory dependency；
 - no Multiplex session；
-- exact RGB/Prompt/attempt identity；
+- exact RGB/Prompt/Companion/attempt identity；
 - one output Mask in normal 3D-guided mode；
 - Prompt consistency and basic geometry validation；
 - technical failure preserves RGB and prior Stable Mask；
-- no automatic fallback to the legacy projected-support/Multiplex route。
+- no automatic fallback to legacy projected-support/Multiplex route。
 
-A missing or invalid Mask becomes `unavailable` or Review according to structured cause. It is distinct from transport/runtime/OOM failure。
+A valid empty result is semantic `unavailable`, distinct from transport/runtime/OOM failure。
 
 ---
 
-# 14. Mask Review, Participation and Lift Readiness
+# 14. Mask Review, Participation and optional cross-view diagnostics
 
-## 14.1 Mask validity / Review
+## 14.1 Per-View Mask Review
 
 Per-View Mask Review may use：
 
@@ -425,22 +481,24 @@ Per-View Mask Review may use：
 
 It produces Good / Review / Failed。
 
-## 14.2 Removed reasons
+`propagation-uncertain` is removed because no tracker propagation exists。
 
-`propagation-uncertain` is removed from the ordinary v1 path because no tracker propagation exists。
+`weak-gaussian-support` and `low-visible-support` are not Mask-quality reasons。They belong to Ticket 13 Lift Readiness。
 
-`weak-gaussian-support` is not a Mask-quality reason. It belongs to Lift Readiness in Ticket 13。
-
-## 14.3 Defaults
+## 14.2 Participation defaults
 
 ```text
 Good automatic Stable Mask → Included
 Review automatic Stable Mask → Excluded
 Failed / unavailable / no Stable Mask → Excluded
-User Confirmed Stable Mask → Included unless the user explicitly excludes it
+User Confirmed Stable Mask → Included unless explicitly excluded
 ```
 
 Participation remains independent from View role and source。
+
+## 14.3 Ticket 10 optional diagnostics
+
+Ticket 10 may add cross-view Evidence-conflict diagnostics after per-View P/N/V exists。It does not own Mask Review、visibility readiness or ownership classification。Its absence does not block base Lift Readiness or core release closure。
 
 ---
 
@@ -448,7 +506,7 @@ Participation remains independent from View role and source。
 
 Only the Stable Mask publication layer may replace an automatic Stable Mask revision。
 
-It validates exact RGB、Prompt/result、review policy and current Stable authority. It never silently replaces User Confirmed Stable state and never creates P/N/V or Candidate。
+It validates exact RGB、Prompt/result、review policy and current Stable authority。It never silently replaces User Confirmed Stable state and never creates P/N/V or Candidate。
 
 ---
 
@@ -475,10 +533,12 @@ Migration MUST retire or isolate：
 - `GeneratedViewMaskResponse.assessment` provider coupling；
 - Negative Box and Mask Constraint Prompt artifacts；
 - binary Brush-to-`mask_input` mapping；
+- raw logits tensor in browser Prompt/request state；
 - generic backend registry and automatic route fallback contracts；
+- former Ticket 06 production-fallback claims；
 - legacy `generated-view-mask/v1` cache rebinding。
 
-Old artifacts fail version validation. User Confirmed Stable Masks remain authoritative。
+Old artifacts fail version validation。User Confirmed Stable Masks remain authoritative。
 
 ---
 
@@ -498,7 +558,7 @@ Candidate stale/current
 
 The Gallery does not expose backend-route matrices、fallback provenance、sequence state or generic ProposalDecision for ordinary Generated Views。
 
-Anchor candidate choice remains in the Anchor editing surface, not in every Gallery card。
+Anchor candidate choice remains in the Anchor editing surface。
 
 ---
 
@@ -527,7 +587,9 @@ Rules：
 - unconfirmed Editing changes do not dirty Evidence；
 - Anchor Stable change invalidates geometry、plan and dependent per-View Prompts/Masks；
 - Camera/RGB change dirties that View Prompt、Mask and Evidence；
-- Point refinement may reuse exact prior logits only on the same RGB and lineage；
+- Point refinement may reuse exact previous-logits ref only on the same RGB/Companion/candidate lineage；
+- Companion Instance change invalidates all previous-logits and Companion RGB refs；
+- missing refinement state causes fresh no-logits inference；
 - Refresh creates a new inference attempt；
 - no Mask refresh automatically Re-Lifts；
 - manual correction affects only that View by default。
@@ -547,25 +609,32 @@ Render Ready
 
 contribute to P/N/V。
 
-Target geometry、Prompt、SAM score、previous logits、Mask Review and View role are not ownership Evidence。
+Target geometry、Prompt、SAM score、previous logits、Mask Review、cross-view diagnostic and View role are not ownership Evidence。
 
 ---
 
-# 21. Working Sets and Lift
+# 21. Working Sets and Lift Readiness
 
-Render Working Set preserves correct compositing and occlusion. Evidence Working Set controls Stable Gaussian IDs receiving P/N/V writes。
+Render Working Set preserves correct compositing and occlusion。Evidence Working Set controls Stable Gaussian IDs receiving P/N/V writes。
 
 `TargetGeometryHintArtifact` may seed but never hard-bound Evidence Working Set。Later Included Views may expand it。
 
-Ticket 13 owns Lift Readiness：coverage、view diversity、visibility/support sufficiency and Not Ready / Limited / Ready classification。
+Ticket 13 is the sole current authority for：
+
+- visibility/support sufficiency；
+- Observation Coverage；
+- useful View Diversity；
+- Not Ready / Limited / Ready。
+
+Ticket 10 optional conflict diagnostics may enrich inspection but cannot emit weak/low-support readiness claims and do not block release。
 
 ---
 
 # 22. Candidate and native operations
 
-Aggregation preserves per-View Evidence and produces Selected、Rejected、Uncertain、Out of Scope classes. Candidate contains Selected only。
+Aggregation preserves per-View Evidence and produces Selected、Rejected、Uncertain、Out of Scope classes。Candidate contains Selected only。
 
-Native Set/Add/Remove/Intersect remains explicit and undoable. No AI artifact mutates Native Selection before the user applies an operation。
+Native Set/Add/Remove/Intersect remains explicit and undoable。No AI artifact mutates Native Selection before user application。
 
 ---
 
@@ -573,7 +642,7 @@ Native Set/Add/Remove/Intersect remains explicit and undoable. No AI artifact mu
 
 SAM 3.1 Multiplex may be reconsidered only for a real ordered video/dense multi-object tracking workload。
 
-Adoption requires a new ADR with measured benefit、sequence semantics、reference updates、drift handling、resource envelope、failure isolation and migration。No current Ticket must implement speculative sequence interfaces。
+Adoption requires a new ADR with measured benefit、sequence semantics、reference updates、drift handling、resource envelope、failure isolation and migration。No current Ticket implements speculative sequence interfaces。
 
 ---
 
@@ -583,13 +652,16 @@ Minimum rules：
 
 - Companion unavailable leaves Native SuperSplat usable；
 - RGB failure preserves inspectable prior state；
+- unresolved/digest-only RGB request fails before inference；
 - SAM technical failure preserves RGB、prior Stable Mask and manual editing；
 - one-point candidate ambiguity asks the user to choose/refine；
+- expired previous-logits ref reruns current Points/Box without `mask_input`；
 - no usable Mask offers Point/Box adjustment、Retry、Manual Draw or Exclude；
 - geometry failure preserves Anchor and allows local/user-added alternatives；
 - stale or old-schema artifacts are rejected, never rebound；
 - OOM/cancellation publishes no partial artifact；
-- Evidence/Lift failure preserves Views and Stable Masks。
+- Evidence/Lift failure preserves Views and Stable Masks；
+- optional Ticket 10 failure leaves core release, readiness, Participation and Candidate unchanged。
 
 ---
 
@@ -600,7 +672,9 @@ Required validation：
 - repository tests、lint、locales and build；
 - official SAM 3 Image adapter GPU fixture；
 - no static path imports or invokes Multiplex predictor/private tracker heads；
-- Point、Negative Point、Positive Box and previous-logits refinement fixtures；
+- authoritative RGB artifact/reference resolution and mismatch fixtures；
+- Point、Negative Point、Positive Box and opaque previous-logits-ref refinement fixtures；
+- Companion restart/state eviction invalidation；
 - single-point multimask and Box/multi-point single-mask fixtures；
 - PromptState migration rejecting Negative Box/Mask Constraint artifacts；
 - Paint/Erase never entering model request；
@@ -608,16 +682,17 @@ Required validation：
 - bounded local View framing and nonblank render fixtures；
 - 3D-guided Box/Point per-View quality fixtures；
 - Mask Review versus Lift Readiness reason separation；
+- core release without Ticket 10 output；
 - stale identity、Retry、OOM and User Confirmed preservation tests。
 
 ---
 
-# 26. Ticket ownership summary
+# 26. Ticket ownership and current frontier
 
 ```text
-04C  SAM 3 Image adapter + Prompt contract migration
+04C  SAM 3 Image adapter + Prompt/RGB/refinement contract migration
+07   MaskReviewPolicy correction
 02C  automatic readiness for the new Active Model Manifest
-07   Mask Review / Participation correction
 07A  simplified Anchor candidate choice and confirmation
 07B  Point/Box + Paint/Erase palette hardening
 08   TargetGeometryHint + bounded local Key Views
@@ -625,7 +700,19 @@ Required validation：
 08B  3D-guided per-View SAM 3 Image acquisition
 09   simplified Gallery states
 12   simplified dirty/refresh lifecycle
-13   Lift Readiness including weak Gaussian support
+13   sole Lift Readiness / visibility authority
+10   optional cross-view Evidence-conflict diagnostics
 ```
 
-Current implementation begins at Ticket 04C。
+Current ready frontier：
+
+```text
+04C  critical model migration gate
+07   parallel MaskReview policy correction
+```
+
+After 04C：
+
+- 02C may proceed independently；
+- 07A proceeds after both 04C and 07；
+- 07B and 08 proceed in parallel after 07A。

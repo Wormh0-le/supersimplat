@@ -1,6 +1,6 @@
-# Final Spec v1.2 Walkthrough Coverage — v2.8
+# Final Spec v1.2 Walkthrough Coverage — v2.9
 
-## Typical and architecture flows A–T
+## Typical and architecture flows A–V
 
 | ID | Flow | Ticket path | Required result |
 |---|---|---|---|
@@ -12,8 +12,8 @@
 | WF-F | Visible support extraction | `07A → 08` | Bounded replayable support artifact with no ownership semantics |
 | WF-G | Sparse planner | `08 support → bootstrap → segment` | Validity precedes gain; no Bridge/tracker requirement |
 | WF-H | Generate More | `08 → 09/12` | New immutable segment appends without staling prior Views |
-| WF-I | Contract foundation | `08 → 08A` | Prompt/Proposal/Decision/backend bundle schemas validate without production inference |
-| WF-J | Route-B per-view acquisition | `08A → 08B` | Prompt synthesis → ProposalSet → Decision → Assessment → publication are separate |
+| WF-I | Contract foundation | `08 → 08A` | Prompt/Proposal/result/Decision/backend bundle schemas validate without production inference |
+| WF-J | Route-B per-view acquisition | `08A → 08B` | Prompt synthesis → result/ProposalSet → Decision → Assessment → publication are separate |
 | WF-K | Ambiguous Key View | `08B → 09` | ProposalSet retained, no Stable Mask, Excluded, actionable Review |
 | WF-L | Route-B technical fallback | `08B → 09/12` | Distinct route-A attempt with parent/reason; same-or-stricter quality gate |
 | WF-M | Semantic Review no fallback | `08B → 09` | Contamination/clipping/Review remains Review and never auto-fallbacks |
@@ -24,6 +24,8 @@
 | WF-R | P/N/V ownership | `11/12 → 14 → 20` | Only Included Stable Masks contribute formal Evidence |
 | WF-S | Native apply and Undo-and-Fix | `14/15 → 16 → 17` | Native EditHistory used; correction returns through explicit Re-Lift |
 | WF-T | Future C/D readiness | `08A contracts → future experiment → ADR` | Current route B remains stable; no fake sequence/reference state |
+| WF-U | Decision unavailable | `08B → 09/12` | Successful acquisition with no eligible proposal stays Decision unavailable, not technical failure or fallback |
+| WF-V | Legacy contract migration | `08B → 12 → 21` | legacy generated-view-mask/v1, propagated source, and provider Assessment cannot validate as current artifacts |
 
 ## WF-F — Visible target support
 
@@ -70,7 +72,8 @@ Assertions:
 08 artifacts
 → KeyViewPromptArtifact schema
 → KeyViewMaskProposalSet schema
-→ KeyViewMaskDecision schema
+→ PerViewMaskAcquisitionResult schema
+→ KeyViewMaskDecision bound to ProposalSet digest + attempt
 → attempt/fallback identity
 → Backend Descriptor + Bundle + Registry
 → perView contract + optional sequence schemas
@@ -82,6 +85,8 @@ Assertions:
 - bundle structure is capability truth;
 - route B has perView only;
 - provider result cannot contain Decision, Assessment, Stable publication, Participation, P/N/V, or Candidate;
+- attempt-level backend diagnostics have one authority on the result envelope;
+- ProposalSet contains candidate-local data only;
 - unsupported sequence operations fail before mutation.
 
 ## WF-J — Route-B layered acquisition
@@ -91,9 +96,11 @@ Visible support + bootstrap + segment + Key-View RGB
 → KeyViewPromptSynthesizer
 → immutable KeyViewPromptArtifact
 → route-B perView provider
-→ bounded KeyViewMaskProposalSet
+→ PerViewMaskAcquisitionResult
+    ├── bounded KeyViewMaskProposalSet
+    └── one backendDiagnostics authority
 → exact/near-duplicate clustering
-→ KeyViewMaskDecision
+→ KeyViewMaskDecision bound to exact ProposalSet
     ├── selected
     ├── ambiguous
     └── unavailable
@@ -107,13 +114,15 @@ Publication:
 selected + Good   → Auto Good Stable + Included
 selected + Review → Auto Review Stable + Excluded
 ambiguous          → retain ProposalSet, no new Stable, Excluded
-unavailable        → Mask Failed, no Stable
+unavailable        → acquisition Ready, no Stable, Excluded
 ```
 
 Assertions:
 
 - model score is not sole selector;
 - provider, Decision, Assessment, publication and Participation remain distinct;
+- Decision cannot bind a proposal from another attempt even when proposal IDs collide;
+- unavailable is not technical failure;
 - User Confirmed Stable cannot be overwritten;
 - RGB does not wait for acquisition.
 
@@ -134,9 +143,50 @@ route-B technical/capability failure
 Assertions:
 
 - fallback is allowed only for backend/capability/technical/OOM classes;
-- ambiguous, contamination, Prompt inconsistency, clipping, fragmentation and Review do not trigger fallback;
+- ambiguous, unavailable, contamination, Prompt inconsistency, clipping, fragmentation and Review do not trigger fallback;
 - route-A Auto Good requires same or stricter thresholds;
 - fallback provenance is visible and never represented as route B.
+
+## WF-U — Decision unavailable
+
+```text
+provider succeeds
+→ PerViewMaskAcquisitionResult is valid
+→ ProposalSet is empty or all proposals are ineligible
+→ KeyViewMaskDecision.status = unavailable
+→ no ViewAssessmentResult
+→ no Stable Mask publication
+→ Participation Excluded
+```
+
+Assertions:
+
+- acquisition remains Ready/completed;
+- no technical failure reason is fabricated;
+- no automatic route-A fallback occurs;
+- Gallery exposes Retry / Regenerate Prompts / Adjust View / Manual Draw / Exclude;
+- existing prior Stable Mask/Evidence remains governed by exact identity and is not destroyed by the unavailable review result.
+
+## WF-V — Legacy generated-view acquisition migration
+
+```text
+legacy generated-view-mask/v1
++ maskSource='propagated'
++ GeneratedViewMaskPropagation
++ provider-returned ViewAssessmentResult
+→ current contract validator
+→ incompatible / rejected
+→ optional route-A compatibility adapter creates new attempt
+→ current PerViewMaskAcquisitionResult / ProposalSet / Decision path
+```
+
+Assertions:
+
+- legacy payload/cache is never structurally rebound;
+- controller no longer publishes Stable/Participation directly from provider response;
+- legacy propagated source is not generic backend provenance;
+- User Confirmed Stable authority survives migration;
+- compatibility route A remains visibly route A.
 
 ## WF-R — Evidence ownership
 
@@ -152,7 +202,7 @@ Included + Render Ready + Stable Mask Views
 Assertions:
 
 - support, bootstrap, Prompt, ProposalSet, Decision, backend/fallback and tracker state are not P/N/V;
-- ambiguous Views without Stable Mask contribute nothing;
+- ambiguous/unavailable Views without Stable Mask contribute nothing;
 - unobserved/mixed support is Uncertain;
 - Re-Lift is explicit.
 
@@ -174,9 +224,11 @@ Native operation (16)
 
 07B is a parallel interaction prerequisite for complete correction UX and release hardening, not an artifact prerequisite for Ticket 08.
 
+Current Ticket mappings resolve through `CURRENT-TICKET-SPEC-MAPPING.md`; no outcome requires reconstructing Final Spec v1.1 Amendments.
+
 No final outcome depends on route comparison, tracker presence, or complete Contributor publication.
 
-## Error / degradation flows ERR-1–ERR-20
+## Error / degradation flows ERR-1–ERR-22
 
 | ID | Failure | Ticket(s) | Required retained state / recovery |
 |---|---|---|---|
@@ -200,16 +252,23 @@ No final outcome depends on route comparison, tracker presence, or complete Cont
 | ERR-18 | Evidence/Lift failure | 14/20/21 | Preserve RGB/View/Stable/Gallery/proposals/prior Candidate |
 | ERR-19 | Scene dependency mutation | 18 | Suspended/read-only; exact Undo or Restart |
 | ERR-20 | Cached replay vs true Retry | 03/08B/12/21 | Same attempt idempotent; Retry creates new identity |
+| ERR-21 | Decision unavailable | 08B/09/12/21 | Acquisition remains Ready; no Assessment/Stable/fallback; Prompt/View/manual recovery |
+| ERR-22 | Legacy generated-view result/cache | 08B/12/21 | Reject contract version; preserve user Stable; new adapter attempt only |
 
 ## Closure assertions
 
 - Final Spec v1.2 is the only current implementation specification.
+- `CURRENT-TICKET-SPEC-MAPPING.md` is the current mapping authority; local v1.1 references are historical only.
 - Ticket 07B and Ticket 08 are parallel after 07A.
 - Ticket 08 owns visible support, bootstrap, and sparse planning only.
 - Ticket 08A owns contracts/registry only.
-- Ticket 08B owns production route-B execution and B2 fallback.
-- Prompt synthesis, provider, Decision, Assessment, publication and Participation remain separate.
+- Ticket 08B owns production route-B execution, B2 fallback, and legacy acquisition migration.
+- Prompt synthesis, provider, result envelope, Decision, Assessment, publication and Participation remain separate.
+- Backend diagnostics have one result-envelope authority.
+- Decision binds exact ProposalSet digest and attempt.
 - Ambiguous never publishes an arbitrary Stable Mask or auto-fallbacks.
+- Unavailable is not technical failure and never auto-fallbacks.
+- Legacy generated-view-mask/v1 cannot validate as a current artifact.
 - Support/bootstrap/acquisition artifacts never become P/N/V.
 - Confirmed correction is per-view by default.
 - Routes C/D remain future ADR-gated experiments.

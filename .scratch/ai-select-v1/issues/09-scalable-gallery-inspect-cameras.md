@@ -1,6 +1,6 @@
-# 09 — Scalable Gallery + Frustum sync + acquisition inspection
+# 09 — Scalable Gallery + Frustum Sync + Mask Inspection
 
-Status: blocked — waits for Ticket 08B production acquisition
+Status: blocked — waits for Ticket 08B
 
 Blocked by: 08B
 
@@ -8,133 +8,109 @@ Blocks: 11, 12
 
 ## Final Spec mapping
 
-- Final Spec v1.2 §§19, 27–29
-- DG-26 Decisions 4–8
-- ADR 0014 as subordinate Route-B-first rationale
+- Final Spec v1.3 §§17–19, 24–26
+- ADR 0016
 
-## Inputs / preconditions
+## Purpose
 
-- Progressive AIView registry;
-- independent render/mask/evidence states;
-- Ticket 08 immutable sparse Key-View plan segments;
-- Ticket 08A backend/proposal/decision/publication contracts;
-- Ticket 08B generic acquisition, fallback, decision, assessment and publication states;
-- Participation;
-- Generated frustums;
-- Camera Inspection;
-- optional sequence/reference state only when a future adopted backend actually provides it.
+Present progressive AI Views and camera frustums without exposing obsolete backend-route, tracker or generic proposal-decision machinery.
 
-## Outputs / handoff artifacts
+## Card state model
 
-- single-row scalable Gallery;
-- summary/filter/review queue;
-- bidirectional card↔frustum sync;
-- Inspect AI Cameras;
-- Anchor/Key/User-added role presentation;
-- separate render/acquisition/proposal-decision/Mask-quality/Participation/Evidence presentation;
-- backend and route-A fallback provenance;
-- explicit distinction between acquisition technical failure and Decision `unavailable`;
-- optional future auxiliary/tracker/reference presentation only when capability exists.
-
-## What to build
-
-Build Gallery and frustum synchronization without collapsing state boundaries.
-
-Cards MUST distinguish:
+Cards distinguish:
 
 ```text
 Render status
-Acquisition status / attempt
-Backend + fallback provenance
-ProposalDecision status
-Mask quality / Stable Mask presence
+Prompt synthesis status
+Mask inference status
+Mask Review / Stable Mask status
 Participation
 Evidence status
-Candidate stale/current status where applicable
+Candidate stale/current where applicable
 ```
 
-Required state examples:
+Required examples:
 
 ```text
-acquisition = ready
-Decision = unavailable
-Stable Mask = none
-Participation = excluded
+Render Ready
+Prompt Ready
+Mask unavailable
+Stable Mask none
+Participation Excluded
 ```
 
 is distinct from:
 
 ```text
-acquisition = failed
-Decision = not-produced
-Stable Mask = prior-or-none
-Participation = unchanged/excluded by current policy
+Render Ready
+Mask inference technical failure
+prior Stable Mask retained or none
+Participation unchanged/current policy
 ```
 
-Navigation and filtering never change Prompt, ProposalSet, Decision, Stable Mask, Participation, optional reference memory, Evidence or Candidate identity.
+Anchor one-point candidate choice remains on the Anchor authoring surface. Generated and User-added Views normally produce one model Mask and do not expose a generic ProposalSet/Decision panel.
+
+## Required behavior
+
+- stable order: Anchor, generated local Views in creation order, then user-added Views;
+- View role is visible but does not imply trust;
+- card/frustum selection is bidirectional and never moves Editor Camera automatically;
+- Camera Inspection reuses existing inspection behavior;
+- filters do not mutate Prompt, Mask, Participation, Evidence or Candidate;
+- RGB remains inspectable while Prompt/Mask inference is pending or failed;
+- semantic unavailable is not shown as service/transport/OOM failure;
+- Mask Review reasons map to corrective actions;
+- Lift Readiness is presented separately when Ticket 13 exists.
+
+## Removed presentation
+
+Current v1 Gallery does not show:
+
+- Route B/C/D backend kind;
+- automatic Route-A fallback provenance;
+- sequence/tracker/reference state;
+- generic selected/ambiguous/unavailable Decision for ordinary Generated Views;
+- Prompt Brush or Negative Box correction actions.
+
+## Corrective actions
+
+Depending on state:
+
+- inspect Mask;
+- add Positive/Negative Point;
+- adjust Positive Box;
+- Retry Mask;
+- regenerate 3D-guided Prompt;
+- Paint/Erase or Manual Draw;
+- Confirm as-is where allowed;
+- Include/Exclude;
+- adjust/add View.
 
 ## Acceptance criteria
 
-- [ ] Stable order is Anchor, planner segments in creation order, then user-added creation order.
-- [ ] Cards remain compact: thumbnail, View ID, primary status, Participation, selection and compact role/backend metadata.
-- [ ] Anchor/Key/User-added roles are visible without being conflated with Participation.
-- [ ] Plan segment/local index are inspectable; stable `viewId` remains identity.
-- [ ] Render, Prompt synthesis, acquisition, ProposalDecision, Mask quality, Evidence and Participation are not one flag.
-- [ ] `selected`, `ambiguous`, and `unavailable` are inspectable Decision states.
-- [ ] `unavailable` is shown as a completed acquisition with no eligible proposal, not as backend/protocol/OOM failure.
-- [ ] Technical acquisition failure has no fabricated `unavailable` Decision.
-- [ ] Ambiguous exposes review/refine/choose/Paint actions and does not pretend a Stable Mask exists.
-- [ ] Unavailable exposes Retry / Regenerate Prompts / Adjust View / Manual Draw / Exclude actions without automatic route-A fallback.
-- [ ] Backend/fallback identity is inspectable and does not imply trust or Included.
-- [ ] Route-B technical failure and route-A fallback result remain separately inspectable.
-- [ ] Optional correction-reference status is absent unless a future backend advertises and implements it.
-- [ ] Optional Auxiliary/Bridge/tracker roles appear only when a future adopted backend creates them.
-- [ ] Status priority is deterministic; Evidence Failed appears only when Evidence was requested and never replaces RGB Ready.
-- [ ] Summary counts separate unavailable Decisions from technical acquisition failures.
-- [ ] Summary counts do not pretend to be Lift Readiness.
-- [ ] Filters support All / Needs Attention / Included / Excluded / Key / User-added and do not mutate state.
-- [ ] Needs Attention includes ambiguous, unavailable, unresolved Review, no Stable Mask, Prompt/acquisition failure, Render Failed and actionable Evidence Failed.
-- [ ] Filtering de-emphasizes nonmatching frustums without deleting/reclassifying them.
-- [ ] Card↔frustum selection works without moving Editor Camera.
-- [ ] Inspect AI Cameras reuses Camera Inspection and never retargets Anchor.
-- [ ] A selected off-screen frustum has explicit locate/inspect recovery.
-- [ ] Generated frustums remain read-only in v1.2.
-- [ ] Thumbnail/resource handling supports 10–20+ Views without one full Mask Editor per card.
-- [ ] Sticky add exposes Generate More / Use Current View / Adjust New View; Stop remains visible while active.
-- [ ] Generate More appends a planner segment and does not visually stale prior completed Views.
-- [ ] No ordinary Delete View; Exclude is normal participation removal, record deletion is Restart/Regenerate-owned.
-- [ ] Needs Attention empty state provides return to All.
-
-## Failure / recovery criteria
-
-- Failed thumbnails/resources keep recoverable View records.
-- Prompt/acquisition/decision/publication failure remains distinguishable from View Render Failure.
-- Route-A fallback is shown as fallback, never as route B.
-- Ambiguous retains its ProposalSet and review actions.
-- Unavailable retains its successful acquisition result/diagnostics and no-Stable state.
-- Optional tracker failure/drift remains capability-gated and distinguishable from ordinary per-view failure.
-- Filtering/navigation never mutates formal state.
-- Stale acquisition/decision/assessment result is shown as stale rather than attached to a newer View revision.
+- [ ] Render, Prompt, Mask inference, Mask Review, Participation and Evidence remain separate.
+- [ ] semantic unavailable differs from technical inference failure.
+- [ ] no obsolete backend/fallback/tracker state appears.
+- [ ] no Prompt Brush/Negative Box action appears.
+- [ ] Anchor candidate choice is not duplicated into every card.
+- [ ] role and Participation remain independent.
+- [ ] 10–20+ Views remain resource-bounded.
+- [ ] card↔frustum selection and Camera Inspection are deterministic.
+- [ ] Generate More appends local Views without visually staling prior completed Views.
+- [ ] filtering/navigation never mutates formal state.
 
 ## Validation
 
-- `npm test`
-- `npm run lint`
-- `npm run lint:locales`
-- `npm run build`
-- manual 10–20+ View walkthrough
-- selected/ambiguous/unavailable Gallery fixtures
-- unavailable-versus-technical-acquisition-failure fixture
-- route-B failure → route-A fallback provenance walkthrough
-- RGB Ready + acquisition pending/failed + Evidence Failed combinations
-- frustum↔card tests
-- browser walkthrough with every Generated Frustum initially behind observer
-- optional Auxiliary/Bridge walkthrough only under an adopted capability fixture
+- large Gallery walkthrough;
+- semantic-unavailable versus technical-failure fixture;
+- Prompt/Mask Review action fixtures;
+- removed backend/tool presentation assertions;
+- card/frustum sync tests;
+- RGB Ready plus Mask pending/failed combinations;
+- repository test/lint/locales/build.
 
 ## Non-goals
 
-- No acquisition backend execution.
-- No Prompt synthesis or ProposalDecision algorithm.
-- No tracker/reference mutation.
-- No manual sequence reorder/search.
+- No model execution or Prompt synthesis.
+- No tracker/reference UI.
 - No Candidate provenance inspector.

@@ -9,6 +9,7 @@ Blocked by: 20, 18, 07B, 08B, 10, 13
 - Final Spec v1.2 §§4, 7, 17–18, 21–28
 - DG-26
 - ADR 0013
+- ADR 0014 as subordinate Route-B-first rationale
 
 ## Inputs / preconditions
 
@@ -19,6 +20,8 @@ Blocked by: 20, 18, 07B, 08B, 10, 13
 - frozen support/bootstrap/planner/acquisition benchmark scenes;
 - route-A B2 fallback;
 - backend bundle/registry and schema compatibility fixtures;
+- exact ProposalSet/Decision identity validators;
+- legacy generated-view acquisition contract/cache fixtures;
 - optional future tracker/hybrid runtime only when separately adopted by ADR;
 - fault-injection hooks.
 
@@ -29,6 +32,8 @@ Blocked by: 20, 18, 07B, 08B, 10, 13
 - support/planner/route-B resource-envelope validation;
 - acquisition bundle/dispatch compatibility results;
 - route-A fallback eligibility and trust results;
+- unavailable-versus-technical-failure validation;
+- legacy contract migration/retention results;
 - interaction release validation including Ticket 07B;
 - stress and repeatability results;
 - locked production evidence record.
@@ -45,7 +50,7 @@ Close the production-hardening loop for the selected Final Spec v1.2 flow. Calib
 - [ ] Same-attempt replay remains idempotent where supported.
 - [ ] Cancellation correctness never depends on cancellation finishing before stale work returns.
 - [ ] OOM/kernel/model failure during support/render/Prompt/SAM/Evidence/Lift never publishes partial Ready artifacts.
-- [ ] Atomic publication is validated for support, bootstrap, plan segment, RGB/View, Prompt artifact, ProposalSet, Decision, Stable Mask, per-view Evidence and Candidate.
+- [ ] Atomic publication is validated for support, bootstrap, plan segment, RGB/View, Prompt artifact, acquisition result, ProposalSet, Decision, Stable Mask, per-view Evidence and Candidate.
 - [ ] RGB failure preserves last valid preview only as stale/not-current and exposes Retry.
 - [ ] Lift failure preserves stable inputs and leaves Candidate unchanged/not-current.
 
@@ -54,8 +59,13 @@ Close the production-hardening loop for the selected Final Spec v1.2 flow. Calib
 - [ ] Invalid support fails to Limited/unavailable with actionable local/user-added recovery.
 - [ ] Insufficient 3D-guided Prompt support fails to Review/Failed, not silent oversized success.
 - [ ] Provider returns no hidden final Mask, Assessment, Participation or Evidence.
+- [ ] Attempt-level backend diagnostics have exactly one authority on the acquisition result envelope.
 - [ ] ProposalSet dedup/clustering and selected/ambiguous/unavailable are repeatable.
+- [ ] Every Decision binds exact target/context/View/acquisition attempt and `proposalSetArtifactDigest`.
+- [ ] Proposal ID collision across attempts cannot satisfy Decision membership.
 - [ ] Ambiguous retains proposals, publishes no Stable Mask and never triggers automatic route-A fallback.
+- [ ] Unavailable after successful acquisition remains acquisition-ready/decision-unavailable, publishes no Stable Mask, and never triggers automatic route-A fallback.
+- [ ] Technical backend/protocol/OOM failure produces no fabricated unavailable Decision.
 - [ ] Neighbour contamination, Prompt inconsistency, clipping, fragmentation and Assessment Review never trigger automatic fallback.
 - [ ] Per-view technical failure preserves View/RGB/prior Stable Mask and exposes Retry, eligible route-A fallback, manual correction or Exclude.
 - [ ] User Confirmed Stable Mask cannot be overwritten by automatic refresh/fallback.
@@ -80,12 +90,24 @@ Close the production-hardening loop for the selected Final Spec v1.2 flow. Calib
 - [ ] Optional C/D schemas remain forward-compatible with current RGB, ProposalSet, publication and P/N/V artifacts.
 - [ ] Future C/D hardening is out of scope unless a separate ADR adopts one.
 
+### Legacy generated-view migration
+
+- [ ] `GeneratedViewMaskResponse.assessment` is absent from the current provider result path.
+- [ ] `maskSource: 'propagated'` is not used as generic route-B provenance.
+- [ ] `GeneratedViewMaskPropagation` is not the generic diagnostics authority.
+- [ ] controller performs no direct provider-response Stable publication or Participation policy.
+- [ ] legacy `generated-view-mask/v1` payload/cache cannot validate against the current result/ProposalSet contract.
+- [ ] migration rejects incompatible legacy artifacts rather than structurally rebinding them.
+- [ ] current User Confirmed Stable Masks remain authoritative across migration.
+- [ ] route-A compatibility adapter emits current result/ProposalSet/Decision artifacts and remains visibly route A.
+
 ### Dirty/stale and retained state
 
 - [ ] Stress stale-result rejection across Anchor/support/bootstrap/segment/View/RGB/Prompt/backend/attempt churn, Stop, Restart, Suspended/Undo, Evidence recomputation and cancellation.
 - [ ] Generate More appends without dirtying prior completed artifacts.
 - [ ] Prompt-only regeneration does not mutate Stable Mask or Evidence.
 - [ ] No Mask refresh/fallback automatically Re-Lifts.
+- [ ] Ambiguous/unavailable review artifacts without Stable replacement do not dirty exact prior Evidence solely by existing.
 - [ ] Evidence failure preserves RGB/View/Stable/Gallery/proposal review/prior Candidate.
 - [ ] Reference Contributor failure does not block valid RGB or successful Direct Evidence.
 - [ ] Offline/upgrade/incompatible states preserve native SuperSplat and expose recovery.
@@ -98,6 +120,7 @@ Close the production-hardening loop for the selected Final Spec v1.2 flow. Calib
 - [ ] Calibrate Prompt point/Box/ROI/local-negative/Mask-input policies.
 - [ ] Calibrate ProposalSet dedup/clustering and hard-consistency gates.
 - [ ] Calibrate selected/ambiguous/unavailable boundaries.
+- [ ] Report unavailable Decision rate separately from technical acquisition-failure rate.
 - [ ] Calibrate route-B acceptable-mask rate, neighbour contamination and manual correction burden.
 - [ ] Calibrate B2 fallback technical eligibility and same-or-stricter route-A trust threshold.
 - [ ] Calibrate per-view scheduler concurrency and peak VRAM envelope.
@@ -111,11 +134,12 @@ Close the production-hardening loop for the selected Final Spec v1.2 flow. Calib
 - [ ] Ticket 07B drag/collapse/Space-hide behavior works across Anchor, Generated and User-added correction surfaces.
 - [ ] No stale palette hit region remains after move/collapse/hide/disposal.
 - [ ] Gallery exposes render/acquisition/decision/Mask/Participation/Evidence separately.
-- [ ] Fallback provenance and ambiguous review remain understandable without exposing a misleading confidence percentage.
+- [ ] Gallery distinguishes acquisition technical failure from Decision unavailable.
+- [ ] Fallback provenance and ambiguous/unavailable review remain understandable without exposing a misleading confidence percentage.
 
 ### Production identity record
 
-- [ ] Record exact raster/Evidence/runtime/model/backend/Prompt/decision/assessment/publication/planner identities.
+- [ ] Record exact raster/Evidence/runtime/model/backend/Prompt/acquisition-result/ProposalSet/decision/assessment/publication/planner identities.
 - [ ] Validate RGB-only versus RGB+Evidence parity for same raster identity and inputs.
 - [ ] Inject Evidence RGB-digest mismatch and verify no publication/rebinding.
 - [ ] Validate incompatible renderer/acquisition/runtime migration blocks stale reuse until explicit recovery.
@@ -124,7 +148,7 @@ Close the production-hardening loop for the selected Final Spec v1.2 flow. Calib
 ## Failure / recovery criteria
 
 - Every injected failure documents retained state, disabled operations and recovery.
-- No failure silently downgrades to stale-but-applicable Candidate, approximate attribution, hidden Top-1 Mask or undisclosed fallback.
+- No failure silently downgrades to stale-but-applicable Candidate, approximate attribution, hidden Top-1 Mask, fabricated unavailable Decision or undisclosed fallback.
 - Renderer/backend/runtime incompatibility disables production application without destroying inspectable artifacts or mutating Native Selection.
 - Unsupported optional extension calls produce structured capability failure and no dirty-state mutation.
 - Interaction failure cannot leave a permanent uneditable image region.
@@ -138,9 +162,14 @@ Close the production-hardening loop for the selected Final Spec v1.2 flow. Calib
 - support/bootstrap/segment/View/RGB/Prompt/backend stale-result tests
 - Generate More append-only preservation tests
 - selected/ambiguous/unavailable repeatability
+- unavailable-versus-technical-failure matrix
+- exact Decision-to-ProposalSet digest/attempt tests
+- proposal ID collision across attempts
+- single backend-diagnostics authority tests
 - technical fallback eligibility matrix
 - route-A same-or-stricter threshold validation
 - User Confirmed authority preservation
+- legacy generated-view contract/cache migration rejection
 - capability bundle/dispatch tests
 - unsupported sequence/reference no-mutation tests
 - Ticket 07B browser interaction release walkthrough

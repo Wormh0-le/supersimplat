@@ -27,6 +27,31 @@ The resulting mismatch creates unnecessary private-API risk and drives speculati
 11. Mask Review is separated from Lift Readiness. `propagation-uncertain` is removed; `weak-gaussian-support` moves to Lift Readiness.
 12. The current generic backend registry, Route B/C/D bundle, sequence extension, and automatic Route-A fallback are removed from v1 planning.
 
+## Prior inspiration and deliberate divergence
+
+This section is non-normative design provenance. It explains the origin of several product ideas but does not add requirements beyond Final Spec v1.3 and the Decision above.
+
+[ArtisanGS](https://research.nvidia.com/labs/sil/projects/ArtisanGS/) ([paper](https://arxiv.org/abs/2602.10173)) demonstrates an interactive 3DGS-selection workflow that propagates user-guided 2D masks to a binary Gaussian selection while allowing users to inspect and correct errors. Its automatic path lifts the initial masked surface into a target point cloud, generates a dense turnaround sequence around that target, uses Cutie video mask tracking with user reference-frame corrections, and aggregates the multi-view masks by optimizing a one-channel value per Gaussian through the splat renderer.
+
+AI Select v1.3 retains the following design principles:
+
+- **2D-first user intent.** A user establishes an object instance in an authoritative rendered image before any Gaussian ownership decision.
+- **Human-in-the-loop correction.** Automatic masks remain inspectable and correctable through candidate choice, Point refinement, Paint/Erase, Manual Draw, Confirm, Include/Exclude, and User-added Views.
+- **Visible-surface localization.** Anchor depth/first-hit support is lifted into bounded visible 3D points and robust center/extent in `TargetGeometryHintArtifact`.
+- **Geometry-guided multi-view observation.** The visible target hint guides additional camera views and per-View prompts rather than treating the Anchor first-hit set as final ownership.
+- **Renderer-mediated 3D selection.** Multi-view Stable Masks are converted to Gaussian selection through the authoritative splat renderer without scene-specific semantic-feature training.
+- **Explicit 2D/3D selection boundaries.** Editing a 2D Mask, computing a Gaussian Candidate, and applying Native Set/Add/Remove/Intersect remain distinct operations.
+
+AI Select v1.3 deliberately diverges in the following ways:
+
+- ArtisanGS uses a dense full-circle turnaround sequence and reports robust operation around approximately 50 tracking views; v1.3 starts with 2–4 bounded local Key Views and explicit `Generate More`.
+- ArtisanGS treats rendered views as an ordered video and uses Cutie memory/reference frames; v1.3 runs independent SAM 3 Image instance inference for each View and has no current tracker memory or cross-View sequence state.
+- ArtisanGS aggregates masks by optimizing and thresholding a one-channel per-Gaussian mask feature; v1.3 uses explicit per-View P/N/V contribution Evidence and preserves `Selected`, `Rejected`, `Uncertain`, and `Out of Scope` as separate classes.
+- ArtisanGS exposes manual frustum/depth projection as first-class selection tools; v1.3 currently uses depth/first-hit geometry for localization and prompting, not as an immediate Native Selection mutation.
+- ArtisanGS may pre-segment with intersecting frusta when references are declared unoccluded; v1.3 permits `TargetGeometryHintArtifact` to seed an Evidence Working Set but never hard-bounds ownership from Anchor-visible support alone.
+
+No `VideoObjectTracker`, `SequenceMaskProvider`, or tracker-memory contract is reserved in the current v1 protocol. Future video tracking requires a separate `SequenceInstanceTracker` ADR and measured evidence that an ordered-view workload exists and that tracking materially improves quality, latency, or correction burden over independent SAM 3 Image inference. That ADR must specify sequence identity, reference-frame insertion, drift handling, resource limits, cancellation/failure isolation, User Confirmed authority, migration, and how tracker outputs enter the existing Mask Review and Stable publication layers without changing P/N/V ownership semantics.
+
 ## Consequences
 
 - Ticket 04C becomes the next implementation gate and migrates model, Prompt schema, capabilities, artifacts, tests, and Model Manifest identity.

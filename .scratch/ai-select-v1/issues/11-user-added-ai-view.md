@@ -21,8 +21,10 @@ Create user-owned Views through the same authoritative RGB, SAM 3 Image instance
 - a user-added View may remain RGB Ready with no Mask and Evidence Not Requested;
 - No-Mask UI offers Auto Generate Mask, Manual Draw or Exclude;
 - Auto Generate Mask uses Positive/Negative Points and optional Positive Instance Box through the 04C provider;
+- every provider request includes exact authoritative RGB bytes or current Companion RGB ref, not only a digest;
 - one-point-only Prompt may show up to three candidates on the editing surface;
 - Box/multiple-Point/refinement returns one candidate;
+- previous-logits refinement uses only an opaque same-View/current-Companion ref before Accept;
 - Paint/Erase use the 07B palette and never enter inference;
 - automatic Mask Review/publication follows Ticket 07 semantics;
 - Stable Mask publication dirties per-View Evidence but does not auto-Lift;
@@ -36,14 +38,17 @@ Create user-owned Views through the same authoritative RGB, SAM 3 Image instance
 - no automatic Route-A fallback;
 - no Negative Box or Prompt Brush;
 - no generic ProposalSet/Decision panel for ordinary single-mask requests;
-- no tracker/reference state.
+- no tracker/reference state;
+- no raw previous-logits tensor in browser state.
 
 ## Failure and recovery
 
 - render failure preserves the View record and offers Retry/Exclude;
+- unresolved/mismatched RGB request fails before inference;
 - Mask technical failure preserves View/RGB/prior Stable Mask and offers Retry/manual/exclude;
 - semantic unavailable offers Prompt adjustment or Manual Draw;
 - one-point candidate ambiguity is resolved on the editing surface;
+- expired/invalid logits ref reruns current Points/Box without `mask_input`;
 - Evidence failure preserves View/RGB/Stable Mask;
 - palette move/hide/disposal leaves no stale input interception.
 
@@ -51,8 +56,10 @@ Create user-owned Views through the same authoritative RGB, SAM 3 Image instance
 
 - [ ] Current/Adjusted View creation preserves exact CameraBinding/frustum identity.
 - [ ] RGB Ready does not require Mask or Evidence.
-- [ ] Auto Mask uses the current SAM 3 Image adapter and v1 Prompt set.
-- [ ] candidate cardinality follows the current multimask policy.
+- [ ] Auto Mask uses current SAM 3 Image adapter and v1 Prompt set.
+- [ ] provider resolves authoritative RGB and validates dimensions/digest.
+- [ ] candidate cardinality follows current multimask policy.
+- [ ] refinement refs bind same View/RGB/Companion/candidate.
 - [ ] Manual Draw and Paint/Erase remain available.
 - [ ] no removed backend/tool/tracker state appears.
 - [ ] Stable publication and Participation match generated Views.
@@ -64,6 +71,7 @@ Create user-owned Views through the same authoritative RGB, SAM 3 Image instance
 - RGB Ready + No Mask fixture;
 - one-point candidate-choice fixture;
 - Box/multiple-Point single-mask fixture;
+- refinement-ref expiry/Companion-replacement fixture;
 - technical failure/manual recovery;
 - Ticket 07B palette walkthrough;
 - repository test/lint/locales/build.

@@ -12,7 +12,7 @@ import math
 from pathlib import Path
 import tempfile
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Protocol, Sequence
+from typing import Any, Callable, Mapping, Protocol, runtime_checkable, Sequence
 
 
 # The compiler is a capability-level contract: changing prompt ordering,
@@ -557,6 +557,23 @@ class PromptableMaskAdapter(Protocol):
         ``MaskProduction`` binds the threshold and any adapter-local audit
         diagnostics into the immutable completed Mask Set.
         """
+
+
+@runtime_checkable
+class AISelectVisualPromptAdapter(PromptableMaskAdapter, Protocol):
+    """A prompt adapter that explicitly owns the visual inference contract."""
+
+    def produce_ai_select_visual_proposals(
+        self,
+        *,
+        model: Mapping[str, Any],
+        rgb_png: bytes,
+        width: int,
+        height: int,
+        program: Sam31VisualPromptProgram,
+        cancelled: Callable[[], bool],
+    ) -> tuple[AISelectVisualPromptCandidate, ...]:
+        """Return independently validated candidates without cross-candidate policy."""
 
 
 def register_frame_set(payload: dict[str, Any]) -> RegisteredFrameSet:

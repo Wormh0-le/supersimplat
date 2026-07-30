@@ -272,6 +272,14 @@ test('a visual Prompt request requires per-family candidate diagnostics', () => 
     assert.ok(!maskResponseMatchesRequest(responseFor(req), req));
 
     const proposalSet = proposalSetFor(req);
+    proposalSet.proposals[0].promptConsistency = {
+        ...proposalSet.proposals[0].promptConsistency,
+        positiveBoxesSatisfied: true
+    };
+    proposalSet.proposals[0].rankingFeatures.promptConsistency = {
+        ...proposalSet.proposals[0].rankingFeatures.promptConsistency,
+        positiveBoxesSatisfied: true
+    };
     proposalSet.proposals[0].promptDiagnostics = [
         {
             promptId: 'p-1',
@@ -294,5 +302,14 @@ test('a visual Prompt request requires per-family candidate diagnostics', () => 
     });
     assert.ok(
         maskResponseMatchesRequest(responseFor(req, { proposalSet }), req)
+    );
+
+    proposalSet.proposals[0].promptDiagnostics[1].satisfied = false;
+    proposalSet.digest = autoMaskProposalSetDigest({
+        ...proposalSet,
+        digest: undefined
+    });
+    assert.ok(
+        !maskResponseMatchesRequest(responseFor(req, { proposalSet }), req)
     );
 });

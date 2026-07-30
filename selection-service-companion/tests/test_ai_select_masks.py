@@ -651,6 +651,44 @@ class AISelectMaskTests(unittest.TestCase):
             ],
         )
 
+    def test_visual_prompt_contradiction_is_ineligible_for_07a_selection(self) -> None:
+        interactive_predictor = FakeSam3InteractivePredictor()
+        self.state.mask_adapters['sam3.1'] = Sam3PointMaskAdapter(
+            build_predictor=lambda model: self.predictor,
+            build_interactive_predictor=lambda model, rgb_png: interactive_predictor,
+        )
+        request = self.request_body()
+        disjoint_constraint = bytes([0b00000100])
+        request['promptState']['maskConstraints'] = [{  # type: ignore[index]
+            'promptId': 'constraint-1',
+            'polarity': 'include',
+            'artifact': {
+                'encoding': 'bitset-lsb-v1',
+                'width': IMAGE_WIDTH,
+                'height': IMAGE_HEIGHT,
+                'data': base64.b64encode(disjoint_constraint).decode('ascii'),
+                'digest': (
+                    f'sha256:{hashlib.sha256(disjoint_constraint).hexdigest()}'
+                ),
+            },
+        }]
+        request['promptState']['digest'] = self.prompt_state_digest(  # type: ignore[index]
+            request['promptState']  # type: ignore[arg-type]
+        )
+        request['adapterCapabilityDigest'] = self.state.capabilities(
+            [EDITOR_ORIGIN]
+        )['modelManifests'][0]['promptCapabilities']['capabilityDigest']
+
+        response = self.post_proposals(request)
+
+        proposal = response['proposalSet']['proposals'][0]
+        self.assertFalse(
+            proposal['promptConsistency']['maskConstraintsSatisfied']
+        )
+        self.assertFalse(proposal['rankingFeatures']['eligible'])
+        self.assertEqual(response['proposalDecision']['status'], 'unavailable')
+        self.assertNotIn('selectedProposalId', response['proposalDecision'])
+
     def test_publishes_an_empty_proposal_set_when_the_adapter_finds_no_mask(
         self,
     ) -> None:

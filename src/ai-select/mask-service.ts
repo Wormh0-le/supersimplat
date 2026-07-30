@@ -160,6 +160,18 @@ const visualPromptDiagnosticsMatchRequest = (
             polarity: prompt.polarity
         }))
     ];
+    const familySatisfied = (
+        family: 'point' | 'box' | 'mask-constraint',
+        polarity?: 'include' | 'exclude'
+    ): boolean =>
+        diagnostics
+            .filter(
+                (diagnostic) =>
+                    diagnostic.family === family &&
+                    (polarity === undefined || diagnostic.polarity === polarity)
+            )
+            .every((diagnostic) => diagnostic.satisfied);
+    const consistency = proposal.promptConsistency;
     return (
         diagnostics.length === expected.length &&
         expected.every((expectedPrompt) =>
@@ -169,7 +181,20 @@ const visualPromptDiagnosticsMatchRequest = (
                     diagnostic.family === expectedPrompt.family &&
                     diagnostic.polarity === expectedPrompt.polarity
             )
-        )
+        ) &&
+        consistency.positivePointsSatisfied ===
+            familySatisfied('point', 'include') &&
+        consistency.negativePointsSatisfied ===
+            familySatisfied('point', 'exclude') &&
+        (!promptState.boxes.some((prompt) => prompt.polarity === 'include') ||
+            consistency.positiveBoxesSatisfied ===
+                familySatisfied('box', 'include')) &&
+        (!promptState.boxes.some((prompt) => prompt.polarity === 'exclude') ||
+            consistency.negativeBoxesSatisfied ===
+                familySatisfied('box', 'exclude')) &&
+        (promptState.maskConstraints.length === 0 ||
+            consistency.maskConstraintsSatisfied ===
+                familySatisfied('mask-constraint'))
     );
 };
 

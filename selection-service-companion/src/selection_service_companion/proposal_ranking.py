@@ -210,13 +210,22 @@ def _base_features(
             'positivePointsSatisfied': positive_satisfied,
             'negativePointsSatisfied': negative_satisfied,
         }
+    hard_prompts_satisfied = all(prompt_consistency.values())
     features: dict[str, object] = {
         # Candidate-local visual facts arrive from the adapter compiler. The
         # current ranking policy remains unchanged; it merely retains those
         # facts for Ticket 07A instead of overwriting them with point-only
         # diagnostics.
         'promptConsistency': prompt_consistency,
-        'eligible': bool(area and positive_satisfied and negative_satisfied),
+        # 04B supplies candidate-local visual facts; the retained 07A policy
+        # owns the eligibility decision. A declared hard Prompt contradiction
+        # is never eligible, regardless of model score.
+        'eligible': bool(
+            area
+            and positive_satisfied
+            and negative_satisfied
+            and hard_prompts_satisfied
+        ),
         'areaFraction': area / (width * height),
         'boundingBox': bounding_box,
         'connectedComponentCount': component_count,

@@ -44,6 +44,7 @@ from .gsplat_renderer import (
     validate_supported_snapshot,
 )
 from .masking import (
+    AISelectVisualPromptAdapter,
     AISelectVisualPromptCandidate,
     MaskProduction,
     MaskSessionError,
@@ -1993,15 +1994,12 @@ class CompanionState:
                     mask_request.prompt_program.boxes
                     or mask_request.prompt_program.mask_constraints
                 ):
-                    produce_visual_proposals = getattr(
-                        adapter, 'produce_ai_select_visual_proposals', None
-                    )
-                    if not callable(produce_visual_proposals):
+                    if not isinstance(adapter, AISelectVisualPromptAdapter):
                         raise MaskSessionError(
                             'unsupportedPromptType',
                             'The selected Prompt Adapter does not implement visual Prompt inference.',
                         )
-                    visual_candidates = produce_visual_proposals(
+                    visual_candidates = adapter.produce_ai_select_visual_proposals(
                         model=model,
                         rgb_png=mask_request.rgb_png,
                         width=mask_request.width,
@@ -2362,47 +2360,7 @@ class CompanionState:
         return png, digest, width, height
 
     @staticmethod
-    def _parse_ai_select_mask_prompts(
-        value: object, *, width: int, height: int
-    ) -> tuple[AISelectMaskPrompt, ...]:
-        if not isinstance(value, list):
-            raise ValueError('AI Select Mask points must be a list')
-        prompts: list[AISelectMaskPrompt] = []
-        for index, entry in enumerate(value):
-            if not isinstance(entry, dict):
-                raise ValueError(f'AI Select Mask prompts[{index}] must be an object')
-            if set(entry) != {'promptId', 'xPx', 'yPx', 'polarity'}:
-                raise ValueError(
-                    f'AI Select Mask prompts[{index}] fields are invalid'
-                )
-            prompt_id = _mask_request_string(
-                entry.get('promptId'), f'prompts[{index}] promptId'
-            )
-            x_px = _mask_request_nonnegative_integer(
-                entry.get('xPx'), f'prompts[{index}] xPx'
-            )
-            y_px = _mask_request_nonnegative_integer(
-                entry.get('yPx'), f'prompts[{index}] yPx'
-            )
-            if x_px >= width or y_px >= height:
-                raise ValueError(
-                    f'AI Select Mask prompts[{index}] must address an in-bounds pixel'
-                )
-            polarity = entry.get('polarity')
-            if polarity not in ('include', 'exclude'):
-                raise ValueError(
-                    f'AI Select Mask prompts[{index}] polarity must be include or exclude'
-                )
-            prompts.append(
-                AISelectMaskPrompt(
-                    prompt_id=prompt_id, x_px=x_px, y_px=y_px, polarity=polarity
-                )
-            )
-        return tuple(prompts)
-
-    @classmethod
     def _parse_ai_select_prompt_state(
-        cls,
         value: object,
         *,
         view_id: str,
@@ -2489,103 +2447,6 @@ class CompanionState:
             for point in program.points
         )
         return dict(value), prompts, digest, program
-
-    @staticmethod
-    def _validate_unsupported_prompt_family(
-        family: str,
-        entries: list[object],
-        *,
-        width: int,
-        height: int,
-    ) -> None:
-        for index, entry in enumerate(entries):
-            if not isinstance(entry, dict):
-                raise ValueError(
-                    f'AI Select Mask promptState {family}[{index}] must be an object'
-                )
-            _mask_request_string(
-                entry.get('promptId'), f'{family}[{index}] promptId'
-            )
-            if entry.get('polarity') not in ('include', 'exclude'):
-                raise ValueError(
-                    f'AI Select Mask promptState {family}[{index}] polarity is invalid'
-                )
-            if family == 'boxes':
-                expected = {
-                    'promptId', 'polarity', 'x0Px', 'y0Px', 'x1Px', 'y1Px'
-                }
-                if set(entry) != expected:
-                    raise ValueError(
-                        f'AI Select Mask promptState boxes[{index}] fields are invalid'
-                    )
-                x0 = _mask_request_nonnegative_integer(
-                    entry.get('x0Px'), f'boxes[{index}] x0Px'
-                )
-                y0 = _mask_request_nonnegative_integer(
-                    entry.get('y0Px'), f'boxes[{index}] y0Px'
-                )
-                x1 = _mask_request_nonnegative_integer(
-                    entry.get('x1Px'), f'boxes[{index}] x1Px'
-                )
-                y1 = _mask_request_nonnegative_integer(
-                    entry.get('y1Px'), f'boxes[{index}] y1Px'
-                )
-                if not (x0 < x1 < width and y0 < y1 < height):
-                    raise ValueError(
-                        f'AI Select Mask promptState boxes[{index}] must be non-empty and in bounds'
-                    )
-            elif family == 'maskConstraints':
-                if set(entry) != {'promptId', 'polarity', 'artifact'}:
-                    raise ValueError(
-                        f'AI Select Mask promptState maskConstraints[{index}] fields are invalid'
-                    )
-                artifact = entry.get('artifact')
-                if not isinstance(artifact, dict):
-                    raise ValueError(
-                        f'AI Select Mask promptState maskConstraints[{index}] artifact must be an object'
-                    )
-                if (
-                    artifact.get('encoding') != 'bitset-lsb-v1'
-                    or artifact.get('width') != width
-                    or artifact.get('height') != height
-                    or not isinstance(artifact.get('data'), str)
-                ):
-                    raise ValueError(
-                        f'AI Select Mask promptState maskConstraints[{index}] artifact is incompatible with RGB'
-                    )
-                try:
-                    mask = base64.b64decode(artifact['data'], validate=True)
-                except (ValueError, binascii.Error) as error:
-                    raise ValueError(
-                        f'AI Select Mask promptState maskConstraints[{index}] data is invalid'
-                    ) from error
-                if len(mask) != (width * height + 7) // 8:
-                    raise ValueError(
-                        f'AI Select Mask promptState maskConstraints[{index}] data length is invalid'
-                    )
-                digest = _anchor_sha256_digest(
-                    artifact.get('digest'),
-                    f'Mask maskConstraints[{index}] digest',
-                )
-                if f'sha256:{hashlib.sha256(mask).hexdigest()}' != digest:
-                    raise ValueError(
-                        f'AI Select Mask promptState maskConstraints[{index}] digest is invalid'
-                    )
-            else:
-                if set(entry) not in (
-                    {'promptId', 'polarity', 'text'},
-                    {'promptId', 'polarity', 'text', 'locale'},
-                ):
-                    raise ValueError(
-                        f'AI Select Mask promptState textPrompts[{index}] fields are invalid'
-                    )
-                _mask_request_string(
-                    entry.get('text'), f'textPrompts[{index}] text'
-                )
-                if 'locale' in entry:
-                    _mask_request_string(
-                        entry.get('locale'), f'textPrompts[{index}] locale'
-                    )
 
     def register_frame_set(self, payload: dict[str, Any]) -> RegisteredFrameSet:
         """Cache one immutable Frame Set without exposing model-private handles."""

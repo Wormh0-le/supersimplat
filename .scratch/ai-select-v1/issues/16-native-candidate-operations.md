@@ -1,16 +1,17 @@
 # 16 — Candidate → Native Set / Add / Remove / Intersect
 
-Status: ready-for-agent — v2.2 FlashSplat-alignment review
+Status: ready-for-agent — Final Spec v1.3 mapped
 
 Blocked by: 15
 
-## Final Spec mapping
+## Current Final Spec mapping
 
-- Final Spec v1.1 §25
-- Final Spec v1.1 Amendment 001 — Candidate and readiness propagation
-- ADR 0013 implementation staging
-- DG-07
-- MVP Phase 6
+- Final Spec v1.3 §§22, 24
+- ADR 0013 implementation staging where not superseded
+- DG-07 and Final Spec v1.1 Amendment 001 as historical native-application/readiness rationale only
+- MVP Phase 6 as historical implementation provenance
+
+Final Spec v1.3 is the only current closure source.
 
 ## Inputs / preconditions
 

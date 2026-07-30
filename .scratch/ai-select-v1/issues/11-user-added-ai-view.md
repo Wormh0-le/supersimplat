@@ -1,4 +1,4 @@
-# 11 — User-added AIView using current or adjusted camera
+# 11 — User-added AIView Using Current or Adjusted Camera
 
 Status: blocked — waits for Gallery and complete correction UX
 
@@ -6,74 +6,70 @@ Blocked by: 09, 07B, 07, 05
 
 ## Final Spec mapping
 
-- Final Spec v1.2 §§7, 19–21, 27–29
-- DG-26 Decision 7
+- Final Spec v1.3 §§5–8, 11–19, 24–26
+- ADR 0016
 
-## Inputs / preconditions
+## Purpose
 
-- Current Scene View;
-- Camera Inspection / true render-attempt Retry;
-- AIView/Mask/Assessment/Participation contracts;
-- Ticket 09 Gallery and generic acquisition states;
-- Ticket 07B no-blind-spot Prompt/Edit correction UX;
-- Ticket 08A/08B route-B contracts and production provider where automatic acquisition is requested.
+Create user-owned Views through the same authoritative RGB, SAM 3 Image instance Prompt, Mask Review, Stable publication and Participation contracts as generated local Key Views.
 
-## Outputs / handoff artifacts
+## Required behavior
 
-- user-owned RGB-ready AIView;
-- optional Auto/Manual Stable Mask;
-- optional Prompt/Proposal/Decision artifacts for auto acquisition;
-- Evidence=`not-requested`/later-derived state;
-- user-added frustum.
+- `Use Current View` captures the current CameraBinding without moving Editor Camera;
+- `Adjust New View…` uses provisional Camera Inspection and explicit Confirm View;
+- authoritative RGB publication remains independent from Mask and Evidence;
+- a user-added View may remain RGB Ready with no Mask and Evidence Not Requested;
+- No-Mask UI offers Auto Generate Mask, Manual Draw or Exclude;
+- Auto Generate Mask uses Positive/Negative Points and optional Positive Instance Box through the 04C provider;
+- one-point-only Prompt may show up to three candidates on the editing surface;
+- Box/multiple-Point/refinement returns one candidate;
+- Paint/Erase use the 07B palette and never enter inference;
+- automatic Mask Review/publication follows Ticket 07 semantics;
+- Stable Mask publication dirties per-View Evidence but does not auto-Lift;
+- View source never determines trust;
+- Regenerate Auto Views cannot remove user-owned Views;
+- adding/confirming a user View never resumes local generation automatically.
 
-## What to build
+## Removed behavior
 
-Implement user-owned Views through the same authoritative RGB, Prompt, acquisition, proposal decision, assessment, publication and Participation contracts as planner-owned Key Views.
+- no backend registry or Route B/C/D selection;
+- no automatic Route-A fallback;
+- no Negative Box or Prompt Brush;
+- no generic ProposalSet/Decision panel for ordinary single-mask requests;
+- no tracker/reference state.
 
-Authoritative RGB publication remains independent from Mask and Evidence.
+## Failure and recovery
+
+- render failure preserves the View record and offers Retry/Exclude;
+- Mask technical failure preserves View/RGB/prior Stable Mask and offers Retry/manual/exclude;
+- semantic unavailable offers Prompt adjustment or Manual Draw;
+- one-point candidate ambiguity is resolved on the editing surface;
+- Evidence failure preserves View/RGB/Stable Mask;
+- palette move/hide/disposal leaves no stale input interception.
 
 ## Acceptance criteria
 
-- [ ] `Use Current View` creates a user-owned AIView from Current Scene View CameraBinding without moving Editor Camera.
-- [ ] `Adjust New View…` creates a provisional frustum, enters Camera Inspection, and publishes only after explicit Confirm View.
-- [ ] User-added RGB comes from authoritative gsplat and shares exact CameraBinding with frustum.
-- [ ] RGB Ready does not require complete Contributor, Stable Mask, acquisition, or Evidence.
-- [ ] A user-added View may remain Ready with No Mask and Evidence Not Requested.
-- [ ] No-Mask UI offers Auto Generate Mask / Manual Draw / Exclude.
-- [ ] Auto Generate Mask uses the current backend registry and the same Prompt → ProposalSet → Decision → Assessment → Publication chain where exact support/bootstrap context is available.
-- [ ] Auto acquisition never hides ambiguous proposals behind a Top-1 Mask.
-- [ ] Technical route-B failure may use the same B2 route-A fallback policy; semantic Review/ambiguity does not auto-fallback.
-- [ ] Manual Draw uses empty Editing Mask and normal Confirm publication.
-- [ ] Ticket 07B palette behavior applies to user-added Prompt/Edit correction with no stale blind region.
-- [ ] Publishing Stable Mask marks per-view Evidence dirty/missing; it does not auto-Lift.
-- [ ] User-added View uses the same assessment, Participation, Gallery, readiness, Evidence, and lifting pipeline as auto Views.
-- [ ] View source never determines trust.
-- [ ] Regenerate Auto Views cannot remove user-owned Views.
-- [ ] Adding/confirming user View never implicitly resumes planner.
-
-## Failure / recovery criteria
-
-- Render failure keeps failed View record and supports true Retry / Exclude.
-- Prompt/acquisition failure preserves View/RGB and supports retry/manual/exclude and eligible technical fallback.
-- Ambiguous retains ProposalSet and review/refinement actions; no arbitrary Stable Mask is published.
-- Later Evidence failure preserves View/RGB/Stable Mask.
-- Palette move/hide/disposal leaves no stale input interception.
+- [ ] Current/Adjusted View creation preserves exact CameraBinding/frustum identity.
+- [ ] RGB Ready does not require Mask or Evidence.
+- [ ] Auto Mask uses the current SAM 3 Image adapter and v1 Prompt set.
+- [ ] candidate cardinality follows the current multimask policy.
+- [ ] Manual Draw and Paint/Erase remain available.
+- [ ] no removed backend/tool/tracker state appears.
+- [ ] Stable publication and Participation match generated Views.
+- [ ] user-owned lifecycle is preserved across Regenerate Auto Views.
 
 ## Validation
 
-- `npm test`
-- `npm run lint`
-- `npm run lint:locales`
-- `npm run build`
-- `npm run test:companion`
-- locked GPU user-added RGB/acquisition path
-- RGB Ready + No Mask + Evidence Not Requested fixture
-- user-added selected/ambiguous/unavailable acquisition fixtures
-- route-B technical failure/fallback fixture
-- manual correction with Ticket 07B palette walkthrough
+- authoritative user-added RGB path;
+- RGB Ready + No Mask fixture;
+- one-point candidate-choice fixture;
+- Box/multiple-Point single-mask fixture;
+- technical failure/manual recovery;
+- Ticket 07B palette walkthrough;
+- repository test/lint/locales/build.
 
 ## Non-goals
 
 - No persistent cross-target View library.
-- No production Evidence kernel.
-- No separate user-view acquisition architecture.
+- No separate acquisition architecture.
+- No tracker or production Evidence kernel.

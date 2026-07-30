@@ -3,11 +3,11 @@
 ## 产品、交互与工程规格 — Final Spec v1.2
 
 **文档状态：** Current Final Spec / Normative  
-**版本：** v1.2  
+**版本：** v1.2（v2.9 protocol-closure revision）  
 **日期：** 2026-07-30  
 **适用分支：** `ai-select-v1`  
 **适用对象：** Product / UX / Frontend / Companion / Algorithm / QA  
-**决策依据：** ADR 0013、DG-20～DG-26  
+**决策依据：** ADR 0013、ADR 0014、DG-20～DG-26
 
 ---
 
@@ -22,14 +22,17 @@
 
 这些旧文件继续保留为历史记录，但实现 agent、验收、traceability 和新 Ticket 不得要求读者自行合并其 supersession 链。
 
+当前 Ticket 到本规范的映射由 `.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md` 维护。Ticket 内遗留的 v1.1/Amendment 引用仅是历史实现 provenance，不具有当前规范效力。
+
 发生冲突时，权威顺序为：
 
 1. 本文件；
-2. ADR 0013；
-3. 未被本文件覆盖的非 superseded ADR；
-4. `CONTEXT.md`；
-5. implementation tickets；
-6. 实现与测试。
+2. 当前 Ticket mapping；
+3. ADR 0013；
+4. ADR 0014 与未被本文件覆盖的非 superseded ADR；
+5. `CONTEXT.md`；
+6. implementation tickets；
+7. 实现与测试。
 
 本文件中的 MUST / SHALL / 必须 / 不得均为强制要求。
 
@@ -75,12 +78,14 @@ Current Scene Camera
 → KeyViewPromptSynthesizer
 → KeyViewPromptArtifact
 → MaskAcquisitionBackend.perView.acquireView
-→ KeyViewMaskProposalSet
+→ PerViewMaskAcquisitionResult
+    ├── KeyViewMaskProposalSet
+    └── one attempt-level backendDiagnostics authority
 → KeyViewMaskDecisionPolicy
     ├── selected
     ├── ambiguous
     └── unavailable
-→ ViewAssessmentPolicy
+→ selected only: ViewAssessmentPolicy
     ├── Good
     ├── Review
     └── Failed
@@ -97,12 +102,13 @@ Current Scene Camera
 
 ```text
 RGB Ready
-≠ Mask Ready
+≠ Acquisition Ready
+≠ Stable Mask Ready
 ≠ Evidence Ready
 ≠ Candidate Ready
 ```
 
-任何上游诊断、模型分数、Visible Support 或 acquisition backend 身份都不能直接授权 Gaussian ownership。
+任何上游诊断、模型分数、Visible Support、Decision reason、unavailable 状态或 acquisition backend 身份都不能直接授权 Gaussian ownership。
 
 ---
 
@@ -152,7 +158,7 @@ Companion caches are not user-visible product state.
 
 Every asynchronous artifact MUST bind enough immutable identity to reject stale results.
 
-Common identity envelope includes, where applicable:
+Common identity envelope includes, where applicable：
 
 ```text
 targetContextId + contextRevision
@@ -169,10 +175,11 @@ backend descriptor/capability digest
 model / adapter / runtime build identity
 policy digest
 attempt / fallback / sequence-run identity
+ProposalSet artifact digest
 result artifact digest
 ```
 
-Rules:
+Rules：
 
 - explicit Retry creates a new attempt identity；
 - same-attempt replay may be idempotent；
@@ -186,33 +193,28 @@ Rules:
 
 # 5. Authoritative RGB and CameraBinding
 
-All AI observation RGBs MUST come from the locked authoritative gsplat rendering path:
+All AI observation RGBs MUST come from the locked authoritative gsplat rendering path：
 
 - Anchor Preview / Final；
 - Generated Key View；
 - User-added View。
 
-RGB Ready means:
+RGB Ready means：
 
 - exact CameraBinding render succeeded；
 - RGB payload and digest validate；
 - request/result identity is current；
 - CameraBinding revision is current。
 
-RGB Ready MUST NOT require:
+RGB Ready MUST NOT require Stable Mask、Evidence、complete Contributor 或 Candidate。
 
-- Stable Mask；
-- Evidence；
-- complete Contributor；
-- Candidate。
-
-Frustum, depth, support projection and RGB MUST use the same CameraBinding convention and image dimensions.
+Frustum、depth、support projection 和 RGB MUST use the same CameraBinding convention and image dimensions。
 
 ---
 
 # 6. Anchor Prompt, proposal and confirmation
 
-Anchor acquisition uses three stages:
+Anchor acquisition uses three stages：
 
 ```text
 Prompt Authoring
@@ -222,11 +224,11 @@ Prompt Authoring
 → Confirm Mask
 ```
 
-Prompt Authoring and direct Mask pixel editing are distinct modes and histories.
+Prompt Authoring and direct Mask pixel editing are distinct modes and histories。
 
-Prompt capabilities are versioned and truthful. Unsupported Point/Box/Mask/Text combinations fail before inference; they are never silently dropped or converted.
+Prompt capabilities are versioned and truthful. Unsupported Point/Box/Mask/Text combinations fail before inference；they are never silently dropped or converted。
 
-Anchor model output is a bounded proposal set. The decision layer MUST:
+Anchor model output is a bounded proposal set. The decision layer MUST：
 
 - deduplicate exact Masks；
 - cluster near-duplicate Masks；
@@ -235,48 +237,36 @@ Anchor model output is a bounded proposal set. The decision layer MUST:
 - preserve materially distinct plausible candidates as `ambiguous`；
 - preserve `unavailable` when no eligible candidate exists。
 
-Only Confirm publishes a new Anchor Stable Mask revision.
+Only Confirm publishes a new Anchor Stable Mask revision。
 
-A confirmed Anchor Stable Mask is an identity seed for later geometry and views. It is not Gaussian Candidate or ownership Evidence.
+A confirmed Anchor Stable Mask is an identity seed for later geometry and views. It is not Gaussian Candidate or ownership Evidence。
 
 ---
 
 # 7. Floating Prompt/Edit palette
 
-The fitted authoritative image surface owns Prompt and Mask pointer mapping.
+The fitted authoritative image surface owns Prompt and Mask pointer mapping。
 
-The palette MUST support:
+The palette MUST support drag、deterministic clamp/optional edge snap、expanded/collapsed、Space temporary hide、no stale hit region、focus-aware shortcuts/accessibility、target/context disposal reset。
 
-- drag within the fitted image；
-- deterministic clamp and optional edge snap；
-- expanded/collapsed mode；
-- Space temporary hide while image authoring focus is active；
-- no stale or invisible hit region；
-- focus-aware shortcuts and accessibility；
-- reset on target/context disposal。
+Palette state MUST NOT enter PromptState、Mask history、Evidence、Candidate or Companion requests。
 
-Palette state MUST NOT enter PromptState, Mask history, Evidence, Candidate or Companion requests.
-
-Ticket 07B may execute in parallel with Ticket 08 after Ticket 07A, but it remains mandatory before complete Generated/User-added View correction UX and final release hardening.
+Ticket 07B may execute in parallel with Ticket 08 after Ticket 07A, but remains mandatory before complete Generated/User-added View correction UX and final release hardening。
 
 ---
 
 # 8. Visible Target Support
 
-Ticket 08 MUST publish a versioned `VisibleTargetSupportArtifact`.
-
-Minimum contract:
+Ticket 08 MUST publish a versioned `VisibleTargetSupportArtifact`：
 
 ```ts
 interface VisibleTargetSupportArtifact {
     schemaVersion: number;
     targetContextId: string;
-
     anchorViewId: string;
     anchorCameraBindingDigest: string;
     anchorRgbDigest: string;
     anchorStableMaskDigest: string;
-
     supportPolicyDigest: string;
     samples: readonly VisibleTargetSupportSample[];
     quality: 'usable' | 'limited' | 'unavailable';
@@ -293,34 +283,30 @@ interface VisibleTargetSupportSample {
 }
 ```
 
-Requirements:
+Requirements：
 
 - samples are bounded and deterministically ordered/encoded；
 - `stableGaussianId` is optional provenance only；
-- support may originate from depth, first-hit support or equivalent visible-surface extraction；
+- support may originate from depth、first-hit support or equivalent visible-surface extraction；
 - invalid/background-dominated/separated support lowers quality or fails closed；
 - support can guide geometry and Prompt synthesis；
-- support cannot publish P/N/V, Candidate or Native Selection；
+- support cannot publish P/N/V、Candidate or Native Selection；
 - absence from support cannot classify a Gaussian as Rejected or Out of Scope。
 
 ---
 
 # 9. Target Bootstrap
 
-`TargetBootstrapArtifact` is a lightweight object summary referencing the visible-support artifact.
-
-Minimum contract:
+`TargetBootstrapArtifact` is a lightweight object summary referencing the visible-support artifact：
 
 ```ts
 interface TargetBootstrapArtifact {
     schemaVersion: number;
     targetContextId: string;
-
     anchorCameraBindingDigest: string;
     anchorRgbDigest: string;
     anchorStableMaskDigest: string;
     visibleTargetSupportArtifactDigest: string;
-
     bootstrapPolicyDigest: string;
     centerWorld: [number, number, number];
     extentWorld: [number, number, number];
@@ -331,73 +317,46 @@ interface TargetBootstrapArtifact {
 }
 ```
 
-It may guide framing, camera generation, ROI construction, Prompt synthesis and an initial conservative Evidence Working Set seed.
+It may guide framing、camera generation、ROI construction、Prompt synthesis and an initial conservative Evidence Working Set seed。
 
-It MUST NOT become a hard upper bound on later Working Set expansion.
+It MUST NOT become a hard upper bound on later Working Set expansion。
 
 ---
 
 # 10. Adaptive sparse Key-View planning
 
-Ticket 08 MUST replace a fixed orbit with bounded adaptive sparse planning.
+Ticket 08 MUST replace a fixed orbit with bounded adaptive sparse planning。
 
-Planner evaluates independently:
+Planner evaluates independently：camera validity、target observation gain、directional diversity gain、expected render/scene-support quality、resource cost。
 
-```text
-camera validity
-target observation gain
-directional diversity gain
-expected render / scene-support quality
-resource cost
-```
+Invalid camera geometry cannot win through theoretical information gain。
 
-Invalid camera geometry cannot win through theoretical information gain.
+The default route does not require Bridge Views、tracker transition envelopes、dense continuous trajectories 或 adjacent-frame ordering。
 
-The default route does not require:
+Output is an immutable `SparseKeyViewPlanSegment` bound to Anchor、support、bootstrap、planner policy、attempt and stable View identities。
 
-- Bridge Views；
-- tracker transition envelopes；
-- dense continuous trajectories；
-- adjacent-frame ordering。
+`Generate More` appends a new segment and preserves prior completed View/RGB/Mask artifacts。
 
-Output is an immutable `SparseKeyViewPlanSegment`:
-
-```ts
-interface SparseKeyViewPlanSegment {
-    schemaVersion: number;
-    segmentId: string;
-    targetContextId: string;
-    anchorStableMaskDigest: string;
-    visibleTargetSupportArtifactDigest: string;
-    targetBootstrapArtifactDigest: string;
-    plannerPolicyDigest: string;
-    orderedKeyViews: readonly PlannedKeyView[];
-    attemptId: string;
-    artifactDigest: string;
-}
-```
-
-`Generate More` appends a new segment and preserves prior completed View/RGB/Mask artifacts.
-
-`Regenerate Auto Views` is the explicit operation that may supersede planner-owned segments while preserving user-owned Views.
+`Regenerate Auto Views` may supersede planner-owned segments while preserving user-owned Views。
 
 ---
 
 # 11. Acquisition contract foundation
 
-Ticket 08A owns contracts and validators, not production model execution.
+Ticket 08A owns contracts and validators, not production model execution。
 
-Required contracts include:
+Required contracts include：
 
 - `KeyViewPromptArtifact`；
 - `KeyViewMaskProposalSet`；
+- `PerViewMaskAcquisitionResult`；
 - `KeyViewMaskDecision`；
 - acquisition request/result identity；
 - attempt/fallback identity；
 - publication command/result；
 - backend descriptor/bundle/registry；
 - optional sequence extension schemas；
-- structural validators, canonical digest rules and golden vectors。
+- structural validators、canonical digest rules and golden vectors。
 
 ## 11.1 Backend bundle
 
@@ -413,7 +372,7 @@ interface MaskAcquisitionBackendRegistry {
 }
 ```
 
-Capabilities are derived from the actual bundle and validated against `backendKind`.
+Capabilities derive from the actual bundle and MUST match `backendKind`：
 
 ```text
 Route B = perView required, sequence absent
@@ -421,38 +380,54 @@ Route C = sequence required, perView optional
 Route D = perView required, sequence required
 ```
 
-A contradictory descriptor/bundle is Not Ready.
+A contradictory descriptor/bundle is Not Ready。
 
-## 11.2 Per-view provider
+## 11.2 Per-view provider and result envelope
 
 ```ts
 interface MultiViewMaskAcquisitionProvider {
-    acquireView(
-        request: PerViewMaskAcquisitionRequest
-    ): Promise<PerViewMaskAcquisitionResult>;
+    acquireView(request: PerViewMaskAcquisitionRequest): Promise<PerViewMaskAcquisitionResult>;
+}
+
+interface PerViewMaskAcquisitionResult {
+    schemaVersion: number;
+    requestIdentity: PerViewMaskAcquisitionRequestIdentity;
+    proposalSet: KeyViewMaskProposalSet;
+    backendDiagnostics: AcquisitionBackendDiagnostics;
+    resultDigest: string;
 }
 ```
 
-The provider returns a proposal set plus backend diagnostics. It MUST NOT return `ViewAssessmentResult`, choose a hidden final Mask, publish Stable state or set Participation.
+The provider returns a ProposalSet plus one attempt-level backend-diagnostics authority. It MUST NOT return `KeyViewMaskDecision`、`ViewAssessmentResult`、Stable status、Participation、Candidate/P/N/V or publication side effects。
 
-## 11.3 Optional sequence extension
+`KeyViewMaskProposalSet` contains candidate artifacts and candidate-local metrics only；it MUST NOT duplicate attempt-level `backendDiagnostics`。
 
-```ts
-interface SequenceMaskAcquisitionExtension {
-    openSequence(request: OpenMaskSequenceRequest): Promise<OpenMaskSequenceResult>;
-    acquireSequenceRange(request: AcquireMaskSequenceRangeRequest): Promise<AcquireMaskSequenceRangeResult>;
-    updateReferences(request: UpdateMaskSequenceReferencesRequest): Promise<UpdateMaskSequenceReferencesResult>;
-    closeSequence(request: CloseMaskSequenceRequest): Promise<void>;
-}
+A successful result may contain an empty ProposalSet. Technical dispatch/inference failure produces no partial result or ProposalSet。
+
+## 11.3 Decision identity
+
+Every Decision variant MUST bind：
+
+```text
+targetContextId + contextRevision
+viewId
+acquisitionAttemptId
+proposalSetArtifactDigest
+decisionPolicyDigest
+artifactDigest
 ```
 
-Route B has no sequence extension. Unsupported operations fail before inference or state mutation.
+Selected/ambiguous proposal IDs MUST belong to that exact ProposalSet. Cross-attempt proposal-ID collision cannot satisfy membership。
+
+## 11.4 Optional sequence extension
+
+Route B has no sequence extension. Unsupported operations fail before inference or state mutation。
 
 ---
 
 # 12. Key-View Prompt synthesis
 
-Ticket 08B MUST implement `KeyViewPromptSynthesizer` independently from controller and provider.
+Ticket 08B MUST implement `KeyViewPromptSynthesizer` independently from controller and provider：
 
 ```text
 VisibleTargetSupportArtifact
@@ -463,109 +438,54 @@ VisibleTargetSupportArtifact
 → KeyViewPromptArtifact
 ```
 
-A `KeyViewPromptArtifact` binds:
+A Prompt artifact binds target/scene/View、support/bootstrap/segment、Camera/RGB、capability、policy、ordered Prompt payload、diagnostics and artifact digest。
 
-- target/scene/View identities；
-- visible-support digest；
-- bootstrap digest；
-- plan-segment digest；
-- Key-View CameraBinding and RGB digest；
-- adapter capability digest；
-- synthesis policy digest；
-- ordered Prompt payload；
-- clipping/support/contamination diagnostics；
-- artifact digest。
+Supported Prompt families may include projected positive support、target center、Box/ROI、local negatives、compatible Mask input、scale/clipping/boundary diagnostics。
 
-Supported Prompt families may include:
+Unsupported Prompt types fail closed and are not silently dropped。
 
-- projected positive support points；
-- projected target center；
-- projected Box/ROI；
-- local negative points/region；
-- compatible projected Mask input；
-- scale, clipping and boundary diagnostics。
-
-Unsupported Prompt types fail closed and are not silently dropped.
-
-Prompt regeneration and SAM Retry are distinct operations. A same-Prompt Retry may reuse the immutable Prompt artifact while creating a new inference attempt.
+Prompt regeneration and SAM Retry are distinct operations。
 
 ---
 
 # 13. Route-B proposal generation
 
-Route B performs independent prompt-conditioned SAM inference per authoritative Key View.
+Route B performs independent prompt-conditioned SAM inference per authoritative Key View and requires no adjacent frames、tracker memory、Bridge Views or dense sequences。
 
-It does not require adjacent frames, tracker memory, Bridge Views or dense sequences.
+Provider returns a bounded `KeyViewMaskProposalSet` through `PerViewMaskAcquisitionResult`。Each proposal binds its Mask artifact and may include raw model score plus geometry/Prompt consistency diagnostics。
 
-The provider returns:
-
-```ts
-interface KeyViewMaskProposalSet {
-    schemaVersion: number;
-    targetContextId: string;
-    viewId: string;
-    promptArtifactDigest: string;
-    backendId: string;
-    modelId: string;
-    runtimeBuildId: string;
-    attemptId: string;
-    proposals: readonly KeyViewMaskProposal[];
-    artifactDigest: string;
-}
-```
-
-Each proposal binds its Mask artifact and may include raw model score plus geometry/Prompt consistency diagnostics.
-
-No provider-internal Top-1 decision is authoritative.
+No provider-internal Top-1 decision is authoritative。
 
 ---
 
 # 14. Key-View proposal decision
 
-`KeyViewMaskDecisionPolicy` is separate from inference and assessment.
+`KeyViewMaskDecisionPolicy` is separate from inference and assessment。
 
-Output:
+Decision rules：
 
-```ts
-type KeyViewMaskDecision =
-    | { status: 'selected'; selectedProposalId: string; reasons: readonly string[] }
-    | { status: 'ambiguous'; candidateProposalIds: readonly string[]; reasons: readonly string[] }
-    | { status: 'unavailable'; reasons: readonly string[] };
-```
-
-Decision rules:
-
+- validate exact ProposalSet digest/attempt first；
 - exact duplicate and near-duplicate clustering precedes selection；
 - hard Prompt contradiction makes a proposal ineligible；
 - raw model score is not sole selector；
 - one credible cluster may become `selected`；
 - multiple materially distinct plausible clusters become `ambiguous`；
 - zero eligible proposals becomes `unavailable`；
-- ambiguous decisions preserve proposal artifacts for Review and publish no arbitrary Stable Mask。
+- ambiguous preserves proposals and publishes no arbitrary Stable Mask。
 
 ---
 
 # 15. View Assessment and Participation
 
-Only a `selected` proposal enters `ViewAssessmentPolicy`.
+Only a `selected` proposal enters `ViewAssessmentPolicy`。
 
-Assessment answers whether the selected Mask is good enough to use, not which proposal is the target.
+Assessment answers whether the selected Mask is usable, not which proposal is the target；it may use Mask geometry、projected support consistency、clipping、fragmentation、contamination、versioned Gaussian support/visibility diagnostics and later formal P/N/V diagnostics。
 
-Assessment may use:
+Assessment produces Good / Review / Failed and structured reason codes。
 
-- Mask geometry；
-- projected support consistency；
-- boundary clipping；
-- fragmentation；
-- neighbour contamination；
-- declared versioned Gaussian support/visibility diagnostics；
-- later formal P/N/V diagnostics where available。
+Participation is independent from View role、planner role and backend。
 
-Assessment produces Good / Review / Failed and structured reason codes.
-
-Participation is independent from View role, planner role and acquisition backend.
-
-Default transitions:
+Default transitions：
 
 ```text
 selected + Good
@@ -582,175 +502,143 @@ ambiguous
 → Excluded
 
 unavailable
-→ Mask Failed
+→ Acquisition Ready / completed
+→ Decision Unavailable
+→ no ViewAssessmentResult
 → no new Stable Mask
 → Excluded
 ```
 
-User Confirmed Stable authority cannot be silently replaced or revoked.
+`unavailable` is not backend/protocol/OOM/cancellation failure and does not trigger automatic Route-A fallback。
+
+User Confirmed Stable authority cannot be silently replaced or revoked。
 
 ---
 
 # 16. Mask publication
 
-`MaskPublicationCoordinator` is the only route-B layer allowed to publish an automatic Stable Mask revision.
+`MaskPublicationCoordinator` is the only route-B layer allowed to publish an automatic Stable Mask revision。
 
-It validates:
+It validates current identity、exact ProposalSet/Decision membership、selected proposal、RGB dimensions/digest、decision/assessment/publication policy、Stable authority and no partial/cancelled/stale state。
 
-- current request/result identity；
-- selected proposal membership；
-- exact RGB dimensions and digest；
-- decision and assessment policy identity；
-- current Stable authority；
-- no partial/cancelled/stale state。
+Automatic results MUST NOT silently replace a User Confirmed Stable Mask。
 
-Automatic results MUST NOT silently replace a User Confirmed Stable Mask. They may be retained as Review proposals or require explicit Refresh/acceptance.
+Mask technical failure preserves View/RGB/frustum and prior Stable Mask。
 
-Mask failure preserves View/RGB/frustum and prior Stable Mask.
+Ambiguous/unavailable publish no new Stable Mask；unavailable remains distinguishable from technical failure。
 
 ---
 
 # 17. Route-A fallback
 
-Route A remains the existing projected-support + independent single-frame SAM baseline.
+Route A remains the existing projected-support + independent single-frame SAM baseline。
 
-Automatic fallback is permitted only after route-B technical/capability failure:
+Automatic fallback is permitted only after route-B technical/capability failure：backend unavailable、required capability unavailable、technical compatibility rejection、recoverable inference error、declared lower-resource route-A path after OOM。
 
-- backend unavailable；
-- required route-B Prompt capability unavailable；
-- explicit technical compatibility rejection；
-- recoverable inference error；
-- route-B OOM with declared lower-resource route-A availability。
+Automatic fallback is prohibited for：
 
-Automatic fallback is prohibited for:
-
-- ambiguous proposals；
+- ambiguous；
+- unavailable after successful acquisition；
 - neighbour contamination；
 - Prompt inconsistency；
-- clipping/fragmentation quality risk；
+- clipping/fragmentation risk；
 - Assessment Review；
-- an existing User Confirmed Stable Mask。
+- existing User Confirmed Stable Mask。
 
-Fallback creates a new attempt with:
+Fallback creates a new attempt with parent/reason and route-A backend/model/runtime/policy identity。
 
-```text
-fallbackOfAttemptId
-fallbackReason
-route-A backend/model/runtime/policy identity
-```
-
-Route A uses the same ProposalSet → Decision → Assessment → Publication pipeline.
-
-It may produce Auto Good only under the same or stricter threshold and contamination policy. Fallback provenance remains inspectable and does not hide the route-B failure.
+Route A uses the same ProposalSet → Decision → Assessment → Publication pipeline and may Auto Good only under the same or stricter gates。
 
 ---
 
-# 18. Orchestration and scheduling
+# 18. Orchestration, scheduling and legacy migration
 
-The Generated View controller MUST separate:
+Generated View controller MUST separate planning、RGB rendering、Prompt synthesis、acquisition dispatch、proposal decision、assessment、publication and optional future sequence dispatch。
+
+Controller coordinates artifacts；it does not implement geometric Prompt synthesis、SAM selection、Decision or Assessment algorithms。
+
+Scheduling MUST support bounded concurrency、attempt identity、idempotent replay、true Retry、cancellation、stale rejection、OOM-safe cleanup、registry dispatch and stateful future backend compatibility。
+
+RGB publication never waits for Mask acquisition。
+
+The current implementation MUST explicitly migrate from legacy generated-view contracts：
 
 ```text
-planning
-RGB rendering
-Prompt synthesis
-per-view acquisition dispatch
-proposal decision
-assessment
-publication
-optional future sequence dispatch
+GeneratedViewMaskResponse.assessment
+maskSource: 'propagated'
+GeneratedViewMaskPropagation as generic diagnostics
+controller direct Stable/Participation publication
+legacy generated-view-mask/v1 payload/cache
 ```
 
-The controller coordinates artifacts; it does not implement geometric Prompt synthesis, SAM inference, proposal decision or assessment algorithms.
+Requirements：
 
-Companion scheduling MUST support:
-
-- bounded concurrency；
-- explicit attempt identity；
-- idempotent same-attempt replay；
-- true Retry；
-- cancellation；
-- stale-result rejection；
-- OOM-safe cleanup；
-- backend dispatch through registry；
-- no assumption that every future backend is stateless。
-
-RGB publication never waits for Mask acquisition.
+- provider-returned Assessment is not current；
+- fixed `maskSource: 'propagated'` is not generic route-B provenance；
+- attempt diagnostics use `PerViewMaskAcquisitionResult.backendDiagnostics`；
+- controller publishes only through Decision/Assessment/Publication layers；
+- legacy payload/cache fails current contract/version validation and is never structurally rebound；
+- User Confirmed Stable authority survives migration；
+- route-A compatibility adapter emits the current result/ProposalSet/Decision contract and remains visibly route A。
 
 ---
 
 # 19. Gallery and Camera inspection
 
-Gallery presents separate states for:
+Gallery presents separate states for Render、acquisition attempt/backend/fallback、ProposalDecision、Mask/Stable quality、Participation、Evidence、Candidate staleness。
 
-- Render；
-- acquisition attempt/backend/fallback；
-- ProposalDecision；
-- Mask quality；
-- Participation；
-- Evidence；
-- Candidate staleness。
+It MUST distinguish：
 
-Navigation, filters and card/frustum selection MUST NOT mutate Mask, Participation, Evidence, references or Candidate.
+```text
+acquisition ready + Decision unavailable
+```
 
-View role is visible but does not imply trust:
+from：
 
-- Anchor；
-- Key；
-- User-added；
-- optional future Auxiliary/Bridge only when an adopted backend creates them。
+```text
+acquisition technical failure + no Decision
+```
 
-Backend/fallback identity is inspectable but not a confidence percentage.
+Navigation、filters and card/frustum selection MUST NOT mutate formal state。
+
+View role is visible but does not imply trust。Backend/fallback identity is inspectable but not a confidence percentage。
 
 ---
 
 # 20. User-added Views
 
-`Use Current View` and `Adjust New View…` create user-owned Views through the same RGB/Mask/assessment/Participation contracts.
+`Use Current View` and `Adjust New View…` create user-owned Views through the same RGB/Prompt/acquisition/Decision/Assessment/publication/Participation contracts。
 
-User-added Views:
+User-added Views may remain RGB Ready with no Mask/Evidence requested；may request route-B automatic Mask where support context exists；may use Manual Draw；are not removed by Regenerate Auto Views；do not resume planner implicitly；are never trusted by source role alone。
 
-- use authoritative gsplat RGB；
-- may remain RGB Ready with no Mask and Evidence Not Requested；
-- may request route-B automatic Mask generation where required artifacts can be synthesized；
-- may use Manual Draw；
-- are not removed by Regenerate Auto Views；
-- do not implicitly resume the planner；
-- are never trusted or rejected solely by source role。
-
-Complete Prompt/Edit correction UX depends on Ticket 07B.
+Complete Prompt/Edit correction UX depends on Ticket 07B。
 
 ---
 
 # 21. Dirty, refresh and correction lifecycle
 
-Formal dirty state includes:
+Formal dirty state includes Prompt synthesis dirty、per-view acquisition dirty、per-view Evidence dirty、Lift dirty、Candidate stale and optional future propagation dirty。
 
-- per-view acquisition dirty；
-- per-view Evidence dirty；
-- Lift dirty；
-- Candidate stale；
-- optional future propagation dirty only when a sequence backend advertises it。
-
-Rules:
+Rules：
 
 - unconfirmed Editing Mask changes no formal Evidence/Candidate state；
-- Confirmed Stable Mask revision dirties that View Evidence and Lift；
-- Anchor Stable Mask change invalidates support, bootstrap, planner segments and dependent acquisition；
-- CameraBinding/RGB change dirties that View acquisition and Evidence；
+- Confirmed Stable revision dirties that View Evidence and Lift；
+- Anchor Stable change invalidates support/bootstrap/plans/dependent Prompt/acquisition；
+- Camera/RGB change dirties that View Prompt/acquisition/Evidence；
 - Generate More does not dirty prior completed Views；
-- Refresh Auto Mask creates a new attempt；
-- automatic refresh does not overwrite User Confirmed Stable state；
+- Refresh creates a new attempt；
+- automatic refresh does not overwrite User Confirmed Stable；
 - no Mask refresh automatically Re-Lifts；
-- Confirming a correction affects only that View by default；
-- ordinary Confirm does not create tracker reference memory。
-
-`Use as Tracking Reference`, propagation dirty and `Update Multi-view Masks` remain absent unless a future ADR adopts C/D capabilities.
+- confirming correction affects only that View by default；
+- ordinary Confirm does not create tracker memory；
+- ambiguous/unavailable without Stable replacement do not dirty exact prior Evidence solely because a new review artifact exists；
+- legacy acquisition artifacts invalidate by contract/version identity and cannot attach to a current attempt。
 
 ---
 
 # 22. Formal P/N/V Evidence
 
-Only current Views satisfying all conditions contribute:
+Only current Views satisfying：
 
 ```text
 Render Ready
@@ -759,7 +647,7 @@ Render Ready
 + current exact identities
 ```
 
-For View `v`, pixel `p`, Gaussian `g`:
+contribute。
 
 ```text
 w(v,p,g) = alpha(v,p,g) × incomingTransmittance(v,p,g)
@@ -768,148 +656,84 @@ N(v,g) = Σ negativeWeight(v,p) × w(v,p,g)
 V(v,g) = Σ visibleOrRoiWeight(v,p) × w(v,p,g)
 ```
 
-Positive, negative and visible weights are independently versioned. `P + N = V` is not assumed.
+Positive、negative、visible weights are independently versioned；`P + N = V` is not assumed。
 
-Mask policy defines:
-
-- Strong Positive Interior；
-- Boundary / Ignore Band；
-- Local Negative Context Ring；
-- Far Neutral Region；
-- optional soft weights。
-
-The following are not formal ownership Evidence:
-
-- visible-support sample/provenance；
-- bootstrap support；
-- Prompt score；
-- model score；
-- backend confidence；
-- ProposalDecision reason；
-- tracker confidence/reference memory；
-- View role。
+Visible support、bootstrap、Prompt/model score、backend diagnostics/confidence、Decision reason/status、fallback、tracker state and View role are not formal ownership Evidence。
 
 ---
 
 # 23. Render and Evidence Working Sets
 
-Render Working Set preserves all Gaussians required for correct compositing, occlusion and transmittance.
+Render Working Set preserves all Gaussians required for correct compositing、occlusion and transmittance。
 
-Evidence Working Set controls which Stable Gaussian IDs receive P/N/V writes.
+Evidence Working Set controls which Stable Gaussian IDs receive P/N/V writes。
 
-Required semantics:
+Bootstrap/support may seed but never hard-bound it；later Included Views may expand it；outside Gaussians still render；boundary-touch triggers expansion or fail closed；Anchor absence cannot classify Rejected/Out of Scope。
 
-- Core Target Set + Context Set form an initial conservative Evidence Working Set；
-- bootstrap support may seed but never hard-bound it；
-- later Included View observations may expand it；
-- Gaussians outside Evidence Working Set still participate in rendering；
-- boundary-touch diagnostics trigger declared expansion or fail closed；
-- absence from Anchor support cannot alone classify Rejected/Out of Scope。
+Production RGB and Direct Evidence MUST share the same raster decision source。
 
-Production RGB and Direct Evidence MUST share the same raster decision source: projection, ordering, sigma/alpha validity, incoming transmittance, weight and termination decisions.
-
-Complete per-pixel Contributor remains a reference/debug backend, not a product dependency.
+Complete per-pixel Contributor remains reference/debug only。
 
 ---
 
 # 24. Multi-view classification and Candidate
 
-Per-view raw P/N/V is preserved before aggregation.
+Per-view raw P/N/V is preserved before aggregation。
 
-Aggregation is versioned and considers:
+Aggregation is versioned and considers effective positive/negative Evidence、visible mass、supporting/conflicting Views、optional boundary/footprint/diversity diagnostics and dominance safeguards。
 
-- positive/negative effective Evidence；
-- visible mass；
-- supporting/conflicting Views；
-- optional boundary, footprint and directional-diversity diagnostics；
-- safeguards against one close/high-resolution View silently dominating。
+Internal classes remain Selected、Rejected、Uncertain、Out of Scope。
 
-Internal classes remain distinct:
-
-```text
-Selected
-Rejected
-Uncertain
-Out of Scope
-```
-
-Rules:
-
-- Candidate contains Selected only；
-- unobserved/insufficient V is Uncertain, not default Rejected；
-- material positive+negative conflict is Uncertain；
-- Candidate publication is atomic；
-- Candidate never mutates Native Selection until explicit Set/Add/Remove/Intersect；
-- changed Stable input/policy/runtime makes Candidate stale；
-- Re-Lift is explicit。
+Candidate contains Selected only；unobserved/insufficient V and material conflict become Uncertain；publication is atomic；Candidate never mutates Native Selection until explicit operation；changed inputs make Candidate stale；Re-Lift is explicit。
 
 ---
 
 # 25. Native application and recovery
 
-Native operations are explicit:
+Native operations are explicit Set、Add、Remove、Intersect and use Native Selection/EditHistory。
 
-- Set；
-- Add；
-- Remove；
-- Intersect。
+Undo and Fix restores exact pre-apply Native Selection and returns to current AI Candidate correction path。
 
-Application uses Native Selection/EditHistory.
+Restart Current Target disposes target-local AI state while preserving native scene/user-owned semantics。
 
-After application, `Undo and Fix` restores the exact pre-apply Native Selection and returns to the current AI Candidate correction path.
-
-Restart Current Target disposes target-local AI state while preserving normal scene state and user-owned semantics specified by the operation.
-
-Scene dependency mutation moves the context to Suspended/read-only. Exact Native Undo may restore the dependency identity; otherwise Restart is required.
+Scene dependency mutation moves context to Suspended/read-only；exact Native Undo may restore identity, otherwise Restart is required。
 
 ---
 
 # 26. Future route C/D
 
-Current implementation provides extension schemas only.
+Current implementation provides extension schemas only：
 
 ```text
 C = ordered/dense object-level VOS tracker
 D = route-B Key-View references + tracker propagation
 ```
 
-A later experiment-backed ADR is mandatory before production adoption.
+A later experiment-backed ADR is mandatory before production adoption and MUST define supported scenes/benefit、sequence ordering/auxiliary frames、resource envelope、identity、reference semantics、drift、atomicity、fallback、retry/teardown/migration and Gallery/dirty presentation。
 
-That ADR MUST define:
-
-- supported scenes and measurable downstream benefit；
-- sequence ordering and auxiliary/Bridge frames；
-- transition/resource envelope；
-- session and range identity；
-- reference-memory semantics；
-- correction-reference action；
-- drift detection；
-- propagation atomicity；
-- fallback to per-view acquisition；
-- retry/cancellation/teardown/migration；
-- Gallery and dirty-state capability presentation。
-
-Future backends reuse common RGB, proposal, decision, assessment, publication and P/N/V evaluation paths where applicable.
+Future backends reuse common RGB、ProposalSet、Decision、Assessment、publication and P/N/V paths where applicable。
 
 ---
 
 # 27. Failure and recovery requirements
 
-All failures state retained artifacts and actionable recovery.
+All failures state retained artifacts and actionable recovery。
 
-Minimum rules:
+Minimum rules：
 
 - Companion offline/incompatible leaves Native SuperSplat usable；
 - RGB failure keeps prior preview only as stale/not-current and offers true Retry；
 - support/bootstrap failure preserves Anchor and offers local/user-added alternatives；
 - invalid camera is rejected before gain ranking；
-- Mask backend failure preserves View/RGB/prior Stable Mask；
-- ambiguous decision preserves ProposalSet and requests Review；
+- technical Mask backend failure preserves View/RGB/prior Stable Mask；
+- ambiguous preserves ProposalSet and requests Review；
+- unavailable preserves successful acquisition result/diagnostics, publishes no Stable Mask, and offers Prompt/View/manual/Retry/Exclude recovery；
 - route-B technical failure may use B2 fallback；
-- semantic/quality Review never silently falls back；
+- semantic/quality Review、ambiguous、unavailable never silently fall back；
 - OOM/cancellation publishes no partial artifact；
 - unsupported extension call produces structured failure with no mutation；
-- Evidence/Lift failure preserves Views, Stable Masks and prior Candidate；
+- legacy contract/cache mismatch is rejected, never rebound；
+- Evidence/Lift failure preserves Views、Stable Masks and prior Candidate；
 - stale results are discarded rather than rebound；
 - no failure downgrades to approximate Gaussian attribution。
 
@@ -917,62 +741,35 @@ Minimum rules:
 
 # 28. Validation and quality gates
 
-Required validation includes:
+Required general validation：repository tests/lint/build、protocol validators、canonical digest vectors、stale identity fixtures、atomic publication/failure retention。
 
-## 28.1 General
+Support/planner validation：projection replay、background/separated rejection、behind-wall/outside-room rejection、conservative no-free-space fallback、sparse gain/diversity、append-only Generate More、stable identity。
 
-- `npm test`；
-- `npm run test:companion`；
-- `npm run lint`；
-- `npm run lint:locales`；
-- `npm run build`；
-- protocol structural validators；
-- canonical digest golden vectors；
-- stale-result and identity-mismatch fixtures；
-- atomic publication and failure retention tests。
+Route-B validation：
 
-## 28.2 Support and planner
-
-- support projection replay；
-- background/separated support rejection；
-- indoor behind-wall/outside-room rejection；
-- no-free-space conservative fallback；
-- sparse marginal-gain and diversity tests；
-- append-only Generate More；
-- stable View/segment identity。
-
-## 28.3 Route B
-
-- deterministic Prompt synthesis；
-- Prompt artifact replay；
-- candidate dedup/clustering；
+- deterministic Prompt synthesis/replay；
+- single backend-diagnostics authority；
+- ProposalSet candidate validation；
+- exact Decision-to-ProposalSet digest/attempt binding；
+- proposal-ID collision across attempts；
 - selected/ambiguous/unavailable fixtures；
-- neighbour-instance contamination；
-- boundary/fragmentation regression；
-- per-view acceptable-mask rate；
-- manual correction burden；
-- latency and peak VRAM；
-- true Retry and cancellation；
-- route-A technical fallback provenance；
-- no fallback for semantic Review；
-- User Confirmed authority preservation。
+- unavailable-versus-technical-failure matrix；
+- contamination/boundary/fragmentation regression；
+- acceptable-mask/manual burden/latency/VRAM；
+- Retry/cancellation；
+- route-A technical fallback provenance and no semantic fallback；
+- User Confirmed preservation；
+- legacy generated-view contract/cache rejection and route-A adapter migration。
 
-## 28.4 Downstream quality
-
-- final Gaussian precision/recall；
-- background contamination；
-- Mixed/Uncertain ratio；
-- novel-view rendered-mask quality；
-- Add/Remove burden proxy；
-- single-view versus multi-view effect；
-- View exclusion/reinclusion correctness；
-- Working Set expansion；
-- reference versus production P/N/V parity；
-- repeatability under atomic accumulation。
+Downstream validation：Gaussian precision/recall、background contamination、Mixed/Uncertain、novel-view mask quality、Add/Remove burden、single-vs-multi-view、exclude/reinclude、Working Set expansion、reference/production parity、atomic repeatability。
 
 ---
 
 # 29. Ticket ownership and order
+
+Current mapping is maintained in `.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md`。
+
+Core ownership：
 
 ```text
 04A = Prompt/proposal foundation
@@ -980,17 +777,17 @@ Required validation includes:
 07A = conservative object-level Anchor acquisition
 07B = floating Prompt/Edit palette UX
 08  = visible support + bootstrap + sparse planner
-08A = acquisition contracts + backend registry
-08B = route-B production acquisition
+08A = acquisition contracts + result/Decision identity + backend registry
+08B = route-B production acquisition + fallback + legacy migration
 09  = Gallery / frustum / acquisition inspection
 11  = user-added Views
-12  = refresh / dirty / stale lifecycle
+12  = refresh / dirty / stale / legacy invalidation lifecycle
 14  = reference P/N/V and Candidate
 20  = production same-decision Evidence
 21  = end-to-end failure/calibration/release hardening
 ```
 
-After 07A:
+After 07A：
 
 ```text
 07A → 07B
@@ -999,18 +796,18 @@ After 07A:
 07B + 08B + downstream production path → 21
 ```
 
-Ticket 04B remains the next implementation ticket at the time this specification is issued.
+Ticket 04B remains the next implementation ticket at the time of this revision。
 
 ---
 
 # 30. Non-goals
 
-Final Spec v1.2 does not require:
+Final Spec v1.2 does not require：
 
 - A/B/C/D route tournament before route B；
-- tracker, Bridge View or dense sequence implementation；
+- tracker、Bridge View or dense sequence implementation；
 - automatic correction propagation；
-- Prompt/model/backend confidence as P/N/V；
+- Prompt/model/backend confidence or unavailable status as P/N/V；
 - target-only rasterization；
 - complete Contributor in the product path；
 - arbitrary part segmentation；

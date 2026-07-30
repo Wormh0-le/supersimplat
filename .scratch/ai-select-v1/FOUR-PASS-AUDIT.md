@@ -68,7 +68,7 @@ Findings:
 
 ## Pass 3 — Final Spec / Amendments / DGs → tickets
 
-A curated catalog of **166** requirements is mapped in `TRACEABILITY.md`.
+A curated catalog of **166** requirements is mapped by `TRACEABILITY.md` plus the `TRACEABILITY-v2.7.md` overlay.
 
 Checks:
 

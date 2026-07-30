@@ -10,8 +10,9 @@ The filename is retained for compatibility. Final Spec v1.3 is the sole current 
 4. previous logits were modeled as if tensor artifacts could cross browser boundaries, rather than Companion-local state behind opaque refs.
 5. the graph described 04C as the only ready work even though reopened Ticket 07 is independently unblocked.
 6. Ticket 10 duplicated visibility/readiness semantics and unnecessarily blocked Ticket 21.
+7. Fourteen Ticket files still named Final Spec v1.1 or v1.2 in their current mapping/status text even though the central mapping had moved to v1.3.
 
-All six are corrected below.
+All seven are corrected below.
 
 ## Pass 1 — Ticket graph and current frontier
 
@@ -40,7 +41,7 @@ One valid order:
 
 Ticket 10 may execute at any point after 14 + 09 + 07.
 
-## Pass 2 — Specification authority and historical Tickets
+## Pass 2 — Specification authority and Ticket-local migration
 
 Checks:
 
@@ -48,10 +49,15 @@ Checks:
 - Final Spec v1.2 is historical.
 - ADR 0016 is accepted and indexed.
 - CURRENT-TICKET-SPEC-MAPPING maps all 30 Tickets to v1.3.
-- ADR 0014 / DG-24–26 are historical where conflicting.
-- Ticket 04A explicitly marks its generic Prompt surface historical.
-- Ticket 06 explicitly marks Multiplex/projected-support/fallback behavior historical.
-- No current agent is instructed to reconstruct old Prompt or route semantics.
+- every one of the 30 Ticket files contains a direct current mapping to Final Spec v1.3;
+- zero Ticket-local current mapping/status blocks name Final Spec v1.1, an Amendment, or Final Spec v1.2 as current authority;
+- older spec names appear only inside explicitly historical-provenance, historical-implementation, superseded-surface or migration-input sections;
+- ADR 0014 / DG-24–26 are historical where conflicting;
+- Ticket 04A explicitly marks its generic Prompt surface historical;
+- Ticket 06 explicitly marks Multiplex/projected-support/fallback behavior historical;
+- Tickets 14 and 20 use `TargetGeometryHintArtifact`, not v1.2 support/bootstrap route artifacts, as the current optional Working Set seed;
+- Ticket 22 contracts the Final Spec v1.3 replacement path rather than waiting for a v1.1/v1.2 release;
+- no current agent is instructed to reconstruct old Prompt, route, planner or Evidence semantics.
 
 Result: **PASS**
 
@@ -135,9 +141,11 @@ binary Brush-to-mask_input mapping
 raw logits tensor in browser state
 digest-only unresolved RGB requests
 backend registry / sequence / automatic fallback state
+Ticket-local Final Spec v1.1/v1.2 current mapping text
+VisibleTargetSupport/TargetBootstrap current Evidence-seed wording
 ```
 
-Every target is owned by 04C, 06, 08B, 12 or 21. User Confirmed Stable Masks are preserved.
+Every target is owned by 04C, 06, 08B, 12, 14, 20, 22 or 21. User Confirmed Stable Masks are preserved.
 
 Result: **PASS**
 
@@ -146,6 +154,8 @@ Result: **PASS**
 - Requirements: 52.
 - Unmapped requirements: 0.
 - Orphan active Tickets: 0.
+- Ticket-local direct v1.3 mappings: 30/30.
+- Ticket-local legacy current mappings: 0.
 - Typical walkthroughs: 16.
 - Error walkthroughs: 16.
 - Invalid ADR refs: 0.
@@ -158,6 +168,7 @@ Result: **PASS**
 
 Active planning MUST NOT require:
 
+- Final Spec v1.1, an Amendment, or Final Spec v1.2 as a Ticket-local current closure source;
 - static Multiplex for Anchor/Key Views;
 - Negative Box or Prompt Brush;
 - binary Brush/Editing Mask as previous logits;
@@ -168,6 +179,8 @@ Active planning MUST NOT require:
 - backend registry or Route C/D seam;
 - automatic Route-A fallback;
 - Ticket 06 as production fallback;
+- `VisibleTargetSupportArtifact` / `TargetBootstrapArtifact` as current v1 geometry contracts;
+- ProposalSet/Decision/fallback state as current Generated-View ownership or Evidence input;
 - propagation uncertainty in ordinary Mask Review;
 - weak/low Gaussian support outside Ticket 13;
 - Ticket 10 as release blocker.
@@ -177,8 +190,8 @@ Current active planning contains no such requirement.
 ## Final audit result
 
 ```text
-Ticket graph / current frontier              PASS
-Specification authority / historical tickets PASS
+Ticket graph / current frontier               PASS
+Specification authority / all-ticket mapping PASS
 SAM model / Prompt / RGB / refinement         PASS
 Geometry / local multi-view scope             PASS
 Per-View Mask architecture                    PASS

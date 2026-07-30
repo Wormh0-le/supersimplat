@@ -23,6 +23,7 @@ TargetGeometryHintArtifact
 + 1–3 Positive Points
 + optional 0–2 Negative Points
 → ImageInstancePromptArtifact
+→ ImageInstanceMaskRequest with resolvable authoritative RGB
 → SAM 3 Image, multimask_output=false
 → one Mask or semantic unavailable
 → MaskReviewPolicy
@@ -36,9 +37,9 @@ No route comparison or tracker experiment blocks this ticket.
 Implement a deterministic service that:
 
 - projects exact current visible geometry through the exact Key-View CameraBinding;
-- creates at most one Positive Instance Box in authoritative pixel XYXY;
-- selects 1–3 projected positive Points inside reliable visible support;
-- may add 0–2 negative Points in clearly local background/neighbour regions;
+- creates one Positive Instance Box in authoritative pixel XYXY;
+- selects 1–3 projected Positive Points inside reliable visible support;
+- may add 0–2 Negative Points in clearly local background/neighbour regions;
 - clips all coordinates to exact image dimensions;
 - binds geometry, plan, Camera, RGB, adapter capability and synthesis policy identities;
 - reports limited support/clipping diagnostics;
@@ -52,6 +53,8 @@ It MUST NOT synthesize:
 - concept-level normalized CXCYWH Box;
 - previous logits from another View.
 
+Generated automatic requests normally do not use previous logits. Point refinement on a correction surface may use only a valid same-View opaque ref from 04C/08A.
+
 Prompt regeneration is distinct from inference Retry.
 
 ## Phase 2 — per-View inference
@@ -64,16 +67,20 @@ multimask_output=false
 
 Requirements:
 
+- request contains exact authoritative RGB bytes or current Companion RGB ref;
+- provider verifies RGB digest and dimensions before inference;
+- digest-only unresolved RGB is rejected;
 - independent inference per View;
 - no Multiplex/video/tracker session;
 - no adjacent-frame memory;
-- exact request/result identity;
+- exact request/result/Companion identity;
 - at most one usable Mask;
-- exact dimensions and digest;
+- exact Mask dimensions and digest;
 - raw score retained only as diagnostics;
+- raw previous-logits tensor never crosses the browser boundary;
 - explicit Retry creates a new attempt;
 - RGB Ready does not wait for inference;
-- technical failure publishes no partial Mask/logits/Stable state.
+- technical failure publishes no partial Mask/ref/Stable state.
 
 An empty valid result is semantic unavailable, not transport/runtime failure.
 
@@ -90,7 +97,7 @@ Review may use:
 - severe fragmentation;
 - obvious neighbour contamination.
 
-It does not rerun instance candidate selection. `weak-gaussian-support` is handled later by Ticket 13 Lift Readiness.
+It does not rerun instance candidate selection. `weak-gaussian-support` is handled only by Ticket 13 Lift Readiness.
 
 ## Phase 4 — publication
 
@@ -125,7 +132,7 @@ Refactor Generated View orchestration into:
 local plan
 → render and publish RGB
 → synthesize instance Prompt
-→ infer SAM 3 Image Mask
+→ infer SAM 3 Image Mask from exact RGB request
 → review
 → publish
 ```
@@ -137,6 +144,7 @@ Migration requirements:
 - retire static Multiplex/propagation execution;
 - reject `generated-view-mask/v1` cached payloads as current;
 - reject Negative Box/Mask Constraint Prompt artifacts;
+- reject raw logits tensors or stale Companion refs in browser requests;
 - remove generic backend registry/route/fallback dependencies;
 - preserve User Confirmed Stable Masks and manual corrections.
 
@@ -159,18 +167,20 @@ Anchor one-point candidate choice remains Ticket 07A only.
 
 ### Prompt synthesis
 
-- [ ] Exact geometry/View inputs produce deterministic Prompt artifacts.
-- [ ] Generated Prompts contain one Positive Box, 1–3 positive Points and at most two negative Points.
+- [ ] exact geometry/View inputs produce deterministic Prompt artifacts.
+- [ ] Generated Prompts contain one Positive Box, 1–3 Positive Points and at most two Negative Points.
 - [ ] removed Prompt families never appear.
 - [ ] insufficient support yields structured Limited/Review recovery.
 
 ### Inference
 
-- [ ] Every Generated View uses official SAM 3 Image single-mask inference.
+- [ ] every Generated View uses official SAM 3 Image single-mask inference.
+- [ ] every request resolves exact authoritative RGB and matching dimensions.
 - [ ] no current path creates Multiplex/video/tracker session.
 - [ ] result contains at most one usable Mask.
 - [ ] semantic unavailable differs from technical failure.
 - [ ] Retry/stale/cancellation/OOM behavior is fail-closed.
+- [ ] raw logits tensors do not cross the browser boundary.
 
 ### Review/publication
 
@@ -185,16 +195,18 @@ Anchor one-point candidate choice remains Ticket 07A only.
 - [ ] legacy propagated/provider-assessment contracts are not current.
 - [ ] old Multiplex/Prompt schema artifacts cannot attach.
 - [ ] no backend registry or automatic fallback is required.
-- [ ] existing manual/User Confirmed masks remain inspectable and authoritative.
+- [ ] existing manual/User Confirmed Masks remain inspectable and authoritative.
 
 ## Validation
 
 - deterministic 3D projection fixtures;
+- authoritative RGB payload/ref fixture;
 - SAM 3 Image per-View GPU fixture;
 - generated single-mask cardinality test;
 - clipping/fragmentation/Box-spill review fixtures;
 - semantic-unavailable versus technical-failure fixture;
 - stale/Retry/OOM/cancellation tests;
+- Companion-replacement ref rejection;
 - legacy Multiplex/cache/schema rejection;
 - controller separation tests;
 - repository test/lint/locales/build.

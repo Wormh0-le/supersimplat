@@ -1,37 +1,44 @@
-# AI Select v1 — Implementation Ticket Graph v2.8
+# AI Select v1 — Implementation Ticket Graph v2.9
 
 Status: **ready-for-agent planning graph — Ticket 04B remains the next implementation gate**
 
 ## Authoritative source order
 
 1. `docs/specs/ai-select-final-spec-v1.2.md`
-2. ADR 0013 where not superseded by v1.2
-3. `CONTEXT.md` where not superseded
-4. DG-20 through DG-26 as decision rationale
-5. `AGENTS.md`
-6. Current implementation and tests
+2. `.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md`
+3. ADR 0013 where not superseded by v1.2
+4. ADR 0014 as subordinate Route-B-first architecture rationale
+5. `CONTEXT.md` where not superseded
+6. DG-20 through DG-26 as decision rationale
+7. `AGENTS.md`
+8. Current implementation and tests
 
 Final Spec v1.1 and Amendments 001–005 are historical only. Agents must not reconstruct the old supersession chain.
+
+Any ticket-local v1.1/Amendment mapping retained from an earlier planning version is historical implementation provenance only. Current implementation and closure use `CURRENT-TICKET-SPEC-MAPPING.md` and Final Spec v1.2.
 
 Branch: `ai-select-v1`
 
 Baseline: `42f6013438f1271fcd35a4bfdc9ba5a3eb719c06`
 
-v2.8 has 22 numbered tickets and six retrofit tickets: **04A**, **04B**, **07A**, **07B**, **08A**, and **08B**.
+v2.9 has 22 numbered tickets and six retrofit tickets: **04A**, **04B**, **07A**, **07B**, **08A**, and **08B**.
 
-## v2.8 architecture corrections
+## v2.9 architecture corrections
 
-- Ticket 08 now produces a bounded replayable `VisibleTargetSupportArtifact`.
+- Ticket 08 produces a bounded replayable `VisibleTargetSupportArtifact`.
 - `TargetBootstrapArtifact` is a lightweight summary that references visible support by digest.
 - 07B Floating Palette and 08 support/planner execute in parallel after 07A.
 - 08A is contracts/registry only; it does not run production SAM.
 - 08B implements route-B Prompt synthesis, per-view SAM, ProposalSet, conservative Decision, Assessment integration, publication, and B2 route-A fallback.
 - Prompt synthesis, inference, proposal decision, assessment, publication, Participation, and P/N/V are separate layers.
-- Route-B provider returns a ProposalSet, never a hidden Top-1 Stable Mask or ViewAssessmentResult.
+- Route-B provider returns a `PerViewMaskAcquisitionResult` containing a ProposalSet and one attempt-level backend-diagnostics authority, never a hidden Top-1 Stable Mask or ViewAssessmentResult.
+- Every `KeyViewMaskDecision` binds the exact ProposalSet artifact digest and acquisition attempt.
 - Materially distinct plausible proposals remain `ambiguous`; no arbitrary Stable Mask is published.
+- Successful acquisition with no eligible proposal becomes Decision `unavailable`, distinct from technical acquisition failure.
 - Backend capabilities derive from the actual `MaskAcquisitionBackend` bundle structure.
 - Route B is `perView` only; C/D remain future sequence extension experiments.
 - Route-A fallback is automatic only for declared technical/capability failures and may Auto Good only under the same or stricter gates.
+- Legacy `generated-view-mask/v1`, provider-returned Assessment, and generic `maskSource: 'propagated'` are explicit migration targets in 08B/12/21.
 - Final ownership remains Included Stable Masks → P/N/V in Tickets 14/20.
 
 ## Dependency graph
@@ -138,9 +145,10 @@ The order lists 07B before 08 for readability; they are structurally parallel af
 → 08 TargetBootstrapArtifact
 → 08 SparseKeyViewPlanSegment
 → 08B KeyViewPromptArtifact
+→ 08B PerViewMaskAcquisitionResult
 → 08B KeyViewMaskProposalSet
-→ 08B KeyViewMaskDecision
-→ 07/08B ViewAssessmentResult
+→ 08B KeyViewMaskDecision bound to exact ProposalSet
+→ 07/08B ViewAssessmentResult for selected only
 → 08B MaskPublication result / Stable Mask
 → 09/12 Review, Participation, dirty lifecycle
 → 14 per-view P/N/V
@@ -161,23 +169,28 @@ No artifact edge flows from future C/D back into current Ticket 08 planning.
 
 ## Audit artifacts
 
+- `CURRENT-TICKET-SPEC-MAPPING.md`: current Final Spec v1.2 mapping for every ticket; ticket-local v1.1 references are historical only.
 - `TRACEABILITY.md`: single Final Spec v1.2 mapping; no overlay.
-- `FOUR-PASS-AUDIT.md`: six-pass v2.8 graph, artifact, reverse-scope, workflow, and failure audit.
-- `WALKTHROUGHS.md`: route-B layered pipeline, B2 fallback, ambiguity, and C/D extension readiness.
-- `manifest.json`: machine-readable v2.8 graph and audit metadata.
+- `FOUR-PASS-AUDIT.md`: six-pass v2.9 graph, artifact, reverse-scope, workflow, failure, protocol-identity, and legacy-migration audit.
+- `WALKTHROUGHS.md`: route-B layered pipeline, unavailable distinction, B2 fallback, ambiguity, migration, and C/D extension readiness.
+- `manifest.json`: machine-readable v2.9 graph and audit metadata.
 
 ## Implementation rules
 
-- Ticket 04B remains the next executable implementation ticket.
+- Ticket 04B remains the next executable implementation ticket and resolves its current mapping through `CURRENT-TICKET-SPEC-MAPPING.md`.
 - Ticket 07A fails conservatively on material Anchor ambiguity.
 - Ticket 07B changes interaction/pointer routing only and runs parallel with Ticket 08.
 - Ticket 08 uses early geometry for support/planning/Prompt context, never ownership or Masks.
 - Ticket 08A defines stable types, validators, digests, backend bundle/registry and sequence schemas only.
 - Ticket 08B implements route B directly and is not blocked by route comparison.
-- The provider returns ProposalSet only; Decision, Assessment, Publication and Participation are separate.
+- The provider returns result envelope + ProposalSet only; Decision, Assessment, Publication and Participation are separate.
+- Backend diagnostics have one result-envelope authority.
+- Decision binds exact ProposalSet digest and acquisition attempt.
 - Ambiguous never publishes an arbitrary Stable Mask.
+- Unavailable is a successful Decision state, not a technical failure and not a fallback trigger.
 - Route-A fallback is technical-only and fully provenance-bound.
 - Route B has no sequence/reference implementation.
+- Legacy generated-view acquisition payloads cannot validate as current route-B artifacts.
 - A later ADR is mandatory before tracker/hybrid production adoption.
 - Confirmed correction does not automatically create reference memory.
 - Key-View role and backend never imply Lift Participation.

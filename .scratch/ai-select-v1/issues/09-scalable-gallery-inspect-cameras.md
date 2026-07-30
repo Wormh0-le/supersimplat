@@ -10,6 +10,7 @@ Blocks: 11, 12
 
 - Final Spec v1.2 §§19, 27–29
 - DG-26 Decisions 4–8
+- ADR 0014 as subordinate Route-B-first rationale
 
 ## Inputs / preconditions
 
@@ -32,6 +33,7 @@ Blocks: 11, 12
 - Anchor/Key/User-added role presentation;
 - separate render/acquisition/proposal-decision/Mask-quality/Participation/Evidence presentation;
 - backend and route-A fallback provenance;
+- explicit distinction between acquisition technical failure and Decision `unavailable`;
 - optional future auxiliary/tracker/reference presentation only when capability exists.
 
 ## What to build
@@ -45,10 +47,28 @@ Render status
 Acquisition status / attempt
 Backend + fallback provenance
 ProposalDecision status
-Mask quality
+Mask quality / Stable Mask presence
 Participation
 Evidence status
 Candidate stale/current status where applicable
+```
+
+Required state examples:
+
+```text
+acquisition = ready
+Decision = unavailable
+Stable Mask = none
+Participation = excluded
+```
+
+is distinct from:
+
+```text
+acquisition = failed
+Decision = not-produced
+Stable Mask = prior-or-none
+Participation = unchanged/excluded by current policy
 ```
 
 Navigation and filtering never change Prompt, ProposalSet, Decision, Stable Mask, Participation, optional reference memory, Evidence or Candidate identity.
@@ -60,16 +80,20 @@ Navigation and filtering never change Prompt, ProposalSet, Decision, Stable Mask
 - [ ] Anchor/Key/User-added roles are visible without being conflated with Participation.
 - [ ] Plan segment/local index are inspectable; stable `viewId` remains identity.
 - [ ] Render, Prompt synthesis, acquisition, ProposalDecision, Mask quality, Evidence and Participation are not one flag.
-- [ ] `selected`, `ambiguous`, and `unavailable` are inspectable states.
+- [ ] `selected`, `ambiguous`, and `unavailable` are inspectable Decision states.
+- [ ] `unavailable` is shown as a completed acquisition with no eligible proposal, not as backend/protocol/OOM failure.
+- [ ] Technical acquisition failure has no fabricated `unavailable` Decision.
 - [ ] Ambiguous exposes review/refine/choose/Paint actions and does not pretend a Stable Mask exists.
+- [ ] Unavailable exposes Retry / Regenerate Prompts / Adjust View / Manual Draw / Exclude actions without automatic route-A fallback.
 - [ ] Backend/fallback identity is inspectable and does not imply trust or Included.
 - [ ] Route-B technical failure and route-A fallback result remain separately inspectable.
 - [ ] Optional correction-reference status is absent unless a future backend advertises and implements it.
 - [ ] Optional Auxiliary/Bridge/tracker roles appear only when a future adopted backend creates them.
 - [ ] Status priority is deterministic; Evidence Failed appears only when Evidence was requested and never replaces RGB Ready.
+- [ ] Summary counts separate unavailable Decisions from technical acquisition failures.
 - [ ] Summary counts do not pretend to be Lift Readiness.
 - [ ] Filters support All / Needs Attention / Included / Excluded / Key / User-added and do not mutate state.
-- [ ] Needs Attention includes ambiguous, unresolved Review, no Stable Mask, Prompt/acquisition failure, Render Failed and actionable Evidence Failed.
+- [ ] Needs Attention includes ambiguous, unavailable, unresolved Review, no Stable Mask, Prompt/acquisition failure, Render Failed and actionable Evidence Failed.
 - [ ] Filtering de-emphasizes nonmatching frustums without deleting/reclassifying them.
 - [ ] Card↔frustum selection works without moving Editor Camera.
 - [ ] Inspect AI Cameras reuses Camera Inspection and never retargets Anchor.
@@ -87,6 +111,7 @@ Navigation and filtering never change Prompt, ProposalSet, Decision, Stable Mask
 - Prompt/acquisition/decision/publication failure remains distinguishable from View Render Failure.
 - Route-A fallback is shown as fallback, never as route B.
 - Ambiguous retains its ProposalSet and review actions.
+- Unavailable retains its successful acquisition result/diagnostics and no-Stable state.
 - Optional tracker failure/drift remains capability-gated and distinguishable from ordinary per-view failure.
 - Filtering/navigation never mutates formal state.
 - Stale acquisition/decision/assessment result is shown as stale rather than attached to a newer View revision.
@@ -99,6 +124,7 @@ Navigation and filtering never change Prompt, ProposalSet, Decision, Stable Mask
 - `npm run build`
 - manual 10–20+ View walkthrough
 - selected/ambiguous/unavailable Gallery fixtures
+- unavailable-versus-technical-acquisition-failure fixture
 - route-B failure → route-A fallback provenance walkthrough
 - RGB Ready + acquisition pending/failed + Evidence Failed combinations
 - frustum↔card tests

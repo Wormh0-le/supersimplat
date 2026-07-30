@@ -49,6 +49,30 @@
   },
   "pending_adr": null,
   "future_optional_adr": "adopt-video-tracker-only-after-measured-ordered-video-workload",
+  "design_provenance": {
+    "artisan_gs": {
+      "role": "non-normative inspiration documented in ADR 0016",
+      "project": "https://research.nvidia.com/labs/sil/projects/ArtisanGS/",
+      "paper": "https://arxiv.org/abs/2602.10173",
+      "retained_principles": [
+        "2D-first user intent",
+        "human-in-the-loop mask correction",
+        "visible-surface target localization",
+        "geometry-guided multi-view observation",
+        "renderer-mediated Gaussian selection",
+        "explicit separation of 2D mask editing, 3D candidate computation, and native selection operations"
+      ],
+      "deliberate_divergences": [
+        "2-4 bounded local Key Views instead of a dense full-circle turnaround sequence",
+        "independent SAM 3 Image inference instead of Cutie/video object tracking",
+        "P/N/V direct Evidence instead of optimized one-channel per-Gaussian mask features",
+        "no current frustum/depth projection command that directly mutates Native Selection",
+        "TargetGeometryHint may seed but never hard-bound the Evidence Working Set"
+      ],
+      "current_sequence_tracker_contract": false,
+      "future_sequence_tracker_requires_new_measured_adr": true
+    }
+  },
   "status": "ready-for-agent-v2.12-final-spec-v1.3-all-ticket-mapping-closed",
   "branch": "ai-select-v1",
   "baseline": "2b5ae623995963730bbeb9c06329b95e7726f4a7",
@@ -78,6 +102,10 @@
   "protocol_closures": {
     "all_ticket_local_current_mappings_are_v1_3": true,
     "older_spec_refs_are_historical_only": true,
+    "artisan_gs_provenance_is_documented": true,
+    "artisan_gs_is_normative_requirement_source": false,
+    "current_sequence_tracker_contract_reserved": false,
+    "future_sequence_tracker_requires_measured_adr": true,
     "static_instance_model": "sam3-image-instance",
     "static_multiplex_is_current": false,
     "static_private_tracker_heads_are_current": false,
@@ -139,6 +167,8 @@
     "Final Spec v1.3 remains the only current normative specification",
     "all 30 Ticket-local current mapping blocks point directly to Final Spec v1.3",
     "older spec names are allowed only in explicit historical/superseded/migration sections",
+    "ADR 0016 records ArtisanGS inspiration and deliberate divergence as non-normative provenance",
+    "ArtisanGS provenance does not reserve or implement a current video-tracker interface",
     "04C and 07 are the current parallel ready frontier",
     "04C remains the critical model migration gate",
     "02C may proceed after 04C without waiting for 07A",

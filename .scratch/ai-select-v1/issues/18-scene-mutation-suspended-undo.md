@@ -1,15 +1,16 @@
 # 18 — Scene mutation Suspended state + exact Undo recovery
 
-Status: ready-for-agent — v2.2 re-audited
+Status: ready-for-agent — Final Spec v1.3 mapped
 
 Blocked by: 17, 01
 
-## Final Spec mapping
+## Current Final Spec mapping
 
-- Final Spec v1.1 §29
-- DG-17, DG-20
-- Typical Flow I
-- MVP Phase 7 safety
+- Final Spec v1.3 §§4, 19, 22, 24
+- DG-17 and DG-20 as historical suspension/ownership rationale where not superseded
+- Historical Typical Flow I and MVP Phase 7 safety as implementation provenance
+
+Final Spec v1.3 is the only current closure source.
 
 ## Inputs / preconditions
 
@@ -32,14 +33,14 @@ Suspend on actual render/geometry/identity dependency mutation. Preserve artifac
 - [ ] Selection-only and UI-only changes do not suspend or stale Evidence/Candidate.
 - [ ] Only actual current AI render/geometry/Gaussian identity/target transform dependency mutations suspend.
 - [ ] Suspended transition preserves Anchor/Views/Masks/Evidence/Candidate/Gallery read-only.
-- [ ] Suspended context cannot edit Masks, add Views, Repropagate, recompute Evidence, Re-Lift, or apply Candidate.
+- [ ] Suspended context cannot edit Masks, add Views, refresh Mask inference, recompute Evidence, Re-Lift, or apply Candidate.
 - [ ] Toolbar offers Undo Scene Change / Restart Current Target.
 - [ ] Native Undo resumes only when effective TargetDependencyToken exactly matches the compatible pre-mutation state.
 - [ ] Recovery is semantic equality, not merely last-action-is-Undo.
 - [ ] Delete/Separate/Transform suspend when in dependency scope; unrelated edits do not globally invalidate.
 - [ ] Selection flags are excluded from authoritative render/Evidence dependency identity.
 - [ ] Async acceptance requires current context/revision/dependency plus artifact-specific identities.
-- [ ] v1.1 performs no cross-dependency partial RGB/Mask/Evidence remapping repair.
+- [ ] v1 performs no cross-dependency partial RGB/Mask/Evidence remapping repair.
 
 ## Failure / recovery criteria
 

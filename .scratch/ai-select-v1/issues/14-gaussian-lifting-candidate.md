@@ -1,15 +1,18 @@
 # 14 — Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain
 
-Status: ready-for-agent — Final Spec v1.2 aligned
+Status: ready-for-agent — Final Spec v1.3 aligned
 
 Blocked by: 11, 12
 
-## Final Spec mapping
+## Current Final Spec mapping
 
-- Final Spec v1.2 §§22–25, 27–29
+- Final Spec v1.3 §§20–22, 24–25
 - ADR 0013
-- DG-20 and DG-26 ownership boundary
+- ADR 0016 where it narrows geometry, Prompt and per-View acquisition semantics
+- DG-20 and DG-26 as historical ownership-boundary rationale only where not superseded
 - FlashSplat-style direct-Evidence design: reference/algorithm stage
+
+Final Spec v1.3 is the only current closure source. Final Spec v1.2 route/backend artifacts are historical and are not current Evidence inputs.
 
 ## Inputs / preconditions
 
@@ -18,8 +21,8 @@ Blocked by: 11, 12
 - Render Working Set seam;
 - Versioned Mask/Evidence Policy;
 - Dirty-state and artifact identity model;
-- `VisibleTargetSupportArtifact` / bootstrap / Prompt / ProposalSet / Decision / acquisition identities as diagnostic provenance only;
-- View role and acquisition backend as diagnostic metadata only.
+- `TargetGeometryHintArtifact`, Prompt artifacts, SAM scores, previous-logits refs and MaskReview results as diagnostic provenance only;
+- View role and source as diagnostic metadata only.
 
 ## Outputs / handoff artifacts
 
@@ -37,7 +40,7 @@ Validate FlashSplat-style lifting mathematics before production CUDA optimizatio
 
 This ticket defines Mask-conditioned P/N/V, per-view artifacts, multi-view aggregation, and four-state classification. Ticket 20 owns production RGB-forward decision equivalence.
 
-Final Spec v1.2 does not alter this ownership boundary. Support, bootstrap, Prompt, acquisition, ProposalDecision and ViewAssessment help obtain Stable Masks; they are not Gaussian ownership inputs.
+Final Spec v1.3 preserves the ownership boundary: target geometry, Prompt, SAM output metadata, refinement state and Mask Review help obtain Stable Masks or prepare Working Sets; they do not classify Gaussian ownership.
 
 ## Acceptance criteria
 
@@ -45,7 +48,7 @@ Final Spec v1.2 does not alter this ownership boundary. Support, bootstrap, Prom
 
 - [ ] Formal input is exactly current AIViews with Render Ready + Stable Mask + Participation Included, plus target/dependency/policy/working-set identities.
 - [ ] Excluded Views and Views without Stable Mask do not contribute.
-- [ ] Key/User-added/optional future auxiliary role alone never contributes Evidence.
+- [ ] Key/User-added role alone never contributes Evidence.
 - [ ] For View `v`, pixel `p`, Gaussian `g`, reference contribution is `w(v,p,g) = alpha(v,p,g) × incomingTransmittance(v,p,g)`.
 - [ ] `P(v,g) = Σ positiveWeight(v,p) × w(v,p,g)`.
 - [ ] `N(v,g) = Σ negativeWeight(v,p) × w(v,p,g)`.
@@ -54,7 +57,7 @@ Final Spec v1.2 does not alter this ownership boundary. Support, bootstrap, Prom
 - [ ] Do not assume `P + N = V` or apply Contributor mass-conservation admission.
 - [ ] Define/version Strong Positive Interior, Boundary/Ignore Band, Local Negative Context Ring, Far Neutral Region, and optional soft weights.
 - [ ] Far image exterior is not automatically strong negative.
-- [ ] Visible-support samples, bootstrap metrics, Prompt score, raw model score, ProposalDecision reason, acquisition backend/fallback, optional tracker confidence/reference memory, and View role are not formal ownership Evidence.
+- [ ] TargetGeometryHint points/extent, Prompt geometry, raw SAM score, previous logits, MaskReview reason, inference diagnostics and View role are not formal ownership Evidence.
 
 ### Scene and Working Set semantics
 
@@ -62,16 +65,16 @@ Final Spec v1.2 does not alter this ownership boundary. Support, bootstrap, Prom
 - [ ] Full conservative Render Working Set preserves all required occluders/transmittance contributors.
 - [ ] Gaussians outside Evidence Working Set still participate in compositing but receive no P/N/V writes.
 - [ ] A target hidden by an out-of-scope occluder proves target-only rasterization is incorrect.
-- [ ] `VisibleTargetSupportArtifact` and `TargetBootstrapArtifact` may seed an initial conservative Working Set but cannot classify ownership.
-- [ ] Bootstrap/support are not a hard Evidence Working Set upper bound.
+- [ ] `TargetGeometryHintArtifact` may seed an initial conservative Evidence Working Set but cannot classify ownership.
+- [ ] TargetGeometryHint is not a hard Evidence Working Set upper bound.
 - [ ] Later Included Stable View support can expand the Evidence Working Set.
 - [ ] Evidence touching a Working Set boundary triggers declared expansion/fail-closed diagnostics rather than silent truncation.
-- [ ] Absence from Anchor visible support alone cannot classify a Gaussian as Rejected or Out of Scope.
+- [ ] Absence from Anchor-visible geometry alone cannot classify a Gaussian as Rejected or Out of Scope.
 
 ### Artifact and policy semantics
 
 - [ ] Per-view artifact binds Camera, RGB, Stable Mask, policy, Render/Evidence Working Sets, Stable IDs, raster implementation, reference backend, and runtime.
-- [ ] Acquisition/Prompt/Proposal/Decision/fallback identities may be retained as Stable Mask provenance but cannot replace Stable Mask digest or Evidence backend identity.
+- [ ] Prompt/inference/review identities may be retained as Stable Mask provenance but cannot replace Stable Mask digest or Evidence backend identity.
 - [ ] Reference artifact cannot be mistaken for Ticket 20 production Evidence.
 - [ ] Incompatible renderer/runtime/backend changes invalidate artifacts.
 - [ ] Artifact supports exclude/reinclude, Stable Mask replacement, incremental Re-Lift, and exact invalidation.
@@ -89,7 +92,7 @@ Final Spec v1.2 does not alter this ownership boundary. Support, bootstrap, Prom
 - [ ] Discrepancies are characterized rather than hidden by threshold tuning.
 - [ ] Compare max/p95/p99 error, relative error, support differences, threshold-near count, and classification differences.
 - [ ] Fixtures cover strong positive, local background, boundary mixed, unobserved, occlusion, multiple Views, large cross-boundary Gaussian, thin structures, and high occlusion.
-- [ ] Include sparse Key-View, Generate More segment, selected/ambiguous acquisition, route-A fallback provenance, and corrected Stable Mask fixtures.
+- [ ] Include bounded local Key Views, Generate More, semantic Mask unavailable, Auto Review Excluded, User Confirmed correction and TargetGeometryHint-seed expansion fixtures.
 - [ ] Report Gaussian precision/recall, novel-view rendered-mask IoU, background contamination, mixed ratio, user Add/Remove burden proxy, single-vs-multi-view effect, and View-exclusion correctness.
 
 ### Candidate publication
@@ -102,12 +105,12 @@ Final Spec v1.2 does not alter this ownership boundary. Support, bootstrap, Prom
 
 ## Failure / recovery criteria
 
-- Evidence/Lift failure preserves Views, Stable Masks, Gallery, acquisition/proposal review artifacts, and prior Candidate; no partial replacement.
+- Evidence/Lift failure preserves Views, Stable Masks, Gallery, Mask Review state and prior Candidate; no partial replacement.
 - Missing Render Working Set, invalid Stable ID mapping, or non-finite Evidence fails closed.
 - Reference Contributor failure never relabels valid RGB as Render Failed.
 - One reference backend may fall back to another declared trusted reference, never nearest/top-k/distance/center attribution.
-- Mask acquisition failure is upstream and cannot be reinterpreted as Evidence output.
-- Ambiguous ProposalDecision without a Stable Mask contributes no Evidence.
+- Mask inference or semantic unavailable is upstream and cannot be reinterpreted as Evidence output.
+- A View without a Stable Mask contributes no Evidence.
 
 ## Affected seams
 
@@ -127,10 +130,10 @@ Final Spec v1.2 does not alter this ownership boundary. Support, bootstrap, Prom
 - Contributor and autograd comparison where available
 - P/N/V independence tests
 - out-of-scope occluder fixture
-- support/bootstrap-seed expansion fixture
-- sparse Key-View/Participation fixture
-- ambiguous-no-Evidence fixture
-- route-A fallback provenance non-Evidence fixture
+- TargetGeometryHint-seed expansion fixture
+- bounded local Key-View/Participation fixture
+- no-Stable-Mask/no-Evidence fixture
+- semantic-unavailable non-Evidence fixture
 - corrected Stable Mask fixture
 - multi-view dominance and atomic publication tests
 - backend/raster/runtime invalidation tests
@@ -138,7 +141,7 @@ Final Spec v1.2 does not alter this ownership boundary. Support, bootstrap, Prom
 ## Non-goals
 
 - No Native Set/Add/Remove/Intersect.
-- No support/Prompt/acquisition/ProposalDecision confidence as ownership Evidence.
+- No geometry/Prompt/SAM/refinement/MaskReview confidence as ownership Evidence.
 - No production same-decision CUDA kernel; Ticket 20 owns it.
 - No claim that reference/autograd Evidence is production RGB-equivalent.
 - No Candidate provenance/source inspector.

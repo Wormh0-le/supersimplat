@@ -39,7 +39,7 @@
   "parallel_after_ticket_14": ["10", "13"],
   "traceability": "TRACEABILITY.md",
   "traceability_overlay": null,
-  "traceability_requirement_count": 96,
+  "traceability_requirement_count": 100,
   "walkthrough_count": 20,
   "error_walkthrough_count": 20,
   "audit": {

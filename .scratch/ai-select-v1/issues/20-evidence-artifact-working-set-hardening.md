@@ -1,17 +1,19 @@
 # 20 — FlashSplat-style same-decision GPU Evidence + artifact / working-set hardening
 
-Status: ready-for-agent — v2.6 DG-24 alignment
+Status: ready-for-agent — Final Spec v1.3 aligned
 
 Blocked by: 19, 14, 09
 
-## Final Spec mapping
+## Current Final Spec mapping
 
-- Final Spec v1.1 §§14–19, 30 Stage 3–5, 31–32
-- Final Spec v1.1 Amendments 001 and 004
+- Final Spec v1.3 §§4–5, 20–22, 24–25
 - ADR 0013
+- ADR 0016 TargetGeometryHint and bounded local-view boundary
+- Final Spec v1.1 Amendments 001/004 and DG-20/DG-24 as historical renderer/Evidence rationale only where not superseded
 - FlashSplat-style direct Evidence accumulation design
-- DG-20, DG-24
-- MVP Phase 7 production Evidence
+- MVP Phase 7 production Evidence as historical staging provenance
+
+Final Spec v1.3 is the only current closure source.
 
 ## Inputs / preconditions
 
@@ -19,7 +21,7 @@ Blocked by: 19, 14, 09
 - Validated authoritative RGB/render scope/Render Working Set path from Ticket 19
 - Stable Mask artifacts and exact RGB binding
 - 10–20+ View Gallery
-- TargetBootstrapArtifact only as an optional Working Set seed
+- `TargetGeometryHintArtifact` only as an optional Working Set seed
 - Locked/pinned CUDA runtime ownership
 - Known contributor-alpha mismatch CameraBinding regression fixture
 
@@ -62,9 +64,9 @@ This is a single decision-source requirement, not merely reuse of the same formu
 
 - [ ] Render Working Set contains every Gaussian needed for RGB, occlusion, incoming T, and termination.
 - [ ] Evidence Working Set contains target-local Core+Context Stable Gaussian IDs that receive P/N/V writes.
-- [ ] TargetBootstrapArtifact may seed initial Core/Context construction but is never the final upper bound.
-- [ ] Later Included Stable View support can expand the Evidence Working Set beyond the Anchor bootstrap seed.
-- [ ] A Gaussian is not Rejected/Out of Scope solely because the Anchor bootstrap did not observe it.
+- [ ] `TargetGeometryHintArtifact` may seed initial Core/Context construction but is never the final upper bound.
+- [ ] Later Included Stable View support can expand the Evidence Working Set beyond the Anchor-visible geometry seed.
+- [ ] A Gaussian is not Rejected/Out of Scope solely because `TargetGeometryHintArtifact` did not include it.
 - [ ] Evidence touching the current Working Set boundary triggers declared expansion or fails closed with diagnostics; it never silently truncates support.
 - [ ] Target and non-target/out-of-scope occluders remain in traversal and map to `localEvidenceId = -1` or equivalent.
 - [ ] Stable global-render identity → target Stable ID → Evidence-local mapping rejects missing, duplicate, colliding, and out-of-range identities.
@@ -88,7 +90,7 @@ This is a single decision-source requirement, not merely reuse of the same formu
 - [ ] Repeat identical inputs to characterize atomicAdd variation; classification margins prevent flips.
 - [ ] Strong positive/background classes agree with trusted reference; differences are limited to declared low-mass/boundary/threshold regions.
 - [ ] Mixed large-footprint and unobserved fixtures preserve Uncertain semantics.
-- [ ] Bootstrap-seed expansion fixture recovers Gaussians visible only from later Included Key Views.
+- [ ] TargetGeometryHint-seed expansion fixture recovers Gaussians visible only from later Included local/User-added Views.
 
 ### Performance implementation order
 
@@ -125,7 +127,7 @@ This is a single decision-source requirement, not merely reuse of the same formu
 - Reference-vs-production P/N/V and classification fixtures
 - Target plus non-target occluder fixture
 - Full versus spatial Render Working Set RGB/Evidence parity
-- Bootstrap-seed expansion / boundary-triggered expansion fixture
+- TargetGeometryHint-seed expansion / boundary-triggered expansion fixture
 - P/N/V independence tests
 - Repeated-run classification stability
 - Global-atomic baseline versus optimized implementation equivalence
@@ -136,6 +138,6 @@ This is a single decision-source requirement, not merely reuse of the same formu
 ## Non-goals
 
 - No hard-coded final classification inside CUDA
-- No planner/assessment threshold calibration; Ticket 21 owns calibration
+- No planner/MaskReview/Lift-readiness threshold calibration; Ticket 21 owns calibration
 - No complete pixel-level provenance in the normal product artifact
 - No DG-14 provenance UI

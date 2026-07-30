@@ -261,23 +261,6 @@
         background: $bcg-darkest;
         color: $text-primary;
     }
-
-    #ai-select-anchor-unsupported-tools {
-        position: relative;
-        color: $text-secondary;
-
-        span {
-            position: absolute;
-            left: 0;
-            bottom: calc(100% + 4px);
-            display: block;
-            max-width: 320px;
-            padding: 6px;
-            border-radius: 4px;
-            background-color: $bcg-primary;
-            white-space: normal;
-        }
-    }
 }
 
 #ai-select-anchor-technical-details {

@@ -30,7 +30,7 @@ SAM31_RUNTIME_CONFIG: dict[str, Any] = {
     "anchor_prompt_adapter": "sam3.1-interactive-image/v1",
     "anchor_prompt_compiler_policy": SAM31_VISUAL_PROMPT_COMPILER_POLICY_VERSION,
     "anchor_box_composition": "independent-box-branches/v1",
-    "anchor_mask_input_resize": "bilinear-antialias-binary-0-1/v1",
+    "anchor_mask_input": "disabled-after-brush-only-iou-gate/v1",
     "async_loading_frames": False,
     "compile": False,
     "default_output_prob_thresh": 0.5,
@@ -61,9 +61,10 @@ def _prompt_capability_digest(payload: Mapping[str, object]) -> str:
 def sam31_visual_prompt_capabilities() -> dict[str, object]:
     """Return the exact, digest-bound SAM 3.1 visual-prompt contract.
 
-    Positive Box and Mask constraints use the pinned interactive-image API.
-    The public SAM API has no separately validated negative Box or negative
-    Mask composition in this runtime, so those tools remain explicitly off.
+    Positive Box uses the pinned interactive-image API. The current SAM
+    ``mask_input`` consumes previous-iteration logits rather than a partial
+    positive scribble, so Prompt Brush remains off after its locked quality
+    gate failed. Negative visual and Text composition are also explicitly off.
     """
 
     payload: dict[str, object] = {
@@ -71,7 +72,7 @@ def sam31_visual_prompt_capabilities() -> dict[str, object]:
         'negativePoints': True,
         'boxes': True,
         'negativeBoxes': False,
-        'maskInput': True,
+        'maskInput': False,
         'negativeMaskConstraints': False,
         'text': False,
         'negativeText': False,
@@ -81,6 +82,11 @@ def sam31_visual_prompt_capabilities() -> dict[str, object]:
             'negative-box': (
                 'The locked SAM 3.1 interactive-image adapter has no validated '
                 'negative Box composition.'
+            ),
+            'positive-mask-constraint': (
+                'Prompt Brush is disabled because SAM mask_input expects '
+                'previous-prediction logits; the partial-brush GPU quality '
+                'gate failed.'
             ),
             'negative-mask-constraint': (
                 'The locked SAM 3.1 interactive-image adapter has no validated '
@@ -242,10 +248,9 @@ def compile_sam31_visual_prompt_program(
     """Compile exact PromptState constraints without ranking any candidates.
 
     The declared order is family then lexicographic Prompt ID. Boxes use
-    inclusive pixel bounds and become normalized XYWH for SAM. Multiple
-    positive Mask constraints are composed with an explicit bitwise OR before
-    passing the native dense-mask input; no visual constraint is converted to
-    a Point or silently discarded.
+    inclusive pixel bounds and become normalized XYWH for SAM. Every family is
+    capability-checked before its payload is decoded; no visual constraint is
+    converted to a Point or silently discarded.
     """
 
     if width <= 0 or height <= 0:
@@ -426,8 +431,6 @@ def compile_sam31_visual_prompt_program(
                 'inclusive-authoritative-pixel-xyxy-native-normalization/v1'
             ),
             'boxComposition': 'independent-box-branches/v1',
-            'positiveMaskComposition': 'bitwise-or/v1',
-            'positiveMaskModelInput': 'bilinear-antialias-binary-0-1/v1',
             'rgbDigest': rgb_digest,
             'promptStateDigest': prompt_state_digest,
             'adapterCapabilityDigest': capability_digest,
@@ -1008,6 +1011,11 @@ class Sam3PointMaskAdapter:
                 'capabilityMismatch',
                 'The visual Prompt program does not bind this RGB, dimensions, and adapter capability.',
             )
+        if program.mask_constraints:
+            raise MaskSessionError(
+                'unsupportedPromptType',
+                'Prompt Brush has no validated SAM 3.1 visual Prompt mapping.',
+            )
         if cancelled():
             raise MaskSessionError('cancelled', 'The visual Prompt request was cancelled.')
 
@@ -1035,12 +1043,7 @@ class Sam3PointMaskAdapter:
                     if box is not None
                     else None
                 ),
-                mask_input=self._mask_input_for_interactive_predictor(
-                    program.positive_mask_constraint,
-                    width=width,
-                    height=height,
-                    predictor=predictor,
-                ),
+                mask_input=None,
                 multimask_output=True,
                 return_logits=False,
                 # Pinned SAM interprets absolute authoritative-image pixels
@@ -1091,62 +1094,6 @@ class Sam3PointMaskAdapter:
                 )
                 source_index += 1
         return tuple(candidates)
-
-    @staticmethod
-    def _mask_input_for_interactive_predictor(
-        bits: bytes | None,
-        *,
-        width: int,
-        height: int,
-        predictor: Any,
-    ) -> Any | None:
-        if bits is None:
-            return None
-        model = getattr(predictor, 'model', None)
-        prompt_encoder = getattr(model, 'sam_prompt_encoder', None)
-        if prompt_encoder is None:
-            prompt_encoder = getattr(
-                model, 'interactive_sam_prompt_encoder', None
-            )
-        mask_input_size = getattr(prompt_encoder, 'mask_input_size', None)
-        if (
-            not isinstance(mask_input_size, (list, tuple))
-            or len(mask_input_size) != 2
-            or any(
-                isinstance(value, bool) or not isinstance(value, int) or value <= 0
-                for value in mask_input_size
-            )
-        ):
-            raise MaskSessionError(
-                'modelFailure',
-                'The locked SAM 3.1 predictor does not expose its native Mask input dimensions.',
-            )
-        values = [[
-            [
-                float(bool(bits[(y_px * width + x_px) // 8] & (1 << ((y_px * width + x_px) % 8))))
-                for x_px in range(width)
-            ]
-            for y_px in range(height)
-        ]]
-        try:
-            import torch
-            import torch.nn.functional as functional
-
-            tensor = torch.tensor(values, dtype=torch.float32).unsqueeze(0)
-            if tuple(tensor.shape[-2:]) != tuple(mask_input_size):
-                tensor = functional.interpolate(
-                    tensor,
-                    size=tuple(mask_input_size),
-                    mode='bilinear',
-                    align_corners=False,
-                    antialias=True,
-                )
-            return tensor.squeeze(0).cpu().numpy()
-        except Exception as error:
-            raise MaskSessionError(
-                'modelFailure',
-                'The locked SAM 3.1 adapter could not compile the Prompt Brush constraint.',
-            ) from error
 
     @staticmethod
     def _visual_prompt_consistency_facts(

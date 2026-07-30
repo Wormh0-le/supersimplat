@@ -108,7 +108,7 @@ The Companion records the verified manifest and external checkpoint path. It
 does not copy the checkpoint into the package or send a path to the editor.
 
 For `adapterId: "sam3.1"`, `runtimeConfigDigest` must be
-`sha256:de51b91ba833a299fa2ebe512daeda439007c7fa181f375c085bf38fa46b502f`.
+`sha256:6e1475abaee95d1ae97a8986494fba6ac7d3f440625f945b3ca0d258c6934c09`.
 It binds the Companion's fixed SAM 3.1 multiplex baseline: eight objects per
 session, multiplex count 16, FA3 and compilation disabled, a 0.5 output
 threshold, rejection of degenerate full-frame candidates, CPU-backed frame
@@ -206,24 +206,26 @@ This release exposes `/health`, `/capabilities`,
 each usable Model Manifest, and both
 `aiSelectAnchorRender` and `binarySceneSnapshotRegistrationV1` before the
 browser enables AI Select. The current SAM 3.1 adapter explicitly advertises
-positive/negative Point, positive Box, positive Mask Constraint, and
-multi-candidate output. Negative Box, negative Mask Constraint, and Text stay
-disabled with an exact adapter-provided reason. The capability record binds
+positive/negative Point, positive Box, and multi-candidate output. Point-only
+and Point+Box requests use the same interactive-image predictor path.
+Prompt Brush, negative Box, negative Mask Constraint, and Text stay disabled
+with exact adapter-provided reasons. The capability record binds
 `sam3.1-visual-prompt-compiler/v1`; changing support or compilation semantics
 rotates its digest so incompatible prompt replay fails closed.
 
 The compiler preserves authoritative RGB pixel coordinates and orders each
 prompt family by `promptId`. Box coordinates use inclusive pixel `XYXY`;
 multiple positive Boxes become deterministic independent model branches.
-Positive Prompt Brush artifacts use exact-dimension `bitset-lsb-v1` masks,
-reject invalid digests or non-zero padding bits, compose by binary union, and
-resize with bilinear antialiasing to the native SAM prompt-encoder size.
-Points remain point prompts; Boxes and Masks are never converted into Points
-or silently discarded. Every structurally valid raw SAM alternative is
-forwarded in source order with its adapter-local IoU prediction semantics and
-per-prompt diagnostics. The existing Ticket 07A seam performs any later
-ranking and publishes the bound `ProposalDecision`; a raw model score never
-auto-confirms a Mask.
+Prompt Brush is not compiled into SAM `mask_input`: that field represents
+low-resolution logits from a previous prediction, not an arbitrary binary
+positive stroke. The locked brush-only GPU fixture reached best IoU
+`0.0019388243881298328` against a `0.5` minimum quality gate, so
+`maskInput=false` until a separately designed and benchmarked brush adapter
+exists. Unsupported constraints fail before inference. Every structurally
+valid raw Point/Box SAM alternative is forwarded in source order with its
+adapter-local IoU prediction semantics and per-prompt diagnostics. The
+existing Ticket 07A seam performs any later ranking and publishes the bound
+`ProposalDecision`; a raw model score never auto-confirms a Mask.
 
 Run the opt-in locked real-model check with the operator-owned multiplex
 checkpoint and CUDA:

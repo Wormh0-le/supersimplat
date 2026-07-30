@@ -95,6 +95,57 @@ Requirements:
 - accessible label and expanded state;
 - tooltips/localization remain complete.
 
+## 3.1 Icon-first tool presentation
+
+Expanded and collapsed forms use the repository's established icon system for
+Prompt and Edit tools instead of a text-only button row.
+
+Requirements:
+
+- icon plus tooltip/accessibility label communicates the complete localized
+  tool name;
+- positive/negative polarity remains distinguishable without color alone;
+- Prompt and Edit groups have a visible separator or equivalent hierarchy;
+- selected, hover, focus, disabled and unavailable states remain distinct;
+- icons do not replace accessible names or keyboard discoverability;
+- compact labels may supplement icons when space allows, but the palette must
+  not regress to a full-width text toolbar.
+
+## 3.2 Truthful disabled capability presentation
+
+Every known Prompt tool remains present in its normal group even when the
+selected adapter does not support it.
+
+Unsupported tools:
+
+- are disabled and cannot become the active tool;
+- retain their normal icon and placement so the capability stays discoverable;
+- expose the precise adapter-owned reason through tooltip and focus-accessible
+  description;
+- use `disabled` / `aria-disabled` semantics and are not represented by a
+  separate prose-only “other tools” disclosure;
+- become enabled in place after a capability change without reordering the
+  palette or changing Prompt/Mask history.
+
+## 3.3 Contextual Brush Size popover
+
+Positive/negative Prompt Brush, Paint and Erase share one contextual Brush
+Size control anchored to the active brush-tool button.
+
+Requirements:
+
+- selecting an enabled brush tool opens or makes available a compact range
+  popover instead of permanently consuming horizontal palette space;
+- placement chooses above/below (or the nearest safe side) from available
+  fitted-image space and remains fully clamped;
+- changing size never authors pixels and applies only to subsequent strokes;
+- tool switch, outside click, `Escape`, collapse, temporary hide, context
+  disposal and loss of readiness close the popover safely;
+- keyboard adjustment, current-value announcement, tooltip/localization and
+  minimum pointer-target requirements remain complete;
+- reopening preserves the current target-local brush size without entering
+  PromptState, Mask history or artifact identity.
+
 # 4. Space temporary hide
 
 While image authoring focus is active:
@@ -171,6 +222,12 @@ Do not persist one global palette location across unrelated targets/scenes.
 - [ ] Palette drag never authors image content.
 - [ ] Expanded/collapsed state preserves current tool and histories.
 - [ ] Collapsed palette remains draggable.
+- [ ] Tool buttons use the established icon system with localized tooltips and accessible names.
+- [ ] Prompt/Edit grouping and positive/negative polarity remain identifiable without color alone.
+- [ ] Unsupported Prompt tools remain visible in place, disabled and focus-describable with the exact capability reason.
+- [ ] No prose-only “other tools” disclosure replaces unsupported tool buttons.
+- [ ] Brush tools expose one anchored, clamped Brush Size popover with keyboard and `Escape` behavior.
+- [ ] Brush Size popover closes safely on tool/context/readiness transitions and never authors pixels by itself.
 - [ ] Space keydown hides presentation and hit testing; keyup/blur/disposal restores safely.
 - [ ] Old palette position becomes immediately editable.
 - [ ] No transparent wrapper or stale hit region intercepts input.
@@ -196,6 +253,9 @@ Do not persist one global palette location across unrelated targets/scenes.
 - `npm run lint:locales`
 - `npm run build`
 - browser drag/snap/collapse tests
+- icon/tooltip/accessible-name and polarity-without-color audit
+- disabled capability button and capability-rotation regression
+- Brush Size popover placement/flip/clamp/outside-click/`Escape` tests
 - Space keydown/keyup/repeat/blur tests
 - old-location immediate authoring regression
 - Dock resize / DPR / browser zoom matrix

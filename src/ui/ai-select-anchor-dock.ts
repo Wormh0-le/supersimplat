@@ -99,8 +99,6 @@ export class AISelectAnchorDock extends Container {
     private readonly maskActions: Container;
     private readonly toolActions: Container;
     private readonly toolButtons = new Map<DockAuthoringTool, Button>();
-    private readonly unsupportedToolsDetails: HTMLDetailsElement;
-    private readonly unsupportedToolsList: HTMLSpanElement;
     private readonly promptUndoButton: Button;
     private readonly promptRedoButton: Button;
     private readonly clearPromptsButton: Button;
@@ -264,18 +262,6 @@ export class AISelectAnchorDock extends Container {
             this.toolButtons.set(tool, button);
             this.toolActions.append(button);
         }
-        this.unsupportedToolsDetails = document.createElement('details');
-        this.unsupportedToolsDetails.id = 'ai-select-anchor-unsupported-tools';
-        const unsupportedSummary = document.createElement('summary');
-        unsupportedSummary.textContent = i18n.t(
-            'ai-select.prompt.unsupported-tools'
-        );
-        this.unsupportedToolsList = document.createElement('span');
-        this.unsupportedToolsDetails.append(
-            unsupportedSummary,
-            this.unsupportedToolsList
-        );
-        this.toolActions.dom.appendChild(this.unsupportedToolsDetails);
         this.brushSizeInput = document.createElement('input');
         this.brushSizeInput.id = 'ai-select-anchor-brush-size';
         this.brushSizeInput.type = 'range';
@@ -975,7 +961,6 @@ export class AISelectAnchorDock extends Container {
                 'ready' && !this.confirmation.locked;
         this.toolActions.hidden = !ready;
         const capabilities = this.maskState.promptCapabilities;
-        const unsupportedTools: string[] = [];
         for (const [tool, button] of this.toolButtons) {
             const reason =
                 tool === 'paint' || tool === 'erase'
@@ -983,22 +968,20 @@ export class AISelectAnchorDock extends Container {
                     : capabilities === null
                       ? 'Prompt Adapter capabilities are unavailable.'
                       : promptToolCapabilityReason(tool, capabilities);
+            const label = button.dom.textContent?.trim() ?? tool;
             button.enabled = ready && reason === null;
-            button.hidden = reason !== null;
-            if (reason !== null) {
-                unsupportedTools.push(button.dom.textContent?.trim() ?? tool);
-            }
-            button.dom.title = reason ?? button.dom.textContent ?? '';
+            button.hidden = false;
+            button.dom.title = reason ?? label;
+            button.dom.setAttribute(
+                'aria-label',
+                reason === null ? label : `${label}: ${reason}`
+            );
+            button.dom.setAttribute('aria-disabled', String(!button.enabled));
             button.dom.classList.toggle(
                 'ai-select-tool-selected',
                 tool === this.activeTool
             );
         }
-        this.unsupportedToolsDetails.hidden = unsupportedTools.length === 0;
-        this.unsupportedToolsList.textContent =
-            unsupportedTools.length === 0
-                ? ''
-                : `${i18n.t('ai-select.prompt.unsupported-by-adapter')}: ${unsupportedTools.join(', ')}`;
         const activeButton = this.toolButtons.get(this.activeTool);
         if (activeButton !== undefined && !activeButton.enabled) {
             this.activeTool =

@@ -53,7 +53,7 @@ checkpoint          = operator-supplied local sam3.1_multiplex.pt
 anchor adapter      = sam3.1-interactive-image/v1
 prompt compiler     = sam3.1-visual-prompt-compiler/v1
 box composition     = independent-box-branches/v1
-mask input resize   = bilinear-antialias-binary-0-1/v1
+mask input          = disabled-after-brush-only-iou-gate/v1
 max_num_objects     = 8
 multiplex_count     = 16
 use_fa3             = false
@@ -69,7 +69,7 @@ tracker state       = GPU-backed; CPU fallback only after measured OOM
 
 Keep `multiplex_count=16` aligned with the released multiplex checkpoint. Establish correctness and memory measurements in eager mode before separately testing compilation, FA3, or greater CPU offload.
 
-The canonical settings digest for this baseline is `sha256:de51b91ba833a299fa2ebe512daeda439007c7fa181f375c085bf38fa46b502f`. The Companion rejects a SAM 3.1 Model Manifest with another runtime digest instead of silently adopting an upstream default.
+The canonical settings digest for this baseline is `sha256:6e1475abaee95d1ae97a8986494fba6ac7d3f440625f945b3ca0d258c6934c09`. The Companion rejects a SAM 3.1 Model Manifest with another runtime digest instead of silently adopting an upstream default. Prompt Brush remains disabled because SAM `mask_input` is a previous-prediction-logit input, and the locked partial-brush GPU fixture failed its semantic quality gate.
 
 The adapter and weights are governed by Meta's custom SAM License and gated access, not MIT or Apache. Operators obtain access and download weights separately; the application repository and distribution do not bundle them. The 4090D 24GB fit is an empirical test, not an assumed capability.
 

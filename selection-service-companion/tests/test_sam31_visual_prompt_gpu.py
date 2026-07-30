@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import contextlib
 import hashlib
 from importlib.metadata import distribution
@@ -10,6 +9,7 @@ import os
 from pathlib import Path
 import unittest
 
+import numpy as np
 from PIL import Image
 
 from selection_service_companion.masking import (
@@ -26,7 +26,7 @@ SAM31_CHECKPOINT_DIGEST = (
     '0567debeec80ba4ac6369540c6c248025283cb3ff2b92827509e57e2b3541cb6'
 )
 SAM31_VISUAL_RUNTIME_DIGEST = (
-    'sha256:de51b91ba833a299fa2ebe512daeda439007c7fa181f375c085bf38fa46b502f'
+    'sha256:6e1475abaee95d1ae97a8986494fba6ac7d3f440625f945b3ca0d258c6934c09'
 )
 CHECKPOINT_ENV = 'SUPERSPLAT_SAM31_VISUAL_GPU_CHECKPOINT'
 
@@ -48,9 +48,9 @@ def _gpu_fixture_available() -> bool:
     f'locked SAM 3.1 GPU fixture requires {CHECKPOINT_ENV}',
 )
 class Sam31VisualPromptGpuTests(unittest.TestCase):
-    """Locked-runtime proof that Box and Prompt Brush affect real inference."""
+    """Locked-runtime proof for enabled Point/Box and rejected Brush mapping."""
 
-    def test_box_mask_and_combined_prompts_change_real_candidates(self) -> None:
+    def test_point_box_and_rejected_brush_mapping_on_real_model(self) -> None:
         checkpoint = Path(os.environ[CHECKPOINT_ENV])
         self.assertEqual(
             hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
@@ -76,14 +76,15 @@ class Sam31VisualPromptGpuTests(unittest.TestCase):
         with Image.open(io.BytesIO(rgb_png)) as image:
             width, height = image.size
         rgb_digest = f'sha256:{hashlib.sha256(rgb_png).hexdigest()}'
-        constraint_bits = self._rectangle_mask(
-            width=width,
-            height=height,
-            x0=475,
-            y0=170,
-            x1=624,
-            y1=859,
-        )
+        ground_truth = np.load(
+            repository
+            / (
+                'docs/benchmarks/fixtures/office/targets/clothes_rack/'
+                'frame-set-v1/mask-set-v1/masks.npz'
+            )
+        )['masks'][1]
+        brush = np.zeros_like(ground_truth)
+        brush[:, 532:548] = ground_truth[:, 532:548]
         box = {
             'promptId': 'rack-box',
             'polarity': 'include',
@@ -92,20 +93,15 @@ class Sam31VisualPromptGpuTests(unittest.TestCase):
             'x1Px': 624,
             'y1Px': 859,
         }
-        constraint = {
-            'promptId': 'rack-brush',
-            'polarity': 'include',
-            'artifact': {
-                'encoding': 'bitset-lsb-v1',
-                'width': width,
-                'height': height,
-                'data': base64.b64encode(constraint_bits).decode('ascii'),
-                'digest': (
-                    f'sha256:{hashlib.sha256(constraint_bits).hexdigest()}'
-                ),
-            },
-        }
         capabilities = sam31_visual_prompt_capabilities()
+        self.assertTrue(capabilities['boxes'])
+        self.assertFalse(capabilities['maskInput'])
+        self.assertIn(
+            'previous-prediction logits',
+            capabilities['unsupportedPromptReasons'][
+                'positive-mask-constraint'
+            ],
+        )
         model = {
             'adapterId': 'sam3.1',
             'runtimeConfigDigest': SAM31_RUNTIME_CONFIG_DIGEST,
@@ -120,6 +116,31 @@ class Sam31VisualPromptGpuTests(unittest.TestCase):
             build_interactive_predictor=lambda _model, _rgb: session
         )
         try:
+            import torch
+            import torch.nn.functional as functional
+
+            prompt_encoder = getattr(
+                session.model, 'sam_prompt_encoder', None
+            )
+            if prompt_encoder is None:
+                prompt_encoder = session.model.interactive_sam_prompt_encoder
+            mask_input_size = prompt_encoder.mask_input_size
+            binary_brush_input = functional.interpolate(
+                torch.from_numpy(brush.astype(np.float32))[None, None],
+                size=tuple(mask_input_size),
+                mode='bilinear',
+                align_corners=False,
+                antialias=True,
+            ).squeeze(0).cpu().numpy()
+            brush_masks, _, _ = session.predict(
+                point_coords=None,
+                point_labels=None,
+                box=None,
+                mask_input=binary_brush_input,
+                multimask_output=True,
+                return_logits=False,
+                normalize_coords=True,
+            )
             candidate_sets = {
                 name: adapter.produce_ai_select_visual_proposals(
                     model=model,
@@ -132,15 +153,12 @@ class Sam31VisualPromptGpuTests(unittest.TestCase):
                         height=height,
                         capabilities=capabilities,
                         boxes=boxes,
-                        constraints=constraints,
                     ),
                     cancelled=lambda: False,
                 )
-                for name, boxes, constraints in (
-                    ('point', [], []),
-                    ('box', [box], []),
-                    ('mask', [], [constraint]),
-                    ('combined', [box], [constraint]),
+                for name, boxes in (
+                    ('point', []),
+                    ('box', [box]),
                 )
             }
         finally:
@@ -163,33 +181,30 @@ class Sam31VisualPromptGpuTests(unittest.TestCase):
             for name, candidates in candidate_sets.items()
         }
         self.assertNotEqual(digests['box'], digests['point'])
-        self.assertNotEqual(digests['mask'], digests['point'])
-        self.assertNotEqual(digests['combined'], digests['box'])
-        self.assertNotEqual(digests['combined'], digests['mask'])
         self.assertEqual(
             [
                 diagnostic['promptId']
-                for diagnostic in candidate_sets['combined'][0].prompt_diagnostics
+                for diagnostic in candidate_sets['box'][0].prompt_diagnostics
             ],
-            ['rack-negative', 'rack-positive', 'rack-box', 'rack-brush'],
+            ['rack-negative', 'rack-positive', 'rack-box'],
+        )
+        best_brush_iou = max(
+            self._iou(mask, ground_truth)
+            for mask in brush_masks
+        )
+        self.assertLess(
+            best_brush_iou,
+            0.5,
+            'A partial binary brush must not be advertised as valid SAM mask_input semantics.',
         )
 
     @staticmethod
-    def _rectangle_mask(
-        *,
-        width: int,
-        height: int,
-        x0: int,
-        y0: int,
-        x1: int,
-        y1: int,
-    ) -> bytes:
-        bits = bytearray((width * height + 7) // 8)
-        for y_px in range(y0, y1 + 1):
-            for x_px in range(x0, x1 + 1):
-                index = y_px * width + x_px
-                bits[index // 8] |= 1 << (index % 8)
-        return bytes(bits)
+    def _iou(candidate: np.ndarray, ground_truth: np.ndarray) -> float:
+        candidate_mask = np.asarray(candidate, dtype=bool)
+        ground_truth_mask = np.asarray(ground_truth, dtype=bool)
+        intersection = np.logical_and(candidate_mask, ground_truth_mask).sum()
+        union = np.logical_or(candidate_mask, ground_truth_mask).sum()
+        return 0.0 if union == 0 else float(intersection / union)
 
     @staticmethod
     def _program(
@@ -199,7 +214,6 @@ class Sam31VisualPromptGpuTests(unittest.TestCase):
         height: int,
         capabilities: dict[str, object],
         boxes: list[dict[str, object]],
-        constraints: list[dict[str, object]],
     ):
         prompt_state = {
             'rgbDigest': rgb_digest,
@@ -207,7 +221,6 @@ class Sam31VisualPromptGpuTests(unittest.TestCase):
                 json.dumps(
                     {
                         'boxes': boxes,
-                        'constraints': constraints,
                     },
                     separators=(",", ":"),
                     sort_keys=True,
@@ -228,7 +241,7 @@ class Sam31VisualPromptGpuTests(unittest.TestCase):
                 },
             ],
             'boxes': boxes,
-            'maskConstraints': constraints,
+            'maskConstraints': [],
             'textPrompts': [],
         }
         return compile_sam31_visual_prompt_program(

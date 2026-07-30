@@ -50,8 +50,6 @@ class ProposalIdentityDigestTests(unittest.TestCase):
 
 class Sam31VisualPromptCompilerTests(unittest.TestCase):
     def test_compiles_visual_prompt_families_in_a_stable_id_order(self) -> None:
-        mask_bytes = bytes([0b00001010, 0])
-        mask_digest = f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}'
         prompt_state = {
             'rgbDigest': f'sha256:{"1" * 64}',
             'digest': f'sha256:{"2" * 64}',
@@ -77,17 +75,7 @@ class Sam31VisualPromptCompilerTests(unittest.TestCase):
                     'y1Px': 2,
                 },
             ],
-            'maskConstraints': [{
-                'promptId': 'mask-a',
-                'polarity': 'include',
-                'artifact': {
-                    'encoding': 'bitset-lsb-v1',
-                    'width': 4,
-                    'height': 3,
-                    'data': base64.b64encode(mask_bytes).decode('ascii'),
-                    'digest': mask_digest,
-                },
-            }],
+            'maskConstraints': [],
             'textPrompts': [],
         }
 
@@ -113,23 +101,27 @@ class Sam31VisualPromptCompilerTests(unittest.TestCase):
             program.boxes[0].normalized_xywh,
             (0.0, 1 / 3, 0.5, 2 / 3),
         )
-        self.assertEqual(program.positive_mask_constraint, mask_bytes)
+        self.assertIsNone(program.positive_mask_constraint)
         self.assertEqual(
             program.diagnostics['compiledPromptIds'],
-            ['point-a', 'point-b', 'box-a', 'box-b', 'mask-a'],
+            ['point-a', 'point-b', 'box-a', 'box-b'],
         )
 
     def test_declares_only_validated_visual_support(self) -> None:
         capabilities = sam31_visual_prompt_capabilities()
 
         self.assertTrue(capabilities['boxes'])
-        self.assertTrue(capabilities['maskInput'])
+        self.assertFalse(capabilities['maskInput'])
         self.assertFalse(capabilities['negativeBoxes'])
         self.assertFalse(capabilities['negativeMaskConstraints'])
         self.assertEqual(capabilities['text'], False)
         self.assertIn('negative-box', capabilities['unsupportedPromptReasons'])
+        self.assertIn(
+            'quality gate',
+            capabilities['unsupportedPromptReasons']['positive-mask-constraint'],
+        )
 
-    def test_rejects_mask_padding_bits_before_inference(self) -> None:
+    def test_rejects_positive_mask_constraint_before_inference(self) -> None:
         mask_bytes = bytes([0b11111111])
         prompt_state = {
             'rgbDigest': f'sha256:{"1" * 64}',
@@ -150,9 +142,7 @@ class Sam31VisualPromptCompilerTests(unittest.TestCase):
             'textPrompts': [],
         }
 
-        with self.assertRaisesRegex(
-            MaskSessionError, 'outside its dimensions'
-        ):
+        with self.assertRaisesRegex(MaskSessionError, 'does not support'):
             compile_sam31_visual_prompt_program(
                 prompt_state,
                 width=2,
@@ -228,11 +218,24 @@ class FakeSam3InteractivePredictor:
         self.masks: list[list[list[bool]]] = [
             [[False, True], [False, False]],
         ]
-        self.scores: list[float] = [0.9]
+        self.probs: list[float] = [0.9]
+        self.add_prompt_started: Event | None = None
+        self.add_prompt_release: Event | None = None
 
     def predict(self, **request: object) -> tuple[object, object, object]:
         self.requests.append(request)
-        return self.masks, self.scores, []
+        if self.add_prompt_started is not None:
+            self.add_prompt_started.set()
+        if (
+            self.add_prompt_release is not None
+            and not self.add_prompt_release.wait(timeout=5)
+        ):
+            raise RuntimeError('test SAM prompt was never released')
+        return self.masks, self.probs, []
+
+    @property
+    def session_starts(self) -> int:
+        return len(self.requests)
 
 
 class AISelectMaskTests(unittest.TestCase):
@@ -263,9 +266,19 @@ class AISelectMaskTests(unittest.TestCase):
         )
         self.model_manifest_digest = self.state.install_model(manifest, weights)['digest']
 
-        self.predictor = FakeSam3Predictor()
+        self.predictor = FakeSam3InteractivePredictor()
+        self.legacy_predictor = FakeSam3Predictor()
+        self.interactive_rgb: bytes | None = None
+
+        def build_interactive_predictor(
+            _model: dict[str, object], rgb_png: bytes
+        ) -> FakeSam3InteractivePredictor:
+            self.interactive_rgb = rgb_png
+            return self.predictor
+
         self.state.mask_adapters['sam3.1'] = Sam3PointMaskAdapter(
-            build_predictor=lambda model: self.predictor
+            build_predictor=lambda model: self.legacy_predictor,
+            build_interactive_predictor=build_interactive_predictor,
         )
 
         self.server = create_server(
@@ -425,18 +438,43 @@ class AISelectMaskTests(unittest.TestCase):
             'anchor-mask-ranking/v1',
         )
 
-        # A single-view Frame Set is one SAM pass: start, prompt frame zero,
-        # close; never video propagation.
-        self.assertEqual(
-            self.predictor.request_types(),
-            ['start_session', 'add_prompt', 'close_session'],
+        # Point-only requests share the same single-image interactive path as
+        # Box requests; the legacy Frame Set tracker is not involved.
+        self.assertEqual(self.interactive_rgb, IMAGE_PNG)
+        self.assertEqual(self.legacy_predictor.requests, [])
+        self.assertEqual(len(self.predictor.requests), 1)
+        prompt_request = self.predictor.requests[0]
+        self.assertEqual(prompt_request['point_coords'], [[1, 0]])
+        self.assertEqual(prompt_request['point_labels'], [1])
+        self.assertIsNone(prompt_request['box'])
+        self.assertIsNone(prompt_request['mask_input'])
+
+    def test_point_only_request_uses_the_same_interactive_adapter_as_visual_prompts(
+        self,
+    ) -> None:
+        interactive_predictor = FakeSam3InteractivePredictor()
+        self.state.mask_adapters['sam3.1'] = Sam3PointMaskAdapter(
+            build_predictor=lambda model: self.legacy_predictor,
+            build_interactive_predictor=lambda model, rgb_png: interactive_predictor,
         )
-        self.assertEqual(self.predictor.materialized_png, IMAGE_PNG)
-        add_prompt = self.predictor.requests[1]
-        self.assertEqual(add_prompt['session_id'], 'sam-session')
-        self.assertEqual(add_prompt['frame_index'], 0)
-        self.assertEqual(add_prompt['points'], [[1, 0]])
-        self.assertEqual(add_prompt['point_labels'], [1])
+
+        response = self.post_proposals(self.request_body())
+
+        self.assertEqual(len(interactive_predictor.requests), 1)
+        self.assertEqual(self.legacy_predictor.requests, [])
+        self.assertEqual(
+            interactive_predictor.requests[0]['point_coords'],
+            [[1, 0]],
+        )
+        self.assertEqual(
+            response['proposalSet']['proposals'][0]['promptDiagnostics'],
+            [{
+                'promptId': 'prompt-1',
+                'family': 'point',
+                'polarity': 'include',
+                'satisfied': True,
+            }],
+        )
 
     def test_proposal_digest_survives_browser_json_number_round_trip(self) -> None:
         # The locked adapter can publish an exact 1.0 score. The digest binds
@@ -589,10 +627,10 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(payload['code'], 'unsupportedPromptType')
         self.assertEqual(self.predictor.requests, [])
 
-    def test_forwards_positive_box_and_mask_constraint_to_the_visual_adapter(self) -> None:
+    def test_forwards_positive_box_to_the_visual_adapter(self) -> None:
         interactive_predictor = FakeSam3InteractivePredictor()
         self.state.mask_adapters['sam3.1'] = Sam3PointMaskAdapter(
-            build_predictor=lambda model: self.predictor,
+            build_predictor=lambda model: self.legacy_predictor,
             build_interactive_predictor=lambda model, rgb_png: interactive_predictor,
         )
         request = self.request_body()
@@ -603,17 +641,6 @@ class AISelectMaskTests(unittest.TestCase):
             'y0Px': 0,
             'x1Px': 1,
             'y1Px': 1,
-        }]
-        request['promptState']['maskConstraints'] = [{  # type: ignore[index]
-            'promptId': 'constraint-1',
-            'polarity': 'include',
-            'artifact': {
-                'encoding': 'bitset-lsb-v1',
-                'width': IMAGE_WIDTH,
-                'height': IMAGE_HEIGHT,
-                'data': ACCEPTED_MASK_BASE64,
-                'digest': f'sha256:{hashlib.sha256(ACCEPTED_MASK_BITS).hexdigest()}',
-            },
         }]
         request['promptState']['digest'] = self.prompt_state_digest(  # type: ignore[index]
             request['promptState']  # type: ignore[arg-type]
@@ -626,7 +653,7 @@ class AISelectMaskTests(unittest.TestCase):
         response = self.post_proposals(request)
 
         self.assertTrue(capabilities['boxes'])
-        self.assertTrue(capabilities['maskInput'])
+        self.assertFalse(capabilities['maskInput'])
         self.assertFalse(capabilities['negativeBoxes'])
         self.assertFalse(capabilities['negativeMaskConstraints'])
         self.assertEqual(len(interactive_predictor.requests), 1)
@@ -634,31 +661,26 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(adapter_request['point_coords'], [[1, 0]])
         self.assertEqual(adapter_request['point_labels'], [1])
         self.assertEqual(adapter_request['box'], [[0, 0, 1, 1]])
-        self.assertEqual(
-            adapter_request['mask_input'].tolist(),
-            [[[0.0, 1.0], [0.0, 0.0]]],
-        )
+        self.assertIsNone(adapter_request['mask_input'])
         self.assertTrue(adapter_request['normalize_coords'])
         proposal = response['proposalSet']['proposals'][0]
         self.assertTrue(proposal['promptConsistency']['positiveBoxesSatisfied'])
-        self.assertTrue(proposal['promptConsistency']['maskConstraintsSatisfied'])
         self.assertEqual(
             [(item['family'], item['promptId']) for item in proposal['promptDiagnostics']],
             [
                 ('point', 'prompt-1'),
                 ('box', 'box-1'),
-                ('mask-constraint', 'constraint-1'),
             ],
         )
 
-    def test_visual_prompt_contradiction_is_ineligible_for_07a_selection(self) -> None:
+    def test_rejects_positive_mask_constraint_before_inference(self) -> None:
         interactive_predictor = FakeSam3InteractivePredictor()
         self.state.mask_adapters['sam3.1'] = Sam3PointMaskAdapter(
-            build_predictor=lambda model: self.predictor,
+            build_predictor=lambda model: self.legacy_predictor,
             build_interactive_predictor=lambda model, rgb_png: interactive_predictor,
         )
         request = self.request_body()
-        disjoint_constraint = bytes([0b00000100])
+        constraint = bytes([0b00000100])
         request['promptState']['maskConstraints'] = [{  # type: ignore[index]
             'promptId': 'constraint-1',
             'polarity': 'include',
@@ -666,9 +688,9 @@ class AISelectMaskTests(unittest.TestCase):
                 'encoding': 'bitset-lsb-v1',
                 'width': IMAGE_WIDTH,
                 'height': IMAGE_HEIGHT,
-                'data': base64.b64encode(disjoint_constraint).decode('ascii'),
+                'data': base64.b64encode(constraint).decode('ascii'),
                 'digest': (
-                    f'sha256:{hashlib.sha256(disjoint_constraint).hexdigest()}'
+                    f'sha256:{hashlib.sha256(constraint).hexdigest()}'
                 ),
             },
         }]
@@ -679,15 +701,11 @@ class AISelectMaskTests(unittest.TestCase):
             [EDITOR_ORIGIN]
         )['modelManifests'][0]['promptCapabilities']['capabilityDigest']
 
-        response = self.post_proposals(request)
+        status, payload = self.post_proposal_error(request)
 
-        proposal = response['proposalSet']['proposals'][0]
-        self.assertFalse(
-            proposal['promptConsistency']['maskConstraintsSatisfied']
-        )
-        self.assertFalse(proposal['rankingFeatures']['eligible'])
-        self.assertEqual(response['proposalDecision']['status'], 'unavailable')
-        self.assertNotIn('selectedProposalId', response['proposalDecision'])
+        self.assertEqual(status, HTTPStatus.CONFLICT)
+        self.assertEqual(payload['code'], 'unsupportedPromptType')
+        self.assertEqual(interactive_predictor.requests, [])
 
     def test_publishes_an_empty_proposal_set_when_the_adapter_finds_no_mask(
         self,
@@ -756,8 +774,9 @@ class AISelectMaskTests(unittest.TestCase):
             ]
         )
 
-    def test_publishes_no_proposal_for_a_point_inconsistent_mask(self) -> None:
-        # The candidate covers (1, 0) only; prompting (0, 1) rejects it.
+    def test_point_inconsistent_candidate_is_diagnostic_but_ineligible(self) -> None:
+        # The candidate covers (1, 0) only; prompting (0, 1) keeps the raw
+        # alternative inspectable but prevents 07A selection.
         request = self.request_body()
         request['promptState']['points'] = [  # type: ignore[index]
             {'promptId': 'prompt-1', 'xPx': 0, 'yPx': 1, 'polarity': 'include'},
@@ -768,7 +787,12 @@ class AISelectMaskTests(unittest.TestCase):
 
         response = self.state.produce_ai_select_mask(request)
 
-        self.assertEqual(response['proposalSet']['proposals'], [])
+        proposal = response['proposalSet']['proposals'][0]
+        self.assertFalse(
+            proposal['promptConsistency']['positivePointsSatisfied']
+        )
+        self.assertFalse(proposal['rankingFeatures']['eligible'])
+        self.assertEqual(response['proposalDecision']['status'], 'unavailable')
 
     def test_replays_a_matching_mask_request_without_a_second_sam_pass(self) -> None:
         first = self.state.produce_ai_select_mask(self.request_body())

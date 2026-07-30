@@ -1990,15 +1990,7 @@ class CompanionState:
 
         try:
             try:
-                if (
-                    mask_request.prompt_program.boxes
-                    or mask_request.prompt_program.mask_constraints
-                ):
-                    if not isinstance(adapter, AISelectVisualPromptAdapter):
-                        raise MaskSessionError(
-                            'unsupportedPromptType',
-                            'The selected Prompt Adapter does not implement visual Prompt inference.',
-                        )
+                if isinstance(adapter, AISelectVisualPromptAdapter):
                     visual_candidates = adapter.produce_ai_select_visual_proposals(
                         model=model,
                         rgb_png=mask_request.rgb_png,
@@ -2016,6 +2008,14 @@ class CompanionState:
                         mask_key, admission, response=response
                     )
                     return response
+                if (
+                    mask_request.prompt_program.boxes
+                    or mask_request.prompt_program.mask_constraints
+                ):
+                    raise MaskSessionError(
+                        'unsupportedPromptType',
+                        'The selected Prompt Adapter does not implement visual Prompt inference.',
+                    )
                 frame_set = register_frame_set({
                     'frameSetId': f'ai-select-mask-{mask_request.view_id}',
                     'frameSetVersion': (

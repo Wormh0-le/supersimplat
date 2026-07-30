@@ -1,6 +1,6 @@
 # 04B — Visual Prompt Adapter Enablement
 
-Status: implemented — 2026-07-30
+Status: implemented with follow-up correction — 2026-07-30
 
 Blocked by: 04A
 
@@ -38,6 +38,40 @@ Positive / Negative Mask Constraint (Prompt Brush)
 ```
 
 Text Prompt remains a future capability-gated extension and is not required for this ticket.
+
+## Follow-up disposition
+
+The locked adapter validation narrowed the production claim made by the
+initial implementation:
+
+- Point-only requests now use the same interactive-image predictor and
+  candidate path as Point+Box requests. The legacy Frame Set/Tracker path
+  remains only for the explicit point-mask compatibility adapter.
+- Positive Box remains enabled and GPU-validated.
+- Positive Prompt Brush is disabled. SAM `mask_input` is a low-resolution
+  previous-prediction-logit input, not an arbitrary binary foreground stroke.
+  Treating a partial brush bitmap as `0/1` logits produced best IoU
+  `0.0019388243881298328` on the locked clothes-rack brush-only fixture, below
+  the required `0.5` semantic quality gate.
+- The capability and runtime identities rotate. Prompt Brush remains visible
+  in the editor but disabled with the adapter-owned failure reason.
+
+This is a truthful capability correction, not a claim that SAM 3.1 cannot
+support brush interaction through some future, explicitly designed adapter.
+
+### Follow-up acceptance
+
+- [x] Point-only and Point+Box requests use one interactive-image predictor
+      path; the production SAM 3.1 route does not fall back to Frame Set/Tracker.
+- [x] The locked brush-only GPU fixture exercises the prior binary
+      `mask_input` mapping against ground truth and prevents it from being
+      advertised as supported.
+- [x] `maskInput=false` has an exact adapter-owned reason and unsupported Mask
+      constraints fail before inference.
+- [x] Unsupported tools remain visible as disabled buttons; the prose-only
+      “other tools” disclosure is removed.
+- [x] Capability, runtime configuration, and Model Manifest identities rotate
+      with the corrected semantics.
 
 ## Completion ownership
 
@@ -235,13 +269,13 @@ unless a separate later ticket explicitly enables them.
 
 ## Capability and protocol
 
-- [ ] Positive Box works through the locked real adapter and advertises `boxes=true`.
-- [ ] Negative Box is either genuinely supported and advertises `negativeBoxes=true`, or remains explicitly disabled with a reason.
-- [ ] Positive Mask Constraint works through the locked real adapter and advertises `maskInput=true`.
-- [ ] Negative Mask Constraint is either genuinely supported and advertises `negativeMaskConstraints=true`, or remains explicitly disabled with a reason.
+- [x] Positive Box works through the locked real adapter and advertises `boxes=true`.
+- [x] Negative Box is either genuinely supported and advertises `negativeBoxes=true`, or remains explicitly disabled with a reason.
+- [x] Positive Mask Constraint advertises `maskInput=true` only if a locked brush-only semantic quality gate passes; otherwise it remains explicitly disabled with the measured failure reason.
+- [x] Negative Mask Constraint is either genuinely supported and advertises `negativeMaskConstraints=true`, or remains explicitly disabled with a reason.
 - [ ] Text capabilities remain unchanged unless separately approved.
-- [ ] Capability digest changes whenever supported semantics change.
-- [ ] Unsupported families/combinations fail closed before inference.
+- [x] Capability digest changes whenever supported semantics change.
+- [x] Unsupported families/combinations fail closed before inference.
 
 ## Correctness
 
@@ -265,7 +299,7 @@ unless a separate later ticket explicitly enables them.
 
 - [ ] Positive Box drag produces a real model request and visible proposal change.
 - [ ] Supported negative Box produces a real model request and visible exclusion effect.
-- [ ] Positive Prompt Brush produces a real model request and visible proposal change.
+- [x] Positive Prompt Brush is enabled only after a real model request passes the locked semantic quality gate; the current failed gate leaves the visible tool disabled with a precise reason.
 - [ ] Supported negative Prompt Brush produces a real model request and visible exclusion effect.
 - [ ] Unsupported visual tools remain discoverable but disabled with a precise reason.
 - [ ] Retry, Prompt Undo/Redo, Restart Target, and stale-result rejection pass for visual prompts.
@@ -279,7 +313,8 @@ unless a separate later ticket explicitly enables them.
 - `npm run build`
 - locked real-model/GPU adapter tests
 - cross-DPR browser coordinate walkthrough
-- Point + Box + Mask combined-prompt walkthrough
+- Point + Box combined-prompt walkthrough
+- brush-only locked semantic quality gate before any future `maskInput=true`
 - capability rotation/replay incompatibility test
 - Ticket 07A hard-consistency contract tests
 - ownership regression proving 04B does not rank, cluster, select, or publish `ProposalDecision`
@@ -299,20 +334,21 @@ unless a separate later ticket explicitly enables them.
 
 # Implementation outcome
 
-- The locked SAM 3.1 capability now truthfully enables positive Box and
-  positive Mask Constraint. Negative Box, negative Mask Constraint, and Text
-  remain disabled with precise adapter-owned reasons.
+- The locked SAM 3.1 capability now truthfully enables Point and positive Box
+  through one interactive-image predictor path. Positive Prompt Brush,
+  negative Box, negative Mask Constraint, and Text remain disabled with
+  precise adapter-owned reasons.
 - `sam3.1-visual-prompt-compiler/v1` binds authoritative RGB dimensions and
   digest, PromptState digest, capability digest, deterministic prompt order,
-  inclusive pixel Box semantics, independent Box branches, and binary-union
-  Mask composition.
+  inclusive pixel Box semantics, and independent Box branches. Unsupported
+  Mask constraints fail before inference.
 - The real adapter preserves all structurally valid SAM alternatives in source
   order and attaches per-prompt consistency diagnostics. This 04B layer does
   not compare, cluster, rank, truncate, or select candidates; the retained 07A
   proposal seam remains the downstream decision owner.
 - Browser trust-boundary validation rejects missing or mismatched visual
-  diagnostics, stale capability/compiler identity, malformed Prompt Brush
-  dimensions/digest/padding, and unsupported prompt families before inference.
+  diagnostics, stale capability/compiler identity, and unsupported prompt
+  families before inference.
 - The Model Manifest and runtime digest rotate for the new compiler/adapter
   semantics. Operators must reinstall the manifest; model weights remain
   external and unchanged.
@@ -322,16 +358,18 @@ unless a separate later ticket explicitly enables them.
 - Focused browser contract tests cover capability rotation, explicit disabled
   reasons, visual-diagnostic completeness, replay identity, Prompt Undo/Redo,
   Retry, Restart Target, and stale-result rejection.
-- Focused Companion tests cover deterministic Point/Box/Mask compilation,
+- Focused Companion tests cover deterministic Point/Box compilation,
   inclusive authoritative pixel coordinates, native-coordinate normalization,
-  Mask artifact validation, unsupported-family fail-closed behavior, combined
+  unsupported-family fail-closed behavior, Point-only path identity, combined
   prompts, and the unranked candidate handoff.
 - The opt-in locked GPU fixture uses source commit
   `5dd401d1c5c1d5c3eedff06d41b77af824517619` and checkpoint SHA-256
   `0567debeec80ba4ac6369540c6c248025283cb3ff2b92827509e57e2b3541cb6`.
-  It proves Point, positive Box, positive Mask, and combined requests produce
-  materially different real-model candidates while retaining all three raw
-  alternatives and exact prompt diagnostics.
+  It proves Point and positive Box requests use real interactive-image
+  inference, produce materially different candidates, retain all three raw
+  alternatives, and preserve exact prompt diagnostics. The separate
+  brush-only semantic gate recorded best IoU `0.0019388243881298328`, below
+  `0.5`, so production advertises `maskInput=false`.
 - Production GPU correctness is established only for this visual-prompt
   adapter slice. It does not establish Direct Gaussian Evidence correctness,
   renderer parity, calibration, or a negative visual-prompt implementation.

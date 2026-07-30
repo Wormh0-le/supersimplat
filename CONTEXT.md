@@ -137,7 +137,7 @@ The versioned, digest-bound declaration of which positive/negative prompt famili
 _Avoid_: best-effort ignored prompts, model-name feature detection
 
 **Prompt Compiler Policy**
-The versioned deterministic mapping from one exact PromptState into adapter-native Point, Box, and Mask inputs. Its identity covers ordering, coordinate conventions, prompt-family composition, and Mask resizing; capability identity rotates when these semantics change. The locked SAM 3.1 policy supports positive Box and positive Mask Constraint while keeping negative Box, negative Mask Constraint, and Text explicitly disabled.
+The versioned deterministic mapping from one exact PromptState into adapter-native Point, Box, and capability-gated Mask inputs. Its identity covers ordering, coordinate conventions, and prompt-family composition; capability identity rotates when these semantics change. The locked SAM 3.1 policy routes Point and positive Box through the same interactive-image predictor. Positive Prompt Brush remains disabled because SAM `mask_input` expects previous-prediction logits and the locked brush-only quality gate failed; negative Box, negative Mask Constraint, and Text are also explicitly disabled.
 _Avoid_: implicit coordinate conversion, silently ignored prompt, model-name default
 
 **AutoMaskProposalSet**

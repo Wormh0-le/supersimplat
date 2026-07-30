@@ -19,7 +19,10 @@
     "DG-25-route-b-first-extensible-mask-acquisition",
     "DG-26-consolidated-v1.2-route-b-acquisition-architecture"
   ],
-  "adr": "0013-adopt-mask-conditioned-direct-gaussian-evidence",
+  "adrs": [
+    "0013-adopt-mask-conditioned-direct-gaussian-evidence",
+    "0014-adopt-route-b-first-multiview-mask-acquisition"
+  ],
   "pending_adr": null,
   "future_optional_adr": "adopt-tracker-or-hybrid-only-after-future-experiment",
   "status": "ready-for-agent-v2.8-final-spec-v1.2-layered-route-b",
@@ -53,6 +56,7 @@
     "ticket_cycle_detected": false,
     "artifact_cycle_detected": false,
     "invalid_requirement_refs": [],
+    "invalid_adr_refs": [],
     "unmapped_v1_2_requirements": [],
     "orphan_tickets": [],
     "invalid_workflow_refs": [],
@@ -61,6 +65,7 @@
   },
   "dependency_corrections": [
     "Final Spec v1.2 is the only current normative specification; v1.1 and Amendments 001-005 are historical",
+    "ADR 0014 records Route-B-first architecture rationale and is subordinate to Final Spec v1.2",
     "Ticket 04B depends on 04A and owns real Box/Mask adapter enablement",
     "Ticket 07A owns conservative object-level Anchor acquisition",
     "Ticket 07B and Ticket 08 are parallel after 07A",

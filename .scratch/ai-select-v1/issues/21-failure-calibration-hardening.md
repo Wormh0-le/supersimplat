@@ -1,8 +1,10 @@
 # 21 — Retry / Cancellation / OOM / Atomic Publication + Calibration Hardening
 
-Status: blocked — waits for complete v1.3 flow
+Status: blocked — waits for complete core v1.3 flow
 
-Blocked by: 20, 18, 02C, 07B, 08B, 10, 13
+Blocked by: 20, 18, 02C, 07B, 08B, 13
+
+Optional input, not blocker: 10
 
 ## Final Spec mapping
 
@@ -13,7 +15,7 @@ Blocked by: 20, 18, 02C, 07B, 08B, 10, 13
 
 ## Purpose
 
-Close production failure, calibration and release behavior for the simplified SAM 3 Image + local multi-view flow. Introduce no new Prompt family, backend registry, tracker or automatic fallback.
+Close production failure, calibration and release behavior for the simplified SAM 3 Image + local multi-view flow. Introduce no new Prompt family, backend registry, tracker or automatic fallback. Optional Ticket 10 cross-view diagnostics do not block core release closure.
 
 ## Required hardening
 
@@ -23,23 +25,27 @@ Close production failure, calibration and release behavior for the simplified SA
 - historical Multiplex-only manifests fail current compatibility;
 - Native SuperSplat remains usable while Connecting/Unavailable;
 - heartbeat is lightweight and full validation runs only on connection/recovery/Instance change;
-- Busy and task-local failures do not change service Availability.
+- Busy and task-local failures do not change service Availability;
+- Companion Instance replacement invalidates Companion-local RGB/logits refs without invalidating independent User Confirmed Stable Masks.
 
 ### Retry, cancellation and atomicity
 
 - explicit Retry creates a new render, geometry, plan, Prompt, Mask, Evidence or Lift attempt as applicable;
 - same-attempt replay is idempotent where supported;
 - cancellation correctness relies on stale identity rejection;
-- OOM/model/kernel failure publishes no partial Mask, logits, geometry, Evidence or Candidate;
+- OOM/model/kernel failure publishes no partial Mask, refinement ref, geometry, Evidence or Candidate;
 - User Confirmed Stable Mask cannot be overwritten automatically.
 
 ### SAM 3 Image behavior
 
 - no current static path instantiates Multiplex video predictor or private tracker-head session;
+- every inference request resolves exact authoritative RGB bytes or current Companion RGB ref;
+- digest-only RGB input fails before inference;
 - one-point multimask returns at most three candidates;
 - Box/multiple-Point/refinement returns at most one candidate;
-- previous logits bind exact same-image lineage;
-- binary Brush cannot validate as logits;
+- actual previous logits remain Companion-local and refs bind exact same-image/Companion/candidate lineage;
+- Companion replacement/expired ref falls back to fresh no-logits inference;
+- binary Brush cannot validate as a logits ref;
 - Negative Box, Prompt Brush, Mask Constraints and Text are absent from current schema/UI;
 - Paint/Erase never enter model requests;
 - semantic unavailable differs from technical inference failure.
@@ -56,7 +62,8 @@ Close production failure, calibration and release behavior for the simplified SA
 
 - Prompt consistency, clipping, fragmentation and gross Box spill are calibrated as Mask Review;
 - `propagation-uncertain` is absent;
-- `weak-gaussian-support` is evaluated only by Ticket 13 Lift Readiness;
+- weak/low Gaussian visibility support is evaluated only by Ticket 13 Lift Readiness;
+- optional Ticket 10 cross-view conflict diagnostics do not own visibility readiness and are not required for release;
 - Good/Review/Failed defaults and User Confirmed authority are stable;
 - Lift Readiness coverage/diversity calibration remains separate from per-View Mask quality.
 
@@ -69,7 +76,9 @@ Reject or isolate:
 - provider-returned Assessment coupling;
 - `maskSource: 'propagated'` generic provenance;
 - Negative Box/Mask Constraint Prompt artifacts;
-- generic backend registry, Route B/C/D and automatic Route-A fallback state.
+- raw logits tensors in browser Prompt/request state;
+- generic backend registry, Route B/C/D and automatic Route-A fallback state;
+- former Ticket 06 production-fallback language.
 
 Existing User Confirmed Stable Masks survive when their own exact RGB/Mask identity remains valid.
 
@@ -82,17 +91,20 @@ Existing User Confirmed Stable Masks survive when their own exact RGB/Mask ident
 
 ## Acceptance criteria
 
-- [ ] full current Runtime Profile admits only the 04C static adapter;
-- [ ] all async artifact families pass Retry/stale/cancellation/OOM atomicity tests;
-- [ ] static Multiplex/private-head call audit is clean;
-- [ ] multimask/single-mask/refinement policies are repeatable;
-- [ ] removed Prompt schemas and old cache/manifests fail closed;
-- [ ] TargetGeometryHint/local View resource envelope is calibrated;
-- [ ] Mask Review and Lift Readiness reasons are correctly separated;
-- [ ] semantic unavailable and technical failure are separately presented;
-- [ ] User Confirmed authority survives refresh/migration;
-- [ ] Evidence/Lift failure preserves Views and Stable Masks;
-- [ ] current Gallery/palette interaction release checks pass;
+- [ ] full current Runtime Profile admits only the 04C static adapter.
+- [ ] all async artifact families pass Retry/stale/cancellation/OOM atomicity tests.
+- [ ] static Multiplex/private-head call audit is clean.
+- [ ] provider request always contains resolvable authoritative RGB.
+- [ ] opaque logits refs never expose raw tensors and invalidate on Companion replacement.
+- [ ] multimask/single-mask/refinement policies are repeatable.
+- [ ] removed Prompt schemas and old cache/manifests fail closed.
+- [ ] TargetGeometryHint/local View resource envelope is calibrated.
+- [ ] Mask Review and Lift Readiness reasons are correctly separated.
+- [ ] core release passes with Ticket 10 absent.
+- [ ] semantic unavailable and technical failure are separately presented.
+- [ ] User Confirmed authority survives refresh/migration.
+- [ ] Evidence/Lift failure preserves Views and Stable Masks.
+- [ ] current Gallery/palette interaction release checks pass.
 - [ ] production identity record binds renderer, SAM image adapter, Prompt, geometry, review and Evidence policies.
 
 ## Validation
@@ -100,10 +112,13 @@ Existing User Confirmed Stable Masks survive when their own exact RGB/Mask ident
 - full repository checks;
 - locked SAM 3 Image GPU fault injection;
 - static Multiplex absence audit;
+- authoritative RGB payload/ref resolution;
 - Prompt schema/migration fixtures;
 - one-point multimask and single-mask refinement repeatability;
+- opaque logits ref and Companion-replacement invalidation;
 - TargetGeometryHint/local View stress;
 - Mask Review/Lift Readiness calibration matrix;
+- release walkthrough without Ticket 10;
 - stale async stress and User Confirmed preservation;
 - Ticket 07B browser interaction walkthrough;
 - Ticket 02C readiness/Instance replacement walkthrough;

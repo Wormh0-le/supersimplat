@@ -1,69 +1,87 @@
-# 10 — Cross-view Review assessment + visible-support reasons
+# 10 — Optional Cross-view Evidence Consistency Diagnostics
 
-Status: ready-for-agent — v2.6 DG-24 aligned
+Status: planned optional enhancement — not a core release blocker
 
 Blocked by: 14, 09, 07
 
+Blocks: none
+
 ## Final Spec mapping
 
-- Final Spec v1.1 §§18, 20, 22, 26
-- Final Spec v1.1 Amendments 003 and 004
-- DG-19 P1, DG-20, DG-24
-- MVP Phase 4 P1
+- Final Spec v1.3 §§14, 20–21, 24–26
+- ADR 0013
+- ADR 0016
 
-## Inputs / preconditions
+## Purpose
 
-- Version-bound per-view P/N/V Evidence from Ticket 14
-- AIView assessments and Participation
-- Gallery/Review UI
-- Mask acquisition backend/status as separate upstream diagnostics
-- Optional tracker-local status only when advertised
+Add optional cross-view diagnostics after exact per-View P/N/V Evidence exists. This ticket may identify material conflict between Included Stable Views, but it does not own per-View Mask Review or Lift Readiness.
 
-## Outputs / handoff artifacts
+## Inputs
 
-- cross-view-inconsistency reason
-- low-visible-support reason
-- P1 diagnostics
-- Updated Review queue
+- current Included Stable View Annotations;
+- exact per-View P/N/V/visibility artifacts from Ticket 14;
+- current CameraBinding and Stable Mask identities;
+- Gallery/Review presentation seams;
+- versioned cross-view diagnostic policy.
 
-## What to build
+## Outputs
 
-Add P1 cross-view assessment over per-view Gaussian Evidence. It follows Ticket 14 because cross-view P/N/V cannot be consumed before the reference Evidence contract exists.
+- optional `cross-view-evidence-conflict` diagnostics;
+- supporting/conflicting View references;
+- actionable inspection suggestions;
+- no automatic Mask, Participation, Evidence or Candidate mutation.
 
-Optional tracker identity-drift diagnostics are not computed here. Ticket 10 must neither duplicate backend-local signals nor infer semantic identity drift from raw P/N/V alone.
+## Ownership boundaries
+
+Ticket 10 may answer:
+
+```text
+Do current Included Views provide materially conflicting target evidence?
+```
+
+It must not answer:
+
+```text
+Is this single 2D Mask geometrically usable?       → Ticket 07
+Is Gaussian visibility/coverage sufficient to Lift? → Ticket 13
+Which Gaussian is owned by the target?              → Tickets 14/20
+```
+
+`low-visible-support` and `weak-gaussian-support` are not Ticket 10 Review reasons. Visibility sufficiency, coverage and Not Ready / Limited / Ready remain Ticket 13 authority.
+
+## Required behavior
+
+- diagnostics consume exact Stable-Mask-bound P/N/V and policy identities;
+- material conflict is derived from versioned support/conflict logic, not raw 2D Mask area;
+- missing or stale Evidence produces no fabricated reason;
+- optional diagnostics never revoke User Confirmed authority;
+- diagnostics never trigger Mask refresh, re-inference, Participation change, Re-Lift or Candidate mutation;
+- backend route, tracker confidence and Multiplex state are absent from the current contract;
+- absence of Ticket 10 output does not block Ticket 13 readiness or Ticket 21 core release closure.
 
 ## Acceptance criteria
 
-- [ ] Cross-view assessment consumes Stable Mask-bound per-view P/N/V/visibility and policy identities.
-- [ ] Complete per-pixel Contributor is not required.
-- [ ] `cross-view-inconsistency` is emitted only from validated Gaussian support/conflict logic, not raw 2D area.
-- [ ] `low-visible-support` is used instead of claiming semantic occlusion when only V is available.
-- [ ] Diagnostics may include cross-view precision/recall, visible target ratio, supporting/conflicting View counts, or calibrated equivalents.
-- [ ] Raw Mask-area outlier remains internal unless perspective/visibility normalization supports an action.
-- [ ] A generic P/N/V-derived `identity-drift` reason remains out of scope for v1.1.
-- [ ] Optional backend-local drift suspicion remains distinct and is not renamed/recomputed here.
-- [ ] Assessment refreshes when matching per-view Evidence becomes available but never triggers Mask refresh, optional propagation, or Re-Lift.
-- [ ] User Confirmed authority cannot be silently revoked or down-weighted.
-- [ ] UI shows only actionable reasons through static localized Reason→Action mapping.
-- [ ] Key-View role, backend score, and optional tracker confidence cannot substitute for P/N/V support/conflict logic.
-
-## Failure / recovery criteria
-
-- [ ] Insufficient/missing Evidence yields no fabricated cross-view reason.
-- [ ] P1 failure does not corrupt P0 assessment, backend-local status, Participation, View RGB, Stable Mask, or Candidate.
+- [ ] cross-view conflict binds exact per-View Evidence and Stable Mask identities.
+- [ ] missing/stale Evidence yields no diagnostic.
+- [ ] weak/low visibility remains Ticket 13 Lift Readiness, not Ticket 10.
+- [ ] no current backend/tracker terminology enters the artifact or UI.
+- [ ] User Confirmed Stable state is never silently downgraded.
+- [ ] Ticket 10 failure leaves Mask Review, Participation, Evidence, readiness and Candidate unchanged.
+- [ ] core v1 release can close without this optional enhancement.
 
 ## Validation
 
-- npm run test:companion
-- npm test
-- P/N/V cross-view fixtures
-- Missing/stale Evidence fixtures
-- Locked GPU/reference visibility smoke
-- Backend-local diagnostic versus P/N/V inconsistency separation fixture
-- False-positive/false-negative benchmark inputs for Ticket 21
+- P/N/V conflict fixtures;
+- missing/stale Evidence fixtures;
+- no-low-support-reason ownership regression;
+- no-mutation failure fixtures;
+- optional-feature absence release walkthrough;
+- repository test/lint/build.
 
 ## Non-goals
 
-- No new deep model.
-- No Mask acquisition backend or identity-drift detector.
+- No per-View MaskReviewPolicy.
+- No Lift Readiness or coverage classification.
+- No semantic identity-drift detector.
+- No Mask acquisition backend or tracker logic.
 - No production Direct Evidence kernel.

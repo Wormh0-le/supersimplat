@@ -5,9 +5,15 @@
 1. [`ai-select-final-spec-v1.2.md`](./ai-select-final-spec-v1.2.md)
 2. [`../adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md`](../adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md), where not superseded by Final Spec v1.2
 3. [`../../CONTEXT.md`](../../CONTEXT.md), where not superseded
-4. implementation tickets and tests
+4. implementation tickets and tests, interpreted through the current Ticket mapping below
 
 `ai-select-final-spec-v1.2.md` is the only current product and engineering specification. Implementation agents, acceptance reviews, and traceability MUST use it directly.
+
+The current ticket-to-spec mapping authority is:
+
+- [`../../.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md`](../../.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md)
+
+Ticket-local references to Final Spec v1.1 or Amendments 001–005 are historical implementation provenance only and have no current normative force.
 
 ## Current decision rationale
 
@@ -46,15 +52,19 @@ Camera View
 → TargetBootstrapArtifact
 → adaptive sparse Key Views
 → KeyViewPromptSynthesizer
-→ route-B per-view SAM ProposalSet
-→ KeyViewMaskDecisionPolicy
-→ ViewAssessmentPolicy
+→ route-B PerViewMaskAcquisitionResult
+    ├── KeyViewMaskProposalSet
+    └── one attempt-level backendDiagnostics authority
+→ KeyViewMaskDecisionPolicy bound to exact ProposalSet digest + attempt
+→ selected only: ViewAssessmentPolicy
 → MaskPublicationCoordinator
 → Included Stable View Annotations
 → P/N/V Gaussian Evidence
 → Gaussian Candidate + Uncertain
 → Native Set / Add / Remove / Intersect
 ```
+
+A successful Decision `unavailable` means acquisition completed but no eligible proposal exists. It publishes no Stable Mask, remains Excluded, is not a technical failure, and does not trigger automatic Route-A fallback.
 
 Route A remains a technical fallback and regression baseline. Routes C/D remain future optional experiments behind the backend bundle/registry and sequence extension contracts plus a later experiment-backed ADR.
 
@@ -63,6 +73,7 @@ Route A remains a technical fallback and regression baseline. Routes C/D remain 
 The machine-readable and audited graph is maintained under:
 
 - [`../../.scratch/ai-select-v1/README.md`](../../.scratch/ai-select-v1/README.md)
+- [`../../.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md`](../../.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md)
 - [`../../.scratch/ai-select-v1/manifest.json`](../../.scratch/ai-select-v1/manifest.json)
 - [`../../.scratch/ai-select-v1/TRACEABILITY.md`](../../.scratch/ai-select-v1/TRACEABILITY.md)
 - [`../../.scratch/ai-select-v1/FOUR-PASS-AUDIT.md`](../../.scratch/ai-select-v1/FOUR-PASS-AUDIT.md)
@@ -75,7 +86,7 @@ The current acquisition segment is:
 ├── 07B Floating Palette UX
 └── 08 Visible Support + Bootstrap + Sparse Planner
     → 08A Contracts + Backend Registry
-    → 08B Route-B Production Acquisition
+    → 08B Route-B Production Acquisition + legacy-contract migration
     → 09 Gallery / Inspection
     → 11 / 12
     → 14 P/N/V Lift
@@ -86,9 +97,13 @@ The current acquisition segment is:
 - AI Select v1 targets one object instance.
 - Early support geometry is localization/planning/Prompt context, never ownership.
 - Sparse Key Views are mandatory; dense tracking sequences and Bridge Views are not.
-- Prompt synthesis, inference, proposal decision, assessment, publication, Participation, and P/N/V are separate layers.
+- Prompt synthesis, inference, result envelope, proposal decision, assessment, publication, Participation, and P/N/V are separate layers.
+- Attempt-level backend diagnostics exist only on `PerViewMaskAcquisitionResult`.
+- Every Key-View Decision binds the exact ProposalSet artifact digest and acquisition attempt.
 - Route B is selected and is not blocked by route comparison.
 - Route-A fallback is automatic only for technical/capability failures and remains fully provenance-bound.
+- Ambiguous and unavailable Decisions do not trigger automatic fallback.
+- Legacy `generated-view-mask/v1`, provider-returned Assessment, and generic `maskSource: 'propagated'` are not current route-B contracts.
 - C/D sequence/reference methods are optional future extensions, not current implementations.
 - Confirmed correction is per-view by default.
 - Re-Lift remains explicit.

@@ -1,6 +1,8 @@
-# Final Spec v1.2 → Ticket Traceability Matrix — v2.8
+# Final Spec v1.2 → Ticket Traceability Matrix — v2.9
 
 A requirement counts as covered only when the mapped ticket contains an explicit acceptance, failure, validation, or implementation criterion. Final Spec v1.1 and Amendments 001–005 are historical and do not require a parallel overlay.
+
+Current ticket-to-spec mapping is governed by `CURRENT-TICKET-SPEC-MAPPING.md`. Ticket-local v1.1/Amendment references are historical provenance only.
 
 | ID | Requirement | Ticket(s) |
 |---|---|---|
@@ -49,10 +51,10 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R043 | Ticket 08A owns acquisition contracts and registry, not production inference | 08A |
 | R044 | KeyViewPromptArtifact is immutable, capability-validated, inspectable, and replayable | 08A, 08B |
 | R045 | Acquisition providers consume Prompt artifacts rather than reinterpreting raw 3D support | 08A, 08B |
-| R046 | Per-view provider returns KeyViewMaskProposalSet plus diagnostics only | 08A, 08B |
+| R046 | Per-view provider returns PerViewMaskAcquisitionResult containing ProposalSet plus diagnostics only | 08A, 08B |
 | R047 | Provider returns no Decision, Assessment, Stable publication, Participation, Evidence, or Candidate | 08A, 08B, 21 |
 | R048 | KeyViewMaskDecision is a distinct selected/ambiguous/unavailable artifact | 08A, 08B |
-| R049 | Decision membership must validate against the exact ProposalSet | 08A, 08B |
+| R049 | Decision membership validates against the exact ProposalSet artifact digest and acquisition attempt | 08A, 08B, 12, 21 |
 | R050 | Acquisition attempt identity distinguishes route, backend, retry, and fallback parent/reason | 08A, 08B, 12, 21 |
 | R051 | MaskAcquisitionBackend bundle contains real perView and optional sequence implementations | 08A |
 | R052 | Bundle structure is the capability truth source and must match descriptor/backendKind | 08A, 08B, 21 |
@@ -73,10 +75,10 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R067 | MaskPublicationCoordinator is the only route-B automatic Stable publisher | 08A, 08B |
 | R068 | selected+Good publishes Auto Good and defaults Included | 07, 08B |
 | R069 | selected+Review publishes Auto Review and defaults Excluded | 07, 08B |
-| R070 | unavailable publishes no Stable Mask and becomes Mask Failed | 08B, 09 |
+| R070 | unavailable is a completed Decision with no eligible proposal, no Stable Mask, and Excluded Participation; it is not technical failure | 08A, 08B, 09, 12, 21 |
 | R071 | User Confirmed Stable authority cannot be silently replaced | 04, 07, 08B, 12, 21 |
 | R072 | Route-A fallback is automatic only for declared technical/capability failures | 08B, 12, 21 |
-| R073 | Semantic ambiguity, contamination, Prompt inconsistency, clipping, fragmentation, or Review never auto-fallback | 08B, 12, 21 |
+| R073 | Semantic ambiguity, unavailable, contamination, Prompt inconsistency, clipping, fragmentation, or Review never auto-fallback | 08B, 12, 21 |
 | R074 | Route-A fallback uses a distinct parent-bound attempt and retains route-B failure provenance | 08A, 08B, 09, 12, 21 |
 | R075 | Route-A output traverses the same ProposalSet, Decision, Assessment, and Publication layers | 08B, 21 |
 | R076 | Route-A Auto Good requires the same or stricter trust and contamination gates | 08B, 21 |
@@ -104,14 +106,20 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R098 | Future route C/D production requires a separate experiment-backed ADR | 08A, 08B, 12, 21 |
 | R099 | Final hardening covers support/planner/Prompt/proposal/fallback/resource/interaction failure matrices | 21 |
 | R100 | Legacy tracking-mandatory and complete-Contributor product paths are explicitly contracted out | 22 |
+| R101 | Attempt-level backend diagnostics have exactly one authority on PerViewMaskAcquisitionResult and are not duplicated in ProposalSet | 08A, 08B, 21 |
+| R102 | Legacy generated-view provider-returned Assessment is not part of the current acquisition result contract | 08B, 12, 21 |
+| R103 | Generic route-B provenance does not use fixed maskSource='propagated' or GeneratedViewMaskPropagation as the truth source | 08B, 12, 21 |
+| R104 | Legacy generated-view-mask/v1 payloads and caches fail current contract validation and cannot be structurally rebound | 08B, 12, 21 |
 
 ## Coverage result
 
-- Current consolidated requirements: **100**
+- Current consolidated requirements: **104**
 - Invalid ticket references: **0**
 - Unmapped Final Spec v1.2 requirements: **0**
 - Orphan tickets: **0**
 - Historical overlay required: **no**
+- Current ticket mapping authority present: **yes**
+- Active ticket requires historical Amendment: **no**
 - Route-B comparison gate required: **no**
 - Current tracker implementation required: **no**
 
@@ -129,10 +137,11 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 
 08A
 = acquisition schemas + identity + Backend Bundle / Registry + optional sequence contracts
+  + single diagnostics authority + exact Decision/ProposalSet binding
 
 08B
 = Prompt synthesis + route-B provider + ProposalSet Decision + assessment integration
-  + publication + route-A B2 fallback
+  + publication + route-A B2 fallback + legacy acquisition migration
 
 09 / 11 / 12
 = inspection, user Views, refresh and dirty/stale lifecycle

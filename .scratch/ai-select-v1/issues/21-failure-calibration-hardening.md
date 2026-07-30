@@ -2,7 +2,7 @@
 
 Status: ready-for-agent — Final Spec v1.2 aligned
 
-Blocked by: 20, 18, 07B, 08B, 10, 13
+Blocked by: 20, 18, 02C, 07B, 08B, 10, 13
 
 ## Final Spec mapping
 
@@ -10,10 +10,12 @@ Blocked by: 20, 18, 07B, 08B, 10, 13
 - DG-26
 - ADR 0013
 - ADR 0014 as subordinate Route-B-first rationale
+- ADR 0015 for automatic readiness and operator-owned Active Model resolution
 
 ## Inputs / preconditions
 
 - complete Final Spec v1.2 product flow;
+- Ticket 02C automatic readiness and minimal Availability UI;
 - Ticket 07B complete correction UX;
 - production Direct Evidence path;
 - locked GPU/model route-B acquisition runtime;
@@ -53,6 +55,17 @@ Close the production-hardening loop for the selected Final Spec v1.2 flow. Calib
 - [ ] Atomic publication is validated for support, bootstrap, plan segment, RGB/View, Prompt artifact, acquisition result, ProposalSet, Decision, Stable Mask, per-view Evidence and Candidate.
 - [ ] RGB failure preserves last valid preview only as stale/not-current and exposes Retry.
 - [ ] Lift failure preserves stable inputs and leaves Candidate unchanged/not-current.
+
+### Service availability and recovery
+
+- [ ] Native editor startup and native tools remain usable while the Companion is Connecting or Unavailable.
+- [ ] Steady heartbeat is lightweight and never repeats checkpoint hashing or full compatibility validation.
+- [ ] First connection, recovery, and Companion Instance replacement run exact Runtime Profile validation.
+- [ ] Exactly one initialized Companion-owned Active Model Manifest is bound; the browser never selects a model.
+- [ ] Busy, task progress, and task-local failure do not change AI Select Availability.
+- [ ] Same-identity connection interruption retries only the current matching operation once under a new attempt ID.
+- [ ] Changed Companion/runtime/model identity preserves inspectable target state and performs no silent work replay.
+- [ ] Ordinary UI exposes no endpoint, model selector, Ping, manual readiness check, raw diagnostic, or dedicated recovery action.
 
 ### Route-B layered failure behavior
 
@@ -173,6 +186,7 @@ Close the production-hardening loop for the selected Final Spec v1.2 flow. Calib
 - capability bundle/dispatch tests
 - unsupported sequence/reference no-mutation tests
 - Ticket 07B browser interaction release walkthrough
+- Ticket 02C fake-timer heartbeat/backoff, single-flight, instance-replacement, and availability walkthrough
 - RGB-only versus RGB+Evidence parity
 - Stable Mask/RGB digest mismatch
 - renderer/acquisition migration invalidation and recovery

@@ -1,25 +1,27 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.9
+# Eight-Pass Bidirectional Traceability Audit — v2.10
 
-The filename is retained for compatibility. v2.9 keeps Final Spec v1.2 as the sole current product specification, adds a current Ticket mapping authority, closes acquisition diagnostics/Decision identity gaps, separates Decision `unavailable` from technical failure, and makes legacy Generated View acquisition migration explicit.
+The filename is retained for compatibility. v2.10 keeps Final Spec v1.2 as the sole current product specification, adds automatic runtime readiness and minimal Availability presentation through Ticket 02C and ADR 0015, and retains the v2.9 acquisition diagnostics, Decision identity, unavailable-state, and legacy-migration closures.
 
 ## Pass 1 — Ticket graph / dependency audit
 
-- Ticket count: 28 total — 22 numbered + 04A + 04B + 07A + 07B + 08A + 08B
+- Ticket count: 29 total — 22 numbered + 02C + 04A + 04B + 07A + 07B + 08A + 08B
 - Missing blocker references: 0
 - Ticket cycle detected: False
 - Structural initial frontier: [01]
-- Topological order length: 28/28
+- Topological order length: 29/29
 - Result: **PASS**
 
 One valid topological order:
 
-`01 → 02 → 03 → 04 → 05 → 04A → 04B → 06 → 07 → 07A → 07B → 08 → 08A → 08B → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
+`01 → 02 → 03 → 04 → 05 → 04A → 04B → 02C → 06 → 07 → 07A → 07B → 08 → 08A → 08B → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
 
 Structural parallelism:
 
 ```text
 05 → 04A
 05 → 06
+
+02 + 04B → 02C → 21
 
 07A → 07B
 07A → 08
@@ -30,6 +32,8 @@ Structural parallelism:
 
 Findings:
 
+- 02C owns automatic readiness, Companion-owned Active Model binding, and minimal Availability presentation.
+- 02C does not block the native editor or ordinary AI artifact implementation, but is required for Ticket 21 closure.
 - 07B does not block 08.
 - 07B blocks complete user correction UX and Ticket 21 release validation through Tickets 11/21.
 - 08A is contract foundation only.
@@ -85,7 +89,7 @@ Findings:
 
 ## Pass 3 — Final Spec v1.2 / accepted ADRs / current Ticket mapping
 
-The single `TRACEABILITY.md` maps **104** consolidated current requirements.
+The single `TRACEABILITY.md` maps **110** consolidated current requirements.
 
 Checks:
 
@@ -95,9 +99,10 @@ Checks:
 - Current mapping authority: `CURRENT-TICKET-SPEC-MAPPING.md`
 - Ticket IDs missing from current mapping: 0
 - Active ticket requires historical Amendment: 0
-- Accepted ADR references: ADR 0013 and ADR 0014
+- Accepted ADR references: ADR 0013, ADR 0014, and ADR 0015
 - Missing or invalid accepted ADR references: 0
 - ADR 0014 indexed and subordinate to Final Spec v1.2: yes
+- ADR 0015 indexed and subordinate to Final Spec v1.2: yes
 - Route-B comparison gate retained: no
 - Mandatory tracker/Bridge/reference implementation retained: no
 - Result: **PASS**
@@ -115,6 +120,7 @@ Ticket-local v1.1/Amendment references retained from earlier versions are histor
 ## Pass 4 — tickets → Final Spec v1.2 / reverse scope audit
 
 - Orphan tickets: []
+- 02C maps to automatic readiness, operator-owned Active Model resolution, and restrained Availability presentation.
 - 04A maps to Prompt/proposal foundation.
 - 04B maps to truthful visual-Prompt adapter capabilities.
 - 07A maps to conservative object-level Anchor acquisition.
@@ -130,6 +136,8 @@ Ticket-local v1.1/Amendment references retained from earlier versions are histor
 
 Scope-leak checks:
 
+- Ticket 02C does not make the browser select/install models or expose technical runtime controls to ordinary users.
+- Ticket 02C does not treat Busy, task progress, or task-local failures as service Availability.
 - Ticket 08 does not run SAM or publish Masks.
 - Ticket 08A does not implement model inference or tracker behavior.
 - Ticket 08B does not generate cameras or compute P/N/V.
@@ -161,8 +169,21 @@ complete Anchor/Generated/User-added correction UX
 ← Ticket 07B
 ```
 
+Runtime admission prerequisite:
+
+```text
+remote AI request admission
+← Available under current Companion Instance ID
+← full AI Select Runtime Profile validation
+← initialized Companion-owned Active Model Manifest
+← lightweight reachability/instance heartbeat
+```
+
 Checks:
 
+- No remote AI request is admitted from heartbeat reachability alone.
+- No steady heartbeat repeats checkpoint hashing or full compatibility validation.
+- No ordinary user action chooses endpoint or Active Model Manifest.
 - No final outcome depends on route comparison.
 - No final outcome depends on tracker presence.
 - No final outcome depends on complete Contributor publication.
@@ -174,8 +195,10 @@ Checks:
 
 ## Pass 6 — walkthrough / failure audit
 
-- Typical/architecture walkthroughs: 22
-- Error/degradation walkthroughs: 22
+- Typical/architecture walkthroughs: 23
+- Error/degradation walkthroughs: 23
+- Automatic readiness, heartbeat/full-validation separation, and minimal Availability UI: covered
+- Companion Instance/runtime/model identity replacement: covered
 - 07B/08 parallel execution: covered
 - Visible support extraction and invalid-support recovery: covered
 - Sparse planning and Generate More preservation: covered
@@ -250,6 +273,10 @@ Required current statements:
 Final Spec v1.2 is the only current specification
 CURRENT-TICKET-SPEC-MAPPING.md is the current Ticket mapping authority
 ADR 0014 is indexed and subordinate to Final Spec v1.2
+ADR 0015 is indexed and subordinate to Final Spec v1.2
+Ticket 02C owns automatic readiness and minimal three-state Availability
+Companion owns one initialized process-lifetime Active Model Manifest
+steady heartbeat is separate from full Runtime Profile validation
 VisibleTargetSupportArtifact precedes TargetBootstrapArtifact
 07B and 08 are parallel after 07A
 08A is contracts/registry only
@@ -268,6 +295,10 @@ support/bootstrap/Prompt/acquisition are not P/N/V
 Prohibited active statements:
 
 ```text
+browser selects, sorts, remembers, or displays installed Model Manifests
+steady heartbeat invokes full capabilities validation or hashes checkpoints
+Busy, task progress, or one task failure changes AI Select Availability
+ordinary UI exposes endpoint, Ping, Check readiness, or model selector
 07B blocks Ticket 08
 Ticket 08A directly implements production SAM
 TargetBootstrapArtifact precedes VisibleTargetSupportArtifact
@@ -308,7 +339,7 @@ Future non-blocking research:
 
 ## Audit conclusion
 
-v2.9 is internally consistent:
+v2.10 is internally consistent:
 
 ```text
 reliable Anchor
@@ -324,4 +355,4 @@ reliable Anchor
 → final P/N/V ownership
 ```
 
-Ticket 04B remains the next implementation gate. Final Spec v1.2 and `CURRENT-TICKET-SPEC-MAPPING.md` govern current implementation; ADR 0014 and DG-26 provide subordinate rationale.
+Ticket 02C is the next implementation gate. Final Spec v1.2 and `CURRENT-TICKET-SPEC-MAPPING.md` govern current implementation; ADR 0015 governs automatic readiness and operator-owned Active Model resolution, while ADR 0014 and DG-26 retain subordinate acquisition rationale.

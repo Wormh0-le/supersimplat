@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.9
+# AI Select v1 — Implementation Ticket Graph v2.10
 
-Status: **ready-for-agent planning graph — Ticket 04B remains the next implementation gate**
+Status: **ready-for-agent planning graph — Ticket 02C is the next implementation gate**
 
 ## Authoritative source order
 
@@ -8,10 +8,11 @@ Status: **ready-for-agent planning graph — Ticket 04B remains the next impleme
 2. `.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md`
 3. ADR 0013 where not superseded by v1.2
 4. ADR 0014 as subordinate Route-B-first architecture rationale
-5. `CONTEXT.md` where not superseded
-6. DG-20 through DG-26 as decision rationale
-7. `AGENTS.md`
-8. Current implementation and tests
+5. ADR 0015 as the automatic-readiness and operator-owned Active Model decision
+6. `CONTEXT.md` where not superseded
+7. DG-20 through DG-26 as decision rationale
+8. `AGENTS.md`
+9. Current implementation and tests
 
 Final Spec v1.1 and Amendments 001–005 are historical only. Agents must not reconstruct the old supersession chain.
 
@@ -21,10 +22,13 @@ Branch: `ai-select-v1`
 
 Baseline: `42f6013438f1271fcd35a4bfdc9ba5a3eb719c06`
 
-v2.9 has 22 numbered tickets and six retrofit tickets: **04A**, **04B**, **07A**, **07B**, **08A**, and **08B**.
+v2.10 has 22 numbered tickets and seven retrofit tickets: **02C**, **04A**, **04B**, **07A**, **07B**, **08A**, and **08B**.
 
-## v2.9 architecture corrections
+## v2.10 architecture corrections
 
+- Ticket 02C removes ordinary-user endpoint/model/readiness controls, adds automatic single-flight readiness, and presents only Connecting/Available/Unavailable.
+- The Companion resolves one initialized process-lifetime Active Model Manifest; the browser binds but never selects or displays it.
+- Lightweight heartbeat and full Runtime Profile compatibility validation are separate and keyed by Companion Instance ID.
 - Ticket 08 produces a bounded replayable `VisibleTargetSupportArtifact`.
 - `TargetBootstrapArtifact` is a lightweight summary that references visible support by digest.
 - 07B Floating Palette and 08 support/planner execute in parallel after 07A.
@@ -64,6 +68,9 @@ v2.9 has 22 numbered tickets and six retrofit tickets: **04A**, **04B**, **07A**
  ▼                              07 Local Assessment + Participation
 04B Visual Prompt Adapter        │
  Enablement                      │
+ ├───────────────► 02C Automatic Runtime Readiness
+ │                    + Minimal Availability UI
+ │
  └──────────────────┬────────────┘
                     ▼
 07A Object-level Anchor Acquisition / Conservative ProposalDecision
@@ -113,6 +120,8 @@ v2.9 has 22 numbered tickets and six retrofit tickets: **04A**, **04B**, **07A**
             │
             ▼
 21 Retry/OOM/atomic publication + calibration/release hardening
+   ▲
+   └──── 02C
             │
             ▼
 22 Contract legacy product and Contributor paths
@@ -122,6 +131,7 @@ v2.9 has 22 numbered tickets and six retrofit tickets: **04A**, **04B**, **07A**
 
 - Ticket 04A and Ticket 06 may proceed after Ticket 05.
 - Ticket 04B follows 04A.
+- Ticket 02C follows Tickets 02 and 04B and blocks Ticket 21 closure.
 - Ticket 04B and completed Ticket 07 converge at 07A.
 - After 07A, Ticket 07B and Ticket 08 may proceed in parallel.
 - Ticket 08 produces support/bootstrap/planner artifacts.
@@ -133,7 +143,7 @@ v2.9 has 22 numbered tickets and six retrofit tickets: **04A**, **04B**, **07A**
 
 ## One valid topological order
 
-`01 → 02 → 03 → 04 → 05 → 04A → 04B → 06 → 07 → 07A → 07B → 08 → 08A → 08B → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
+`01 → 02 → 03 → 04 → 05 → 04A → 04B → 02C → 06 → 07 → 07A → 07B → 08 → 08A → 08B → 09 → 11 → 12 → 14 → 10 → 13 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22`
 
 The order lists 07B before 08 for readability; they are structurally parallel after 07A.
 
@@ -171,13 +181,15 @@ No artifact edge flows from future C/D back into current Ticket 08 planning.
 
 - `CURRENT-TICKET-SPEC-MAPPING.md`: current Final Spec v1.2 mapping for every ticket; ticket-local v1.1 references are historical only.
 - `TRACEABILITY.md`: single Final Spec v1.2 mapping; no overlay.
-- `FOUR-PASS-AUDIT.md`: six-pass v2.9 graph, artifact, reverse-scope, workflow, failure, protocol-identity, and legacy-migration audit.
+- `FOUR-PASS-AUDIT.md`: eight-pass v2.10 graph, artifact, reverse-scope, workflow, failure, protocol-identity, and legacy-migration audit.
 - `WALKTHROUGHS.md`: route-B layered pipeline, unavailable distinction, B2 fallback, ambiguity, migration, and C/D extension readiness.
-- `manifest.json`: machine-readable v2.9 graph and audit metadata.
+- `manifest.json`: machine-readable v2.10 graph and audit metadata.
 
 ## Implementation rules
 
-- Ticket 04B remains the next executable implementation ticket and resolves its current mapping through `CURRENT-TICKET-SPEC-MAPPING.md`.
+- Ticket 02C is the next executable implementation ticket and resolves its current mapping through `CURRENT-TICKET-SPEC-MAPPING.md`.
+- Ticket 02C keeps runtime admission fail-closed while removing endpoint/model/Ping controls from ordinary UI.
+- Ticket 02C separates lightweight heartbeat from full compatibility validation and keeps Active Model resolution Companion-owned.
 - Ticket 07A fails conservatively on material Anchor ambiguity.
 - Ticket 07B changes interaction/pointer routing only and runs parallel with Ticket 08.
 - Ticket 08 uses early geometry for support/planning/Prompt context, never ownership or Masks.

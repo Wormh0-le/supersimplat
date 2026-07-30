@@ -1,8 +1,8 @@
 # SuperSimPlat AI Select — Domain Context
 
-This context defines the current **AI Select Final Spec v1.1** vocabulary for turning a user's object-level intent into a native SuperSplat Gaussian Selection.
+This context defines the current **AI Select Final Spec v1.2** vocabulary for turning a user's object-level intent into a native SuperSplat Gaussian Selection.
 
-Final Spec v1.1 retains the v1.0 product/lifecycle model while replacing complete per-pixel Contributor artifacts as the production lifting representation with **Mask-Conditioned Direct Gaussian Evidence**. Historical v1.0 Contributor terminology remains valid only for migration, reference fixtures, diagnostics, and the explicit debug/reference backend.
+Final Spec v1.2 retains the mask-conditioned direct-Evidence product/lifecycle model while consolidating the current sparse route-B acquisition architecture. Historical v1.0 Contributor terminology remains valid only for migration, reference fixtures, diagnostics, and the explicit debug/reference backend.
 
 ## Current Product Vocabulary
 
@@ -322,8 +322,24 @@ The separately installed local Python runtime/package implementing rendering, SA
 **Selection Service Endpoint**  
 The explicitly configured loopback or trusted-LAN address. It is not automatically discovered.
 
+**AI Select Availability**
+The user-facing Connecting, Available, or Unavailable projection of automatic Selection Service connection and compatibility validation. It excludes task success and current execution capacity and exposes no endpoint, manifest, or runtime details.
+_Avoid_: Ping status, model picker, task progress
+
+**AI Select Runtime Profile**
+The versioned set of protocol, renderer, Active Model, backend, and policy capabilities required by one editor build before AI Select Availability may become Available. Optional future capabilities do not enter the Profile until the product workflow requires them.
+_Avoid_: process reachability, unversioned feature checklist
+
 **Selection Service Readiness**  
-The condition in which a reachable Companion has passed compatibility checks for required protocol, renderer, Evidence implementation/policy, model adapter/checkpoint, Model Manifest, and locked runtime. Reachable alone is not Ready.
+The technical condition in which a reachable Companion has satisfied the current AI Select Runtime Profile, including successful initialization of its Active Model and required locked runtime. Readiness is distinct from user-facing Availability, task outcome, and execution capacity.
+
+**Active Model Manifest**
+The single operator-resolved Model Manifest initialized for one Companion process and bound automatically by browser requests. One compatible installed manifest may activate automatically; multiple compatible manifests require an explicit operator choice.
+_Avoid_: browser-selected model, first installed model
+
+**Companion Instance ID**
+An opaque identity minted for one Companion process lifetime and returned by lightweight health checks. A changed Instance ID triggers full compatibility validation but is not an artifact, model, or runtime identity.
+_Avoid_: service build, Model Manifest digest, persistent server ID
 
 **Companion Process Ownership**  
 The operator starts, stops, and upgrades the Companion. The browser owns target/request resources, not the Companion process.

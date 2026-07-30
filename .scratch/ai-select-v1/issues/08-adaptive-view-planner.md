@@ -1,183 +1,253 @@
-# 08 — 2.5D object bootstrap + adaptive sparse Key-View planner
+# 08 — Visible target support + 2.5D bootstrap + adaptive sparse Key-View planner
 
-Status: blocked — waits for reopened 07A and Ticket 07B
+Status: blocked — waits for Ticket 07A
 
-Blocked by: 07B
+Blocked by: 07A
 
 Blocks: 08A
 
 ## Final Spec mapping
 
-- Final Spec v1.1 §§23, 27, 30–32
-- Final Spec v1.1 Amendments 002–004
-- DG-13, DG-20, DG-21, DG-22, DG-24
-- MVP Phase 3
+- Final Spec v1.2 §§8–10, 27–29
+- DG-26 Decisions 1, 6, and 7
+- ADR 0013 ownership boundary
+
+## Purpose
+
+Convert a confirmed object-level Anchor Stable Mask into:
+
+1. a bounded replayable set of Anchor-visible 3D support samples;
+2. a lightweight target summary;
+3. immutable adaptive sparse Key-View plan segments.
+
+This ticket uses geometry early for localization, planning, and later Prompt synthesis, but never publishes Gaussian ownership, Mask acquisition output, P/N/V, or Candidate.
 
 ## Inputs / preconditions
 
 - confirmed object-level Anchor Stable Mask;
-- resolved Prompt/proposal state;
-- no permanent fitted-image blind region after Ticket 07B;
-- exact Anchor CameraBinding/RGB/Mask identity;
+- exact Target Context and Anchor Camera/RGB/Mask identity;
 - authoritative depth, first-hit support, or equivalent visible-surface seam;
-- compatible camera/preflight primitives;
-- scene validity/free-space information where available.
+- compatible CameraBinding and render preflight primitives;
+- scene validity/free-space information where available;
+- Ticket 07A conservative Anchor decision complete.
+
+Ticket 07B is not a blocker. Palette interaction hardening and geometric planning may proceed in parallel after 07A.
 
 ## Outputs / handoff artifacts
 
-- versioned `TargetBootstrapArtifact`;
+- versioned `VisibleTargetSupportArtifact`;
+- versioned `TargetBootstrapArtifact` referencing visible support by digest;
 - versioned adaptive sparse planner policy;
 - bounded progressive planner jobs;
 - candidate-pose validity/preflight records;
 - immutable `SparseKeyViewPlanSegment` artifacts;
 - deterministic Key-View review order;
-- Stop / Generate More / Regenerate Auto Views.
+- Stop / Generate More / Regenerate Auto Views lifecycle.
 
-## What to build
+# Phase 1 — VisibleTargetSupportArtifact
+
+Define and produce a contract equivalent to:
+
+```ts
+interface VisibleTargetSupportArtifact {
+    schemaVersion: number;
+    targetContextId: string;
+
+    anchorViewId: string;
+    anchorCameraBindingDigest: string;
+    anchorRgbDigest: string;
+    anchorStableMaskDigest: string;
+
+    supportPolicyDigest: string;
+    samples: readonly VisibleTargetSupportSample[];
+    quality: 'usable' | 'limited' | 'unavailable';
+    reasons: readonly string[];
+    artifactDigest: string;
+}
+
+interface VisibleTargetSupportSample {
+    worldPosition: [number, number, number];
+    sourcePixel?: [number, number];
+    depth?: number;
+    weight?: number;
+    stableGaussianId?: number;
+}
+```
+
+Requirements:
+
+- samples are bounded, deterministic, finite, and replayable;
+- source pixel/depth are retained when available for diagnostics;
+- optional `stableGaussianId` is provenance only, never ownership;
+- support extraction rejects or degrades separated/background-dominated samples;
+- quality and reasons are structured/versioned;
+- policy defines sampling, deduplication, ordering, weighting, and resource cap;
+- the artifact is immutable and digest-bound.
+
+Permitted uses:
+
+- robust target center/extent derivation;
+- camera framing and candidate generation;
+- Key-View projected Point/Box/ROI/Mask Prompt synthesis in Ticket 08B;
+- conservative initial Evidence Working Set seed;
+- render/scene-support diagnostics.
+
+Prohibited uses:
+
+- Owned Gaussian IDs;
+- P/N/V or Candidate publication;
+- Native Selection mutation;
+- unseen-surface completion claims;
+- hard Evidence Working Set upper bound;
+- Rejected/Out-of-Scope classification from Anchor absence alone.
+
+# Phase 2 — TargetBootstrapArtifact
+
+The bootstrap is a lightweight summary and MUST reference the support artifact:
+
+```ts
+interface TargetBootstrapArtifact {
+    schemaVersion: number;
+    targetContextId: string;
+
+    anchorCameraBindingDigest: string;
+    anchorRgbDigest: string;
+    anchorStableMaskDigest: string;
+    visibleTargetSupportArtifactDigest: string;
+
+    bootstrapPolicyDigest: string;
+    centerWorld: [number, number, number];
+    extentWorld: [number, number, number];
+    visibleSupportCount: number;
+    quality: 'usable' | 'limited' | 'unavailable';
+    reasons: readonly string[];
+    artifactDigest: string;
+}
+```
+
+The bootstrap does not duplicate the full support sample payload.
+
+If support quality is limited/unavailable, fail conservatively to smaller local moves, user-added Views, or a declared Limited state.
+
+# Phase 3 — Adaptive sparse Key Views
 
 Replace the Ticket 06 fixed `±45°` pair with a bounded adaptive sparse planner that:
 
-1. derives a conservative visible-target center/extent from the confirmed Anchor;
-2. rejects invalid indoor/outside-room observation poses before gain ranking;
-3. selects a small number of useful Key Views by target observation/diversity gain;
-4. publishes an immutable plan segment;
-5. allows `Generate More` to append another segment without invalidating completed segments.
+1. consumes the exact support and bootstrap artifacts;
+2. generates plausible candidate CameraBindings;
+3. rejects invalid indoor/outside-room observation poses before gain ranking;
+4. evaluates target observation, directional diversity, render/scene support, and resource cost separately;
+5. selects a small number of useful Key Views;
+6. publishes an immutable plan segment;
+7. lets `Generate More` append a later segment without invalidating completed segments.
 
-The planner may use low-cost support/visibility diagnostics before formal Lift. It must not fabricate Gaussian ownership, P/N/V Evidence, tracked Masks, or a video-like tracking sequence.
-
-# TargetBootstrapArtifact
-
-The bootstrap binds exact Anchor Camera/RGB/Stable Mask and policy identity and records visible support, robust center, extent, quality, reasons, and an artifact digest.
-
-It may guide framing, pose generation, projected ROI/Prompt construction, and an initial conservative Working Set seed.
-
-It cannot publish Owned Gaussian IDs, Candidate, Native Selection, or unseen-surface completion. It cannot become a hard upper bound on later Evidence Working Set expansion.
-
-If bootstrap quality is limited/unavailable, fail conservatively to smaller local moves or user-added Views.
-
-# Sparse Key-View semantics
-
-```text
-Key View
-= expected to add useful object observation
-  and may later become Included
-```
-
-The mandatory v1 planner does not require:
+The mandatory planner does not require:
 
 - Bridge Views;
 - tracker transition envelopes;
 - dense continuous camera trajectories;
 - tracker-specific ordering.
 
-A later optional tracker/hybrid ADR may request auxiliary frames through a separate capability contract. Those frames are not part of the default sparse Key-View plan.
+Key-View role is separate from Participation.
 
-Key-View role is separate from Participation. Planner role never overrides Ticket 07 assessment or user inclusion/exclusion.
+# SparseKeyViewPlanSegment
 
-# Planning decisions
-
-Evaluate separately:
-
-```text
-camera validity
-expected target observation gain
-directional diversity gain
-expected render / scene-support quality
-resource cost
+```ts
+interface SparseKeyViewPlanSegment {
+    schemaVersion: number;
+    segmentId: string;
+    targetContextId: string;
+    anchorStableMaskDigest: string;
+    visibleTargetSupportArtifactDigest: string;
+    targetBootstrapArtifactDigest: string;
+    plannerPolicyDigest: string;
+    orderedKeyViews: readonly PlannedKeyView[];
+    attemptId: string;
+    artifactDigest: string;
+}
 ```
 
-A high gain cannot override invalid camera geometry. View count is not a proxy for coverage.
+Each `PlannedKeyView` has a stable `viewId`, exact CameraBinding, validity-policy identity, and optional gain diagnostics.
 
-# Immutable plan segments
-
-Each planner result is an immutable `SparseKeyViewPlanSegment` with:
-
-```text
-segmentId
-targetContextId
-Anchor Stable Mask digest
-TargetBootstrapArtifact digest
-planner policy digest
-ordered Key Views
-attempt identity
-artifact digest
-```
-
-`Generate More` appends a new segment. It does not rewrite prior segments, rotate prior Key-View identities, or invalidate current RGB/Mask artifacts.
+`Generate More` appends a segment. It does not rewrite prior segments, rotate prior View identities, or invalidate current RGB/Mask artifacts.
 
 `Regenerate Auto Views` is the explicit operation that may supersede planner-owned segments while preserving user-owned Views.
 
 # Acceptance criteria
 
+## Visible support
+
+- [ ] Support derives only from the exact confirmed Anchor revision.
+- [ ] Samples are bounded, deterministic, finite, and canonical-digestable.
+- [ ] World position is required; optional source pixel/depth/weight/Gaussian provenance validate coherently.
+- [ ] Background-dominated, separated, invalid-depth, and non-finite support fail closed or lower quality.
+- [ ] Stable Gaussian provenance never becomes ownership.
+- [ ] Support artifact has structural validator and golden identity vectors.
+- [ ] Replaying exact inputs produces the same ordered support artifact.
+
 ## Bootstrap
 
-- [ ] Bootstrap derives only from the confirmed Anchor revision.
-- [ ] Center/extent use robust visible support and reject separated/background-dominated support.
-- [ ] Bootstrap identity includes target/Anchor/RGB/Mask/policy/support/artifact digests.
-- [ ] Bootstrap is explicitly non-ownership and never creates Candidate/P/N/V.
-- [ ] Bootstrap is a Working Set seed, not a hard search-space upper bound.
+- [ ] Bootstrap references the exact support artifact digest.
+- [ ] Center/extent use robust support rather than raw unfiltered extrema.
+- [ ] Bootstrap is non-ownership and never creates Candidate/P/N/V.
+- [ ] Bootstrap is a Working Set seed, not a hard upper bound.
 - [ ] Limited/unavailable bootstrap has actionable fallback.
 
-## Adaptive sparse Key Views
+## Adaptive sparse planner
 
 - [ ] Main flow exposes no fixed user View count or quality preset.
 - [ ] Planner uses bounded min/max, target observation, diversity, marginal gain, low-gain patience, and resource cap.
 - [ ] Candidate validity is evaluated before gain.
 - [ ] Target projection, clipping, occupancy, scene support, depth/alpha/free-space diagnostics are considered.
 - [ ] Behind-wall, outside-room, blank-content, or implausible poses are rejected/replaced.
-- [ ] Training-camera manifold/free-space envelope may constrain candidates under versioned policy.
 - [ ] Absence of reliable free space fails to local moves/user-added Views, not unconstrained orbit jumps.
-- [ ] Target-only visibility is insufficient when the camera lies outside a plausible observation region.
 - [ ] Planner does not require tracker-specific transition limits.
 
-## Plan segment lifecycle
+## Segment lifecycle
 
-- [ ] Output is an immutable sparse Key-View segment.
+- [ ] Output is an immutable sparse Key-View segment bound to support and bootstrap digests.
 - [ ] Stable `viewId` is independent from array position.
-- [ ] Generate More appends a new segment and preserves completed segments/artifacts.
+- [ ] Generate More appends a segment and preserves completed segments/artifacts.
 - [ ] Stop cancels pending/future work without deleting completed artifacts.
-- [ ] `maxAutoViews` remains a hard bounded batch limit.
 - [ ] Regenerate replaces planner-owned segments and preserves user-owned Views.
 - [ ] Manual View confirmation never implicitly resumes planning.
-- [ ] Segment/Anchor/bootstrap changes create explicit new identities and reject stale results.
+- [ ] Anchor/support/bootstrap/segment changes rotate explicit identities and reject stale results.
 - [ ] Ticket 08 does not run Mask acquisition or publish Generated View Masks.
-
-## Anchor dependency
-
-- [ ] Planner starts only from a confirmed Anchor with no unresolved ProposalDecision.
-- [ ] Ticket 07B removes edge/corner authoring blind spots.
-- [ ] Anchor revision changes follow explicit Restart/Recompute lifecycle.
-- [ ] 07A diagnostics are not reused as formal planner Evidence.
 
 # Failure / recovery criteria
 
-- Bootstrap failure preserves Anchor and requests local/user-added alternatives.
+- Support extraction failure preserves Anchor and exposes local/user-added alternatives.
+- Bootstrap failure preserves Anchor/support diagnostics.
 - Invalid camera rejection preserves completed Views and uses bounded replacement.
 - No useful Key View yields actionable Limited state.
-- Stop/cancel/restart cannot publish obsolete segments.
+- Stop/cancel/restart cannot publish obsolete support/bootstrap/segments.
 - Generate More failure preserves every completed segment and View.
-- Missing Evidence never classifies RGB as Render Failed.
+- Missing future Evidence never classifies RGB as Render Failed.
 
 # Validation
 
 - `npm run test:companion`
 - `npm test`
 - `npm run lint`
-- locked GPU planner smoke
-- frozen-scene bootstrap/pose/gain benchmark
-- indoor-room behind-wall/outside-content regressions
+- locked GPU support/planner smoke
+- support sample canonical digest golden vectors
+- depth/first-hit projection replay
+- separated/background support regressions
+- indoor behind-wall/outside-content regressions
 - conservative no-free-space fallback
 - sparse Key-View marginal-gain regression
-- append-only Generate More segment regression
-- segment identity/stale-result regression
+- append-only Generate More regression
+- support/bootstrap/segment stale-result regression
 - existing large-orbit regression
 
 # Non-goals
 
-- No Mask acquisition backend; Ticket 08A owns it.
+- No Prompt synthesis; Ticket 08B owns it.
+- No Mask acquisition backend; Ticket 08B owns it.
+- No acquisition protocol foundation; Ticket 08A owns it.
 - No mandatory tracker, Bridge View, or transition envelope.
 - No final Lift Readiness calibration.
-- No User-added View UI.
+- No user-added View UI.
 - No formal Direct Evidence kernel.
 - No Gaussian ownership or provisional Candidate.
 - No fixed full orbit.

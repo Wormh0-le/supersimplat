@@ -34,7 +34,7 @@ interface ImageInstancePromptArtifact {
     positivePoints: readonly PixelPoint[];
     negativePoints: readonly PixelPoint[];
     positiveBox?: PixelBoxXYXY;
-    previousLogitsArtifactDigest?: string;
+    previousLogitsRefDigest?: string;
     multimaskOutput: boolean;
     artifactDigest: string;
 }
@@ -45,14 +45,36 @@ Rules:
 - authoritative pixel coordinates only;
 - at most one Positive Instance Box;
 - no Negative Box, Mask Constraint, Prompt Brush or Text fields;
-- previous logits are optional internal refinement identity, never embedded binary Brush data;
+- previous logits are referenced only through the 04C opaque ref, never embedded as binary or tensor data;
 - Generated Key Views normally bind geometry/plan/policy digests;
 - Anchor/User-added manual Prompts may omit geometry/plan fields;
 - exact same inputs produce the same canonical artifact.
 
-## PreviousPredictionLogitsArtifact
+## Authoritative RGB input
 
-Reuse the 04C contract. Per-View contracts validate that logits match the exact View/RGB/adapter lineage and are not cross-View reusable.
+A provider request must include resolvable authoritative RGB, not only `rgbDigest`:
+
+```ts
+interface ImageInstanceRgbInput {
+    rgbDigest: string;
+    width: number;
+    height: number;
+    artifact?: AuthoritativeRgbArtifact;
+    companionRgbRef?: CompanionRgbArtifactRef;
+}
+```
+
+Exactly one payload/reference form is present. A Companion RGB reference must resolve to immutable bytes in the current Companion Instance and reproduce the declared digest/dimensions. Digest-only input is invalid.
+
+## PreviousPredictionLogitsRef
+
+Reuse the Ticket 04C opaque-reference contract.
+
+- actual logits tensor remains Companion-local;
+- ref binds Companion Instance, state ID, View/RGB, adapter/runtime, source attempt and candidate;
+- no raw logits bytes enter browser persistence or PromptState;
+- Companion replacement, state eviction, RGB change or adapter/runtime change invalidates the ref;
+- an unavailable ref may be omitted and the request rerun from current Points/Box without `mask_input`.
 
 ## ImageInstanceMaskRequestIdentity
 
@@ -66,9 +88,23 @@ interface ImageInstanceMaskRequestIdentity {
     adapterId: string;
     modelManifestDigest: string;
     runtimeDigest: string;
+    companionInstanceId: string;
     inferenceAttemptId: string;
 }
 ```
+
+## ImageInstanceMaskRequest
+
+```ts
+interface ImageInstanceMaskRequest {
+    schemaVersion: number;
+    identity: ImageInstanceMaskRequestIdentity;
+    rgb: ImageInstanceRgbInput;
+    prompt: ImageInstancePromptArtifact;
+}
+```
+
+The Prompt and RGB inputs must match the request identity exactly.
 
 ## ImageInstanceMaskResult
 
@@ -78,7 +114,7 @@ interface ImageInstanceMaskResult {
     requestIdentity: ImageInstanceMaskRequestIdentity;
     masks: readonly MaskArtifact[];
     modelScores: readonly number[];
-    lowResolutionLogits?: readonly PreviousPredictionLogitsArtifact[];
+    previousLogitsRefs?: readonly PreviousPredictionLogitsRef[];
     diagnostics: ImageInstanceMaskDiagnostics;
     resultDigest: string;
 }
@@ -87,22 +123,21 @@ interface ImageInstanceMaskResult {
 Invariants:
 
 - result exactly echoes accepted request identity;
-- masks, scores and logits cardinality match when logits are present;
+- resolved RGB bytes match request digest and dimensions;
+- Mask, score and optional ref cardinality match;
 - `multimaskOutput=false` produces at most one usable Mask;
 - `multimaskOutput=true` produces at most three;
 - empty result is representable as semantic unavailable;
 - transport/runtime/OOM/cancellation failure produces no partial result;
 - model score is adapter-local preview ordering only;
+- raw logits tensor never crosses the browser boundary;
 - diagnostics cannot publish Stable Mask, Participation, Evidence or Candidate.
 
 ## Provider seam
 
 ```ts
 interface ImageInstanceMaskProvider {
-    infer(
-        prompt: ImageInstancePromptArtifact,
-        requestIdentity: ImageInstanceMaskRequestIdentity
-    ): Promise<ImageInstanceMaskResult>;
+    infer(request: ImageInstanceMaskRequest): Promise<ImageInstanceMaskResult>;
 }
 ```
 
@@ -135,22 +170,26 @@ The provider itself cannot publish.
 
 ## Acceptance criteria
 
-- [ ] Every public artifact is schema-versioned and canonical-digestable.
-- [ ] Removed Prompt fields fail structural validation.
+- [ ] every public artifact is schema-versioned and canonical-digestable.
+- [ ] removed Prompt fields fail structural validation.
 - [ ] one Box maximum and pixel XYXY semantics validate.
-- [ ] previous logits bind exact View/RGB/adapter/source candidate.
+- [ ] provider request carries resolvable authoritative RGB plus matching digest/dimensions.
+- [ ] digest-only or mismatched RGB request fails before inference.
+- [ ] previous-logits ref binds exact Companion/View/RGB/adapter/source candidate.
+- [ ] raw logits tensor cannot validate as a browser request payload.
 - [ ] result cardinality matches multimask policy.
 - [ ] empty semantic result is distinct from technical failure.
-- [ ] technical failure exposes no partial Mask/logits result.
+- [ ] technical failure exposes no partial Mask/ref result.
 - [ ] provider output contains no Review, Stable publication, Participation, Evidence or Candidate.
 - [ ] no backend registry/sequence/fallback schema is required by readiness.
-- [ ] golden vectors cover valid and stale cross-artifact identity.
+- [ ] golden vectors cover valid, stale and Companion-replacement identities.
 
 ## Validation
 
 - schema/digest golden vectors;
+- RGB artifact/reference resolution and mismatch fixtures;
 - single-mask and three-mask cardinality fixtures;
-- previous-logits cross-View/stale rejection;
+- previous-logits cross-View/stale/Companion-replacement rejection;
 - old Negative Box/Mask Constraint schema rejection;
 - technical-failure no-partial-result fixture;
 - provider/publication separation tests;

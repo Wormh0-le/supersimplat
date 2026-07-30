@@ -1,6 +1,6 @@
-# Final Spec v1.1 Walkthrough Coverage — v2.5
+# Final Spec v1.1 Walkthrough Coverage — v2.6
 
-## Typical Flows A–I — inherited product workflows
+## Typical flows A–I
 
 | ID | Flow | Ticket path |
 |---|---|---|
@@ -8,7 +8,7 @@
 | WF-B | Adjust Anchor | `02 → 03 RGB Retry → 04A/04B/07A → 07B → 05 Confirm` |
 | WF-C | Add a missing user View | `09 → 11 → Mask publication → 12 Evidence dirty → 14/15 → 13` |
 | WF-D | Redraw bad Mask from scratch | `09 → 04A Paint/Erase → Confirm → 12 dirty → 15 explicit Re-Lift` |
-| WF-E | Modify reference then Repropagate | `04A/04B/07A or 09 correction → Confirm → 12 explicit tracker Repropagate → 07/10 reassessment → 13 → 15` |
+| WF-E | Refresh one automatic Key-View Mask | `09 → 12 Refresh Auto Mask → 08A → 07/09 reassessment → 14/15` |
 | WF-F | Select multiple objects | `16 → 17 Restart → 02... → 16 → 17` |
 | WF-G | Candidate structural error | `14/15 → 09/07/11/08 correction → 12 dirty → 15` |
 | WF-H | Fix after Candidate applied | `16 → 17 Undo and Fix → 15` |
@@ -25,8 +25,8 @@
 | WF-N | Object-level Anchor acquisition | `04A → 04B → 07A → 05/07 → 07B` | Conservative proposal decision; material ambiguity remains recoverable; Confirm publishes identity seed |
 | WF-O | Visual Prompt Adapter | `04A → 04B → 07A` | Truthful Box/Mask compilation; unsupported combinations fail closed |
 | WF-P | Floating Prompt/Edit Palette | `07A fitted rect → 07B` | Drag/snap/collapse/Space-hide with no stale blind region |
-| WF-Q | D′ object tracking pipeline | `07A/07B → 08 → 08A → 09/12 → 14` | 2.5D bootstrap guides ordered Key/Bridge tracking; final ownership waits for P/N/V |
-| WF-R | Confirmed correction keyframe | `09 correction → Confirm → 12 explicit Repropagate → 08A → 07/09 → 14/15` | Confirmed correction enters tracker memory; prior Stable/Evidence/Candidate survive failure |
+| WF-Q | D-double-prime sparse Key-View pipeline | `07A/07B → 08 → 08A → 09/12 → 14` | 2.5D bootstrap guides sparse per-view SAM; final ownership waits for P/N/V |
+| WF-R | Optional tracker/hybrid augmentation | `08A spike → ADR → optional capability → 09/12 → 14` | Tracking exists only when downstream benefit justifies it; default per-view route remains available |
 
 ## WF-N — object-level Anchor
 
@@ -93,23 +93,23 @@ Assertions:
 - Old position becomes immediately editable.
 - Palette state never enters PromptState, Mask history, Evidence, or Candidate identity.
 
-## WF-Q — D′ object tracking pipeline
+## WF-Q — D-double-prime sparse Key-View acquisition
 
 ```text
 Confirmed object-level Anchor Stable Mask
 → TargetBootstrapArtifact from depth / first-hit visible support
-    ├── center / extent / ROI / framing
-    └── no Gaussian ownership
+    ├── center / extent / ROI / Prompt synthesis seed
+    └── no Gaussian ownership and no hard Working Set bound
 → candidate cameras
 → validity gate
-→ adaptive Key View selection
-→ ordered sequence + bounded Bridge insertion
+→ adaptive sparse Key-View selection
+→ immutable plan segment
 → authoritative RGB publishes progressively
-→ Ticket 08A object-level tracker
-→ per-view Tracked Mask Review / Auto Stable / Failed
+→ 08A 3D-guided Prompt synthesis per Key View
+→ independent prompt-conditioned SAM attempt per View
+→ Auto Good / Review / Failed
 → Ticket 09 review
-→ Participation remains independent of Anchor/Key/Bridge role
-→ explicit Update Multi-view Masks when dirty
+→ Participation remains independent of Key-View/backend status
 → Included Stable View Annotations
 → Ticket 14 per-view P/N/V
 → final Candidate + Uncertain
@@ -118,36 +118,46 @@ Confirmed object-level Anchor Stable Mask
 Assertions:
 
 - Invalid pose cannot win by information gain.
-- Bridge Views exist for transition continuity and default Excluded.
-- Tracker role/confidence does not authorize Lift.
-- Current projected-support + single-frame SAM remains explicit baseline/fallback.
-- Tracker backend is selected only after 08A spike and ADR.
+- Generate More appends a new immutable segment and preserves prior artifacts.
+- Key Views do not require adjacent frames or tracker memory.
+- Current projected-support + single-frame SAM remains route A/fallback.
+- Enhanced 3D-guided per-Key-View SAM is route B/default candidate.
+- Tracker/hybrid is optional and requires a benchmark-backed ADR.
+- Acquisition backend score does not authorize Lift.
 - Formal ownership occurs only in Tickets 14/20.
+- Later Included Views can expand Evidence Working Set beyond the Anchor bootstrap seed.
 
-## WF-R — correction keyframe
+## WF-R — acquisition route decision and optional augmentation
 
 ```text
-Tracked View is Review / drift suspected
-→ user Prompt/Paint correction
-→ Editing Mask only
-→ Confirm correction
-→ Stable Mask + CorrectionReference revision
-→ propagationDirty
+Frozen sparse Key Views / optional dense sequences
+→ compare route A baseline
+→ compare route B enhanced per-view SAM
+→ compare route C tracker
+→ compare route D hybrid
+→ evaluate 2D quality + final Gaussian quality + user effort + latency/VRAM
+    ├── route B meets targets → v1 closes without tracker
+    └── C/D materially improves downstream outcome → ADR enables optional capability
+```
+
+If optional tracker capability is selected:
+
+```text
+User corrects a View
+→ Confirm Stable Mask
+→ per-view Evidence/Lift dirty only
+→ optional explicit Use as Tracking Reference
+→ optional propagationDirty
 → explicit Update Multi-view Masks
-→ new bound tracking run
-→ atomic replacement of dependent tracked Mask revisions
-→ assessment / Participation refresh
-→ Evidence dirty for changed Included Stable Views
-→ explicit Re-Lift
+→ no automatic Re-Lift
 ```
 
 Assertions:
 
-- Unconfirmed correction never enters tracker memory.
-- Bridge correction may be reference memory while remaining Excluded.
-- Repropagate failure preserves prior Stable Masks and matching Candidate/Evidence.
-- Repropagate never automatically Re-Lifts.
-- Late results are rejected against Anchor/plan/reference/backend identities.
+- Confirming a correction never automatically enters tracker memory.
+- Optional auxiliary/Bridge frames default Excluded.
+- Optional tracker failure does not disable valid independent per-view acquisition.
+- Tracker confidence is not P/N/V.
 
 ## Reverse outcome-to-prerequisite validation
 
@@ -156,8 +166,8 @@ Native operation (16)
 ← current Candidate (15/14)
 ← readiness and version-bound per-view P/N/V (13/14/20)
 ← Included Stable View Annotations (09/11/12)
-← object-level tracking + correction memory (08A)
-← valid ordered Key/Bridge plan + 2.5D bootstrap (08)
+← multi-view Mask acquisition (08A)
+← valid sparse Key-View plan + 2.5D bootstrap (08)
 ← no-blind-spot authoring (07B)
 ← confirmed object-level Anchor (04B/07A/05)
 ← Prompt/proposal foundation (04A)
@@ -165,7 +175,7 @@ Native operation (16)
 ← Render Working Set + Stable IDs (01/19)
 ```
 
-No final outcome depends on complete per-pixel Contributor publication. Reference Contributor remains a validation/debug side path.
+No final outcome depends on complete per-pixel Contributor publication or mandatory tracking. Reference Contributor remains a validation/debug side path.
 
 ## Error / degradation flows
 
@@ -177,7 +187,7 @@ No final outcome depends on complete per-pixel Contributor publication. Referenc
 | ERR-4 | View Render Failure | 06/08/11/21 | Keep View record; retry/replacement/exclude |
 | ERR-5 | Evidence failure | 14/20/21 | Keep RGB/View/Stable/Gallery/prior Candidate |
 | ERR-6 | Lift/aggregation failure | 14/15/21 | Keep stable inputs and previous Candidate |
-| ERR-7 | Repropagate failure | 12/21 | Keep prior Stable Masks and matching Evidence/Candidate |
+| ERR-7 | Mask refresh failure | 08A/12/21 | Keep prior Stable Mask and matching Evidence/Candidate |
 | ERR-8 | Reference Contributor failure | 03/14/20/22 | Diagnostic path fails only |
 | ERR-9 | Cached replay vs Retry | 03/08A/21 | Same attempt idempotent; Retry creates new attempt |
 | ERR-10 | Scene Chunk Miss / incomplete Render Working Set | 19/20/21 | No partial Ready artifact; load/fallback/retry |
@@ -187,8 +197,8 @@ No final outcome depends on complete per-pixel Contributor publication. Referenc
 | ERR-14 | Proposal unavailable | 04A/04B/07A | Preserve RGB/Prompt/prior Stable; Retry/refine/manual |
 | ERR-15 | Invalid indoor camera | 08 | Reject before gain; bounded replacement/local fallback/Limited |
 | ERR-16 | Palette stale blind region/stuck hidden | 07B | Remove stale hit box; restore on keyup/blur |
-| ERR-17 | Tracker failure or unsupported runtime | 08A | Preserve RGB/prior Stable; Retry/baseline fallback/manual/exclude |
-| ERR-18 | Identity drift / instance switch suspicion | 08A/09/12 | Review/fail closed; correction reference + explicit Repropagate |
+| ERR-17 | Per-view acquisition failure | 08A | Preserve RGB/prior Stable; Retry/baseline fallback/manual/exclude |
+| ERR-18 | Optional tracker failure/drift | 08A/09/12 | Capability-gated Review/fallback; default per-view route remains available |
 
 ## Closure assertions
 
@@ -197,10 +207,11 @@ No final outcome depends on complete per-pixel Contributor publication. Referenc
 - 04B capabilities are truthful and fail closed.
 - 07A is conservative object-level Anchor acquisition, not a generic calibrated ranker.
 - Only Confirm replaces Stable Mask.
-- 08 uses geometry for planning, not ownership.
-- Key/Bridge role is separate from Participation.
-- 08A begins with a backend spike and preserves the single-frame baseline/fallback.
-- Confirmed corrections enter tracker memory only through explicit repropagation.
-- Tracker confidence is not P/N/V.
+- 08 uses geometry for planning and Prompt synthesis, not ownership.
+- 08 outputs sparse immutable Key-View segments without tracker dependency.
+- 08A begins with an acquisition-route spike and may close without tracker.
+- Confirmed corrections affect the current View by default.
+- Optional reference/repropagation requires an explicit capability and action.
+- Bootstrap support is not a hard Evidence Working Set bound.
 - Reference P/N/V precedes production same-decision CUDA.
 - Every destructive/recompute action states retained artifacts and recovery.

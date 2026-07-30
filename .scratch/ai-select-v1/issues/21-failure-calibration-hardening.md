@@ -1,104 +1,161 @@
 # 21 — Retry / cancellation / OOM / atomic publication + calibration hardening
 
-Status: ready-for-agent — v2.7 DG-25 aligned
+Status: ready-for-agent — Final Spec v1.2 aligned
 
-Blocked by: 20, 18, 08, 08A, 10, 13
+Blocked by: 20, 18, 07B, 08B, 10, 13
 
 ## Final Spec mapping
 
-- Final Spec v1.1 §§8, 16.2, 22–23, 28, 30–32
-- Final Spec v1.1 Amendments 001, 003, 004, and 005
-- DG-24 and DG-25
+- Final Spec v1.2 §§4, 7, 17–18, 21–28
+- DG-26
 - ADR 0013
-- MVP Phase 7 hardening
 
 ## Inputs / preconditions
 
-- Complete v1.1 product flow
-- Production Direct Evidence path
-- Locked GPU/model/route-B Mask-acquisition runtime
-- Frozen benchmark scenes and sparse Key Views
-- Route-A baseline fallback
-- Optional future tracker/hybrid runtime only when separately adopted by ADR
-- Fault-injection hooks
+- complete Final Spec v1.2 product flow;
+- Ticket 07B complete correction UX;
+- production Direct Evidence path;
+- locked GPU/model route-B acquisition runtime;
+- frozen support/bootstrap/planner/acquisition benchmark scenes;
+- route-A B2 fallback;
+- backend bundle/registry and schema compatibility fixtures;
+- optional future tracker/hybrid runtime only when separately adopted by ADR;
+- fault-injection hooks.
 
 ## Outputs / handoff artifacts
 
-- End-to-end failure hardening
-- Versioned policy thresholds/margins
-- Sparse planner and route-B Mask-acquisition resource-envelope validation
-- Acquisition capability/dispatch compatibility results
-- Stress and repeatability results
-- Locked production evidence record
+- end-to-end failure hardening;
+- versioned policy thresholds/margins;
+- support/planner/route-B resource-envelope validation;
+- acquisition bundle/dispatch compatibility results;
+- route-A fallback eligibility and trust results;
+- interaction release validation including Ticket 07B;
+- stress and repeatability results;
+- locked production evidence record.
 
 ## What to build
 
-Close the production-hardening loop for the selected route-B product flow. Calibrate existing semantics and validate retained-state/recovery behavior; introduce no new product model or acquisition backend.
+Close the production-hardening loop for the selected Final Spec v1.2 flow. Calibrate existing semantics and validate retained-state/recovery behavior. Introduce no new product model or acquisition backend.
 
 ## Acceptance criteria
 
-- [ ] Explicit Retry creates a true new attempt for render, route-B per-view Mask acquisition, and Evidence operations; same-attempt replay remains idempotent.
-- [ ] Cancellation correctness never depends on cancellation completing before stale work returns.
-- [ ] OOM/kernel/model failure during render/SAM/Evidence/Lift never publishes partial Ready artifacts.
-- [ ] Atomic publication is validated for RGB/View, Stable Mask, per-view Evidence, assessment, and Candidate.
+### Retry, cancellation, and atomicity
+
+- [ ] Explicit Retry creates a true new attempt for support extraction, planning, render, Prompt synthesis where explicitly requested, route-B acquisition, route-A fallback and Evidence operations.
+- [ ] Same-attempt replay remains idempotent where supported.
+- [ ] Cancellation correctness never depends on cancellation finishing before stale work returns.
+- [ ] OOM/kernel/model failure during support/render/Prompt/SAM/Evidence/Lift never publishes partial Ready artifacts.
+- [ ] Atomic publication is validated for support, bootstrap, plan segment, RGB/View, Prompt artifact, ProposalSet, Decision, Stable Mask, per-view Evidence and Candidate.
 - [ ] RGB failure preserves last valid preview only as stale/not-current and exposes Retry.
-- [ ] Per-view Mask failure preserves View/RGB/prior Stable Mask and exposes Retry, route-A fallback, manual correction, or Exclude.
-- [ ] Insufficient 3D-guided Prompt support fails to Review/Failed with actionable recovery, not silent oversized success.
-- [ ] Corrected Stable Mask does not automatically create tracker memory or refresh unrelated Views.
-- [ ] Evidence failure preserves RGB/View/Stable/Gallery/previous Candidate and exposes recovery.
-- [ ] Reference Contributor failure does not block valid RGB or successful Direct Evidence.
-- [ ] View Render Failure exposes retry/replacement/exclude.
 - [ ] Lift failure preserves stable inputs and leaves Candidate unchanged/not-current.
+
+### Route-B layered failure behavior
+
+- [ ] Invalid support fails to Limited/unavailable with actionable local/user-added recovery.
+- [ ] Insufficient 3D-guided Prompt support fails to Review/Failed, not silent oversized success.
+- [ ] Provider returns no hidden final Mask, Assessment, Participation or Evidence.
+- [ ] ProposalSet dedup/clustering and selected/ambiguous/unavailable are repeatable.
+- [ ] Ambiguous retains proposals, publishes no Stable Mask and never triggers automatic route-A fallback.
+- [ ] Neighbour contamination, Prompt inconsistency, clipping, fragmentation and Assessment Review never trigger automatic fallback.
+- [ ] Per-view technical failure preserves View/RGB/prior Stable Mask and exposes Retry, eligible route-A fallback, manual correction or Exclude.
+- [ ] User Confirmed Stable Mask cannot be overwritten by automatic refresh/fallback.
+- [ ] Corrected Stable Mask does not create tracker memory or refresh unrelated Views.
+
+### Route-A B2 fallback
+
+- [ ] Fallback triggers only for enumerated technical/capability reasons.
+- [ ] Every fallback has a distinct attempt, parent attempt and reason.
+- [ ] Route-B failure remains inspectable after fallback success.
+- [ ] Route-A ProposalSet traverses the same Decision, Assessment and Publication layers.
+- [ ] Route-A Auto Good uses the same or stricter thresholds and contamination gates.
+- [ ] Route-A/route-B/backend identities cannot collide.
+- [ ] No undisclosed fallback occurs.
+
+### Backend registry and future extensions
+
+- [ ] Backend descriptor and actual bundle structure cannot contradict each other.
+- [ ] Route-B bundle has perView and no sequence extension.
+- [ ] Unknown/stale backend identity fails before inference or mutation.
+- [ ] Unsupported sequence/reference operations fail before state mutation.
+- [ ] Optional C/D schemas remain forward-compatible with current RGB, ProposalSet, publication and P/N/V artifacts.
+- [ ] Future C/D hardening is out of scope unless a separate ADR adopts one.
+
+### Dirty/stale and retained state
+
+- [ ] Stress stale-result rejection across Anchor/support/bootstrap/segment/View/RGB/Prompt/backend/attempt churn, Stop, Restart, Suspended/Undo, Evidence recomputation and cancellation.
+- [ ] Generate More appends without dirtying prior completed artifacts.
+- [ ] Prompt-only regeneration does not mutate Stable Mask or Evidence.
+- [ ] No Mask refresh/fallback automatically Re-Lifts.
+- [ ] Evidence failure preserves RGB/View/Stable/Gallery/proposal review/prior Candidate.
+- [ ] Reference Contributor failure does not block valid RGB or successful Direct Evidence.
 - [ ] Offline/upgrade/incompatible states preserve native SuperSplat and expose recovery.
-- [ ] Stress stale-result rejection across Camera churn, bootstrap/segment replacement, Prompt revision, Stop, Restart, Suspended/Undo, Evidence recomputation, and cancellation.
+
+### Calibration
+
+- [ ] Calibrate support sampling count, ordering, quality and resource cap.
+- [ ] Calibrate Camera observer placement, preview behavior and inference resolutions.
+- [ ] Calibrate sparse planner budget, marginal gain, diversity, early stop and Generate More segment size.
+- [ ] Calibrate Prompt point/Box/ROI/local-negative/Mask-input policies.
+- [ ] Calibrate ProposalSet dedup/clustering and hard-consistency gates.
+- [ ] Calibrate selected/ambiguous/unavailable boundaries.
+- [ ] Calibrate route-B acceptable-mask rate, neighbour contamination and manual correction burden.
+- [ ] Calibrate B2 fallback technical eligibility and same-or-stricter route-A trust threshold.
+- [ ] Calibrate per-view scheduler concurrency and peak VRAM envelope.
+- [ ] Calibrate Core/Context/Evidence Working Set and Render Working Set parity, including support/bootstrap-seed expansion.
+- [ ] Calibrate positive/boundary/local-negative Mask policy and P/N/V margins.
+- [ ] Validate mixed/unobserved classifications under repeated atomic accumulation.
+- [ ] Calibrate Coverage, Readiness, assessment and cross-view false-positive/false-negative behavior.
+
+### Release interaction gate
+
+- [ ] Ticket 07B drag/collapse/Space-hide behavior works across Anchor, Generated and User-added correction surfaces.
+- [ ] No stale palette hit region remains after move/collapse/hide/disposal.
+- [ ] Gallery exposes render/acquisition/decision/Mask/Participation/Evidence separately.
+- [ ] Fallback provenance and ambiguous review remain understandable without exposing a misleading confidence percentage.
+
+### Production identity record
+
+- [ ] Record exact raster/Evidence/runtime/model/backend/Prompt/decision/assessment/publication/planner identities.
 - [ ] Validate RGB-only versus RGB+Evidence parity for same raster identity and inputs.
 - [ ] Inject Evidence RGB-digest mismatch and verify no publication/rebinding.
 - [ ] Validate incompatible renderer/acquisition/runtime migration blocks stale reuse until explicit recovery.
-- [ ] Validate route-A/route-B/backend identities cannot collide.
-- [ ] Validate `MaskAcquisitionCapabilities` digest and backend dispatch identity.
-- [ ] Validate route B rejects sequence/reference methods before inference or state mutation.
-- [ ] Validate optional sequence/reference schemas remain forward-compatible with route-B artifacts.
-- [ ] Calibrate Camera observer placement, preview behavior, and inference resolutions.
-- [ ] Calibrate sparse planner budget, marginal gain, diversity, early stop, and Generate More segment size.
-- [ ] Validate 3D-guided Prompt synthesis quality, resource envelope, route-A fallback threshold, and sparse-view budget.
-- [ ] Calibrate Core/Context/Evidence Working Set and Render Working Set parity, including bootstrap-seed expansion.
-- [ ] Calibrate positive/boundary/local-negative Mask policy and P/N/V classification margins.
-- [ ] Validate mixed/unobserved classifications under repeated atomic accumulation.
-- [ ] Calibrate Coverage, Readiness, P0/P1 assessment, and cross-view false-positive/false-negative behavior.
-- [ ] Record exact raster/Evidence/runtime/model/acquisition/planner/Prompt/policy identities.
-- [ ] Distinguish Mask-generation diagnostics from formal P/N/V and reference checks from production same-decision validation.
-
-Future C/D hardening is not part of this ticket unless a separate ADR adopts one of those capabilities.
+- [ ] Distinguish support/Prompt/acquisition diagnostics from formal P/N/V and reference checks from production same-decision validation.
 
 ## Failure / recovery criteria
 
-- [ ] Every injected failure documents retained state, disabled operations, and recovery.
-- [ ] No failure silently downgrades to stale-but-applicable Candidate, approximate attribution, or undisclosed fallback.
-- [ ] Renderer/backend/runtime incompatibility disables production application without destroying inspectable artifacts or mutating Native Selection.
-- [ ] Unsupported optional extension calls produce structured capability failure and no dirty-state mutation.
+- Every injected failure documents retained state, disabled operations and recovery.
+- No failure silently downgrades to stale-but-applicable Candidate, approximate attribution, hidden Top-1 Mask or undisclosed fallback.
+- Renderer/backend/runtime incompatibility disables production application without destroying inspectable artifacts or mutating Native Selection.
+- Unsupported optional extension calls produce structured capability failure and no dirty-state mutation.
+- Interaction failure cannot leave a permanent uneditable image region.
 
 ## Validation
 
-- Full repository checks
-- Locked GPU/model/route-B acquisition fault injection
-- Same-binding Retry/cache tests
-- Bootstrap/segment/View/Prompt/backend stale-result tests
+- full repository checks
+- locked GPU/model route-B fault injection
+- support/bootstrap/planner fault injection
+- same-binding Retry/cache tests
+- support/bootstrap/segment/View/RGB/Prompt/backend stale-result tests
 - Generate More append-only preservation tests
-- Per-view correction without unrelated refresh tests
-- Capability digest and dispatch tests
-- Unsupported sequence/reference no-mutation tests
+- selected/ambiguous/unavailable repeatability
+- technical fallback eligibility matrix
+- route-A same-or-stricter threshold validation
+- User Confirmed authority preservation
+- capability bundle/dispatch tests
+- unsupported sequence/reference no-mutation tests
+- Ticket 07B browser interaction release walkthrough
 - RGB-only versus RGB+Evidence parity
 - Stable Mask/RGB digest mismatch
-- Renderer/acquisition migration invalidation and recovery
-- Reference/production identity separation
-- Frozen route-B benchmark calibration
-- Atomic repeatability/classification stability
-- Stale async stress
+- renderer/acquisition migration invalidation and recovery
+- reference/production identity separation
+- frozen route-B benchmark calibration
+- atomic repeatability/classification stability
+- stale async stress
 - Review false-positive/false-negative evaluation
 
 ## Non-goals
 
-- No acquisition-route selection; route B is selected by DG-25 / Amendment 005.
+- No acquisition-route selection; route B is selected.
 - No A/B/C/D comparison gate.
 - No tracker/hybrid implementation or hardening without a separate future ADR.
 - No new generic cross-view semantic identity classifier.

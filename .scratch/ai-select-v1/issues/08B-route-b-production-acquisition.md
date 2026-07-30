@@ -10,6 +10,7 @@ Blocks: 09
 
 - Final Spec v1.2 §§12–18, 27–29
 - DG-26 Decisions 2–6 and 8
+- ADR 0014 as subordinate Route-B-first rationale
 - Ticket 08 visible support/bootstrap/planner artifacts
 - Ticket 08A acquisition contracts and backend registry
 
@@ -24,6 +25,7 @@ VisibleTargetSupportArtifact
 → KeyViewPromptSynthesizer
 → KeyViewPromptArtifact
 → route-B per-view SAM provider
+→ PerViewMaskAcquisitionResult
 → KeyViewMaskProposalSet
 → KeyViewMaskDecisionPolicy
 → ViewAssessmentPolicy
@@ -55,6 +57,7 @@ Routes C/D are not implemented.
 - versioned Prompt synthesis policy;
 - registered route-B `per-view-sam` backend bundle;
 - route-B `MultiViewMaskAcquisitionProvider` implementation;
+- `PerViewMaskAcquisitionResult` production artifacts;
 - `KeyViewMaskProposalSet` production artifacts;
 - `KeyViewMaskDecisionPolicy` implementation;
 - `MaskPublicationCoordinator` implementation;
@@ -62,6 +65,7 @@ Routes C/D are not implemented.
 - progressive per-view acquisition/proposal/decision/assessment/publication states;
 - generic acquisition status/provenance for Ticket 09;
 - exact refresh/dirty dependencies for Ticket 12;
+- explicit migration from the legacy generated-view Mask contract;
 - production quality/resource/downstream validation report.
 
 # Phase 1 — KeyViewPromptSynthesizer
@@ -114,7 +118,7 @@ Route B never fabricates sequence sessions, references, auxiliary frames, or rep
 
 # Phase 3 — route-B SAM provider
 
-The provider consumes authoritative RGB plus `KeyViewPromptArtifact` and returns a bounded `KeyViewMaskProposalSet`.
+The provider consumes authoritative RGB plus `KeyViewPromptArtifact` and returns a `PerViewMaskAcquisitionResult` containing one bounded `KeyViewMaskProposalSet` and one attempt-level `backendDiagnostics` authority.
 
 Requirements:
 
@@ -128,7 +132,11 @@ Requirements:
 - same-attempt replay idempotent where supported;
 - explicit Retry creates a new attempt;
 - RGB Ready never waits for inference;
-- technical failure publishes no partial ProposalSet or Stable Mask.
+- ProposalSet contains no duplicate attempt-level backend diagnostics;
+- a successful result may contain an empty ProposalSet;
+- technical failure publishes no partial result, ProposalSet, or Stable Mask.
+
+A successful empty ProposalSet is not a backend failure. It proceeds to `KeyViewMaskDecisionPolicy` and becomes `unavailable`.
 
 # Phase 4 — KeyViewMaskDecisionPolicy
 
@@ -138,6 +146,7 @@ Processing order:
 
 ```text
 schema / Mask validity
+→ exact ProposalSet identity binding
 → hard Prompt consistency eligibility
 → exact deduplication
 → near-duplicate clustering
@@ -147,13 +156,15 @@ schema / Mask validity
 
 Rules:
 
+- every Decision binds target/context/View/acquisition attempt and exact `proposalSetArtifactDigest`;
 - raw model score is never sole selector;
 - one credible proposal cluster may become `selected`;
 - representative selection inside a duplicate cluster may use model score as a secondary tie-break;
 - multiple materially distinct plausible clusters become `ambiguous`;
 - neighbour-object pollution or hard Prompt conflict cannot become Auto Good;
 - zero eligible proposal becomes `unavailable`;
-- ambiguous preserves ProposalSet for Review and selects no hidden Stable Mask.
+- ambiguous preserves ProposalSet for Review and selects no hidden Stable Mask;
+- proposal IDs from another ProposalSet or attempt are rejected even when values collide.
 
 # Phase 5 — ViewAssessmentPolicy integration
 
@@ -178,6 +189,8 @@ Potential reasons include:
 
 Assessment does not re-run target-instance candidate selection.
 
+`ambiguous` and `unavailable` never receive a fabricated Assessment.
+
 # Phase 6 — MaskPublicationCoordinator
 
 Implement backend-neutral publication transitions:
@@ -197,14 +210,18 @@ ambiguous
 → Excluded
 
 unavailable
-→ Mask Failed
+→ acquisition Ready
+→ Decision Unavailable
 → publish no Stable Mask
 → Excluded
 ```
 
+`unavailable` is a valid Decision after successful acquisition. It MUST remain distinct from technical acquisition failure, protocol rejection, cancellation, or OOM.
+
 Requirements:
 
 - validate exact ProposalSet/Decision/Assessment membership and identity;
+- validate exact `proposalSetArtifactDigest` and acquisition attempt on Decision;
 - atomic publication;
 - no partial Mask becomes Stable;
 - do not overwrite a current User Confirmed Stable Mask;
@@ -227,6 +244,7 @@ Eligible reasons:
 Ineligible outcomes:
 
 - Decision `ambiguous`;
+- Decision `unavailable` after successful acquisition;
 - neighbour contamination;
 - Prompt consistency failure;
 - fragmentation or boundary clipping;
@@ -253,7 +271,7 @@ plan
 → render RGB and publish immediately
 → synthesize Prompt artifact
 → dispatch backend through registry
-→ receive ProposalSet
+→ receive PerViewMaskAcquisitionResult / ProposalSet
 → decide
 → assess selected Mask
 → publish through coordinator
@@ -268,6 +286,35 @@ Required seams:
 - readiness reports exact selected backend descriptor/bundle;
 - Gallery consumes generic acquisition/proposal/decision status;
 - optional future sequence dispatch remains a separate unused seam.
+
+# Phase 9 — legacy generated-view contract migration
+
+The current implementation contains a legacy single-frame contract equivalent to:
+
+```text
+GeneratedViewMaskRequest
+→ AISelectGeneratedViewMaskProvider.produceGeneratedViewMask
+→ GeneratedViewMaskResponse {
+     maskSource: 'propagated'
+     maskPropagation
+     mask
+     assessment
+   }
+→ controller publishes Stable Mask and Participation directly
+```
+
+08B MUST explicitly retire or isolate that contract.
+
+Migration requirements:
+
+- supersede `GeneratedViewMaskResponse.assessment`; provider responses contain no Assessment;
+- supersede the fixed `maskSource: 'propagated'` interpretation with backend-neutral acquisition provenance;
+- replace `GeneratedViewMaskPropagation` as the generic truth source with Prompt artifact diagnostics, ProposalSet candidate diagnostics, and attempt-level backend diagnostics;
+- controller no longer derives Stable publication or Participation directly from a provider response;
+- legacy `generated-view-mask/v1` payloads and cached results cannot validate as Ticket 08A/08B artifacts;
+- migration uses explicit contract/version incompatibility rather than structural best-effort rebinding;
+- prior User Confirmed Stable Masks remain authoritative through migration;
+- old route-A baseline may remain behind a dedicated adapter, but it emits the new ProposalSet/result contract and is visibly route A.
 
 # Acceptance criteria
 
@@ -284,22 +331,26 @@ Required seams:
 ## Provider and proposals
 
 - [ ] Route-B bundle registers as perView-only.
-- [ ] Provider returns bounded ProposalSet, not one hidden final Mask.
+- [ ] Provider returns `PerViewMaskAcquisitionResult` with bounded ProposalSet, not one hidden final Mask.
+- [ ] Attempt-level backend diagnostics exist only on the result envelope.
 - [ ] Every candidate Mask validates dimensions/digest.
 - [ ] Every Key View has independent attempt/retry identity.
 - [ ] Same-attempt replay is idempotent; explicit Retry is new work.
 - [ ] RGB Ready does not wait for Prompt synthesis or inference.
-- [ ] OOM/cancellation/failure publishes no partial ProposalSet/Stable Mask.
+- [ ] Successful empty ProposalSet is represented and proceeds to `unavailable`.
+- [ ] OOM/cancellation/technical failure publishes no partial result/ProposalSet/Stable Mask.
 
 ## Decision
 
 - [ ] Exact and near-duplicate clustering is deterministic.
+- [ ] Every Decision binds the exact ProposalSet digest and attempt.
 - [ ] Hard Prompt contradiction makes a proposal ineligible.
 - [ ] Raw model score is not the sole selector.
 - [ ] One credible cluster may be selected.
 - [ ] Materially distinct plausible alternatives remain ambiguous.
 - [ ] Ambiguous publishes no arbitrary Stable Mask.
 - [ ] Zero eligible proposal becomes unavailable.
+- [ ] Cross-attempt proposal ID collision cannot satisfy Decision membership.
 
 ## Assessment/publication
 
@@ -308,6 +359,7 @@ Required seams:
 - [ ] selected+Good publishes Auto Good+Included.
 - [ ] selected+Review publishes Auto Review+Excluded.
 - [ ] ambiguous/unavailable publish no new Stable Mask.
+- [ ] unavailable remains acquisition-ready/decision-unavailable, not technical Mask failure.
 - [ ] User Confirmed Stable Mask is never overwritten silently.
 - [ ] Failure preserves View/RGB/frustum/prior Stable Mask.
 - [ ] No publication automatically creates P/N/V or Re-Lifts.
@@ -315,11 +367,20 @@ Required seams:
 ## B2 fallback
 
 - [ ] Automatic fallback triggers only for enumerated technical/capability failures.
-- [ ] Ambiguous/Review/contamination/clipping/fragmentation never trigger automatic fallback.
+- [ ] Ambiguous/unavailable/Review/contamination/clipping/fragmentation never trigger automatic fallback.
 - [ ] Fallback attempt binds parent and reason.
 - [ ] Route-A result uses the same Proposal/Decision/Assessment/Publication layers.
 - [ ] Route-A Auto Good requires same or stricter thresholds.
 - [ ] Route-B failure and route-A provenance remain inspectable.
+
+## Legacy migration
+
+- [ ] `GeneratedViewMaskResponse.assessment` is removed or isolated behind a non-current compatibility adapter.
+- [ ] `maskSource: 'propagated'` is not the generic source for route-B results.
+- [ ] controller performs no direct provider-response Assessment or Stable publication policy.
+- [ ] legacy `generated-view-mask/v1` result cannot pass new validators or attach to a new attempt.
+- [ ] migration preserves User Confirmed Stable authority and prior inspectable state.
+- [ ] route-A compatibility adapter emits the new result/ProposalSet contract.
 
 ## Architecture
 
@@ -334,7 +395,7 @@ Required seams:
 
 - [ ] Frozen sparse-Key-View scenes and review protocol are versioned.
 - [ ] Per-view acceptable-mask rate and neighbour contamination are reported.
-- [ ] selected/ambiguous/unavailable rates are reported.
+- [ ] selected/ambiguous/unavailable rates are reported separately from technical failure rate.
 - [ ] Manual correction burden, latency, peak VRAM, fallback rate and recovery are reported.
 - [ ] Final Gaussian precision/recall, background contamination, Mixed/Uncertain ratio and Add/Remove burden proxy are reported.
 - [ ] Route A remains a tested fallback/regression baseline.
@@ -346,9 +407,11 @@ Required seams:
 - Prompt synthesis insufficient: Review/Failed with adjusted View/manual Prompt/Exclude recovery.
 - Route-B OOM: no partial publication; eligible B2 fallback only when declared safe.
 - Ambiguous: retain ProposalSet; user refines/chooses/paints; no automatic route A.
+- Unavailable after successful acquisition: retain acquisition result and diagnostics; offer Prompt/View adjustment, Retry, manual correction, or Exclude; no automatic route A.
 - Neighbour-instance risk: Review, not silent Auto Good or fallback.
 - Stale Anchor/support/bootstrap/segment/View/RGB/Prompt/backend/attempt result: discard.
 - Publication conflict with User Confirmed Stable: retain user authority and store no automatic replacement as current Stable.
+- Legacy contract/cache mismatch: reject as incompatible, never structurally rebind.
 - Unsupported sequence/reference method: structured capability failure, no mutation.
 
 # Validation commands and fixtures
@@ -364,11 +427,15 @@ Required seams:
 - occlusion/reappearance and poor-render regression
 - Prompt synthesis digest golden vectors
 - ProposalSet/Decision clustering golden vectors
+- exact ProposalSet digest/attempt membership tests
+- cross-attempt proposal ID collision regression
 - ambiguous-no-Stable regression
+- unavailable-versus-technical-failure regression
 - selected/assessment/publication transition tests
 - backend registry route-B fixture
 - technical-fallback eligibility matrix
 - route-A same-or-stricter threshold regression
+- legacy generated-view contract/cache rejection
 - stale support/bootstrap/segment/View/Prompt/backend rejection
 - cancellation/OOM atomicity
 - final P/N/V Gaussian outcome validation

@@ -4,11 +4,13 @@ Status: closed — 2026-07-23
 
 Blocked by: 01
 
-## Final Spec mapping
+## Current Final Spec mapping
 
-- Final Spec v1.1 §§1–7 where inherited from the completed v1.0 tracer bullet
-- DG-01, DG-02
-- MVP Phase 0–1
+- Final Spec v1.3 §§1–5, 24–25
+- DG-01 and DG-02 as historical tracer-bullet rationale where not superseded
+- MVP Phase 0–1 as historical implementation provenance
+
+Historical v1.0/v1.1 references below describe the implementation path only. Final Spec v1.3 is the sole current closure source.
 
 ## Inputs / preconditions
 
@@ -70,18 +72,18 @@ Current Scene View
 - Large-scene profiling, effective-snapshot parity, browser memory, and phase timing were transferred to Ticket 19.
 - Frustum translate/rotate remained explicitly deferred to Ticket 03.
 
-## Final Spec v1.1 architecture amendment — 2026-07-23
+## Historical provenance — Final Spec v1.1 architecture amendment, 2026-07-23
 
 Ticket 02 remains closed for the native shell, authoritative RGB tracer bullet, CameraBinding/frustum identity, and browser Ready path.
 
-ADR 0013 / Final Spec v1.1 supersede only the former assumption that complete Contributor publication is part of normal View readiness or production lifting:
+The historical ADR 0013 / Final Spec v1.1 migration superseded only the former assumption that complete Contributor publication was part of normal View readiness or production lifting:
 
 - authoritative RGB remains a validated Ticket 02 foundation;
 - complete Contributor code produced by the old tracer path is retained only as reference/debug infrastructure;
 - Ticket 03 removes Contributor/Evidence from Camera Inspection preview readiness and implements true Retry attempts;
 - Tickets 14 and 20 own reference P/N/V and production same-decision Evidence respectively.
 
-This amendment does not reopen Ticket 02 or retroactively claim that Direct Evidence was implemented here.
+This historical amendment did not reopen Ticket 02 or retroactively claim that Direct Evidence was implemented here. Current interpretation is governed by Final Spec v1.3.
 
 ## Non-goals
 

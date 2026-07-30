@@ -1,14 +1,16 @@
 # 17 — Applied Undo-and-Fix + complete Restart + multi-object/tool-switch lifecycle
 
-Status: ready-for-agent — v2.2 re-audited
+Status: ready-for-agent — Final Spec v1.3 mapped
 
 Blocked by: 16, 05, 03
 
-## Final Spec mapping
+## Current Final Spec mapping
 
-- Final Spec v1.1 §25 and inherited v1.0 lifecycle rules
-- DG-11, DG-15, DG-16, DG-20
-- Typical Flows F/H
+- Final Spec v1.3 §§4, 19, 22, 24
+- DG-11, DG-15, DG-16 and DG-20 as historical lifecycle rationale where not superseded
+- Historical Typical Flows F/H as implementation provenance
+
+Final Spec v1.3 is the only current closure source.
 
 ## Inputs / preconditions
 
@@ -34,7 +36,7 @@ Complete lifecycle after application. Native Selection/EditHistory are durable c
 - [ ] Undo and Fix is available only when the associated native command is safely top-of-stack/undoable.
 - [ ] It performs Native Undo, keeps AI context alive, and enters Candidate correction.
 - [ ] Later native edits disable Undo and Fix; no hidden history traversal.
-- [ ] Restart is available across Generated Views, Review, Propagation/Evidence/Lift dirty, Candidate Stale/Ready/Applied.
+- [ ] Restart is available across Generated Views, Review, Mask/Evidence/Lift dirty, Candidate Stale/Ready/Applied.
 - [ ] Restart clears target-local Anchor/Views/Masks/Evidence artifacts/status/Review/Coverage/Readiness/Lift/Candidate/Uncertain/Gallery.
 - [ ] Restart preserves Native Selection/EditHistory, AI Select activation, Scene View, policies, and valid shared runtime caches.
 - [ ] Candidate Applied needs no confirmation solely to protect already committed Native Selection.

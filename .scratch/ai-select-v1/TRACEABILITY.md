@@ -1,6 +1,6 @@
-# Final Spec v1.1 → Ticket Traceability Matrix — v2.5
+# Final Spec v1.1 → Ticket Traceability Matrix — v2.6
 
-A requirement counts as covered only when the mapped ticket contains an explicit acceptance/failure/validation criterion. Final Spec v1.0 requirements inherited by v1.1 remain included; DG-20–23 and Amendments 001–003 are explicit.
+A requirement counts as covered only when the mapped ticket contains an explicit acceptance/failure/validation criterion. Final Spec v1.0 requirements inherited by v1.1 remain included; DG-20–24 and Amendments 001–004 are explicit.
 
 | ID | Requirement | Ticket(s) |
 |---|---|---|
@@ -59,13 +59,13 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R053 | No unified uncalibrated Confidence percentage | 07, 10, 07A, 08A |
 | R054 | User Confirmed authority cannot be overridden by assessor | 07, 10, 07A |
 | R055 | Review reason maps to localized action | 07, 10 |
-| R056 | Explicit propagation/Evidence/Lift dirty and Suspended model | 12, 18 |
+| R056 | Explicit Mask/Evidence/Lift dirty and Suspended model | 12, 18 |
 | R057 | Unconfirmed Editing Mask does not dirty formal artifacts | 12, 15, 04A, 07A |
-| R058 | Anchor/reference Stable change dirties propagation, Anchor Evidence, Lift | 12 |
+| R058 | Anchor Stable change invalidates dependent bootstrap/plans/acquisition and dirties Anchor Evidence/Lift | 08, 08A, 12 |
 | R059 | Normal View Stable/Participation changes dirty Evidence/Lift | 12 |
-| R060 | Repropagate is explicit | 12 |
-| R061 | Repropagate never automatically Re-Lifts | 12 |
-| R062 | Repropagate failure preserves old Stable Masks | 12, 21 |
+| R060 | Per-view Mask refresh is explicit | 12 |
+| R061 | Mask refresh/optional propagation never automatically Re-Lifts | 12 |
+| R062 | Refresh/optional propagation failure preserves old Stable Masks | 12, 21 |
 | R063 | Observation Coverage is target-scoped Visible Evidence | 13 |
 | R064 | View Diversity is separate from View count | 13 |
 | R065 | Lift Readiness is Not Ready/Limited/Ready | 13 |
@@ -95,7 +95,7 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R089 | No cross-dependency partial artifact repair | 18 |
 | R090 | Companion Offline leaves native SuperSplat functional | 02, 21 |
 | R091 | Preview failure preserves last valid preview + retry | 03, 21 |
-| R092 | Mask/tracker failure preserves View and offers recovery | 06, 07, 08A, 09, 11, 21, 07A |
+| R092 | Mask-acquisition failure preserves View and offers recovery | 06, 07, 08A, 09, 11, 21, 07A |
 | R093 | View Render Failure offers retry/replacement/exclude | 06, 08, 11, 21 |
 | R094 | Evidence/Lift failure preserves stable inputs and previous Candidate | 14, 15, 20, 21 |
 | R095 | Cancellation/OOM cannot publish partial Ready artifacts | 20, 21, 04A, 04B, 08A |
@@ -105,7 +105,7 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R099 | Planner/assessment/readiness/Evidence policies are benchmark-owned | 08, 10, 13, 21 |
 | R100 | Legacy product path contracts only after replacement validation | 22 |
 | R101 | RGB Ready does not require Contributor/Stable Mask/Evidence/Candidate | 03, 04, 06, 11 |
-| R102 | Explicit Retry creates a new attempt for same CameraBinding | 03, 08A, 21 |
+| R102 | Explicit Retry creates a new attempt for the same bound operation | 03, 08A, 21 |
 | R103 | Same attempt may replay idempotently; no camera jitter cache bypass | 03, 08A, 21 |
 | R104 | Successful RGB cannot become View Failure due to Evidence/reference failure | 03, 04, 06, 20, 21 |
 | R105 | Stable Mask publication invalidates dependent per-view Evidence | 04, 12, 15, 07A |
@@ -152,20 +152,25 @@ A requirement counts as covered only when the mapped ticket contains an explicit
 | R146 | Palette move/collapse/hide restores hit testing immediately | 07B |
 | R147 | Palette state is Target Context-scoped and resets on Restart | 07B |
 | R148 | v1 targets one object instance; arbitrary parts and whole-image inventory are not required | 07A, 08A |
-| R149 | Confirmed Anchor Stable Mask is object-identity seed, not Gaussian ownership | 07A, 08, 14 |
-| R150 | Early depth/first-hit support is 2.5D bootstrap only | 08, 14 |
-| R151 | Planner outputs ordered Key/Bridge sequence with validity/gain/transition separated | 08 |
-| R152 | Tracking membership is distinct from Lift Participation | 08, 09, 14 |
-| R153 | Production multi-view Mask path uses object-level tracking; single-frame SAM remains explicit baseline/fallback | 06, 08A |
-| R154 | Only confirmed correction Stable Masks enter tracker memory; repropagate is explicit | 08A, 12 |
-| R155 | Bridge Views default Excluded and do not automatically contribute Evidence | 08, 09, 14 |
-| R156 | Tracking artifacts bind Anchor/plan/backend/runtime/reference/attempt identities | 08A, 12 |
-| R157 | Tracker confidence and bootstrap support are not P/N/V ownership Evidence | 08A, 14, 20 |
-| R158 | Final ownership remains Included Stable Masks → per-view P/N/V → multi-view classification | 14, 20 |
-| R159 | Tracked Mask publication is progressive/atomic; tracker failure preserves RGB/prior Stable state | 08A, 09, 12 |
+| R149 | Confirmed Anchor Stable Mask is identity seed, not Gaussian ownership | 07A, 08, 14 |
+| R150 | Early depth/first-hit support is non-ownership 2.5D bootstrap only | 08, 14 |
+| R151 | Planner outputs adaptive sparse Key-View plan segments without tracker dependency | 08 |
+| R152 | Generate More appends immutable segments and preserves completed artifacts | 08, 09, 12 |
+| R153 | Default production candidate is 3D-guided independent SAM per Key View | 08A |
+| R154 | Acquisition spike compares baseline, enhanced per-view SAM, tracker, and hybrid using downstream Gaussian metrics | 08A, 21 |
+| R155 | Tracker/hybrid production requires a separate benchmark-backed ADR | 08A, 12, 21 |
+| R156 | Bridge Views and transition envelopes are optional capability-gated features | 08, 08A, 09 |
+| R157 | Confirmed correction changes the current Stable View by default and does not dirty unrelated Views | 08A, 12 |
+| R158 | Use as Tracking Reference is a separate explicit optional action | 08A, 12 |
+| R159 | Per-view automatic Mask refresh is explicit, replayable, and failure-preserving | 08A, 12 |
+| R160 | Mask acquisition artifacts bind bootstrap/segment/View/Prompt/backend/runtime/attempt identities | 08A, 12 |
+| R161 | Bootstrap support seeds but does not hard-bound Evidence Working Set; later Included Views may expand it | 08, 14, 20 |
+| R162 | Acquisition score, optional tracker confidence, and View role are not P/N/V ownership Evidence | 08A, 10, 14, 20 |
+| R163 | Final ownership remains Included Stable Masks → per-view P/N/V → multi-view classification | 14, 20 |
+| R164 | Optional tracker failure cannot disable valid independent per-view acquisition and must fail closed | 08A, 09, 12, 21 |
 
 ## Reverse mapping result
 
-Every active ticket, including retrofit Tickets 04A, 04B, 07A, 07B, and 08A, maps back to Final Spec v1.1, Amendments 001–003, DG-20–23, inherited v1.0, migration, or hardening requirements. No orphan ticket remains.
+Every active ticket, including retrofit Tickets 04A, 04B, 07A, 07B, and 08A, maps back to Final Spec v1.1, Amendments 001–004, DG-20–24, inherited v1.0, migration, or hardening requirements. No orphan ticket remains.
 
-04A owns Prompt/proposal infrastructure. 04B owns real visual-prompt adapter enablement. 07A owns conservative object-level Anchor acquisition. 07B owns fitted-image palette interaction. 08 owns non-ownership 2.5D Key/Bridge sequence planning. 08A owns tracking/correction memory and fallback. 12 owns explicit repropagation. 14/20 remain the reference/production P/N/V ownership stages.
+04A owns Prompt/proposal infrastructure. 04B owns real visual-prompt adapter enablement. 07A owns conservative object-level Anchor acquisition. 07B owns fitted-image palette interaction. 08 owns non-ownership 2.5D sparse Key-View planning. 08A owns acquisition-route evaluation and enhanced per-Key-View SAM, with tracker/hybrid optional. 12 owns explicit per-view refresh and optional propagation. 14/20 remain the reference/production P/N/V ownership stages.

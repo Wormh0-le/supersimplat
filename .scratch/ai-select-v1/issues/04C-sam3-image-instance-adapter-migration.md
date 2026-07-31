@@ -1,6 +1,6 @@
 # 04C — SAM 3 Image Instance Adapter + Prompt Contract Migration
 
-Status: implemented — locked SAM 3 Image GPU fixture still owes an operator run
+Status: implemented — locked GPU fixture passed on operator CUDA hardware (see implementation record)
 
 Blocked by: 04B
 
@@ -16,7 +16,7 @@ in `.scratch/ai-select-v1/04C-protocol-contract.md`:
 - Companion: `sam3-image-instance/v1` adapter on the official
   `build_sam3_image_model(enable_inst_interactivity=True)` →
   `Sam3Processor.set_image` → `predict_inst` path with pinned
-  `SAM3_IMAGE_RUNTIME_CONFIG` (`sha256:b4acaec4…`), new
+  `SAM3_IMAGE_RUNTIME_CONFIG` (`sha256:736e6c4e…`), new
   `sam3-image-instance-compiler/v1` Prompt v2 compiler, multimask policy
   (≤3 single-positive-point / ≤1 otherwise), immutable RGB artifact/reference
   resolution (`rgbUnresolvable` fails before inference), Companion-local
@@ -41,10 +41,14 @@ in `.scratch/ai-select-v1/04C-protocol-contract.md`:
   (`.scratch/ai-select-v1/04c-cross-check-*.py/.cjs`).
 - Validation run: `npm test` (330 TS + 299 Companion tests, 1 env-gated GPU
   skip), `npm run lint`, `npm run lint:locales`, `npm run build`. The locked
-  SAM 3 Image GPU fixture (`test_sam3_image_instance_gpu.py`,
-  `SUPERSPLAT_SAM3_IMAGE_GPU_CHECKPOINT`) is written but has not run on
-  operator CUDA hardware in this environment; production GPU validation
-  remains outstanding.
+  SAM 3 Image GPU fixture (`test_sam3_image_instance_gpu.py`) subsequently
+  ran on an RTX 4090 D with the operator `sam3.pt` checkpoint and passed
+  (multimask point, single box, single refinement, static audits). Its first
+  production run exposed that the pinned upstream returns low-resolution
+  logits at 288×288 (backbone feature size), not SAM 2's 256×256; the pinned
+  `low_res_logits_size` and runtime config digest were corrected to 288
+  (`sha256:736e6c4e…`), which is why the first production requests failed
+  closed with `modelFailure` before this fix.
 
 ## Final Spec mapping
 

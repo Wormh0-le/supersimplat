@@ -61,7 +61,7 @@ if (mode === 'emit') {
             }
         ]
     });
-    const zeroLogitsDigest = sha256Digest(Buffer.alloc(256 * 256 * 4));
+    const zeroLogitsDigest = sha256Digest(Buffer.alloc(288 * 288 * 4));
     const refPayload = {
         schemaVersion: 1,
         companionInstanceId: 'instance-A',
@@ -72,7 +72,7 @@ if (mode === 'emit') {
         sourceInferenceAttemptId: 'attempt-1',
         sourceCandidateId: 'proposal-0',
         adapterRuntimeDigest: `sha256:${'ab'.repeat(32)}`,
-        shape: [1, 256, 256],
+        shape: [1, 288, 288],
         dtype: 'float32',
         dataDigest: zeroLogitsDigest
     };

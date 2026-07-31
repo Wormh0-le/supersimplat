@@ -80,7 +80,7 @@ const logitsRef = () => {
         sourceInferenceAttemptId: 'proposal-attempt-0',
         sourceCandidateId: 'proposal-0',
         adapterRuntimeDigest: digest('9'),
-        shape: [1, 256, 256],
+        shape: [1, 288, 288],
         dtype: 'float32',
         dataDigest: digest('8')
     };

@@ -37,7 +37,10 @@ SAM3_IMAGE_RUNTIME_CONFIG: dict[str, Any] = {
     "confidence_threshold": 0.5,
     "multimask_policy": "single-positive-point-multimask/v1",
     "max_multimask_candidates": 3,
-    "low_res_logits_size": 256,
+    # The pinned upstream returns low-resolution prediction logits at its
+    # backbone feature size (288x288), not SAM 2's 256x256; this guard fails
+    # closed if a future model build changes that contract.
+    "low_res_logits_size": 288,
     "reject_full_frame_masks": True,
     "autocast_dtype": "bfloat16",
     "compile": False,

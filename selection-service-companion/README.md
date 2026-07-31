@@ -109,11 +109,11 @@ does not copy the checkpoint into the package or send a path to the editor.
 
 For `adapterId: "sam3-image-instance/v1"` (the current static instance
 adapter), `runtimeConfigDigest` must be
-`sha256:b4acaec46dfeb259e7382619f610c08dc34818d4a29d7f2c7120e8543b89933f`.
+`sha256:736e6c4eb608e5f5f707f3a8006e665cba454e5d6f7c536fa3126edfa35f0b05`.
 It binds the Companion's fixed SAM 3 Image baseline: the official
 `build_sam3_image_model(enable_inst_interactivity=True)` builder, the
 `sam3-image-instance-compiler/v1` Prompt contract, single-positive-point
-multimask with at most three retained candidates, 256×256 low-resolution
+multimask with at most three retained candidates, 288×288 low-resolution
 previous-prediction logits behind opaque references, rejection of degenerate
 full-frame candidates, and bf16 autocast without Hugging Face downloads or
 compilation. A changed runtime configuration needs a new adapter baseline and

@@ -1,11 +1,11 @@
 {
-  "digest": "operator-sam3-image-5dd401d1c5c1d5c3eedff06d41b77af824517619-instance-v1",
+  "digest": "operator-sam3-image-5dd401d1c5c1d5c3eedff06d41b77af824517619-instance-v2",
   "adapterId": "sam3-image-instance/v1",
   "modelName": "SAM 3 Image",
   "checkpointDigest": "9999e2341ceef5e136daa386eecb55cb414446a00ac2b55eb2dfd2f7c3cf8c9e",
   "sourceCommit": "5dd401d1c5c1d5c3eedff06d41b77af824517619",
   "licenseName": "SAM License",
   "licenseUrl": "https://github.com/facebookresearch/sam3/blob/5dd401d1c5c1d5c3eedff06d41b77af824517619/LICENSE",
-  "runtimeConfigDigest": "sha256:b4acaec46dfeb259e7382619f610c08dc34818d4a29d7f2c7120e8543b89933f",
+  "runtimeConfigDigest": "sha256:736e6c4eb608e5f5f707f3a8006e665cba454e5d6f7c536fa3126edfa35f0b05",
   "operatorNote": "checkpointDigest is a placeholder; replace it with the sha256 of the operator-acquired SAM 3 Image checkpoint before selection-service install."
 }

@@ -38,7 +38,7 @@ SAM3_IMAGE_RUNTIME_CONFIG = {
     "confidence_threshold": 0.5,
     "multimask_policy": "single-positive-point-multimask/v1",
     "max_multimask_candidates": 3,
-    "low_res_logits_size": 256,
+    "low_res_logits_size": 288,
     "reject_full_frame_masks": True,
     "autocast_dtype": "bfloat16",
     "compile": False,
@@ -190,7 +190,7 @@ interface PreviousPredictionLogitsRef {
     sourceInferenceAttemptId: string;
     sourceCandidateId: string; // == proposalId of the source candidate
     adapterRuntimeDigest: string;
-    shape: readonly number[]; // e.g. [1, 256, 256]
+    shape: readonly number[]; // e.g. [1, 288, 288]
     dtype: string; // 'float32'
     dataDigest: string; // sha256 of raw logits bytes
     refDigest: string; // sha256 over canonical JSON of all fields above
@@ -252,7 +252,7 @@ checkpoint_path=<manifest weightsPath>, load_from_HF=False)` →
 inference_state, point_coords=..., point_labels=..., box=...(XYXY pixels),
 mask_input=..., multimask_output=..., return_logits=False,
 normalize_coords=True)`; request low-res logits (third return value,
-  Cx256x256) for ref minting. bf16 autocast on CUDA per upstream example.
+  Cx288x288) for ref minting. bf16 autocast on CUDA per upstream example.
 - Built model cached per manifest digest (Companion-local disposable cache);
   inference/refinement state released on cancellation, failure, target
   disposal, and cache eviction.

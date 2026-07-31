@@ -404,7 +404,7 @@ class FakeSam3ImageRuntime:
         logits = (
             self.logits
             if self.logits is not None
-            else np.zeros((count, 256, 256), dtype=np.float32)
+            else np.zeros((count, 288, 288), dtype=np.float32)
         )
         return self.masks, self.scores, logits
 
@@ -486,7 +486,7 @@ class Sam3ImageInstanceAdapterTests(unittest.TestCase):
             [0, 1, 2],
         )
         for candidate in batch.candidates:
-            self.assertEqual(candidate.low_res_logits.shape, (1, 256, 256))
+            self.assertEqual(candidate.low_res_logits.shape, (1, 288, 288))
             self.assertEqual(str(candidate.low_res_logits.dtype), 'float32')
             self.assertEqual(
                 set(candidate.prompt_consistency),

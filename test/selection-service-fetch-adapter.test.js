@@ -1480,7 +1480,7 @@ test('sends an RGB reference and refinement lineage without the RGB artifact', a
         sourceInferenceAttemptId: 'proposal-attempt-0',
         sourceCandidateId: 'proposal-0',
         adapterRuntimeDigest: `sha256:${'9'.repeat(64)}`,
-        shape: [1, 256, 256],
+        shape: [1, 288, 288],
         dtype: 'float32',
         dataDigest: `sha256:${'8'.repeat(64)}`
     };

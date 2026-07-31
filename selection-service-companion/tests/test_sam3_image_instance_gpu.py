@@ -120,7 +120,7 @@ class Sam3ImageInstanceGpuTests(unittest.TestCase):
             self.assertGreaterEqual(len(point_batch.candidates), 1)
             self.assertLessEqual(len(point_batch.candidates), 3)
             for candidate in point_batch.candidates:
-                self.assertEqual(candidate.low_res_logits.shape, (1, 256, 256))
+                self.assertEqual(candidate.low_res_logits.shape, (1, 288, 288))
                 self.assertEqual(str(candidate.low_res_logits.dtype), 'float32')
 
             box_batch = adapter.produce_proposals(

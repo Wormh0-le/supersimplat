@@ -103,7 +103,7 @@ class FakeSam3ImageRuntime:
         return (
             self.masks,
             self.scores,
-            np.zeros((count, 256, 256), dtype=np.float32),
+            np.zeros((count, 288, 288), dtype=np.float32),
         )
 
 
@@ -350,11 +350,11 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(ref['rgbDigest'], IMAGE_DIGEST)
         self.assertEqual(ref['sourceInferenceAttemptId'], 'proposal-attempt-1')
         self.assertEqual(ref['sourceCandidateId'], 'proposal-0')
-        self.assertEqual(ref['shape'], [1, 256, 256])
+        self.assertEqual(ref['shape'], [1, 288, 288])
         self.assertEqual(ref['dtype'], 'float32')
         self.assertEqual(
             ref['dataDigest'],
-            f'sha256:{hashlib.sha256(np.zeros((1, 256, 256), dtype=np.float32).tobytes()).hexdigest()}',
+            f'sha256:{hashlib.sha256(np.zeros((1, 288, 288), dtype=np.float32).tobytes()).hexdigest()}',
         )
         ref_fields = {key: value for key, value in ref.items() if key != 'refDigest'}
         self.assertEqual(ref['refDigest'], _canonical_json_digest(ref_fields))

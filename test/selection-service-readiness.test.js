@@ -57,12 +57,14 @@ const capabilities = (overrides = {}) => ({
             artifact: true,
             companionReference: true
         },
-        promptCapabilities: promptCapabilities()
+        promptCapabilities: promptCapabilities(),
+        compilerPolicyVersion: 'sam3-image-instance-compiler/v1',
+        adapterCapabilityDigest: `sha256:${'c'.repeat(64)}`
     },
     supportedOperations: [
         'aiSelectAnchorRender',
         'aiSelectMaskProposals',
-        'autoMaskProposalSetSchemaV2',
+        'autoMaskProposalSetSchemaV3',
         'binarySceneSnapshotRegistrationV1'
     ],
     activeModelManifest: {
@@ -380,6 +382,21 @@ test('rejects authoritative RGB, opaque refinement, and removed Prompt capabilit
                 })
             },
             'imageInstanceCapabilityMismatch'
+        ],
+        [
+            'missing compiler policy version',
+            { compilerPolicyVersion: undefined },
+            'imageInstanceCapabilityMismatch'
+        ],
+        [
+            'missing adapter capability digest',
+            { adapterCapabilityDigest: undefined },
+            'imageInstanceCapabilityMismatch'
+        ],
+        [
+            'malformed adapter capability digest',
+            { adapterCapabilityDigest: 'not-a-digest' },
+            'invalidCapabilities'
         ]
     ];
 

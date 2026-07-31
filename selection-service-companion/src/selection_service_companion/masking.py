@@ -12,20 +12,55 @@ import math
 from pathlib import Path
 import tempfile
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Protocol, runtime_checkable, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 
 # The compiler is a capability-level contract: changing prompt ordering,
 # coordinate conversion, or composition changes the advertised capability
 # digest so a replay artifact from the old semantics cannot be rebound.
 POINT_MASK_PROMPT_COMPILER_POLICY_VERSION = 'point-mask-compiler/v1'
+SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION = 'sam3-image-instance-compiler/v1'
+SAM3_IMAGE_INSTANCE_ADAPTER_ID = 'sam3-image-instance/v1'
+
+
+# The SAM 3 Image adapter intentionally pins every material model, processor,
+# and multimask option rather than inheriting upstream defaults.  The digest is
+# the manifest identity for this executable configuration, not an
+# operator-chosen label: changing one of these values requires a new adapter
+# baseline.
+SAM3_IMAGE_RUNTIME_CONFIG: dict[str, Any] = {
+    "anchor_prompt_adapter": SAM3_IMAGE_INSTANCE_ADAPTER_ID,
+    "anchor_prompt_compiler_policy": SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION,
+    "image_model_builder": "sam3.build_sam3_image_model",
+    "enable_inst_interactivity": True,
+    "processor_resolution": 1008,
+    "confidence_threshold": 0.5,
+    "multimask_policy": "single-positive-point-multimask/v1",
+    "max_multimask_candidates": 3,
+    "low_res_logits_size": 256,
+    "reject_full_frame_masks": True,
+    "autocast_dtype": "bfloat16",
+    "compile": False,
+    "load_from_hf": False,
+}
+SAM3_IMAGE_RUNTIME_CONFIG_DIGEST = "sha256:" + hashlib.sha256(
+    json.dumps(
+        SAM3_IMAGE_RUNTIME_CONFIG, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
+).hexdigest()
+
+
+# Reserved legacy identity (non-current): the retired SAM 3.1 visual Prompt
+# compiler policy.  It remains only because the pinned legacy runtime
+# configuration below binds it; nothing current may compile against it.
 SAM31_VISUAL_PROMPT_COMPILER_POLICY_VERSION = 'sam3.1-visual-prompt-compiler/v1'
 
 
-# The initial SAM 3.1 adapter intentionally pins every material predictor and
-# session option rather than inheriting upstream defaults.  The digest is the
-# manifest identity for this executable configuration, not an operator-chosen
-# label: changing one of these values requires a new adapter baseline.
+# Legacy non-current benchmark fixture: the retired SAM 3.1 Multiplex
+# configuration below remains pinned only so the historical object-selection
+# PoC flow and its benchmark records stay replayable.  It is not a current
+# static instance-segmentation runtime and must not be installed as the Active
+# Model Manifest for AI Select mask proposals.
 SAM31_RUNTIME_CONFIG: dict[str, Any] = {
     "anchor_prompt_adapter": "sam3.1-interactive-image/v1",
     "anchor_prompt_compiler_policy": SAM31_VISUAL_PROMPT_COMPILER_POLICY_VERSION,
@@ -58,49 +93,34 @@ def _prompt_capability_digest(payload: Mapping[str, object]) -> str:
     return f'sha256:{hashlib.sha256(encoded).hexdigest()}'
 
 
-def sam31_visual_prompt_capabilities() -> dict[str, object]:
-    """Return the exact, digest-bound SAM 3.1 visual-prompt contract.
+def sam3_image_instance_capabilities() -> dict[str, object]:
+    """Return the exact, digest-bound SAM 3 Image instance-prompt contract.
 
-    Positive Box uses the pinned interactive-image API. The current SAM
-    ``mask_input`` consumes previous-iteration logits rather than a partial
-    positive scribble, so Prompt Brush remains off after its locked quality
-    gate failed. Negative visual and Text composition are also explicitly off.
+    The current static adapter supports Positive/Negative Points, one Positive
+    Instance Box in authoritative pixel XYXY, Companion-local previous-logits
+    refinement, and single-positive-point multimask output. Negative Box,
+    Prompt Brush, Mask constraints, and Text are not tools in this contract;
+    removed families have no placeholder reasons because old artifacts fail
+    closed on schema and capability-digest identity instead.
     """
 
     payload: dict[str, object] = {
-        'points': True,
+        'positivePoints': True,
         'negativePoints': True,
-        'boxes': True,
-        'negativeBoxes': False,
-        'maskInput': False,
-        'negativeMaskConstraints': False,
+        'positiveInstanceBox': True,
+        'previousLogitsRefinement': True,
+        'singlePointMultimask': True,
+        'negativeBox': False,
+        'promptBrush': False,
+        'maskConstraints': False,
         'text': False,
-        'negativeText': False,
-        'multiCandidateOutput': True,
-        'compilerPolicyVersion': SAM31_VISUAL_PROMPT_COMPILER_POLICY_VERSION,
-        'unsupportedPromptReasons': {
-            'negative-box': (
-                'The locked SAM 3.1 interactive-image adapter has no validated '
-                'negative Box composition.'
-            ),
-            'positive-mask-constraint': (
-                'Prompt Brush is disabled because SAM mask_input expects '
-                'previous-prediction logits; the partial-brush GPU quality '
-                'gate failed.'
-            ),
-            'negative-mask-constraint': (
-                'The locked SAM 3.1 interactive-image adapter has no validated '
-                'negative Mask constraint composition.'
-            ),
-            'positive-text': 'Text prompts are not enabled by this adapter.',
-            'negative-text': 'Text prompts are not enabled by this adapter.',
-        },
+        'compilerPolicyVersion': SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION,
     }
     return {**payload, 'capabilityDigest': _prompt_capability_digest(payload)}
 
 
 @dataclass(frozen=True)
-class Sam31CompiledPointPrompt:
+class CompiledPointPrompt:
     """One exact RGB-pixel point preserved for model input and diagnostics."""
 
     prompt_id: str
@@ -110,30 +130,19 @@ class Sam31CompiledPointPrompt:
 
 
 @dataclass(frozen=True)
-class Sam31CompiledBoxPrompt:
-    """An inclusive PixelBox compiled to the native normalized XYWH contract."""
+class CompiledBoxPrompt:
+    """One Positive Instance Box in authoritative-image pixel XYXY."""
 
     prompt_id: str
-    polarity: str
     x0_px: int
     y0_px: int
     x1_px: int
     y1_px: int
-    normalized_xywh: tuple[float, float, float, float]
 
 
 @dataclass(frozen=True)
-class Sam31CompiledMaskConstraintPrompt:
-    """One immutable Prompt Brush artifact retained for candidate diagnostics."""
-
-    prompt_id: str
-    polarity: str
-    bits: bytes
-
-
-@dataclass(frozen=True)
-class Sam31VisualPromptProgram:
-    """Deterministic, RGB-bound visual constraints for one SAM invocation."""
+class CompiledImagePromptProgram:
+    """Deterministic, RGB-bound instance constraints for one SAM invocation."""
 
     compiler_policy_version: str
     rgb_digest: str
@@ -141,10 +150,8 @@ class Sam31VisualPromptProgram:
     adapter_capability_digest: str
     width: int
     height: int
-    points: tuple[Sam31CompiledPointPrompt, ...]
-    boxes: tuple[Sam31CompiledBoxPrompt, ...]
-    mask_constraints: tuple[Sam31CompiledMaskConstraintPrompt, ...]
-    positive_mask_constraint: bytes | None
+    points: tuple[CompiledPointPrompt, ...]
+    boxes: tuple[CompiledBoxPrompt, ...]
     diagnostics: Mapping[str, object]
 
 
@@ -193,244 +200,238 @@ def _require_supported_prompt(
         )
 
 
-def _decode_mask_constraint(
-    entry: Mapping[str, object], *, width: int, height: int
-) -> bytes:
-    artifact = entry.get('artifact')
-    if not isinstance(artifact, Mapping):
-        raise MaskSessionError(
-            'invalidPromptState', 'Mask constraint artifact must be an object.'
-        )
-    if (
-        artifact.get('encoding') != 'bitset-lsb-v1'
-        or artifact.get('width') != width
-        or artifact.get('height') != height
-        or not isinstance(artifact.get('data'), str)
-    ):
-        raise MaskSessionError(
-            'invalidPromptState',
-            'Mask constraint artifact must match the exact authoritative RGB.',
-        )
-    try:
-        bits = base64.b64decode(str(artifact['data']), validate=True)
-    except (ValueError, TypeError) as error:
-        raise MaskSessionError(
-            'invalidPromptState', 'Mask constraint artifact data is invalid.'
-        ) from error
-    expected_length = (width * height + 7) // 8
-    if len(bits) != expected_length:
-        raise MaskSessionError(
-            'invalidPromptState',
-            'Mask constraint artifact data does not match its dimensions.',
-        )
-    if bits and width * height % 8 and bits[-1] >> (width * height % 8):
-        raise MaskSessionError(
-            'invalidPromptState',
-            'Mask constraint artifact sets bits outside its dimensions.',
-        )
-    digest = artifact.get('digest')
-    expected_digest = f'sha256:{hashlib.sha256(bits).hexdigest()}'
-    if digest != expected_digest:
-        raise MaskSessionError(
-            'invalidPromptState',
-            'Mask constraint artifact digest does not match its bytes.',
-        )
-    return bits
-
-
-def compile_sam31_visual_prompt_program(
-    prompt_state: Mapping[str, object],
-    *,
-    width: int,
-    height: int,
-    capabilities: Mapping[str, object],
-) -> Sam31VisualPromptProgram:
-    """Compile exact PromptState constraints without ranking any candidates.
-
-    The declared order is family then lexicographic Prompt ID. Boxes use
-    inclusive pixel bounds and become normalized XYWH for SAM. Every family is
-    capability-checked before its payload is decoded; no visual constraint is
-    converted to a Point or silently discarded.
-    """
-
-    if width <= 0 or height <= 0:
-        raise MaskSessionError(
-            'invalidPromptState', 'Prompt compilation requires positive RGB dimensions.'
-        )
-    if (
-        capabilities.get('compilerPolicyVersion')
-        != SAM31_VISUAL_PROMPT_COMPILER_POLICY_VERSION
-    ):
-        raise MaskSessionError(
-            'capabilityMismatch',
-            'The SAM 3.1 visual Prompt compiler policy is incompatible.',
-        )
-    rgb_digest = prompt_state.get('rgbDigest')
-    prompt_state_digest = prompt_state.get('digest')
-    capability_digest = capabilities.get('capabilityDigest')
-    if not all(
+def _is_sha256_digest(value: object) -> bool:
+    return (
         isinstance(value, str)
         and len(value) == len('sha256:') + 64
         and value.startswith('sha256:')
         and all(character in '0123456789abcdef' for character in value[7:])
-        for value in (rgb_digest, prompt_state_digest, capability_digest)
-    ):
+    )
+
+
+def _require_prompt_state_v2(prompt_state: Mapping[str, object]) -> tuple[str, str]:
+    """Fail closed on any PromptState shape outside the exact v2 contract."""
+
+    required = {
+        'schemaVersion',
+        'viewId',
+        'rgbDigest',
+        'revision',
+        'points',
+        'boxes',
+        'digest',
+    }
+    if set(prompt_state) != required:
         raise MaskSessionError(
             'invalidPromptState',
-            'Prompt compilation requires exact RGB, PromptState, and capability digests.',
+            'PromptState must contain exactly the schema v2 fields.',
         )
-
-    points_value = prompt_state.get('points')
-    boxes_value = prompt_state.get('boxes')
-    constraints_value = prompt_state.get('maskConstraints')
-    text_value = prompt_state.get('textPrompts')
-    if not all(
-        isinstance(value, list)
-        for value in (points_value, boxes_value, constraints_value, text_value)
-    ):
+    if prompt_state.get('schemaVersion') != 2:
         raise MaskSessionError(
-            'invalidPromptState', 'PromptState families must be arrays.'
+            'invalidPromptState', 'PromptState schemaVersion must be 2.'
         )
-    if text_value:
-        _require_supported_prompt(capabilities, 'text', 'Text prompts')
+    revision = prompt_state.get('revision')
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
         raise MaskSessionError(
-            'unsupportedPromptType',
-            'The locked SAM 3.1 visual adapter does not accept Text prompts.',
+            'invalidPromptState',
+            'PromptState revision must be a non-negative integer.',
         )
+    rgb_digest = prompt_state.get('rgbDigest')
+    prompt_state_digest = prompt_state.get('digest')
+    if not _is_sha256_digest(rgb_digest) or not _is_sha256_digest(prompt_state_digest):
+        raise MaskSessionError(
+            'invalidPromptState',
+            'PromptState requires exact sha256 RGB and PromptState digests.',
+        )
+    payload = {key: item for key, item in prompt_state.items() if key != 'digest'}
+    try:
+        encoded = json.dumps(
+            payload, separators=(',', ':'), sort_keys=True, allow_nan=False
+        ).encode('utf-8')
+    except (TypeError, ValueError) as error:
+        raise MaskSessionError(
+            'invalidPromptState', 'PromptState payload must be JSON-compatible.'
+        ) from error
+    if f'sha256:{hashlib.sha256(encoded).hexdigest()}' != prompt_state_digest:
+        raise MaskSessionError(
+            'invalidPromptState',
+            'PromptState digest does not match its exact payload.',
+        )
+    return str(rgb_digest), str(prompt_state_digest)
 
-    points: list[Sam31CompiledPointPrompt] = []
-    boxes: list[Sam31CompiledBoxPrompt] = []
-    mask_constraints: list[Sam31CompiledMaskConstraintPrompt] = []
-    prompt_ids: set[str] = set()
 
-    for entry in points_value:
+def _compile_point_entries(
+    entries: object,
+    *,
+    width: int,
+    height: int,
+    capabilities: Mapping[str, object],
+    positive_field: str,
+    negative_field: str,
+    prompt_ids: set[str],
+) -> list[CompiledPointPrompt]:
+    if not isinstance(entries, list):
+        raise MaskSessionError(
+            'invalidPromptState', 'PromptState points must be an array.'
+        )
+    points: list[CompiledPointPrompt] = []
+    for entry in entries:
         if not isinstance(entry, Mapping):
             raise MaskSessionError('invalidPromptState', 'Point prompts must be objects.')
         prompt_id = _require_prompt_id(entry, 'Point')
         polarity = _require_prompt_polarity(entry, 'Point')
         _require_supported_prompt(
             capabilities,
-            'negativePoints' if polarity == 'exclude' else 'points',
+            negative_field if polarity == 'exclude' else positive_field,
             'negative Point prompts' if polarity == 'exclude' else 'Point prompts',
         )
         if prompt_id in prompt_ids:
             raise MaskSessionError('invalidPromptState', 'Prompt IDs must be unique.')
         prompt_ids.add(prompt_id)
         points.append(
-            Sam31CompiledPointPrompt(
+            CompiledPointPrompt(
                 prompt_id=prompt_id,
                 polarity=polarity,
                 x_px=_require_prompt_pixel(entry, 'xPx', width=width, height=height),
                 y_px=_require_prompt_pixel(entry, 'yPx', width=width, height=height),
             )
         )
-
-    for entry in boxes_value:
-        if not isinstance(entry, Mapping):
-            raise MaskSessionError('invalidPromptState', 'Box prompts must be objects.')
-        prompt_id = _require_prompt_id(entry, 'Box')
-        polarity = _require_prompt_polarity(entry, 'Box')
-        _require_supported_prompt(
-            capabilities,
-            'negativeBoxes' if polarity == 'exclude' else 'boxes',
-            'negative Box prompts' if polarity == 'exclude' else 'Box prompts',
-        )
-        if prompt_id in prompt_ids:
-            raise MaskSessionError('invalidPromptState', 'Prompt IDs must be unique.')
-        prompt_ids.add(prompt_id)
-        x0_px = _require_prompt_pixel(entry, 'x0Px', width=width, height=height)
-        y0_px = _require_prompt_pixel(entry, 'y0Px', width=width, height=height)
-        x1_px = _require_prompt_pixel(entry, 'x1Px', width=width, height=height)
-        y1_px = _require_prompt_pixel(entry, 'y1Px', width=width, height=height)
-        if x0_px >= x1_px or y0_px >= y1_px:
-            raise MaskSessionError(
-                'invalidPromptState', 'Box prompts must have a non-empty pixel area.'
-            )
-        boxes.append(
-            Sam31CompiledBoxPrompt(
-                prompt_id=prompt_id,
-                polarity=polarity,
-                x0_px=x0_px,
-                y0_px=y0_px,
-                x1_px=x1_px,
-                y1_px=y1_px,
-                normalized_xywh=(
-                    x0_px / width,
-                    y0_px / height,
-                    (x1_px - x0_px + 1) / width,
-                    (y1_px - y0_px + 1) / height,
-                ),
-            )
-        )
-
-    for entry in constraints_value:
-        if not isinstance(entry, Mapping):
-            raise MaskSessionError(
-                'invalidPromptState', 'Mask constraints must be objects.'
-            )
-        prompt_id = _require_prompt_id(entry, 'Mask constraint')
-        polarity = _require_prompt_polarity(entry, 'Mask constraint')
-        _require_supported_prompt(
-            capabilities,
-            'negativeMaskConstraints' if polarity == 'exclude' else 'maskInput',
-            (
-                'negative Mask constraints'
-                if polarity == 'exclude'
-                else 'Mask constraints'
-            ),
-        )
-        if prompt_id in prompt_ids:
-            raise MaskSessionError('invalidPromptState', 'Prompt IDs must be unique.')
-        prompt_ids.add(prompt_id)
-        mask_constraints.append(
-            Sam31CompiledMaskConstraintPrompt(
-                prompt_id=prompt_id,
-                polarity=polarity,
-                bits=_decode_mask_constraint(entry, width=width, height=height),
-            )
-        )
-
     points.sort(key=lambda point: point.prompt_id)
-    boxes.sort(key=lambda box: box.prompt_id)
-    mask_constraints.sort(key=lambda constraint: constraint.prompt_id)
-    positive_mask_constraint: bytes | None = None
-    if mask_constraints:
-        composed = bytearray((width * height + 7) // 8)
-        for constraint in mask_constraints:
-            if constraint.polarity != 'include':
-                # The capability check above means this is only reachable when
-                # a future version explicitly enables negative Mask semantics.
-                raise MaskSessionError(
-                    'unsupportedPromptType',
-                    'Negative Mask constraint composition is not available in this compiler.',
-                )
-            for index, value in enumerate(constraint.bits):
-                composed[index] |= value
-        positive_mask_constraint = bytes(composed)
+    return points
 
+
+def _require_box_pixel(value: object, name: str, *, limit: int) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or value < 0
+        or value > limit
+    ):
+        raise MaskSessionError(
+            'invalidPromptState', f'Box {name} must address an in-bounds pixel.'
+        )
+    return value
+
+
+def _compile_instance_box(
+    entries: object,
+    *,
+    width: int,
+    height: int,
+    capabilities: Mapping[str, object],
+    prompt_ids: set[str],
+) -> tuple[CompiledBoxPrompt, ...]:
+    if not isinstance(entries, list):
+        raise MaskSessionError(
+            'invalidPromptState', 'PromptState boxes must be an array.'
+        )
+    if not entries:
+        return ()
+    _require_supported_prompt(
+        capabilities, 'positiveInstanceBox', 'Instance Box prompts'
+    )
+    if len(entries) > 1:
+        raise MaskSessionError(
+            'invalidPromptState',
+            'PromptState supports at most one positive Instance Box.',
+        )
+    entry = entries[0]
+    if not isinstance(entry, Mapping):
+        raise MaskSessionError('invalidPromptState', 'Box prompts must be objects.')
+    prompt_id = _require_prompt_id(entry, 'Box')
+    if entry.get('polarity') != 'include':
+        raise MaskSessionError(
+            'unsupportedPromptType',
+            'The SAM 3 Image adapter supports a positive Instance Box only.',
+        )
+    if prompt_id in prompt_ids:
+        raise MaskSessionError('invalidPromptState', 'Prompt IDs must be unique.')
+    prompt_ids.add(prompt_id)
+    x0_px = _require_box_pixel(entry.get('x0Px'), 'x0Px', limit=width)
+    y0_px = _require_box_pixel(entry.get('y0Px'), 'y0Px', limit=height)
+    x1_px = _require_box_pixel(entry.get('x1Px'), 'x1Px', limit=width)
+    y1_px = _require_box_pixel(entry.get('y1Px'), 'y1Px', limit=height)
+    if x0_px >= x1_px or y0_px >= y1_px:
+        raise MaskSessionError(
+            'invalidPromptState', 'Box prompts must have a non-empty pixel area.'
+        )
+    return (
+        CompiledBoxPrompt(
+            prompt_id=prompt_id,
+            x0_px=x0_px,
+            y0_px=y0_px,
+            x1_px=x1_px,
+            y1_px=y1_px,
+        ),
+    )
+
+
+def compile_sam3_image_prompt_program(
+    prompt_state: Mapping[str, object],
+    *,
+    width: int,
+    height: int,
+    capabilities: Mapping[str, object],
+) -> CompiledImagePromptProgram:
+    """Compile exact PromptState v2 constraints without ranking any candidates.
+
+    The declared order is family then lexicographic Prompt ID. The Instance Box
+    uses authoritative-image pixel XYXY only; there is no normalized XYWH form.
+    Removed v1 families (Mask constraints, Text, negative Box polarity) fail
+    closed on exact-key, schema-version, and capability identity rather than
+    being converted into Points.
+    """
+
+    if width <= 0 or height <= 0:
+        raise MaskSessionError(
+            'invalidPromptState', 'Prompt compilation requires positive RGB dimensions.'
+        )
+    expected_capabilities = sam3_image_instance_capabilities()
+    capability_digest = expected_capabilities['capabilityDigest']
+    if (
+        capabilities.get('compilerPolicyVersion')
+        != SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION
+        or capabilities.get('capabilityDigest') != capability_digest
+    ):
+        raise MaskSessionError(
+            'capabilityMismatch',
+            'The SAM 3 Image Prompt compiler policy is incompatible.',
+        )
+    rgb_digest, prompt_state_digest = _require_prompt_state_v2(prompt_state)
+    prompt_ids: set[str] = set()
+    points = _compile_point_entries(
+        prompt_state.get('points'),
+        width=width,
+        height=height,
+        capabilities=capabilities,
+        positive_field='positivePoints',
+        negative_field='negativePoints',
+        prompt_ids=prompt_ids,
+    )
+    boxes = _compile_instance_box(
+        prompt_state.get('boxes'),
+        width=width,
+        height=height,
+        capabilities=capabilities,
+        prompt_ids=prompt_ids,
+    )
     compiled_prompt_ids = [
         *(point.prompt_id for point in points),
         *(box.prompt_id for box in boxes),
-        *(constraint.prompt_id for constraint in mask_constraints),
     ]
-    return Sam31VisualPromptProgram(
-        compiler_policy_version=SAM31_VISUAL_PROMPT_COMPILER_POLICY_VERSION,
+    return CompiledImagePromptProgram(
+        compiler_policy_version=SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION,
         rgb_digest=rgb_digest,
         prompt_state_digest=prompt_state_digest,
-        adapter_capability_digest=capability_digest,
+        adapter_capability_digest=str(capability_digest),
         width=width,
         height=height,
         points=tuple(points),
-        boxes=tuple(boxes),
-        mask_constraints=tuple(mask_constraints),
-        positive_mask_constraint=positive_mask_constraint,
+        boxes=boxes,
         diagnostics=MappingProxyType({
-            'compilerPolicyVersion': SAM31_VISUAL_PROMPT_COMPILER_POLICY_VERSION,
+            'compilerPolicyVersion': SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION,
             'promptOrder': 'family-then-prompt-id-lexicographic/v1',
-            'boxCoordinateConvention': (
-                'inclusive-authoritative-pixel-xyxy-native-normalization/v1'
-            ),
-            'boxComposition': 'independent-box-branches/v1',
+            'boxCoordinateConvention': 'authoritative-pixel-xyxy/v1',
             'rgbDigest': rgb_digest,
             'promptStateDigest': prompt_state_digest,
             'adapterCapabilityDigest': capability_digest,
@@ -446,9 +447,18 @@ def compile_point_mask_prompt_program(
     width: int,
     height: int,
     capabilities: Mapping[str, object],
-) -> Sam31VisualPromptProgram:
-    """Validate the reference point-only program without adopting SAM identity."""
+) -> CompiledImagePromptProgram:
+    """Validate the deterministic reference point-only program on v2 shape.
 
+    This compiler belongs to the ``point-mask-v1`` protocol reference adapter.
+    It shares the exact v2 PromptState envelope but supports Points only and
+    never adopts SAM model identity.
+    """
+
+    if width <= 0 or height <= 0:
+        raise MaskSessionError(
+            'invalidPromptState', 'Prompt compilation requires positive RGB dimensions.'
+        )
     if (
         capabilities.get('compilerPolicyVersion')
         != POINT_MASK_PROMPT_COMPILER_POLICY_VERSION
@@ -457,32 +467,59 @@ def compile_point_mask_prompt_program(
             'capabilityMismatch',
             'The Point Mask Prompt compiler policy is incompatible.',
         )
-    compiler_capabilities = {
-        **capabilities,
-        'compilerPolicyVersion': SAM31_VISUAL_PROMPT_COMPILER_POLICY_VERSION,
-    }
-    program = compile_sam31_visual_prompt_program(
-        prompt_state,
+    capability_digest = capabilities.get('capabilityDigest')
+    if not _is_sha256_digest(capability_digest):
+        raise MaskSessionError(
+            'invalidPromptState',
+            'Prompt compilation requires an exact adapter capability digest.',
+        )
+    rgb_digest, prompt_state_digest = _require_prompt_state_v2(prompt_state)
+    if prompt_state.get('boxes'):
+        _require_supported_prompt(capabilities, 'boxes', 'Box prompts')
+    prompt_ids: set[str] = set()
+    points = _compile_point_entries(
+        prompt_state.get('points'),
         width=width,
         height=height,
-        capabilities=compiler_capabilities,
+        capabilities=capabilities,
+        positive_field='points',
+        negative_field='negativePoints',
+        prompt_ids=prompt_ids,
     )
-    return Sam31VisualPromptProgram(
+    return CompiledImagePromptProgram(
         compiler_policy_version=POINT_MASK_PROMPT_COMPILER_POLICY_VERSION,
-        rgb_digest=program.rgb_digest,
-        prompt_state_digest=program.prompt_state_digest,
-        adapter_capability_digest=program.adapter_capability_digest,
-        width=program.width,
-        height=program.height,
-        points=program.points,
-        boxes=program.boxes,
-        mask_constraints=program.mask_constraints,
-        positive_mask_constraint=program.positive_mask_constraint,
+        rgb_digest=rgb_digest,
+        prompt_state_digest=prompt_state_digest,
+        adapter_capability_digest=str(capability_digest),
+        width=width,
+        height=height,
+        points=tuple(points),
+        boxes=(),
         diagnostics=MappingProxyType({
-            **program.diagnostics,
             'compilerPolicyVersion': POINT_MASK_PROMPT_COMPILER_POLICY_VERSION,
+            'promptOrder': 'family-then-prompt-id-lexicographic/v1',
+            'rgbDigest': rgb_digest,
+            'promptStateDigest': prompt_state_digest,
+            'adapterCapabilityDigest': capability_digest,
+            'rgbDimensions': [width, height],
+            'compiledPromptIds': [point.prompt_id for point in points],
         }),
     )
+
+
+def resolve_multimask_output(
+    program: CompiledImagePromptProgram, has_refinement: bool
+) -> bool:
+    """Pin the single-positive-point multimask policy for one program.
+
+    Multimask output is allowed only for exactly one positive Point with no
+    Instance Box and no resolved previous-logits refinement; every other
+    composition forces single-mask mode.
+    """
+
+    if has_refinement or program.boxes or len(program.points) != 1:
+        return False
+    return program.points[0].polarity == 'include'
 
 
 class MaskSessionError(ValueError):
@@ -534,14 +571,36 @@ class MaskProduction:
 
 
 @dataclass(frozen=True)
-class AISelectVisualPromptCandidate:
-    """One structurally valid, unranked model candidate for the proposal seam."""
+class Sam3ImageRefinementInput:
+    """Resolved Companion-local refinement state; it never crosses the wire."""
+
+    inference_state: Any
+    mask_input: Any
+
+
+@dataclass(frozen=True)
+class Sam3ImageCandidate:
+    """One validated, unranked instance candidate for the proposal seam.
+
+    ``low_res_logits`` is the raw model-side refinement tensor. It is
+    Companion-local disposable state and must never be serialized into a
+    response; only opaque digest-bound references may cross the boundary.
+    """
 
     source_index: int
     mask_bits: bytes
     model_score: float | None
     prompt_consistency: Mapping[str, bool]
     prompt_diagnostics: tuple[Mapping[str, object], ...]
+    low_res_logits: Any
+
+
+@dataclass(frozen=True)
+class Sam3ImageProposalBatch:
+    """Retained candidates plus the opaque image state used to mint refs."""
+
+    candidates: tuple[Sam3ImageCandidate, ...]
+    inference_state: Any
 
 
 class PromptableMaskAdapter(Protocol):
@@ -560,23 +619,6 @@ class PromptableMaskAdapter(Protocol):
         ``MaskProduction`` binds the threshold and any adapter-local audit
         diagnostics into the immutable completed Mask Set.
         """
-
-
-@runtime_checkable
-class AISelectVisualPromptAdapter(PromptableMaskAdapter, Protocol):
-    """A prompt adapter that explicitly owns the visual inference contract."""
-
-    def produce_ai_select_visual_proposals(
-        self,
-        *,
-        model: Mapping[str, Any],
-        rgb_png: bytes,
-        width: int,
-        height: int,
-        program: Sam31VisualPromptProgram,
-        cancelled: Callable[[], bool],
-    ) -> tuple[AISelectVisualPromptCandidate, ...]:
-        """Return independently validated candidates without cross-candidate policy."""
 
 
 def register_frame_set(payload: dict[str, Any]) -> RegisteredFrameSet:
@@ -669,8 +711,9 @@ class PointMaskAdapter:
     """A deterministic protocol reference adapter for point-mask contracts.
 
     It is intentionally limited to contract tests and local transport smoke
-    checks.  It never claims to be image/model inference; the `sam3.1` adapter
-    below is the isolated model-backed Anchor View implementation.
+    checks.  It never claims to be image/model inference; the
+    ``Sam3ImageInstanceAdapter`` below is the isolated model-backed Anchor View
+    implementation.
     """
 
     def produce_tracks(
@@ -832,26 +875,22 @@ class PointMaskAdapter:
 
 
 class Sam3PointMaskAdapter:
-    """Track SAM 3.1 point prompts across an ordered Frame Set.
+    """Legacy non-current SAM 3.1 Multiplex point tracker (benchmark fixture).
 
-    SAM and its checkpoint remain separately installed by the operator.  This
-    adapter imports that runtime only when selected, passes the verified
-    checkpoint path to it, materializes immutable PNGs into a temporary video
-    sequence, and releases the model session before returning generic mask
-    bytes to the Companion state machine.
+    This adapter remains only for the historical object-selection PoC flow and
+    its frozen benchmark fixtures. It is not a current static
+    instance-segmentation provider: a ``sam3.1`` Model Manifest fails closed on
+    the AI Select mask-proposals route, and the retired private-tracker static
+    path (``produce_ai_select_visual_proposals``) has been removed. The current
+    static path is ``Sam3ImageInstanceAdapter`` below.
     """
 
     def __init__(
         self,
         *,
         build_predictor: Callable[[Mapping[str, Any]], Any] | None = None,
-        build_interactive_predictor: Callable[[Mapping[str, Any], bytes], Any]
-        | None = None,
     ) -> None:
         self._build_predictor = build_predictor or _build_sam3_predictor
-        self._build_interactive_predictor = (
-            build_interactive_predictor or _build_sam3_interactive_image_predictor
-        )
 
     def produce_tracks(
         self,
@@ -972,226 +1011,6 @@ class Sam3PointMaskAdapter:
             return
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-
-    def produce_ai_select_visual_proposals(
-        self,
-        *,
-        model: Mapping[str, Any],
-        rgb_png: bytes,
-        width: int,
-        height: int,
-        program: Sam31VisualPromptProgram,
-        cancelled: Callable[[], bool],
-    ) -> tuple[AISelectVisualPromptCandidate, ...]:
-        """Run unranked visual-prompt inference through the locked image API.
-
-        This method owns only adapter execution and candidate-local prompt
-        facts. It never compares candidates, truncates them, or chooses a
-        proposal; those operations remain downstream policy concerns.
-        """
-
-        if model.get('adapterId') != 'sam3.1':
-            raise MaskSessionError(
-                'incompatibleManifest',
-                'The selected Model Manifest is incompatible with the SAM 3.1 visual Prompt adapter.',
-            )
-        if model.get('runtimeConfigDigest') != SAM31_RUNTIME_CONFIG_DIGEST:
-            raise MaskSessionError(
-                'incompatibleManifest',
-                'The selected SAM 3.1 Model Manifest does not bind the pinned visual Prompt runtime.',
-            )
-        if (
-            width != program.width
-            or height != program.height
-            or f'sha256:{hashlib.sha256(rgb_png).hexdigest()}' != program.rgb_digest
-            or program.adapter_capability_digest
-            != sam31_visual_prompt_capabilities()['capabilityDigest']
-        ):
-            raise MaskSessionError(
-                'capabilityMismatch',
-                'The visual Prompt program does not bind this RGB, dimensions, and adapter capability.',
-            )
-        if program.mask_constraints:
-            raise MaskSessionError(
-                'unsupportedPromptType',
-                'Prompt Brush has no validated SAM 3.1 visual Prompt mapping.',
-            )
-        if cancelled():
-            raise MaskSessionError('cancelled', 'The visual Prompt request was cancelled.')
-
-        predictor = self._build_interactive_predictor(model, rgb_png)
-        branches = program.boxes or (None,)
-        candidates: list[AISelectVisualPromptCandidate] = []
-        source_index = 0
-        for box in branches:
-            if cancelled():
-                raise MaskSessionError(
-                    'cancelled', 'The visual Prompt request was cancelled.'
-                )
-            masks, scores, _low_res_masks = predictor.predict(
-                point_coords=[
-                    [point.x_px, point.y_px] for point in program.points
-                ]
-                or None,
-                point_labels=[
-                    1 if point.polarity == 'include' else 0
-                    for point in program.points
-                ]
-                or None,
-                box=(
-                    [[box.x0_px, box.y0_px, box.x1_px, box.y1_px]]
-                    if box is not None
-                    else None
-                ),
-                mask_input=None,
-                multimask_output=True,
-                return_logits=False,
-                # Pinned SAM interprets absolute authoritative-image pixels
-                # correctly only when it performs its native normalization.
-                normalize_coords=True,
-            )
-            mask_candidates = self._mask_candidates(masks)
-            candidate_scores = self._candidate_scores(scores, len(mask_candidates))
-            for mask, score in zip(mask_candidates, candidate_scores, strict=True):
-                bits, foreground = self._encode_binary_mask(
-                    mask,
-                    RegisteredFrame(
-                        view_id='anchor-view',
-                        frame_digest='',
-                        width=width,
-                        height=height,
-                    ),
-                )
-                foreground_count = sum(byte.bit_count() for byte in bits)
-                if (
-                    not foreground
-                    or (
-                        SAM31_RUNTIME_CONFIG['reject_full_frame_masks']
-                        and foreground_count == width * height
-                    )
-                ):
-                    source_index += 1
-                    continue
-                prompt_consistency, prompt_diagnostics = (
-                    self._visual_prompt_consistency_facts(
-                        bits,
-                        width=width,
-                        height=height,
-                        program=program,
-                    )
-                )
-                candidates.append(
-                    AISelectVisualPromptCandidate(
-                        source_index=source_index,
-                        mask_bits=bytes(bits),
-                        model_score=score,
-                        prompt_consistency=MappingProxyType(prompt_consistency),
-                        prompt_diagnostics=tuple(
-                            MappingProxyType(diagnostic)
-                            for diagnostic in prompt_diagnostics
-                        ),
-                    )
-                )
-                source_index += 1
-        return tuple(candidates)
-
-    @staticmethod
-    def _visual_prompt_consistency_facts(
-        bits: bytes,
-        *,
-        width: int,
-        height: int,
-        program: Sam31VisualPromptProgram,
-    ) -> tuple[dict[str, bool], list[dict[str, object]]]:
-        def contains(x_px: int, y_px: int) -> bool:
-            pixel_index = y_px * width + x_px
-            return bool(bits[pixel_index // 8] & (1 << (pixel_index % 8)))
-
-        foreground_count = sum(byte.bit_count() for byte in bits)
-        diagnostics: list[dict[str, object]] = []
-        point_results: list[bool] = []
-        for point in program.points:
-            present = contains(point.x_px, point.y_px)
-            satisfied = present == (point.polarity == 'include')
-            point_results.append(satisfied)
-            diagnostics.append({
-                'promptId': point.prompt_id,
-                'family': 'point',
-                'polarity': point.polarity,
-                'satisfied': satisfied,
-            })
-
-        box_results: list[bool] = []
-        for box in program.boxes:
-            box_pixels = [
-                (x_px, y_px)
-                for y_px in range(box.y0_px, box.y1_px + 1)
-                for x_px in range(box.x0_px, box.x1_px + 1)
-            ]
-            intersection_count = sum(
-                contains(x_px, y_px) for x_px, y_px in box_pixels
-            )
-            # This is an exact local fact, not an acceptance threshold. Ticket
-            # 07A owns how fill/spill fractions affect proposal eligibility.
-            satisfied = intersection_count > 0
-            box_results.append(satisfied)
-            diagnostics.append({
-                'promptId': box.prompt_id,
-                'family': 'box',
-                'polarity': box.polarity,
-                'satisfied': satisfied,
-                'constraintCoverageFraction': intersection_count / len(box_pixels),
-                'candidateCoverageFraction': (
-                    0.0
-                    if foreground_count == 0
-                    else intersection_count / foreground_count
-                ),
-            })
-
-        mask_results: list[bool] = []
-        for constraint in program.mask_constraints:
-            constraint_count = sum(byte.bit_count() for byte in constraint.bits)
-            intersection_count = sum(
-                byte.bit_count() for byte in bytes(
-                    left & right for left, right in zip(bits, constraint.bits, strict=True)
-                )
-            )
-            satisfied = intersection_count > 0
-            mask_results.append(satisfied)
-            diagnostics.append({
-                'promptId': constraint.prompt_id,
-                'family': 'mask-constraint',
-                'polarity': constraint.polarity,
-                'satisfied': satisfied,
-                'constraintCoverageFraction': (
-                    0.0 if constraint_count == 0 else intersection_count / constraint_count
-                ),
-                'candidateCoverageFraction': (
-                    0.0
-                    if foreground_count == 0
-                    else intersection_count / foreground_count
-                ),
-            })
-
-        point_positive = [
-            result
-            for point, result in zip(program.points, point_results, strict=True)
-            if point.polarity == 'include'
-        ]
-        point_negative = [
-            result
-            for point, result in zip(program.points, point_results, strict=True)
-            if point.polarity == 'exclude'
-        ]
-        facts: dict[str, bool] = {
-            'positivePointsSatisfied': all(point_positive),
-            'negativePointsSatisfied': all(point_negative),
-        }
-        if program.boxes:
-            facts['positiveBoxesSatisfied'] = all(box_results)
-        if program.mask_constraints:
-            facts['maskConstraintsSatisfied'] = all(mask_results)
-        return facts, diagnostics
 
     def _infer_frame_set(
         self,
@@ -1747,218 +1566,442 @@ def _build_sam3_predictor(model: Mapping[str, Any]) -> Any:
     return predictor
 
 
-@dataclass(frozen=True)
-class _Sam31InteractiveImageSession:
-    """One locked SAM 3.1 interactive head over shared image features."""
-
-    runtime: Any
-    tracker_model: Any
-    backbone_features: Any
-    high_resolution_features: tuple[Any, ...]
-    multiplex_state: Any
-    original_width: int
-    original_height: int
-
-    @property
-    def model(self) -> Any:
-        return self.tracker_model
-
-    def predict(self, **request: object) -> tuple[object, object, object]:
-        import torch
-        import torch.nn.functional as functional
-
-        if request.get('normalize_coords') is not True:
-            raise ValueError(
-                'SAM 3.1 visual prompts must use authoritative pixel coordinates.'
-            )
-        device = self.backbone_features.device
-        coords: list[list[float]] = []
-        labels: list[int] = []
-        box = request.get('box')
-        if box is not None:
-            box_tensor = torch.as_tensor(box, dtype=torch.float32)
-            if box_tensor.numel() != 4:
-                raise ValueError('SAM 3.1 Box input must contain one XYXY box.')
-            box_values = box_tensor.reshape(4).tolist()
-            coords.extend([
-                [float(box_values[0]), float(box_values[1])],
-                [float(box_values[2]), float(box_values[3])],
-            ])
-            labels.extend([2, 3])
-        point_coords = request.get('point_coords')
-        point_labels = request.get('point_labels')
-        if point_coords is not None:
-            point_tensor = torch.as_tensor(point_coords, dtype=torch.float32)
-            label_tensor = torch.as_tensor(point_labels, dtype=torch.int32)
-            if (
-                point_tensor.ndim != 2
-                or point_tensor.shape[-1] != 2
-                or label_tensor.ndim != 1
-                or point_tensor.shape[0] != label_tensor.shape[0]
-            ):
-                raise ValueError('SAM 3.1 Point inputs are structurally invalid.')
-            coords.extend(point_tensor.tolist())
-            labels.extend(label_tensor.tolist())
-        point_inputs: dict[str, Any] | None = None
-        if coords:
-            point_coords_tensor = torch.tensor(
-                coords, dtype=torch.float32, device=device
-            )
-            point_coords_tensor[:, 0] *= (
-                self.tracker_model.image_size / self.original_width
-            )
-            point_coords_tensor[:, 1] *= (
-                self.tracker_model.image_size / self.original_height
-            )
-            point_inputs = {
-                'point_coords': point_coords_tensor.unsqueeze(0),
-                'point_labels': torch.tensor(
-                    labels, dtype=torch.int32, device=device
-                ).unsqueeze(0),
-            }
-        mask_input = request.get('mask_input')
-        mask_tensor = None
-        if mask_input is not None:
-            mask_tensor = torch.as_tensor(
-                mask_input, dtype=torch.float32, device=device
-            )
-            if mask_tensor.ndim == 3:
-                mask_tensor = mask_tensor.unsqueeze(0)
-            if mask_tensor.ndim != 4 or mask_tensor.shape[:2] != (1, 1):
-                raise ValueError('SAM 3.1 Mask input is structurally invalid.')
-        with torch.inference_mode():
-            output = self.tracker_model._forward_sam_heads(
-                backbone_features=self.backbone_features,
-                point_inputs=point_inputs,
-                mask_inputs=mask_tensor,
-                interactive_high_res_features=list(
-                    self.high_resolution_features
-                ),
-                multimask_output=bool(request.get('multimask_output', True)),
-                objects_to_interact=[0],
-                multiplex_state=self.multiplex_state,
-            )
-            masks = output['high_res_multimasks']
-            if masks.shape[-2:] != (self.original_height, self.original_width):
-                masks = functional.interpolate(
-                    masks,
-                    size=(self.original_height, self.original_width),
-                    mode='bilinear',
-                    align_corners=False,
+def _encode_binary_mask_bits(
+    mask: list[list[Any]], width: int, height: int
+) -> tuple[bytearray, bool]:
+    if len(mask) != height or any(len(row) != width for row in mask):
+        raise MaskSessionError(
+            'modelFailure', 'SAM 3 Image returned a mask with stale RGB dimensions.'
+        )
+    bits = bytearray((width * height + 7) // 8)
+    foreground = False
+    for y_px, row in enumerate(mask):
+        for x_px, value in enumerate(row):
+            if isinstance(value, bool):
+                accepted = value
+            elif isinstance(value, (int, float)):
+                accepted = value > 0
+            else:
+                raise MaskSessionError(
+                    'modelFailure', 'SAM 3 Image returned a non-binary instance mask.'
                 )
-            if request.get('return_logits') is not True:
-                masks = masks > 0
-            return (
-                masks.squeeze(0).float().cpu().numpy(),
-                output['ious'].squeeze(0).float().cpu().numpy(),
-                output['low_res_multimasks'].squeeze(0).float().cpu().numpy(),
-            )
+            if accepted:
+                foreground = True
+                pixel_index = y_px * width + x_px
+                bits[pixel_index // 8] |= 1 << (pixel_index % 8)
+    return bits, foreground
 
 
-def _build_sam3_interactive_image_predictor(
-    model: Mapping[str, Any], rgb_png: bytes
-) -> Any:
-    """Build the pinned SAM 3.1 shared-backbone image-prompt surface."""
+def _instance_prompt_consistency_facts(
+    bits: bytes,
+    *,
+    width: int,
+    height: int,
+    program: CompiledImagePromptProgram,
+) -> tuple[dict[str, bool], list[dict[str, object]]]:
+    """Compute exact candidate-local Point/Box facts for one instance mask."""
+
+    def contains(x_px: int, y_px: int) -> bool:
+        pixel_index = y_px * width + x_px
+        return bool(bits[pixel_index // 8] & (1 << (pixel_index % 8)))
+
+    foreground_count = sum(byte.bit_count() for byte in bits)
+    diagnostics: list[dict[str, object]] = []
+    point_results: list[bool] = []
+    for point in program.points:
+        present = contains(point.x_px, point.y_px)
+        satisfied = present == (point.polarity == 'include')
+        point_results.append(satisfied)
+        diagnostics.append({
+            'promptId': point.prompt_id,
+            'family': 'point',
+            'polarity': point.polarity,
+            'satisfied': satisfied,
+        })
+
+    box_results: list[bool] = []
+    for box in program.boxes:
+        box_pixels = [
+            (x_px, y_px)
+            for y_px in range(box.y0_px, box.y1_px)
+            for x_px in range(box.x0_px, box.x1_px)
+        ]
+        intersection_count = sum(
+            contains(x_px, y_px) for x_px, y_px in box_pixels
+        )
+        # This is an exact local fact, not an acceptance threshold. Ticket
+        # 07A owns how fill/spill fractions affect proposal eligibility.
+        satisfied = intersection_count > 0
+        box_results.append(satisfied)
+        diagnostics.append({
+            'promptId': box.prompt_id,
+            'family': 'box',
+            'polarity': 'include',
+            'satisfied': satisfied,
+            'constraintCoverageFraction': intersection_count / len(box_pixels),
+            'candidateCoverageFraction': (
+                0.0
+                if foreground_count == 0
+                else intersection_count / foreground_count
+            ),
+        })
+
+    point_positive = [
+        result
+        for point, result in zip(program.points, point_results, strict=True)
+        if point.polarity == 'include'
+    ]
+    point_negative = [
+        result
+        for point, result in zip(program.points, point_results, strict=True)
+        if point.polarity == 'exclude'
+    ]
+    facts: dict[str, bool] = {
+        'positivePointsSatisfied': all(point_positive),
+        'negativePointsSatisfied': all(point_negative),
+        'positiveBoxesSatisfied': all(box_results),
+    }
+    return facts, diagnostics
+
+
+class _Sam3ImageModelRuntime:
+    """The locked official SAM 3 Image path behind the injectable seam."""
+
+    def __init__(self, model: Any, processor: Any) -> None:
+        self._model = model
+        self._processor = processor
+
+    def set_image(self, rgb_png: bytes) -> Any:
+        try:
+            from PIL import Image
+        except ImportError as error:
+            raise MaskSessionError(
+                'modelRuntimeUnavailable',
+                'SAM 3 Image dependencies are unavailable in this Companion environment.',
+            ) from error
+        try:
+            with Image.open(io.BytesIO(rgb_png)) as image:
+                rgb = image.convert('RGB').copy()
+        except Exception as error:
+            raise MaskSessionError(
+                'invalidRgb',
+                'The authoritative RGB cannot be decoded for SAM 3 Image prompting.',
+            ) from error
+        return self._processor.set_image(rgb)
+
+    def predict_inst(self, inference_state: Any, **kwargs: Any) -> Any:
+        try:
+            import torch
+        except ImportError as error:
+            raise MaskSessionError(
+                'modelRuntimeUnavailable',
+                'SAM 3 Image requires the pinned PyTorch runtime in this Companion environment.',
+            ) from error
+        with torch.inference_mode():
+            if torch.cuda.is_available():
+                # bf16 autocast on CUDA follows the pinned upstream
+                # interactive-image example for this model family.
+                with torch.autocast('cuda', dtype=torch.bfloat16):
+                    return self._model.predict_inst(inference_state, **kwargs)
+            return self._model.predict_inst(inference_state, **kwargs)
+
+
+def _build_sam3_image_runtime(model: Mapping[str, Any]) -> _Sam3ImageModelRuntime:
+    """Load the optional operator-installed SAM 3 Image runtime on demand."""
 
     weights_path = model.get('weightsPath')
     if not isinstance(weights_path, str) or not weights_path:
         raise MaskSessionError(
             'modelUnavailable',
-            'The SAM 3.1 Model Manifest has no verified checkpoint path.',
+            'The SAM 3 Image Model Manifest has no verified checkpoint path.',
         )
     try:
-        from PIL import Image
+        from sam3.model_builder import build_sam3_image_model
         from sam3.model.sam3_image_processor import Sam3Processor
     except ImportError as error:
         raise MaskSessionError(
             'modelRuntimeUnavailable',
-            'SAM 3.1 interactive-image dependencies are unavailable in this Companion environment.',
+            'SAM 3 Image is not installed in this Companion environment; install the matching runtime and retry.',
         ) from error
     try:
-        with Image.open(io.BytesIO(rgb_png)) as image:
-            rgb = image.convert('RGB').copy()
-    except Exception as error:
-        raise MaskSessionError(
-            'invalidRgb',
-            'The authoritative RGB cannot be decoded for SAM 3.1 visual prompting.',
-        ) from error
-    try:
-        runtime = _build_sam3_predictor(model)
-        multiplex_model = getattr(runtime, 'model', None)
-        detector = getattr(multiplex_model, 'detector', None)
-        tracker_wrapper = getattr(multiplex_model, 'tracker', None)
-        tracker_model = getattr(tracker_wrapper, 'model', None)
-        if detector is None or tracker_model is None:
-            raise RuntimeError(
-                'SAM 3.1 multiplex runtime has no detector/tracker prompt surface'
-            )
-        import torch
-        from torchvision.transforms import v2
-
-        processor = Sam3Processor(detector)
-        image_tensor = processor.transform(
-            v2.functional.to_image(rgb).to('cuda')
-        ).unsqueeze(0)
-        with torch.inference_mode():
-            backbone_out = detector.backbone.forward_image(
-                image_tensor,
-                need_sam3_out=False,
-                need_interactive_out=True,
-                need_propagation_out=False,
-            )
-            interactive = backbone_out['interactive']
-            if tracker_model.use_high_res_features_in_sam:
-                interactive['backbone_fpn'][
-                    0
-                ].tensors = tracker_model.interactive_sam_mask_decoder.conv_s0(
-                    interactive['backbone_fpn'][0].tensors
-                )
-                interactive['backbone_fpn'][
-                    1
-                ].tensors = tracker_model.interactive_sam_mask_decoder.conv_s1(
-                    interactive['backbone_fpn'][1].tensors
-                )
-            prepared = tracker_model._prepare_backbone_features(backbone_out)[
-                'interactive'
-            ]
-            vision_features = prepared['vision_feats']
-            feature_sizes = prepared['feat_sizes']
-            backbone_features = tracker_model._get_interactive_pix_mem(
-                vision_features, feature_sizes
-            )
-            high_resolution_features = tuple(
-                feature.permute(1, 2, 0).view(
-                    feature.size(1), feature.size(2), *size
-                )
-                for feature, size in zip(
-                    vision_features[:-1], feature_sizes[:-1], strict=True
-                )
-            )
-            multiplex_state = tracker_model.multiplex_controller.get_state(
-                num_valid_entries=1,
-                device=backbone_features.device,
-                dtype=backbone_features.dtype,
-                random=False,
-                object_ids=[1],
-            )
-        return _Sam31InteractiveImageSession(
-            runtime=runtime,
-            tracker_model=tracker_model,
-            backbone_features=backbone_features,
-            high_resolution_features=high_resolution_features,
-            multiplex_state=multiplex_state,
-            original_width=rgb.width,
-            original_height=rgb.height,
+        built = build_sam3_image_model(
+            enable_inst_interactivity=SAM3_IMAGE_RUNTIME_CONFIG[
+                'enable_inst_interactivity'
+            ],
+            checkpoint_path=weights_path,
+            load_from_HF=SAM3_IMAGE_RUNTIME_CONFIG['load_from_hf'],
+            compile=SAM3_IMAGE_RUNTIME_CONFIG['compile'],
         )
-    except MaskSessionError:
-        raise
     except Exception as error:
         raise MaskSessionError(
             'modelFailure',
-            'The locked SAM 3.1 interactive-image adapter failed to prepare the authoritative RGB.',
+            'The SAM 3 Image checkpoint could not be initialized from the installed Model Manifest.',
         ) from error
+    return _Sam3ImageModelRuntime(built, Sam3Processor(built))
 
 
+class Sam3ImageInstanceAdapter:
+    """Locked SAM 3 Image instance adapter for the current static Prompt path.
+
+    The model builder is injectable so contract tests can substitute a fake
+    runtime; the default builds the pinned official upstream
+    ``build_sam3_image_model(enable_inst_interactivity=True)`` model and its
+    ``Sam3Processor``. The built model is cached per Model Manifest digest as
+    Companion-local disposable state. Inference state and low-resolution
+    logits never cross the browser boundary; only generic Mask bytes, scores,
+    and opaque digest-bound references do. This adapter must never instantiate
+    the Multiplex video predictor or call private tracker-head methods.
+    """
+
+    def __init__(
+        self,
+        *,
+        build_model: Callable[[Mapping[str, Any]], Any] | None = None,
+    ) -> None:
+        self._build_model = build_model or _build_sam3_image_runtime
+        self._runtime_cache_key: str | None = None
+        self._runtime_cache: Any = None
+
+    def runtime_profile_capability(
+        self, model: Mapping[str, Any]
+    ) -> dict[str, object]:
+        capabilities = sam3_image_instance_capabilities()
+        capability: dict[str, object] = {
+            'status': 'ready',
+            'authoritativeRgb': {
+                'artifact': True,
+                'companionReference': True,
+            },
+            'promptCapabilities': {
+                key: capabilities[key]
+                for key in (
+                    'positivePoints',
+                    'negativePoints',
+                    'positiveInstanceBox',
+                    'previousLogitsRefinement',
+                    'singlePointMultimask',
+                    'negativeBox',
+                    'promptBrush',
+                    'maskConstraints',
+                    'text',
+                )
+            },
+            'compilerPolicyVersion': SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION,
+            'adapterCapabilityDigest': capabilities['capabilityDigest'],
+        }
+        try:
+            self._require_runtime(model)
+        except MaskSessionError as error:
+            return {
+                **capability,
+                'status': 'unavailable',
+                'message': str(error),
+            }
+        except Exception:
+            return {
+                **capability,
+                'status': 'unavailable',
+                'message': (
+                    'The SAM 3 Image checkpoint could not be initialized in '
+                    'this Companion environment.'
+                ),
+            }
+        return capability
+
+    def produce_proposals(
+        self,
+        *,
+        model: Mapping[str, Any],
+        rgb_png: bytes,
+        width: int,
+        height: int,
+        program: CompiledImagePromptProgram,
+        refinement: Sam3ImageRefinementInput | None,
+        cancelled: Callable[[], bool],
+    ) -> Sam3ImageProposalBatch:
+        """Run unranked instance inference through the locked image API.
+
+        This method owns only adapter execution, candidate-local prompt facts,
+        and the pinned multimask/exact-duplicate/area candidate policy. It
+        never ranks candidates or chooses a proposal; those remain downstream
+        policy concerns.
+        """
+
+        if model.get('adapterId') != SAM3_IMAGE_INSTANCE_ADAPTER_ID:
+            raise MaskSessionError(
+                'incompatibleManifest',
+                'The selected Model Manifest is incompatible with the SAM 3 Image instance adapter.',
+            )
+        if model.get('runtimeConfigDigest') != SAM3_IMAGE_RUNTIME_CONFIG_DIGEST:
+            raise MaskSessionError(
+                'incompatibleManifest',
+                'The selected SAM 3 Image Model Manifest does not bind the pinned runtime configuration.',
+            )
+        if (
+            width != program.width
+            or height != program.height
+            or f'sha256:{hashlib.sha256(rgb_png).hexdigest()}' != program.rgb_digest
+            or program.adapter_capability_digest
+            != sam3_image_instance_capabilities()['capabilityDigest']
+        ):
+            raise MaskSessionError(
+                'capabilityMismatch',
+                'The Prompt program does not bind this RGB, dimensions, and adapter capability.',
+            )
+        if cancelled():
+            raise MaskSessionError(
+                'cancelled', 'The instance Prompt request was cancelled.'
+            )
+
+        runtime = self._require_runtime(model)
+        multimask_output = resolve_multimask_output(
+            program, refinement is not None
+        )
+        if refinement is None:
+            inference_state = runtime.set_image(rgb_png)
+        else:
+            # Refinement reuses the exact stored image state and the chosen
+            # candidate's low-resolution logits as mask_input; the RGB digest
+            # lineage was validated before this dispatch.
+            inference_state = refinement.inference_state
+        if cancelled():
+            raise MaskSessionError(
+                'cancelled', 'The instance Prompt request was cancelled.'
+            )
+
+        import numpy as np
+
+        point_coords = None
+        point_labels = None
+        if program.points:
+            point_coords = np.array(
+                [[point.x_px, point.y_px] for point in program.points],
+                dtype=np.float32,
+            )
+            point_labels = np.array(
+                [
+                    1 if point.polarity == 'include' else 0
+                    for point in program.points
+                ],
+                dtype=np.int32,
+            )
+        box = None
+        if program.boxes:
+            instance_box = program.boxes[0]
+            box = np.array(
+                [
+                    instance_box.x0_px,
+                    instance_box.y0_px,
+                    instance_box.x1_px,
+                    instance_box.y1_px,
+                ],
+                dtype=np.float32,
+            )
+        masks, scores, low_res_logits = runtime.predict_inst(
+            inference_state,
+            point_coords=point_coords,
+            point_labels=point_labels,
+            box=box,
+            mask_input=None if refinement is None else refinement.mask_input,
+            multimask_output=multimask_output,
+            return_logits=False,
+            # The pinned SAM Image API interprets absolute authoritative-image
+            # pixels correctly only when it performs its native normalization.
+            normalize_coords=True,
+        )
+        if cancelled():
+            raise MaskSessionError(
+                'cancelled', 'The instance Prompt request was cancelled.'
+            )
+
+        mask_candidates = Sam3PointMaskAdapter._mask_candidates(masks)
+        if not mask_candidates:
+            return Sam3ImageProposalBatch(
+                candidates=(), inference_state=inference_state
+            )
+        candidate_scores = Sam3PointMaskAdapter._candidate_scores(
+            scores, len(mask_candidates)
+        )
+        logits_size = int(SAM3_IMAGE_RUNTIME_CONFIG['low_res_logits_size'])
+        logits_array = np.asarray(low_res_logits, dtype=np.float32)
+        if (
+            logits_array.ndim != 3
+            or logits_array.shape[0] != len(mask_candidates)
+            or logits_array.shape[1] != logits_size
+            or logits_array.shape[2] != logits_size
+        ):
+            raise MaskSessionError(
+                'modelFailure',
+                'SAM 3 Image returned low-resolution logits that do not match its candidates.',
+            )
+
+        candidate_cap = (
+            int(SAM3_IMAGE_RUNTIME_CONFIG['max_multimask_candidates'])
+            if multimask_output
+            else 1
+        )
+        retained: list[Sam3ImageCandidate] = []
+        seen_payloads: set[bytes] = set()
+        for source_index, (mask, score) in enumerate(
+            zip(mask_candidates, candidate_scores, strict=True)
+        ):
+            bits, foreground = _encode_binary_mask_bits(mask, width, height)
+            foreground_count = sum(byte.bit_count() for byte in bits)
+            if (
+                not foreground
+                or (
+                    SAM3_IMAGE_RUNTIME_CONFIG['reject_full_frame_masks']
+                    and foreground_count == width * height
+                )
+            ):
+                continue
+            payload = bytes(bits)
+            if payload in seen_payloads:
+                # Byte-identical duplicate masks are removed without any
+                # general clustering framework.
+                continue
+            seen_payloads.add(payload)
+            prompt_consistency, prompt_diagnostics = (
+                _instance_prompt_consistency_facts(
+                    payload, width=width, height=height, program=program
+                )
+            )
+            retained.append(
+                Sam3ImageCandidate(
+                    source_index=source_index,
+                    mask_bits=payload,
+                    model_score=score,
+                    prompt_consistency=MappingProxyType(prompt_consistency),
+                    prompt_diagnostics=tuple(
+                        MappingProxyType(diagnostic)
+                        for diagnostic in prompt_diagnostics
+                    ),
+                    low_res_logits=np.ascontiguousarray(
+                        logits_array[source_index].reshape(
+                            1, logits_size, logits_size
+                        )
+                    ),
+                )
+            )
+            if len(retained) >= candidate_cap:
+                break
+        return Sam3ImageProposalBatch(
+            candidates=tuple(retained), inference_state=inference_state
+        )
+
+    def _require_runtime(self, model: Mapping[str, Any]) -> Any:
+        cache_key = str(model.get('digest') or model.get('weightsPath') or '')
+        if (
+            self._runtime_cache_key == cache_key
+            and self._runtime_cache is not None
+        ):
+            return self._runtime_cache
+        runtime = self._build_model(model)
+        # A different Active Model Manifest deterministically replaces the
+        # previous built runtime; Python finalization releases its GPU state.
+        self._runtime_cache_key = cache_key
+        self._runtime_cache = runtime
+        return runtime
 def _require_string(payload: dict[str, Any], name: str, subject: str) -> str:
     value = payload.get(name)
     if not isinstance(value, str) or not value.strip():

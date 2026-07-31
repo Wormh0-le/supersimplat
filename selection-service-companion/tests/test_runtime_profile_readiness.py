@@ -6,7 +6,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from selection_service_companion.masking import SAM31_RUNTIME_CONFIG_DIGEST
+from selection_service_companion.masking import (
+    SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
+    SAM31_RUNTIME_CONFIG_DIGEST,
+    sam3_image_instance_capabilities,
+)
 from selection_service_companion.state import (
     AI_SELECT_READINESS_PROTOCOL_VERSION,
     AI_SELECT_RUNTIME_PROFILE_ID,
@@ -18,7 +22,10 @@ EDITOR_ORIGIN = "https://editor.example"
 
 
 class ReadySam3ImageInstanceAdapter:
-    def runtime_profile_capability(self) -> dict[str, object]:
+    def runtime_profile_capability(
+        self, model: dict[str, object]
+    ) -> dict[str, object]:
+        capabilities = sam3_image_instance_capabilities()
         return {
             "status": "ready",
             "authoritativeRgb": {
@@ -36,6 +43,8 @@ class ReadySam3ImageInstanceAdapter:
                 "maskConstraints": False,
                 "text": False,
             },
+            "compilerPolicyVersion": capabilities["compilerPolicyVersion"],
+            "adapterCapabilityDigest": capabilities["capabilityDigest"],
         }
 
 
@@ -166,7 +175,7 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
         self.install_model(
             "sha256:sam3-image-instance",
             adapter_id=adapter_id,
-            runtime_config_digest="sha256:sam3-image-runtime",
+            runtime_config_digest=SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
         )
 
         result = self.state.runtime_profile_capabilities([EDITOR_ORIGIN])
@@ -180,6 +189,37 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
             provider["promptCapabilities"]["previousLogitsRefinement"]
         )
         self.assertTrue(provider["promptCapabilities"]["singlePointMultimask"])
+        expected = sam3_image_instance_capabilities()
+        self.assertEqual(
+            provider["compilerPolicyVersion"],
+            expected["compilerPolicyVersion"],
+        )
+        self.assertEqual(
+            provider["adapterCapabilityDigest"],
+            expected["capabilityDigest"],
+        )
+
+    def test_unavailable_current_adapter_omits_the_pass_through_digests(
+        self,
+    ) -> None:
+        adapter_id = "sam3-image-instance/v1"
+        # The real adapter reports unavailable when the checkpoint cannot be
+        # initialized in this environment; readiness must stay truthful and
+        # must not advertise capability digests for a non-ready provider.
+        self.install_model(
+            "sha256:sam3-image-instance",
+            adapter_id=adapter_id,
+            runtime_config_digest=SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
+        )
+
+        result = self.state.runtime_profile_capabilities([EDITOR_ORIGIN])
+        provider = result["imageInstanceProvider"]
+
+        self.assertEqual(provider["status"], "unavailable")
+        self.assertFalse(result["activeModelManifest"]["initialized"])
+        self.assertNotIn("compilerPolicyVersion", provider)
+        self.assertNotIn("adapterCapabilityDigest", provider)
+        self.assertTrue(provider["promptCapabilities"]["positivePoints"])
 
 
 if __name__ == "__main__":

@@ -28,10 +28,7 @@ import {
     mapClientPointToImagePixel,
     type ImagePixel
 } from '../ai-select/image-viewport';
-import {
-    decodeMaskArtifact,
-    type BrushStroke
-} from '../ai-select/mask-annotation';
+import { decodeMaskArtifact } from '../ai-select/mask-annotation';
 import {
     type AISelectMaskController,
     type AISelectMaskState
@@ -105,8 +102,6 @@ export class AISelectAnchorDock extends Container {
     private readonly acceptProposalButton: Button;
     private readonly proposalSelect: HTMLSelectElement;
     private readonly brushSizeInput: HTMLInputElement;
-    private readonly textPromptInput: HTMLInputElement;
-    private readonly textPromptApply: Button;
     private readonly boxPreview: HTMLDivElement;
     private readonly confirmMaskButton: Button;
     private readonly retryMaskButton: Button;
@@ -133,7 +128,6 @@ export class AISelectAnchorDock extends Container {
     private dragStart: { x: number; y: number } | null = null;
     private gestureStartPixel: ImagePixel | null = null;
     private lastStrokePixel: ImagePixel | null = null;
-    private promptBrushStrokes: BrushStroke[] = [];
     private readonly pixelStroke = new PointerStrokeBuffer();
     private activeTool: DockAuthoringTool = 'positive-point';
 
@@ -241,11 +235,6 @@ export class AISelectAnchorDock extends Container {
             ['positive-point', 'ai-select.prompt.point-positive'],
             ['negative-point', 'ai-select.prompt.point-negative'],
             ['positive-box', 'ai-select.prompt.box-positive'],
-            ['negative-box', 'ai-select.prompt.box-negative'],
-            ['positive-mask-constraint', 'ai-select.prompt.brush-positive'],
-            ['negative-mask-constraint', 'ai-select.prompt.brush-negative'],
-            ['positive-text', 'ai-select.prompt.text-positive'],
-            ['negative-text', 'ai-select.prompt.text-negative'],
             ['paint', 'ai-select.edit.paint'],
             ['erase', 'ai-select.edit.erase']
         ];
@@ -273,31 +262,6 @@ export class AISelectAnchorDock extends Container {
             i18n.t('ai-select.edit.brush-size')
         );
         this.toolActions.dom.appendChild(this.brushSizeInput);
-        this.textPromptInput = document.createElement('input');
-        this.textPromptInput.id = 'ai-select-anchor-text-prompt';
-        this.textPromptInput.type = 'text';
-        this.textPromptInput.placeholder = i18n.t(
-            'ai-select.prompt.text-placeholder'
-        );
-        this.textPromptApply = new Button({
-            id: 'ai-select-anchor-text-apply'
-        });
-        i18n.bindText(this.textPromptApply, 'ai-select.prompt.text-apply');
-        this.textPromptApply.on('click', () => {
-            const polarity =
-                this.activeTool === 'negative-text' ? 'exclude' : 'include';
-            this.mask
-                .addTextPrompt({
-                    text: this.textPromptInput.value,
-                    polarity
-                })
-                .then(() => {
-                    this.textPromptInput.value = '';
-                })
-                .catch((error) => console.error(error));
-        });
-        this.toolActions.dom.appendChild(this.textPromptInput);
-        this.toolActions.append(this.textPromptApply);
         this.promptUndoButton = new Button({
             id: 'ai-select-anchor-prompt-undo'
         });
@@ -317,6 +281,13 @@ export class AISelectAnchorDock extends Container {
             i18n.t('ai-select.proposal.choose')
         );
         this.proposalSelect.addEventListener('change', () => {
+            // The previewed candidate owns the refinement lineage: a later
+            // Prompt revision refines from this candidate's logits reference.
+            try {
+                this.mask.previewProposal(this.proposalSelect.value);
+            } catch (error) {
+                console.error(error);
+            }
             this.renderMaskOverlay(
                 getAnchorDockPresentation(this.state, this.maskState)
             );
@@ -985,31 +956,23 @@ export class AISelectAnchorDock extends Container {
         const activeButton = this.toolButtons.get(this.activeTool);
         if (activeButton !== undefined && !activeButton.enabled) {
             this.activeTool =
-                capabilities?.points === true ? 'positive-point' : 'paint';
+                capabilities?.positivePoints === true
+                    ? 'positive-point'
+                    : 'paint';
             this.toolButtons
                 .get(this.activeTool)
                 ?.dom.classList.add('ai-select-tool-selected');
         }
         const brushActive =
-            this.activeTool === 'paint' ||
-            this.activeTool === 'erase' ||
-            this.activeTool === 'positive-mask-constraint' ||
-            this.activeTool === 'negative-mask-constraint';
+            this.activeTool === 'paint' || this.activeTool === 'erase';
         this.brushSizeInput.hidden = !brushActive;
-        const textActive =
-            this.activeTool === 'positive-text' ||
-            this.activeTool === 'negative-text';
-        this.textPromptInput.hidden = !textActive;
-        this.textPromptApply.hidden = !textActive;
         this.promptUndoButton.enabled = ready && this.maskState.canUndoPrompt;
         this.promptRedoButton.enabled = ready && this.maskState.canRedoPrompt;
         this.clearPromptsButton.enabled =
             ready &&
             this.maskState.promptState !== null &&
             (this.maskState.promptState.points.length > 0 ||
-                this.maskState.promptState.boxes.length > 0 ||
-                this.maskState.promptState.maskConstraints.length > 0 ||
-                this.maskState.promptState.textPrompts.length > 0);
+                this.maskState.promptState.boxes.length > 0);
         const proposalIds =
             this.maskState.proposalDecision?.alternativeProposalIds ?? [];
         const previousSelection = this.proposalSelect.value;
@@ -1061,7 +1024,6 @@ export class AISelectAnchorDock extends Container {
             `${i18n.t('ai-select.prompt.summary-positive-points')} ${i18n.formatInteger(prompt.positivePointCount)}`,
             `${i18n.t('ai-select.prompt.summary-negative-points')} ${i18n.formatInteger(prompt.negativePointCount)}`,
             `${i18n.t('ai-select.prompt.summary-boxes')} ${i18n.formatInteger(prompt.boxCount)}`,
-            `${i18n.t('ai-select.prompt.summary-brushes')} ${i18n.formatInteger(prompt.maskConstraintCount)}`,
             `${i18n.t('ai-select.prompt.summary-revision')} ${i18n.formatInteger(prompt.promptRevision)}`
         ].join(' · ');
         const reasons = (this.maskState.proposalDecision?.reasons ?? []).map(
@@ -1220,7 +1182,6 @@ export class AISelectAnchorDock extends Container {
             return;
         }
         context.putImageData(new ImageData(pixels, width, height), 0, 0);
-        this.renderMaskConstraintPrompts(context, width, height);
         this.renderPendingPixelStroke(context);
         this.renderBoxPrompts(context);
         this.renderPointMarkers(context);
@@ -1229,35 +1190,7 @@ export class AISelectAnchorDock extends Container {
             artifact === undefined &&
             (this.maskState.promptState?.points.length ?? 0) === 0 &&
             (this.maskState.promptState?.boxes.length ?? 0) === 0 &&
-            (this.maskState.promptState?.maskConstraints.length ?? 0) === 0 &&
             this.pixelStroke.previewSamples.length === 0;
-    }
-
-    private renderMaskConstraintPrompts(
-        context: CanvasRenderingContext2D,
-        width: number,
-        height: number
-    ): void {
-        for (const constraint of this.maskState.promptState?.maskConstraints ??
-            []) {
-            const bits = decodeMaskArtifact(constraint.artifact);
-            context.save();
-            context.fillStyle =
-                constraint.polarity === 'include'
-                    ? 'rgba(32, 200, 120, 0.28)'
-                    : 'rgba(240, 91, 102, 0.28)';
-            for (let index = 0; index < width * height; index += 1) {
-                if ((bits[index >> 3] & (1 << (index % 8))) === 0) {
-                    continue;
-                }
-                const x = index % width;
-                const y = Math.floor(index / width);
-                if (constraint.polarity === 'include' || (x + y) % 4 < 2) {
-                    context.fillRect(x, y, 1, 1);
-                }
-            }
-            context.restore();
-        }
     }
 
     private renderBoxPrompts(context: CanvasRenderingContext2D): void {
@@ -1386,14 +1319,11 @@ export class AISelectAnchorDock extends Container {
         this.dragStart = { x: event.clientX, y: event.clientY };
         this.gestureStartPixel = pixel;
         this.lastStrokePixel = pixel;
-        this.promptBrushStrokes = [];
         this.image.setPointerCapture(event.pointerId);
         const action = pointerActionForTool(this.activeTool);
         if (action === 'pixel-edit') {
             this.pixelStroke.begin(pixel);
             this.renderCurrentMaskOverlay();
-        } else if (action === 'prompt-constraint') {
-            this.promptBrushStrokes.push(this.promptBrushStroke(pixel));
         } else if (action === 'box') {
             this.updateBoxPreview(pixel, pixel);
         }
@@ -1426,9 +1356,7 @@ export class AISelectAnchorDock extends Container {
         }
         this.lastStrokePixel = pixel;
         const action = pointerActionForTool(this.activeTool);
-        if (action === 'prompt-constraint') {
-            this.promptBrushStrokes.push(this.promptBrushStroke(pixel));
-        } else if (action === 'box' && this.gestureStartPixel !== null) {
+        if (action === 'box' && this.gestureStartPixel !== null) {
             this.updateBoxPreview(this.gestureStartPixel, pixel);
         }
     }
@@ -1441,7 +1369,6 @@ export class AISelectAnchorDock extends Container {
             Math.abs(event.clientX - this.dragStart.x) +
             Math.abs(event.clientY - this.dragStart.y);
         const startPixel = this.gestureStartPixel;
-        const strokes = this.promptBrushStrokes;
         const action = pointerActionForTool(this.activeTool);
         if (action === 'pixel-edit') {
             const pixel = this.toImagePixel(event);
@@ -1467,7 +1394,6 @@ export class AISelectAnchorDock extends Container {
         this.dragStart = null;
         this.gestureStartPixel = null;
         this.lastStrokePixel = null;
-        this.promptBrushStrokes = [];
         this.boxPreview.hidden = true;
         const pixel = this.toImagePixel(event);
         if (pixel === null || startPixel === null) {
@@ -1498,41 +1424,14 @@ export class AISelectAnchorDock extends Container {
                     x0Px: startPixel.xPx,
                     y0Px: startPixel.yPx,
                     x1Px: pixel.xPx,
-                    y1Px: pixel.yPx,
-                    polarity:
-                        this.activeTool === 'negative-box'
-                            ? 'exclude'
-                            : 'include'
+                    y1Px: pixel.yPx
                 })
-                .catch((error) => console.error(error));
-            return;
-        }
-        if (action === 'prompt-constraint') {
-            if (strokes.length === 0) {
-                strokes.push(this.promptBrushStroke(pixel));
-            }
-            this.mask
-                .addPromptBrushConstraint(
-                    strokes,
-                    this.activeTool === 'negative-mask-constraint'
-                        ? 'exclude'
-                        : 'include'
-                )
                 .catch((error) => console.error(error));
         }
     }
 
     private brushRadius(): number {
         return Number(this.brushSizeInput.value);
-    }
-
-    private promptBrushStroke(pixel: ImagePixel): BrushStroke {
-        return {
-            xPx: pixel.xPx,
-            yPx: pixel.yPx,
-            radiusPx: this.brushRadius(),
-            mode: 'add'
-        };
     }
 
     private cancelPointerGesture(): void {
@@ -1545,7 +1444,6 @@ export class AISelectAnchorDock extends Container {
         this.dragStart = null;
         this.gestureStartPixel = null;
         this.lastStrokePixel = null;
-        this.promptBrushStrokes = [];
         this.boxPreview.hidden = true;
     }
 

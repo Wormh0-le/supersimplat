@@ -3,11 +3,20 @@ const test = require('node:test');
 
 const {
     anchorMaskRankingPolicyVersion,
+    autoMaskProposalPolicyVersion,
     autoMaskProposalSetDigest,
     isAutoMaskProposalSet,
     isProposalDecision,
+    maximumAutoMaskProposalCount,
     proposalIdentityDigest
 } = require('../.test-dist/src/ai-select/mask-proposal.js');
+const {
+    previousPredictionLogitsRefDigest
+} = require('../.test-dist/src/ai-select/previous-logits-ref.js');
+const {
+    createEmptyPromptState,
+    revisePromptState
+} = require('../.test-dist/src/ai-select/prompt-state.js');
 
 const digest = (character) => `sha256:${character.repeat(64)}`;
 
@@ -33,11 +42,14 @@ const mask = {
     digest: 'sha256:4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a'
 };
 
+const promptConsistency = () => ({
+    positivePointsSatisfied: true,
+    negativePointsSatisfied: true,
+    positiveBoxesSatisfied: true
+});
+
 const rankingFeatures = {
-    promptConsistency: {
-        positivePointsSatisfied: true,
-        negativePointsSatisfied: true
-    },
+    promptConsistency: promptConsistency(),
     eligible: true,
     areaFraction: 1,
     boundingBox: { x0Px: 0, y0Px: 0, x1Px: 0, y1Px: 0 },
@@ -57,15 +69,36 @@ const rankingFeatures = {
     modelScore: 2.5
 };
 
+const logitsRef = () => {
+    const payload = {
+        schemaVersion: 1,
+        companionInstanceId: 'companion-instance-1',
+        stateId: 'logits-state-1',
+        targetContextId: 'ai-target-context-1',
+        viewId: 'anchor-view',
+        rgbDigest: digest('a'),
+        sourceInferenceAttemptId: 'proposal-attempt-0',
+        sourceCandidateId: 'proposal-0',
+        adapterRuntimeDigest: digest('9'),
+        shape: [1, 256, 256],
+        dtype: 'float32',
+        dataDigest: digest('8')
+    };
+    return {
+        ...payload,
+        refDigest: previousPredictionLogitsRefDigest(payload)
+    };
+};
+
 const proposalSet = () => {
     const value = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         viewId: 'anchor-view',
         rgbDigest: digest('a'),
         promptStateDigest: digest('b'),
         modelManifestDigest: digest('c'),
         adapterCapabilityDigest: digest('d'),
-        proposalPolicyVersion: 'auto-mask-proposals/bounded-source-order-v1',
+        proposalPolicyVersion: autoMaskProposalPolicyVersion,
         proposalAttemptId: 'proposal-attempt-1',
         proposals: [
             {
@@ -74,11 +107,9 @@ const proposalSet = () => {
                 sourceIndex: 0,
                 modelScore: 2.5,
                 modelScoreSemantics: 'adapter-local logit',
-                promptConsistency: {
-                    positivePointsSatisfied: true,
-                    negativePointsSatisfied: true
-                },
-                rankingFeatures
+                promptConsistency: promptConsistency(),
+                rankingFeatures,
+                logitsRef: logitsRef()
             }
         ]
     };
@@ -97,6 +128,14 @@ const withProposal = (value, proposal) => {
     };
 };
 
+test('policy identities rotate to the SAM 3 Image instance contract', () => {
+    assert.equal(
+        autoMaskProposalPolicyVersion,
+        'auto-mask-proposals/bounded-source-order-v2'
+    );
+    assert.equal(anchorMaskRankingPolicyVersion, 'anchor-mask-ranking/v2');
+});
+
 test('a bounded proposal set preserves score semantics and exact identity', () => {
     const value = proposalSet();
     assert.equal(isAutoMaskProposalSet(value), true);
@@ -105,6 +144,80 @@ test('a bounded proposal set preserves score semantics and exact identity', () =
         isAutoMaskProposalSet({ ...value, proposalAttemptId: 'stale-attempt' }),
         false
     );
+    // A v2 proposal set identity fails closed on the v3 schema.
+    assert.equal(isAutoMaskProposalSet({ ...value, schemaVersion: 2 }), false);
+});
+
+test('per-candidate logits references are opaque and digest-bound', () => {
+    const value = proposalSet();
+    assert.equal(isAutoMaskProposalSet(value), true);
+    // The ref is optional per candidate (undefined keys are not bound).
+    const withoutRef = withProposal(value, {
+        ...value.proposals[0],
+        logitsRef: undefined
+    });
+    assert.equal(isAutoMaskProposalSet(withoutRef), true);
+    // A tampered ref (raw bytes smuggled in, or a stale digest) fails closed.
+    assert.equal(
+        isAutoMaskProposalSet(
+            withProposal(value, {
+                ...value.proposals[0],
+                logitsRef: { ...logitsRef(), stateId: 'other-state' }
+            })
+        ),
+        false
+    );
+    assert.equal(
+        isAutoMaskProposalSet(
+            withProposal(value, {
+                ...value.proposals[0],
+                logitsRef: { ...logitsRef(), logitsBase64: 'AAAA' }
+            })
+        ),
+        false
+    );
+});
+
+test('the multimask policy bounds candidates by prompt shape and refinement', () => {
+    const singlePoint = revisePromptState(
+        createEmptyPromptState('anchor-view', digest('a')),
+        {
+            points: [{ promptId: 'p-1', polarity: 'include', xPx: 1, yPx: 1 }]
+        }
+    );
+    // Exactly one include Point, no Box, no refinement: at most 3 candidates.
+    assert.equal(maximumAutoMaskProposalCount(singlePoint, false), 3);
+    // Any refinement forces single-mask mode.
+    assert.equal(maximumAutoMaskProposalCount(singlePoint, true), 1);
+    // A negative Point or multiple Points force single-mask mode.
+    const mixed = revisePromptState(singlePoint, {
+        points: [
+            ...singlePoint.points,
+            { promptId: 'p-2', polarity: 'exclude', xPx: 2, yPx: 2 }
+        ]
+    });
+    assert.equal(maximumAutoMaskProposalCount(mixed, false), 1);
+    const singleNegative = revisePromptState(
+        createEmptyPromptState('anchor-view', digest('a')),
+        {
+            points: [{ promptId: 'p-1', polarity: 'exclude', xPx: 1, yPx: 1 }]
+        }
+    );
+    assert.equal(maximumAutoMaskProposalCount(singleNegative, false), 1);
+    // A Box forces single-mask mode.
+    const withBox = revisePromptState(singlePoint, {
+        boxes: [
+            {
+                promptId: 'box-1',
+                polarity: 'include',
+                x0Px: 0,
+                y0Px: 0,
+                x1Px: 3,
+                y1Px: 3
+            }
+        ]
+    });
+    assert.equal(maximumAutoMaskProposalCount(withBox, false), 1);
 });
 
 test('a ProposalDecision binds the exact proposal set and structured ambiguity reasons', () => {
@@ -193,9 +306,34 @@ test('proposal sets reject duplicate source identity and invalid truncation', ()
     );
 });
 
-test('proposal sets reject ranking features that contradict their mask or proposal facts', () => {
+test('proposal sets reject shrunk or contradictory prompt consistency facts', () => {
     const value = proposalSet();
     const proposal = value.proposals[0];
+    // Removed v2 fact families fail closed.
+    assert.equal(
+        isAutoMaskProposalSet(
+            withProposal(value, {
+                ...proposal,
+                promptConsistency: {
+                    ...proposal.promptConsistency,
+                    maskConstraintsSatisfied: true
+                }
+            })
+        ),
+        false
+    );
+    assert.equal(
+        isAutoMaskProposalSet(
+            withProposal(value, {
+                ...proposal,
+                promptConsistency: {
+                    positivePointsSatisfied: true,
+                    negativePointsSatisfied: true
+                }
+            })
+        ),
+        false
+    );
     assert.equal(
         isAutoMaskProposalSet(
             withProposal(value, {
@@ -204,7 +342,8 @@ test('proposal sets reject ranking features that contradict their mask or propos
                     ...proposal.rankingFeatures,
                     promptConsistency: {
                         positivePointsSatisfied: false,
-                        negativePointsSatisfied: true
+                        negativePointsSatisfied: true,
+                        positiveBoxesSatisfied: true
                     }
                 }
             })
@@ -237,16 +376,16 @@ test('proposal sets reject ranking features that contradict their mask or propos
     );
 });
 
-test('deterministic truncation records preserve at most four source-ordered proposals', () => {
+test('deterministic truncation records preserve at most three source-ordered proposals', () => {
     const base = proposalSet();
-    const proposals = Array.from({ length: 4 }, (_, sourceIndex) => ({
+    const proposals = Array.from({ length: 3 }, (_, sourceIndex) => ({
         ...base.proposals[0],
         proposalId: `proposal-${sourceIndex}`,
         sourceIndex,
         rankingFeatures: {
             ...rankingFeatures,
             pairwiseRelations: Array.from(
-                { length: 4 },
+                { length: 3 },
                 (_, relatedIndex) => relatedIndex
             )
                 .filter((relatedIndex) => relatedIndex !== sourceIndex)
@@ -263,9 +402,9 @@ test('deterministic truncation records preserve at most four source-ordered prop
         ...base,
         proposals,
         truncation: {
-            originalCount: 6,
-            retainedCount: 4,
-            policy: 'source-order-first-4'
+            originalCount: 5,
+            retainedCount: 3,
+            policy: 'source-order-first-3'
         }
     };
     delete payload.digest;
@@ -280,14 +419,14 @@ test('deterministic truncation records preserve at most four source-ordered prop
             ...proposals,
             {
                 ...base.proposals[0],
-                proposalId: 'proposal-4',
-                sourceIndex: 4
+                proposalId: 'proposal-3',
+                sourceIndex: 3
             }
         ],
         truncation: {
-            originalCount: 6,
-            retainedCount: 5,
-            policy: 'source-order-first-5'
+            originalCount: 5,
+            retainedCount: 4,
+            policy: 'source-order-first-4'
         }
     };
     assert.equal(

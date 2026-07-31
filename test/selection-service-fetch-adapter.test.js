@@ -20,6 +20,9 @@ const {
     anchorMaskRankingPolicyVersion,
     autoMaskProposalSetDigest
 } = require('../.test-dist/src/ai-select/mask-proposal.js');
+const {
+    previousPredictionLogitsRefDigest
+} = require('../.test-dist/src/ai-select/previous-logits-ref.js');
 
 const snapshot = {
     protocolVersion: '1',
@@ -1310,6 +1313,9 @@ const maskRequest = {
     sceneVersion: anchorSnapshot.sceneVersion,
     viewId: 'anchor-view',
     cameraBindingDigest: `sha256:${'c'.repeat(64)}`,
+    rgbDigest: `sha256:${'a'.repeat(64)}`,
+    rgbWidth: 64,
+    rgbHeight: 48,
     rgb: {
         pngBase64: anchorPng(64, 48).pngBase64,
         digest: `sha256:${'a'.repeat(64)}`,
@@ -1319,7 +1325,7 @@ const maskRequest = {
     promptState: maskPromptState,
     modelManifestDigest: 'sha256:model-v1',
     adapterCapabilityDigest: `sha256:${'d'.repeat(64)}`,
-    proposalPolicyVersion: 'auto-mask-proposals/bounded-source-order-v1',
+    proposalPolicyVersion: 'auto-mask-proposals/bounded-source-order-v2',
     rankingPolicyVersion: anchorMaskRankingPolicyVersion,
     proposalAttemptId: 'proposal-attempt-1'
 };
@@ -1340,10 +1346,15 @@ const maskBitset = (width, height, foreground = [[10, 12]]) => {
 };
 
 const maskReply = (request, overrides = {}) => {
+    const promptConsistency = {
+        positivePointsSatisfied: true,
+        negativePointsSatisfied: true,
+        positiveBoxesSatisfied: true
+    };
     const proposalPayload = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         viewId: request.viewId,
-        rgbDigest: request.rgb.digest,
+        rgbDigest: request.rgbDigest,
         promptStateDigest: request.promptState.digest,
         modelManifestDigest: request.modelManifestDigest,
         adapterCapabilityDigest: request.adapterCapabilityDigest,
@@ -1355,18 +1366,12 @@ const maskReply = (request, overrides = {}) => {
                 sourceIndex: 0,
                 mask:
                     overrides.mask ??
-                    maskBitset(request.rgb.width, request.rgb.height),
-                promptConsistency: {
-                    positivePointsSatisfied: true,
-                    negativePointsSatisfied: true
-                },
+                    maskBitset(request.rgbWidth, request.rgbHeight),
+                promptConsistency,
                 rankingFeatures: {
-                    promptConsistency: {
-                        positivePointsSatisfied: true,
-                        negativePointsSatisfied: true
-                    },
+                    promptConsistency,
                     eligible: true,
-                    areaFraction: 1 / (request.rgb.width * request.rgb.height),
+                    areaFraction: 1 / (request.rgbWidth * request.rgbHeight),
                     boundingBox: {
                         x0Px: 10,
                         y0Px: 12,
@@ -1403,7 +1408,7 @@ const maskReply = (request, overrides = {}) => {
         sceneVersion: request.sceneVersion,
         viewId: request.viewId,
         cameraBindingDigest: request.cameraBindingDigest,
-        rgbDigest: request.rgb.digest,
+        rgbDigest: request.rgbDigest,
         promptStateDigest: request.promptState.digest,
         modelManifestDigest: request.modelManifestDigest,
         adapterCapabilityDigest: request.adapterCapabilityDigest,
@@ -1414,7 +1419,7 @@ const maskReply = (request, overrides = {}) => {
         proposalDecision: {
             schemaVersion: 1,
             viewId: request.viewId,
-            rgbDigest: request.rgb.digest,
+            rgbDigest: request.rgbDigest,
             promptStateDigest: request.promptState.digest,
             proposalSetDigest: proposalSet.digest,
             rankingPolicyVersion: request.rankingPolicyVersion,
@@ -1454,9 +1459,83 @@ test('sends a bound single-frame Mask request and returns the validated Mask res
         maskRequest.rankingPolicyVersion
     );
     assert.equal(calls[0].body.proposalAttemptId, 'proposal-attempt-1');
+    assert.equal(calls[0].body.rgbDigest, maskRequest.rgbDigest);
+    assert.equal(calls[0].body.rgbWidth, 64);
+    assert.equal(calls[0].body.rgbHeight, 48);
+    assert.deepEqual(calls[0].body.rgb, maskRequest.rgb);
     assert.equal(
         response.proposalSet.digest,
         maskReply(maskRequest).proposalSet.digest
+    );
+});
+
+test('sends an RGB reference and refinement lineage without the RGB artifact', async () => {
+    const refPayload = {
+        schemaVersion: 1,
+        companionInstanceId: 'companion-instance-1',
+        stateId: 'logits-state-1',
+        targetContextId: maskRequest.requestBinding.targetContextId,
+        viewId: 'anchor-view',
+        rgbDigest: maskRequest.rgbDigest,
+        sourceInferenceAttemptId: 'proposal-attempt-0',
+        sourceCandidateId: 'proposal-0',
+        adapterRuntimeDigest: `sha256:${'9'.repeat(64)}`,
+        shape: [1, 256, 256],
+        dtype: 'float32',
+        dataDigest: `sha256:${'8'.repeat(64)}`
+    };
+    const previousLogitsRef = {
+        ...refPayload,
+        refDigest: previousPredictionLogitsRefDigest(refPayload)
+    };
+    const { rgb: _rgb, ...referenceOnly } = maskRequest;
+    const refinementRequest = {
+        ...referenceOnly,
+        previousLogitsRef,
+        proposalAttemptId: 'proposal-attempt-2'
+    };
+    const calls = [];
+    const adapter = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:model-v1'
+        }),
+        fetch: async (url, init) => {
+            calls.push({ url, init, body: responseBody(init.body) });
+            return new Response(JSON.stringify(maskReply(refinementRequest)), {
+                status: 200
+            });
+        }
+    });
+
+    await adapter.produceMaskProposals(refinementRequest);
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].body.rgb, undefined);
+    assert.equal(calls[0].body.rgbDigest, maskRequest.rgbDigest);
+    assert.deepEqual(calls[0].body.previousLogitsRef, previousLogitsRef);
+    assert.equal(calls[0].body.proposalAttemptId, 'proposal-attempt-2');
+});
+
+test('rejects a structurally invalid refinement reference before transport', async () => {
+    const adapter = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:model-v1'
+        }),
+        fetch: async () => {
+            throw new Error('must not be called');
+        }
+    });
+    await assert.rejects(
+        adapter.produceMaskProposals({
+            ...maskRequest,
+            previousLogitsRef: {
+                stateId: 'logits-state-1',
+                logitsBase64: 'AAAA'
+            }
+        }),
+        /complete bound Mask request/
     );
 });
 

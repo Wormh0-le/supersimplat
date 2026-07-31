@@ -31,7 +31,8 @@ import {
     isMaskResultResponse,
     maskResponseMatchesRequest,
     type AIViewMaskRequest,
-    type MaskResultResponse
+    type MaskResultResponse,
+    type PreviousPredictionLogitsRef
 } from './mask-service';
 import type { PromptState } from './prompt-state';
 import {
@@ -376,14 +377,21 @@ export class AISelectAnchorController {
     /**
      * Build a single-frame SAM mask request bound to the current RGB Ready
      * Anchor. Returns null unless the exact full-resolution Anchor RGB is
-     * current: a mask must never be produced for superseded RGB.
+     * current: a mask must never be produced for superseded RGB. The RGB
+     * artifact itself crosses only when the caller marks this digest as not
+     * yet shipped to the Companion (04C contract §5); a refinement attempt
+     * carries the opaque logits reference of the currently chosen candidate.
      */
     createAnchorMaskRequest(
         promptState: PromptState,
         proposalAttemptId: string,
         modelManifestDigest: string,
         adapterCapabilityDigest: string,
-        proposalPolicyVersion: string
+        proposalPolicyVersion: string,
+        options: {
+            readonly includeRgbArtifact: boolean;
+            readonly previousLogitsRef?: PreviousPredictionLogitsRef;
+        }
     ): AIViewMaskRequest | null {
         const anchor = this.anchor;
         const activeRequest = this.activeRequest;
@@ -407,8 +415,14 @@ export class AISelectAnchorController {
             sceneVersion: activeRequest.snapshot.sceneVersion,
             viewId: anchor.viewId,
             cameraBindingDigest: cameraBindingDigest(anchor.cameraBinding),
-            rgb: copyRgb(anchor.rgb),
+            rgbDigest: anchor.rgb.digest,
+            rgbWidth: anchor.rgb.width,
+            rgbHeight: anchor.rgb.height,
+            ...(options.includeRgbArtifact ? { rgb: copyRgb(anchor.rgb) } : {}),
             promptState,
+            ...(options.previousLogitsRef === undefined
+                ? {}
+                : { previousLogitsRef: options.previousLogitsRef }),
             modelManifestDigest,
             adapterCapabilityDigest,
             proposalPolicyVersion,
@@ -439,7 +453,7 @@ export class AISelectAnchorController {
             anchor.renderStatus === 'ready' &&
             anchor.rgb !== undefined &&
             anchor.viewId === request.viewId &&
-            anchor.rgb.digest === request.rgb.digest &&
+            anchor.rgb.digest === request.rgbDigest &&
             isMaskResultResponse(response) &&
             maskResponseMatchesRequest(response, request)
         );

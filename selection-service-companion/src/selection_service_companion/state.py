@@ -16,6 +16,7 @@ import struct
 from threading import Event, Lock
 import time
 from typing import Any, Callable, Mapping, Sequence
+import uuid
 
 from . import PACKAGE_VERSION, PROTOCOL_VERSION
 from .anchor_timing import AnchorServerTiming
@@ -44,20 +45,26 @@ from .gsplat_renderer import (
     validate_supported_snapshot,
 )
 from .masking import (
-    AISelectVisualPromptAdapter,
-    AISelectVisualPromptCandidate,
+    CompiledImagePromptProgram,
     MaskProduction,
     MaskSessionError,
     POINT_MASK_PROMPT_COMPILER_POLICY_VERSION,
     PromptableMaskAdapter,
     RegisteredFrameSet,
+    SAM3_IMAGE_INSTANCE_ADAPTER_ID,
+    SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION,
+    SAM3_IMAGE_RUNTIME_CONFIG,
+    SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
     SAM31_RUNTIME_CONFIG_DIGEST,
-    Sam31VisualPromptProgram,
+    Sam3ImageCandidate,
+    Sam3ImageInstanceAdapter,
+    Sam3ImageProposalBatch,
+    Sam3ImageRefinementInput,
     Sam3PointMaskAdapter,
     compile_point_mask_prompt_program,
-    compile_sam31_visual_prompt_program,
+    compile_sam3_image_prompt_program,
     register_frame_set,
-    sam31_visual_prompt_capabilities,
+    sam3_image_instance_capabilities,
 )
 from .proposal_ranking import (
     RANKING_POLICY_VERSION,
@@ -104,7 +111,18 @@ from .generated_view_planning import (
 DEFAULT_STATE_DIRECTORY = Path.home() / ".local" / "state" / "supersplat-selection-service"
 AI_SELECT_RUNTIME_PROFILE_ID = "ai-select-static-image-instance/v1"
 AI_SELECT_READINESS_PROTOCOL_VERSION = "2"
-SAM3_IMAGE_INSTANCE_ADAPTER_ID = "sam3-image-instance/v1"
+AI_SELECT_MASK_PROPOSAL_POLICY_VERSION = "auto-mask-proposals/bounded-source-order-v2"
+AI_SELECT_RGB_CACHE_LIMIT = 16
+AI_SELECT_LOGITS_STORE_LIMIT = 8
+
+
+def _canonical_json_digest(payload: Mapping[str, object]) -> str:
+    """Digest one JSON-compatible payload with sorted canonical encoding."""
+
+    encoded = json.dumps(
+        payload, separators=(",", ":"), sort_keys=True, allow_nan=False
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
 def _proposal_identity_json(value: object) -> str:
@@ -461,7 +479,7 @@ class AISelectMaskRequest:
     width: int
     height: int
     prompts: tuple[AISelectMaskPrompt, ...]
-    prompt_program: Sam31VisualPromptProgram
+    prompt_program: CompiledImagePromptProgram
     prompt_state: dict[str, object]
     prompt_state_digest: str
     model_manifest_digest: str
@@ -469,6 +487,7 @@ class AISelectMaskRequest:
     proposal_policy_version: str
     ranking_policy_version: str
     proposal_attempt_id: str
+    previous_logits_ref: dict[str, object] | None = None
 
     def response_fields(self) -> dict[str, object]:
         return {
@@ -488,10 +507,13 @@ class AISelectMaskRequest:
         }
 
     def identity_fields(self) -> dict[str, object]:
-        return {
+        fields: dict[str, object] = {
             **self.response_fields(),
             'promptState': self.prompt_state,
         }
+        if self.previous_logits_ref is not None:
+            fields['previousLogitsRef'] = self.previous_logits_ref
+        return fields
 
 
 @dataclass
@@ -780,10 +802,12 @@ def _point_prompt_capabilities() -> dict[str, object]:
 
 
 def _prompt_capabilities_for_adapter(adapter_id: object) -> dict[str, object]:
-    if adapter_id == 'sam3.1':
-        return sam31_visual_prompt_capabilities()
+    if adapter_id == SAM3_IMAGE_INSTANCE_ADAPTER_ID:
+        return sam3_image_instance_capabilities()
     if adapter_id == 'point-mask-v1':
         return _point_prompt_capabilities()
+    # The legacy sam3.1 Multiplex fixture has no current Prompt capability
+    # contract; its manifest fails closed on the mask-proposals route here.
     raise MaskSessionError(
         'incompatibleManifest',
         'The selected Model Manifest has no supported Prompt capability contract.',
@@ -877,9 +901,33 @@ class CompanionState:
         init=False,
         repr=False,
     )
+    # Immutable authoritative RGB reference cache: digest -> (png, width,
+    # height). Populated by anchor-render output and artifact-carrying
+    # proposal requests; digest-only requests resolve against it. Guarded by
+    # _session_lock; never held across model work.
+    _rgb_cache: dict[str, tuple[bytes, int, int]] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    # Companion-local previous-prediction logits store keyed by opaque
+    # stateId. Entries mint only on a successful proposal publication path
+    # and are cleared with the other transient caches. Guarded by
+    # _session_lock; never held across model work.
+    _logits_store: dict[str, dict[str, Any]] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _adapter_runtime_digests: dict[str, str] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
     mask_adapters: dict[str, PromptableMaskAdapter] = field(
         default_factory=lambda: {
             "sam3.1": Sam3PointMaskAdapter(),
+            SAM3_IMAGE_INSTANCE_ADAPTER_ID: Sam3ImageInstanceAdapter(),
         },
         repr=False,
     )
@@ -1002,6 +1050,13 @@ class CompanionState:
         ):
             raise ValueError(
                 "the SAM 3.1 Model Manifest runtimeConfigDigest does not match the pinned Companion runtime configuration"
+            )
+        if (
+            manifest["adapterId"] == SAM3_IMAGE_INSTANCE_ADAPTER_ID
+            and manifest["runtimeConfigDigest"] != SAM3_IMAGE_RUNTIME_CONFIG_DIGEST
+        ):
+            raise ValueError(
+                "the SAM 3 Image Model Manifest runtimeConfigDigest does not match the pinned Companion runtime configuration"
             )
 
         expected_digest = _normalise_sha256(manifest["checkpointDigest"])
@@ -1168,7 +1223,7 @@ class CompanionState:
                 "aiSelectAnchorReferenceContributor",
                 "aiSelectAnchorSupportProbe",
                 "aiSelectMaskProposals",
-                "autoMaskProposalSetSchemaV2",
+                "autoMaskProposalSetSchemaV3",
                 "aiSelectGeneratedViewPlanning",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",
@@ -1201,7 +1256,7 @@ class CompanionState:
             adapter_id == SAM3_IMAGE_INSTANCE_ADAPTER_ID
             and callable(capability_factory)
         ):
-            capability = capability_factory()
+            capability = capability_factory(model)
             if not isinstance(capability, Mapping):
                 raise ValueError(
                     "the SAM 3 Image adapter returned an invalid Runtime Profile capability"
@@ -1249,14 +1304,33 @@ class CompanionState:
                     for key in prompt_keys
                 },
             }
+            if capability["status"] == "ready":
+                # The editor rebuilds its Prompt adapter capability record from
+                # these pass-through identities; a ready provider must bind the
+                # exact compiler policy and capability digest.
+                compiler_policy_version = capability.get("compilerPolicyVersion")
+                adapter_capability_digest = capability.get(
+                    "adapterCapabilityDigest"
+                )
+                if (
+                    not isinstance(compiler_policy_version, str)
+                    or not compiler_policy_version.strip()
+                    or not isinstance(adapter_capability_digest, str)
+                    or not adapter_capability_digest.startswith("sha256:")
+                ):
+                    raise ValueError(
+                        "the SAM 3 Image adapter returned an incomplete Runtime Profile capability"
+                    )
+                result["compilerPolicyVersion"] = compiler_policy_version
+                result["adapterCapabilityDigest"] = adapter_capability_digest
             message = capability.get("message")
             if isinstance(message, str):
                 result["message"] = message
             return result
 
-        # Ticket 04C supplies the current SAM 3 Image adapter and its
-        # initialization/refinement cache. Until then, the historical
-        # Multiplex-backed static shim remains truthfully incompatible.
+        # Any non-current adapter (including the legacy sam3.1 Multiplex
+        # benchmark fixture) remains truthfully unavailable for the current
+        # static instance-segmentation profile.
         return {
             "status": "unavailable",
             "adapterId": adapter_id,
@@ -1691,6 +1765,12 @@ class CompanionState:
             )
             raise failure from error
 
+        self._cache_rgb(
+            _anchor_digest(artifact.rgb_digest, 'RGB digest'),
+            artifact.image_png,
+            anchor_request.width,
+            anchor_request.height,
+        )
         self._complete_anchor_render(
             anchor_key, admission, response=response, timing=anchor_timing
         )
@@ -2153,11 +2233,14 @@ class CompanionState:
 
         The browser owns target identity, authoritative Anchor RGB, and
         PromptState. This method validates those untrusted bindings and the
-        negotiated adapter capability identity, reserves the single Companion
-        operation slot, then runs the negotiated point or visual adapter
-        outside every state lock before atomically publishing the immutable
-        bounded result. Point-only requests retain the synthetic single-view
-        Frame Set compatibility path with no video propagation.
+        negotiated adapter capability identity, resolves the RGB artifact or
+        Companion-held reference and any previous-logits refinement before
+        inference, reserves the single Companion operation slot, then runs the
+        SAM 3 Image instance adapter outside every state lock before
+        atomically publishing the immutable bounded result. Point-only
+        requests through the deterministic reference adapter retain the
+        synthetic single-view Frame Set compatibility path with no video
+        propagation.
         """
 
         model_manifest_digest = _mask_request_string(
@@ -2175,10 +2258,15 @@ class CompanionState:
             return self._replay_mask_request(admission)
 
         def proposal_response(
-            proposals: list[dict[str, object]]
+            proposals: list[dict[str, object]],
+            *,
+            refinement_fallback: bool = False,
         ) -> dict[str, object]:
             original_count = len(proposals)
-            proposals = proposals[:4]
+            candidate_bound = int(
+                SAM3_IMAGE_RUNTIME_CONFIG['max_multimask_candidates']
+            )
+            proposals = proposals[:candidate_bound]
             ranked_proposals = add_ranking_features(
                 proposals,
                 width=mask_request.width,
@@ -2186,8 +2274,10 @@ class CompanionState:
                 prompt_state=mask_request.prompt_state,
             )
             proposal_set: dict[str, object] = {
-                # v2 makes the binary64 proposal identity encoding explicit.
-                'schemaVersion': 2,
+                # v3 rotates the proposal schema with the v2 Prompt contract;
+                # the identity digest binds every retained candidate's opaque
+                # logits reference and the refinement fallback diagnostic.
+                'schemaVersion': 3,
                 'viewId': mask_request.view_id,
                 'rgbDigest': mask_request.rgb_digest,
                 'promptStateDigest': mask_request.prompt_state_digest,
@@ -2201,8 +2291,10 @@ class CompanionState:
                 proposal_set['truncation'] = {
                     'originalCount': original_count,
                     'retainedCount': len(ranked_proposals),
-                    'policy': 'source-order-first-4',
+                    'policy': AI_SELECT_MASK_PROPOSAL_POLICY_VERSION,
                 }
+            if refinement_fallback:
+                proposal_set['diagnostics'] = {'refinementFallback': True}
             proposal_set['digest'] = _proposal_identity_digest(proposal_set)
             return {
                 'status': 'complete',
@@ -2219,31 +2311,48 @@ class CompanionState:
 
         try:
             try:
-                if isinstance(adapter, AISelectVisualPromptAdapter):
-                    visual_candidates = adapter.produce_ai_select_visual_proposals(
+                if isinstance(adapter, Sam3ImageInstanceAdapter):
+                    refinement, refinement_fallback, source_attempt_id = (
+                        self._resolve_logits_refinement(model, mask_request)
+                    )
+                    batch = adapter.produce_proposals(
                         model=model,
                         rgb_png=mask_request.rgb_png,
                         width=mask_request.width,
                         height=mask_request.height,
                         program=mask_request.prompt_program,
+                        refinement=refinement,
                         cancelled=lambda: False,
                     )
+                    proposals = self._proposals_from_sam3_image_candidates(
+                        batch.candidates, mask_request
+                    )
+                    # Refs mint only here, on the success path, atomically
+                    # with the proposal publication below. Any adapter failure
+                    # or cancellation above leaves the logits store untouched.
+                    self._mint_logits_refs(
+                        model=model,
+                        mask_request=mask_request,
+                        batch=batch,
+                        proposals=proposals,
+                        source_attempt_id=(
+                            source_attempt_id
+                            if refinement is not None
+                            and source_attempt_id is not None
+                            else mask_request.proposal_attempt_id
+                        ),
+                    )
                     response = proposal_response(
-                        self._proposals_from_visual_candidates(
-                            visual_candidates, mask_request
-                        )
+                        proposals, refinement_fallback=refinement_fallback
                     )
                     self._complete_mask_request(
                         mask_key, admission, response=response
                     )
                     return response
-                if (
-                    mask_request.prompt_program.boxes
-                    or mask_request.prompt_program.mask_constraints
-                ):
+                if mask_request.prompt_program.boxes:
                     raise MaskSessionError(
                         'unsupportedPromptType',
-                        'The selected Prompt Adapter does not implement visual Prompt inference.',
+                        'The selected Prompt Adapter does not implement instance Prompt inference.',
                     )
                 frame_set = register_frame_set({
                     'frameSetId': f'ai-select-mask-{mask_request.view_id}',
@@ -2472,10 +2581,10 @@ class CompanionState:
         proposal_policy_version = _mask_request_string(
             request.get('proposalPolicyVersion'), 'proposalPolicyVersion'
         )
-        if proposal_policy_version != 'auto-mask-proposals/bounded-source-order-v1':
+        if proposal_policy_version != AI_SELECT_MASK_PROPOSAL_POLICY_VERSION:
             raise MaskSessionError(
                 'capabilityMismatch',
-                'The point adapter does not support this Mask proposal policy.',
+                'The Companion does not support this Mask proposal policy.',
             )
         ranking_policy_version = _mask_request_string(
             request.get('rankingPolicyVersion'), 'rankingPolicyVersion'
@@ -2488,8 +2597,41 @@ class CompanionState:
         proposal_attempt_id = _mask_request_string(
             request.get('proposalAttemptId'), 'proposalAttemptId'
         )
-        rgb_png, rgb_digest, width, height = self._parse_ai_select_mask_rgb(
-            request.get('rgb')
+        rgb_digest = _anchor_sha256_digest(
+            request.get('rgbDigest'), 'Mask rgbDigest'
+        )
+        width = _mask_request_positive_integer(request.get('rgbWidth'), 'rgbWidth')
+        height = _mask_request_positive_integer(
+            request.get('rgbHeight'), 'rgbHeight'
+        )
+        rgb_value = request.get('rgb')
+        if rgb_value is not None:
+            artifact_png, artifact_digest, artifact_width, artifact_height = (
+                self._parse_ai_select_mask_rgb(rgb_value)
+            )
+            if (
+                artifact_digest != rgb_digest
+                or artifact_width != width
+                or artifact_height != height
+            ):
+                raise ValueError(
+                    'AI Select Mask rgb artifact must match the request rgbDigest, rgbWidth, and rgbHeight'
+                )
+            rgb_png = artifact_png
+            self._cache_rgb(rgb_digest, rgb_png, width, height)
+        else:
+            # A digest-only request is valid only while this Companion still
+            # holds the exact immutable bytes; it fails before any inference.
+            rgb_png = self._resolve_rgb(rgb_digest, width, height)
+        previous_logits_ref_value = request.get('previousLogitsRef')
+        if previous_logits_ref_value is not None and not isinstance(
+            previous_logits_ref_value, dict
+        ):
+            raise ValueError('AI Select Mask previousLogitsRef must be an object')
+        previous_logits_ref = (
+            None
+            if previous_logits_ref_value is None
+            else dict(previous_logits_ref_value)
         )
         prompt_state, prompts, prompt_state_digest, prompt_program = (
             self._parse_ai_select_prompt_state(
@@ -2521,11 +2663,12 @@ class CompanionState:
             proposal_policy_version=proposal_policy_version,
             ranking_policy_version=ranking_policy_version,
             proposal_attempt_id=proposal_attempt_id,
+            previous_logits_ref=previous_logits_ref,
         )
 
     @staticmethod
-    def _proposals_from_visual_candidates(
-        candidates: Sequence[AISelectVisualPromptCandidate],
+    def _proposals_from_sam3_image_candidates(
+        candidates: Sequence[Sam3ImageCandidate],
         request: AISelectMaskRequest,
     ) -> list[dict[str, object]]:
         """Wrap independently validated adapter candidates without comparing them."""
@@ -2551,11 +2694,211 @@ class CompanionState:
             if candidate.model_score is not None:
                 proposal['modelScore'] = candidate.model_score
                 proposal['modelScoreSemantics'] = (
-                    'sam3.1 interactive-image IoU prediction; adapter-local '
-                    'candidate diagnostic, not a ranking score.'
+                    'SAM 3 Image instance IoU prediction; adapter-local preview '
+                    'ordering score, not a correctness probability.'
                 )
             proposals.append(proposal)
         return proposals
+
+    def _cache_rgb(self, digest: str, png: bytes, width: int, height: int) -> None:
+        """Retain immutable authoritative RGB bytes for digest-only requests."""
+
+        with self._session_lock:
+            if digest in self._rgb_cache:
+                return
+            self._rgb_cache[digest] = (png, width, height)
+            while len(self._rgb_cache) > AI_SELECT_RGB_CACHE_LIMIT:
+                # dict preserves insertion order; evict the oldest entry.
+                del self._rgb_cache[next(iter(self._rgb_cache))]
+
+    def _resolve_rgb(self, digest: str, width: int, height: int) -> bytes:
+        with self._session_lock:
+            entry = self._rgb_cache.get(digest)
+        if entry is None or entry[1] != width or entry[2] != height:
+            raise MaskSessionError(
+                'rgbUnresolvable',
+                'The authoritative RGB reference cannot be resolved by this Companion; resend the RGB artifact.',
+            )
+        return entry[0]
+
+    def _adapter_runtime_digest(self, model: Mapping[str, Any]) -> str:
+        """Bind adapter, compiler, runtime, checkpoint, and source identity."""
+
+        cache_key = str(model.get('digest', ''))
+        with self._session_lock:
+            cached = self._adapter_runtime_digests.get(cache_key)
+        if cached is not None:
+            return cached
+        digest = _canonical_json_digest({
+            'adapterId': model.get('adapterId'),
+            'compilerPolicyVersion': SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION,
+            'runtimeConfigDigest': model.get('runtimeConfigDigest'),
+            'checkpointDigest': model.get('checkpointDigest'),
+            'sourceCommit': model.get('sourceCommit'),
+        })
+        with self._session_lock:
+            self._adapter_runtime_digests[cache_key] = digest
+        return digest
+
+    def _resolve_logits_refinement(
+        self, model: Mapping[str, Any], mask_request: AISelectMaskRequest
+    ) -> tuple[Sam3ImageRefinementInput | None, bool, str | None]:
+        """Resolve an opaque logits ref to Companion-local refinement state.
+
+        Any resolution failure falls back to a fresh no-mask_input inference
+        with a refinementFallback diagnostic; it never errors the request and
+        never converts browser data into model input.
+        """
+
+        ref = mask_request.previous_logits_ref
+        if ref is None:
+            return None, False, None
+        entry = self._resolve_logits_ref_entry(model, mask_request, ref)
+        if entry is None:
+            return None, True, None
+        return (
+            Sam3ImageRefinementInput(
+                inference_state=entry['inferenceState'],
+                mask_input=entry['logits'],
+            ),
+            False,
+            str(entry['sourceAttemptId']),
+        )
+
+    def _resolve_logits_ref_entry(
+        self,
+        model: Mapping[str, Any],
+        mask_request: AISelectMaskRequest,
+        ref: Mapping[str, object],
+    ) -> dict[str, Any] | None:
+        required = {
+            'schemaVersion',
+            'companionInstanceId',
+            'stateId',
+            'targetContextId',
+            'viewId',
+            'rgbDigest',
+            'sourceInferenceAttemptId',
+            'sourceCandidateId',
+            'adapterRuntimeDigest',
+            'shape',
+            'dtype',
+            'dataDigest',
+            'refDigest',
+        }
+        if set(ref) != required or ref.get('schemaVersion') != 1:
+            return None
+        payload = {key: value for key, value in ref.items() if key != 'refDigest'}
+        try:
+            recomputed = _canonical_json_digest(payload)
+        except (TypeError, ValueError):
+            return None
+        if ref.get('refDigest') != recomputed:
+            return None
+        if ref.get('companionInstanceId') != self._companion_instance_id:
+            return None
+        logits_size = int(SAM3_IMAGE_RUNTIME_CONFIG['low_res_logits_size'])
+        if (
+            ref.get('shape') != [1, logits_size, logits_size]
+            or ref.get('dtype') != 'float32'
+        ):
+            return None
+        state_id = ref.get('stateId')
+        if not isinstance(state_id, str):
+            return None
+        with self._session_lock:
+            entry = self._logits_store.get(state_id)
+        if entry is None:
+            return None
+        if (
+            entry['targetContextId']
+            != mask_request.request_binding.get('targetContextId')
+            or entry['viewId'] != mask_request.view_id
+            or entry['rgbDigest'] != mask_request.rgb_digest
+            or entry['sourceCandidateId'] != ref.get('sourceCandidateId')
+            or entry['dataDigest'] != ref.get('dataDigest')
+            or entry['adapterRuntimeDigest'] != ref.get('adapterRuntimeDigest')
+        ):
+            return None
+        if entry['adapterRuntimeDigest'] != self._adapter_runtime_digest(model):
+            return None
+        logits_bytes = entry['logits'].tobytes()
+        if (
+            f'sha256:{hashlib.sha256(logits_bytes).hexdigest()}'
+            != entry['dataDigest']
+        ):
+            return None
+        return entry
+
+    def _mint_logits_refs(
+        self,
+        *,
+        model: Mapping[str, Any],
+        mask_request: AISelectMaskRequest,
+        batch: Sam3ImageProposalBatch,
+        proposals: list[dict[str, object]],
+        source_attempt_id: str,
+    ) -> None:
+        """Mint one opaque digest-bound logits reference per retained candidate.
+
+        The raw logits and inference state stay in the Companion-local store;
+        only the reference crosses the boundary. Refinement attempts link back
+        to their source inference attempt through ``source_attempt_id``.
+        """
+
+        adapter_runtime_digest = self._adapter_runtime_digest(model)
+        target_context_id = str(
+            mask_request.request_binding['targetContextId']
+        )
+        logits_size = int(SAM3_IMAGE_RUNTIME_CONFIG['low_res_logits_size'])
+        for proposal, candidate in zip(proposals, batch.candidates, strict=True):
+            logits = candidate.low_res_logits
+            if (
+                tuple(logits.shape) != (1, logits_size, logits_size)
+                or str(logits.dtype) != 'float32'
+            ):
+                raise MaskSessionError(
+                    'modelFailure',
+                    'SAM 3 Image returned low-resolution logits outside the pinned refinement contract.',
+                )
+            logits_bytes = logits.tobytes()
+            data_digest = f'sha256:{hashlib.sha256(logits_bytes).hexdigest()}'
+            state_id = f'logits-{uuid.uuid4().hex}'
+            proposal_id = str(proposal['proposalId'])
+            ref_fields: dict[str, object] = {
+                'schemaVersion': 1,
+                'companionInstanceId': self._companion_instance_id,
+                'stateId': state_id,
+                'targetContextId': target_context_id,
+                'viewId': mask_request.view_id,
+                'rgbDigest': mask_request.rgb_digest,
+                'sourceInferenceAttemptId': source_attempt_id,
+                'sourceCandidateId': proposal_id,
+                'adapterRuntimeDigest': adapter_runtime_digest,
+                'shape': [1, logits_size, logits_size],
+                'dtype': 'float32',
+                'dataDigest': data_digest,
+            }
+            proposal['logitsRef'] = {
+                **ref_fields,
+                'refDigest': _canonical_json_digest(ref_fields),
+            }
+            entry = {
+                'logits': logits,
+                'inferenceState': batch.inference_state,
+                'targetContextId': target_context_id,
+                'viewId': mask_request.view_id,
+                'rgbDigest': mask_request.rgb_digest,
+                'sourceAttemptId': source_attempt_id,
+                'sourceCandidateId': proposal_id,
+                'adapterRuntimeDigest': adapter_runtime_digest,
+                'dataDigest': data_digest,
+            }
+            with self._session_lock:
+                self._logits_store[state_id] = entry
+                while len(self._logits_store) > AI_SELECT_LOGITS_STORE_LIMIT:
+                    # dict preserves insertion order; evict the oldest entry.
+                    del self._logits_store[next(iter(self._logits_store))]
 
     @staticmethod
     def _parse_ai_select_mask_rgb(value: object) -> tuple[bytes, str, int, int]:
@@ -2601,7 +2944,7 @@ class CompanionState:
         dict[str, object],
         tuple[AISelectMaskPrompt, ...],
         str,
-        Sam31VisualPromptProgram,
+        CompiledImagePromptProgram,
     ]:
         if not isinstance(value, dict):
             raise ValueError('AI Select Mask promptState must be an object')
@@ -2612,16 +2955,14 @@ class CompanionState:
             'revision',
             'points',
             'boxes',
-            'maskConstraints',
-            'textPrompts',
             'digest',
         }
         if set(value) != required:
             raise ValueError(
                 'AI Select Mask promptState must contain exactly the versioned PromptState fields'
             )
-        if value.get('schemaVersion') != 1:
-            raise ValueError('AI Select Mask promptState schemaVersion must be 1')
+        if value.get('schemaVersion') != 2:
+            raise ValueError('AI Select Mask promptState schemaVersion must be 2')
         if value.get('viewId') != view_id or value.get('rgbDigest') != rgb_digest:
             raise ValueError(
                 'AI Select Mask promptState must bind the exact View and authoritative RGB'
@@ -2650,7 +2991,7 @@ class CompanionState:
                     capabilities=prompt_capabilities,
                 )
             else:
-                program = compile_sam31_visual_prompt_program(
+                program = compile_sam3_image_prompt_program(
                     value,
                     width=width,
                     height=height,
@@ -2660,9 +3001,7 @@ class CompanionState:
             if error.code == 'invalidPromptState':
                 raise ValueError(str(error)) from error
             raise
-        if not (
-            program.points or program.boxes or program.mask_constraints
-        ):
+        if not (program.points or program.boxes):
             raise ValueError(
                 'AI Select Mask promptState must contain at least one supported prompt'
             )
@@ -4088,6 +4427,10 @@ class CompanionState:
         self._support_probe_admissions.clear()
         self._generated_view_plan_admissions.clear()
         self._generated_view_mask_admissions.clear()
+        # Target disposal invalidates every Companion-held RGB reference and
+        # previous-prediction logits reference with the same transaction.
+        self._rgb_cache.clear()
+        self._logits_store.clear()
         with self._frame_lock:
             self._frame_sets.clear()
         with self._scene_lock:
@@ -4908,10 +5251,14 @@ class CompanionState:
 
     @staticmethod
     def _model_runtime_configuration_is_current(model: dict[str, Any]) -> bool:
-        return (
-            model.get("adapterId") != "sam3.1"
-            or model.get("runtimeConfigDigest") == SAM31_RUNTIME_CONFIG_DIGEST
-        )
+        adapter_id = model.get("adapterId")
+        if adapter_id == "sam3.1":
+            return model.get("runtimeConfigDigest") == SAM31_RUNTIME_CONFIG_DIGEST
+        if adapter_id == SAM3_IMAGE_INSTANCE_ADAPTER_ID:
+            return (
+                model.get("runtimeConfigDigest") == SAM3_IMAGE_RUNTIME_CONFIG_DIGEST
+            )
+        return True
 
     def _require_frame_set(self, frame_set_version: str) -> RegisteredFrameSet:
         with self._frame_lock:
@@ -5241,34 +5588,41 @@ class CompanionState:
 
     def capabilities(self, allowed_editor_origins: list[str]) -> dict[str, Any]:
         release = self.require_release()
-        manifests = [
-            {
+        manifests = []
+        for model in self.available_models():
+            if (
+                not all(key in model for key in ("digest", "adapterId", "modelName"))
+                or model["adapterId"] not in self.mask_adapters
+            ):
+                continue
+            try:
+                prompt_capabilities = _prompt_capabilities_for_adapter(
+                    model["adapterId"]
+                )
+            except MaskSessionError:
+                # Non-current fixtures (for example the legacy sam3.1
+                # Multiplex adapter) have no current Prompt capability
+                # contract and stay out of the advertised manifest list.
+                continue
+            manifests.append({
                 "digest": model["digest"],
                 "adapterId": model["adapterId"],
                 "modelName": model["modelName"],
                 "weightsBundled": False,
-                "promptCapabilities": _prompt_capabilities_for_adapter(
-                    model["adapterId"]
-                ),
-            }
-            for model in self.available_models()
-            if (
-                all(key in model for key in ("digest", "adapterId", "modelName"))
-                and model["adapterId"] in self.mask_adapters
-            )
-        ]
+                "promptCapabilities": prompt_capabilities,
+            })
         renderer_capability = self._renderer_capability(release)
         return {
             "protocolVersion": PROTOCOL_VERSION,
             "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}+{release['release']}",
             "renderer": renderer_capability,
-            "supportedPromptKinds": ["point", "box", "mask-constraint"],
+            "supportedPromptKinds": ["point", "box"],
             "supportedOperations": [
                 "aiSelectAnchorRender",
                 "aiSelectAnchorReferenceContributor",
                 "aiSelectAnchorSupportProbe",
                 "aiSelectMaskProposals",
-                "autoMaskProposalSetSchemaV2",
+                "autoMaskProposalSetSchemaV3",
                 "aiSelectGeneratedViewPlanning",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",

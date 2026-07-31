@@ -12,12 +12,27 @@ import {
     type AutoMaskProposalSet,
     type ProposalDecision
 } from './mask-proposal';
+import {
+    isPreviousPredictionLogitsRef,
+    previousPredictionLogitsRefDigest,
+    type PreviousPredictionLogitsRef
+} from './previous-logits-ref';
 import { isPromptState, type PromptState } from './prompt-state';
 
+export {
+    isPreviousPredictionLogitsRef,
+    previousPredictionLogitsRefDigest,
+    type PreviousPredictionLogitsRef
+};
+
 /**
- * The generic single-frame proposal contract. Every request binds the full
- * async identity, exact RGB/CameraBinding, immutable PromptState, selected
- * model/capability identity, bounded proposal policy, and execution attempt.
+ * The generic single-frame proposal contract (04C contract §5). Every request
+ * binds the full async identity, exact RGB/CameraBinding, immutable
+ * PromptState v2, selected model/capability identity, bounded proposal
+ * policy, and execution attempt. The RGB identity/dimensions always cross the
+ * boundary; the RGB artifact itself crosses on first use of a digest and may
+ * be omitted afterwards, with the Companion resolving its immutable RGB cache
+ * by digest. An optional opaque logits reference marks a refinement attempt.
  */
 export interface AIViewMaskRequest {
     readonly requestBinding: AIRequestBinding;
@@ -25,17 +40,23 @@ export interface AIViewMaskRequest {
     readonly sceneId: string;
     readonly sceneVersion: string;
     readonly viewId: string;
-    /**
-     * The identity of one actual mask-production attempt. Same-attempt
-     * replay is idempotent; an explicit user Retry submits a new attempt.
-     */
     readonly cameraBindingDigest: string;
-    readonly rgb: AnchorRgbArtifact;
+    readonly rgbDigest: string;
+    readonly rgbWidth: number;
+    readonly rgbHeight: number;
+    /** Present on the first request for this RGB digest in a target context. */
+    readonly rgb?: AnchorRgbArtifact;
     readonly promptState: PromptState;
+    /** Present only on an explicit prompt-revision refinement attempt. */
+    readonly previousLogitsRef?: PreviousPredictionLogitsRef;
     readonly modelManifestDigest: string;
     readonly adapterCapabilityDigest: string;
     readonly proposalPolicyVersion: string;
     readonly rankingPolicyVersion: typeof anchorMaskRankingPolicyVersion;
+    /**
+     * The identity of one actual mask-production attempt. Same-attempt
+     * replay is idempotent; an explicit user Retry submits a new attempt.
+     */
     readonly proposalAttemptId: string;
 }
 
@@ -111,20 +132,17 @@ const isAnchorRgbReference = (value: unknown): value is AnchorRgbArtifact => {
 
 const promptStateMatchesRgb = (
     promptState: PromptState,
-    rgb: AnchorRgbArtifact
+    rgbDigest: string,
+    rgbWidth: number,
+    rgbHeight: number
 ): boolean => {
     return (
-        promptState.rgbDigest === rgb.digest &&
+        promptState.rgbDigest === rgbDigest &&
         promptState.points.every(
-            (point) => point.xPx < rgb.width && point.yPx < rgb.height
+            (point) => point.xPx < rgbWidth && point.yPx < rgbHeight
         ) &&
         promptState.boxes.every(
-            (box) => box.x1Px < rgb.width && box.y1Px < rgb.height
-        ) &&
-        promptState.maskConstraints.every(
-            (constraint) =>
-                constraint.artifact.width === rgb.width &&
-                constraint.artifact.height === rgb.height
+            (box) => box.x1Px < rgbWidth && box.y1Px < rgbHeight
         )
     );
 };
@@ -133,15 +151,9 @@ const visualPromptDiagnosticsMatchRequest = (
     proposal: AutoMaskProposalSet['proposals'][number],
     promptState: PromptState
 ): boolean => {
-    if (
-        promptState.boxes.length === 0 &&
-        promptState.maskConstraints.length === 0
-    ) {
-        return true;
-    }
     const diagnostics = proposal.promptDiagnostics;
     if (diagnostics === undefined) {
-        return false;
+        return promptState.boxes.length === 0;
     }
     const expected = [
         ...promptState.points.map((prompt) => ({
@@ -153,15 +165,10 @@ const visualPromptDiagnosticsMatchRequest = (
             promptId: prompt.promptId,
             family: 'box' as const,
             polarity: prompt.polarity
-        })),
-        ...promptState.maskConstraints.map((prompt) => ({
-            promptId: prompt.promptId,
-            family: 'mask-constraint' as const,
-            polarity: prompt.polarity
         }))
     ];
     const familySatisfied = (
-        family: 'point' | 'box' | 'mask-constraint',
+        family: 'point' | 'box',
         polarity?: 'include' | 'exclude'
     ): boolean =>
         diagnostics
@@ -186,41 +193,64 @@ const visualPromptDiagnosticsMatchRequest = (
             familySatisfied('point', 'include') &&
         consistency.negativePointsSatisfied ===
             familySatisfied('point', 'exclude') &&
-        (!promptState.boxes.some((prompt) => prompt.polarity === 'include') ||
+        (promptState.boxes.length === 0 ||
             consistency.positiveBoxesSatisfied ===
-                familySatisfied('box', 'include')) &&
-        (!promptState.boxes.some((prompt) => prompt.polarity === 'exclude') ||
-            consistency.negativeBoxesSatisfied ===
-                familySatisfied('box', 'exclude')) &&
-        (promptState.maskConstraints.length === 0 ||
-            consistency.maskConstraintsSatisfied ===
-                familySatisfied('mask-constraint'))
+                familySatisfied('box', 'include'))
     );
 };
 
 export const isAIViewMaskRequest = (
     value: unknown
 ): value is AIViewMaskRequest => {
-    return (
-        isRecord(value) &&
-        isAIRequestBinding(value.requestBinding) &&
-        isRecord(value.target) &&
-        isNonEmptyString(value.target.splatId) &&
-        value.requestBinding.dependencyToken.splatId === value.target.splatId &&
-        isNonEmptyString(value.sceneId) &&
-        isNonEmptyString(value.sceneVersion) &&
-        isNonEmptyString(value.viewId) &&
-        isDigest(value.cameraBindingDigest) &&
-        isAnchorRgbReference(value.rgb) &&
-        isPromptState(value.promptState) &&
-        value.promptState.viewId === value.viewId &&
-        promptStateMatchesRgb(value.promptState, value.rgb) &&
-        isNonEmptyString(value.modelManifestDigest) &&
-        isDigest(value.adapterCapabilityDigest) &&
-        isNonEmptyString(value.proposalPolicyVersion) &&
-        value.rankingPolicyVersion === anchorMaskRankingPolicyVersion &&
-        isNonEmptyString(value.proposalAttemptId)
-    );
+    if (
+        !isRecord(value) ||
+        !isAIRequestBinding(value.requestBinding) ||
+        !isRecord(value.target) ||
+        !isNonEmptyString(value.target.splatId) ||
+        value.requestBinding.dependencyToken.splatId !== value.target.splatId ||
+        !isNonEmptyString(value.sceneId) ||
+        !isNonEmptyString(value.sceneVersion) ||
+        !isNonEmptyString(value.viewId) ||
+        !isDigest(value.cameraBindingDigest) ||
+        !isDigest(value.rgbDigest) ||
+        !isPositiveSafeInteger(value.rgbWidth) ||
+        !isPositiveSafeInteger(value.rgbHeight) ||
+        !isPromptState(value.promptState) ||
+        value.promptState.viewId !== value.viewId ||
+        !promptStateMatchesRgb(
+            value.promptState,
+            value.rgbDigest,
+            value.rgbWidth,
+            value.rgbHeight
+        ) ||
+        !isNonEmptyString(value.modelManifestDigest) ||
+        !isDigest(value.adapterCapabilityDigest) ||
+        !isNonEmptyString(value.proposalPolicyVersion) ||
+        value.rankingPolicyVersion !== anchorMaskRankingPolicyVersion ||
+        !isNonEmptyString(value.proposalAttemptId)
+    ) {
+        return false;
+    }
+    if (
+        value.rgb !== undefined &&
+        (!isAnchorRgbReference(value.rgb) ||
+            value.rgb.digest !== value.rgbDigest ||
+            value.rgb.width !== value.rgbWidth ||
+            value.rgb.height !== value.rgbHeight)
+    ) {
+        return false;
+    }
+    if (
+        value.previousLogitsRef !== undefined &&
+        (!isPreviousPredictionLogitsRef(value.previousLogitsRef) ||
+            value.previousLogitsRef.viewId !== value.viewId ||
+            value.previousLogitsRef.rgbDigest !== value.rgbDigest ||
+            value.previousLogitsRef.targetContextId !==
+                value.requestBinding.targetContextId)
+    ) {
+        return false;
+    }
+    return true;
 };
 
 export const isMaskResultResponse = (
@@ -250,8 +280,9 @@ export const isMaskResultResponse = (
 
 /**
  * Fail-closed response matching: every identity field must echo the request,
- * the mask must be bound to the exact RGB artifact and dimensions the prompts
- * were placed on, and the artifact digest must match its decoded bytes.
+ * and the response must be bound to the exact RGB digest the prompts were
+ * placed on (matching on rgbDigest, not on artifact presence) plus the exact
+ * request dimensions. The artifact digest must match its decoded bytes.
  */
 export const maskResponseMatchesRequest = (
     response: MaskResultResponse,
@@ -271,7 +302,7 @@ export const maskResponseMatchesRequest = (
         response.sceneVersion === request.sceneVersion &&
         response.viewId === request.viewId &&
         response.cameraBindingDigest === request.cameraBindingDigest &&
-        response.rgbDigest === request.rgb.digest &&
+        response.rgbDigest === request.rgbDigest &&
         response.promptStateDigest === request.promptState.digest &&
         response.modelManifestDigest === request.modelManifestDigest &&
         response.adapterCapabilityDigest === request.adapterCapabilityDigest &&
@@ -279,7 +310,7 @@ export const maskResponseMatchesRequest = (
         response.rankingPolicyVersion === request.rankingPolicyVersion &&
         response.proposalAttemptId === request.proposalAttemptId &&
         response.proposalSet.viewId === request.viewId &&
-        response.proposalSet.rgbDigest === request.rgb.digest &&
+        response.proposalSet.rgbDigest === request.rgbDigest &&
         response.proposalSet.promptStateDigest === request.promptState.digest &&
         response.proposalSet.modelManifestDigest ===
             request.modelManifestDigest &&
@@ -292,8 +323,8 @@ export const maskResponseMatchesRequest = (
             request.rankingPolicyVersion &&
         response.proposalSet.proposals.every(
             (proposal) =>
-                proposal.mask.width === request.rgb.width &&
-                proposal.mask.height === request.rgb.height &&
+                proposal.mask.width === request.rgbWidth &&
+                proposal.mask.height === request.rgbHeight &&
                 visualPromptDiagnosticsMatchRequest(
                     proposal,
                     request.promptState

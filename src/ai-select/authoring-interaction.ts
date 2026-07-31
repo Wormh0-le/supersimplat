@@ -1,8 +1,7 @@
 import type { PromptTool } from './prompt-state';
 
 export type AuthoringTool = PromptTool | 'paint' | 'erase' | 'inspect';
-export type AuthoringPointerAction =
-    'point' | 'box' | 'prompt-constraint' | 'pixel-edit' | 'none';
+export type AuthoringPointerAction = 'point' | 'box' | 'pixel-edit' | 'none';
 
 export interface PointerStrokeSample {
     readonly xPx: number;
@@ -59,14 +58,8 @@ export const pointerActionForTool = (
     if (tool === 'positive-point' || tool === 'negative-point') {
         return 'point';
     }
-    if (tool === 'positive-box' || tool === 'negative-box') {
+    if (tool === 'positive-box') {
         return 'box';
-    }
-    if (
-        tool === 'positive-mask-constraint' ||
-        tool === 'negative-mask-constraint'
-    ) {
-        return 'prompt-constraint';
     }
     if (tool === 'paint' || tool === 'erase') {
         return 'pixel-edit';

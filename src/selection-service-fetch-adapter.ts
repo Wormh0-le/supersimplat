@@ -1208,8 +1208,14 @@ class FetchSelectionServiceAdapter
                 sceneVersion: request.sceneVersion,
                 viewId: request.viewId,
                 cameraBindingDigest: request.cameraBindingDigest,
-                rgb: request.rgb,
+                rgbDigest: request.rgbDigest,
+                rgbWidth: request.rgbWidth,
+                rgbHeight: request.rgbHeight,
+                ...(request.rgb === undefined ? {} : { rgb: request.rgb }),
                 promptState: request.promptState,
+                ...(request.previousLogitsRef === undefined
+                    ? {}
+                    : { previousLogitsRef: request.previousLogitsRef }),
                 modelManifestDigest: request.modelManifestDigest,
                 adapterCapabilityDigest: request.adapterCapabilityDigest,
                 proposalPolicyVersion: request.proposalPolicyVersion,

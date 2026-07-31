@@ -152,10 +152,15 @@ const solidForeground = (width, height) => {
 };
 
 const maskResponseFor = (request, overrides = {}) => {
+    const promptConsistency = {
+        positivePointsSatisfied: true,
+        negativePointsSatisfied: true,
+        positiveBoxesSatisfied: true
+    };
     const proposalPayload = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         viewId: request.viewId,
-        rgbDigest: request.rgb.digest,
+        rgbDigest: request.rgbDigest,
         promptStateDigest: request.promptState.digest,
         modelManifestDigest: request.modelManifestDigest,
         adapterCapabilityDigest: request.adapterCapabilityDigest,
@@ -166,27 +171,20 @@ const maskResponseFor = (request, overrides = {}) => {
                 proposalId: 'proposal-0',
                 sourceIndex: 0,
                 mask: bitsetArtifact(
-                    request.rgb.width,
-                    request.rgb.height,
-                    solidForeground(request.rgb.width, request.rgb.height)
+                    request.rgbWidth,
+                    request.rgbHeight,
+                    solidForeground(request.rgbWidth, request.rgbHeight)
                 ),
-                promptConsistency: {
-                    positivePointsSatisfied: true,
-                    negativePointsSatisfied: true
-                },
+                promptConsistency,
                 rankingFeatures: {
-                    promptConsistency: {
-                        positivePointsSatisfied: true,
-                        negativePointsSatisfied: true
-                    },
+                    promptConsistency,
                     eligible: true,
-                    areaFraction:
-                        256 / (request.rgb.width * request.rgb.height),
+                    areaFraction: 256 / (request.rgbWidth * request.rgbHeight),
                     boundingBox: {
-                        x0Px: request.rgb.width / 2 - 8,
-                        y0Px: request.rgb.height / 2 - 8,
-                        x1Px: request.rgb.width / 2 + 7,
-                        y1Px: request.rgb.height / 2 + 7
+                        x0Px: request.rgbWidth / 2 - 8,
+                        y0Px: request.rgbHeight / 2 - 8,
+                        x1Px: request.rgbWidth / 2 + 7,
+                        y1Px: request.rgbHeight / 2 + 7
                     },
                     connectedComponentCount: 1,
                     positivePointComponentIds: [0],
@@ -216,7 +214,7 @@ const maskResponseFor = (request, overrides = {}) => {
         sceneVersion: request.sceneVersion,
         viewId: request.viewId,
         cameraBindingDigest: request.cameraBindingDigest,
-        rgbDigest: request.rgb.digest,
+        rgbDigest: request.rgbDigest,
         promptStateDigest: request.promptState.digest,
         modelManifestDigest: request.modelManifestDigest,
         adapterCapabilityDigest: request.adapterCapabilityDigest,
@@ -227,7 +225,7 @@ const maskResponseFor = (request, overrides = {}) => {
         proposalDecision: {
             schemaVersion: 1,
             viewId: request.viewId,
-            rgbDigest: request.rgb.digest,
+            rgbDigest: request.rgbDigest,
             promptStateDigest: request.promptState.digest,
             proposalSetDigest: proposalSet.digest,
             rankingPolicyVersion: anchorMaskRankingPolicyVersion,
@@ -241,24 +239,16 @@ const maskResponseFor = (request, overrides = {}) => {
 };
 
 const pointCapabilities = createPromptAdapterCapabilities({
-    points: true,
+    positivePoints: true,
     negativePoints: true,
-    boxes: false,
-    negativeBoxes: false,
-    maskInput: false,
-    negativeMaskConstraints: false,
+    positiveInstanceBox: false,
+    previousLogitsRefinement: false,
+    singlePointMultimask: false,
+    negativeBox: false,
+    promptBrush: false,
+    maskConstraints: false,
     text: false,
-    negativeText: false,
-    multiCandidateOutput: false,
-    compilerPolicyVersion: 'point-mask-compiler/v1',
-    unsupportedPromptReasons: {
-        'positive-box': 'The adapter supports Points only.',
-        'negative-box': 'The adapter supports Points only.',
-        'positive-mask-constraint': 'The adapter supports Points only.',
-        'negative-mask-constraint': 'The adapter supports Points only.',
-        'positive-text': 'The adapter supports Points only.',
-        'negative-text': 'The adapter supports Points only.'
-    }
+    compilerPolicyVersion: 'point-mask-compiler/v1'
 });
 
 const probeResponseFor = (request, overrides = {}) => ({

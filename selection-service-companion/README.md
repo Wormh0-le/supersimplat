@@ -100,21 +100,30 @@ manifest's `checkpointDigest` must match the checkpoint's SHA-256 digest.
 
 ```sh
 uv run --locked --extra renderer --extra sam3 selection-service models install \
-  --manifest /secure/manifests/sam31.json \
-  --weights /secure/models/sam31_multiplex.pt
+  --manifest /secure/manifests/sam3-image.json \
+  --weights /secure/models/sam3.pt
 ```
 
 The Companion records the verified manifest and external checkpoint path. It
 does not copy the checkpoint into the package or send a path to the editor.
 
-For `adapterId: "sam3.1"`, `runtimeConfigDigest` must be
+For `adapterId: "sam3-image-instance/v1"` (the current static instance
+adapter), `runtimeConfigDigest` must be
+`sha256:b4acaec46dfeb259e7382619f610c08dc34818d4a29d7f2c7120e8543b89933f`.
+It binds the Companion's fixed SAM 3 Image baseline: the official
+`build_sam3_image_model(enable_inst_interactivity=True)` builder, the
+`sam3-image-instance-compiler/v1` Prompt contract, single-positive-point
+multimask with at most three retained candidates, 256×256 low-resolution
+previous-prediction logits behind opaque references, rejection of degenerate
+full-frame candidates, and bf16 autocast without Hugging Face downloads or
+compilation. A changed runtime configuration needs a new adapter baseline and
+Model Manifest digest.
+
+For the legacy `adapterId: "sam3.1"`, `runtimeConfigDigest` must be
 `sha256:6e1475abaee95d1ae97a8986494fba6ac7d3f440625f945b3ca0d258c6934c09`.
-It binds the Companion's fixed SAM 3.1 multiplex baseline: eight objects per
-session, multiplex count 16, FA3 and compilation disabled, a 0.5 output
-threshold, rejection of degenerate full-frame candidates, CPU-backed frame
-storage, GPU-backed tracker state, and the Anchor visual-prompt compiler and
-interactive-image adapter semantics described below. A changed runtime
-configuration needs a new adapter baseline and Model Manifest digest.
+It binds the historical SAM 3.1 multiplex baseline retained for the legacy
+Frame Set flow below; it is not a current static instance adapter and never
+advertises Ready for the current Runtime Profile.
 
 ## Produce a complete Frame Set Mask Track
 
@@ -217,46 +226,55 @@ zero manifests fail unavailable and multiple manifests require the startup
 choice above. The browser runs `/capabilities` on first connection, recovery,
 or Instance replacement rather than on every heartbeat.
 
-The historical SAM 3.1 Multiplex-backed static adapter remains intentionally
-Unavailable for the current `ai-select-static-image-instance/v1` profile until
-Ticket 04C supplies the official SAM 3 Image instance adapter, authoritative
-RGB/reference resolver, and opaque previous-logits refinement state. It is not
-silently advertised as current merely because its checkpoint is installed.
+The current static instance adapter is `sam3-image-instance/v1`, built on the
+official SAM 3 Image instance-interaction path
+(`build_sam3_image_model(enable_inst_interactivity=True)` →
+`Sam3Processor.set_image` → `predict_inst`). It never instantiates the
+Multiplex video predictor or calls private tracker-head methods. The
+historical SAM 3.1 Multiplex-backed static shim is retired; a `sam3.1`
+manifest stays installable for the legacy Frame Set flow but never advertises
+Ready for the current `ai-select-static-image-instance/v1` profile.
 
 The remaining control plane exposes `/scene-snapshot-uploads/v1`, the AI Select
 Anchor route `/ai-select/anchor-renders`, and the prompt-conditioned proposal
 route `/ai-select/mask-proposals`. The Runtime Profile must advertise
 `aiSelectMaskProposals` and both
 `aiSelectAnchorRender` and `binarySceneSnapshotRegistrationV1` before the
-browser enables AI Select. The legacy SAM 3.1 adapter explicitly advertises
-positive/negative Point, positive Box, and multi-candidate output. Point-only
-and Point+Box requests use the same interactive-image predictor path.
-Prompt Brush, negative Box, negative Mask Constraint, and Text stay disabled
-with exact adapter-provided reasons. The capability record binds
-`sam3.1-visual-prompt-compiler/v1`; changing support or compilation semantics
-rotates its digest so incompatible prompt replay fails closed.
+browser enables AI Select. The v1 Prompt surface is exactly positive/negative
+Point and at most one Positive Instance Box in authoritative-image pixel
+XYXY; Negative Box, Prompt Brush, Mask Constraints, and Text are removed from
+the schema, capability record, and compiler, and old artifacts carrying them
+fail closed by version/capability identity. Exactly one Positive Point with no
+Box and no refinement runs multimask and retains at most three candidates;
+Box, multiple Points, or previous-logits refinement retain at most one.
+Paint/Erase remain Editing Mask operations and never enter a model request.
+
+Every inference request carries either the exact authoritative RGB artifact or
+a Companion-resolvable immutable RGB reference whose digest matches the
+request identity; digest-only input without resolvable bytes fails before
+inference. Low-resolution previous-prediction logits stay Companion-local;
+the browser receives only an opaque digest-bound reference that resolves
+inside the exact Companion Instance for the same View/RGB/adapter lineage and
+chosen candidate, forces single-mask refinement linked to the source attempt,
+and falls back to a fresh Point/Box prediction when expired or unresolvable.
+The capability record binds `sam3-image-instance-compiler/v1`; changing
+support or compilation semantics rotates its digest so incompatible prompt
+replay fails closed.
 
 The compiler preserves authoritative RGB pixel coordinates and orders each
-prompt family by `promptId`. Box coordinates use inclusive pixel `XYXY`;
-multiple positive Boxes become deterministic independent model branches.
-Prompt Brush is not compiled into SAM `mask_input`: that field represents
-low-resolution logits from a previous prediction, not an arbitrary binary
-positive stroke. The locked brush-only GPU fixture reached best IoU
-`0.0019388243881298328` against a `0.5` minimum quality gate, so
-`maskInput=false` until a separately designed and benchmarked brush adapter
-exists. Unsupported constraints fail before inference. Every structurally
-valid raw Point/Box SAM alternative is forwarded in source order with its
-adapter-local IoU prediction semantics and per-prompt diagnostics. The
-existing Ticket 07A seam performs any later ranking and publishes the bound
-`ProposalDecision`; a raw model score never auto-confirms a Mask.
+prompt family by `promptId`. Every structurally valid raw Point/Box SAM
+alternative is forwarded in source order with its adapter-local IoU
+prediction semantics and per-prompt diagnostics; a raw model score orders the
+preview but never auto-confirms a Mask. The existing Ticket 07A seam performs
+any later ranking and publishes the bound `ProposalDecision`.
 
-Run the opt-in locked real-model check with the operator-owned multiplex
+Run the opt-in locked real-model check with the operator-owned SAM 3 Image
 checkpoint and CUDA:
 
 ```sh
-SUPERSPLAT_SAM31_VISUAL_GPU_CHECKPOINT=/secure/models/sam3.1_multiplex.pt \
+SUPERSPLAT_SAM3_IMAGE_GPU_CHECKPOINT=/secure/models/sam3.pt \
   uv run --locked --extra sam3 python -m unittest discover \
-  -s tests -p test_sam31_visual_prompt_gpu.py
+  -s tests -p test_sam3_image_instance_gpu.py
 ```
 
 `/scene-snapshots/...` remains a legacy fixture

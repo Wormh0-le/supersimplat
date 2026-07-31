@@ -6,7 +6,7 @@ import math
 from typing import Mapping, Sequence
 
 
-RANKING_POLICY_VERSION = 'anchor-mask-ranking/v1'
+RANKING_POLICY_VERSION = 'anchor-mask-ranking/v2'
 MATERIAL_IOU_THRESHOLD = 0.9
 MATERIAL_AREA_RATIO_THRESHOLD = 1.15
 NESTED_AREA_RATIO_THRESHOLD = 1.5
@@ -119,8 +119,8 @@ def _box_features(
         y1 = int(value['y1Px'])
         box_indexes = [
             y * width + x
-            for y in range(y0, y1 + 1)
-            for x in range(x0, x1 + 1)
+            for y in range(y0, y1)
+            for x in range(x0, x1)
         ]
         inside = sum(1 for index in box_indexes if pixels[index])
         fill_ratios.append(inside / len(box_indexes))
@@ -203,6 +203,15 @@ def _base_features(
         )
         and {'positivePointsSatisfied', 'negativePointsSatisfied'}
         <= set(candidate_prompt_consistency)
+        # The v2 fact set is shrunk to Points and the positive Instance Box;
+        # removed families (mask constraints, Text, negative Box) never count
+        # as ranking evidence.
+        and set(candidate_prompt_consistency)
+        <= {
+            'positivePointsSatisfied',
+            'negativePointsSatisfied',
+            'positiveBoxesSatisfied',
+        }
     ):
         prompt_consistency = dict(candidate_prompt_consistency)
     else:

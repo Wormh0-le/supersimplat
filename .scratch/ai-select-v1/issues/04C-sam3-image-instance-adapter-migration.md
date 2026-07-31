@@ -1,12 +1,50 @@
 # 04C — SAM 3 Image Instance Adapter + Prompt Contract Migration
 
-Status: ready-for-agent — critical model migration gate
+Status: implemented — locked SAM 3 Image GPU fixture still owes an operator run
 
 Blocked by: 04B
 
 Blocks: 02C, 07A, 08A, 08B
 
 Runs in parallel with: 07
+
+## Implementation record
+
+Implemented on `ai-select-v1` across both runtimes against the pinned contract
+in `.scratch/ai-select-v1/04C-protocol-contract.md`:
+
+- Companion: `sam3-image-instance/v1` adapter on the official
+  `build_sam3_image_model(enable_inst_interactivity=True)` →
+  `Sam3Processor.set_image` → `predict_inst` path with pinned
+  `SAM3_IMAGE_RUNTIME_CONFIG` (`sha256:b4acaec4…`), new
+  `sam3-image-instance-compiler/v1` Prompt v2 compiler, multimask policy
+  (≤3 single-positive-point / ≤1 otherwise), immutable RGB artifact/reference
+  resolution (`rgbUnresolvable` fails before inference), Companion-local
+  logits store behind opaque `PreviousPredictionLogitsRef` with fallback
+  semantics, and install/readiness hard gates. The static Multiplex
+  interactive-image path (`produce_ai_select_visual_proposals`,
+  `_build_sam3_interactive_image_predictor`, `_Sam31InteractiveImageSession`,
+  `_forward_sam_heads`) is deleted; legacy `produce_tracks` remains only as a
+  non-current benchmark fixture and a `sam3.1` manifest fails closed on the
+  current route.
+- Editor: PromptState schema v2 (Positive/Negative Point + ≤1 Positive
+  Instance Box pixel XYXY), rotated capability record/digest, removed
+  Negative Box / Mask Constraint / Prompt Brush / Text from schema, toolbar,
+  palette, and locales, request-level `rgbDigest` + optional artifact +
+  optional `previousLogitsRef`, proposal set v3 with policy-driven candidate
+  bounds, refinement lineage with Retry-mints-new-attempt semantics, and
+  readiness-gated capability derivation in `main.ts`.
+- Cross-runtime wire audit: editor-produced PromptState/capability/ref
+  payloads validated by the Python compiler and digest code, and
+  Companion-produced fresh/refinement/fallback exchanges validated by the
+  editor's fail-closed response gates
+  (`.scratch/ai-select-v1/04c-cross-check-*.py/.cjs`).
+- Validation run: `npm test` (330 TS + 299 Companion tests, 1 env-gated GPU
+  skip), `npm run lint`, `npm run lint:locales`, `npm run build`. The locked
+  SAM 3 Image GPU fixture (`test_sam3_image_instance_gpu.py`,
+  `SUPERSPLAT_SAM3_IMAGE_GPU_CHECKPOINT`) is written but has not run on
+  operator CUDA hardware in this environment; production GPU validation
+  remains outstanding.
 
 ## Final Spec mapping
 
@@ -175,38 +213,38 @@ The old Multiplex implementation may remain as a non-current benchmark fixture o
 
 ### Model and RGB
 
-- [ ] Anchor and single-image tests use the official SAM 3 Image path.
-- [ ] no current static request instantiates the Multiplex video predictor.
-- [ ] no current static adapter calls private tracker-head feature methods.
-- [ ] a new SAM 3 Image Model Manifest/runtime digest is required for readiness.
-- [ ] every provider request includes resolvable authoritative RGB plus matching digest/dimensions.
-- [ ] digest-only requests with no RGB artifact/reference fail before inference.
+- [x] Anchor and single-image tests use the official SAM 3 Image path.
+- [x] no current static request instantiates the Multiplex video predictor.
+- [x] no current static adapter calls private tracker-head feature methods.
+- [x] a new SAM 3 Image Model Manifest/runtime digest is required for readiness.
+- [x] every provider request includes resolvable authoritative RGB plus matching digest/dimensions.
+- [x] digest-only requests with no RGB artifact/reference fail before inference.
 
 ### Prompt behavior
 
-- [ ] Positive and Negative Points work end to end.
-- [ ] one Positive Instance Box works in authoritative pixel XYXY.
-- [ ] Negative Box, Prompt Brush, Mask Constraints and Text are absent from current Prompt UI/schema.
-- [ ] Paint/Erase never appear in a model request.
-- [ ] old Prompt artifacts fail by version/capability identity.
+- [x] Positive and Negative Points work end to end.
+- [x] one Positive Instance Box works in authoritative pixel XYXY.
+- [x] Negative Box, Prompt Brush, Mask Constraints and Text are absent from current Prompt UI/schema.
+- [x] Paint/Erase never appear in a model request.
+- [x] old Prompt artifacts fail by version/capability identity.
 
 ### Candidate and refinement behavior
 
-- [ ] one positive point returns at most three candidates.
-- [ ] Box, multiple Points and refinement return at most one candidate.
-- [ ] candidate Masks, scores and references have matching cardinality.
-- [ ] raw logits tensors remain Companion-local; only opaque refs cross the protocol.
-- [ ] valid refs refine the same image under exact Companion/candidate lineage.
-- [ ] Companion replacement or stale ref causes fresh no-logits inference.
-- [ ] binary Brush data cannot validate as a logits ref.
-- [ ] model score only orders preview and never confirms a Mask.
+- [x] one positive point returns at most three candidates.
+- [x] Box, multiple Points and refinement return at most one candidate.
+- [x] candidate Masks, scores and references have matching cardinality.
+- [x] raw logits tensors remain Companion-local; only opaque refs cross the protocol.
+- [x] valid refs refine the same image under exact Companion/candidate lineage.
+- [x] Companion replacement or stale ref causes fresh no-logits inference.
+- [x] binary Brush data cannot validate as a logits ref.
+- [x] model score only orders preview and never confirms a Mask.
 
 ### Migration and recovery
 
-- [ ] existing User Confirmed Stable Masks survive migration.
-- [ ] old in-flight/cached Multiplex results cannot attach to the new adapter revision.
-- [ ] cancellation/OOM/model failure publishes no partial Mask or refinement ref.
-- [ ] explicit Retry mints a new attempt.
+- [x] existing User Confirmed Stable Masks survive migration.
+- [x] old in-flight/cached Multiplex results cannot attach to the new adapter revision.
+- [x] cancellation/OOM/model failure publishes no partial Mask or refinement ref.
+- [x] explicit Retry mints a new attempt.
 
 ## Validation
 

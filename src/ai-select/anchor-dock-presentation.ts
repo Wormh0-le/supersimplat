@@ -30,7 +30,6 @@ export interface AnchorDockMaskPresentation {
     readonly positivePointCount: number;
     readonly negativePointCount: number;
     readonly boxCount: number;
-    readonly maskConstraintCount: number;
     readonly promptRevision: number;
     readonly proposalFeedback: ProposalFeedback;
     readonly evidenceStatus: EvidenceStatus;
@@ -71,7 +70,6 @@ const emptyMaskPresentation = (
         positivePointCount: 0,
         negativePointCount: 0,
         boxCount: 0,
-        maskConstraintCount: 0,
         promptRevision: 0,
         proposalFeedback: 'none',
         evidenceStatus: 'not-requested',
@@ -101,10 +99,7 @@ export const getAnchorDockMaskPresentation = (
     }
     const promptState = maskState.promptState;
     const promptCount =
-        (promptState?.points.length ?? 0) +
-        (promptState?.boxes.length ?? 0) +
-        (promptState?.maskConstraints.length ?? 0) +
-        (promptState?.textPrompts.length ?? 0);
+        (promptState?.points.length ?? 0) + (promptState?.boxes.length ?? 0);
     const proposalFeedback: ProposalFeedback =
         maskState.requestStatus === 'pending'
             ? 'pending'
@@ -131,7 +126,6 @@ export const getAnchorDockMaskPresentation = (
             promptState?.points.filter((point) => point.polarity === 'exclude')
                 .length ?? 0,
         boxCount: promptState?.boxes.length ?? 0,
-        maskConstraintCount: promptState?.maskConstraints.length ?? 0,
         promptRevision: promptState?.revision ?? 0,
         proposalFeedback,
         evidenceStatus: maskState.evidence.status,

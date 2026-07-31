@@ -1,21 +1,13 @@
 import { sha256Digest } from '../scene-snapshot-binary';
-import {
-    isMaskArtifact,
-    type MaskArtifact,
-    type MaskPolarity
-} from './mask-annotation';
+import type { MaskPolarity } from './mask-annotation';
 
-export const promptStateSchemaVersion = 1;
+// Ticket 04C: PromptState schema v2 shrinks the instance prompt contract to
+// Positive/Negative Points plus at most one Positive Instance Box. v1
+// artifacts (maskConstraints/textPrompts/negative boxes) fail closed on
+// exact-key, schemaVersion, and digest-recompute validation.
+export const promptStateSchemaVersion = 2;
 
-export type PromptTool =
-    | 'positive-point'
-    | 'negative-point'
-    | 'positive-box'
-    | 'negative-box'
-    | 'positive-mask-constraint'
-    | 'negative-mask-constraint'
-    | 'positive-text'
-    | 'negative-text';
+export type PromptTool = 'positive-point' | 'negative-point' | 'positive-box';
 
 export interface PointPrompt {
     readonly promptId: string;
@@ -26,24 +18,12 @@ export interface PointPrompt {
 
 export interface BoxPrompt {
     readonly promptId: string;
-    readonly polarity: MaskPolarity;
+    /** Positive Instance Box only; exclude polarity fails closed (§4). */
+    readonly polarity: 'include';
     readonly x0Px: number;
     readonly y0Px: number;
     readonly x1Px: number;
     readonly y1Px: number;
-}
-
-export interface MaskConstraintPrompt {
-    readonly promptId: string;
-    readonly polarity: MaskPolarity;
-    readonly artifact: MaskArtifact;
-}
-
-export interface TextPrompt {
-    readonly promptId: string;
-    readonly polarity: MaskPolarity;
-    readonly text: string;
-    readonly locale?: string;
 }
 
 export interface PromptState {
@@ -53,27 +33,26 @@ export interface PromptState {
     readonly revision: number;
     readonly points: readonly PointPrompt[];
     readonly boxes: readonly BoxPrompt[];
-    readonly maskConstraints: readonly MaskConstraintPrompt[];
-    readonly textPrompts: readonly TextPrompt[];
     readonly digest: string;
 }
 
+/**
+ * The SAM 3 Image instance adapter capability record (04C contract §3). The
+ * digest binds exactly the 9 capability flags plus the compiler policy
+ * version; removed prompt families are absent from the record entirely, so
+ * old records with `unsupportedPromptReasons` fail closed.
+ */
 export interface PromptAdapterCapabilities {
-    readonly points: boolean;
+    readonly positivePoints: boolean;
     readonly negativePoints: boolean;
-    readonly boxes: boolean;
-    readonly negativeBoxes: boolean;
-    readonly maskInput: boolean;
-    readonly negativeMaskConstraints: boolean;
+    readonly positiveInstanceBox: boolean;
+    readonly previousLogitsRefinement: boolean;
+    readonly singlePointMultimask: boolean;
+    readonly negativeBox: boolean;
+    readonly promptBrush: boolean;
+    readonly maskConstraints: boolean;
     readonly text: boolean;
-    readonly negativeText: boolean;
-    readonly multiCandidateOutput: boolean;
-    /** Versioned deterministic compilation semantics for this adapter. */
     readonly compilerPolicyVersion: string;
-    /** Actionable explanations for intentionally unsupported Prompt tools. */
-    readonly unsupportedPromptReasons: Readonly<
-        Partial<Record<PromptTool, string>>
-    >;
     readonly capabilityDigest: string;
 }
 
@@ -98,18 +77,14 @@ const canonicalJson = (value: unknown): string => {
     return JSON.stringify(value);
 };
 
+/**
+ * Canonical sorted JSON with plain JSON number spelling. Prompt identity and
+ * the opaque logits-ref digest share this encoding (04C contract §4/§7).
+ */
+export const promptCanonicalJson = canonicalJson;
+
 const promptStateDigest = (payload: PromptStatePayload): string => {
     return sha256Digest(encoder.encode(canonicalJson(payload)));
-};
-
-const copyArtifact = (artifact: MaskArtifact): MaskArtifact => {
-    return Object.freeze({
-        encoding: artifact.encoding,
-        width: artifact.width,
-        height: artifact.height,
-        data: artifact.data,
-        digest: artifact.digest
-    });
 };
 
 const freezePayload = (payload: PromptStatePayload): PromptStatePayload => {
@@ -120,17 +95,6 @@ const freezePayload = (payload: PromptStatePayload): PromptStatePayload => {
         ),
         boxes: Object.freeze(
             payload.boxes.map((box) => Object.freeze({ ...box }))
-        ),
-        maskConstraints: Object.freeze(
-            payload.maskConstraints.map((constraint) =>
-                Object.freeze({
-                    ...constraint,
-                    artifact: copyArtifact(constraint.artifact)
-                })
-            )
-        ),
-        textPrompts: Object.freeze(
-            payload.textPrompts.map((prompt) => Object.freeze({ ...prompt }))
         )
     });
 };
@@ -153,9 +117,7 @@ export const createEmptyPromptState = (
         rgbDigest,
         revision: 0,
         points: [],
-        boxes: [],
-        maskConstraints: [],
-        textPrompts: []
+        boxes: []
     });
 };
 
@@ -164,22 +126,20 @@ export const revisePromptState = (
     prompts: {
         readonly points?: readonly PointPrompt[];
         readonly boxes?: readonly BoxPrompt[];
-        readonly maskConstraints?: readonly MaskConstraintPrompt[];
-        readonly textPrompts?: readonly TextPrompt[];
     }
 ): PromptState => {
     if (current.revision >= Number.MAX_SAFE_INTEGER) {
         throw new Error('AI Select Prompt revision cannot advance safely.');
     }
+    // At most one Positive Instance Box exists: adding a box replaces it.
+    const boxes = prompts.boxes ?? current.boxes;
     return publish({
         schemaVersion: promptStateSchemaVersion,
         viewId: current.viewId,
         rgbDigest: current.rgbDigest,
         revision: current.revision + 1,
         points: prompts.points ?? current.points,
-        boxes: prompts.boxes ?? current.boxes,
-        maskConstraints: prompts.maskConstraints ?? current.maskConstraints,
-        textPrompts: prompts.textPrompts ?? current.textPrompts
+        boxes: boxes.slice(-1)
     });
 };
 
@@ -221,8 +181,6 @@ export const isPromptState = (value: unknown): value is PromptState => {
             'revision',
             'points',
             'boxes',
-            'maskConstraints',
-            'textPrompts',
             'digest'
         ]) ||
         value.schemaVersion !== promptStateSchemaVersion ||
@@ -235,8 +193,7 @@ export const isPromptState = (value: unknown): value is PromptState => {
         !digestPattern.test(value.digest) ||
         !Array.isArray(value.points) ||
         !Array.isArray(value.boxes) ||
-        !Array.isArray(value.maskConstraints) ||
-        !Array.isArray(value.textPrompts)
+        value.boxes.length > 1
     ) {
         return false;
     }
@@ -249,6 +206,7 @@ export const isPromptState = (value: unknown): value is PromptState => {
             isPixel(point.xPx) &&
             isPixel(point.yPx)
     );
+    // Boxes are Positive Instance only: exclude polarity fails closed.
     const boxes = value.boxes.every(
         (box) =>
             isRecord(box) &&
@@ -261,7 +219,7 @@ export const isPromptState = (value: unknown): value is PromptState => {
                 'y1Px'
             ]) &&
             isNonEmptyString(box.promptId) &&
-            isPolarity(box.polarity) &&
+            box.polarity === 'include' &&
             isPixel(box.x0Px) &&
             isPixel(box.y0Px) &&
             isPixel(box.x1Px) &&
@@ -269,36 +227,12 @@ export const isPromptState = (value: unknown): value is PromptState => {
             (box.x0Px as number) < (box.x1Px as number) &&
             (box.y0Px as number) < (box.y1Px as number)
     );
-    const constraints = value.maskConstraints.every(
-        (constraint) =>
-            isRecord(constraint) &&
-            hasExactKeys(constraint, ['promptId', 'polarity', 'artifact']) &&
-            isNonEmptyString(constraint.promptId) &&
-            isPolarity(constraint.polarity) &&
-            isMaskArtifact(constraint.artifact)
-    );
-    const texts = value.textPrompts.every(
-        (prompt) =>
-            isRecord(prompt) &&
-            hasExactKeys(
-                prompt,
-                ['promptId', 'polarity', 'text'],
-                ['locale']
-            ) &&
-            isNonEmptyString(prompt.promptId) &&
-            isPolarity(prompt.polarity) &&
-            isNonEmptyString(prompt.text) &&
-            (prompt.locale === undefined || isNonEmptyString(prompt.locale))
-    );
-    if (!points || !boxes || !constraints || !texts) {
+    if (!points || !boxes) {
         return false;
     }
-    const promptIds = [
-        ...value.points,
-        ...value.boxes,
-        ...value.maskConstraints,
-        ...value.textPrompts
-    ].map((prompt) => (prompt as { promptId: string }).promptId);
+    const promptIds = [...value.points, ...value.boxes].map(
+        (prompt) => (prompt as { promptId: string }).promptId
+    );
     if (new Set(promptIds).size !== promptIds.length) {
         return false;
     }
@@ -309,19 +243,16 @@ export const isPromptState = (value: unknown): value is PromptState => {
 const capabilityPayload = (
     capabilities: Omit<PromptAdapterCapabilities, 'capabilityDigest'>
 ) => ({
-    points: capabilities.points,
+    positivePoints: capabilities.positivePoints,
     negativePoints: capabilities.negativePoints,
-    boxes: capabilities.boxes,
-    negativeBoxes: capabilities.negativeBoxes,
-    maskInput: capabilities.maskInput,
-    negativeMaskConstraints: capabilities.negativeMaskConstraints,
+    positiveInstanceBox: capabilities.positiveInstanceBox,
+    previousLogitsRefinement: capabilities.previousLogitsRefinement,
+    singlePointMultimask: capabilities.singlePointMultimask,
+    negativeBox: capabilities.negativeBox,
+    promptBrush: capabilities.promptBrush,
+    maskConstraints: capabilities.maskConstraints,
     text: capabilities.text,
-    negativeText: capabilities.negativeText,
-    multiCandidateOutput: capabilities.multiCandidateOutput,
-    compilerPolicyVersion: capabilities.compilerPolicyVersion,
-    unsupportedPromptReasons: Object.freeze({
-        ...capabilities.unsupportedPromptReasons
-    })
+    compilerPolicyVersion: capabilities.compilerPolicyVersion
 });
 
 export const createPromptAdapterCapabilities = (
@@ -330,44 +261,19 @@ export const createPromptAdapterCapabilities = (
     const payload = capabilityPayload(capabilities);
     return Object.freeze({
         ...payload,
-        unsupportedPromptReasons: Object.freeze({
-            ...payload.unsupportedPromptReasons
-        }),
         capabilityDigest: sha256Digest(encoder.encode(canonicalJson(payload)))
     });
 };
-
-const promptTools = new Set<PromptTool>([
-    'positive-point',
-    'negative-point',
-    'positive-box',
-    'negative-box',
-    'positive-mask-constraint',
-    'negative-mask-constraint',
-    'positive-text',
-    'negative-text'
-]);
 
 const promptToolSupported = (
     tool: PromptTool,
     capabilities: Omit<PromptAdapterCapabilities, 'capabilityDigest'>
 ): boolean => {
     return tool === 'positive-point'
-        ? capabilities.points
+        ? capabilities.positivePoints
         : tool === 'negative-point'
-          ? capabilities.points && capabilities.negativePoints
-          : tool === 'positive-box'
-            ? capabilities.boxes
-            : tool === 'negative-box'
-              ? capabilities.boxes && capabilities.negativeBoxes
-              : tool === 'positive-mask-constraint'
-                ? capabilities.maskInput
-                : tool === 'negative-mask-constraint'
-                  ? capabilities.maskInput &&
-                    capabilities.negativeMaskConstraints
-                  : tool === 'positive-text'
-                    ? capabilities.text
-                    : capabilities.text && capabilities.negativeText;
+          ? capabilities.negativePoints
+          : capabilities.positiveInstanceBox;
 };
 
 export const isPromptAdapterCapabilities = (
@@ -376,37 +282,35 @@ export const isPromptAdapterCapabilities = (
     if (
         !isRecord(value) ||
         !hasExactKeys(value, [
-            'points',
+            'positivePoints',
             'negativePoints',
-            'boxes',
-            'negativeBoxes',
-            'maskInput',
-            'negativeMaskConstraints',
+            'positiveInstanceBox',
+            'previousLogitsRefinement',
+            'singlePointMultimask',
+            'negativeBox',
+            'promptBrush',
+            'maskConstraints',
             'text',
-            'negativeText',
-            'multiCandidateOutput',
             'compilerPolicyVersion',
-            'unsupportedPromptReasons',
             'capabilityDigest'
         ])
     ) {
         return false;
     }
     const booleanKeys = [
-        'points',
+        'positivePoints',
         'negativePoints',
-        'boxes',
-        'negativeBoxes',
-        'maskInput',
-        'negativeMaskConstraints',
-        'text',
-        'negativeText',
-        'multiCandidateOutput'
+        'positiveInstanceBox',
+        'previousLogitsRefinement',
+        'singlePointMultimask',
+        'negativeBox',
+        'promptBrush',
+        'maskConstraints',
+        'text'
     ] as const;
     if (
         !booleanKeys.every((key) => typeof value[key] === 'boolean') ||
         !isNonEmptyString(value.compilerPolicyVersion) ||
-        !isRecord(value.unsupportedPromptReasons) ||
         typeof value.capabilityDigest !== 'string' ||
         !digestPattern.test(value.capabilityDigest)
     ) {
@@ -416,25 +320,6 @@ export const isPromptAdapterCapabilities = (
         PromptAdapterCapabilities,
         'capabilityDigest'
     >;
-    const unsupportedPromptReasons = value.unsupportedPromptReasons as Record<
-        string,
-        unknown
-    >;
-    if (
-        !Object.entries(unsupportedPromptReasons).every(
-            ([tool, reason]) =>
-                promptTools.has(tool as PromptTool) &&
-                isNonEmptyString(reason) &&
-                !promptToolSupported(tool as PromptTool, capabilityPayloadValue)
-        ) ||
-        [...promptTools].some(
-            (tool) =>
-                !promptToolSupported(tool, capabilityPayloadValue) &&
-                !Object.hasOwn(unsupportedPromptReasons, tool)
-        )
-    ) {
-        return false;
-    }
     const expected = createPromptAdapterCapabilities(capabilityPayloadValue);
     return expected.capabilityDigest === value.capabilityDigest;
 };
@@ -445,15 +330,9 @@ export const promptToolCapabilityReason = (
 ): string | null => {
     return promptToolSupported(tool, capabilities)
         ? null
-        : (capabilities.unsupportedPromptReasons[tool] ??
-              `The selected Prompt Adapter does not support ${tool}.`);
+        : `The selected Prompt Adapter does not support ${tool}.`;
 };
 
 export const promptStateHasConstraints = (state: PromptState): boolean => {
-    return (
-        state.points.length > 0 ||
-        state.boxes.length > 0 ||
-        state.maskConstraints.length > 0 ||
-        state.textPrompts.length > 0
-    );
+    return state.points.length > 0 || state.boxes.length > 0;
 };

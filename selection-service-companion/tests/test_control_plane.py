@@ -20,8 +20,9 @@ from selection_service_companion.evidence import (
 )
 from selection_service_companion.masking import (
     PointMaskAdapter,
+    SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
     SAM31_RUNTIME_CONFIG_DIGEST,
-    sam31_visual_prompt_capabilities,
+    sam3_image_instance_capabilities,
 )
 from selection_service_companion.server import create_server
 from selection_service_companion.state import CompanionState
@@ -45,8 +46,8 @@ class CompanionControlPlaneTests(unittest.TestCase):
     def install_model(
         self,
         *,
-        adapter_id: str = "sam3.1",
-        model_name: str = "SAM 3.1",
+        adapter_id: str = "sam3-image-instance/v1",
+        model_name: str = "SAM 3 Image",
         runtime_config_digest: str | None = None,
     ) -> str:
         weights = self.directory / "sam31.pt"
@@ -71,7 +72,7 @@ class CompanionControlPlaneTests(unittest.TestCase):
                 runtime_config_digest or (
                     SAM31_RUNTIME_CONFIG_DIGEST
                     if adapter_id == "sam3.1"
-                    else "sha256:runtime-v1"
+                    else SAM3_IMAGE_RUNTIME_CONFIG_DIGEST
                 ),
             ),
             encoding="utf-8",
@@ -85,17 +86,17 @@ class CompanionControlPlaneTests(unittest.TestCase):
 
         self.assertEqual(capabilities["protocolVersion"], "1")
         self.assertEqual(capabilities["capacity"], {"maximumActiveSessions": 1, "activeSessions": 0})
-        prompt_capabilities = sam31_visual_prompt_capabilities()
+        prompt_capabilities = sam3_image_instance_capabilities()
         self.assertEqual(capabilities["modelManifests"], [{
             "digest": model_digest,
-            "adapterId": "sam3.1",
-            "modelName": "SAM 3.1",
+            "adapterId": "sam3-image-instance/v1",
+            "modelName": "SAM 3 Image",
             "weightsBundled": False,
             "promptCapabilities": prompt_capabilities,
         }])
         self.assertIn("aiSelectMaskProposals", capabilities["supportedOperations"])
         self.assertIn(
-            "autoMaskProposalSetSchemaV2",
+            "autoMaskProposalSetSchemaV3",
             capabilities["supportedOperations"],
         )
         self.assertEqual(capabilities["renderer"]["status"], "unavailable")
@@ -110,7 +111,23 @@ class CompanionControlPlaneTests(unittest.TestCase):
 
     def test_rejects_a_sam31_manifest_with_an_unpinned_runtime_configuration(self) -> None:
         with self.assertRaisesRegex(ValueError, "runtimeConfigDigest"):
+            self.install_model(
+                adapter_id="sam3.1",
+                model_name="SAM 3.1",
+                runtime_config_digest="sha256:runtime-v1",
+            )
+
+    def test_rejects_a_sam3_image_manifest_with_an_unpinned_runtime_configuration(self) -> None:
+        with self.assertRaisesRegex(ValueError, "runtimeConfigDigest"):
             self.install_model(runtime_config_digest="sha256:runtime-v1")
+
+    def test_keeps_the_legacy_sam31_fixture_out_of_current_prompt_capabilities(self) -> None:
+        self.install_model(adapter_id="sam3.1", model_name="SAM 3.1")
+
+        self.assertEqual(
+            self.state.capabilities([EDITOR_ORIGIN])["modelManifests"],
+            [],
+        )
 
     def test_records_the_actual_lock_file_digest_when_installing_a_release(self) -> None:
         data_directory = self.directory / "cli-state"

@@ -125,11 +125,11 @@ _Avoid_: implicit renderer swap
 ## Mask Vocabulary
 
 **Prompt Authoring**
-The pre-Stable interaction layer that records explicit model constraints on one exact authoritative RGB. Point, Box, Prompt Brush / Mask Constraint, and capability-gated Text tools revise PromptState; they do not directly change Editing Mask pixels.
+The pre-Stable interaction layer that records explicit model constraints on one exact authoritative RGB. Positive Point, Negative Point, and at most one Positive Instance Box tools revise PromptState; they do not directly change Editing Mask pixels. Negative Box, Prompt Brush / Mask Constraint, and Text are removed from the v1 Prompt surface.
 _Avoid_: Paint/Erase, implicit long-press brush
 
 **PromptState**
-An immutable-by-revision, per-View set of positive/negative Point, Box, Mask Constraint, and Text prompts bound to one exact authoritative RGB digest. PromptState has its own digest and history and is neither an Editing Mask nor a Stable Mask.
+An immutable-by-revision, per-View set of positive/negative Point prompts and at most one Positive Instance Box (authoritative-image pixel XYXY) bound to one exact authoritative RGB digest. PromptState has its own digest and history and is neither an Editing Mask nor a Stable Mask. The current schema is v2; artifacts carrying removed v1 families fail closed by version/capability identity.
 _Avoid_: legacy Prompt Log, bitmap edit history
 
 **Prompt Adapter Capabilities**
@@ -137,11 +137,15 @@ The versioned, digest-bound declaration of which positive/negative prompt famili
 _Avoid_: best-effort ignored prompts, model-name feature detection
 
 **Prompt Compiler Policy**
-The versioned deterministic mapping from one exact PromptState into adapter-native Point, Box, and capability-gated Mask inputs. Its identity covers ordering, coordinate conventions, and prompt-family composition; capability identity rotates when these semantics change. The locked SAM 3.1 policy routes Point and positive Box through the same interactive-image predictor. Positive Prompt Brush remains disabled because SAM `mask_input` expects previous-prediction logits and the locked brush-only quality gate failed; negative Box, negative Mask Constraint, and Text are also explicitly disabled.
+The versioned deterministic mapping from one exact PromptState into adapter-native Point, Box, and previous-logits inputs. Its identity covers ordering, coordinate conventions, and prompt-family composition; capability identity rotates when these semantics change. The current `sam3-image-instance-compiler/v1` policy routes Points and the Positive Instance Box through the official SAM 3 Image instance-interaction path (`build_sam3_image_model` → `Sam3Processor.set_image` → `predict_inst`). Prompt Brush is never compiled into SAM `mask_input`: that field accepts only Companion-local previous-prediction logits behind an opaque reference.
 _Avoid_: implicit coordinate conversion, silently ignored prompt, model-name default
 
+**PreviousPredictionLogitsRef**
+An opaque, digest-bound browser-held reference to Companion-local low-resolution previous-prediction logits. Raw logits never cross the protocol or enter PromptState/persistence. The reference resolves only inside the exact Companion Instance that minted it, for the same View/RGB/adapter lineage and chosen candidate, and forces single-mask refinement linked to the source inference attempt. An expired or unresolvable reference falls back to a fresh Point/Box prediction without `mask_input`.
+_Avoid_: binary brush as mask input, cross-session logits cache
+
 **AutoMaskProposalSet**
-A deterministic bounded set of structurally valid model Mask alternatives bound to exact target/context, Camera/RGB, PromptState, model, adapter capability, policy, and attempt identities. A proposal may seed Editing Mask but is never Stable without Confirm Mask. Raw adapter scores retain their declared semantics and are not correctness confidence.
+A deterministic bounded set of structurally valid model Mask alternatives bound to exact target/context, Camera/RGB, PromptState, model, adapter capability, policy, and attempt identities. Exactly one Positive Point with no Box and no refinement yields at most three candidates; Box, multiple Points, or previous-logits refinement yields at most one. A proposal may seed Editing Mask but is never Stable without Confirm Mask. Raw adapter scores retain their declared semantics and are not correctness confidence.
 _Avoid_: Stable Mask, highest-score auto-confirm, ProposalDecision
 
 **Proposal Ranking Features**
@@ -380,6 +384,9 @@ The bounded fail-closed logic that attempts to explain boundary differences betw
 
 **Object Selection Session (legacy)**  
 The old user-visible lifetime bundling prompting, preview correction, Candidate state, and one final commit. Replaced by Current Target Context plus independent View/Mask/Evidence/Candidate lifecycles.
+
+**SAM 3.1 Multiplex Static Adapter (legacy/reference)**  
+The retired static segmentation path built from the Multiplex video predictor and private tracker-head methods (`sam3.1-interactive-image/v1`). It remains only as a non-current benchmark fixture and never advertises Ready for current static instance segmentation; the current path is the official SAM 3 Image instance adapter (`sam3-image-instance/v1`).
 
 **Prompt Log (legacy product role)**  
 The old chronological product source of truth for point prompts and New/Add/Remove/Refine operations. Prompt data may still exist inside MaskAnnotation provenance, compatibility code, or frozen benchmarks.

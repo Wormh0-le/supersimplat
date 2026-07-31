@@ -1,0 +1,235 @@
+from __future__ import annotations
+
+import hashlib
+from importlib.metadata import distribution
+import inspect
+import io
+import json
+import os
+from pathlib import Path
+import unittest
+
+from PIL import Image
+
+from selection_service_companion import masking
+from selection_service_companion.masking import (
+    SAM3_IMAGE_INSTANCE_ADAPTER_ID,
+    SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
+    Sam3ImageInstanceAdapter,
+    Sam3ImageRefinementInput,
+    compile_sam3_image_prompt_program,
+    sam3_image_instance_capabilities,
+)
+
+
+SAM3_SOURCE_COMMIT = '5dd401d1c5c1d5c3eedff06d41b77af824517619'
+CHECKPOINT_ENV = 'SUPERSPLAT_SAM3_IMAGE_GPU_CHECKPOINT'
+
+
+def _gpu_fixture_available() -> bool:
+    checkpoint = os.environ.get(CHECKPOINT_ENV)
+    if not checkpoint or not Path(checkpoint).is_file():
+        return False
+    try:
+        import torch
+
+        return torch.cuda.is_available()
+    except ImportError:
+        return False
+
+
+class Sam3ImageStaticPathAuditTests(unittest.TestCase):
+    """Static proof that the current static path retired Multiplex internals."""
+
+    def test_the_retired_private_tracker_path_is_gone(self) -> None:
+        source = inspect.getsource(masking)
+
+        self.assertNotIn('_forward_sam_heads', source)
+        self.assertNotIn('def _build_sam3_interactive_image_predictor', source)
+        self.assertNotIn('def produce_ai_select_visual_proposals', source)
+        self.assertNotIn('def compile_sam31_visual_prompt_program', source)
+
+    def test_the_current_static_adapter_never_touches_multiplex(self) -> None:
+        adapter_source = inspect.getsource(Sam3ImageInstanceAdapter)
+        builder_source = inspect.getsource(masking._build_sam3_image_runtime)
+
+        for source in (adapter_source, builder_source):
+            self.assertNotIn('build_sam3_multiplex_video_predictor', source)
+            self.assertNotIn('_forward_sam_heads', source)
+
+
+@unittest.skipUnless(
+    _gpu_fixture_available(),
+    f'locked SAM 3 Image GPU fixture requires {CHECKPOINT_ENV}',
+)
+class Sam3ImageInstanceGpuTests(unittest.TestCase):
+    """Locked-runtime proof for the official SAM 3 Image instance path."""
+
+    def test_point_box_and_refinement_on_the_real_image_model(self) -> None:
+        checkpoint = Path(os.environ[CHECKPOINT_ENV])
+        direct_url = distribution('sam3').read_text('direct_url.json')
+        if direct_url is not None:
+            vcs_info = json.loads(direct_url).get('vcs_info')
+            if vcs_info is not None:
+                self.assertEqual(vcs_info['commit_id'], SAM3_SOURCE_COMMIT)
+
+        repository = Path(__file__).resolve().parents[2]
+        image_path = repository / (
+            'docs/benchmarks/fixtures/office/targets/clothes_rack/'
+            'frame-set-v1/frames/001-anchor.png'
+        )
+        rgb_png = image_path.read_bytes()
+        with Image.open(io.BytesIO(rgb_png)) as image:
+            width, height = image.size
+        rgb_digest = f'sha256:{hashlib.sha256(rgb_png).hexdigest()}'
+        capabilities = sam3_image_instance_capabilities()
+        self.assertTrue(capabilities['positiveInstanceBox'])
+        self.assertTrue(capabilities['previousLogitsRefinement'])
+        self.assertFalse(capabilities['promptBrush'])
+        model = {
+            'adapterId': SAM3_IMAGE_INSTANCE_ADAPTER_ID,
+            'runtimeConfigDigest': SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
+            'weightsPath': str(checkpoint),
+        }
+        adapter = Sam3ImageInstanceAdapter()
+
+        try:
+            point_batch = adapter.produce_proposals(
+                model=model,
+                rgb_png=rgb_png,
+                width=width,
+                height=height,
+                program=self._program(
+                    rgb_digest=rgb_digest,
+                    width=width,
+                    height=height,
+                    capabilities=capabilities,
+                    points=[{
+                        'promptId': 'rack-positive',
+                        'polarity': 'include',
+                        'xPx': 548,
+                        'yPx': 410,
+                    }],
+                    boxes=[],
+                ),
+                refinement=None,
+                cancelled=lambda: False,
+            )
+            # One positive point takes the multimask path: up to three
+            # candidates, each with Companion-local low-resolution logits.
+            self.assertGreaterEqual(len(point_batch.candidates), 1)
+            self.assertLessEqual(len(point_batch.candidates), 3)
+            for candidate in point_batch.candidates:
+                self.assertEqual(candidate.low_res_logits.shape, (1, 256, 256))
+                self.assertEqual(str(candidate.low_res_logits.dtype), 'float32')
+
+            box_batch = adapter.produce_proposals(
+                model=model,
+                rgb_png=rgb_png,
+                width=width,
+                height=height,
+                program=self._program(
+                    rgb_digest=rgb_digest,
+                    width=width,
+                    height=height,
+                    capabilities=capabilities,
+                    points=[{
+                        'promptId': 'rack-positive',
+                        'polarity': 'include',
+                        'xPx': 548,
+                        'yPx': 410,
+                    }],
+                    boxes=[{
+                        'promptId': 'rack-box',
+                        'polarity': 'include',
+                        'x0Px': 475,
+                        'y0Px': 170,
+                        'x1Px': 624,
+                        'y1Px': 859,
+                    }],
+                ),
+                refinement=None,
+                cancelled=lambda: False,
+            )
+            # A Box forces single-mask mode.
+            self.assertLessEqual(len(box_batch.candidates), 1)
+
+            refined_batch = adapter.produce_proposals(
+                model=model,
+                rgb_png=rgb_png,
+                width=width,
+                height=height,
+                program=self._program(
+                    rgb_digest=rgb_digest,
+                    width=width,
+                    height=height,
+                    capabilities=capabilities,
+                    points=[
+                        {
+                            'promptId': 'rack-positive',
+                            'polarity': 'include',
+                            'xPx': 548,
+                            'yPx': 410,
+                        },
+                        {
+                            'promptId': 'rack-negative',
+                            'polarity': 'exclude',
+                            'xPx': 700,
+                            'yPx': 500,
+                        },
+                    ],
+                    boxes=[],
+                ),
+                refinement=Sam3ImageRefinementInput(
+                    inference_state=point_batch.inference_state,
+                    mask_input=point_batch.candidates[0].low_res_logits,
+                ),
+                cancelled=lambda: False,
+            )
+            # Previous-logits refinement forces single-mask mode.
+            self.assertLessEqual(len(refined_batch.candidates), 1)
+        finally:
+            del adapter
+            import torch
+
+            torch.cuda.empty_cache()
+
+    @staticmethod
+    def _program(
+        *,
+        rgb_digest: str,
+        width: int,
+        height: int,
+        capabilities: dict[str, object],
+        points: list[dict[str, object]],
+        boxes: list[dict[str, object]],
+    ):
+        prompt_state: dict[str, object] = {
+            'schemaVersion': 2,
+            'viewId': 'anchor-view',
+            'rgbDigest': rgb_digest,
+            'revision': 1,
+            'points': points,
+            'boxes': boxes,
+        }
+        prompt_state['digest'] = f'sha256:{hashlib.sha256(
+            json.dumps(
+                {
+                    key: value
+                    for key, value in prompt_state.items()
+                    if key != "digest"
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()}'
+        return compile_sam3_image_prompt_program(
+            prompt_state,
+            width=width,
+            height=height,
+            capabilities=capabilities,
+        )
+
+
+if __name__ == '__main__':
+    unittest.main()

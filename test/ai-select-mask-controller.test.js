@@ -23,6 +23,9 @@ const {
     autoMaskProposalSetDigest
 } = require('../.test-dist/src/ai-select/mask-proposal.js');
 const {
+    previousPredictionLogitsRefDigest
+} = require('../.test-dist/src/ai-select/previous-logits-ref.js');
+const {
     createPromptAdapterCapabilities
 } = require('../.test-dist/src/ai-select/prompt-state.js');
 const {
@@ -136,11 +139,14 @@ const bitsetArtifact = (width, height, foreground = [[2, 2]]) => {
     });
 };
 
+const promptConsistency = () => ({
+    positivePointsSatisfied: true,
+    negativePointsSatisfied: true,
+    positiveBoxesSatisfied: true
+});
+
 const rankingFeatures = (relations = [], modelScore) => ({
-    promptConsistency: {
-        positivePointsSatisfied: true,
-        negativePointsSatisfied: true
-    },
+    promptConsistency: promptConsistency(),
     eligible: true,
     areaFraction: 1 / (64 * 48),
     boundingBox: { x0Px: 2, y0Px: 2, x1Px: 2, y1Px: 2 },
@@ -160,6 +166,27 @@ const rankingFeatures = (relations = [], modelScore) => ({
     ...(modelScore === undefined ? {} : { modelScore })
 });
 
+const logitsRefFor = (request, candidateId = 'proposal-0') => {
+    const payload = {
+        schemaVersion: 1,
+        companionInstanceId: 'companion-instance-1',
+        stateId: `logits-state-${request.proposalAttemptId}`,
+        targetContextId: request.requestBinding.targetContextId,
+        viewId: request.viewId,
+        rgbDigest: request.rgbDigest,
+        sourceInferenceAttemptId: request.proposalAttemptId,
+        sourceCandidateId: candidateId,
+        adapterRuntimeDigest: `sha256:${'9'.repeat(64)}`,
+        shape: [1, 256, 256],
+        dtype: 'float32',
+        dataDigest: `sha256:${'8'.repeat(64)}`
+    };
+    return {
+        ...payload,
+        refDigest: previousPredictionLogitsRefDigest(payload)
+    };
+};
+
 const promptDiagnosticsFor = (request) => [
     ...request.promptState.points.map((prompt) => ({
         promptId: prompt.promptId,
@@ -174,41 +201,32 @@ const promptDiagnosticsFor = (request) => [
         satisfied: true,
         constraintCoverageFraction: 1,
         candidateCoverageFraction: 1
-    })),
-    ...request.promptState.maskConstraints.map((prompt) => ({
-        promptId: prompt.promptId,
-        family: 'mask-constraint',
-        polarity: prompt.polarity,
-        satisfied: true,
-        constraintCoverageFraction: 1,
-        candidateCoverageFraction: 1
     }))
 ];
 
 const maskResponseFor = (request, overrides = {}) => {
     const artifact =
-        overrides.mask ?? bitsetArtifact(request.rgb.width, request.rgb.height);
+        overrides.mask ?? bitsetArtifact(request.rgbWidth, request.rgbHeight);
     const promptDiagnostics = promptDiagnosticsFor(request);
     const proposals = overrides.proposals ?? [
         {
             proposalId: 'proposal-0',
             mask: artifact,
             sourceIndex: 0,
-            promptConsistency: {
-                positivePointsSatisfied: true,
-                negativePointsSatisfied: true
-            },
-            ...(request.promptState.boxes.length === 0 &&
-            request.promptState.maskConstraints.length === 0
+            promptConsistency: promptConsistency(),
+            ...(request.promptState.boxes.length === 0
                 ? {}
                 : { promptDiagnostics }),
-            rankingFeatures: rankingFeatures()
+            rankingFeatures: rankingFeatures(),
+            ...(overrides.withLogitsRef === true
+                ? { logitsRef: logitsRefFor(request) }
+                : {})
         }
     ];
     const proposalPayload = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         viewId: request.viewId,
-        rgbDigest: request.rgb.digest,
+        rgbDigest: request.rgbDigest,
         promptStateDigest: request.promptState.digest,
         modelManifestDigest: request.modelManifestDigest,
         adapterCapabilityDigest: request.adapterCapabilityDigest,
@@ -226,7 +244,7 @@ const maskResponseFor = (request, overrides = {}) => {
             ? {
                   schemaVersion: 1,
                   viewId: request.viewId,
-                  rgbDigest: request.rgb.digest,
+                  rgbDigest: request.rgbDigest,
                   promptStateDigest: request.promptState.digest,
                   proposalSetDigest: proposalSet.digest,
                   rankingPolicyVersion: anchorMaskRankingPolicyVersion,
@@ -237,7 +255,7 @@ const maskResponseFor = (request, overrides = {}) => {
             : {
                   schemaVersion: 1,
                   viewId: request.viewId,
-                  rgbDigest: request.rgb.digest,
+                  rgbDigest: request.rgbDigest,
                   promptStateDigest: request.promptState.digest,
                   proposalSetDigest: proposalSet.digest,
                   rankingPolicyVersion: anchorMaskRankingPolicyVersion,
@@ -250,6 +268,7 @@ const maskResponseFor = (request, overrides = {}) => {
         mask: ignoredMask,
         proposals: ignoredProposals,
         proposalDecision: ignoredDecision,
+        withLogitsRef: ignoredLogitsRef,
         ...responseOverrides
     } = overrides;
     return {
@@ -259,7 +278,7 @@ const maskResponseFor = (request, overrides = {}) => {
         sceneVersion: request.sceneVersion,
         viewId: request.viewId,
         cameraBindingDigest: request.cameraBindingDigest,
-        rgbDigest: request.rgb.digest,
+        rgbDigest: request.rgbDigest,
         promptStateDigest: request.promptState.digest,
         modelManifestDigest: request.modelManifestDigest,
         adapterCapabilityDigest: request.adapterCapabilityDigest,
@@ -274,9 +293,9 @@ const maskResponseFor = (request, overrides = {}) => {
 
 const emptyProposalResponseFor = (request) => {
     const payload = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         viewId: request.viewId,
-        rgbDigest: request.rgb.digest,
+        rgbDigest: request.rgbDigest,
         promptStateDigest: request.promptState.digest,
         modelManifestDigest: request.modelManifestDigest,
         adapterCapabilityDigest: request.adapterCapabilityDigest,
@@ -375,7 +394,20 @@ test('a prompt change automatically requests single-frame SAM feedback', async (
     assert.equal(request.promptState.points.length, 1);
     assert.equal(request.promptState.points[0].polarity, 'include');
     assert.ok(request.proposalAttemptId.length > 0);
+    assert.equal(request.rgbDigest, `sha256:${'a'.repeat(64)}`);
+    // The first request for an RGB digest ships the exact artifact.
     assert.equal(request.rgb.digest, `sha256:${'a'.repeat(64)}`);
+    assert.equal(request.previousLogitsRef, undefined);
+    // PromptState v2 carries only Points and at most one positive Box.
+    assert.deepEqual(Object.keys(request.promptState).sort(), [
+        'boxes',
+        'digest',
+        'points',
+        'revision',
+        'rgbDigest',
+        'schemaVersion',
+        'viewId'
+    ]);
     assert.equal(mask.state.proposalStatus, 'selected');
     assert.equal(mask.state.editingMask, null);
     acceptSuggestedProposal(mask);
@@ -387,17 +419,16 @@ test('a prompt change automatically requests single-frame SAM feedback', async (
 });
 
 const richPromptCapabilities = createPromptAdapterCapabilities({
-    points: true,
+    positivePoints: true,
     negativePoints: true,
-    boxes: true,
-    negativeBoxes: true,
-    maskInput: true,
-    negativeMaskConstraints: true,
-    text: true,
-    negativeText: true,
-    multiCandidateOutput: true,
-    compilerPolicyVersion: 'test-rich-prompt-compiler/v1',
-    unsupportedPromptReasons: {}
+    positiveInstanceBox: true,
+    previousLogitsRefinement: true,
+    singlePointMultimask: true,
+    negativeBox: false,
+    promptBrush: false,
+    maskConstraints: false,
+    text: false,
+    compilerPolicyVersion: 'sam3-image-instance-compiler/v1'
 });
 
 test('each new prompt serializes SAM attempts and resubmits the latest prompt set', async () => {
@@ -920,28 +951,23 @@ test('a locked confirmed Anchor rejects every Mask mutation', async () => {
     assert.equal(mask.state.editingMask.source, 'hybrid');
 });
 
-test('unsupported prompt families are rejected before transport', async () => {
+test('unsupported prompt tools are rejected before transport', async () => {
     const { mask, maskRequests } = await setup();
+    // The fallback Point Mask adapter supports Points only.
     await assert.rejects(
         mask.addBoxPrompt({
             x0Px: 1,
             y0Px: 1,
             x1Px: 10,
-            y1Px: 10,
-            polarity: 'include'
+            y1Px: 10
         }),
         /does not support positive-box/
     );
-    await assert.rejects(
-        mask.addTextPrompt({ text: 'chair', polarity: 'include' }),
-        /does not support positive-text/
-    );
     assert.equal(maskRequests.length, 0);
     assert.equal(mask.state.promptState.boxes.length, 0);
-    assert.equal(mask.state.promptState.textPrompts.length, 0);
 });
 
-test('Box and Prompt Brush revise PromptState without editing pixels', async () => {
+test('a Box prompt revises PromptState without editing pixels', async () => {
     const { mask, maskRequests } = await setup({
         promptCapabilities: richPromptCapabilities
     });
@@ -949,10 +975,10 @@ test('Box and Prompt Brush revise PromptState without editing pixels', async () 
         x0Px: 20,
         y0Px: 20,
         x1Px: 4,
-        y1Px: 5,
-        polarity: 'exclude'
+        y1Px: 5
     });
     assert.equal(mask.state.promptState.boxes.length, 1);
+    assert.equal(mask.state.promptState.boxes[0].polarity, 'include');
     assert.deepEqual(
         [
             mask.state.promptState.boxes[0].x0Px,
@@ -963,23 +989,132 @@ test('Box and Prompt Brush revise PromptState without editing pixels', async () 
         [4, 5, 20, 20]
     );
     assert.equal(mask.state.editingMask, null);
+    assert.equal(maskRequests.length, 1);
 
-    await mask.addPromptBrushConstraint(
-        [
-            {
-                xPx: 8,
-                yPx: 9,
-                radiusPx: 2,
-                mode: 'add'
-            }
-        ],
-        'include'
-    );
+    // A second Box replaces the first: at most one Positive Instance Box.
+    await mask.addBoxPrompt({
+        x0Px: 1,
+        y0Px: 1,
+        x1Px: 8,
+        y1Px: 8
+    });
+    assert.equal(mask.state.promptState.boxes.length, 1);
     assert.equal(maskRequests.length, 2);
-    assert.equal(mask.state.promptState.maskConstraints.length, 1);
-    assert.equal(mask.state.editingMask, null);
+    assert.equal(maskRequests[1].promptState.boxes.length, 1);
+    assert.deepEqual(
+        [
+            maskRequests[1].promptState.boxes[0].x0Px,
+            maskRequests[1].promptState.boxes[0].y0Px,
+            maskRequests[1].promptState.boxes[0].x1Px,
+            maskRequests[1].promptState.boxes[0].y1Px
+        ],
+        [1, 1, 8, 8]
+    );
     assert.equal(mask.state.stableMask, null);
     assert.equal(mask.state.evidence.status, 'not-requested');
+});
+
+test('the RGB artifact ships on the first request of a digest only', async () => {
+    const { mask, maskRequests } = await setup();
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    assert.ok(maskRequests[0].rgb);
+    assert.equal(maskRequests[0].rgbDigest, maskRequests[0].rgb.digest);
+
+    await mask.addPrompt({ xPx: 20, yPx: 22, polarity: 'exclude' });
+    // The Companion resolves the already-shipped RGB digest from its cache.
+    assert.equal(maskRequests[1].rgb, undefined);
+    assert.equal(maskRequests[1].rgbDigest, maskRequests[0].rgbDigest);
+});
+
+test('a prompt revision refines from the chosen candidate logits reference', async () => {
+    const maskRequests = [];
+    const { mask } = await setup({
+        promptCapabilities: richPromptCapabilities,
+        produceMask: (request) => {
+            maskRequests.push(request);
+            return Promise.resolve(
+                maskResponseFor(request, { withLogitsRef: true })
+            );
+        }
+    });
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    assert.equal(maskRequests[0].previousLogitsRef, undefined);
+
+    await mask.addPrompt({ xPx: 20, yPx: 22, polarity: 'exclude' });
+    const refinement = maskRequests[1];
+    // A revision with a valid reference links to the source attempt as a new
+    // inference attempt for the same View/RGB lineage.
+    assert.ok(refinement.previousLogitsRef);
+    assert.equal(
+        refinement.previousLogitsRef.sourceInferenceAttemptId,
+        maskRequests[0].proposalAttemptId
+    );
+    assert.equal(refinement.previousLogitsRef.rgbDigest, refinement.rgbDigest);
+    assert.notEqual(
+        refinement.proposalAttemptId,
+        maskRequests[0].proposalAttemptId
+    );
+});
+
+test('an explicit Retry mints a new attempt and omits the logits reference', async () => {
+    const maskRequests = [];
+    const { mask } = await setup({
+        promptCapabilities: richPromptCapabilities,
+        produceMask: (request) => {
+            maskRequests.push(request);
+            return Promise.resolve(
+                maskResponseFor(request, { withLogitsRef: true })
+            );
+        }
+    });
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+
+    await mask.retryMaskRequest();
+    assert.equal(maskRequests.length, 2);
+    assert.equal(maskRequests[1].previousLogitsRef, undefined);
+    assert.notEqual(
+        maskRequests[1].proposalAttemptId,
+        maskRequests[0].proposalAttemptId
+    );
+});
+
+test('accepting a proposal clears the refinement lineage', async () => {
+    const maskRequests = [];
+    const { mask } = await setup({
+        promptCapabilities: richPromptCapabilities,
+        produceMask: (request) => {
+            maskRequests.push(request);
+            return Promise.resolve(
+                maskResponseFor(request, { withLogitsRef: true })
+            );
+        }
+    });
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    acceptSuggestedProposal(mask);
+
+    // Returning to Prompt mode after Accept mints a fresh no-logits attempt.
+    await mask.addPrompt({ xPx: 20, yPx: 22, polarity: 'exclude' });
+    assert.equal(maskRequests[1].previousLogitsRef, undefined);
+});
+
+test('an adapter without refinement support never sends a logits reference', async () => {
+    const maskRequests = [];
+    const pointsOnly = createPromptAdapterCapabilities({
+        ...richPromptCapabilities,
+        previousLogitsRefinement: false
+    });
+    const { mask } = await setup({
+        promptCapabilities: pointsOnly,
+        produceMask: (request) => {
+            maskRequests.push(request);
+            return Promise.resolve(
+                maskResponseFor(request, { withLogitsRef: true })
+            );
+        }
+    });
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    await mask.addPrompt({ xPx: 20, yPx: 22, polarity: 'exclude' });
+    assert.equal(maskRequests[1].previousLogitsRef, undefined);
 });
 
 test('Paint changes Editing Mask without rewriting PromptState', async () => {
@@ -1070,8 +1205,7 @@ test('Prompt Undo and Mask Undo are independent histories', async () => {
         x0Px: 1,
         y0Px: 1,
         x1Px: 10,
-        y1Px: 10,
-        polarity: 'include'
+        y1Px: 10
     });
     const promptDigest = mask.state.promptState.digest;
     mask.applyBrushStroke({
@@ -1197,7 +1331,8 @@ test('explicit acceptance rejects proposals excluded by the bound decision', asy
             };
             const ineligibleFacts = {
                 positivePointsSatisfied: false,
-                negativePointsSatisfied: true
+                negativePointsSatisfied: true,
+                positiveBoxesSatisfied: true
             };
             const ineligible = {
                 ...eligible,
@@ -1260,10 +1395,7 @@ test('an ambiguous proposal set preserves alternatives until explicit acceptance
             sourceIndex: 0,
             modelScore: 0.91,
             modelScoreSemantics: 'adapter-local score',
-            promptConsistency: {
-                positivePointsSatisfied: true,
-                negativePointsSatisfied: true
-            },
+            promptConsistency: promptConsistency(),
             rankingFeatures: rankingFeatures(
                 [
                     {
@@ -1283,10 +1415,7 @@ test('an ambiguous proposal set preserves alternatives until explicit acceptance
             sourceIndex: 1,
             modelScore: 0.89,
             modelScoreSemantics: 'adapter-local score',
-            promptConsistency: {
-                positivePointsSatisfied: true,
-                negativePointsSatisfied: true
-            },
+            promptConsistency: promptConsistency(),
             rankingFeatures: rankingFeatures(
                 [
                     {
@@ -1308,7 +1437,7 @@ test('an ambiguous proposal set preserves alternatives until explicit acceptance
             response.proposalDecision = {
                 schemaVersion: 1,
                 viewId: request.viewId,
-                rgbDigest: request.rgb.digest,
+                rgbDigest: request.rgbDigest,
                 promptStateDigest: request.promptState.digest,
                 proposalSetDigest: response.proposalSet.digest,
                 rankingPolicyVersion: anchorMaskRankingPolicyVersion,

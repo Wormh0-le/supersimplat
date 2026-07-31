@@ -4,12 +4,17 @@ const test = require('node:test');
 const {
     isAIViewMaskRequest,
     isMaskResultResponse,
+    isPreviousPredictionLogitsRef,
     maskResponseMatchesRequest
 } = require('../.test-dist/src/ai-select/mask-service.js');
 const {
     anchorMaskRankingPolicyVersion,
-    autoMaskProposalSetDigest
+    autoMaskProposalSetDigest,
+    autoMaskProposalPolicyVersion
 } = require('../.test-dist/src/ai-select/mask-proposal.js');
+const {
+    previousPredictionLogitsRefDigest
+} = require('../.test-dist/src/ai-select/previous-logits-ref.js');
 const {
     createEmptyPromptState,
     revisePromptState
@@ -49,6 +54,36 @@ const promptState = () =>
         ]
     });
 
+const rgbArtifact = () => ({
+    pngBase64: 'aGVsbG8=',
+    digest: digest('a'),
+    width: 8,
+    height: 8
+});
+
+const logitsRefPayload = () => ({
+    schemaVersion: 1,
+    companionInstanceId: 'companion-instance-1',
+    stateId: 'logits-state-1',
+    targetContextId: 'ai-target-context-1',
+    viewId: 'anchor-view',
+    rgbDigest: digest('a'),
+    sourceInferenceAttemptId: 'proposal-attempt-6',
+    sourceCandidateId: 'proposal-0',
+    adapterRuntimeDigest: digest('9'),
+    shape: [1, 256, 256],
+    dtype: 'float32',
+    dataDigest: digest('8')
+});
+
+const logitsRef = (overrides = {}) => {
+    const payload = { ...logitsRefPayload(), ...overrides };
+    return {
+        ...payload,
+        refDigest: previousPredictionLogitsRefDigest(payload)
+    };
+};
+
 const request = (overrides = {}) => ({
     requestBinding: {
         targetContextId: 'ai-target-context-1',
@@ -66,26 +101,30 @@ const request = (overrides = {}) => ({
     sceneVersion: 'snapshot-v1',
     viewId: 'anchor-view',
     cameraBindingDigest: digest('e'),
-    rgb: {
-        pngBase64: 'aGVsbG8=',
-        digest: digest('a'),
-        width: 8,
-        height: 8
-    },
+    rgbDigest: digest('a'),
+    rgbWidth: 8,
+    rgbHeight: 8,
+    rgb: rgbArtifact(),
     promptState: promptState(),
-    modelManifestDigest: 'modelscope-facebook-sam31-616acbee',
+    modelManifestDigest: 'modelscope-facebook-sam3-image-616acbee',
     adapterCapabilityDigest: digest('d'),
-    proposalPolicyVersion: 'auto-mask-proposals/bounded-source-order-v1',
+    proposalPolicyVersion: autoMaskProposalPolicyVersion,
     rankingPolicyVersion: anchorMaskRankingPolicyVersion,
     proposalAttemptId: 'proposal-attempt-7',
     ...overrides
 });
 
+const promptConsistency = () => ({
+    positivePointsSatisfied: true,
+    negativePointsSatisfied: true,
+    positiveBoxesSatisfied: true
+});
+
 const proposalSetFor = (req, overrides = {}) => {
     const payload = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         viewId: req.viewId,
-        rgbDigest: req.rgb.digest,
+        rgbDigest: req.rgbDigest,
         promptStateDigest: req.promptState.digest,
         modelManifestDigest: req.modelManifestDigest,
         adapterCapabilityDigest: req.adapterCapabilityDigest,
@@ -95,18 +134,12 @@ const proposalSetFor = (req, overrides = {}) => {
             {
                 proposalId: 'proposal-0',
                 sourceIndex: 0,
-                mask: bitsetArtifact(req.rgb.width, req.rgb.height, 0b101),
+                mask: bitsetArtifact(req.rgbWidth, req.rgbHeight, 0b101),
                 modelScore: 2.5,
                 modelScoreSemantics: 'adapter-local score',
-                promptConsistency: {
-                    positivePointsSatisfied: true,
-                    negativePointsSatisfied: true
-                },
+                promptConsistency: promptConsistency(),
                 rankingFeatures: {
-                    promptConsistency: {
-                        positivePointsSatisfied: true,
-                        negativePointsSatisfied: true
-                    },
+                    promptConsistency: promptConsistency(),
                     eligible: true,
                     areaFraction: 2 / 64,
                     boundingBox: {
@@ -146,7 +179,7 @@ const responseFor = (req, overrides = {}) => {
         sceneVersion: req.sceneVersion,
         viewId: req.viewId,
         cameraBindingDigest: req.cameraBindingDigest,
-        rgbDigest: req.rgb.digest,
+        rgbDigest: req.rgbDigest,
         promptStateDigest: req.promptState.digest,
         modelManifestDigest: req.modelManifestDigest,
         adapterCapabilityDigest: req.adapterCapabilityDigest,
@@ -157,7 +190,7 @@ const responseFor = (req, overrides = {}) => {
         proposalDecision: {
             schemaVersion: 1,
             viewId: req.viewId,
-            rgbDigest: req.rgb.digest,
+            rgbDigest: req.rgbDigest,
             promptStateDigest: req.promptState.digest,
             proposalSetDigest: proposalSet.digest,
             rankingPolicyVersion: req.rankingPolicyVersion,
@@ -177,12 +210,23 @@ test('a complete bound proposal response matches its request', () => {
     assert.ok(maskResponseMatchesRequest(response, req));
 });
 
+test('responses match on RGB digest, not on RGB artifact presence', () => {
+    const req = request({ rgb: undefined });
+    assert.ok(isAIViewMaskRequest(req));
+    const response = responseFor(req);
+    assert.ok(isMaskResultResponse(response));
+    assert.ok(maskResponseMatchesRequest(response, req));
+});
+
 test('the request requires exact RGB, PromptState, capability, policy, and attempt identity', () => {
     assert.ok(isAIViewMaskRequest(request()));
     assert.ok(!isAIViewMaskRequest(request({ proposalAttemptId: '' })));
     assert.ok(!isAIViewMaskRequest(request({ adapterCapabilityDigest: '' })));
     assert.ok(!isAIViewMaskRequest(request({ modelManifestDigest: '' })));
     assert.ok(!isAIViewMaskRequest(request({ rankingPolicyVersion: '' })));
+    assert.ok(!isAIViewMaskRequest(request({ rgbWidth: 0 })));
+    assert.ok(!isAIViewMaskRequest(request({ rgbHeight: -1 })));
+    assert.ok(!isAIViewMaskRequest(request({ rgbDigest: 'not-a-digest' })));
     assert.ok(
         !isAIViewMaskRequest(
             request({
@@ -193,9 +237,51 @@ test('the request requires exact RGB, PromptState, capability, policy, and attem
             })
         )
     );
+    // An inlined artifact must agree with the request RGB identity.
+    assert.ok(
+        !isAIViewMaskRequest(
+            request({ rgb: { ...rgbArtifact(), digest: digest('b') } })
+        )
+    );
+    assert.ok(
+        !isAIViewMaskRequest(request({ rgb: { ...rgbArtifact(), width: 9 } }))
+    );
     const mismatchedTarget = request();
     mismatchedTarget.target = { splatId: 'other-splat' };
     assert.ok(!isAIViewMaskRequest(mismatchedTarget));
+});
+
+test('a previous-logits reference is structural, digest-bound, and lineage-bound', () => {
+    const ref = logitsRef();
+    assert.ok(isPreviousPredictionLogitsRef(ref));
+    assert.ok(isAIViewMaskRequest(request({ previousLogitsRef: ref })));
+
+    // A tampered payload invalidates the recomputed refDigest.
+    assert.ok(!isPreviousPredictionLogitsRef({ ...ref, stateId: 'other' }));
+    // Extra keys (for example raw tensor bytes) fail closed.
+    assert.ok(!isPreviousPredictionLogitsRef({ ...ref, logitsBase64: 'AAAA' }));
+    // The ref must bind the exact request View/RGB/target lineage.
+    assert.ok(
+        !isAIViewMaskRequest(
+            request({ previousLogitsRef: logitsRef({ viewId: 'view-2' }) })
+        )
+    );
+    assert.ok(
+        !isAIViewMaskRequest(
+            request({
+                previousLogitsRef: logitsRef({ rgbDigest: digest('b') })
+            })
+        )
+    );
+    assert.ok(
+        !isAIViewMaskRequest(
+            request({
+                previousLogitsRef: logitsRef({
+                    targetContextId: 'ai-target-context-2'
+                })
+            })
+        )
+    );
 });
 
 test('stale, corrupt, or partial proposal responses are rejected', () => {
@@ -244,15 +330,15 @@ test('stale, corrupt, or partial proposal responses are rejected', () => {
     assert.ok(!maskResponseMatchesRequest(wrongRevision, req));
     const proposalSet = proposalSetFor(req);
     proposalSet.proposals[0].mask.data = bitsetArtifact(
-        req.rgb.width,
-        req.rgb.height,
+        req.rgbWidth,
+        req.rgbHeight,
         0b111
     ).data;
     assert.ok(!isMaskResultResponse(responseFor(req, { proposalSet })));
     assert.ok(!isMaskResultResponse({ status: 'maskProposalError' }));
 });
 
-test('a visual Prompt request requires per-family candidate diagnostics', () => {
+test('a Box prompt request requires per-family candidate diagnostics', () => {
     const base = promptState();
     const visualPromptState = revisePromptState(base, {
         boxes: [
@@ -272,14 +358,6 @@ test('a visual Prompt request requires per-family candidate diagnostics', () => 
     assert.ok(!maskResponseMatchesRequest(responseFor(req), req));
 
     const proposalSet = proposalSetFor(req);
-    proposalSet.proposals[0].promptConsistency = {
-        ...proposalSet.proposals[0].promptConsistency,
-        positiveBoxesSatisfied: true
-    };
-    proposalSet.proposals[0].rankingFeatures.promptConsistency = {
-        ...proposalSet.proposals[0].rankingFeatures.promptConsistency,
-        positiveBoxesSatisfied: true
-    };
     proposalSet.proposals[0].promptDiagnostics = [
         {
             promptId: 'p-1',

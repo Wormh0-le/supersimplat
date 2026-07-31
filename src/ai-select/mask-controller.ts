@@ -10,9 +10,6 @@ import {
     type ViewEvidenceState
 } from './evidence-state';
 import {
-    applyBrushStroke as applyMaskBrushStroke,
-    createEmptyMaskArtifact,
-    type MaskArtifact,
     type BrushStroke,
     type MaskAnnotation,
     type MaskPolarity,
@@ -29,7 +26,8 @@ import {
     MaskArtifactInvalidError,
     type AISelectMaskProvider,
     type AIViewMaskRequest,
-    type MaskResultResponse
+    type MaskResultResponse,
+    type PreviousPredictionLogitsRef
 } from './mask-service';
 import {
     createEmptyPromptState,
@@ -38,12 +36,10 @@ import {
     promptToolCapabilityReason,
     revisePromptState,
     type BoxPrompt,
-    type MaskConstraintPrompt,
     type PointPrompt,
     type PromptAdapterCapabilities,
     type PromptState,
-    type PromptTool,
-    type TextPrompt
+    type PromptTool
 } from './prompt-state';
 
 const ANCHOR_VIEW_ID = 'anchor-view';
@@ -65,18 +61,12 @@ export interface AddMaskPromptInput {
     readonly polarity: MaskPolarity;
 }
 
+/** Positive Instance Box only; adding a box replaces any existing one. */
 export interface AddBoxPromptInput {
     readonly x0Px: number;
     readonly y0Px: number;
     readonly x1Px: number;
     readonly y1Px: number;
-    readonly polarity: MaskPolarity;
-}
-
-export interface AddTextPromptInput {
-    readonly text: string;
-    readonly locale?: string;
-    readonly polarity: MaskPolarity;
 }
 
 export interface BrushGestureSample {
@@ -145,30 +135,16 @@ export interface AISelectMaskControllerOptions {
 }
 
 const pointOnlyCapabilities = createPromptAdapterCapabilities({
-    points: true,
+    positivePoints: true,
     negativePoints: true,
-    boxes: false,
-    negativeBoxes: false,
-    maskInput: false,
-    negativeMaskConstraints: false,
+    positiveInstanceBox: false,
+    previousLogitsRefinement: false,
+    singlePointMultimask: false,
+    negativeBox: false,
+    promptBrush: false,
+    maskConstraints: false,
     text: false,
-    negativeText: false,
-    multiCandidateOutput: false,
-    compilerPolicyVersion: 'point-mask-compiler/v1',
-    unsupportedPromptReasons: {
-        'positive-box':
-            'The fallback Point Mask adapter does not support positive-box; it supports Points only.',
-        'negative-box':
-            'The fallback Point Mask adapter does not support negative-box; it supports Points only.',
-        'positive-mask-constraint':
-            'The fallback Point Mask adapter does not support positive-mask-constraint; it supports Points only.',
-        'negative-mask-constraint':
-            'The fallback Point Mask adapter does not support negative-mask-constraint; it supports Points only.',
-        'positive-text':
-            'The fallback Point Mask adapter does not support positive-text; it supports Points only.',
-        'negative-text':
-            'The fallback Point Mask adapter does not support negative-text; it supports Points only.'
-    }
+    compilerPolicyVersion: 'point-mask-compiler/v1'
 });
 
 const errorMessage = (error: unknown): string => {
@@ -247,6 +223,19 @@ export class AISelectMaskController {
     private nextPromptOrdinal = 0;
     private promptUndoStack: PromptState[] = [];
     private promptRedoStack: PromptState[] = [];
+    /**
+     * The opaque logits reference of the currently previewed proposal
+     * candidate. Held only while still in Prompt mode: a subsequent Prompt
+     * revision for the same View/RGB sends it as `previousLogitsRef`, an
+     * explicit Retry omits it, and Accept/RGB/View/Target changes clear it.
+     */
+    private refinementLogitsRef: PreviousPredictionLogitsRef | null = null;
+    /**
+     * RGB digests whose artifact already reached the Companion in this target
+     * context. Later requests for a shipped digest may omit the artifact; the
+     * Companion resolves its immutable RGB cache by digest (04C contract §5).
+     */
+    private readonly shippedRgbDigests = new Set<string>();
     /**
      * The mask-local history: Editing-chain maskIds (or null for the empty
      * start state) for the current RGB identity. It is independent from
@@ -378,9 +367,7 @@ export class AISelectMaskController {
     async addBoxPrompt(input: AddBoxPromptInput): Promise<void> {
         this.requireUnlocked();
         const rgb = this.requireReadyRgb();
-        const tool: PromptTool =
-            input.polarity === 'include' ? 'positive-box' : 'negative-box';
-        this.requirePromptCapability(tool);
+        this.requirePromptCapability('positive-box');
         const x0Px = Math.min(input.x0Px, input.x1Px);
         const y0Px = Math.min(input.y0Px, input.y1Px);
         const x1Px = Math.max(input.x0Px, input.x1Px);
@@ -401,87 +388,36 @@ export class AISelectMaskController {
         const current = this.requirePromptState(rgb.digest);
         const box: BoxPrompt = Object.freeze({
             promptId: this.mintPromptId(),
-            polarity: input.polarity,
+            polarity: 'include',
             x0Px,
             y0Px,
             x1Px,
             y1Px
         });
+        // At most one Positive Instance Box: a new box replaces the old one.
         this.publishPromptRevision(
             revisePromptState(current, {
-                boxes: [...current.boxes, box]
+                boxes: [box]
             })
         );
         await this.submitMaskRequest();
     }
 
-    async addMaskConstraint(
-        artifact: MaskArtifact,
-        polarity: MaskPolarity
-    ): Promise<void> {
-        this.requireUnlocked();
-        const rgb = this.requireReadyRgb();
-        this.requirePromptCapability(
-            polarity === 'include'
-                ? 'positive-mask-constraint'
-                : 'negative-mask-constraint'
+    /**
+     * Choose the previewed proposal candidate. The chosen candidate's opaque
+     * logits reference becomes the refinement lineage for the next Prompt
+     * revision (04C contract §7); it never leaves the request boundary.
+     */
+    previewProposal(proposalId: string): void {
+        const proposal = this.proposalSet?.proposals.find(
+            (candidate) => candidate.proposalId === proposalId
         );
-        if (artifact.width !== rgb.width || artifact.height !== rgb.height) {
+        if (proposal === undefined) {
             throw new Error(
-                'AI Select Prompt Brush must match the exact Anchor RGB dimensions.'
+                'AI Select cannot preview an unknown Mask proposal.'
             );
         }
-        const current = this.requirePromptState(rgb.digest);
-        const constraint: MaskConstraintPrompt = Object.freeze({
-            promptId: this.mintPromptId(),
-            polarity,
-            artifact
-        });
-        this.publishPromptRevision(
-            revisePromptState(current, {
-                maskConstraints: [...current.maskConstraints, constraint]
-            })
-        );
-        await this.submitMaskRequest();
-    }
-
-    async addPromptBrushConstraint(
-        strokes: readonly BrushStroke[],
-        polarity: MaskPolarity
-    ): Promise<void> {
-        const rgb = this.requireReadyRgb();
-        let artifact = createEmptyMaskArtifact(rgb.width, rgb.height);
-        for (const stroke of strokes) {
-            artifact = applyMaskBrushStroke(artifact, {
-                ...stroke,
-                mode: 'add'
-            });
-        }
-        await this.addMaskConstraint(artifact, polarity);
-    }
-
-    async addTextPrompt(input: AddTextPromptInput): Promise<void> {
-        this.requireUnlocked();
-        const rgb = this.requireReadyRgb();
-        this.requirePromptCapability(
-            input.polarity === 'include' ? 'positive-text' : 'negative-text'
-        );
-        if (!input.text.trim()) {
-            throw new Error('AI Select Text prompts cannot be empty.');
-        }
-        const current = this.requirePromptState(rgb.digest);
-        const prompt: TextPrompt = Object.freeze({
-            promptId: this.mintPromptId(),
-            polarity: input.polarity,
-            text: input.text.trim(),
-            ...(input.locale === undefined ? {} : { locale: input.locale })
-        });
-        this.publishPromptRevision(
-            revisePromptState(current, {
-                textPrompts: [...current.textPrompts, prompt]
-            })
-        );
-        await this.submitMaskRequest();
+        this.refinementLogitsRef = proposal.logitsRef ?? null;
     }
 
     clearPrompts(): void {
@@ -491,11 +427,10 @@ export class AISelectMaskController {
         this.publishPromptRevision(
             revisePromptState(current, {
                 points: [],
-                boxes: [],
-                maskConstraints: [],
-                textPrompts: []
+                boxes: []
             })
         );
+        this.refinementLogitsRef = null;
         this.requestStatus = 'idle';
         this.failureKind = undefined;
         this.resubmitMaskRequested = false;
@@ -548,6 +483,9 @@ export class AISelectMaskController {
             editing.maskId
         );
         this.acceptedProposalId = proposalId;
+        // Accept leaves Prompt mode: refinement lineage is dropped and any
+        // later return to Prompt mode mints a fresh inference attempt.
+        this.refinementLogitsRef = null;
         this.editingRevision += 1;
         this.failureKind = undefined;
         this.lastErrorMessage = undefined;
@@ -682,7 +620,11 @@ export class AISelectMaskController {
         this.supersedeLocalEditing();
     }
 
-    /** An explicit Retry submits a new attempt for the same prompt set. */
+    /**
+     * An explicit Retry submits a new attempt for the same prompt set. Retry
+     * is not a refinement: it must actually rerun the render/inference path,
+     * so the held logits reference is omitted (04C contract §7).
+     */
     async retryMaskRequest(): Promise<void> {
         this.requireUnlocked();
         this.requireReadyRgb();
@@ -692,10 +634,12 @@ export class AISelectMaskController {
         ) {
             throw new Error('AI Select has no Mask prompt set to retry.');
         }
-        await this.submitMaskRequest();
+        await this.submitMaskRequest({ omitRefinementRef: true });
     }
 
-    private async submitMaskRequest(): Promise<void> {
+    private async submitMaskRequest(
+        options: { readonly omitRefinementRef?: boolean } = {}
+    ): Promise<void> {
         if (this.activeMaskRequest !== null) {
             // One in-flight SAM attempt per view: a concurrent attempt would
             // hit the Companion's single operation slot as a 409. Supersede
@@ -719,12 +663,23 @@ export class AISelectMaskController {
             );
             return;
         }
+        const rgbDigest = this.promptState.rgbDigest;
+        const refinementRef = this.currentRefinementRef(
+            promptCapabilities,
+            options.omitRefinementRef === true
+        );
         const request = this.anchor.createAnchorMaskRequest(
             this.promptState,
             this.mintMaskAttemptId(),
             modelManifestDigest,
             promptCapabilities.capabilityDigest,
-            autoMaskProposalPolicyVersion
+            autoMaskProposalPolicyVersion,
+            {
+                includeRgbArtifact: !this.shippedRgbDigests.has(rgbDigest),
+                ...(refinementRef === null
+                    ? {}
+                    : { previousLogitsRef: refinementRef })
+            }
         );
         if (request === null) {
             this.failMaskRequest(
@@ -787,6 +742,18 @@ export class AISelectMaskController {
                 response.proposalDecision
             );
             this.acceptedProposalId = null;
+            // The Companion accepted this RGB digest; later attempts in this
+            // target context may reference it without reshipping the bytes.
+            this.shippedRgbDigests.add(request.rgbDigest);
+            // The suggested candidate is the default preview; its opaque
+            // logits reference is the refinement lineage until the user
+            // previews another candidate or leaves Prompt mode.
+            const suggested = this.proposalSet.proposals.find(
+                (candidate) =>
+                    candidate.proposalId ===
+                    this.proposalDecision?.selectedProposalId
+            );
+            this.refinementLogitsRef = suggested?.logitsRef ?? null;
         } catch (error) {
             this.failMaskRequest(errorMessage(error));
             this.resubmitLatestPromptSet();
@@ -877,6 +844,8 @@ export class AISelectMaskController {
         this.proposalSet = null;
         this.proposalDecision = null;
         this.acceptedProposalId = null;
+        this.refinementLogitsRef = null;
+        this.shippedRgbDigests.clear();
         this.acceptedProposalMaskIdsByPromptDigest.clear();
         this.activeMaskRequest = null;
         this.resubmitMaskRequested = false;
@@ -1063,6 +1032,30 @@ export class AISelectMaskController {
             );
         }
         return this.promptState;
+    }
+
+    /**
+     * The held logits reference crosses the boundary only for a same-View,
+     * same-RGB, same-target refinement attempt on an adapter that advertised
+     * previous-logits refinement; Retry never reuses it silently.
+     */
+    private currentRefinementRef(
+        capabilities: PromptAdapterCapabilities,
+        omitted: boolean
+    ): PreviousPredictionLogitsRef | null {
+        const ref = this.refinementLogitsRef;
+        if (
+            omitted ||
+            ref === null ||
+            !capabilities.previousLogitsRefinement ||
+            this.promptState === null ||
+            ref.viewId !== this.promptState.viewId ||
+            ref.rgbDigest !== this.promptState.rgbDigest ||
+            ref.targetContextId !== this.targetContextId
+        ) {
+            return null;
+        }
+        return ref;
     }
 
     private requirePromptCapability(tool: PromptTool): void {

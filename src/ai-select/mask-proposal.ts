@@ -4,26 +4,49 @@ import {
     isMaskArtifact,
     type MaskArtifact
 } from './mask-annotation';
+import {
+    isPreviousPredictionLogitsRef,
+    type PreviousPredictionLogitsRef
+} from './previous-logits-ref';
+import type { PromptState } from './prompt-state';
 
 // Schema v2 binds numbers by binary64 value instead of language-specific JSON
 // spelling, keeping browser and Companion artifact identity deterministic.
-export const autoMaskProposalSetSchemaVersion = 2;
+// Schema v3 (ticket 04C) rotates the proposal policy/ranking identity for the
+// SAM 3 Image instance adapter and binds the optional opaque logits ref.
+export const autoMaskProposalSetSchemaVersion = 3;
 export const autoMaskProposalPolicyVersion =
-    'auto-mask-proposals/bounded-source-order-v1';
-export const maximumAutoMaskProposalCount = 4;
+    'auto-mask-proposals/bounded-source-order-v2';
+export const anchorMaskRankingPolicyVersion = 'anchor-mask-ranking/v2';
 export const proposalDecisionSchemaVersion = 1;
-export const anchorMaskRankingPolicyVersion = 'anchor-mask-ranking/v1';
+
+/** The wire-level retention bound; the policy function may tighten it. */
+export const maximumRetainedAutoMaskProposalCount = 3;
+
+/**
+ * Multimask policy (04C contract §6): exactly one include Point, no Box, and
+ * no previous-logits refinement retains at most 3 candidates; every other
+ * program retains at most 1.
+ */
+export const maximumAutoMaskProposalCount = (
+    promptState: PromptState,
+    hasRefinement: boolean
+): number => {
+    return !hasRefinement &&
+        promptState.boxes.length === 0 &&
+        promptState.points.length === 1 &&
+        promptState.points[0].polarity === 'include'
+        ? 3
+        : 1;
+};
 
 export interface PromptConsistencyFacts {
     readonly positivePointsSatisfied: boolean;
     readonly negativePointsSatisfied: boolean;
-    readonly positiveBoxesSatisfied?: boolean;
-    readonly negativeBoxesSatisfied?: boolean;
-    readonly maskConstraintsSatisfied?: boolean;
-    readonly textConstraintsSatisfied?: boolean;
+    readonly positiveBoxesSatisfied: boolean;
 }
 
-export type PromptDiagnosticFamily = 'point' | 'box' | 'mask-constraint';
+export type PromptDiagnosticFamily = 'point' | 'box';
 
 /**
  * Candidate-local prompt facts preserved for later 2D proposal policy. These
@@ -47,6 +70,11 @@ export interface AutoMaskProposal {
     readonly promptConsistency: PromptConsistencyFacts;
     readonly promptDiagnostics?: readonly PromptFamilyDiagnostic[];
     readonly rankingFeatures: ProposalRankingFeatures;
+    /**
+     * The opaque Companion-local previous-prediction logits reference for
+     * refinement lineage (04C contract §7). Never raw logits.
+     */
+    readonly logitsRef?: PreviousPredictionLogitsRef;
 }
 
 export interface PixelBox {
@@ -206,21 +234,14 @@ const exactBooleanFacts = (value: unknown): boolean => {
     if (!isRecord(value)) {
         return false;
     }
-    const required = ['positivePointsSatisfied', 'negativePointsSatisfied'];
-    const optional = [
-        'positiveBoxesSatisfied',
-        'negativeBoxesSatisfied',
-        'maskConstraintsSatisfied',
-        'textConstraintsSatisfied'
+    const required = [
+        'positivePointsSatisfied',
+        'negativePointsSatisfied',
+        'positiveBoxesSatisfied'
     ];
-    const allowed = new Set([...required, ...optional]);
     return (
-        required.every((key) => typeof value[key] === 'boolean') &&
-        Object.keys(value).every(
-            (key) =>
-                allowed.has(key) &&
-                (value[key] === undefined || typeof value[key] === 'boolean')
-        )
+        Object.keys(value).length === required.length &&
+        required.every((key) => typeof value[key] === 'boolean')
     );
 };
 
@@ -247,7 +268,7 @@ const isPromptFamilyDiagnostic = (
     return (
         Object.keys(value).every((key) => allowed.has(key)) &&
         isNonEmptyString(value.promptId) &&
-        ['point', 'box', 'mask-constraint'].includes(value.family as string) &&
+        ['point', 'box'].includes(value.family as string) &&
         ['include', 'exclude'].includes(value.polarity as string) &&
         typeof value.satisfied === 'boolean' &&
         (value.constraintCoverageFraction === undefined ||
@@ -379,7 +400,7 @@ export const isAutoMaskProposalSet = (
         !isNonEmptyString(value.proposalPolicyVersion) ||
         !isNonEmptyString(value.proposalAttemptId) ||
         !Array.isArray(value.proposals) ||
-        value.proposals.length > maximumAutoMaskProposalCount ||
+        value.proposals.length > maximumRetainedAutoMaskProposalCount ||
         typeof value.digest !== 'string' ||
         !digestPattern.test(value.digest)
     ) {
@@ -420,7 +441,9 @@ export const isAutoMaskProposalSet = (
                 (typeof proposal.modelScore !== 'number' ||
                     !Number.isFinite(proposal.modelScore))) ||
             (proposal.modelScoreSemantics !== undefined &&
-                !isNonEmptyString(proposal.modelScoreSemantics))
+                !isNonEmptyString(proposal.modelScoreSemantics)) ||
+            (proposal.logitsRef !== undefined &&
+                !isPreviousPredictionLogitsRef(proposal.logitsRef))
         ) {
             return false;
         }

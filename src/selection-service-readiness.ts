@@ -125,6 +125,9 @@ interface SelectionServiceImageInstanceProviderCapability {
     adapterId: string;
     authoritativeRgb: SelectionServiceAuthoritativeRgbCapabilities;
     promptCapabilities: SelectionServiceImageInstancePromptCapabilities;
+    /** Present only when the provider reports ready (04C contract §3). */
+    compilerPolicyVersion?: string;
+    adapterCapabilityDigest?: string;
     message?: string;
 }
 
@@ -284,7 +287,7 @@ const defaultRequirements: SelectionServiceReadinessRequirements = {
     modelAdapterId: currentImageInstanceAdapterId,
     aiSelectAnchorOperation: 'aiSelectAnchorRender',
     maskProposalOperation: 'aiSelectMaskProposals',
-    maskProposalSetSchemaOperation: 'autoMaskProposalSetSchemaV2',
+    maskProposalSetSchemaOperation: 'autoMaskProposalSetSchemaV3',
     binarySceneSnapshotRegistrationOperation:
         'binarySceneSnapshotRegistrationV1'
 };
@@ -540,6 +543,19 @@ const validateCapabilities = (
         !promptCapabilityKeys.every(
             (key) => typeof promptCapabilities[key] === 'boolean'
         )
+    ) {
+        return false;
+    }
+    if (
+        (value.imageInstanceProvider.compilerPolicyVersion !== undefined &&
+            typeof value.imageInstanceProvider.compilerPolicyVersion !==
+                'string') ||
+        (value.imageInstanceProvider.adapterCapabilityDigest !== undefined &&
+            (typeof value.imageInstanceProvider.adapterCapabilityDigest !==
+                'string' ||
+                !/^sha256:[a-f0-9]{64}$/i.test(
+                    value.imageInstanceProvider.adapterCapabilityDigest
+                )))
     ) {
         return false;
     }
@@ -1059,6 +1075,20 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             return diagnostic(
                 'imageInstanceCapabilityMismatch',
                 'The image provider Prompt/refinement capabilities do not match the current profile.',
+                'Use the current SAM 3 Image instance adapter.'
+            );
+        }
+        // A ready provider must advertise the compiler policy and the exact
+        // adapter capability digest so the editor can rebuild and verify the
+        // Prompt Adapter capability record locally (04C contract §3).
+        if (
+            !isNonEmptyString(provider.compilerPolicyVersion) ||
+            typeof provider.adapterCapabilityDigest !== 'string' ||
+            !/^sha256:[a-f0-9]{64}$/i.test(provider.adapterCapabilityDigest)
+        ) {
+            return diagnostic(
+                'imageInstanceCapabilityMismatch',
+                'The image provider does not advertise its compiler policy and adapter capability digest.',
                 'Use the current SAM 3 Image instance adapter.'
             );
         }

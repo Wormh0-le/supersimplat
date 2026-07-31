@@ -8,6 +8,7 @@ import { AnchorFrustumManipulator } from './ai-select/camera-inspection-manipula
 import { pickGeneratedViewFrustum } from './ai-select/generated-frustum-picking';
 import { AISelectGeneratedViewController } from './ai-select/generated-view-controller';
 import { AISelectMaskController } from './ai-select/mask-controller';
+import { createPromptAdapterCapabilities } from './ai-select/prompt-state';
 import { AnchorFrustum } from './ai-select-anchor-frustum';
 import { AISelectEditorTargetFactory } from './ai-select-editor-target';
 import { GeneratedViewFrustums } from './ai-select-generated-frustums';
@@ -416,10 +417,29 @@ const main = async () => {
         getModelManifestDigest: () =>
             selectionServiceReadiness.state.configuration.modelManifestDigest,
         getPromptAdapterCapabilities: () => {
-            // Ticket 04C owns the new PromptState/capability schema. The v1.3
-            // readiness profile deliberately does not reinterpret the removed
-            // Multiplex Prompt capability record as a current one.
-            return null;
+            // Rebuild the exact Prompt Adapter capability record from the
+            // ready provider's advertised flags and compiler policy, and
+            // trust it only when the recomputed digest matches the
+            // advertised adapter capability digest (04C contract §3).
+            const readiness = selectionServiceReadiness.state;
+            const provider = readiness.capabilities?.imageInstanceProvider;
+            if (
+                readiness.status !== 'available' ||
+                provider === undefined ||
+                provider.status !== 'ready' ||
+                provider.compilerPolicyVersion === undefined ||
+                provider.adapterCapabilityDigest === undefined
+            ) {
+                return null;
+            }
+            const capabilities = createPromptAdapterCapabilities({
+                ...provider.promptCapabilities,
+                compilerPolicyVersion: provider.compilerPolicyVersion
+            });
+            return capabilities.capabilityDigest ===
+                provider.adapterCapabilityDigest
+                ? capabilities
+                : null;
         },
         isAnchorLocked: isAISelectAnchorLocked
     });

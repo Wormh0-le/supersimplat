@@ -46,7 +46,7 @@ class StatusBar extends Container {
         );
 
         const aiSelectButton = new Button({
-            class: 'status-bar-toggle status-bar-ai-select'
+            class: ['status-bar-toggle', 'status-bar-ai-select']
         });
         i18n.bindText(aiSelectButton, () =>
             i18n.t('status-bar.ai-select').toUpperCase()

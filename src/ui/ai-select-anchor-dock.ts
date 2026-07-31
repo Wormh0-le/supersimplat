@@ -525,8 +525,10 @@ export class AISelectAnchorDock extends Container {
         );
         this.galleryCards.append(this.anchorCard.root);
 
-        this.append(title);
-        this.append(availability);
+        const header = new Container({ id: 'ai-select-anchor-dock-header' });
+        header.append(title);
+        header.append(availability);
+        this.append(header);
         // Image, information, and primary actions have separate ownership.
         // Only the exact fitted image surface accepts pointer authoring.
         const mainRow = new Container({ id: 'ai-select-anchor-dock-main' });

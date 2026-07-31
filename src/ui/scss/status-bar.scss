@@ -38,13 +38,19 @@
     }
 }
 
+.status-bar-ai-select {
+    padding-right: 20px;
+}
+
 .status-bar-availability-dot {
     position: absolute;
-    top: 4px;
-    right: 4px;
-    width: 6px;
-    height: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    right: 6px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
+    box-shadow: 0 0 0 1px $bcg-darkest;
 
     &.availability-available {
         background-color: #66bb6a;

@@ -46,15 +46,15 @@ class StatusBar extends Container {
         );
 
         const aiSelectButton = new Button({
-            class: 'status-bar-toggle'
+            class: 'status-bar-toggle status-bar-ai-select'
         });
         i18n.bindText(aiSelectButton, () =>
             i18n.t('status-bar.ai-select').toUpperCase()
         );
 
         // AI Select availability rides on the panel toggle as a status dot.
-        // Only the 02C three-state projection crosses the icon; no endpoint,
-        // model, or runtime detail is shown here.
+        // Only the 02C three-state projection crosses the icon; no technical
+        // or model detail is shown here.
         const aiSelectAvailabilityDot = document.createElement('span');
         aiSelectButton.dom.appendChild(aiSelectAvailabilityDot);
         let aiSelectAvailability: SelectionServiceReadinessStatus =

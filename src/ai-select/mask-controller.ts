@@ -148,6 +148,17 @@ const pointOnlyCapabilities = createPromptAdapterCapabilities({
 });
 
 const errorMessage = (error: unknown): string => {
+    // Transport failures keep the Companion's distinguishable error code and
+    // message so the technical details can name the actual recovery class
+    // (capability mismatch, unresolvable RGB, capacity, …) instead of a bare
+    // HTTP status.
+    if (
+        error instanceof SelectionServiceTransportError &&
+        error.serviceCode !== undefined
+    ) {
+        const detail = error.serviceMessage ?? '';
+        return `${error.message} [${error.serviceCode}] ${detail}`.trim();
+    }
     return error instanceof Error && error.message
         ? error.message
         : 'AI Select mask production failed.';

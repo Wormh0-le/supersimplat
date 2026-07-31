@@ -97,11 +97,7 @@ class EditorUI {
 
         // bottom toolbar
         const scenePanel = new ScenePanel(events, tooltips);
-        const settingsPanel = new SettingsPanel(
-            events,
-            tooltips,
-            selectionServiceReadiness
-        );
+        const settingsPanel = new SettingsPanel(events, tooltips);
         const colorPanel = new ColorPanel(events, tooltips);
         const bottomToolbar = new BottomToolbar(events, tooltips);
         const rightToolbar = new RightToolbar(events, tooltips);

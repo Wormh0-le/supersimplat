@@ -74,23 +74,4 @@
             margin: 0 2px;
         }
     }
-
-    & > .selection-service-readiness-settings {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        margin: 8px 2px 4px;
-        padding: 6px 0 4px;
-        border-top: 1px solid $bcg-dark;
-
-        & > .selection-service-readiness-heading {
-            color: $clr-hilight;
-            font-weight: bold;
-        }
-
-        & > .selection-service-readiness-status {
-            color: $text-primary;
-            font-weight: bold;
-        }
-    }
 }

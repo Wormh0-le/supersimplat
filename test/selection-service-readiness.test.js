@@ -556,21 +556,22 @@ test('gates AI work while unavailable without blocking native editor state', asy
 });
 
 test('ordinary Availability UI is accessible and contains no technical/model controls', () => {
-    const source = fs.readFileSync(
-        path.join(
-            __dirname,
-            '..',
-            'src',
-            'ui',
-            'selection-service-readiness-settings.ts'
-        ),
+    const statusBarSource = fs.readFileSync(
+        path.join(__dirname, '..', 'src', 'ui', 'status-bar.ts'),
+        'utf8'
+    );
+    const dockSource = fs.readFileSync(
+        path.join(__dirname, '..', 'src', 'ui', 'ai-select-anchor-dock.ts'),
         'utf8'
     );
 
-    assert.match(source, /ai-select\.availability\./);
-    assert.match(source, /aria-live/);
-    assert.match(source, /role', 'status/);
-    // The three Availability states are localized, not hardcoded.
+    // The three-state projection rides on the AI Select toggle and inside
+    // the AI Select panel; both are localized, never hardcoded.
+    assert.match(statusBarSource, /status-bar-availability-dot/);
+    assert.match(statusBarSource, /ai-select\.availability\./);
+    assert.match(dockSource, /ai-select-anchor-dock-availability/);
+    assert.match(dockSource, /ai-select\.availability\./);
+    assert.match(dockSource, /aria-live/);
     const locales = JSON.parse(
         fs.readFileSync(
             path.join(__dirname, '..', 'static', 'locales', 'en.json'),
@@ -583,13 +584,13 @@ test('ordinary Availability UI is accessible and contains no technical/model con
     for (const forbidden of [
         'TextInput',
         'SelectInput',
-        'Button',
         'Endpoint',
         'Model Manifest',
         'CUDA',
         'Check readiness',
         'Ping'
     ]) {
-        assert.doesNotMatch(source, new RegExp(forbidden, 'i'));
+        assert.doesNotMatch(statusBarSource, new RegExp(forbidden, 'i'));
+        assert.doesNotMatch(dockSource, new RegExp(forbidden, 'i'));
     }
 });

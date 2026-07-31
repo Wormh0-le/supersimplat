@@ -94,6 +94,14 @@
     }
 }
 
+#ai-select-anchor-dock-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
 #ai-select-anchor-dock-availability {
     flex-direction: row;
     align-items: center;

@@ -1,20 +1,21 @@
-import { BooleanInput, Button, ColorPicker, Container, Label, SelectInput, SliderInput } from '@playcanvas/pcui';
+import {
+    BooleanInput,
+    Button,
+    ColorPicker,
+    Container,
+    Label,
+    SelectInput,
+    SliderInput
+} from '@playcanvas/pcui';
 import { Color } from 'playcanvas';
 
 import { Events } from '../events';
-import type { SelectionServiceReadinessInterface } from '../selection-service-readiness';
-import { SelectionServiceReadinessSettings } from './selection-service-readiness-settings';
 import { ShortcutManager } from '../shortcut-manager';
 import { i18n } from './localization';
 import { Tooltips } from './tooltips';
 
 class SettingsPanel extends Container {
-    constructor(
-        events: Events,
-        tooltips: Tooltips,
-        selectionServiceReadiness?: SelectionServiceReadinessInterface,
-        args = {}
-    ) {
+    constructor(events: Events, tooltips: Tooltips, args = {}) {
         args = {
             ...args,
             id: 'settings-panel',
@@ -25,8 +26,16 @@ class SettingsPanel extends Container {
         super(args);
 
         // stop pointer events bubbling
-        ['pointerdown', 'pointerup', 'pointermove', 'wheel', 'dblclick'].forEach((eventName) => {
-            this.dom.addEventListener(eventName, (event: Event) => event.stopPropagation());
+        [
+            'pointerdown',
+            'pointerup',
+            'pointermove',
+            'wheel',
+            'dblclick'
+        ].forEach((eventName) => {
+            this.dom.addEventListener(eventName, (event: Event) =>
+                event.stopPropagation()
+            );
         });
 
         // header
@@ -68,7 +77,7 @@ class SettingsPanel extends Container {
         // their native form so they're recognisable regardless of current UI lang
         i18n.bindOptions(languageSelection, () => [
             { v: 'auto', t: i18n.t('panel.settings.language.auto') },
-            ...i18n.languages.map(l => ({ v: l.code, t: l.name }))
+            ...i18n.languages.map((l) => ({ v: l.code, t: l.name }))
         ]);
 
         // switch language live (no reload). a stored choice persists across
@@ -289,7 +298,10 @@ class SettingsPanel extends Container {
         const centersColorLabel = new Label({
             class: 'settings-panel-row-label'
         });
-        i18n.bindText(centersColorLabel, 'panel.settings.centers-gaussian-color');
+        i18n.bindText(
+            centersColorLabel,
+            'panel.settings.centers-gaussian-color'
+        );
 
         const centersColorToggle = new BooleanInput({
             type: 'toggle',
@@ -309,7 +321,10 @@ class SettingsPanel extends Container {
         const outlineSelectionLabel = new Label({
             class: 'settings-panel-row-label'
         });
-        i18n.bindText(outlineSelectionLabel, 'panel.settings.outline-selection');
+        i18n.bindText(
+            outlineSelectionLabel,
+            'panel.settings.outline-selection'
+        );
 
         const outlineSelectionToggle = new BooleanInput({
             type: 'toggle',
@@ -369,7 +384,10 @@ class SettingsPanel extends Container {
         const showBoundDimensionsLabel = new Label({
             class: 'settings-panel-row-label'
         });
-        i18n.bindText(showBoundDimensionsLabel, 'panel.settings.show-bound-dimensions');
+        i18n.bindText(
+            showBoundDimensionsLabel,
+            'panel.settings.show-bound-dimensions'
+        );
 
         const showBoundDimensionsToggle = new BooleanInput({
             type: 'toggle',
@@ -449,9 +467,6 @@ class SettingsPanel extends Container {
         this.append(showBoundDimensionsRow);
         this.append(showCameraPosesRow);
         this.append(showCameraInfoRow);
-        if (selectionServiceReadiness) {
-            this.append(new SelectionServiceReadinessSettings(selectionServiceReadiness));
-        }
         this.append(resetRow);
 
         // handle panel visibility
@@ -569,7 +584,10 @@ class SettingsPanel extends Container {
         });
 
         showBoundDimensionsToggle.on('change', () => {
-            events.fire('camera.setBoundDimensions', showBoundDimensionsToggle.value);
+            events.fire(
+                'camera.setBoundDimensions',
+                showBoundDimensionsToggle.value
+            );
         });
 
         // show camera poses
@@ -599,15 +617,24 @@ class SettingsPanel extends Container {
         });
 
         selectedClrPicker.on('change', (value: number[]) => {
-            events.fire('setSelectedClr', new Color(value[0], value[1], value[2], value[3]));
+            events.fire(
+                'setSelectedClr',
+                new Color(value[0], value[1], value[2], value[3])
+            );
         });
 
         unselectedClrPicker.on('change', (value: number[]) => {
-            events.fire('setUnselectedClr', new Color(value[0], value[1], value[2], value[3]));
+            events.fire(
+                'setUnselectedClr',
+                new Color(value[0], value[1], value[2], value[3])
+            );
         });
 
         lockedClrPicker.on('change', (value: number[]) => {
-            events.fire('setLockedClr', new Color(value[0], value[1], value[2], value[3]));
+            events.fire(
+                'setLockedClr',
+                new Color(value[0], value[1], value[2], value[3])
+            );
         });
 
         // camera fov
@@ -643,23 +670,50 @@ class SettingsPanel extends Container {
         });
 
         // tooltips
-        const shortcutManager: ShortcutManager = events.invoke('shortcutManager');
+        const shortcutManager: ShortcutManager =
+            events.invoke('shortcutManager');
         const shortcut = shortcutManager.formatShortcut('grid.toggleVisible');
         tooltips.register(
             showGridLabel,
-            () => i18n.formatTooltipWithShortcut(i18n.t('panel.settings.show-grid'), shortcut),
+            () =>
+                i18n.formatTooltipWithShortcut(
+                    i18n.t('panel.settings.show-grid'),
+                    shortcut
+                ),
             'left'
         );
-        const cameraInfoShortcut = shortcutManager.formatShortcut('camera.toggleShowInfo');
+        const cameraInfoShortcut = shortcutManager.formatShortcut(
+            'camera.toggleShowInfo'
+        );
         tooltips.register(
             showCameraInfoLabel,
-            () => i18n.formatTooltipWithShortcut(i18n.t('panel.settings.show-camera-info'), cameraInfoShortcut),
+            () =>
+                i18n.formatTooltipWithShortcut(
+                    i18n.t('panel.settings.show-camera-info'),
+                    cameraInfoShortcut
+                ),
             'left'
         );
-        tooltips.register(bgClrPicker, () => i18n.t('panel.settings.background-color'), 'left');
-        tooltips.register(selectedClrPicker, () => i18n.t('panel.settings.selected-color'), 'top');
-        tooltips.register(unselectedClrPicker, () => i18n.t('panel.settings.unselected-color'), 'top');
-        tooltips.register(lockedClrPicker, () => i18n.t('panel.settings.locked-color'), 'top');
+        tooltips.register(
+            bgClrPicker,
+            () => i18n.t('panel.settings.background-color'),
+            'left'
+        );
+        tooltips.register(
+            selectedClrPicker,
+            () => i18n.t('panel.settings.selected-color'),
+            'top'
+        );
+        tooltips.register(
+            unselectedClrPicker,
+            () => i18n.t('panel.settings.unselected-color'),
+            'top'
+        );
+        tooltips.register(
+            lockedClrPicker,
+            () => i18n.t('panel.settings.locked-color'),
+            'top'
+        );
     }
 }
 

@@ -1,6 +1,7 @@
 # 02C — Automatic Runtime Readiness + Minimal Availability UI
 
-Status: blocked — waits for Ticket 04C
+Status: in progress — automatic readiness/UI implemented; production Available
+state still waits for Ticket 04C
 
 Blocked by: 02, 04C
 
@@ -85,18 +86,29 @@ No endpoint, Model Manifest, CUDA, protocol matrix, Ping, Check Readiness, model
 
 ## Acceptance criteria
 
-- [ ] Browser performs automatic single-flight readiness.
-- [ ] heartbeat and full compatibility validation remain separate.
-- [ ] one Active Model Manifest crosses the protocol.
-- [ ] current profile admits only the 04C SAM 3 Image instance adapter.
-- [ ] historical Multiplex static manifest fails compatibility.
+- [x] Browser performs automatic single-flight readiness.
+- [x] heartbeat and full compatibility validation remain separate.
+- [x] one Active Model Manifest crosses the protocol.
+- [x] current profile admits only the 04C SAM 3 Image instance adapter.
+- [x] historical Multiplex static manifest fails compatibility.
 - [ ] current provider advertises authoritative RGB resolution and opaque refinement-ref support.
-- [ ] removed Prompt capabilities are not required or advertised as current.
+- [x] removed Prompt capabilities are not required or advertised as current.
 - [ ] Companion Instance replacement invalidates prior RGB/logits refs.
-- [ ] Busy/task-local failure does not change Availability.
-- [ ] same-instance recovery is fail-closed and identity-bound.
-- [ ] ordinary UI contains no technical/model controls.
-- [ ] Native SuperSplat remains usable while unavailable.
+- [x] Busy/task-local failure does not change Availability.
+- [x] same-instance recovery is fail-closed and identity-bound.
+- [x] ordinary UI contains no technical/model controls.
+- [x] Native SuperSplat remains usable while unavailable.
+
+Implementation note:
+
+- the readiness layer emits a Companion Instance replacement invalidation hook
+  and rejects stale cross-Instance recovery;
+- Ticket 04C must attach its actual Companion RGB-reference and
+  previous-logits registries to that hook before the corresponding acceptance
+  criterion can close;
+- the historical Multiplex provider truthfully remains `Unavailable` for the
+  current Runtime Profile rather than being relabeled as the SAM 3 Image
+  instance adapter.
 
 ## Validation
 

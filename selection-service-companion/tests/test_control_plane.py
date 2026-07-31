@@ -153,6 +153,7 @@ class CompanionControlPlaneTests(unittest.TestCase):
         self.assertEqual(capabilities["modelManifests"], [])
 
     def test_enforces_exact_editor_origin_cors_for_health_and_capabilities(self) -> None:
+        self.install_model()
         server = create_server(
             state=self.state,
             endpoint="http://127.0.0.1:0",
@@ -167,6 +168,15 @@ class CompanionControlPlaneTests(unittest.TestCase):
                 self.assertEqual(response.status, HTTPStatus.OK)
                 self.assertEqual(response.headers["Access-Control-Allow-Origin"], EDITOR_ORIGIN)
                 self.assertEqual(response.headers["Vary"], "Origin")
+                self.assertTrue(json.load(response)["companionInstanceId"])
+
+            with urlopen(Request(
+                f"{endpoint}/capabilities",
+                headers={"Origin": EDITOR_ORIGIN},
+            )) as response:
+                runtime_profile = json.load(response)
+                self.assertIn("activeModelManifest", runtime_profile)
+                self.assertNotIn("modelManifests", runtime_profile)
 
             with urlopen(Request(
                 f"{endpoint}/capabilities",
@@ -212,11 +222,13 @@ class CompanionControlPlaneTests(unittest.TestCase):
                 self.assertEqual(response.status, HTTPStatus.CREATED)
                 session_id = json.load(response)["sessionId"]
 
-            with urlopen(Request(f"{endpoint}/capabilities", headers={"Origin": EDITOR_ORIGIN})) as response:
-                self.assertEqual(json.load(response)["capacity"], {
+            self.assertEqual(
+                self.state.capabilities([EDITOR_ORIGIN])["capacity"],
+                {
                     "maximumActiveSessions": 1,
                     "activeSessions": 1,
-                })
+                },
+            )
 
             with self.assertRaises(HTTPError) as error:
                 urlopen(Request(
@@ -235,11 +247,13 @@ class CompanionControlPlaneTests(unittest.TestCase):
             )) as response:
                 self.assertEqual(response.status, HTTPStatus.NO_CONTENT)
 
-            with urlopen(Request(f"{endpoint}/capabilities", headers={"Origin": EDITOR_ORIGIN})) as response:
-                self.assertEqual(json.load(response)["capacity"], {
+            self.assertEqual(
+                self.state.capabilities([EDITOR_ORIGIN])["capacity"],
+                {
                     "maximumActiveSessions": 1,
                     "activeSessions": 0,
-                })
+                },
+            )
         finally:
             server.shutdown()
             server.server_close()

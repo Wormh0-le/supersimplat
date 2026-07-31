@@ -146,7 +146,14 @@ const main = async () => {
     // The editor reads the operator-configured Companion state but never owns
     // its installation, model downloads, start, stop, or upgrade lifecycle.
     const selectionServiceReadiness = new SelectionServiceReadiness({
-        probe: new FetchSelectionServiceReadinessProbe()
+        probe: new FetchSelectionServiceReadinessProbe(),
+        onCompanionInstanceChanged: (previousInstanceId, currentInstanceId) => {
+            events.fire(
+                'selectionService.companionInstanceChanged',
+                previousInstanceId,
+                currentInstanceId
+            );
+        }
     });
     // The concrete scene/session transport is attached only through the
     // readiness gate, so no ObjectSelectionSession can bypass the
@@ -176,6 +183,10 @@ const main = async () => {
 
     // editor ui
     const editorUI = new EditorUI(events, selectionServiceReadiness);
+    // UI construction mounts the ordinary three-state Availability surface.
+    // The first compatibility check starts only after that mount and never
+    // blocks native editor startup.
+    selectionServiceReadiness.start();
 
     // create the graphics device
     const graphicsDevice = await createGraphicsDevice(editorUI.canvas, {
@@ -405,13 +416,10 @@ const main = async () => {
         getModelManifestDigest: () =>
             selectionServiceReadiness.state.configuration.modelManifestDigest,
         getPromptAdapterCapabilities: () => {
-            const readiness = selectionServiceReadiness.state;
-            const selectedDigest = readiness.configuration.modelManifestDigest;
-            return (
-                readiness.capabilities?.modelManifests.find(
-                    (manifest) => manifest.digest === selectedDigest
-                )?.promptCapabilities ?? null
-            );
+            // Ticket 04C owns the new PromptState/capability schema. The v1.3
+            // readiness profile deliberately does not reinterpret the removed
+            // Multiplex Prompt capability record as a current one.
+            return null;
         },
         isAnchorLocked: isAISelectAnchorLocked
     });
@@ -645,7 +653,7 @@ const main = async () => {
             onRetry: () => aiSelectController.retryAnchorPreview(),
             onReconnect: async () => {
                 await selectionServiceReadiness.refresh();
-                if (selectionServiceReadiness.state.status !== 'ready') {
+                if (selectionServiceReadiness.state.status !== 'available') {
                     const { diagnostic } = selectionServiceReadiness.state;
                     throw new Error(
                         `${diagnostic.message} ${diagnostic.action}`.trim()

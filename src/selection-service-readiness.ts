@@ -19,10 +19,6 @@ import type {
     AIViewMaskRequest,
     MaskResultResponse
 } from './ai-select/mask-service';
-import {
-    isPromptAdapterCapabilities,
-    type PromptAdapterCapabilities
-} from './ai-select/prompt-state';
 import type {
     AISelectSupportProbeProvider,
     AnchorSupportProbeRequest,
@@ -30,13 +26,16 @@ import type {
 } from './ai-select/support-probe';
 import type { SelectionServiceAdapter } from './object-selection-session';
 
-const selectionServiceProtocolVersion = '1';
+const selectionServiceProtocolVersion = '2';
 const defaultSelectionServiceEndpoint = 'http://127.0.0.1:8787';
+const currentRuntimeProfileId = 'ai-select-static-image-instance/v1';
+const currentImageInstanceAdapterId = 'sam3-image-instance/v1';
 
 type SelectionServiceTransportProfile = 'loopback' | 'trustedLan';
 type SelectionServiceReadinessStatus =
-    'unchecked' | 'checking' | 'unavailable' | 'reachable' | 'ready';
+    'connecting' | 'available' | 'unavailable';
 type SelectionServiceRendererStatus = 'ready' | 'unavailable';
+type SelectionServiceImageInstanceProviderStatus = 'ready' | 'unavailable';
 type SelectionServiceTransportErrorCode =
     | 'localNetworkPermissionDenied'
     | 'insecureEditorContext'
@@ -44,9 +43,8 @@ type SelectionServiceTransportErrorCode =
     | 'invalidResponse'
     | 'http';
 type SelectionServiceReadinessDiagnosticCode =
-    | 'unchecked'
-    | 'checking'
-    | 'ready'
+    | 'connecting'
+    | 'available'
     | 'invalidEndpoint'
     | 'invalidEditorOrigin'
     | 'loopbackEndpointRequired'
@@ -59,26 +57,29 @@ type SelectionServiceReadinessDiagnosticCode =
     | 'browserTransport'
     | 'invalidResponse'
     | 'companionRejectedRequest'
+    | 'companionInstanceMismatch'
     | 'protocolMismatch'
+    | 'runtimeProfileMismatch'
     | 'rendererUnavailable'
     | 'rendererMismatch'
-    | 'pointPromptUnsupported'
+    | 'rgbResolutionUnsupported'
+    | 'imageInstanceProviderUnavailable'
+    | 'imageInstanceCapabilityMismatch'
     | 'aiSelectAnchorUnsupported'
     | 'maskProposalUnsupported'
     | 'binarySceneSnapshotRegistrationUnsupported'
-    | 'modelNotSelected'
     | 'modelUnavailable'
     | 'modelWeightsBundled'
     | 'modelAdapterMismatch'
     | 'editorOriginDenied'
-    | 'capacityMismatch'
-    | 'capacityBusy'
     | 'invalidCapabilities';
 
 interface SelectionServiceConfiguration {
     endpoint: string;
     profile: SelectionServiceTransportProfile;
     editorOrigin: string;
+    // This identity is resolved by the Companion and copied here only so
+    // task requests bind the one process-lifetime Active Model Manifest.
     modelManifestDigest: string | null;
 }
 
@@ -89,13 +90,41 @@ interface SelectionServiceReadinessRequest {
 }
 
 interface SelectionServiceHealth {
-    serviceBuild?: string;
+    status: 'ok';
+    serviceBuild: string;
+    companionInstanceId: string;
 }
 
 interface SelectionServiceRendererCapability {
     id: string;
     status: SelectionServiceRendererStatus;
     cudaVersion?: string;
+    rgbRendererVersion?: string;
+    message?: string;
+}
+
+interface SelectionServiceImageInstancePromptCapabilities {
+    positivePoints: boolean;
+    negativePoints: boolean;
+    positiveInstanceBox: boolean;
+    previousLogitsRefinement: boolean;
+    singlePointMultimask: boolean;
+    negativeBox: boolean;
+    promptBrush: boolean;
+    maskConstraints: boolean;
+    text: boolean;
+}
+
+interface SelectionServiceAuthoritativeRgbCapabilities {
+    artifact: boolean;
+    companionReference: boolean;
+}
+
+interface SelectionServiceImageInstanceProviderCapability {
+    status: SelectionServiceImageInstanceProviderStatus;
+    adapterId: string;
+    authoritativeRgb: SelectionServiceAuthoritativeRgbCapabilities;
+    promptCapabilities: SelectionServiceImageInstancePromptCapabilities;
     message?: string;
 }
 
@@ -103,23 +132,22 @@ interface SelectionServiceModelManifest {
     digest: string;
     adapterId: string;
     modelName: string;
+    checkpointDigest: string;
+    sourceCommit: string;
+    runtimeConfigDigest: string;
     weightsBundled: boolean;
-    promptCapabilities: PromptAdapterCapabilities;
-}
-
-interface SelectionServiceCapacity {
-    maximumActiveSessions: number;
-    activeSessions: number;
+    initialized: boolean;
 }
 
 interface SelectionServiceCapabilities {
     protocolVersion: string;
     serviceBuild: string;
+    companionInstanceId: string;
+    runtimeProfileId: string;
     renderer: SelectionServiceRendererCapability;
-    supportedPromptKinds: readonly string[];
+    imageInstanceProvider: SelectionServiceImageInstanceProviderCapability;
     supportedOperations: readonly string[];
-    modelManifests: readonly SelectionServiceModelManifest[];
-    capacity: SelectionServiceCapacity;
+    activeModelManifest: SelectionServiceModelManifest;
     allowedEditorOrigins: readonly string[];
 }
 
@@ -134,7 +162,9 @@ interface SelectionServiceReadinessProbe {
 
 interface SelectionServiceReadinessRequirements {
     protocolVersion: string;
+    runtimeProfileId: string;
     rendererId: string;
+    rgbRendererVersion: string;
     modelAdapterId: string;
     aiSelectAnchorOperation: string;
     maskProposalOperation: string;
@@ -164,10 +194,26 @@ interface SelectionServiceReadinessInterface {
     readonly state: SelectionServiceReadinessState;
 
     subscribe(listener: SelectionServiceReadinessListener): () => void;
-    setConfiguration(configuration: SelectionServiceConfiguration): void;
-    updateConfiguration(partial: Partial<SelectionServiceConfiguration>): void;
+    start(): void;
+    stop(): void;
     refresh(): Promise<void>;
+    recoverSameInstance(
+        companionInstanceId: string,
+        isBindingCurrent: () => boolean
+    ): Promise<boolean>;
     requireReady(): void;
+}
+
+interface SelectionServiceReadinessClock {
+    setTimeout(callback: () => void, delayMs: number): unknown;
+    clearTimeout(handle: unknown): void;
+}
+
+interface SelectionServiceReadinessTransition {
+    readonly previous: SelectionServiceReadinessStatus;
+    readonly current: SelectionServiceReadinessStatus;
+    readonly diagnosticCode: SelectionServiceReadinessDiagnosticCode;
+    readonly companionInstanceId: string | null;
 }
 
 interface SelectionServiceTransportErrorDetails {
@@ -232,8 +278,10 @@ const defaultConfiguration = (
 
 const defaultRequirements: SelectionServiceReadinessRequirements = {
     protocolVersion: selectionServiceProtocolVersion,
+    runtimeProfileId: currentRuntimeProfileId,
     rendererId: 'gsplat',
-    modelAdapterId: 'sam3.1',
+    rgbRendererVersion: 'gsplat-rgb/v1',
+    modelAdapterId: currentImageInstanceAdapterId,
     aiSelectAnchorOperation: 'aiSelectAnchorRender',
     maskProposalOperation: 'aiSelectMaskProposals',
     maskProposalSetSchemaOperation: 'autoMaskProposalSetSchemaV2',
@@ -260,7 +308,9 @@ const copyConfiguration = (
 const copyHealth = (
     health: SelectionServiceHealth
 ): SelectionServiceHealth => ({
-    serviceBuild: health.serviceBuild
+    status: health.status,
+    serviceBuild: health.serviceBuild,
+    companionInstanceId: health.companionInstanceId
 });
 
 const copyCapabilities = (
@@ -268,24 +318,41 @@ const copyCapabilities = (
 ): SelectionServiceCapabilities => ({
     protocolVersion: capabilities.protocolVersion,
     serviceBuild: capabilities.serviceBuild,
+    companionInstanceId: capabilities.companionInstanceId,
+    runtimeProfileId: capabilities.runtimeProfileId,
     renderer: {
         id: capabilities.renderer.id,
         status: capabilities.renderer.status,
         cudaVersion: capabilities.renderer.cudaVersion,
+        rgbRendererVersion: capabilities.renderer.rgbRendererVersion,
         message: capabilities.renderer.message
     },
-    supportedPromptKinds: [...capabilities.supportedPromptKinds],
+    imageInstanceProvider: {
+        status: capabilities.imageInstanceProvider.status,
+        adapterId: capabilities.imageInstanceProvider.adapterId,
+        authoritativeRgb: {
+            artifact:
+                capabilities.imageInstanceProvider.authoritativeRgb.artifact,
+            companionReference:
+                capabilities.imageInstanceProvider.authoritativeRgb
+                    .companionReference
+        },
+        promptCapabilities: {
+            ...capabilities.imageInstanceProvider.promptCapabilities
+        },
+        message: capabilities.imageInstanceProvider.message
+    },
     supportedOperations: [...capabilities.supportedOperations],
-    modelManifests: capabilities.modelManifests.map((manifest) => ({
-        digest: manifest.digest,
-        adapterId: manifest.adapterId,
-        modelName: manifest.modelName,
-        weightsBundled: manifest.weightsBundled,
-        promptCapabilities: { ...manifest.promptCapabilities }
-    })),
-    capacity: {
-        maximumActiveSessions: capabilities.capacity.maximumActiveSessions,
-        activeSessions: capabilities.capacity.activeSessions
+    activeModelManifest: {
+        digest: capabilities.activeModelManifest.digest,
+        adapterId: capabilities.activeModelManifest.adapterId,
+        modelName: capabilities.activeModelManifest.modelName,
+        checkpointDigest: capabilities.activeModelManifest.checkpointDigest,
+        sourceCommit: capabilities.activeModelManifest.sourceCommit,
+        runtimeConfigDigest:
+            capabilities.activeModelManifest.runtimeConfigDigest,
+        weightsBundled: capabilities.activeModelManifest.weightsBundled,
+        initialized: capabilities.activeModelManifest.initialized
     },
     allowedEditorOrigins: [...capabilities.allowedEditorOrigins]
 });
@@ -410,8 +477,17 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
     return typeof value === 'object' && value !== null;
 };
 
-const isNonNegativeInteger = (value: unknown): value is number => {
-    return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+const isNonEmptyString = (value: unknown): value is string => {
+    return typeof value === 'string' && value.length > 0;
+};
+
+const validateHealth = (value: unknown): value is SelectionServiceHealth => {
+    return (
+        isRecord(value) &&
+        value.status === 'ok' &&
+        isNonEmptyString(value.serviceBuild) &&
+        isNonEmptyString(value.companionInstanceId)
+    );
 };
 
 const validateCapabilities = (
@@ -419,8 +495,10 @@ const validateCapabilities = (
 ): value is SelectionServiceCapabilities => {
     if (
         !isRecord(value) ||
-        typeof value.protocolVersion !== 'string' ||
-        typeof value.serviceBuild !== 'string'
+        !isNonEmptyString(value.protocolVersion) ||
+        !isNonEmptyString(value.serviceBuild) ||
+        !isNonEmptyString(value.companionInstanceId) ||
+        !isNonEmptyString(value.runtimeProfileId)
     ) {
         return false;
     }
@@ -433,8 +511,35 @@ const validateCapabilities = (
         return false;
     }
     if (
-        !Array.isArray(value.supportedPromptKinds) ||
-        !value.supportedPromptKinds.every((kind) => typeof kind === 'string')
+        !isRecord(value.imageInstanceProvider) ||
+        (value.imageInstanceProvider.status !== 'ready' &&
+            value.imageInstanceProvider.status !== 'unavailable') ||
+        !isNonEmptyString(value.imageInstanceProvider.adapterId) ||
+        !isRecord(value.imageInstanceProvider.authoritativeRgb) ||
+        typeof value.imageInstanceProvider.authoritativeRgb.artifact !==
+            'boolean' ||
+        typeof value.imageInstanceProvider.authoritativeRgb
+            .companionReference !== 'boolean' ||
+        !isRecord(value.imageInstanceProvider.promptCapabilities)
+    ) {
+        return false;
+    }
+    const promptCapabilities = value.imageInstanceProvider.promptCapabilities;
+    const promptCapabilityKeys = [
+        'positivePoints',
+        'negativePoints',
+        'positiveInstanceBox',
+        'previousLogitsRefinement',
+        'singlePointMultimask',
+        'negativeBox',
+        'promptBrush',
+        'maskConstraints',
+        'text'
+    ];
+    if (
+        !promptCapabilityKeys.every(
+            (key) => typeof promptCapabilities[key] === 'boolean'
+        )
     ) {
         return false;
     }
@@ -447,24 +552,15 @@ const validateCapabilities = (
         return false;
     }
     if (
-        !Array.isArray(value.modelManifests) ||
-        !value.modelManifests.every((manifest) => {
-            return (
-                isRecord(manifest) &&
-                typeof manifest.digest === 'string' &&
-                typeof manifest.adapterId === 'string' &&
-                typeof manifest.modelName === 'string' &&
-                typeof manifest.weightsBundled === 'boolean' &&
-                isPromptAdapterCapabilities(manifest.promptCapabilities)
-            );
-        })
-    ) {
-        return false;
-    }
-    if (
-        !isRecord(value.capacity) ||
-        !isNonNegativeInteger(value.capacity.maximumActiveSessions) ||
-        !isNonNegativeInteger(value.capacity.activeSessions)
+        !isRecord(value.activeModelManifest) ||
+        !isNonEmptyString(value.activeModelManifest.digest) ||
+        !isNonEmptyString(value.activeModelManifest.adapterId) ||
+        !isNonEmptyString(value.activeModelManifest.modelName) ||
+        !isNonEmptyString(value.activeModelManifest.checkpointDigest) ||
+        !isNonEmptyString(value.activeModelManifest.sourceCommit) ||
+        !isNonEmptyString(value.activeModelManifest.runtimeConfigDigest) ||
+        typeof value.activeModelManifest.weightsBundled !== 'boolean' ||
+        typeof value.activeModelManifest.initialized !== 'boolean'
     ) {
         return false;
     }
@@ -484,35 +580,88 @@ const requestFromConfiguration = (
         configuration.editorOrigin
 });
 
+const browserReadinessClock: SelectionServiceReadinessClock = {
+    setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
+    clearTimeout: (handle) =>
+        globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>)
+};
+
 class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
-    private probe: SelectionServiceReadinessProbe;
-    private requirements: SelectionServiceReadinessRequirements;
+    private readonly probe: SelectionServiceReadinessProbe;
+    private readonly requirements: SelectionServiceReadinessRequirements;
+    private readonly clock: SelectionServiceReadinessClock;
+    private readonly heartbeatIntervalMs: number;
+    private readonly retryInitialMs: number;
+    private readonly retryMaximumMs: number;
+    private readonly isForeground: () => boolean;
+    private readonly logTransition: (
+        transition: SelectionServiceReadinessTransition
+    ) => void;
+    private readonly onCompanionInstanceChanged: (
+        previousInstanceId: string,
+        currentInstanceId: string
+    ) => void;
     private readinessState: SelectionServiceReadinessState;
-    private listeners = new Set<SelectionServiceReadinessListener>();
-    private refreshVersion = 0;
+    private readonly listeners = new Set<SelectionServiceReadinessListener>();
+    private running = false;
+    private generation = 0;
+    private failureCount = 0;
+    private scheduledCheck: unknown | null = null;
+    private inFlight: Promise<boolean> | null = null;
 
     constructor(options: {
         probe: SelectionServiceReadinessProbe;
         configuration?: SelectionServiceConfiguration;
         requirements?: Partial<SelectionServiceReadinessRequirements>;
+        clock?: SelectionServiceReadinessClock;
+        heartbeatIntervalMs?: number;
+        retryInitialMs?: number;
+        retryMaximumMs?: number;
+        isForeground?: () => boolean;
+        logTransition?: (
+            transition: SelectionServiceReadinessTransition
+        ) => void;
+        onCompanionInstanceChanged?: (
+            previousInstanceId: string,
+            currentInstanceId: string
+        ) => void;
     }) {
         this.probe = options.probe;
         this.requirements = {
             ...defaultRequirements,
             ...options.requirements
         };
+        this.clock = options.clock ?? browserReadinessClock;
+        this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 10_000;
+        this.retryInitialMs = options.retryInitialMs ?? 1_000;
+        this.retryMaximumMs = options.retryMaximumMs ?? 30_000;
+        this.isForeground =
+            options.isForeground ??
+            (() =>
+                typeof document === 'undefined' ||
+                document.visibilityState === 'visible');
+        this.logTransition =
+            options.logTransition ??
+            ((transition) => {
+                console.info('AI Select availability transition', transition);
+            });
+        this.onCompanionInstanceChanged =
+            options.onCompanionInstanceChanged ?? (() => {});
         const configuration = options.configuration
             ? copyConfiguration(options.configuration)
             : defaultConfiguration(defaultEditorOrigin());
         this.readinessState = {
-            status: 'unchecked',
-            configuration,
+            status: 'connecting',
+            configuration: {
+                ...configuration,
+                modelManifestDigest: null
+            },
             health: null,
             capabilities: null,
             diagnostic: diagnostic(
-                'unchecked',
-                'The Selection Service Companion has not been checked.',
-                'Start the operator-managed Companion, select its endpoint and Model Manifest, then check readiness.'
+                'connecting',
+                'AI Select is connecting to the Selection Service Companion.',
+                'Native SuperSplat tools remain available.'
             )
         };
     }
@@ -530,57 +679,118 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
         };
     }
 
-    setConfiguration(configuration: SelectionServiceConfiguration) {
-        ++this.refreshVersion;
-        this.setState({
-            status: 'unchecked',
-            configuration: copyConfiguration(configuration),
-            health: null,
-            capabilities: null,
-            diagnostic: diagnostic(
-                'unchecked',
-                'The Selection Service configuration changed.',
-                'Check Companion readiness before starting Object Selection.'
-            )
-        });
+    start() {
+        if (this.running) {
+            return;
+        }
+        this.running = true;
+        this.runCheck('full').catch((error) => console.error(error));
     }
 
-    updateConfiguration(partial: Partial<SelectionServiceConfiguration>) {
-        this.setConfiguration({
-            ...this.readinessState.configuration,
-            ...partial
-        });
+    stop() {
+        this.running = false;
+        ++this.generation;
+        this.clearScheduledCheck();
     }
 
     async refresh() {
+        await this.runCheck('full');
+    }
+
+    async recoverSameInstance(
+        companionInstanceId: string,
+        isBindingCurrent: () => boolean
+    ) {
+        if (
+            !isBindingCurrent() ||
+            this.readinessState.health?.companionInstanceId !==
+                companionInstanceId
+        ) {
+            return false;
+        }
+        if (this.inFlight) {
+            await this.inFlight;
+        }
+        if (
+            !isBindingCurrent() ||
+            this.readinessState.health?.companionInstanceId !==
+                companionInstanceId
+        ) {
+            return false;
+        }
+        const recovered = await this.runCheck('full', companionInstanceId);
+        return (
+            recovered &&
+            isBindingCurrent() &&
+            this.readinessState.status === 'available' &&
+            this.readinessState.health?.companionInstanceId ===
+                companionInstanceId
+        );
+    }
+
+    requireReady() {
+        if (this.readinessState.status !== 'available') {
+            throw new SelectionServiceNotReadyError(
+                this.readinessState.diagnostic
+            );
+        }
+    }
+
+    private runCheck(
+        mode: 'heartbeat' | 'full',
+        expectedInstanceId?: string
+    ): Promise<boolean> {
+        if (this.inFlight) {
+            return this.inFlight;
+        }
+        this.clearScheduledCheck();
+        const generation = ++this.generation;
+        const check = this.performCheck(
+            mode,
+            generation,
+            expectedInstanceId
+        ).finally(() => {
+            if (this.inFlight === check) {
+                this.inFlight = null;
+            }
+            if (this.running && generation === this.generation) {
+                this.scheduleNextCheck();
+            }
+        });
+        this.inFlight = check;
+        return check;
+    }
+
+    private async performCheck(
+        mode: 'heartbeat' | 'full',
+        generation: number,
+        expectedInstanceId?: string
+    ): Promise<boolean> {
         const configuration = copyConfiguration(
             this.readinessState.configuration
         );
         const validationDiagnostic = validateConfiguration(configuration);
-        const refreshVersion = ++this.refreshVersion;
-
         if (validationDiagnostic) {
-            this.setState({
+            this.failureCount += 1;
+            this.publish({
+                ...this.readinessState,
                 status: 'unavailable',
-                configuration,
-                health: null,
-                capabilities: null,
                 diagnostic: validationDiagnostic
             });
-            return;
+            return false;
         }
 
-        this.setState({
-            status: 'checking',
-            configuration,
-            health: null,
-            capabilities: null,
-            diagnostic: diagnostic(
-                'checking',
-                'Checking the configured Selection Service Companion.',
-                'Keep this editor open while readiness is checked.'
-            )
-        });
+        if (mode === 'full') {
+            this.publish({
+                ...this.readinessState,
+                status: 'connecting',
+                diagnostic: diagnostic(
+                    'connecting',
+                    'AI Select is validating the Selection Service Companion.',
+                    'Native SuperSplat tools remain available.'
+                )
+            });
+        }
 
         let health: SelectionServiceHealth;
         try {
@@ -588,34 +798,92 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
                 requestFromConfiguration(configuration)
             );
         } catch (error) {
-            if (!this.isCurrentRefresh(refreshVersion)) {
-                return;
+            if (!this.isCurrent(generation)) {
+                return false;
             }
-            this.setState({
-                status: this.isReachableProbeError(error)
-                    ? 'reachable'
-                    : 'unavailable',
-                configuration,
-                health: null,
+            this.failureCount += 1;
+            this.publishUnavailable(
+                this.diagnosticForProbeError(error, 'health')
+            );
+            return false;
+        }
+
+        if (!this.isCurrent(generation)) {
+            return false;
+        }
+        if (!validateHealth(health)) {
+            this.failureCount += 1;
+            this.publishUnavailable(
+                diagnostic(
+                    'invalidResponse',
+                    'The Companion returned an invalid lightweight health response.',
+                    'Use a compatible locked Companion release.'
+                )
+            );
+            return false;
+        }
+
+        const previousInstanceId =
+            this.readinessState.health?.companionInstanceId ?? null;
+        const instanceChanged =
+            previousInstanceId !== null &&
+            previousInstanceId !== health.companionInstanceId;
+        if (instanceChanged) {
+            this.onCompanionInstanceChanged(
+                previousInstanceId,
+                health.companionInstanceId
+            );
+        }
+        if (
+            expectedInstanceId !== undefined &&
+            health.companionInstanceId !== expectedInstanceId
+        ) {
+            this.failureCount += 1;
+            this.publish({
+                status: 'unavailable',
+                configuration: {
+                    ...configuration,
+                    modelManifestDigest: null
+                },
+                health: copyHealth(health),
                 capabilities: null,
-                diagnostic: this.diagnosticForProbeError(error, 'health')
+                diagnostic: diagnostic(
+                    'companionInstanceMismatch',
+                    'The Companion process changed during connection recovery.',
+                    'Retry the task from current AI Select state.'
+                )
             });
-            return;
+            return false;
         }
 
-        if (!this.isCurrentRefresh(refreshVersion)) {
-            return;
+        if (
+            mode === 'heartbeat' &&
+            !instanceChanged &&
+            this.readinessState.status === 'available' &&
+            this.readinessState.capabilities?.companionInstanceId ===
+                health.companionInstanceId
+        ) {
+            this.failureCount = 0;
+            this.publish({
+                ...this.readinessState,
+                health: copyHealth(health)
+            });
+            return true;
         }
 
-        this.setState({
-            status: 'reachable',
-            configuration,
+        this.publish({
+            ...this.readinessState,
+            status: 'connecting',
+            configuration: {
+                ...configuration,
+                modelManifestDigest: null
+            },
             health: copyHealth(health),
             capabilities: null,
             diagnostic: diagnostic(
-                'checking',
-                'The Selection Service Companion is reachable. Checking capabilities.',
-                'Wait for the capability check before starting Object Selection.'
+                'connecting',
+                'AI Select is validating Companion compatibility.',
+                'Native SuperSplat tools remain available.'
             )
         });
 
@@ -625,63 +893,68 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
                 requestFromConfiguration(configuration)
             );
         } catch (error) {
-            if (!this.isCurrentRefresh(refreshVersion)) {
-                return;
+            if (!this.isCurrent(generation)) {
+                return false;
             }
-            this.setState({
-                status: 'reachable',
-                configuration,
-                health: copyHealth(health),
-                capabilities: null,
-                diagnostic: this.diagnosticForProbeError(error, 'capabilities')
-            });
-            return;
+            this.failureCount += 1;
+            this.publishUnavailable(
+                this.diagnosticForProbeError(error, 'capabilities'),
+                health
+            );
+            return false;
         }
 
-        if (!this.isCurrentRefresh(refreshVersion)) {
-            return;
+        if (!this.isCurrent(generation)) {
+            return false;
         }
-
         if (!validateCapabilities(capabilities)) {
-            this.setState({
-                status: 'reachable',
-                configuration,
-                health: copyHealth(health),
-                capabilities: null,
-                diagnostic: diagnostic(
+            this.failureCount += 1;
+            this.publishUnavailable(
+                diagnostic(
                     'invalidCapabilities',
-                    'The reachable Companion returned an incomplete capability response.',
-                    'Use a compatible locked Companion release and refresh readiness.'
-                )
-            });
-            return;
+                    'The Companion returned an incomplete Runtime Profile response.',
+                    'Use a compatible locked Companion release.'
+                ),
+                health
+            );
+            return false;
+        }
+        if (capabilities.companionInstanceId !== health.companionInstanceId) {
+            this.failureCount += 1;
+            this.publishUnavailable(
+                diagnostic(
+                    'companionInstanceMismatch',
+                    'Health and compatibility responses came from different Companion processes.',
+                    'Wait for automatic reconnection.'
+                ),
+                health
+            );
+            return false;
         }
 
         const capabilityDiagnostic = this.evaluateCapabilities(
             capabilities,
             configuration
         );
-        this.setState({
-            status: capabilityDiagnostic ? 'reachable' : 'ready',
-            configuration,
+        const activeModelManifest = capabilities.activeModelManifest;
+        this.publish({
+            status: capabilityDiagnostic ? 'unavailable' : 'available',
+            configuration: {
+                ...configuration,
+                modelManifestDigest: activeModelManifest.digest
+            },
             health: copyHealth(health),
             capabilities: copyCapabilities(capabilities),
             diagnostic:
                 capabilityDiagnostic ??
-                diagnostic(
-                    'ready',
-                    'The Selection Service Companion is ready for one new Object Selection Session.',
-                    'Start New to begin Object Selection.'
-                )
+                diagnostic('available', 'AI Select is available.', '')
         });
-    }
-
-    requireReady() {
-        if (this.readinessState.status !== 'ready') {
-            throw new SelectionServiceNotReadyError(
-                this.readinessState.diagnostic
-            );
+        if (capabilityDiagnostic) {
+            this.failureCount += 1;
+            return false;
         }
+        this.failureCount = 0;
+        return true;
     }
 
     private evaluateCapabilities(
@@ -693,33 +966,100 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
         ) {
             return diagnostic(
                 'protocolMismatch',
-                `The Companion protocol ${capabilities.protocolVersion} is incompatible with editor protocol ${this.requirements.protocolVersion}.`,
-                'Stop the Companion, install the compatible locked release, start it again, then refresh readiness.'
+                'The Companion protocol is incompatible with this editor.',
+                'Use the locked compatible Companion release.'
             );
         }
-
+        if (
+            capabilities.runtimeProfileId !== this.requirements.runtimeProfileId
+        ) {
+            return diagnostic(
+                'runtimeProfileMismatch',
+                'The Companion does not implement the current AI Select Runtime Profile.',
+                'Use the current static-image Companion profile.'
+            );
+        }
         if (capabilities.renderer.status !== 'ready') {
             return diagnostic(
                 'rendererUnavailable',
                 capabilities.renderer.message ??
-                    'The Companion renderer or CUDA runtime is unavailable.',
-                'Resolve the Companion renderer or CUDA diagnostic with the operator-managed installation, then refresh readiness.'
+                    'The Companion renderer is unavailable.',
+                'Resolve the operator-side renderer/runtime diagnostic.'
             );
         }
-
-        if (capabilities.renderer.id !== this.requirements.rendererId) {
+        if (
+            capabilities.renderer.id !== this.requirements.rendererId ||
+            capabilities.renderer.rgbRendererVersion !==
+                this.requirements.rgbRendererVersion
+        ) {
             return diagnostic(
                 'rendererMismatch',
-                `The Companion renderer ${capabilities.renderer.id} is not the required ${this.requirements.rendererId} renderer.`,
-                'Start a Companion release configured with the required renderer, then refresh readiness.'
+                'The Companion authoritative renderer identity is incompatible.',
+                'Use the locked compatible Companion release.'
             );
         }
 
-        if (!capabilities.supportedPromptKinds.includes('point')) {
+        const modelManifest = capabilities.activeModelManifest;
+        if (!modelManifest.initialized) {
             return diagnostic(
-                'pointPromptUnsupported',
-                'The Companion does not advertise the required point-prompt capability.',
-                'Install a compatible promptable-mask adapter and refresh readiness.'
+                'modelUnavailable',
+                'The Active Model Manifest is not initialized.',
+                'Resolve the operator-side model diagnostic.'
+            );
+        }
+        if (modelManifest.weightsBundled) {
+            return diagnostic(
+                'modelWeightsBundled',
+                'The Active Model Manifest reports bundled model weights.',
+                'Use a separately installed, manifest-verified model artifact.'
+            );
+        }
+        if (modelManifest.adapterId !== this.requirements.modelAdapterId) {
+            return diagnostic(
+                'modelAdapterMismatch',
+                'The Active Model Manifest is not the current SAM 3 Image instance adapter.',
+                'Install and activate the current SAM 3 Image Model Manifest.'
+            );
+        }
+
+        const provider = capabilities.imageInstanceProvider;
+        if (
+            provider.status !== 'ready' ||
+            provider.adapterId !== modelManifest.adapterId
+        ) {
+            return diagnostic(
+                'imageInstanceProviderUnavailable',
+                provider.message ??
+                    'The current SAM 3 Image provider is unavailable.',
+                'Resolve the operator-side model/provider diagnostic.'
+            );
+        }
+        if (
+            !provider.authoritativeRgb.artifact &&
+            !provider.authoritativeRgb.companionReference
+        ) {
+            return diagnostic(
+                'rgbResolutionUnsupported',
+                'The image provider cannot resolve authoritative RGB input.',
+                'Use a provider with exact RGB artifact or Companion-reference resolution.'
+            );
+        }
+        const prompts = provider.promptCapabilities;
+        if (
+            !prompts.positivePoints ||
+            !prompts.negativePoints ||
+            !prompts.positiveInstanceBox ||
+            !prompts.previousLogitsRefinement ||
+            !prompts.singlePointMultimask ||
+            prompts.negativeBox ||
+            prompts.promptBrush ||
+            prompts.maskConstraints ||
+            prompts.text
+        ) {
+            return diagnostic(
+                'imageInstanceCapabilityMismatch',
+                'The image provider Prompt/refinement capabilities do not match the current profile.',
+                'Use the current SAM 3 Image instance adapter.'
             );
         }
 
@@ -730,35 +1070,24 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
         ) {
             return diagnostic(
                 'aiSelectAnchorUnsupported',
-                'The Companion does not advertise authoritative AI Select Anchor rendering.',
-                'Install the compatible locked Companion release, then refresh readiness.'
+                'Authoritative AI Select Anchor rendering is unavailable.',
+                'Use the compatible locked Companion release.'
             );
         }
-
         if (
             !capabilities.supportedOperations.includes(
                 this.requirements.maskProposalOperation
-            )
-        ) {
-            return diagnostic(
-                'maskProposalUnsupported',
-                'The Companion does not advertise prompt-conditioned Mask proposal production.',
-                'Install the compatible Companion release with AI Select Mask proposal support, then refresh readiness.'
-            );
-        }
-
-        if (
+            ) ||
             !capabilities.supportedOperations.includes(
                 this.requirements.maskProposalSetSchemaOperation
             )
         ) {
             return diagnostic(
                 'maskProposalUnsupported',
-                'The Companion does not advertise AutoMaskProposalSet schema v2.',
-                'Install the compatible Companion release with schema-v2 Mask proposal identity, then refresh readiness.'
+                'Current image-instance Mask production is unavailable.',
+                'Use the compatible locked Companion release.'
             );
         }
-
         if (
             !capabilities.supportedOperations.includes(
                 this.requirements.binarySceneSnapshotRegistrationOperation
@@ -766,8 +1095,8 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
         ) {
             return diagnostic(
                 'binarySceneSnapshotRegistrationUnsupported',
-                'The Companion does not advertise Binary SceneSnapshot Registration v1.',
-                'Install the compatible locked Companion release, then refresh readiness.'
+                'Binary SceneSnapshot Registration v1 is unavailable.',
+                'Use the compatible locked Companion release.'
             );
         }
 
@@ -779,61 +1108,9 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             return diagnostic(
                 'editorOriginDenied',
                 'The Companion does not allow this exact editor origin.',
-                'Add this editor origin to the Companion CORS allowlist, restart it under operator control, then refresh readiness.'
+                'Update the operator-owned Companion origin allowlist.'
             );
         }
-
-        if (capabilities.capacity.maximumActiveSessions !== 1) {
-            return diagnostic(
-                'capacityMismatch',
-                `The Companion advertises a capacity of ${capabilities.capacity.maximumActiveSessions} active sessions; this PoC requires exactly one.`,
-                'Configure the Companion for one active session, then refresh readiness.'
-            );
-        }
-
-        if (capabilities.capacity.activeSessions !== 0) {
-            return diagnostic(
-                'capacityBusy',
-                'The Companion is already serving another Object Selection Session.',
-                'Finish or cancel the active session in its editor, then refresh readiness. The Companion does not queue sessions.'
-            );
-        }
-
-        if (configuration.modelManifestDigest === null) {
-            return diagnostic(
-                'modelNotSelected',
-                'The Companion is reachable, but no separately installed Model Manifest is selected.',
-                'Select an installed Model Manifest explicitly, then refresh readiness.'
-            );
-        }
-
-        const modelManifest = capabilities.modelManifests.find(
-            (manifest) => manifest.digest === configuration.modelManifestDigest
-        );
-        if (!modelManifest) {
-            return diagnostic(
-                'modelUnavailable',
-                'The selected Model Manifest is not installed in this Companion.',
-                'Install the selected model through the Companion operator workflow, then refresh readiness.'
-            );
-        }
-
-        if (modelManifest.weightsBundled) {
-            return diagnostic(
-                'modelWeightsBundled',
-                'The selected Model Manifest reports bundled weights, which this editor does not accept.',
-                'Use a separately installed, manifest-verified model artifact, then refresh readiness.'
-            );
-        }
-
-        if (modelManifest.adapterId !== this.requirements.modelAdapterId) {
-            return diagnostic(
-                'modelAdapterMismatch',
-                `The selected Model Manifest uses adapter ${modelManifest.adapterId}, not ${this.requirements.modelAdapterId}.`,
-                'Select a compatible separately installed Model Manifest, then refresh readiness.'
-            );
-        }
-
         return null;
     }
 
@@ -847,70 +1124,111 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
                     return diagnostic(
                         'localNetworkPermissionDenied',
                         'The browser denied local-network access to the Companion.',
-                        'Allow Local Network Access for this editor origin in Chromium, then refresh readiness.'
+                        'Allow Local Network Access for this editor origin.'
                     );
                 case 'insecureEditorContext':
                     return diagnostic(
                         'insecureEditorContext',
-                        'This editor origin is not a secure context for local-network access.',
-                        'Serve the editor over HTTPS, or use a standards-defined loopback development origin, then refresh readiness.'
+                        'This editor origin cannot securely access the Companion.',
+                        'Use a secure editor deployment.'
                     );
                 case 'browserTransport':
                     return diagnostic(
                         'browserTransport',
-                        'The browser could not complete the Companion request.',
-                        'Check the endpoint, exact CORS allowlist, Local Network Access permission, and trusted-LAN certificate, then refresh readiness.'
+                        'The browser could not reach the Companion.',
+                        'Automatic reconnection will continue.'
                     );
                 case 'invalidResponse':
                     return diagnostic(
                         'invalidResponse',
-                        `The reachable Companion returned an invalid ${operation} response.`,
-                        'Use a compatible locked Companion release and refresh readiness.'
+                        `The Companion returned an invalid ${operation} response.`,
+                        'Use a compatible locked Companion release.'
                     );
                 case 'http':
                     return diagnostic(
                         'companionRejectedRequest',
-                        `The reachable Companion rejected the ${operation} check${
-                            error.status === undefined
-                                ? ''
-                                : ` with HTTP ${error.status}`
-                        }.`,
+                        `The Companion rejected the ${operation} check.`,
                         error.serviceMessage ??
-                            'Resolve the Companion-reported error, then refresh readiness.'
+                            'Resolve the operator-side Companion diagnostic.'
                     );
                 default:
                     break;
             }
         }
-
         return diagnostic(
             operation === 'health'
                 ? 'healthUnavailable'
                 : 'capabilitiesUnavailable',
             operation === 'health'
-                ? 'The configured Selection Service Companion is not reachable.'
-                : 'The Companion is reachable, but its capabilities could not be read.',
-            operation === 'health'
-                ? 'Verify the operator-started Companion endpoint, then refresh readiness.'
-                : 'Check the Companion protocol and browser transport configuration, then refresh readiness.'
+                ? 'The Companion is not reachable.'
+                : 'The Companion Runtime Profile could not be read.',
+            'Automatic reconnection will continue.'
         );
     }
 
-    private isReachableProbeError(error: unknown) {
-        return (
-            error instanceof SelectionServiceTransportError &&
-            (error.code === 'http' || error.code === 'invalidResponse')
-        );
+    private publishUnavailable(
+        readinessDiagnostic: SelectionServiceReadinessDiagnostic,
+        health: SelectionServiceHealth | null = this.readinessState.health
+    ) {
+        this.publish({
+            ...this.readinessState,
+            status: 'unavailable',
+            health: health ? copyHealth(health) : null,
+            diagnostic: readinessDiagnostic
+        });
     }
 
-    private isCurrentRefresh(refreshVersion: number) {
-        return refreshVersion === this.refreshVersion;
-    }
-
-    private setState(state: SelectionServiceReadinessState) {
+    private publish(state: SelectionServiceReadinessState) {
+        const previous = this.readinessState.status;
         this.readinessState = copyState(state);
+        if (previous !== state.status) {
+            this.logTransition({
+                previous,
+                current: state.status,
+                diagnosticCode: state.diagnostic.code,
+                companionInstanceId: state.health?.companionInstanceId ?? null
+            });
+        }
         const published = this.state;
         this.listeners.forEach((listener) => listener(published));
+    }
+
+    private isCurrent(generation: number) {
+        return generation === this.generation;
+    }
+
+    private scheduleNextCheck() {
+        const delay =
+            this.readinessState.status === 'available'
+                ? this.heartbeatIntervalMs
+                : Math.min(
+                      this.retryInitialMs *
+                          2 ** Math.max(0, this.failureCount - 1),
+                      this.retryMaximumMs
+                  );
+        this.scheduledCheck = this.clock.setTimeout(() => {
+            this.scheduledCheck = null;
+            if (!this.running) {
+                return;
+            }
+            if (!this.isForeground()) {
+                this.scheduleNextCheck();
+                return;
+            }
+            this.runCheck(
+                this.readinessState.status === 'available'
+                    ? 'heartbeat'
+                    : 'full'
+            ).catch((error) => console.error(error));
+        }, delay);
+    }
+
+    private clearScheduledCheck() {
+        if (this.scheduledCheck === null) {
+            return;
+        }
+        this.clock.clearTimeout(this.scheduledCheck);
+        this.scheduledCheck = null;
     }
 }
 
@@ -1105,10 +1423,12 @@ export {
 
 export type {
     SelectionServiceCapabilities,
-    SelectionServiceCapacity,
     SelectionServiceConfiguration,
     SelectionServiceHealth,
+    SelectionServiceImageInstancePromptCapabilities,
+    SelectionServiceImageInstanceProviderCapability,
     SelectionServiceModelManifest,
+    SelectionServiceReadinessClock,
     SelectionServiceReadinessDiagnostic,
     SelectionServiceReadinessDiagnosticCode,
     SelectionServiceReadinessInterface,
@@ -1118,6 +1438,7 @@ export type {
     SelectionServiceReadinessRequest,
     SelectionServiceReadinessState,
     SelectionServiceReadinessStatus,
+    SelectionServiceReadinessTransition,
     SelectionServiceRendererCapability,
     SelectionServiceRendererStatus,
     SelectionServiceTransportErrorCode,

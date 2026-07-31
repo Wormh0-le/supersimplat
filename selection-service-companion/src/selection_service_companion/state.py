@@ -102,6 +102,9 @@ from .generated_view_planning import (
 
 
 DEFAULT_STATE_DIRECTORY = Path.home() / ".local" / "state" / "supersplat-selection-service"
+AI_SELECT_RUNTIME_PROFILE_ID = "ai-select-static-image-instance/v1"
+AI_SELECT_READINESS_PROTOCOL_VERSION = "2"
+SAM3_IMAGE_INSTANCE_ADAPTER_ID = "sam3-image-instance/v1"
 
 
 def _proposal_identity_json(value: object) -> str:
@@ -790,6 +793,8 @@ def _prompt_capabilities_for_adapter(adapter_id: object) -> dict[str, object]:
 @dataclass
 class CompanionState:
     directory: Path
+    requested_active_model_manifest_digest: str | None = None
+    _readiness_lock: Lock = field(default_factory=Lock, init=False, repr=False)
     _session_lock: Lock = field(default_factory=Lock, init=False, repr=False)
     _scene_lock: Lock = field(default_factory=Lock, init=False, repr=False)
     _frame_lock: Lock = field(default_factory=Lock, init=False, repr=False)
@@ -890,8 +895,20 @@ class CompanionState:
         default_factory=GeneratedViewPolicy,
         repr=False,
     )
+    _companion_instance_id: str = field(init=False, repr=False)
+    _process_release_identity: dict[str, str] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _active_model_manifest: dict[str, Any] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
+        self._companion_instance_id = secrets.token_urlsafe(24)
         self._binary_scene_snapshot_uploads = BinarySceneSnapshotUploadStore(
             self.directory / "runtime-scene-snapshots"
         )
@@ -1051,6 +1068,218 @@ class CompanionState:
                 and self._model_runtime_configuration_is_current(model)
             )
         ]
+
+    def configure_active_model_manifest(self, digest: str | None) -> None:
+        if digest is not None and not digest.strip():
+            raise ValueError("active Model Manifest digest must not be empty")
+        with self._readiness_lock:
+            if self._active_model_manifest is not None:
+                raise ValueError(
+                    "the process-lifetime Active Model Manifest is already resolved"
+                )
+            self.requested_active_model_manifest_digest = digest
+
+    def _process_release(self) -> dict[str, str]:
+        with self._readiness_lock:
+            cached = self._process_release_identity
+        if cached is not None:
+            return dict(cached)
+        release = self.require_release()
+        with self._readiness_lock:
+            if self._process_release_identity is None:
+                self._process_release_identity = dict(release)
+            return dict(self._process_release_identity)
+
+    def health(self) -> dict[str, str]:
+        release = self._process_release()
+        return {
+            "status": "ok",
+            "serviceBuild": (
+                f"selection-service-companion/{PACKAGE_VERSION}"
+                f"+{release['release']}"
+            ),
+            "companionInstanceId": self._companion_instance_id,
+        }
+
+    def resolve_active_model_manifest(self) -> dict[str, Any]:
+        with self._readiness_lock:
+            active = self._active_model_manifest
+            requested_digest = self.requested_active_model_manifest_digest
+        if active is not None:
+            if (
+                self._model_artifact_is_current(active)
+                and self._model_runtime_configuration_is_current(active)
+            ):
+                return dict(active)
+            raise ValueError(
+                "the process-lifetime Active Model Manifest is no longer available"
+            )
+
+        available = self.available_models()
+        if requested_digest is None:
+            if len(available) == 0:
+                raise ValueError(
+                    "no compatible installed Model Manifest is available"
+                )
+            if len(available) != 1:
+                raise ValueError(
+                    "multiple compatible Model Manifests are installed; "
+                    "the operator must choose one at Companion startup"
+                )
+            selected = available[0]
+        else:
+            selected = next(
+                (
+                    model
+                    for model in available
+                    if model.get("digest") == requested_digest
+                ),
+                None,
+            )
+            if selected is None:
+                raise ValueError(
+                    "the operator-selected Active Model Manifest is unavailable"
+                )
+
+        with self._readiness_lock:
+            if self._active_model_manifest is None:
+                self._active_model_manifest = dict(selected)
+            return dict(self._active_model_manifest)
+
+    def runtime_profile_capabilities(
+        self,
+        allowed_editor_origins: list[str],
+    ) -> dict[str, Any]:
+        release = self._process_release()
+        model = self.resolve_active_model_manifest()
+        provider = self._image_instance_provider_capability(model)
+        return {
+            "protocolVersion": AI_SELECT_READINESS_PROTOCOL_VERSION,
+            "serviceBuild": (
+                f"selection-service-companion/{PACKAGE_VERSION}"
+                f"+{release['release']}"
+            ),
+            "companionInstanceId": self._companion_instance_id,
+            "runtimeProfileId": AI_SELECT_RUNTIME_PROFILE_ID,
+            "renderer": self._renderer_capability(release),
+            "imageInstanceProvider": provider,
+            "supportedOperations": [
+                "aiSelectAnchorRender",
+                "aiSelectAnchorReferenceContributor",
+                "aiSelectAnchorSupportProbe",
+                "aiSelectMaskProposals",
+                "autoMaskProposalSetSchemaV2",
+                "aiSelectGeneratedViewPlanning",
+                "binarySceneSnapshotRegistrationV1",
+                "cameraAwareSpatialWorkingSetV1",
+            ],
+            "activeModelManifest": {
+                "digest": model["digest"],
+                "adapterId": model["adapterId"],
+                "modelName": model["modelName"],
+                "checkpointDigest": model["checkpointDigest"],
+                "sourceCommit": model["sourceCommit"],
+                "runtimeConfigDigest": model["runtimeConfigDigest"],
+                "weightsBundled": False,
+                "initialized": provider["status"] == "ready",
+            },
+            "allowedEditorOrigins": allowed_editor_origins,
+        }
+
+    def _image_instance_provider_capability(
+        self,
+        model: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        adapter_id = str(model.get("adapterId", ""))
+        adapter = self.mask_adapters.get(adapter_id)
+        capability_factory = getattr(
+            adapter,
+            "runtime_profile_capability",
+            None,
+        )
+        if (
+            adapter_id == SAM3_IMAGE_INSTANCE_ADAPTER_ID
+            and callable(capability_factory)
+        ):
+            capability = capability_factory()
+            if not isinstance(capability, Mapping):
+                raise ValueError(
+                    "the SAM 3 Image adapter returned an invalid Runtime Profile capability"
+                )
+            authoritative_rgb = capability.get("authoritativeRgb")
+            prompt_capabilities = capability.get("promptCapabilities")
+            prompt_keys = (
+                "positivePoints",
+                "negativePoints",
+                "positiveInstanceBox",
+                "previousLogitsRefinement",
+                "singlePointMultimask",
+                "negativeBox",
+                "promptBrush",
+                "maskConstraints",
+                "text",
+            )
+            if (
+                capability.get("status") not in ("ready", "unavailable")
+                or not isinstance(authoritative_rgb, Mapping)
+                or not all(
+                    isinstance(authoritative_rgb.get(key), bool)
+                    for key in ("artifact", "companionReference")
+                )
+                or not isinstance(prompt_capabilities, Mapping)
+                or not all(
+                    isinstance(prompt_capabilities.get(key), bool)
+                    for key in prompt_keys
+                )
+            ):
+                raise ValueError(
+                    "the SAM 3 Image adapter returned an incomplete Runtime Profile capability"
+                )
+            result = {
+                "status": capability["status"],
+                "adapterId": adapter_id,
+                "authoritativeRgb": {
+                    "artifact": authoritative_rgb["artifact"],
+                    "companionReference": authoritative_rgb[
+                        "companionReference"
+                    ],
+                },
+                "promptCapabilities": {
+                    key: prompt_capabilities[key]
+                    for key in prompt_keys
+                },
+            }
+            message = capability.get("message")
+            if isinstance(message, str):
+                result["message"] = message
+            return result
+
+        # Ticket 04C supplies the current SAM 3 Image adapter and its
+        # initialization/refinement cache. Until then, the historical
+        # Multiplex-backed static shim remains truthfully incompatible.
+        return {
+            "status": "unavailable",
+            "adapterId": adapter_id,
+            "authoritativeRgb": {
+                "artifact": True,
+                "companionReference": False,
+            },
+            "promptCapabilities": {
+                "positivePoints": True,
+                "negativePoints": True,
+                "positiveInstanceBox": True,
+                "previousLogitsRefinement": False,
+                "singlePointMultimask": False,
+                "negativeBox": False,
+                "promptBrush": False,
+                "maskConstraints": False,
+                "text": False,
+            },
+            "message": (
+                "The installed static adapter is not the current "
+                f"{SAM3_IMAGE_INSTANCE_ADAPTER_ID} provider."
+            ),
+        }
 
     def open_object_selection_session(
         self,

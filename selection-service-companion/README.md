@@ -173,13 +173,24 @@ Confirm as-is creates a User Confirmed Stable Mask and Included participation.
 
 ## Start the control plane
 
-The default profile listens only on loopback. The editor must be configured
-with the same endpoint and exact origin shown here.
+The default profile listens only on loopback. The endpoint is deployment-owned;
+ordinary editor UI does not expose endpoint or model controls. When exactly one
+compatible Model Manifest is installed, the process resolves it automatically.
 
 ```sh
 uv run --locked --extra renderer --extra sam3 selection-service start \
   --endpoint http://127.0.0.1:8787 \
   --allow-origin https://editor.example
+```
+
+When multiple compatible manifests are installed, the operator must resolve
+the one process-lifetime Active Model Manifest explicitly:
+
+```sh
+uv run --locked --extra renderer --extra sam3 selection-service start \
+  --endpoint http://127.0.0.1:8787 \
+  --allow-origin https://editor.example \
+  --active-model-manifest sha256:operator-selected-manifest
 ```
 
 Trusted-LAN use must be explicit and HTTPS-only:
@@ -198,14 +209,26 @@ browser never starts, stops, upgrades, installs, or rolls back this process.
 Trusted-LAN hosts must resolve only to private-network addresses; public,
 unspecified, and loopback listeners are rejected.
 
-This release exposes `/health`, `/capabilities`,
-`/scene-snapshot-uploads/v1`, and the AI Select Anchor route
-`/ai-select/anchor-renders` and the prompt-conditioned proposal route
-`/ai-select/mask-proposals`; `/capabilities` must advertise
-`aiSelectMaskProposals`, an exact digest-bound `promptCapabilities` record for
-each usable Model Manifest, and both
+This release exposes a lightweight `/health` heartbeat with one opaque
+process-lifetime `companionInstanceId`. `/capabilities` performs the heavier
+readiness protocol v2 Runtime Profile validation and returns one singular
+`activeModelManifest`;
+zero manifests fail unavailable and multiple manifests require the startup
+choice above. The browser runs `/capabilities` on first connection, recovery,
+or Instance replacement rather than on every heartbeat.
+
+The historical SAM 3.1 Multiplex-backed static adapter remains intentionally
+Unavailable for the current `ai-select-static-image-instance/v1` profile until
+Ticket 04C supplies the official SAM 3 Image instance adapter, authoritative
+RGB/reference resolver, and opaque previous-logits refinement state. It is not
+silently advertised as current merely because its checkpoint is installed.
+
+The remaining control plane exposes `/scene-snapshot-uploads/v1`, the AI Select
+Anchor route `/ai-select/anchor-renders`, and the prompt-conditioned proposal
+route `/ai-select/mask-proposals`. The Runtime Profile must advertise
+`aiSelectMaskProposals` and both
 `aiSelectAnchorRender` and `binarySceneSnapshotRegistrationV1` before the
-browser enables AI Select. The current SAM 3.1 adapter explicitly advertises
+browser enables AI Select. The legacy SAM 3.1 adapter explicitly advertises
 positive/negative Point, positive Box, and multi-candidate output. Point-only
 and Point+Box requests use the same interactive-image predictor path.
 Prompt Brush, negative Box, negative Mask Constraint, and Text stay disabled

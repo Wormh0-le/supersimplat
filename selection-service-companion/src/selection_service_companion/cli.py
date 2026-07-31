@@ -39,6 +39,13 @@ def _parser() -> argparse.ArgumentParser:
     start.add_argument("--endpoint", default="http://127.0.0.1:8787")
     start.add_argument("--profile", choices=("loopback", "trusted-lan"), default="loopback")
     start.add_argument("--allow-origin", action="append", default=[], required=True)
+    start.add_argument(
+        "--active-model-manifest",
+        help=(
+            "operator-selected Model Manifest digest; required when more than "
+            "one compatible manifest is installed"
+        ),
+    )
     start.add_argument("--cert", type=Path)
     start.add_argument("--key", type=Path)
     return parser
@@ -60,6 +67,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if arguments.command == "start":
             state.require_release()
+            state.configure_active_model_manifest(
+                arguments.active_model_manifest
+            )
             server = create_server(
                 state=state,
                 endpoint=arguments.endpoint,

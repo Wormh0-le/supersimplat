@@ -205,21 +205,17 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/health":
             try:
-                release = self._state.require_release()
+                health = self._state.health()
             except ValueError as error:
                 self._send_unavailable(str(error))
                 return
-            self._send_json(
-                HTTPStatus.OK,
-                {
-                    "status": "ok",
-                    "serviceBuild": f"selection-service-companion/{release['release']}",
-                },
-            )
+            self._send_json(HTTPStatus.OK, health)
             return
         if self.path == "/capabilities":
             try:
-                capabilities = self._state.capabilities(sorted(self._allowed_origins))
+                capabilities = self._state.runtime_profile_capabilities(
+                    sorted(self._allowed_origins)
+                )
             except ValueError as error:
                 self._send_unavailable(str(error))
                 return

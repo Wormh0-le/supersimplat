@@ -2,7 +2,6 @@ import { Color } from 'playcanvas';
 
 import { Events } from './events';
 import { SceneConfig } from './scene-config';
-import { defaultSelectionServiceEndpoint } from './selection-service-readiness';
 import { i18n } from './ui/localization';
 
 const storageKey = 'supersplat:preferences';
@@ -31,9 +30,17 @@ type Descriptor = {
 
 // mirror the kebab-case matching used by scene-config's Params so url
 // detection agrees with how getSceneConfig consumed the query parameters
-const kebabize = (s: string) => s.replace(/[A-Z]+(?![a-z])|[A-Z]/g, ($, ofs) => (ofs ? '-' : '') + $.toLowerCase());
+const kebabize = (s: string) =>
+    s.replace(
+        /[A-Z]+(?![a-z])|[A-Z]/g,
+        ($, ofs) => (ofs ? '-' : '') + $.toLowerCase()
+    );
 
-const registerPreferences = (events: Events, config: SceneConfig, urlArgs: any) => {
+const registerPreferences = (
+    events: Events,
+    config: SceneConfig,
+    urlArgs: any
+) => {
     // returns true if the url query args specify the given config path
     const urlHas = (path?: string) => {
         if (!path) {
@@ -42,7 +49,11 @@ const registerPreferences = (events: Events, config: SceneConfig, urlArgs: any) 
         const lookup = (segments: string[]) => {
             let obj = urlArgs;
             for (const segment of segments) {
-                if (typeof obj !== 'object' || obj === null || !obj.hasOwnProperty(segment)) {
+                if (
+                    typeof obj !== 'object' ||
+                    obj === null ||
+                    !obj.hasOwnProperty(segment)
+                ) {
                     return undefined;
                 }
                 obj = obj[segment];
@@ -50,16 +61,29 @@ const registerPreferences = (events: Events, config: SceneConfig, urlArgs: any) 
             return obj;
         };
         const parts = path.split('.');
-        return lookup(parts.map(kebabize)) !== undefined || lookup(parts) !== undefined;
+        return (
+            lookup(parts.map(kebabize)) !== undefined ||
+            lookup(parts) !== undefined
+        );
     };
 
     const isBool = (v: PrefValue) => typeof v === 'boolean';
-    const isNumber = (min: number, max: number) => (v: PrefValue) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
-    const isEnum = (options: string[]) => (v: PrefValue) => typeof v === 'string' && options.includes(v);
-    const isNonEmptyString = (v: PrefValue) => typeof v === 'string' && v.trim().length > 0;
-    const isColor = (v: PrefValue) => Array.isArray(v) && v.length === 4 && v.every(c => typeof c === 'number' && c >= 0 && c <= 1);
+    const isNumber = (min: number, max: number) => (v: PrefValue) =>
+        typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
+    const isEnum = (options: string[]) => (v: PrefValue) =>
+        typeof v === 'string' && options.includes(v);
+    const isNonEmptyString = (v: PrefValue) =>
+        typeof v === 'string' && v.trim().length > 0;
+    const isColor = (v: PrefValue) =>
+        Array.isArray(v) &&
+        v.length === 4 &&
+        v.every((c) => typeof c === 'number' && c >= 0 && c <= 1);
 
-    const color = (key: string, setCommand: string, getDefault: () => { r: number, g: number, b: number, a: number }): Descriptor => ({
+    const color = (
+        key: string,
+        setCommand: string,
+        getDefault: () => { r: number; g: number; b: number; a: number }
+    ): Descriptor => ({
         key,
         setCommand,
         urlPath: key,
@@ -88,7 +112,14 @@ const registerPreferences = (events: Events, config: SceneConfig, urlArgs: any) 
             setCommand: 'camera.setTonemapping',
             urlPath: 'camera.toneMapping',
             getDefault: () => config.camera.toneMapping,
-            validate: isEnum(['linear', 'neutral', 'aces', 'aces2', 'filmic', 'hejl'])
+            validate: isEnum([
+                'linear',
+                'neutral',
+                'aces',
+                'aces2',
+                'filmic',
+                'hejl'
+            ])
         },
         {
             key: 'camera.fovDolly',
@@ -108,7 +139,8 @@ const registerPreferences = (events: Events, config: SceneConfig, urlArgs: any) 
             setCommand: 'view.setBands',
             urlPath: 'show.shBands',
             getDefault: () => config.show.shBands,
-            validate: v => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 3
+            validate: (v) =>
+                typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 3
         },
         {
             key: 'camera.flySpeed',
@@ -187,20 +219,6 @@ const registerPreferences = (events: Events, config: SceneConfig, urlArgs: any) 
             setCommand: 'camera.setControlMode',
             getDefault: () => 'orbit',
             validate: isEnum(['orbit', 'fly'])
-        },
-        {
-            key: 'selectionService.endpoint',
-            setCommand: 'selectionService.setEndpoint',
-            urlPath: 'selectionService.endpoint',
-            getDefault: () => defaultSelectionServiceEndpoint,
-            validate: isNonEmptyString
-        },
-        {
-            key: 'selectionService.profile',
-            setCommand: 'selectionService.setProfile',
-            urlPath: 'selectionService.profile',
-            getDefault: () => 'loopback',
-            validate: isEnum(['loopback', 'trustedLan'])
         }
     ];
 
@@ -213,7 +231,11 @@ const registerPreferences = (events: Events, config: SceneConfig, urlArgs: any) 
             const raw = localStorage.getItem(storageKey);
             if (raw) {
                 const blob = JSON.parse(raw);
-                if (blob?.version === storageVersion && typeof blob.values === 'object' && blob.values) {
+                if (
+                    blob?.version === storageVersion &&
+                    typeof blob.values === 'object' &&
+                    blob.values
+                ) {
                     for (const descriptor of descriptors) {
                         const value = blob.values[descriptor.key];
                         if (value !== undefined && descriptor.validate(value)) {
@@ -242,11 +264,16 @@ const registerPreferences = (events: Events, config: SceneConfig, urlArgs: any) 
         queueMicrotask(() => {
             writeScheduled = false;
             try {
-                localStorage.setItem(storageKey, JSON.stringify({ version: storageVersion, values }));
+                localStorage.setItem(
+                    storageKey,
+                    JSON.stringify({ version: storageVersion, values })
+                );
             } catch (e) {
                 if (!storageWarned) {
                     storageWarned = true;
-                    console.warn('preferences will not persist: localStorage is unavailable');
+                    console.warn(
+                        'preferences will not persist: localStorage is unavailable'
+                    );
                 }
             }
         });
@@ -270,13 +297,15 @@ const registerPreferences = (events: Events, config: SceneConfig, urlArgs: any) 
         events.fire('preferences.suspend');
         try {
             for (const descriptor of descriptors) {
-                const stored = urlHas(descriptor.urlPath) ? undefined : values[descriptor.key];
+                const stored = urlHas(descriptor.urlPath)
+                    ? undefined
+                    : values[descriptor.key];
                 const payload =
-                    stored !== undefined ?
-                        descriptor.toEvent ?
-                            descriptor.toEvent(stored) :
-                            stored :
-                        descriptor.getDefault();
+                    stored !== undefined
+                        ? descriptor.toEvent
+                            ? descriptor.toEvent(stored)
+                            : stored
+                        : descriptor.getDefault();
                 events.fire(descriptor.setCommand, payload);
             }
         } finally {
@@ -293,11 +322,16 @@ const registerPreferences = (events: Events, config: SceneConfig, urlArgs: any) 
             if (suspendDepth > 0) {
                 return;
             }
-            const stored = descriptor.fromEvent ? descriptor.fromEvent(value) : value;
+            const stored = descriptor.fromEvent
+                ? descriptor.fromEvent(value)
+                : value;
             if (!descriptor.validate(stored)) {
                 return;
             }
-            if (JSON.stringify(values[descriptor.key]) === JSON.stringify(stored)) {
+            if (
+                JSON.stringify(values[descriptor.key]) ===
+                JSON.stringify(stored)
+            ) {
                 return;
             }
             values[descriptor.key] = stored;

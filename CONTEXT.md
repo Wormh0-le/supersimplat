@@ -324,6 +324,7 @@ The explicitly configured loopback or trusted-LAN address. It is not automatical
 
 **AI Select Availability**
 The user-facing Connecting, Available, or Unavailable projection of automatic Selection Service connection and compatibility validation. It excludes task success and current execution capacity and exposes no endpoint, manifest, or runtime details.
+The first check begins after UI mount. Available uses lightweight foreground heartbeats; first connection, recovery, and Companion Instance replacement run full Runtime Profile validation. Busy and task-local failures do not change Availability.
 _Avoid_: Ping status, model picker, task progress
 
 **AI Select Runtime Profile**
@@ -335,10 +336,12 @@ The technical condition in which a reachable Companion has satisfied the current
 
 **Active Model Manifest**
 The single operator-resolved Model Manifest initialized for one Companion process and bound automatically by browser requests. One compatible installed manifest may activate automatically; multiple compatible manifests require an explicit operator choice.
+Only this singular manifest crosses the current readiness protocol; the browser does not receive an installed-model catalog or select a model.
 _Avoid_: browser-selected model, first installed model
 
 **Companion Instance ID**
 An opaque identity minted for one Companion process lifetime and returned by lightweight health checks. A changed Instance ID triggers full compatibility validation but is not an artifact, model, or runtime identity.
+Replacement invalidates Companion-local RGB and previous-logits references; independently persisted User Confirmed Stable Masks retain their own artifact identity.
 _Avoid_: service build, Model Manifest digest, persistent server ID
 
 **Companion Process Ownership**  

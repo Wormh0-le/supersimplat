@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 
 const {
@@ -6,69 +8,72 @@ const {
     SelectionServiceReadiness,
     SelectionServiceTransportError
 } = require('../.test-dist/src/selection-service-readiness.js');
-const {
-    createPromptAdapterCapabilities
-} = require('../.test-dist/src/ai-select/prompt-state.js');
 
 const editorOrigin = 'https://editor.example';
-const selectedModelDigest = 'sha256:model-v1';
+const activeModelDigest = 'sha256:model-v1';
 
 const configuration = (overrides = {}) => ({
     endpoint: 'http://127.0.0.1:8787',
     profile: 'loopback',
     editorOrigin,
-    modelManifestDigest: selectedModelDigest,
+    modelManifestDigest: null,
+    ...overrides
+});
+
+const health = (companionInstanceId = 'companion-instance-1') => ({
+    status: 'ok',
+    serviceBuild: 'selection-service-companion/0.1.0+test',
+    companionInstanceId
+});
+
+const promptCapabilities = (overrides = {}) => ({
+    positivePoints: true,
+    negativePoints: true,
+    positiveInstanceBox: true,
+    previousLogitsRefinement: true,
+    singlePointMultimask: true,
+    negativeBox: false,
+    promptBrush: false,
+    maskConstraints: false,
+    text: false,
     ...overrides
 });
 
 const capabilities = (overrides = {}) => ({
-    protocolVersion: '1',
-    serviceBuild: 'selection-service/0.1.0',
+    protocolVersion: '2',
+    serviceBuild: 'selection-service-companion/0.1.0+test',
+    companionInstanceId: 'companion-instance-1',
+    runtimeProfileId: 'ai-select-static-image-instance/v1',
     renderer: {
         id: 'gsplat',
         status: 'ready',
-        cudaVersion: '12.8'
+        cudaVersion: '12.8',
+        rgbRendererVersion: 'gsplat-rgb/v1'
     },
-    supportedPromptKinds: ['point'],
+    imageInstanceProvider: {
+        status: 'ready',
+        adapterId: 'sam3-image-instance/v1',
+        authoritativeRgb: {
+            artifact: true,
+            companionReference: true
+        },
+        promptCapabilities: promptCapabilities()
+    },
     supportedOperations: [
         'aiSelectAnchorRender',
         'aiSelectMaskProposals',
         'autoMaskProposalSetSchemaV2',
         'binarySceneSnapshotRegistrationV1'
     ],
-    modelManifests: [
-        {
-            digest: selectedModelDigest,
-            adapterId: 'sam3.1',
-            modelName: 'SAM 3.1',
-            weightsBundled: false,
-            promptCapabilities: createPromptAdapterCapabilities({
-                points: true,
-                negativePoints: true,
-                boxes: false,
-                negativeBoxes: false,
-                maskInput: false,
-                negativeMaskConstraints: false,
-                text: false,
-                negativeText: false,
-                multiCandidateOutput: false,
-                compilerPolicyVersion: 'point-mask-compiler/v1',
-                unsupportedPromptReasons: {
-                    'positive-box': 'The adapter supports Points only.',
-                    'negative-box': 'The adapter supports Points only.',
-                    'positive-mask-constraint':
-                        'The adapter supports Points only.',
-                    'negative-mask-constraint':
-                        'The adapter supports Points only.',
-                    'positive-text': 'The adapter supports Points only.',
-                    'negative-text': 'The adapter supports Points only.'
-                }
-            })
-        }
-    ],
-    capacity: {
-        maximumActiveSessions: 1,
-        activeSessions: 0
+    activeModelManifest: {
+        digest: activeModelDigest,
+        adapterId: 'sam3-image-instance/v1',
+        modelName: 'SAM 3 Image Instance',
+        checkpointDigest: 'sha256:checkpoint',
+        sourceCommit: 'sam3-source-commit',
+        runtimeConfigDigest: 'sha256:runtime',
+        weightsBundled: false,
+        initialized: true
     },
     allowedEditorOrigins: [editorOrigin],
     ...overrides
@@ -76,9 +81,10 @@ const capabilities = (overrides = {}) => ({
 
 class DeterministicReadinessProbe {
     constructor(options = {}) {
+        this.healthResult = options.healthResult ?? health();
+        this.capabilitiesResult = options.capabilitiesResult ?? capabilities();
         this.healthError = options.healthError;
         this.capabilitiesError = options.capabilitiesError;
-        this.capabilitiesResult = options.capabilitiesResult ?? capabilities();
         this.healthRequests = [];
         this.capabilitiesRequests = [];
     }
@@ -88,7 +94,9 @@ class DeterministicReadinessProbe {
         if (this.healthError) {
             throw this.healthError;
         }
-        return { serviceBuild: 'selection-service/0.1.0' };
+        return typeof this.healthResult === 'function'
+            ? this.healthResult()
+            : this.healthResult;
     }
 
     async getCapabilities(request) {
@@ -96,17 +104,52 @@ class DeterministicReadinessProbe {
         if (this.capabilitiesError) {
             throw this.capabilitiesError;
         }
-        return this.capabilitiesResult;
+        return typeof this.capabilitiesResult === 'function'
+            ? this.capabilitiesResult()
+            : this.capabilitiesResult;
+    }
+}
+
+class FakeClock {
+    constructor() {
+        this.nextId = 1;
+        this.tasks = new Map();
+        this.delays = [];
+    }
+
+    setTimeout(callback, delayMs) {
+        const id = this.nextId++;
+        this.tasks.set(id, callback);
+        this.delays.push(delayMs);
+        return id;
+    }
+
+    clearTimeout(id) {
+        this.tasks.delete(id);
+    }
+
+    async runNext() {
+        const entry = this.tasks.entries().next().value;
+        assert.ok(entry, 'expected a scheduled readiness check');
+        const [id, callback] = entry;
+        this.tasks.delete(id);
+        callback();
+        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => setImmediate(resolve));
     }
 }
 
 class RecordingSelectionServiceAdapter {
     constructor() {
         this.openRequests = [];
+        this.error = null;
     }
 
     async openSession(start) {
         this.openRequests.push(start);
+        if (this.error) {
+            throw this.error;
+        }
         return 'selection-session';
     }
 
@@ -123,304 +166,396 @@ class RecordingSelectionServiceAdapter {
     }
 }
 
-test('keeps a reachable Companion unavailable until the operator selects an installed Model Manifest', async () => {
+test('starts automatic readiness as a single flight and binds the Companion Active Model Manifest', async () => {
+    let resolveHealth;
+    const healthPromise = new Promise((resolve) => {
+        resolveHealth = resolve;
+    });
+    const probe = new DeterministicReadinessProbe({
+        healthResult: () => healthPromise
+    });
+    const readiness = new SelectionServiceReadiness({
+        probe,
+        configuration: configuration(),
+        logTransition: () => {}
+    });
+
+    readiness.start();
+    readiness.start();
+    const refresh = readiness.refresh();
+    assert.equal(readiness.state.status, 'connecting');
+    assert.equal(probe.healthRequests.length, 1);
+
+    resolveHealth(health());
+    await refresh;
+
+    assert.equal(readiness.state.status, 'available');
+    assert.equal(probe.capabilitiesRequests.length, 1);
+    assert.equal(
+        readiness.state.configuration.modelManifestDigest,
+        activeModelDigest
+    );
+    readiness.stop();
+});
+
+test('uses lightweight heartbeats while Available and full validation after connection recovery', async () => {
+    const clock = new FakeClock();
     const probe = new DeterministicReadinessProbe();
     const readiness = new SelectionServiceReadiness({
         probe,
-        configuration: configuration({ modelManifestDigest: null })
+        configuration: configuration(),
+        clock,
+        heartbeatIntervalMs: 50,
+        retryInitialMs: 10,
+        retryMaximumMs: 40,
+        logTransition: () => {}
+    });
+
+    readiness.start();
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(readiness.state.status, 'available');
+    assert.equal(probe.capabilitiesRequests.length, 1);
+
+    await clock.runNext();
+    assert.equal(probe.healthRequests.length, 2);
+    assert.equal(
+        probe.capabilitiesRequests.length,
+        1,
+        'an Available heartbeat must not repeat model/runtime validation'
+    );
+
+    probe.healthError = new SelectionServiceTransportError('browserTransport');
+    await clock.runNext();
+    assert.equal(readiness.state.status, 'unavailable');
+    assert.equal(clock.delays.at(-1), 10);
+
+    probe.healthError = null;
+    await clock.runNext();
+    assert.equal(readiness.state.status, 'available');
+    assert.equal(
+        probe.capabilitiesRequests.length,
+        2,
+        'connection recovery must run full compatibility validation'
+    );
+    readiness.stop();
+});
+
+test('caps automatic retry backoff and pauses probes outside the foreground', async () => {
+    const clock = new FakeClock();
+    let foreground = true;
+    const probe = new DeterministicReadinessProbe({
+        healthError: new SelectionServiceTransportError('browserTransport')
+    });
+    const readiness = new SelectionServiceReadiness({
+        probe,
+        configuration: configuration(),
+        clock,
+        retryInitialMs: 10,
+        retryMaximumMs: 20,
+        isForeground: () => foreground,
+        logTransition: () => {}
+    });
+
+    readiness.start();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(clock.delays.at(-1), 10);
+    await clock.runNext();
+    assert.equal(clock.delays.at(-1), 20);
+    await clock.runNext();
+    assert.equal(clock.delays.at(-1), 20);
+
+    foreground = false;
+    const requestsBeforeHiddenTick = probe.healthRequests.length;
+    await clock.runNext();
+    assert.equal(probe.healthRequests.length, requestsBeforeHiddenTick);
+    assert.equal(clock.delays.at(-1), 20);
+    readiness.stop();
+});
+
+test('runs full validation and invalidates Companion-local references after Instance replacement', async () => {
+    const clock = new FakeClock();
+    let instanceId = 'companion-instance-1';
+    const invalidations = [];
+    const probe = new DeterministicReadinessProbe({
+        healthResult: () => health(instanceId),
+        capabilitiesResult: () =>
+            capabilities({ companionInstanceId: instanceId })
+    });
+    const readiness = new SelectionServiceReadiness({
+        probe,
+        configuration: configuration(),
+        clock,
+        heartbeatIntervalMs: 10,
+        onCompanionInstanceChanged: (previous, current) => {
+            invalidations.push([previous, current]);
+        },
+        logTransition: () => {}
+    });
+
+    readiness.start();
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    instanceId = 'companion-instance-2';
+    await clock.runNext();
+
+    assert.deepEqual(invalidations, [
+        ['companion-instance-1', 'companion-instance-2']
+    ]);
+    assert.equal(probe.capabilitiesRequests.length, 2);
+    assert.equal(readiness.state.status, 'available');
+    assert.equal(
+        readiness.state.health.companionInstanceId,
+        'companion-instance-2'
+    );
+    readiness.stop();
+});
+
+test('accepts only the current SAM 3 Image instance Runtime Profile', async () => {
+    const readiness = new SelectionServiceReadiness({
+        probe: new DeterministicReadinessProbe(),
+        configuration: configuration(),
+        logTransition: () => {}
     });
 
     await readiness.refresh();
 
-    assert.equal(readiness.state.status, 'reachable');
-    assert.equal(readiness.state.diagnostic.code, 'modelNotSelected');
-    assert.match(readiness.state.diagnostic.action, /select/i);
-    assert.equal(probe.healthRequests.length, 1);
-    assert.equal(probe.capabilitiesRequests.length, 1);
+    assert.equal(readiness.state.status, 'available');
+    assert.equal(readiness.state.diagnostic.code, 'available');
 });
 
-test('admits a Selection Service session only after compatible readiness succeeds', async () => {
-    const probe = new DeterministicReadinessProbe();
+test('rejects the historical Multiplex static manifest', async () => {
+    const multiplexManifest = {
+        ...capabilities().activeModelManifest,
+        adapterId: 'sam3.1',
+        modelName: 'SAM 3.1 Multiplex'
+    };
     const readiness = new SelectionServiceReadiness({
-        probe,
-        configuration: configuration()
+        probe: new DeterministicReadinessProbe({
+            capabilitiesResult: capabilities({
+                activeModelManifest: multiplexManifest,
+                imageInstanceProvider: {
+                    ...capabilities().imageInstanceProvider,
+                    status: 'unavailable',
+                    adapterId: 'sam3.1'
+                }
+            })
+        }),
+        configuration: configuration(),
+        logTransition: () => {}
+    });
+
+    await readiness.refresh();
+
+    assert.equal(readiness.state.status, 'unavailable');
+    assert.equal(readiness.state.diagnostic.code, 'modelAdapterMismatch');
+});
+
+test('rejects authoritative RGB, opaque refinement, and removed Prompt capability mismatches', async (t) => {
+    const cases = [
+        [
+            'authoritative RGB',
+            {
+                authoritativeRgb: {
+                    artifact: false,
+                    companionReference: false
+                }
+            },
+            'rgbResolutionUnsupported'
+        ],
+        [
+            'opaque refinement reference',
+            {
+                promptCapabilities: promptCapabilities({
+                    previousLogitsRefinement: false
+                })
+            },
+            'imageInstanceCapabilityMismatch'
+        ],
+        [
+            'removed Prompt family',
+            {
+                promptCapabilities: promptCapabilities({
+                    promptBrush: true
+                })
+            },
+            'imageInstanceCapabilityMismatch'
+        ]
+    ];
+
+    for (const [name, providerOverride, code] of cases) {
+        await t.test(name, async () => {
+            const provider = {
+                ...capabilities().imageInstanceProvider,
+                ...providerOverride
+            };
+            const readiness = new SelectionServiceReadiness({
+                probe: new DeterministicReadinessProbe({
+                    capabilitiesResult: capabilities({
+                        imageInstanceProvider: provider
+                    })
+                }),
+                configuration: configuration(),
+                logTransition: () => {}
+            });
+
+            await readiness.refresh();
+
+            assert.equal(readiness.state.status, 'unavailable');
+            assert.equal(readiness.state.diagnostic.code, code);
+        });
+    }
+});
+
+test('does not use Companion capacity or task-local failures as Availability', async () => {
+    const readiness = new SelectionServiceReadiness({
+        probe: new DeterministicReadinessProbe({
+            capabilitiesResult: capabilities({
+                capacity: {
+                    maximumActiveSessions: 1,
+                    activeSessions: 1
+                }
+            })
+        }),
+        configuration: configuration(),
+        logTransition: () => {}
     });
     const adapter = new RecordingSelectionServiceAdapter();
+    adapter.error = new Error('task-local model OOM');
     const gatedAdapter = new ReadinessGatedSelectionServiceAdapter({
         readiness,
         adapter
     });
 
     await readiness.refresh();
-    const sessionId = await gatedAdapter.openSession({
-        target: {},
-        prompt: {}
-    });
-
-    assert.equal(readiness.state.status, 'ready');
-    assert.equal(sessionId, 'selection-session');
-    assert.equal(adapter.openRequests.length, 1);
-});
-
-test('keeps the production adapter gateway closed until its real transport is attached', async () => {
-    const readiness = new SelectionServiceReadiness({
-        probe: new DeterministicReadinessProbe(),
-        configuration: configuration()
-    });
-    const gateway = new ReadinessGatedSelectionServiceAdapter({ readiness });
-
-    await readiness.refresh();
-
+    assert.equal(readiness.state.status, 'available');
     await assert.rejects(
-        gateway.openSession({ target: {}, prompt: {} }),
-        /transport is not configured/i
+        gatedAdapter.openSession({ target: {}, prompt: {} }),
+        /task-local model OOM/
     );
+    assert.equal(readiness.state.status, 'available');
 });
 
-test('admits the attached transport only through the ready production gateway', async () => {
-    const readiness = new SelectionServiceReadiness({
-        probe: new DeterministicReadinessProbe(),
-        configuration: configuration()
+test('same-Instance recovery is identity-bound and fails closed on replacement or stale input', async () => {
+    let instanceId = 'companion-instance-1';
+    let bindingCurrent = true;
+    const invalidations = [];
+    const probe = new DeterministicReadinessProbe({
+        healthResult: () => health(instanceId),
+        capabilitiesResult: () =>
+            capabilities({ companionInstanceId: instanceId })
     });
-    const adapter = new RecordingSelectionServiceAdapter();
-    const gateway = new ReadinessGatedSelectionServiceAdapter({ readiness });
-    gateway.setAdapter(adapter);
-
-    await readiness.refresh();
-    await gateway.openSession({ target: {}, prompt: {} });
-
-    assert.equal(adapter.openRequests.length, 1);
-});
-
-test('gates the AI Select Anchor renderer through the same readiness decision', async () => {
-    const readiness = new SelectionServiceReadiness({
-        probe: new DeterministicReadinessProbe(),
-        configuration: configuration()
-    });
-    const adapter = new RecordingSelectionServiceAdapter();
-    const anchorRequests = [];
-    adapter.renderAnchor = async (request) => {
-        anchorRequests.push(request);
-        return { status: 'complete' };
-    };
-    const gateway = new ReadinessGatedSelectionServiceAdapter({
-        readiness,
-        adapter
-    });
-
-    await assert.rejects(gateway.renderAnchor({}), /cannot start/i);
-    await readiness.refresh();
-    const result = await gateway.renderAnchor({ requestBinding: 'bound' });
-
-    assert.deepEqual(result, { status: 'complete' });
-    assert.deepEqual(anchorRequests, [{ requestBinding: 'bound' }]);
-});
-
-test('does not admit an Anchor renderer when a compatible protocol does not advertise Anchor rendering', async () => {
-    const readiness = new SelectionServiceReadiness({
-        probe: new DeterministicReadinessProbe({
-            capabilitiesResult: capabilities({ supportedOperations: [] })
-        }),
-        configuration: configuration()
-    });
-    const adapter = new RecordingSelectionServiceAdapter();
-    adapter.renderAnchor = async () => ({ status: 'complete' });
-    const gateway = new ReadinessGatedSelectionServiceAdapter({
-        readiness,
-        adapter
-    });
-
-    await readiness.refresh();
-
-    assert.equal(readiness.state.status, 'reachable');
-    assert.equal(readiness.state.diagnostic.code, 'aiSelectAnchorUnsupported');
-    await assert.rejects(gateway.renderAnchor({}), /cannot start/i);
-});
-
-test('does not admit AI Select when the Companion lacks AutoMaskProposalSet schema v2', async () => {
-    const readiness = new SelectionServiceReadiness({
-        probe: new DeterministicReadinessProbe({
-            capabilitiesResult: capabilities({
-                supportedOperations: [
-                    'aiSelectAnchorRender',
-                    'aiSelectMaskProposals',
-                    'binarySceneSnapshotRegistrationV1'
-                ]
-            })
-        }),
-        configuration: configuration()
-    });
-
-    await readiness.refresh();
-
-    assert.equal(readiness.state.status, 'reachable');
-    assert.equal(readiness.state.diagnostic.code, 'maskProposalUnsupported');
-    assert.match(readiness.state.diagnostic.message, /schema v2/i);
-});
-
-test('does not admit AI Select when the Companion lacks Binary SceneSnapshot Registration v1', async () => {
-    const readiness = new SelectionServiceReadiness({
-        probe: new DeterministicReadinessProbe({
-            capabilitiesResult: capabilities({
-                supportedOperations: [
-                    'aiSelectAnchorRender',
-                    'aiSelectMaskProposals',
-                    'autoMaskProposalSetSchemaV2'
-                ]
-            })
-        }),
-        configuration: configuration()
-    });
-
-    await readiness.refresh();
-
-    assert.equal(readiness.state.status, 'reachable');
-    assert.equal(
-        readiness.state.diagnostic.code,
-        'binarySceneSnapshotRegistrationUnsupported'
-    );
-});
-
-test('reports protocol, renderer, model, origin, and one-session capacity failures without opening a session', async (t) => {
-    const cases = [
-        [
-            'protocol',
-            capabilities({ protocolVersion: '2' }),
-            'protocolMismatch'
-        ],
-        [
-            'renderer',
-            capabilities({ renderer: { id: 'gsplat', status: 'unavailable' } }),
-            'rendererUnavailable'
-        ],
-        ['model', capabilities({ modelManifests: [] }), 'modelUnavailable'],
-        [
-            'origin',
-            capabilities({ allowedEditorOrigins: [] }),
-            'editorOriginDenied'
-        ],
-        [
-            'capacity',
-            capabilities({
-                capacity: { maximumActiveSessions: 1, activeSessions: 1 }
-            }),
-            'capacityBusy'
-        ]
-    ];
-
-    for (const [name, capabilitiesResult, code] of cases) {
-        await t.test(name, async () => {
-            const readiness = new SelectionServiceReadiness({
-                probe: new DeterministicReadinessProbe({ capabilitiesResult }),
-                configuration: configuration()
-            });
-            const adapter = new RecordingSelectionServiceAdapter();
-            const gatedAdapter = new ReadinessGatedSelectionServiceAdapter({
-                readiness,
-                adapter
-            });
-
-            await readiness.refresh();
-
-            assert.equal(readiness.state.status, 'reachable');
-            assert.equal(readiness.state.diagnostic.code, code);
-            await assert.rejects(
-                gatedAdapter.openSession({ target: {}, prompt: {} }),
-                /cannot start/i
-            );
-            assert.equal(adapter.openRequests.length, 0);
-        });
-    }
-});
-
-test('rejects an endpoint outside its selected transport profile before contacting the Companion', async () => {
-    const probe = new DeterministicReadinessProbe();
     const readiness = new SelectionServiceReadiness({
         probe,
-        configuration: configuration({ endpoint: 'http://192.168.1.20:8787' })
+        configuration: configuration(),
+        onCompanionInstanceChanged: (previous, current) => {
+            invalidations.push([previous, current]);
+        },
+        logTransition: () => {}
     });
 
     await readiness.refresh();
-
-    assert.equal(readiness.state.status, 'unavailable');
-    assert.equal(readiness.state.diagnostic.code, 'loopbackEndpointRequired');
-    assert.equal(probe.healthRequests.length, 0);
-
-    readiness.setConfiguration(
-        configuration({
-            endpoint: 'http://selection.lan:8787',
-            profile: 'trustedLan'
-        })
-    );
-    await readiness.refresh();
-
-    assert.equal(readiness.state.status, 'unavailable');
-    assert.equal(readiness.state.diagnostic.code, 'trustedLanHttpsRequired');
-    assert.equal(probe.healthRequests.length, 0);
-});
-
-test('surfaces a Chromium local-network permission denial as a browser transport failure', async () => {
-    const readiness = new SelectionServiceReadiness({
-        probe: new DeterministicReadinessProbe({
-            healthError: new SelectionServiceTransportError(
-                'localNetworkPermissionDenied'
-            )
-        }),
-        configuration: configuration()
-    });
-
-    await readiness.refresh();
-
-    assert.equal(readiness.state.status, 'unavailable');
     assert.equal(
-        readiness.state.diagnostic.code,
-        'localNetworkPermissionDenied'
+        await readiness.recoverSameInstance(
+            'companion-instance-1',
+            () => bindingCurrent
+        ),
+        true
     );
-    assert.match(readiness.state.diagnostic.action, /local network/i);
+
+    bindingCurrent = false;
+    assert.equal(
+        await readiness.recoverSameInstance(
+            'companion-instance-1',
+            () => bindingCurrent
+        ),
+        false
+    );
+
+    bindingCurrent = true;
+    instanceId = 'companion-instance-2';
+    assert.equal(
+        await readiness.recoverSameInstance(
+            'companion-instance-1',
+            () => bindingCurrent
+        ),
+        false
+    );
+    assert.equal(readiness.state.status, 'unavailable');
+    assert.deepEqual(invalidations, [
+        ['companion-instance-1', 'companion-instance-2']
+    ]);
 });
 
-test('keeps a responding Companion reachable when its capability check returns an actionable HTTP error', async () => {
+test('rejects stale full-validation results whose Instance differs from health', async () => {
     const readiness = new SelectionServiceReadiness({
         probe: new DeterministicReadinessProbe({
-            capabilitiesError: new SelectionServiceTransportError(
-                'http',
-                'The Selection Service Companion returned HTTP 503.',
-                {
-                    status: 503,
-                    serviceMessage:
-                        'The installed Companion release lock changed; run selection-service install again.'
-                }
-            )
+            healthResult: health('companion-instance-1'),
+            capabilitiesResult: capabilities({
+                companionInstanceId: 'companion-instance-2'
+            })
         }),
-        configuration: configuration()
+        configuration: configuration(),
+        logTransition: () => {}
     });
 
     await readiness.refresh();
 
-    assert.equal(readiness.state.status, 'reachable');
-    assert.equal(readiness.state.diagnostic.code, 'companionRejectedRequest');
-    assert.match(readiness.state.diagnostic.action, /release lock changed/i);
+    assert.equal(readiness.state.status, 'unavailable');
+    assert.equal(readiness.state.diagnostic.code, 'companionInstanceMismatch');
 });
 
-test('keeps a responding Companion reachable when health returns an actionable HTTP error', async () => {
+test('gates AI work while unavailable without blocking native editor state', async () => {
     const readiness = new SelectionServiceReadiness({
         probe: new DeterministicReadinessProbe({
-            healthError: new SelectionServiceTransportError(
-                'http',
-                'The Selection Service Companion returned HTTP 503.',
-                {
-                    status: 503,
-                    serviceMessage:
-                        'The installed Companion release lock changed; run selection-service install again.'
-                }
-            )
+            healthError: new SelectionServiceTransportError('browserTransport')
         }),
-        configuration: configuration()
+        configuration: configuration(),
+        logTransition: () => {}
+    });
+    const nativeSelection = new Set([7, 9]);
+    const gatedAdapter = new ReadinessGatedSelectionServiceAdapter({
+        readiness,
+        adapter: new RecordingSelectionServiceAdapter()
     });
 
     await readiness.refresh();
 
-    assert.equal(readiness.state.status, 'reachable');
-    assert.equal(readiness.state.diagnostic.code, 'companionRejectedRequest');
-    assert.match(readiness.state.diagnostic.action, /release lock changed/i);
+    assert.equal(readiness.state.status, 'unavailable');
+    await assert.rejects(
+        gatedAdapter.openSession({ target: {}, prompt: {} }),
+        /cannot start/i
+    );
+    assert.deepEqual([...nativeSelection], [7, 9]);
+});
+
+test('ordinary Availability UI is accessible and contains no technical/model controls', () => {
+    const source = fs.readFileSync(
+        path.join(
+            __dirname,
+            '..',
+            'src',
+            'ui',
+            'selection-service-readiness-settings.ts'
+        ),
+        'utf8'
+    );
+
+    assert.match(source, /Connecting/);
+    assert.match(source, /Available/);
+    assert.match(source, /Unavailable/);
+    assert.match(source, /aria-live/);
+    assert.match(source, /role', 'status/);
+    for (const forbidden of [
+        'TextInput',
+        'SelectInput',
+        'Button',
+        'Endpoint',
+        'Model Manifest',
+        'CUDA',
+        'Check readiness',
+        'Ping'
+    ]) {
+        assert.doesNotMatch(source, new RegExp(forbidden, 'i'));
+    }
 });

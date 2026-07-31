@@ -449,6 +449,11 @@ const main = async () => {
     events.on('selectionService.companionInstanceChanged', () => {
         aiSelectMaskController.handleCompanionInstanceChanged();
     });
+    // Prompt Adapter capabilities derive from live readiness; a readiness
+    // transition must republish or Prompt tools keep a stale gating snapshot.
+    events.on('selectionService.readinessChanged', () => {
+        aiSelectMaskController.refreshAvailability();
+    });
     aiSelectConfirmation = new AISelectAnchorConfirmationController({
         anchor: aiSelectController,
         mask: aiSelectMaskController,

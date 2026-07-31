@@ -343,6 +343,13 @@ const copyCapabilities = (
         promptCapabilities: {
             ...capabilities.imageInstanceProvider.promptCapabilities
         },
+        // The adapter capability identity must survive the copy: the Prompt
+        // capability derivation in main.ts trusts the advertised record only
+        // when the recomputed digest matches these fields.
+        compilerPolicyVersion:
+            capabilities.imageInstanceProvider.compilerPolicyVersion,
+        adapterCapabilityDigest:
+            capabilities.imageInstanceProvider.adapterCapabilityDigest,
         message: capabilities.imageInstanceProvider.message
     },
     supportedOperations: [...capabilities.supportedOperations],

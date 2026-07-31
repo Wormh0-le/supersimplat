@@ -358,10 +358,13 @@ const setup = async (options = {}) => {
             'modelManifestDigest' in options
                 ? options.modelManifestDigest
                 : 'manifest-digest-1',
-        ...(options.promptCapabilities === undefined
+        ...(options.promptCapabilities === undefined &&
+        options.getPromptAdapterCapabilities === undefined
             ? {}
             : {
-                  getPromptAdapterCapabilities: () => options.promptCapabilities
+                  getPromptAdapterCapabilities:
+                      options.getPromptAdapterCapabilities ??
+                      (() => options.promptCapabilities)
               }),
         ...(options.isAnchorLocked === undefined
             ? {}
@@ -1048,6 +1051,19 @@ test('a Companion Instance replacement re-ships the artifact and drops the refin
     assert.ok(maskRequests[1].rgb);
     assert.equal(maskRequests[1].rgb.digest, maskRequests[1].rgbDigest);
     assert.equal(maskRequests[1].previousLogitsRef, undefined);
+});
+
+test('a readiness refresh republishes the negotiated Prompt capabilities', async () => {
+    let capabilities = null;
+    const { mask } = await setup({
+        getPromptAdapterCapabilities: () => capabilities
+    });
+    // Before the Runtime Profile is ready the tools gate on null capabilities.
+    assert.equal(mask.state.promptCapabilities, null);
+
+    capabilities = richPromptCapabilities;
+    mask.refreshAvailability();
+    assert.equal(mask.state.promptCapabilities, richPromptCapabilities);
 });
 
 test('a prompt revision refines from the chosen candidate logits reference', async () => {

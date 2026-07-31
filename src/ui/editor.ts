@@ -135,7 +135,11 @@ class EditorUI {
 
         const timelinePanel = new TimelinePanel(events, tooltips);
         const dataPanel = new DataPanel(events, tooltips);
-        const statusBar = new StatusBar(events, tooltips);
+        const statusBar = new StatusBar(
+            events,
+            tooltips,
+            selectionServiceReadiness
+        );
         const aiSelectPanel = new Container({
             id: 'ai-select-panel',
             hidden: true

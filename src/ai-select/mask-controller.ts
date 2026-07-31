@@ -450,6 +450,16 @@ export class AISelectMaskController {
         this.shippedRgbDigests.clear();
     }
 
+    /**
+     * Prompt Adapter capabilities derive from the live readiness state, so a
+     * readiness transition (first connection, recovery, Instance change) must
+     * republish: Prompt tools gate on the latest negotiated capability record
+     * rather than a stale snapshot from an earlier publish.
+     */
+    refreshAvailability(): void {
+        this.publish();
+    }
+
     undoPromptEdit(): void {
         this.restorePromptHistory(this.promptUndoStack, this.promptRedoStack);
     }

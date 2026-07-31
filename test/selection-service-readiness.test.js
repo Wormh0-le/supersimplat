@@ -197,6 +197,15 @@ test('starts automatic readiness as a single flight and binds the Companion Acti
         readiness.state.configuration.modelManifestDigest,
         activeModelDigest
     );
+    // The adapter capability identity must survive the stored copy: the
+    // Prompt capability derivation trusts the advertised record only when
+    // the recomputed digest matches these fields.
+    const provider = readiness.state.capabilities.imageInstanceProvider;
+    assert.equal(
+        provider.compilerPolicyVersion,
+        'sam3-image-instance-compiler/v1'
+    );
+    assert.equal(provider.adapterCapabilityDigest, `sha256:${'c'.repeat(64)}`);
     readiness.stop();
 });
 
@@ -558,11 +567,19 @@ test('ordinary Availability UI is accessible and contains no technical/model con
         'utf8'
     );
 
-    assert.match(source, /Connecting/);
-    assert.match(source, /Available/);
-    assert.match(source, /Unavailable/);
+    assert.match(source, /ai-select\.availability\./);
     assert.match(source, /aria-live/);
     assert.match(source, /role', 'status/);
+    // The three Availability states are localized, not hardcoded.
+    const locales = JSON.parse(
+        fs.readFileSync(
+            path.join(__dirname, '..', 'static', 'locales', 'en.json'),
+            'utf8'
+        )
+    );
+    assert.ok(locales['ai-select.availability.connecting']);
+    assert.ok(locales['ai-select.availability.available']);
+    assert.ok(locales['ai-select.availability.unavailable']);
     for (const forbidden of [
         'TextInput',
         'SelectInput',

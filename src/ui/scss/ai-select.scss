@@ -94,6 +94,37 @@
     }
 }
 
+#ai-select-anchor-dock-availability {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+
+    #ai-select-anchor-dock-availability-label {
+        color: $text-secondary;
+        font-size: 11px;
+    }
+}
+
+.ai-select-availability-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+
+    &.availability-available {
+        background-color: #66bb6a;
+    }
+
+    &.availability-connecting {
+        background-color: #ffb74d;
+    }
+
+    &.availability-unavailable {
+        background-color: $clr-disabled;
+    }
+}
+
 #ai-select-anchor-dock-main {
     flex-direction: row;
     gap: 8px;

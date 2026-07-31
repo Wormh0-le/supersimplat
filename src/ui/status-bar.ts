@@ -1,6 +1,10 @@
 import { Button, Container, Label } from '@playcanvas/pcui';
 
 import { Events } from '../events';
+import type {
+    SelectionServiceReadinessInterface,
+    SelectionServiceReadinessStatus
+} from '../selection-service-readiness';
 import { ShortcutManager } from '../shortcut-manager';
 import { Splat } from '../splat';
 import {
@@ -11,7 +15,12 @@ import { i18n } from './localization';
 import { Tooltips } from './tooltips';
 
 class StatusBar extends Container {
-    constructor(events: Events, tooltips: Tooltips, args = {}) {
+    constructor(
+        events: Events,
+        tooltips: Tooltips,
+        selectionServiceReadiness?: SelectionServiceReadinessInterface,
+        args = {}
+    ) {
         args = {
             ...args,
             id: 'status-bar'
@@ -25,20 +34,45 @@ class StatusBar extends Container {
         const timelineButton = new Button({
             class: 'status-bar-toggle'
         });
-        i18n.bindText(timelineButton, () => i18n.t('status-bar.timeline').toUpperCase()
+        i18n.bindText(timelineButton, () =>
+            i18n.t('status-bar.timeline').toUpperCase()
         );
 
         const splatDataButton = new Button({
             class: 'status-bar-toggle'
         });
-        i18n.bindText(splatDataButton, () => i18n.t('status-bar.splat-data').toUpperCase()
+        i18n.bindText(splatDataButton, () =>
+            i18n.t('status-bar.splat-data').toUpperCase()
         );
 
         const aiSelectButton = new Button({
             class: 'status-bar-toggle'
         });
-        i18n.bindText(aiSelectButton, () => i18n.t('status-bar.ai-select').toUpperCase()
+        i18n.bindText(aiSelectButton, () =>
+            i18n.t('status-bar.ai-select').toUpperCase()
         );
+
+        // AI Select availability rides on the panel toggle as a status dot.
+        // Only the 02C three-state projection crosses the icon; no endpoint,
+        // model, or runtime detail is shown here.
+        const aiSelectAvailabilityDot = document.createElement('span');
+        aiSelectButton.dom.appendChild(aiSelectAvailabilityDot);
+        let aiSelectAvailability: SelectionServiceReadinessStatus =
+            selectionServiceReadiness?.state.status ?? 'connecting';
+        const renderAiSelectAvailability = () => {
+            aiSelectAvailabilityDot.className = `status-bar-availability-dot availability-${aiSelectAvailability}`;
+            const label = i18n.t(
+                `ai-select.availability.${aiSelectAvailability}`
+            );
+            aiSelectAvailabilityDot.title = label;
+            aiSelectAvailabilityDot.setAttribute('aria-label', label);
+        };
+        selectionServiceReadiness?.subscribe((state) => {
+            aiSelectAvailability = state.status;
+            renderAiSelectAvailability();
+        });
+        i18n.onChange(renderAiSelectAvailability, this);
+        renderAiSelectAvailability();
 
         const setActivePanel = (panel: BottomPanelId | null) => {
             panelController.setActivePanel(panel);
@@ -46,13 +80,13 @@ class StatusBar extends Container {
 
         panelController.subscribe((panel) => {
             timelineButton.dom.classList[
-            panel === 'timeline' ? 'add' : 'remove'
+                panel === 'timeline' ? 'add' : 'remove'
             ]('active');
             splatDataButton.dom.classList[
-            panel === 'splatData' ? 'add' : 'remove'
+                panel === 'splatData' ? 'add' : 'remove'
             ]('active');
             aiSelectButton.dom.classList[
-            panel === 'aiSelect' ? 'add' : 'remove'
+                panel === 'aiSelect' ? 'add' : 'remove'
             ]('active');
             events.fire('statusBar.panelChanged', panel || null);
         });

@@ -4,19 +4,11 @@ import type {
     SelectionServiceReadinessInterface,
     SelectionServiceReadinessStatus
 } from '../selection-service-readiness';
+import { i18n } from './localization';
 
 const selectionServiceAvailabilityLabel = (
     status: SelectionServiceReadinessStatus
-) => {
-    switch (status) {
-        case 'connecting':
-            return 'Connecting';
-        case 'available':
-            return 'Available';
-        case 'unavailable':
-            return 'Unavailable';
-    }
-};
+) => i18n.t(`ai-select.availability.${status}`);
 
 class SelectionServiceReadinessSettings extends Container {
     constructor(readiness: SelectionServiceReadinessInterface, args = {}) {
@@ -42,6 +34,11 @@ class SelectionServiceReadinessSettings extends Container {
         readiness.subscribe((state) => {
             status.text = selectionServiceAvailabilityLabel(state.status);
         });
+        i18n.onChange(() => {
+            status.text = selectionServiceAvailabilityLabel(
+                readiness.state.status
+            );
+        }, this);
     }
 }
 

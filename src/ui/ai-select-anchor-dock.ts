@@ -35,6 +35,10 @@ import {
 } from '../ai-select/mask-controller';
 import { promptToolCapabilityReason } from '../ai-select/prompt-state';
 import { reviewReasonActionKeys } from '../ai-select/view-assessment';
+import type {
+    SelectionServiceReadinessInterface,
+    SelectionServiceReadinessStatus
+} from '../selection-service-readiness';
 
 export interface AISelectAnchorDockOptions {
     readonly onRetry: () => Promise<void>;
@@ -44,6 +48,7 @@ export interface AISelectAnchorDockOptions {
     readonly onConfirmAnchor: () => Promise<void>;
     readonly onAdjustAnchor: () => void;
     readonly generatedViews: AISelectGeneratedViewController;
+    readonly readiness: SelectionServiceReadinessInterface;
 }
 
 interface GeneratedCardElements {
@@ -84,6 +89,9 @@ export class AISelectAnchorDock extends Container {
     private readonly confirmation: AISelectAnchorConfirmationController;
     private readonly generatedViews: AISelectGeneratedViewController;
     private readonly status: Label;
+    private readonly availabilityDot: HTMLSpanElement;
+    private readonly availabilityLabel: Label;
+    private availabilityStatus: SelectionServiceReadinessStatus;
     private readonly maskStatus: Label;
     private readonly promptStatus: Label;
     private readonly imageViewport: HTMLDivElement;
@@ -162,6 +170,26 @@ export class AISelectAnchorDock extends Container {
         const title = new Label({ id: 'ai-select-anchor-dock-title' });
         i18n.bindText(title, 'ai-select.panel.title');
         this.status = new Label({ id: 'ai-select-anchor-dock-status' });
+
+        // The panel mirrors the 02C three-state Availability projection so
+        // the user can see why Prompt tools are gated without opening
+        // Settings; no technical or model detail is shown.
+        const availability = new Container({
+            id: 'ai-select-anchor-dock-availability'
+        });
+        this.availabilityDot = document.createElement('span');
+        availability.dom.appendChild(this.availabilityDot);
+        this.availabilityLabel = new Label({
+            id: 'ai-select-anchor-dock-availability-label'
+        });
+        availability.append(this.availabilityLabel);
+        availability.dom.setAttribute('role', 'status');
+        availability.dom.setAttribute('aria-live', 'polite');
+        this.availabilityStatus = options.readiness.state.status;
+        options.readiness.subscribe((readinessState) => {
+            this.availabilityStatus = readinessState.status;
+            this.renderAvailability();
+        });
 
         this.imageViewport = document.createElement('div');
         this.imageViewport.id = 'ai-select-anchor-dock-image-viewport';
@@ -498,6 +526,7 @@ export class AISelectAnchorDock extends Container {
         this.galleryCards.append(this.anchorCard.root);
 
         this.append(title);
+        this.append(availability);
         // Image, information, and primary actions have separate ownership.
         // Only the exact fitted image surface accepts pointer authoring.
         const mainRow = new Container({ id: 'ai-select-anchor-dock-main' });
@@ -559,7 +588,15 @@ export class AISelectAnchorDock extends Container {
         i18n.onChange(() => this.render(), this);
     }
 
+    private renderAvailability(): void {
+        this.availabilityDot.className = `ai-select-availability-dot availability-${this.availabilityStatus}`;
+        this.availabilityLabel.text = i18n.t(
+            `ai-select.availability.${this.availabilityStatus}`
+        );
+    }
+
     private render(): void {
+        this.renderAvailability();
         const presentation = getAnchorDockPresentation(
             this.state,
             this.maskState

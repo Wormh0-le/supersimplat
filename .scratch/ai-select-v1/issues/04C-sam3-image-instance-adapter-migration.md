@@ -48,7 +48,16 @@ in `.scratch/ai-select-v1/04C-protocol-contract.md`:
   logits at 288×288 (backbone feature size), not SAM 2's 256×256; the pinned
   `low_res_logits_size` and runtime config digest were corrected to 288
   (`sha256:736e6c4e…`), which is why the first production requests failed
-  closed with `modelFailure` before this fix.
+  closed with `modelFailure` before this fix. The first live HTTP run then
+  exposed a second real-model defect: the model builder leaks an enabled
+  autocast state into its calling thread and autocast state is thread-local,
+  so HTTP handler threads executed `set_image` outside bf16 autocast and
+  failed with a BFloat16/Float mismatch. Both `set_image` and `predict_inst`
+  now establish the pinned inference_mode + bf16 autocast scope explicitly
+  on every entry point, the GPU fixture covers a handler-thread inference,
+  and the live route was verified returning three bound candidates with
+  opaque logits refs. Operator-facing logs now preserve the underlying
+  model failure cause while the wire keeps the generic `modelFailure` code.
 
 ## Final Spec mapping
 

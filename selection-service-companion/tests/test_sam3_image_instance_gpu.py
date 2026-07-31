@@ -123,34 +123,54 @@ class Sam3ImageInstanceGpuTests(unittest.TestCase):
                 self.assertEqual(candidate.low_res_logits.shape, (1, 288, 288))
                 self.assertEqual(str(candidate.low_res_logits.dtype), 'float32')
 
-            box_batch = adapter.produce_proposals(
-                model=model,
-                rgb_png=rgb_png,
-                width=width,
-                height=height,
-                program=self._program(
-                    rgb_digest=rgb_digest,
-                    width=width,
-                    height=height,
-                    capabilities=capabilities,
-                    points=[{
-                        'promptId': 'rack-positive',
-                        'polarity': 'include',
-                        'xPx': 548,
-                        'yPx': 410,
-                    }],
-                    boxes=[{
-                        'promptId': 'rack-box',
-                        'polarity': 'include',
-                        'x0Px': 475,
-                        'y0Px': 170,
-                        'x1Px': 624,
-                        'y1Px': 859,
-                    }],
-                ),
-                refinement=None,
-                cancelled=lambda: False,
-            )
+            # The HTTP server executes model work on handler threads, not
+            # the main thread that built the runtime; ambient autocast state
+            # is thread-local, so the pinned inference scope must hold there.
+            box_result: dict[str, object] = {}
+
+            def produce_box_in_worker_thread(
+                adapter: Sam3ImageInstanceAdapter = adapter,
+            ) -> None:
+                try:
+                    box_result['batch'] = adapter.produce_proposals(
+                        model=model,
+                        rgb_png=rgb_png,
+                        width=width,
+                        height=height,
+                        program=self._program(
+                            rgb_digest=rgb_digest,
+                            width=width,
+                            height=height,
+                            capabilities=capabilities,
+                            points=[{
+                                'promptId': 'rack-positive',
+                                'polarity': 'include',
+                                'xPx': 548,
+                                'yPx': 410,
+                            }],
+                            boxes=[{
+                                'promptId': 'rack-box',
+                                'polarity': 'include',
+                                'x0Px': 475,
+                                'y0Px': 170,
+                                'x1Px': 624,
+                                'y1Px': 859,
+                            }],
+                        ),
+                        refinement=None,
+                        cancelled=lambda: False,
+                    )
+                except Exception as error:  # noqa: BLE001
+                    box_result['error'] = error
+
+            import threading
+
+            worker = threading.Thread(target=produce_box_in_worker_thread)
+            worker.start()
+            worker.join()
+            if 'error' in box_result:
+                raise box_result['error']  # type: ignore[misc]
+            box_batch = box_result['batch']
             # A Box forces single-mask mode.
             self.assertLessEqual(len(box_batch.candidates), 1)
 

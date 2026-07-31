@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import hashlib
 import json
+import logging
 import math
 import os
 from pathlib import Path
@@ -114,6 +115,11 @@ AI_SELECT_READINESS_PROTOCOL_VERSION = "2"
 AI_SELECT_MASK_PROPOSAL_POLICY_VERSION = "auto-mask-proposals/bounded-source-order-v2"
 AI_SELECT_RGB_CACHE_LIMIT = 16
 AI_SELECT_LOGITS_STORE_LIMIT = 8
+
+# Operator-facing diagnostics: the wire carries distinguishable generic
+# failure codes, while the underlying model/runtime cause stays in the
+# Companion log where the operator can act on it.
+_logger = logging.getLogger(__name__)
 
 
 def _canonical_json_digest(payload: Mapping[str, object]) -> str:
@@ -2401,6 +2407,9 @@ class CompanionState:
                 )
                 return response
             except Exception as error:
+                _logger.exception(
+                    "promptable-mask adapter failed during instance inference"
+                )
                 raise MaskSessionError(
                     'modelFailure',
                     'The promptable-mask adapter failed; verify the installed model runtime and retry.',
@@ -2500,6 +2509,9 @@ class CompanionState:
             self._complete_mask_request(mask_key, admission, failure=error)
             raise
         except Exception as error:
+            _logger.exception(
+                "promptable-mask adapter failed while publishing the single-frame mask"
+            )
             failure = MaskSessionError(
                 'modelFailure',
                 'The promptable-mask adapter failed while publishing the single-frame mask.',

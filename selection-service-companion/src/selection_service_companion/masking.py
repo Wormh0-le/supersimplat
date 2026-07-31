@@ -1674,6 +1674,35 @@ class _Sam3ImageModelRuntime:
         self._model = model
         self._processor = processor
 
+    @staticmethod
+    def _inference_scope() -> Any:
+        """The pinned upstream execution scope for every model entry point.
+
+        The upstream interactive example runs both ``set_image`` and
+        ``predict_inst`` inside one inference_mode + bf16 autocast scope.
+        Ambient autocast state is thread-local (and the builder leaks an
+        enabled autocast state into its calling thread), so each entry point
+        must establish the scope explicitly or HTTP worker threads execute a
+        different dtype contract than the main thread.
+        """
+
+        import contextlib
+
+        import torch
+
+        stack = contextlib.ExitStack()
+        try:
+            import torch
+        except ImportError as error:
+            raise MaskSessionError(
+                'modelRuntimeUnavailable',
+                'SAM 3 Image requires the pinned PyTorch runtime in this Companion environment.',
+            ) from error
+        stack.enter_context(torch.inference_mode())
+        if torch.cuda.is_available():
+            stack.enter_context(torch.autocast('cuda', dtype=torch.bfloat16))
+        return stack
+
     def set_image(self, rgb_png: bytes) -> Any:
         try:
             from PIL import Image
@@ -1690,22 +1719,11 @@ class _Sam3ImageModelRuntime:
                 'invalidRgb',
                 'The authoritative RGB cannot be decoded for SAM 3 Image prompting.',
             ) from error
-        return self._processor.set_image(rgb)
+        with self._inference_scope():
+            return self._processor.set_image(rgb)
 
     def predict_inst(self, inference_state: Any, **kwargs: Any) -> Any:
-        try:
-            import torch
-        except ImportError as error:
-            raise MaskSessionError(
-                'modelRuntimeUnavailable',
-                'SAM 3 Image requires the pinned PyTorch runtime in this Companion environment.',
-            ) from error
-        with torch.inference_mode():
-            if torch.cuda.is_available():
-                # bf16 autocast on CUDA follows the pinned upstream
-                # interactive-image example for this model family.
-                with torch.autocast('cuda', dtype=torch.bfloat16):
-                    return self._model.predict_inst(inference_state, **kwargs)
+        with self._inference_scope():
             return self._model.predict_inst(inference_state, **kwargs)
 
 

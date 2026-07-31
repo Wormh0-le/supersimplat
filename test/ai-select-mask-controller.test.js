@@ -1026,6 +1026,30 @@ test('the RGB artifact ships on the first request of a digest only', async () =>
     assert.equal(maskRequests[1].rgbDigest, maskRequests[0].rgbDigest);
 });
 
+test('a Companion Instance replacement re-ships the artifact and drops the refinement ref', async () => {
+    const maskRequests = [];
+    const { mask } = await setup({
+        promptCapabilities: richPromptCapabilities,
+        produceMask: (request) => {
+            maskRequests.push(request);
+            return Promise.resolve(
+                maskResponseFor(request, { withLogitsRef: true })
+            );
+        }
+    });
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    assert.ok(maskRequests[0].rgb);
+
+    mask.handleCompanionInstanceChanged();
+
+    await mask.addPrompt({ xPx: 20, yPx: 22, polarity: 'exclude' });
+    // The prior Instance's caches are gone: the exact artifact ships again
+    // and no stale logits reference crosses the boundary.
+    assert.ok(maskRequests[1].rgb);
+    assert.equal(maskRequests[1].rgb.digest, maskRequests[1].rgbDigest);
+    assert.equal(maskRequests[1].previousLogitsRef, undefined);
+});
+
 test('a prompt revision refines from the chosen candidate logits reference', async () => {
     const maskRequests = [];
     const { mask } = await setup({

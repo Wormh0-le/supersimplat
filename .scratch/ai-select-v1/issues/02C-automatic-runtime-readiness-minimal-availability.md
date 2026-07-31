@@ -1,7 +1,6 @@
 # 02C — Automatic Runtime Readiness + Minimal Availability UI
 
-Status: in progress — automatic readiness/UI implemented; production Available
-state still waits for Ticket 04C
+Status: implemented — production Available requires an operator Companion on the locked SAM 3 Image runtime
 
 Blocked by: 02, 04C
 
@@ -91,9 +90,9 @@ No endpoint, Model Manifest, CUDA, protocol matrix, Ping, Check Readiness, model
 - [x] one Active Model Manifest crosses the protocol.
 - [x] current profile admits only the 04C SAM 3 Image instance adapter.
 - [x] historical Multiplex static manifest fails compatibility.
-- [ ] current provider advertises authoritative RGB resolution and opaque refinement-ref support.
+- [x] current provider advertises authoritative RGB resolution and opaque refinement-ref support.
 - [x] removed Prompt capabilities are not required or advertised as current.
-- [ ] Companion Instance replacement invalidates prior RGB/logits refs.
+- [x] Companion Instance replacement invalidates prior RGB/logits refs.
 - [x] Busy/task-local failure does not change Availability.
 - [x] same-instance recovery is fail-closed and identity-bound.
 - [x] ordinary UI contains no technical/model controls.
@@ -103,9 +102,14 @@ Implementation note:
 
 - the readiness layer emits a Companion Instance replacement invalidation hook
   and rejects stale cross-Instance recovery;
-- Ticket 04C must attach its actual Companion RGB-reference and
-  previous-logits registries to that hook before the corresponding acceptance
-  criterion can close;
+- Ticket 04C attached the real registries: the `sam3-image-instance/v1`
+  provider advertises authoritative RGB artifact + Companion-reference
+  resolution and opaque previous-logits refinement, and its Companion-local
+  RGB/logits stores are process-bound so Instance replacement invalidates
+  them by construction; the editor clears its held refinement ref and
+  shipped-RGB cache on `selectionService.companionInstanceChanged`, so the
+  next request re-ships the exact RGB artifact instead of failing on the
+  prior Instance's cache;
 - the historical Multiplex provider truthfully remains `Unavailable` for the
   current Runtime Profile rather than being relabeled as the SAM 3 Image
   instance adapter.

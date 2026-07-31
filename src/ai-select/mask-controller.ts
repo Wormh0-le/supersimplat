@@ -437,6 +437,19 @@ export class AISelectMaskController {
         this.publish();
     }
 
+    /**
+     * Companion Instance replacement invalidates every Companion-local
+     * reference minted by the prior Instance (02C availability lifecycle):
+     * the held refinement logits ref is dropped, and the next request for an
+     * already-seen RGB digest re-ships the exact artifact instead of relying
+     * on the prior Instance's RGB cache. Editor-owned Prompt and Mask
+     * artifacts keep their own identity and stay valid.
+     */
+    handleCompanionInstanceChanged(): void {
+        this.refinementLogitsRef = null;
+        this.shippedRgbDigests.clear();
+    }
+
     undoPromptEdit(): void {
         this.restorePromptHistory(this.promptUndoStack, this.promptRedoStack);
     }

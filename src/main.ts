@@ -443,6 +443,12 @@ const main = async () => {
         },
         isAnchorLocked: isAISelectAnchorLocked
     });
+    // Companion Instance replacement invalidates the prior Instance's
+    // Companion-local RGB/logits references (02C); editor-owned Prompt and
+    // Mask artifacts keep their own identity and are not touched.
+    events.on('selectionService.companionInstanceChanged', () => {
+        aiSelectMaskController.handleCompanionInstanceChanged();
+    });
     aiSelectConfirmation = new AISelectAnchorConfirmationController({
         anchor: aiSelectController,
         mask: aiSelectMaskController,
@@ -670,6 +676,7 @@ const main = async () => {
         aiSelectConfirmation,
         {
             generatedViews: aiSelectGeneratedViews,
+            readiness: selectionServiceReadiness,
             onRetry: () => aiSelectController.retryAnchorPreview(),
             onReconnect: async () => {
                 await selectionServiceReadiness.refresh();

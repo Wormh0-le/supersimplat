@@ -37,7 +37,11 @@ import {
     type GeneratedViewPlanResponse
 } from './generated-view-service';
 import type { MaskAnnotationRegistry } from './mask-registry';
-import type { ReviewReason, ViewAssessmentResult } from './view-assessment';
+import {
+    defaultViewParticipation,
+    type ReviewReason,
+    type ViewAssessmentResult
+} from './view-assessment';
 
 export type GeneratedViewRenderStatus =
     'pending' | 'rendering' | 'ready' | 'failed';
@@ -150,28 +154,26 @@ const copyAssessment = (
             rgbDigest: assessment.inputIdentity.rgbDigest,
             stableMaskDigest: assessment.inputIdentity.stableMaskDigest,
             assessmentPolicyVersion:
-                assessment.inputIdentity.assessmentPolicyVersion,
-            supportPolicyVersion: assessment.inputIdentity.supportPolicyVersion,
-            supportDiagnosticId: assessment.inputIdentity.supportDiagnosticId,
-            propagationPolicyVersion:
-                assessment.inputIdentity.propagationPolicyVersion
+                assessment.inputIdentity.assessmentPolicyVersion
         }),
         ...(assessment.diagnostics === undefined
             ? {}
             : {
                   diagnostics: Object.freeze({
+                      framePixels: assessment.diagnostics.framePixels,
                       foregroundPixels: assessment.diagnostics.foregroundPixels,
+                      boundaryPixels: assessment.diagnostics.boundaryPixels,
                       boundaryContactRatio:
                           assessment.diagnostics.boundaryContactRatio,
                       connectedComponents:
                           assessment.diagnostics.connectedComponents,
                       largestComponentRatio:
                           assessment.diagnostics.largestComponentRatio,
-                      observedGaussianCount:
-                          assessment.diagnostics.observedGaussianCount,
-                      projectedSupportCount:
-                          assessment.diagnostics.projectedSupportCount,
-                      promptCount: assessment.diagnostics.promptCount
+                      promptPointCount: assessment.diagnostics.promptPointCount,
+                      promptViolationCount:
+                          assessment.diagnostics.promptViolationCount,
+                      boxSpillPixels: assessment.diagnostics.boxSpillPixels,
+                      boxSpillRatio: assessment.diagnostics.boxSpillRatio
                   })
               })
     });
@@ -182,26 +184,22 @@ const automaticAssessmentDefaults = (
 ): {
     readonly stableMaskStatus: 'auto-good' | 'auto-review';
     readonly maskQuality: GeneratedViewMaskQuality;
-    readonly participation: AIViewParticipation;
 } => {
     switch (assessment.status) {
         case 'good':
             return {
                 stableMaskStatus: 'auto-good',
-                maskQuality: 'auto-good',
-                participation: 'included'
+                maskQuality: 'auto-good'
             };
         case 'review':
             return {
                 stableMaskStatus: 'auto-review',
-                maskQuality: 'auto-review',
-                participation: 'excluded'
+                maskQuality: 'auto-review'
             };
         case 'failed':
             return {
                 stableMaskStatus: 'auto-review',
-                maskQuality: 'failed',
-                participation: 'excluded'
+                maskQuality: 'failed'
             };
     }
 };
@@ -357,8 +355,9 @@ export class AISelectGeneratedViewController {
 
     /**
      * Confirm one Auto Review Stable Mask without changing its pixels. This
-     * rotates the Stable Mask revision to User Confirmed and grants Included
-     * participation; the original assessment remains inspectable.
+     * rotates the Stable Mask revision to User Confirmed and grants the §14.2
+     * User Confirmed default Participation; the original assessment remains
+     * inspectable.
      */
     confirmReviewAsIs(viewId: string): void {
         const view = this.requireView(viewId);
@@ -372,7 +371,12 @@ export class AISelectGeneratedViewController {
             );
         }
         this.maskRegistry.confirmStableAsIs(viewId, view.rgb.digest);
-        view.participation = 'included';
+        // Authority dominates the default: User Confirmed grants Included
+        // regardless of the underlying automatic review status.
+        view.participation = defaultViewParticipation({
+            reviewStatus: view.assessment.status,
+            authority: 'user-confirmed'
+        });
         this.publish();
     }
 
@@ -626,8 +630,6 @@ export class AISelectGeneratedViewController {
         }
         view.maskStatus = 'generating';
         view.maskErrorMessage = undefined;
-        view.assessment = undefined;
-        view.participation = 'excluded';
         this.publish();
         const modelManifestDigest = this.getModelManifestDigest();
         if (modelManifestDigest === null || modelManifestDigest.length === 0) {
@@ -709,9 +711,10 @@ export class AISelectGeneratedViewController {
             return;
         }
         view.assessment = copyAssessment(response.assessment);
-        view.participation = automaticAssessmentDefaults(
-            response.assessment
-        ).participation;
+        view.participation = defaultViewParticipation({
+            reviewStatus: response.assessment.status,
+            authority: 'automatic'
+        });
         view.maskStatus = 'ready';
         this.publish();
     }
@@ -731,11 +734,14 @@ export class AISelectGeneratedViewController {
         this.publish();
     }
 
+    /**
+     * A Mask production failure preserves the prior Stable Mask, its
+     * assessment, and Participation authority (Final Spec v1.3 §§13, 24);
+     * only the latest-attempt status and diagnostic change.
+     */
     private failViewMask(view: GeneratedViewRecord, message: string): void {
         view.maskStatus = 'failed';
         view.maskErrorMessage = message;
-        view.assessment = undefined;
-        view.participation = 'excluded';
         this.publish();
     }
 
@@ -792,16 +798,19 @@ export class AISelectGeneratedViewController {
                 stableMask.artifact.digest
                 ? view.assessment
                 : undefined;
+        // Quality derives from the current Stable Mask authority, not from
+        // the latest attempt: a failed refresh over an existing Stable Mask
+        // preserves its quality and Participation authority.
         const maskQuality: GeneratedViewMaskQuality =
-            view.renderStatus === 'failed' || view.maskStatus === 'failed'
-                ? 'failed'
-                : stableMask === null
-                  ? 'none'
-                  : stableMask.status === 'user-confirmed'
-                    ? 'user-confirmed'
-                    : assessment === undefined
-                      ? 'auto-review'
-                      : automaticAssessmentDefaults(assessment).maskQuality;
+            stableMask === null
+                ? view.renderStatus === 'failed' || view.maskStatus === 'failed'
+                    ? 'failed'
+                    : 'none'
+                : stableMask.status === 'user-confirmed'
+                  ? 'user-confirmed'
+                  : assessment === undefined
+                    ? 'auto-review'
+                    : automaticAssessmentDefaults(assessment).maskQuality;
         const participation: AIViewParticipation =
             view.participation === 'included' &&
             (maskQuality === 'auto-good' || maskQuality === 'user-confirmed') &&

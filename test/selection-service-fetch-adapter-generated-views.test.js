@@ -14,9 +14,6 @@ const {
     maskBitsetEncoding
 } = require('../.test-dist/src/ai-select/mask-annotation.js');
 const {
-    localViewSupportDiagnosticId
-} = require('../.test-dist/src/ai-select/view-assessment.js');
-const {
     buildPackedSceneSnapshot,
     sha256Digest
 } = require('../.test-dist/src/scene-snapshot-binary.js');
@@ -264,30 +261,23 @@ const maskResponse = (request, overrides = {}) => ({
         status: 'good',
         reasons: [],
         actionableReasons: [],
-        policyVersion: 'local-view-assessment/v1',
+        policyVersion: 'local-view-assessment/v2',
         inputIdentity: {
             rgbDigest: request.rgb.digest,
             stableMaskDigest: maskArtifact.digest,
-            assessmentPolicyVersion: 'local-view-assessment/v1',
-            supportPolicyVersion: 'local-view-support-probe/v1',
-            supportDiagnosticId: localViewSupportDiagnosticId({
-                sceneId: request.sceneId,
-                sceneVersion: request.sceneVersion,
-                viewId: request.viewId,
-                rgbDigest: request.rgb.digest,
-                stableMaskDigest: maskArtifact.digest,
-                observedGaussianCount: 30
-            }),
-            propagationPolicyVersion: aiSelectGeneratedViewMaskPolicyVersion
+            assessmentPolicyVersion: 'local-view-assessment/v2'
         },
         diagnostics: {
-            foregroundPixels: 2,
+            framePixels: 3072,
+            foregroundPixels: 24,
+            boundaryPixels: 0,
             boundaryContactRatio: 0,
             connectedComponents: 1,
             largestComponentRatio: 1,
-            observedGaussianCount: 30,
-            projectedSupportCount: 7,
-            promptCount: 3
+            promptPointCount: 3,
+            promptViolationCount: 0,
+            boxSpillPixels: null,
+            boxSpillRatio: null
         }
     },
     modelManifestDigest: request.modelManifestDigest,

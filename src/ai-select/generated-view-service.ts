@@ -27,10 +27,8 @@ import {
     type MaskArtifact
 } from './mask-annotation';
 import {
-    aiSelectLocalViewSupportPolicyVersion,
     aiSelectViewAssessmentPolicyVersion,
     isViewAssessmentResult,
-    localViewSupportDiagnosticId,
     type ViewAssessmentResult
 } from './view-assessment';
 
@@ -493,40 +491,6 @@ export const generatedViewMaskResponseMatchesRequest = (
             response.mask.digest &&
         response.assessment.inputIdentity.assessmentPolicyVersion ===
             aiSelectViewAssessmentPolicyVersion &&
-        (response.assessment.inputIdentity.supportPolicyVersion === null ||
-            response.assessment.inputIdentity.supportPolicyVersion ===
-                aiSelectLocalViewSupportPolicyVersion) &&
-        ((response.assessment.inputIdentity.supportPolicyVersion === null &&
-            response.assessment.inputIdentity.supportDiagnosticId === null &&
-            (response.assessment.diagnostics === undefined ||
-                response.assessment.diagnostics.observedGaussianCount ===
-                    null)) ||
-            (response.assessment.inputIdentity.supportPolicyVersion ===
-                aiSelectLocalViewSupportPolicyVersion &&
-                response.assessment.diagnostics !== undefined &&
-                response.assessment.diagnostics.observedGaussianCount !==
-                    null &&
-                response.assessment.inputIdentity.supportDiagnosticId ===
-                    localViewSupportDiagnosticId({
-                        sceneId: response.sceneId,
-                        sceneVersion: response.sceneVersion,
-                        viewId: response.viewId,
-                        rgbDigest: response.rgbDigest,
-                        stableMaskDigest: response.mask.digest,
-                        observedGaussianCount:
-                            response.assessment.diagnostics
-                                .observedGaussianCount
-                    }))) &&
-        (!response.assessment.reasons.includes('weak-gaussian-support') ||
-            response.assessment.inputIdentity.supportPolicyVersion ===
-                aiSelectLocalViewSupportPolicyVersion) &&
-        response.assessment.inputIdentity.propagationPolicyVersion ===
-            response.maskPropagation.policyVersion &&
-        (response.assessment.diagnostics === undefined ||
-            (response.assessment.diagnostics.projectedSupportCount ===
-                response.maskPropagation.projectedSupportCount &&
-                response.assessment.diagnostics.promptCount ===
-                    response.maskPropagation.promptCount)) &&
         response.modelManifestDigest === request.modelManifestDigest &&
         artifactDigestMatchesBytes(response.mask)
     );

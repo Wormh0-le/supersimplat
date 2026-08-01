@@ -1,16 +1,21 @@
-import { sha256Digest } from '../scene-snapshot-binary';
+import type { AIViewParticipation } from './ai-view';
 
-export const aiSelectViewAssessmentPolicyVersion = 'local-view-assessment/v1';
-export const aiSelectLocalViewSupportPolicyVersion =
-    'local-view-support-probe/v1';
+export const aiSelectViewAssessmentPolicyVersion = 'local-view-assessment/v2';
 
 export type ViewAssessmentStatus = 'good' | 'review' | 'failed';
 
+/**
+ * The Final Spec v1.3 §14.1 Mask Review reason vocabulary. Tracker
+ * propagation and Gaussian visibility/support are not Mask-quality inputs:
+ * `propagation-uncertain` is deleted (no tracker propagation exists) and
+ * `weak-gaussian-support` belongs to Ticket 13 Lift Readiness.
+ */
 export type ReviewReason =
-    | 'target-at-boundary'
-    | 'fragmented-mask'
-    | 'weak-gaussian-support'
-    | 'propagation-uncertain';
+    | 'prompt-inconsistent'
+    | 'target-materially-clipped'
+    | 'severely-fragmented'
+    | 'box-spill-or-neighbour-leak'
+    | 'empty-or-degenerate-mask';
 
 export type ReviewActionKey =
     | 'ai-select.review.action.inspect-mask'
@@ -21,18 +26,23 @@ export type ReviewActionKey =
 const actionKeysByReason: Readonly<
     Record<ReviewReason, readonly ReviewActionKey[]>
 > = Object.freeze({
-    'target-at-boundary': Object.freeze<ReviewActionKey[]>([
+    'prompt-inconsistent': Object.freeze<ReviewActionKey[]>([
         'ai-select.review.action.inspect-mask',
-        'ai-select.review.action.add-view'
-    ]),
-    'fragmented-mask': Object.freeze<ReviewActionKey[]>([
         'ai-select.review.action.brush'
     ]),
-    'weak-gaussian-support': Object.freeze<ReviewActionKey[]>([
+    'target-materially-clipped': Object.freeze<ReviewActionKey[]>([
         'ai-select.review.action.inspect-view',
         'ai-select.review.action.add-view'
     ]),
-    'propagation-uncertain': Object.freeze<ReviewActionKey[]>([
+    'severely-fragmented': Object.freeze<ReviewActionKey[]>([
+        'ai-select.review.action.inspect-mask',
+        'ai-select.review.action.brush'
+    ]),
+    'box-spill-or-neighbour-leak': Object.freeze<ReviewActionKey[]>([
+        'ai-select.review.action.inspect-mask',
+        'ai-select.review.action.brush'
+    ]),
+    'empty-or-degenerate-mask': Object.freeze<ReviewActionKey[]>([
         'ai-select.review.action.inspect-mask'
     ])
 });
@@ -47,43 +57,42 @@ export interface ViewAssessmentInputIdentity {
     readonly rgbDigest: string;
     readonly stableMaskDigest: string;
     readonly assessmentPolicyVersion: string;
-    readonly supportPolicyVersion: string | null;
-    readonly supportDiagnosticId: string | null;
-    readonly propagationPolicyVersion: string | null;
 }
 
-export interface LocalViewSupportDiagnosticIdentityInput {
-    readonly sceneId: string;
-    readonly sceneVersion: string;
-    readonly viewId: string;
-    readonly rgbDigest: string;
-    readonly stableMaskDigest: string;
-    readonly observedGaussianCount: number;
-}
+/**
+ * The frozen `local-view-assessment/v2` geometry thresholds, mirrored from
+ * the Companion Mask Review policy so the trust boundary can reject an
+ * artifact whose stated reasons are not backed by its own measured
+ * diagnostics. They are version-owned: changing one requires a new policy
+ * version on both sides.
+ */
+export const aiSelectMaskReviewThresholds = Object.freeze({
+    minForegroundPixels: 4,
+    fullFrameRatio: 0.98,
+    clippedMinBoundaryPixels: 8,
+    clippedMinBoundaryRatio: 0.2,
+    fragmentMinDisconnectedPixels: 16,
+    fragmentMinDisconnectedRatio: 0.1,
+    boxSpillMinPixels: 16,
+    boxSpillMinRatio: 0.2
+});
 
-export const localViewSupportDiagnosticId = (
-    input: LocalViewSupportDiagnosticIdentityInput
-): string => {
-    const payload = [
-        aiSelectLocalViewSupportPolicyVersion,
-        input.sceneId,
-        input.sceneVersion,
-        input.viewId,
-        input.rgbDigest,
-        input.stableMaskDigest,
-        String(input.observedGaussianCount)
-    ].join('\u0000');
-    return sha256Digest(new TextEncoder().encode(payload));
-};
-
+/**
+ * The measured geometry backing each structured reason. Prompt/Box
+ * diagnostics are null when that Prompt family does not exist; a missing
+ * family never fabricates a reason.
+ */
 export interface ViewAssessmentDiagnostics {
+    readonly framePixels: number;
     readonly foregroundPixels: number;
+    readonly boundaryPixels: number;
     readonly boundaryContactRatio: number;
     readonly connectedComponents: number;
     readonly largestComponentRatio: number;
-    readonly observedGaussianCount: number | null;
-    readonly projectedSupportCount: number | null;
-    readonly promptCount: number | null;
+    readonly promptPointCount: number | null;
+    readonly promptViolationCount: number | null;
+    readonly boxSpillPixels: number | null;
+    readonly boxSpillRatio: number | null;
 }
 
 export interface ViewAssessmentResult {
@@ -100,13 +109,38 @@ export interface ViewAssessmentResult {
     readonly diagnostics?: ViewAssessmentDiagnostics;
 }
 
+/**
+ * The source authority behind one Stable Mask. User Confirmed authority is
+ * recorded by the Mask registry and cannot be silently revoked by a later
+ * automatic review.
+ */
+export type MaskStableAuthority = 'automatic' | 'user-confirmed';
+
+/**
+ * Final Spec v1.3 §14.2 Participation defaults, centralized here and
+ * independent from View role and source: automatic Good defaults Included;
+ * automatic Review, Failed, or unavailable review defaults Excluded; User
+ * Confirmed defaults Included unless the user explicitly excludes (an
+ * explicit controller action, never a default flip).
+ */
+export const defaultViewParticipation = (input: {
+    readonly reviewStatus: ViewAssessmentStatus | null;
+    readonly authority: MaskStableAuthority;
+}): AIViewParticipation => {
+    if (input.authority === 'user-confirmed') {
+        return 'included';
+    }
+    return input.reviewStatus === 'good' ? 'included' : 'excluded';
+};
+
 type UnknownRecord = Record<string, unknown>;
 
 const reviewReasons = new Set<ReviewReason>([
-    'target-at-boundary',
-    'fragmented-mask',
-    'weak-gaussian-support',
-    'propagation-uncertain'
+    'prompt-inconsistent',
+    'target-materially-clipped',
+    'severely-fragmented',
+    'box-spill-or-neighbour-leak',
+    'empty-or-degenerate-mask'
 ]);
 
 const isRecord = (value: unknown): value is UnknownRecord => {
@@ -115,12 +149,6 @@ const isRecord = (value: unknown): value is UnknownRecord => {
 
 const isDigest = (value: unknown): value is string => {
     return typeof value === 'string' && /^sha256:[a-f0-9]{64}$/i.test(value);
-};
-
-const isNullableNonEmptyString = (value: unknown): value is string | null => {
-    return (
-        value === null || (typeof value === 'string' && value.trim().length > 0)
-    );
 };
 
 const isNonNegativeSafeInteger = (value: unknown): value is number => {
@@ -142,6 +170,10 @@ const isNullableNonNegativeSafeInteger = (
     value: unknown
 ): value is number | null => {
     return value === null || isNonNegativeSafeInteger(value);
+};
+
+const isNullableUnitInterval = (value: unknown): value is number | null => {
+    return value === null || isUnitInterval(value);
 };
 
 const isReviewReason = (value: unknown): value is ReviewReason => {
@@ -167,25 +199,101 @@ const isInputIdentity = (
         isRecord(value) &&
         isDigest(value.rgbDigest) &&
         isDigest(value.stableMaskDigest) &&
-        value.assessmentPolicyVersion === aiSelectViewAssessmentPolicyVersion &&
-        isNullableNonEmptyString(value.supportPolicyVersion) &&
-        (value.supportDiagnosticId === null ||
-            isDigest(value.supportDiagnosticId)) &&
-        isNullableNonEmptyString(value.propagationPolicyVersion)
+        value.assessmentPolicyVersion === aiSelectViewAssessmentPolicyVersion
     );
 };
 
 const isDiagnostics = (value: unknown): value is ViewAssessmentDiagnostics => {
     return (
         isRecord(value) &&
+        isNonNegativeSafeInteger(value.framePixels) &&
         isNonNegativeSafeInteger(value.foregroundPixels) &&
+        isNonNegativeSafeInteger(value.boundaryPixels) &&
         isUnitInterval(value.boundaryContactRatio) &&
         isNonNegativeSafeInteger(value.connectedComponents) &&
         isUnitInterval(value.largestComponentRatio) &&
-        isNullableNonNegativeSafeInteger(value.observedGaussianCount) &&
-        isNullableNonNegativeSafeInteger(value.projectedSupportCount) &&
-        isNullableNonNegativeSafeInteger(value.promptCount)
+        isNullableNonNegativeSafeInteger(value.promptPointCount) &&
+        isNullableNonNegativeSafeInteger(value.promptViolationCount) &&
+        isNullableNonNegativeSafeInteger(value.boxSpillPixels) &&
+        isNullableUnitInterval(value.boxSpillRatio)
     );
+};
+
+/**
+ * Reject a fabricated claim fail-closed: every structured reason must be
+ * backed by the measured diagnostic that the version-owned thresholds could
+ * produce it from.
+ */
+const reasonsAreEvidenceBacked = (
+    reasons: readonly ReviewReason[],
+    diagnostics: ViewAssessmentDiagnostics
+): boolean => {
+    const thresholds = aiSelectMaskReviewThresholds;
+    return reasons.every((reason) => {
+        switch (reason) {
+            case 'prompt-inconsistent':
+                return (
+                    diagnostics.promptViolationCount !== null &&
+                    diagnostics.promptViolationCount > 0
+                );
+            case 'target-materially-clipped':
+                return (
+                    diagnostics.boundaryPixels >=
+                        thresholds.clippedMinBoundaryPixels &&
+                    diagnostics.boundaryContactRatio >=
+                        thresholds.clippedMinBoundaryRatio
+                );
+            case 'severely-fragmented': {
+                // The stored ratio round-trips to the exact disconnected
+                // pixel mass the Companion measured.
+                const disconnected =
+                    diagnostics.foregroundPixels -
+                    Math.round(
+                        diagnostics.largestComponentRatio *
+                            diagnostics.foregroundPixels
+                    );
+                return (
+                    diagnostics.connectedComponents > 1 &&
+                    disconnected >= thresholds.fragmentMinDisconnectedPixels &&
+                    disconnected >=
+                        thresholds.fragmentMinDisconnectedRatio *
+                            diagnostics.foregroundPixels
+                );
+            }
+            case 'box-spill-or-neighbour-leak':
+                return (
+                    diagnostics.boxSpillPixels !== null &&
+                    diagnostics.boxSpillPixels >=
+                        thresholds.boxSpillMinPixels &&
+                    diagnostics.boxSpillRatio !== null &&
+                    diagnostics.boxSpillRatio >= thresholds.boxSpillMinRatio
+                );
+            case 'empty-or-degenerate-mask':
+                return (
+                    diagnostics.foregroundPixels <
+                        thresholds.minForegroundPixels ||
+                    diagnostics.foregroundPixels >=
+                        thresholds.fullFrameRatio * diagnostics.framePixels
+                );
+            default:
+                // Unreachable over the ReviewReason union; keeps the
+                // callback total for the linter.
+                return false;
+        }
+    });
+};
+
+/**
+ * Structural parse of the optional diagnostics block: `undefined` when the
+ * artifact carries none, `null` when it carries a malformed one.
+ */
+const parseAssessmentDiagnostics = (
+    value: unknown
+): ViewAssessmentDiagnostics | undefined | null => {
+    if (value === undefined) {
+        return undefined;
+    }
+    return isDiagnostics(value) ? value : null;
 };
 
 export const isViewAssessmentResult = (
@@ -204,26 +312,50 @@ export const isViewAssessmentResult = (
         !isReviewReasonArray(actionableReasons) ||
         actionableReasons.length > 2 ||
         value.policyVersion !== aiSelectViewAssessmentPolicyVersion ||
-        !isInputIdentity(value.inputIdentity) ||
-        (value.diagnostics !== undefined && !isDiagnostics(value.diagnostics))
+        !isInputIdentity(value.inputIdentity)
     ) {
+        return false;
+    }
+    const diagnostics = parseAssessmentDiagnostics(value.diagnostics);
+    if (diagnostics === null) {
         return false;
     }
     if (!actionableReasons.every((reason) => reasons.includes(reason))) {
         return false;
     }
     if (value.status === 'review') {
+        // Review reasons are Mask-quality claims only; the failure reason
+        // never appears outside a Failed assessment.
         return (
             reasons.length > 0 &&
+            !reasons.includes('empty-or-degenerate-mask') &&
             isReviewReason(value.primaryReason) &&
             value.primaryReason === reasons[0] &&
-            value.diagnostics !== undefined
+            diagnostics !== undefined &&
+            reasonsAreEvidenceBacked(reasons, diagnostics)
+        );
+    }
+    if (value.status === 'failed') {
+        if (diagnostics === undefined) {
+            // Assessment-internal failure: no invented reason, no geometry.
+            return (
+                reasons.length === 0 &&
+                actionableReasons.length === 0 &&
+                value.primaryReason === undefined
+            );
+        }
+        return (
+            reasons.length === 1 &&
+            reasons[0] === 'empty-or-degenerate-mask' &&
+            actionableReasons.length === 0 &&
+            value.primaryReason === 'empty-or-degenerate-mask' &&
+            reasonsAreEvidenceBacked(reasons, diagnostics)
         );
     }
     return (
         reasons.length === 0 &&
         actionableReasons.length === 0 &&
         value.primaryReason === undefined &&
-        (value.status === 'failed' || value.diagnostics !== undefined)
+        diagnostics !== undefined
     );
 };

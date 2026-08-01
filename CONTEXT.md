@@ -185,15 +185,15 @@ The automatic quality state attached to an automatic Mask/View, typically Auto G
 _Avoid_: participation flag, unified confidence percentage
 
 **Review Reason**  
-A structured evidence-backed reason explaining why an automatic Mask/View needs inspection. It must be supported by measurable mask, propagation, Gaussian Evidence/visibility, or cross-view data.  
+A structured evidence-backed reason explaining why an automatic Mask/View needs inspection. The Final Spec v1.3 vocabulary is `prompt-inconsistent`, `target-materially-clipped`, `severely-fragmented`, `box-spill-or-neighbour-leak`, and `empty-or-degenerate-mask`, each supported by measurable Mask geometry or, when the Prompt family exists, Point/Box consistency. Tracker propagation and Gaussian visibility/support are not Mask-quality inputs: `propagation-uncertain` is deleted, and `weak-gaussian-support` belongs to Lift Readiness.  
 _Avoid_: free-form AI guess
 
 **ViewAssessmentPolicy**  
-The Companion-side versioned policy deriving Good/Review/Failed plus Review Reasons from exact RGB/Stable-Mask, policy, propagation, and available support-diagnostic identity. Missing support produces no weak-support claim. It does not override a user-confirmed Stable Mask.
+The Companion-side versioned (`local-view-assessment/v2`) Mask Review policy deriving Good/Review/Failed plus Review Reasons from the exact RGB/Stable-Mask identity, Mask geometry, and the instance Prompt family that produced the Mask. Boundary Review requires a meaningful ratio/margin, fragmentation requires material disconnected mass, and missing optional diagnostics never fabricate a reason. It does not override a user-confirmed Stable Mask.
 _Avoid_: SAM confidence passthrough
 
 **Participation**  
-Whether one AI View's Stable Mask participates in Coverage/Lifting: Included or Excluded. Participation is independent from Mask Quality.  
+Whether one AI View's Stable Mask participates in Coverage/Lifting: Included or Excluded. Participation is independent from Mask Quality and View role. Its defaults are centralized: Auto Good defaults Included; Auto Review, Failed, or unavailable review defaults Excluded; User Confirmed defaults Included unless the user explicitly excludes.  
 _Avoid_: quality score
 
 **Included Stable View Annotation**  

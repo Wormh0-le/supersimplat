@@ -154,26 +154,25 @@ SAM 3.1 adapter.
 ## Assess automatic Generated View Masks
 
 `POST /ai-select/generated-view-masks` publishes a Companion-owned
-`local-view-assessment/v1` result with the automatic Stable Mask. The result
-binds the exact RGB digest, Stable Mask digest, assessment policy,
-`generated-view-mask/v1` propagation policy, and any support diagnostic policy.
-When support runs, `supportDiagnosticId` also hashes its Scene/View/RGB/Mask
-inputs and observed-Gaussian result; the browser recomputes this identity and
-rejects contradictory counts or propagation diagnostics.
-It emits only `good`, `review`, or `failed` and the P0 structured reasons
-`target-at-boundary`, `fragmented-mask`, `weak-gaussian-support`, and
-`propagation-uncertain`. It never publishes a unified confidence percentage or
-requires complete Contributor output.
+`local-view-assessment/v2` Mask Review with the automatic Stable Mask. The
+result binds the exact RGB digest, Stable Mask digest, and assessment policy
+identity. It consumes only the exact Mask geometry and, when the Prompt
+family exists, the synthesized include-point Prompt; tracker propagation and
+Gaussian visibility/support are not Mask-quality inputs (weak/low support
+belongs to Lift Readiness).
+It emits only `good`, `review`, or `failed` and the v1.3 structured reasons
+`prompt-inconsistent`, `target-materially-clipped`, `severely-fragmented`,
+`box-spill-or-neighbour-leak`, and `empty-or-degenerate-mask`. It never
+publishes a unified confidence percentage or requires complete Contributor
+output.
 
-The v1 constants are version-owned: any boundary contact is actionable;
-fragmentation requires multiple 4-connected components with the largest below
-90% of foreground; fewer than 25 observed Gaussians is weak support; and fewer
-than four projected supports or two propagation prompts is propagation
-uncertain. Weak support is emitted only when `local-view-support-probe/v1`
-actually ran. Packed snapshots provide complete-scene planes for this probe.
-The current spatial propagation path resolves an Anchor working set, so it
-deliberately omits Generated-View support instead of undercounting unseen
-chunks and fabricating a weak-support claim.
+The v2 constants are version-owned: boundary Review requires a meaningful
+contact margin and ratio, never any one-pixel contact; fragmentation
+requires material disconnected mass, not merely multiple tiny components;
+Box spill is measured outside the margined Box and flagged only when gross;
+empty, degenerate, and full-frame Masks fail with one structured reason.
+Point/Box consistency is evaluated only when that Prompt family exists, and
+missing optional diagnostics never fabricate a reason.
 
 Assessment failure does not discard a valid RGB or automatic Stable Mask. It
 publishes `failed` with no invented reasons, and the browser keeps that View

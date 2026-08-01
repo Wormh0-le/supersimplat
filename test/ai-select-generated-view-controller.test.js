@@ -24,9 +24,6 @@ const {
 const {
     MaskAnnotationRegistry
 } = require('../.test-dist/src/ai-select/mask-registry.js');
-const {
-    localViewSupportDiagnosticId
-} = require('../.test-dist/src/ai-select/view-assessment.js');
 const { sha256Digest } = require('../.test-dist/src/scene-snapshot-binary.js');
 
 const dependency = (overrides = {}) => ({
@@ -350,33 +347,26 @@ const maskResponseFor = (request, assessmentOverrides = {}) => {
         },
         assessment: {
             status: 'review',
-            primaryReason: 'fragmented-mask',
-            reasons: ['fragmented-mask'],
-            actionableReasons: ['fragmented-mask'],
-            policyVersion: 'local-view-assessment/v1',
+            primaryReason: 'severely-fragmented',
+            reasons: ['severely-fragmented'],
+            actionableReasons: ['severely-fragmented'],
+            policyVersion: 'local-view-assessment/v2',
             inputIdentity: {
                 rgbDigest: request.rgb.digest,
                 stableMaskDigest: mask.digest,
-                assessmentPolicyVersion: 'local-view-assessment/v1',
-                supportPolicyVersion: 'local-view-support-probe/v1',
-                supportDiagnosticId: localViewSupportDiagnosticId({
-                    sceneId: request.sceneId,
-                    sceneVersion: request.sceneVersion,
-                    viewId: request.viewId,
-                    rgbDigest: request.rgb.digest,
-                    stableMaskDigest: mask.digest,
-                    observedGaussianCount: 9
-                }),
-                propagationPolicyVersion: aiSelectGeneratedViewMaskPolicyVersion
+                assessmentPolicyVersion: 'local-view-assessment/v2'
             },
             diagnostics: {
-                foregroundPixels: 3,
+                framePixels: 3072,
+                foregroundPixels: 40,
+                boundaryPixels: 0,
                 boundaryContactRatio: 0,
-                connectedComponents: 1,
-                largestComponentRatio: 1,
-                observedGaussianCount: 9,
-                projectedSupportCount: 9,
-                promptCount: 3
+                connectedComponents: 2,
+                largestComponentRatio: 0.5,
+                promptPointCount: 3,
+                promptViolationCount: 0,
+                boxSpillPixels: null,
+                boxSpillRatio: null
             },
             ...assessmentOverrides
         },
@@ -523,7 +513,7 @@ test('a successful automatic Mask atomically publishes an auto Stable Mask bound
     // Publishing the Stable Mask marks Evidence missing/dirty only; no Lift.
     assert.equal(views[0].evidenceStatus, 'not-requested');
     assert.equal(views[0].assessment.status, 'review');
-    assert.deepEqual(views[0].assessment.reasons, ['fragmented-mask']);
+    assert.deepEqual(views[0].assessment.reasons, ['severely-fragmented']);
     assert.equal(views[0].maskQuality, 'auto-review');
     assert.equal(views[0].participation, 'excluded');
 });
@@ -573,8 +563,6 @@ test('Assessment Failed preserves the Stable Mask but remains Excluded without r
         actionableReasons: [],
         diagnostics: undefined
     });
-    response.assessment.inputIdentity.supportPolicyVersion = null;
-    response.assessment.inputIdentity.supportDiagnosticId = null;
     harness.maskProvider.deferreds[0].resolve(response);
     await flush();
 

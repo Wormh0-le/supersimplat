@@ -93,12 +93,9 @@ from .support_probe import (
     probe_camera_from_renderer_camera,
 )
 from .view_assessment import (
-    AI_SELECT_LOCAL_VIEW_SUPPORT_POLICY_VERSION,
     AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
-    PropagationDiagnostic,
-    SupportDiagnostic,
+    MaskReviewPrompt,
     assess_local_view,
-    local_view_support_diagnostic_id,
 )
 from .generated_view_planning import (
     AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION,
@@ -172,45 +169,19 @@ def _local_view_assessment_payload(
     *,
     rgb_digest: str,
     stable_mask_digest: str,
-    scene_id: str,
-    scene_version: str,
-    view_id: str,
     width: int,
     height: int,
     mask: bytes,
-    projected_support_count: int,
-    prompt_count: int,
-    observed_gaussian_count: int | None,
+    positive_points: tuple[tuple[int, int], ...],
 ) -> dict[str, object]:
+    # The current Generated View Prompt family is synthesized include points
+    # only; Negative Point and Box consistency stay unevaluated (never
+    # fabricated) until the instance Prompt contract supplies them.
     assessment = assess_local_view(
         width=width,
         height=height,
         mask=mask,
-        propagation=PropagationDiagnostic(
-            policy_version=AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION,
-            projected_support_count=projected_support_count,
-            prompt_count=prompt_count,
-        ),
-        support=(
-            None
-            if observed_gaussian_count is None
-            else SupportDiagnostic(
-                policy_version=AI_SELECT_LOCAL_VIEW_SUPPORT_POLICY_VERSION,
-                observed_gaussian_count=observed_gaussian_count,
-            )
-        ),
-    )
-    support_diagnostic_id = (
-        None
-        if observed_gaussian_count is None
-        else local_view_support_diagnostic_id(
-            scene_id=scene_id,
-            scene_version=scene_version,
-            view_id=view_id,
-            rgb_digest=rgb_digest,
-            stable_mask_digest=stable_mask_digest,
-            observed_gaussian_count=observed_gaussian_count,
-        )
+        prompt=MaskReviewPrompt(positive_points=positive_points),
     )
     payload: dict[str, object] = {
         'status': assessment.status,
@@ -221,12 +192,11 @@ def _local_view_assessment_payload(
             'rgbDigest': rgb_digest,
             'stableMaskDigest': stable_mask_digest,
             'assessmentPolicyVersion': assessment.policy_version,
-            'supportPolicyVersion': assessment.support_policy_version,
-            'supportDiagnosticId': support_diagnostic_id,
-            'propagationPolicyVersion': assessment.propagation_policy_version,
         },
         'diagnostics': {
+            'framePixels': assessment.diagnostics.frame_pixels,
             'foregroundPixels': assessment.diagnostics.foreground_pixels,
+            'boundaryPixels': assessment.diagnostics.boundary_pixels,
             'boundaryContactRatio': (
                 assessment.diagnostics.boundary_contact_ratio
             ),
@@ -234,13 +204,12 @@ def _local_view_assessment_payload(
             'largestComponentRatio': (
                 assessment.diagnostics.largest_component_ratio
             ),
-            'observedGaussianCount': (
-                assessment.diagnostics.observed_gaussian_count
+            'promptPointCount': assessment.diagnostics.prompt_point_count,
+            'promptViolationCount': (
+                assessment.diagnostics.prompt_violation_count
             ),
-            'projectedSupportCount': (
-                assessment.diagnostics.projected_support_count
-            ),
-            'promptCount': assessment.diagnostics.prompt_count,
+            'boxSpillPixels': assessment.diagnostics.box_spill_pixels,
+            'boxSpillRatio': assessment.diagnostics.box_spill_ratio,
         },
     }
     if assessment.primary_reason is not None:
@@ -262,11 +231,6 @@ def _failed_local_view_assessment_payload(
             'rgbDigest': rgb_digest,
             'stableMaskDigest': stable_mask_digest,
             'assessmentPolicyVersion': AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
-            'supportPolicyVersion': None,
-            'supportDiagnosticId': None,
-            'propagationPolicyVersion': (
-                AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION
-            ),
         },
     }
 
@@ -4830,35 +4794,16 @@ class CompanionState:
             mask_bytes = base64.b64decode(binary_mask['data'], validate=True)
             mask_digest = f'sha256:{hashlib.sha256(mask_bytes).hexdigest()}'
             try:
-                # Packed snapshots expose the complete scene. The current
-                # spatial Mask path resolves the Anchor working set for
-                # propagation; using it as Generated-View visibility truth
-                # could undercount missing off-anchor chunks, so support stays
-                # explicitly unavailable until a view-bound working set is
-                # resolved.
-                observed_gaussian_count = (
-                    None
-                    if mask_request.scene_transport == 'spatial-v1'
-                    else count_observed_gaussians(
-                        planes=planes,
-                        camera=mask_request.view_probe_camera,
-                        mask=mask_bytes,
-                    )
-                )
+                # Mask Review consumes the exact produced Mask and the
+                # synthesized include-point Prompt family only; Gaussian
+                # visibility/support belongs to Ticket 13 Lift Readiness.
                 assessment_payload = _local_view_assessment_payload(
                     rgb_digest=mask_request.rgb_digest,
                     stable_mask_digest=mask_digest,
-                    scene_id=mask_request.scene_id,
-                    scene_version=mask_request.scene_version,
-                    view_id=mask_request.view_id,
                     width=mask_request.width,
                     height=mask_request.height,
                     mask=mask_bytes,
-                    projected_support_count=(
-                        synthesized.projected_support_count
-                    ),
-                    prompt_count=len(synthesized.prompts),
-                    observed_gaussian_count=observed_gaussian_count,
+                    positive_points=synthesized.prompts,
                 )
             except Exception:
                 # Assessment is derived from an already valid automatic Mask.

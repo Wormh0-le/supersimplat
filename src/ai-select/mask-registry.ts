@@ -253,9 +253,9 @@ export class MaskAnnotationRegistry {
      * Atomically publish an automatic cross-view Mask directly as the Stable
      * revision, chained from any previous Stable version. Automatic
      * publication never creates or disturbs the Editing Mask, and it never
-     * waits for user confirmation: until Ticket 07's evidence-backed View
-     * Assessment binds and supplies the automatic quality label; Review stays
-     * the fail-closed default and is Excluded from Lift.
+     * waits for user confirmation: the Companion's Mask Review supplies the
+     * automatic quality label, with Review the fail-closed default Excluded
+     * from Lift.
      */
     publishAutoStable(input: PublishAutoStableMaskInput): MaskAnnotation {
         assertDigestBoundArtifact(input.artifact);

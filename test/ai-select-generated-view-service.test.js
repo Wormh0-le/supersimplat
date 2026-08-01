@@ -21,9 +21,6 @@ const {
 const {
     maskBitsetEncoding
 } = require('../.test-dist/src/ai-select/mask-annotation.js');
-const {
-    localViewSupportDiagnosticId
-} = require('../.test-dist/src/ai-select/view-assessment.js');
 const { sha256Digest } = require('../.test-dist/src/scene-snapshot-binary.js');
 
 const dependency = (overrides = {}) => ({
@@ -227,33 +224,26 @@ const maskResponseFor = (request, overrides = {}) => {
         },
         assessment: {
             status: 'review',
-            primaryReason: 'fragmented-mask',
-            reasons: ['fragmented-mask', 'weak-gaussian-support'],
-            actionableReasons: ['fragmented-mask', 'weak-gaussian-support'],
-            policyVersion: 'local-view-assessment/v1',
+            primaryReason: 'severely-fragmented',
+            reasons: ['severely-fragmented'],
+            actionableReasons: ['severely-fragmented'],
+            policyVersion: 'local-view-assessment/v2',
             inputIdentity: {
                 rgbDigest: request.rgb.digest,
                 stableMaskDigest: mask.digest,
-                assessmentPolicyVersion: 'local-view-assessment/v1',
-                supportPolicyVersion: 'local-view-support-probe/v1',
-                supportDiagnosticId: localViewSupportDiagnosticId({
-                    sceneId: request.sceneId,
-                    sceneVersion: request.sceneVersion,
-                    viewId: request.viewId,
-                    rgbDigest: request.rgb.digest,
-                    stableMaskDigest: mask.digest,
-                    observedGaussianCount: 17
-                }),
-                propagationPolicyVersion: aiSelectGeneratedViewMaskPolicyVersion
+                assessmentPolicyVersion: 'local-view-assessment/v2'
             },
             diagnostics: {
-                foregroundPixels: 2,
+                framePixels: 3072,
+                foregroundPixels: 40,
+                boundaryPixels: 0,
                 boundaryContactRatio: 0,
                 connectedComponents: 2,
                 largestComponentRatio: 0.5,
-                observedGaussianCount: 17,
-                projectedSupportCount: 17,
-                promptCount: 3
+                promptPointCount: 3,
+                promptViolationCount: 0,
+                boxSpillPixels: null,
+                boxSpillRatio: null
             }
         },
         modelManifestDigest: request.modelManifestDigest,
@@ -473,32 +463,37 @@ test('mask response rejects stale bindings, wrong sources, and bad artifacts', (
             request
         )
     );
+    // A fabricated reason without its measured diagnostic fails closed.
     assert.ok(
-        !generatedViewMaskResponseMatchesRequest(
+        !isGeneratedViewMaskResponse(
             maskResponseFor(request, {
                 assessment: {
                     ...maskResponseFor(request).assessment,
-                    diagnostics: {
-                        ...maskResponseFor(request).assessment.diagnostics,
-                        projectedSupportCount: 99
-                    }
+                    reasons: ['prompt-inconsistent'],
+                    actionableReasons: ['prompt-inconsistent'],
+                    primaryReason: 'prompt-inconsistent'
                 }
-            }),
-            request
+            })
         )
     );
+    // The retired v1 schema (support/propagation identity) is rejected, never
+    // rebound.
     assert.ok(
-        !generatedViewMaskResponseMatchesRequest(
+        !isGeneratedViewMaskResponse(
             maskResponseFor(request, {
                 assessment: {
                     ...maskResponseFor(request).assessment,
-                    diagnostics: {
-                        ...maskResponseFor(request).assessment.diagnostics,
-                        observedGaussianCount: 18
+                    policyVersion: 'local-view-assessment/v1',
+                    inputIdentity: {
+                        ...maskResponseFor(request).assessment.inputIdentity,
+                        assessmentPolicyVersion: 'local-view-assessment/v1',
+                        supportPolicyVersion: 'local-view-support-probe/v1',
+                        supportDiagnosticId: null,
+                        propagationPolicyVersion:
+                            aiSelectGeneratedViewMaskPolicyVersion
                     }
                 }
-            }),
-            request
+            })
         )
     );
     // Structural failures close at the response validator.

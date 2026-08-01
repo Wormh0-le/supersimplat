@@ -36,9 +36,7 @@ from selection_service_companion.server import create_server
 from selection_service_companion.state import CompanionState
 from selection_service_companion.support_probe import AnchorSupportProbeCamera
 from selection_service_companion.view_assessment import (
-    AI_SELECT_LOCAL_VIEW_SUPPORT_POLICY_VERSION,
     AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
-    local_view_support_diagnostic_id,
 )
 
 
@@ -770,6 +768,18 @@ class GeneratedViewRouteTests(unittest.TestCase):
     def test_produces_a_propagated_mask_bound_to_the_view_and_anchor(self) -> None:
         self.register_binary_snapshot()
         body = self._mask_request_body(self.manifest.scene_version)
+        # A 4x4 border ring plus the (1, 2) prompt pixel: 13 foreground
+        # pixels, 12 on the image boundary — materially clipped under the
+        # v1.3 Mask Review margin/ratio rule. Both synthesized include
+        # prompts land on foreground, so no Prompt reason is fabricated.
+        self.predictor.masks = [
+            [
+                [True, True, True, True],
+                [True, False, False, True],
+                [True, True, False, True],
+                [True, True, True, True],
+            ]
+        ]
 
         response = self.request_json('/ai-select/generated-view-masks', 'POST', body)
 
@@ -797,20 +807,11 @@ class GeneratedViewRouteTests(unittest.TestCase):
         )
         assessment = response['assessment']
         self.assertEqual(assessment['status'], 'review')
+        self.assertEqual(assessment['reasons'], ['target-materially-clipped'])
         self.assertEqual(
-            assessment['reasons'],
-            [
-                'target-at-boundary',
-                'fragmented-mask',
-                'weak-gaussian-support',
-                'propagation-uncertain',
-            ],
+            assessment['actionableReasons'], ['target-materially-clipped']
         )
-        self.assertEqual(
-            assessment['actionableReasons'],
-            ['target-at-boundary', 'fragmented-mask'],
-        )
-        self.assertEqual(assessment['primaryReason'], 'target-at-boundary')
+        self.assertEqual(assessment['primaryReason'], 'target-materially-clipped')
         self.assertEqual(
             assessment['policyVersion'],
             AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
@@ -823,20 +824,21 @@ class GeneratedViewRouteTests(unittest.TestCase):
                 'assessmentPolicyVersion': (
                     AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION
                 ),
-                'supportPolicyVersion': (
-                    AI_SELECT_LOCAL_VIEW_SUPPORT_POLICY_VERSION
-                ),
-                'supportDiagnosticId': local_view_support_diagnostic_id(
-                    scene_id='splat-1',
-                    scene_version=self.manifest.scene_version,
-                    view_id='generated-00',
-                    rgb_digest=body['rgb']['digest'],
-                    stable_mask_digest=mask['digest'],
-                    observed_gaussian_count=3,
-                ),
-                'propagationPolicyVersion': (
-                    AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION
-                ),
+            },
+        )
+        self.assertEqual(
+            assessment['diagnostics'],
+            {
+                'framePixels': 16,
+                'foregroundPixels': 13,
+                'boundaryPixels': 12,
+                'boundaryContactRatio': 12 / 13,
+                'connectedComponents': 1,
+                'largestComponentRatio': 1.0,
+                'promptPointCount': 2,
+                'promptViolationCount': 0,
+                'boxSpillPixels': None,
+                'boxSpillRatio': None,
             },
         )
         # SAM ran exactly one single-frame pass with the synthesized prompts.

@@ -1,5 +1,9 @@
 import { Button, Container, Label } from '@playcanvas/pcui';
 
+import {
+    AISelectFloatingPalette,
+    type PaletteToolAvailability
+} from './ai-select-floating-palette';
 import { i18n } from './localization';
 import {
     type AISelectAnchorConfirmationController,
@@ -15,9 +19,13 @@ import {
 } from '../ai-select/anchor-dock-presentation';
 import {
     PointerStrokeBuffer,
-    pointerActionForTool,
-    type AuthoringTool
+    pointerActionForTool
 } from '../ai-select/authoring-interaction';
+import {
+    PALETTE_TOOLS,
+    paletteToolForShortcutKey,
+    type PaletteTool
+} from '../ai-select/floating-palette';
 import type {
     AISelectGeneratedViewController,
     AISelectGeneratedViewState,
@@ -64,7 +72,9 @@ interface GeneratedCardElements {
 }
 
 const CLICK_TOLERANCE_PX = 4;
-type DockAuthoringTool = Exclude<AuthoringTool, 'inspect'>;
+// DG-22 Decision 5 opacity assist proximity; unrelated to the snap threshold.
+const PALETTE_GESTURE_DIM_MARGIN_PX = 24;
+type DockAuthoringTool = PaletteTool;
 
 const cursorForTool = (tool: DockAuthoringTool): string => {
     const cursors: Partial<Record<DockAuthoringTool, string>> = {
@@ -102,14 +112,9 @@ export class AISelectAnchorDock extends Container {
     private readonly technicalDetailsBody: HTMLPreElement;
     private readonly failureActions: Container;
     private readonly maskActions: Container;
-    private readonly toolActions: Container;
-    private readonly toolButtons = new Map<DockAuthoringTool, Button>();
-    private readonly promptUndoButton: Button;
-    private readonly promptRedoButton: Button;
-    private readonly clearPromptsButton: Button;
+    private readonly palette: AISelectFloatingPalette;
     private readonly acceptProposalButton: Button;
     private readonly proposalSelect: HTMLSelectElement;
-    private readonly brushSizeInput: HTMLInputElement;
     private readonly boxPreview: HTMLDivElement;
     private readonly confirmMaskButton: Button;
     private readonly retryMaskButton: Button;
@@ -138,6 +143,7 @@ export class AISelectAnchorDock extends Container {
     private lastStrokePixel: ImagePixel | null = null;
     private readonly pixelStroke = new PointerStrokeBuffer();
     private activeTool: DockAuthoringTool = 'positive-point';
+    private spaceHeld = false;
 
     constructor(
         controller: AISelectAnchorController,
@@ -164,8 +170,16 @@ export class AISelectAnchorDock extends Container {
         // Undo/Redo and never reach native EditHistory.
         this.dom.tabIndex = 0;
         this.dom.addEventListener('keydown', (event) =>
-            this.routeEditingKeys(event)
+            this.handleDockKeydown(event)
         );
+        // Space release restores the palette even when the keyup lands
+        // outside the Dock; a window blur never leaves it hidden.
+        window.addEventListener('keyup', (event) => {
+            if (event.key === ' ') {
+                this.setSpaceHeld(false);
+            }
+        });
+        window.addEventListener('blur', () => this.setSpaceHeld(false));
 
         const title = new Label({ id: 'ai-select-anchor-dock-title' });
         i18n.bindText(title, 'ai-select.panel.title');
@@ -252,53 +266,39 @@ export class AISelectAnchorDock extends Container {
             id: 'ai-select-anchor-dock-mask-actions',
             hidden: true
         });
-        this.toolActions = new Container({
-            id: 'ai-select-anchor-dock-tools',
-            hidden: true
-        });
-        this.toolActions.dom.addEventListener('pointerdown', (event) => {
-            event.stopPropagation();
-        });
-        const toolKeys: readonly [DockAuthoringTool, string][] = [
-            ['positive-point', 'ai-select.prompt.point-positive'],
-            ['negative-point', 'ai-select.prompt.point-negative'],
-            ['positive-box', 'ai-select.prompt.box-positive'],
-            ['paint', 'ai-select.edit.paint'],
-            ['erase', 'ai-select.edit.erase']
-        ];
-        for (const [tool, key] of toolKeys) {
-            const button = new Button({
-                id: `ai-select-anchor-tool-${tool}`
-            });
-            i18n.bindText(button, key);
-            button.on('click', () => {
+        // The floating Prompt/Edit palette (Ticket 07B, DG-22): draggable,
+        // collapsible and clamped inside the fitted image. It exposes exactly
+        // the v1 tool set; Negative Box and Prompt Brush are absent.
+        this.palette = new AISelectFloatingPalette({
+            onSelectTool: (tool) => {
                 this.cancelPointerGesture();
                 this.activeTool = tool;
                 this.renderTools();
-            });
-            this.toolButtons.set(tool, button);
-            this.toolActions.append(button);
-        }
-        this.brushSizeInput = document.createElement('input');
-        this.brushSizeInput.id = 'ai-select-anchor-brush-size';
-        this.brushSizeInput.type = 'range';
-        this.brushSizeInput.min = '1';
-        this.brushSizeInput.max = '64';
-        this.brushSizeInput.value = '8';
-        this.brushSizeInput.setAttribute(
-            'aria-label',
-            i18n.t('ai-select.edit.brush-size')
-        );
-        this.toolActions.dom.appendChild(this.brushSizeInput);
-        this.promptUndoButton = new Button({
-            id: 'ai-select-anchor-prompt-undo'
+            },
+            onPromptUndo: () => {
+                try {
+                    this.mask.undoPromptEdit();
+                } catch (error) {
+                    console.error(error);
+                }
+            },
+            onPromptRedo: () => {
+                try {
+                    this.mask.redoPromptEdit();
+                } catch (error) {
+                    console.error(error);
+                }
+            },
+            onClearPrompts: () => {
+                try {
+                    this.mask.clearPrompts();
+                } catch (error) {
+                    console.error(error);
+                }
+            },
+            onBrushSizeChange: () => this.renderCurrentMaskOverlay()
         });
-        this.promptRedoButton = new Button({
-            id: 'ai-select-anchor-prompt-redo'
-        });
-        this.clearPromptsButton = new Button({
-            id: 'ai-select-anchor-prompt-clear'
-        });
+        this.imageSurface.appendChild(this.palette.dom);
         this.acceptProposalButton = new Button({
             id: 'ai-select-anchor-proposal-accept'
         });
@@ -320,31 +320,7 @@ export class AISelectAnchorDock extends Container {
                 getAnchorDockPresentation(this.state, this.maskState)
             );
         });
-        i18n.bindText(this.promptUndoButton, 'ai-select.prompt.undo');
-        i18n.bindText(this.promptRedoButton, 'ai-select.prompt.redo');
-        i18n.bindText(this.clearPromptsButton, 'ai-select.prompt.clear');
         i18n.bindText(this.acceptProposalButton, 'ai-select.proposal.accept');
-        this.promptUndoButton.on('click', () => {
-            try {
-                this.mask.undoPromptEdit();
-            } catch (error) {
-                console.error(error);
-            }
-        });
-        this.promptRedoButton.on('click', () => {
-            try {
-                this.mask.redoPromptEdit();
-            } catch (error) {
-                console.error(error);
-            }
-        });
-        this.clearPromptsButton.on('click', () => {
-            try {
-                this.mask.clearPrompts();
-            } catch (error) {
-                console.error(error);
-            }
-        });
         this.acceptProposalButton.on('click', () => {
             const proposal = this.maskState.proposalSet?.proposals.find(
                 (candidate) =>
@@ -359,11 +335,6 @@ export class AISelectAnchorDock extends Container {
                 console.error(error);
             }
         });
-        this.toolActions.append(this.promptUndoButton);
-        this.toolActions.append(this.promptRedoButton);
-        this.toolActions.append(this.clearPromptsButton);
-        this.toolActions.dom.appendChild(this.proposalSelect);
-        this.imageSurface.appendChild(this.toolActions.dom);
         this.confirmMaskButton = new Button({
             id: 'ai-select-anchor-dock-confirm-mask'
         });
@@ -566,6 +537,11 @@ export class AISelectAnchorDock extends Container {
             ) {
                 this.cancelPointerGesture();
             }
+            // Palette placement/collapse is target-local: Restart, context
+            // rotation and disposal reset it (DG-22 Decision 7).
+            this.palette.retargetContext(
+                state.context?.targetContextId ?? null
+            );
             this.state = state;
             this.render();
         });
@@ -965,53 +941,52 @@ export class AISelectAnchorDock extends Container {
             !editingReady;
     }
 
+    /**
+     * Why a Prompt tool cannot run, or null when it is usable. Paint/Erase
+     * are local Editing Mask operations and stay usable without the model
+     * service; inference tools gate on Prompt Adapter capabilities.
+     */
+    private toolUnavailableReason(tool: PaletteTool): string | null {
+        if (tool === 'paint' || tool === 'erase') {
+            return null;
+        }
+        const capabilities = this.maskState.promptCapabilities;
+        return capabilities === null
+            ? i18n.t('ai-select.prompt.capabilities-unavailable')
+            : promptToolCapabilityReason(tool, capabilities);
+    }
+
     private renderTools(): void {
         const ready =
             getAnchorDockPresentation(this.state, this.maskState).status ===
                 'ready' && !this.confirmation.locked;
-        this.toolActions.hidden = !ready;
         const capabilities = this.maskState.promptCapabilities;
-        for (const [tool, button] of this.toolButtons) {
-            const reason =
-                tool === 'paint' || tool === 'erase'
-                    ? null
-                    : capabilities === null
-                      ? 'Prompt Adapter capabilities are unavailable.'
-                      : promptToolCapabilityReason(tool, capabilities);
-            const label = button.dom.textContent?.trim() ?? tool;
-            button.enabled = ready && reason === null;
-            button.hidden = false;
-            button.dom.title = reason ?? label;
-            button.dom.setAttribute(
-                'aria-label',
-                reason === null ? label : `${label}: ${reason}`
-            );
-            button.dom.setAttribute('aria-disabled', String(!button.enabled));
-            button.dom.classList.toggle(
-                'ai-select-tool-selected',
-                tool === this.activeTool
-            );
+        const availability = new Map<PaletteTool, PaletteToolAvailability>();
+        for (const tool of PALETTE_TOOLS) {
+            const reason = this.toolUnavailableReason(tool);
+            availability.set(tool, {
+                enabled: ready && reason === null,
+                reason
+            });
         }
-        const activeButton = this.toolButtons.get(this.activeTool);
-        if (activeButton !== undefined && !activeButton.enabled) {
+        if (ready && availability.get(this.activeTool)?.enabled !== true) {
             this.activeTool =
                 capabilities?.positivePoints === true
                     ? 'positive-point'
                     : 'paint';
-            this.toolButtons
-                .get(this.activeTool)
-                ?.dom.classList.add('ai-select-tool-selected');
         }
-        const brushActive =
-            this.activeTool === 'paint' || this.activeTool === 'erase';
-        this.brushSizeInput.hidden = !brushActive;
-        this.promptUndoButton.enabled = ready && this.maskState.canUndoPrompt;
-        this.promptRedoButton.enabled = ready && this.maskState.canRedoPrompt;
-        this.clearPromptsButton.enabled =
-            ready &&
-            this.maskState.promptState !== null &&
-            (this.maskState.promptState.points.length > 0 ||
-                this.maskState.promptState.boxes.length > 0);
+        this.palette.render({
+            visible: ready,
+            activeTool: this.activeTool,
+            availability,
+            canUndoPrompt: ready && this.maskState.canUndoPrompt,
+            canRedoPrompt: ready && this.maskState.canRedoPrompt,
+            canClearPrompts:
+                ready &&
+                this.maskState.promptState !== null &&
+                (this.maskState.promptState.points.length > 0 ||
+                    this.maskState.promptState.boxes.length > 0)
+        });
         const proposalIds =
             this.maskState.proposalDecision?.alternativeProposalIds ?? [];
         const previousSelection = this.proposalSelect.value;
@@ -1043,12 +1018,8 @@ export class AISelectAnchorDock extends Container {
         this.acceptProposalButton.enabled =
             ready && !this.acceptProposalButton.hidden;
         this.image.style.cursor = cursorForTool(this.activeTool);
-        const promptUndo = i18n.t('ai-select.prompt.undo');
-        const promptRedo = i18n.t('ai-select.prompt.redo');
         const maskUndo = i18n.t('ai-select.mask.undo');
         const maskRedo = i18n.t('ai-select.mask.redo');
-        this.setAccessibleLabel(this.promptUndoButton, promptUndo);
-        this.setAccessibleLabel(this.promptRedoButton, promptRedo);
         this.setAccessibleLabel(this.undoMaskButton, maskUndo);
         this.setAccessibleLabel(this.redoMaskButton, maskRedo);
     }
@@ -1183,6 +1154,78 @@ export class AISelectAnchorDock extends Container {
         } catch (error) {
             console.error(error);
         }
+    }
+
+    /**
+     * Dock-focus-scoped palette keys (DG-22 Decision 4 and 8). These never
+     * reach the global ShortcutManager (it only fires for document.body
+     * targets), and they never steal input from text-entry controls, native
+     * button activation, or modals that own focus.
+     */
+    private handleDockKeydown(event: KeyboardEvent): void {
+        this.routeEditingKeys(event);
+        if (event.defaultPrevented) {
+            return;
+        }
+        // Escape closes the Brush Size popover first.
+        if (event.key === 'Escape' && this.palette.popoverOpen) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.palette.closeBrushPopover();
+            this.palette.focusActiveTool();
+            return;
+        }
+        const target = event.target as HTMLElement | null;
+        const tag = target?.tagName;
+        if (
+            tag === 'INPUT' ||
+            tag === 'TEXTAREA' ||
+            tag === 'SELECT' ||
+            target?.isContentEditable === true
+        ) {
+            return;
+        }
+        if (event.ctrlKey || event.metaKey || event.altKey) {
+            return;
+        }
+        if (event.key === ' ') {
+            // Buttons keep native Space activation; everywhere else in the
+            // Dock, hold Space hides the palette until keyup/blur.
+            if (tag === 'BUTTON' || tag === 'A') {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            if (!event.repeat) {
+                this.setSpaceHeld(true);
+            }
+            return;
+        }
+        if (event.repeat) {
+            return;
+        }
+        const tool = paletteToolForShortcutKey(event.key);
+        if (tool === null) {
+            return;
+        }
+        const ready =
+            getAnchorDockPresentation(this.state, this.maskState).status ===
+                'ready' && !this.confirmation.locked;
+        if (!ready || this.toolUnavailableReason(tool) !== null) {
+            return;
+        }
+        event.preventDefault();
+        this.cancelPointerGesture();
+        this.activeTool = tool;
+        this.renderTools();
+    }
+
+    private setSpaceHeld(held: boolean): void {
+        if (this.spaceHeld === held) {
+            return;
+        }
+        this.spaceHeld = held;
+        this.palette.setTransientHidden(held);
     }
 
     private renderMaskOverlay(presentation: AnchorDockPresentation): void {
@@ -1343,6 +1386,8 @@ export class AISelectAnchorDock extends Container {
         this.imageSurface.style.top = `${fitted.top}px`;
         this.imageSurface.style.width = `${fitted.width}px`;
         this.imageSurface.style.height = `${fitted.height}px`;
+        // Dock/image resize reclamps the palette without changing the tool.
+        this.palette.setSurfaceSize(fitted.width, fitted.height);
     }
 
     private toImagePixel(event: PointerEvent): ImagePixel | null {
@@ -1379,6 +1424,7 @@ export class AISelectAnchorDock extends Container {
         this.gestureStartPixel = pixel;
         this.lastStrokePixel = pixel;
         this.image.setPointerCapture(event.pointerId);
+        this.updatePaletteGestureDim(event);
         const action = pointerActionForTool(this.activeTool);
         if (action === 'pixel-edit') {
             this.pixelStroke.begin(pixel);
@@ -1392,6 +1438,7 @@ export class AISelectAnchorDock extends Container {
         if (this.dragStart === null) {
             return;
         }
+        this.updatePaletteGestureDim(event);
         if (pointerActionForTool(this.activeTool) === 'pixel-edit') {
             const samples = event.getCoalescedEvents?.() ?? [event];
             for (const sampleEvent of samples) {
@@ -1424,6 +1471,7 @@ export class AISelectAnchorDock extends Container {
         if (this.dragStart === null) {
             return;
         }
+        this.palette.setGestureDimmed(false);
         const moved =
             Math.abs(event.clientX - this.dragStart.x) +
             Math.abs(event.clientY - this.dragStart.y);
@@ -1490,12 +1538,34 @@ export class AISelectAnchorDock extends Container {
     }
 
     private brushRadius(): number {
-        return Number(this.brushSizeInput.value);
+        return this.palette.brushSize;
+    }
+
+    /**
+     * DG-22 Decision 5 non-relocating occlusion assist: while a captured
+     * image gesture passes near the palette, temporarily dim it. This never
+     * moves the palette and never touches image coordinates, PromptState,
+     * Mask pixels, or either history.
+     */
+    private updatePaletteGestureDim(event: PointerEvent): void {
+        const rect = this.palette.dom.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+            this.palette.setGestureDimmed(false);
+            return;
+        }
+        const margin = PALETTE_GESTURE_DIM_MARGIN_PX;
+        const near =
+            event.clientX >= rect.left - margin &&
+            event.clientX <= rect.right + margin &&
+            event.clientY >= rect.top - margin &&
+            event.clientY <= rect.bottom + margin;
+        this.palette.setGestureDimmed(near);
     }
 
     private cancelPointerGesture(): void {
         this.pixelStroke.cancel();
         this.resetPointerGesture();
+        this.palette.setGestureDimmed(false);
         this.renderCurrentMaskOverlay();
     }
 

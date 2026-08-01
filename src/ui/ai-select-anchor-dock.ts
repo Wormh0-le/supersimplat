@@ -1065,9 +1065,29 @@ export class AISelectAnchorDock extends Container {
             `${i18n.t('ai-select.prompt.summary-boxes')} ${i18n.formatInteger(prompt.boxCount)}`,
             `${i18n.t('ai-select.prompt.summary-revision')} ${i18n.formatInteger(prompt.promptRevision)}`
         ].join(' · ');
-        const reasons = (this.maskState.proposalDecision?.reasons ?? []).map(
-            (reason) => i18n.t(`ai-select.proposal.reason.${reason.code}`)
+        // Mask-quality claims live on the previewed candidate's Review record
+        // (the simplified 07A decision carries no ranking reason codes). The
+        // candidate choice control is authoritative for which candidate the
+        // user is previewing; fall back to the decision's default preview.
+        const chosenProposalId = this.maskState.proposalSet?.proposals.some(
+            (candidate) => candidate.proposalId === this.proposalSelect.value
+        )
+            ? this.proposalSelect.value
+            : undefined;
+        const previewedProposalId =
+            chosenProposalId ??
+            this.maskState.acceptedProposalId ??
+            this.maskState.proposalDecision?.selectedProposalId ??
+            this.maskState.proposalDecision?.alternativeProposalIds[0];
+        const previewedProposal = this.maskState.proposalSet?.proposals.find(
+            (candidate) => candidate.proposalId === previewedProposalId
         );
+        const reasons = (previewedProposal?.review.reasons ?? []).map(
+            (reason) => i18n.t(`ai-select.review.reason.${reason}`)
+        );
+        if (this.maskState.proposalSet?.diagnostics?.refinementFallback) {
+            reasons.push(i18n.t('ai-select.proposal.refinement-fallback'));
+        }
         this.promptStatus.text = [summary, ...reasons]
             .filter((entry) => entry.length > 0)
             .join(' · ');

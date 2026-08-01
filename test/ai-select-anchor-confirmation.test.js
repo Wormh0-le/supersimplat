@@ -28,6 +28,9 @@ const {
     autoMaskProposalSetDigest
 } = require('../.test-dist/src/ai-select/mask-proposal.js');
 const {
+    aiSelectViewAssessmentPolicyVersion
+} = require('../.test-dist/src/ai-select/view-assessment.js');
+const {
     createPromptAdapterCapabilities
 } = require('../.test-dist/src/ai-select/prompt-state.js');
 const { sha256Digest } = require('../.test-dist/src/scene-snapshot-binary.js');
@@ -158,7 +161,7 @@ const maskResponseFor = (request, overrides = {}) => {
         positiveBoxesSatisfied: true
     };
     const proposalPayload = {
-        schemaVersion: 3,
+        schemaVersion: 4,
         viewId: request.viewId,
         rgbDigest: request.rgbDigest,
         promptStateDigest: request.promptState.digest,
@@ -180,24 +183,24 @@ const maskResponseFor = (request, overrides = {}) => {
                     promptConsistency,
                     eligible: true,
                     areaFraction: 256 / (request.rgbWidth * request.rgbHeight),
-                    boundingBox: {
-                        x0Px: request.rgbWidth / 2 - 8,
-                        y0Px: request.rgbHeight / 2 - 8,
-                        x1Px: request.rgbWidth / 2 + 7,
-                        y1Px: request.rgbHeight / 2 + 7
-                    },
-                    connectedComponentCount: 1,
-                    positivePointComponentIds: [0],
-                    positivePointBoundaryDistances: [1],
-                    pairwiseRelations: [],
-                    boundaryContactFraction: 0,
-                    compactness: Math.PI / 4,
-                    boxFillRatios: [],
-                    boxSpillRatios: [],
-                    promptMaskOverlap: 1,
-                    optionalSupportSanity: {
-                        participated: false,
-                        changedDecision: false
+                    connectedComponentCount: 1
+                },
+                review: {
+                    status: 'good',
+                    reasons: [],
+                    actionableReasons: [],
+                    policyVersion: aiSelectViewAssessmentPolicyVersion,
+                    diagnostics: {
+                        framePixels: request.rgbWidth * request.rgbHeight,
+                        foregroundPixels: 256,
+                        boundaryPixels: 0,
+                        boundaryContactRatio: 0,
+                        connectedComponents: 1,
+                        largestComponentRatio: 1,
+                        promptPointCount: 1,
+                        promptViolationCount: 0,
+                        boxSpillPixels: null,
+                        boxSpillRatio: null
                     }
                 }
             }
@@ -223,7 +226,7 @@ const maskResponseFor = (request, overrides = {}) => {
         proposalAttemptId: request.proposalAttemptId,
         proposalSet,
         proposalDecision: {
-            schemaVersion: 1,
+            schemaVersion: 2,
             viewId: request.viewId,
             rgbDigest: request.rgbDigest,
             promptStateDigest: request.promptState.digest,
@@ -231,8 +234,7 @@ const maskResponseFor = (request, overrides = {}) => {
             rankingPolicyVersion: anchorMaskRankingPolicyVersion,
             status: 'selected',
             selectedProposalId: 'proposal-0',
-            alternativeProposalIds: ['proposal-0'],
-            reasons: []
+            alternativeProposalIds: ['proposal-0']
         },
         ...overrides
     };

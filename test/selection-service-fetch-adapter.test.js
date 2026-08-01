@@ -21,6 +21,9 @@ const {
     autoMaskProposalSetDigest
 } = require('../.test-dist/src/ai-select/mask-proposal.js');
 const {
+    aiSelectViewAssessmentPolicyVersion
+} = require('../.test-dist/src/ai-select/view-assessment.js');
+const {
     previousPredictionLogitsRefDigest
 } = require('../.test-dist/src/ai-select/previous-logits-ref.js');
 
@@ -1352,7 +1355,7 @@ const maskReply = (request, overrides = {}) => {
         positiveBoxesSatisfied: true
     };
     const proposalPayload = {
-        schemaVersion: 3,
+        schemaVersion: 4,
         viewId: request.viewId,
         rgbDigest: request.rgbDigest,
         promptStateDigest: request.promptState.digest,
@@ -1372,24 +1375,24 @@ const maskReply = (request, overrides = {}) => {
                     promptConsistency,
                     eligible: true,
                     areaFraction: 1 / (request.rgbWidth * request.rgbHeight),
-                    boundingBox: {
-                        x0Px: 10,
-                        y0Px: 12,
-                        x1Px: 10,
-                        y1Px: 12
-                    },
-                    connectedComponentCount: 1,
-                    positivePointComponentIds: [0],
-                    positivePointBoundaryDistances: [1],
-                    pairwiseRelations: [],
-                    boundaryContactFraction: 0,
-                    compactness: Math.PI / 4,
-                    boxFillRatios: [],
-                    boxSpillRatios: [],
-                    promptMaskOverlap: 1,
-                    optionalSupportSanity: {
-                        participated: false,
-                        changedDecision: false
+                    connectedComponentCount: 1
+                },
+                review: {
+                    status: 'good',
+                    reasons: [],
+                    actionableReasons: [],
+                    policyVersion: aiSelectViewAssessmentPolicyVersion,
+                    diagnostics: {
+                        framePixels: request.rgbWidth * request.rgbHeight,
+                        foregroundPixels: 1,
+                        boundaryPixels: 0,
+                        boundaryContactRatio: 0,
+                        connectedComponents: 1,
+                        largestComponentRatio: 1,
+                        promptPointCount: 1,
+                        promptViolationCount: 0,
+                        boxSpillPixels: null,
+                        boxSpillRatio: null
                     }
                 }
             }
@@ -1417,7 +1420,7 @@ const maskReply = (request, overrides = {}) => {
         proposalAttemptId: request.proposalAttemptId,
         proposalSet,
         proposalDecision: {
-            schemaVersion: 1,
+            schemaVersion: 2,
             viewId: request.viewId,
             rgbDigest: request.rgbDigest,
             promptStateDigest: request.promptState.digest,
@@ -1425,8 +1428,7 @@ const maskReply = (request, overrides = {}) => {
             rankingPolicyVersion: request.rankingPolicyVersion,
             status: 'selected',
             selectedProposalId: 'proposal-0',
-            alternativeProposalIds: ['proposal-0'],
-            reasons: []
+            alternativeProposalIds: ['proposal-0']
         },
         ...responseOverrides
     };

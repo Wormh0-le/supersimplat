@@ -1,6 +1,6 @@
 # 07B — Floating Prompt/Edit Palette UX Hardening
 
-Status: proposed — ready after 07A
+Status: proposed — unblocked (07A implemented)
 
 Blocked by: 07A
 

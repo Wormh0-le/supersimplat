@@ -9,6 +9,7 @@ import {
     anchorMaskRankingPolicyVersion,
     isAutoMaskProposalSet,
     isProposalDecision,
+    maximumAutoMaskProposalCount,
     type AutoMaskProposalSet,
     type ProposalDecision
 } from './mask-proposal';
@@ -321,6 +322,14 @@ export const maskResponseMatchesRequest = (
         response.proposalSet.proposalAttemptId === request.proposalAttemptId &&
         response.proposalDecision.rankingPolicyVersion ===
             request.rankingPolicyVersion &&
+        // The editor enforces the 07A candidate bound fail-closed rather than
+        // trusting the wire: one include Point without Box/refinement keeps at
+        // most three candidates; every other program keeps at most one.
+        response.proposalSet.proposals.length <=
+            maximumAutoMaskProposalCount(
+                request.promptState,
+                request.previousLogitsRef !== undefined
+            ) &&
         response.proposalSet.proposals.every(
             (proposal) =>
                 proposal.mask.width === request.rgbWidth &&

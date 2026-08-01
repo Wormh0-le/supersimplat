@@ -1,5 +1,16 @@
 # 04C Protocol Contract — SAM 3 Image Instance Adapter Migration
 
+> **07A amendment (current):** Ticket 07A rotated the ranking/decision layer
+> of this contract. Current identities: ranking policy
+> `anchor-mask-ranking/v3`, proposal set schemaVersion `4`, ProposalDecision
+> schemaVersion `2` (no ranking reason codes; default preview is the highest
+> raw model score and never auto-confirms). Per-candidate `rankingFeatures`
+> are slimmed to prompt consistency, eligibility, area fraction, connected
+> component count, and echoed model score; each candidate additionally carries
+> a `review` record under the shared `local-view-assessment/v2` Mask Review
+> policy. The editor also enforces the 3-vs-1 candidate bound fail-closed on
+> every response. Everything below otherwise remains the 04C baseline.
+
 Working design note pinning the exact editor↔Companion contract for ticket
 `.scratch/ai-select-v1/issues/04C-sam3-image-instance-adapter-migration.md`.
 Both implementation slices (Companion Python, Editor TypeScript) implement

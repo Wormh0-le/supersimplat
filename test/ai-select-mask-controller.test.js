@@ -23,6 +23,9 @@ const {
     autoMaskProposalSetDigest
 } = require('../.test-dist/src/ai-select/mask-proposal.js');
 const {
+    aiSelectViewAssessmentPolicyVersion
+} = require('../.test-dist/src/ai-select/view-assessment.js');
+const {
     previousPredictionLogitsRefDigest
 } = require('../.test-dist/src/ai-select/previous-logits-ref.js');
 const {
@@ -145,25 +148,32 @@ const promptConsistency = () => ({
     positiveBoxesSatisfied: true
 });
 
-const rankingFeatures = (relations = [], modelScore) => ({
+const rankingFeatures = (modelScore) => ({
     promptConsistency: promptConsistency(),
     eligible: true,
     areaFraction: 1 / (64 * 48),
-    boundingBox: { x0Px: 2, y0Px: 2, x1Px: 2, y1Px: 2 },
     connectedComponentCount: 1,
-    positivePointComponentIds: [0],
-    positivePointBoundaryDistances: [1],
-    pairwiseRelations: relations,
-    boundaryContactFraction: 0,
-    compactness: Math.PI / 4,
-    boxFillRatios: [],
-    boxSpillRatios: [],
-    promptMaskOverlap: 1,
-    optionalSupportSanity: {
-        participated: false,
-        changedDecision: false
-    },
     ...(modelScore === undefined ? {} : { modelScore })
+});
+
+const goodReview = (overrides = {}) => ({
+    status: 'good',
+    reasons: [],
+    actionableReasons: [],
+    policyVersion: aiSelectViewAssessmentPolicyVersion,
+    diagnostics: {
+        framePixels: 64 * 48,
+        foregroundPixels: 1,
+        boundaryPixels: 0,
+        boundaryContactRatio: 0,
+        connectedComponents: 1,
+        largestComponentRatio: 1,
+        promptPointCount: 1,
+        promptViolationCount: 0,
+        boxSpillPixels: null,
+        boxSpillRatio: null
+    },
+    ...overrides
 });
 
 const logitsRefFor = (request, candidateId = 'proposal-0') => {
@@ -218,13 +228,14 @@ const maskResponseFor = (request, overrides = {}) => {
                 ? {}
                 : { promptDiagnostics }),
             rankingFeatures: rankingFeatures(),
+            review: goodReview(),
             ...(overrides.withLogitsRef === true
                 ? { logitsRef: logitsRefFor(request) }
                 : {})
         }
     ];
     const proposalPayload = {
-        schemaVersion: 3,
+        schemaVersion: 4,
         viewId: request.viewId,
         rgbDigest: request.rgbDigest,
         promptStateDigest: request.promptState.digest,
@@ -242,18 +253,17 @@ const maskResponseFor = (request, overrides = {}) => {
         overrides.proposalDecision ??
         (proposalSet.proposals.length === 0
             ? {
-                  schemaVersion: 1,
+                  schemaVersion: 2,
                   viewId: request.viewId,
                   rgbDigest: request.rgbDigest,
                   promptStateDigest: request.promptState.digest,
                   proposalSetDigest: proposalSet.digest,
                   rankingPolicyVersion: anchorMaskRankingPolicyVersion,
                   status: 'unavailable',
-                  alternativeProposalIds: [],
-                  reasons: [{ code: 'prompt-conflict', proposalIds: [] }]
+                  alternativeProposalIds: []
               }
             : {
-                  schemaVersion: 1,
+                  schemaVersion: 2,
                   viewId: request.viewId,
                   rgbDigest: request.rgbDigest,
                   promptStateDigest: request.promptState.digest,
@@ -261,8 +271,7 @@ const maskResponseFor = (request, overrides = {}) => {
                   rankingPolicyVersion: anchorMaskRankingPolicyVersion,
                   status: 'selected',
                   selectedProposalId: proposalSet.proposals[0].proposalId,
-                  alternativeProposalIds: [proposalSet.proposals[0].proposalId],
-                  reasons: []
+                  alternativeProposalIds: [proposalSet.proposals[0].proposalId]
               });
     const {
         mask: ignoredMask,
@@ -293,7 +302,7 @@ const maskResponseFor = (request, overrides = {}) => {
 
 const emptyProposalResponseFor = (request) => {
     const payload = {
-        schemaVersion: 3,
+        schemaVersion: 4,
         viewId: request.viewId,
         rgbDigest: request.rgbDigest,
         promptStateDigest: request.promptState.digest,
@@ -1354,21 +1363,7 @@ test('explicit acceptance rejects proposals excluded by the bound decision', asy
     const { mask } = await setup({
         produceMask: (request) => {
             const base = maskResponseFor(request);
-            const eligible = {
-                ...base.proposalSet.proposals[0],
-                rankingFeatures: {
-                    ...base.proposalSet.proposals[0].rankingFeatures,
-                    pairwiseRelations: [
-                        {
-                            proposalId: 'proposal-1',
-                            intersectionOverUnion: 1,
-                            areaRatio: 1,
-                            containment: 'none',
-                            materiallyDistinct: false
-                        }
-                    ]
-                }
-            };
+            const eligible = base.proposalSet.proposals[0];
             const ineligibleFacts = {
                 positivePointsSatisfied: false,
                 negativePointsSatisfied: true,
@@ -1382,16 +1377,7 @@ test('explicit acceptance rejects proposals excluded by the bound decision', asy
                 rankingFeatures: {
                     ...eligible.rankingFeatures,
                     promptConsistency: ineligibleFacts,
-                    eligible: false,
-                    pairwiseRelations: [
-                        {
-                            proposalId: 'proposal-0',
-                            intersectionOverUnion: 1,
-                            areaRatio: 1,
-                            containment: 'none',
-                            materiallyDistinct: false
-                        }
-                    ]
+                    eligible: false
                 }
             };
             const proposalPayload = {
@@ -1436,18 +1422,25 @@ test('an ambiguous proposal set preserves alternatives until explicit acceptance
             modelScore: 0.91,
             modelScoreSemantics: 'adapter-local score',
             promptConsistency: promptConsistency(),
-            rankingFeatures: rankingFeatures(
-                [
-                    {
-                        proposalId: 'proposal-1',
-                        intersectionOverUnion: 1 / 3,
-                        areaRatio: 3,
-                        containment: 'contained-by',
-                        materiallyDistinct: true
-                    }
-                ],
-                0.91
-            )
+            rankingFeatures: rankingFeatures(0.91),
+            review: goodReview({
+                status: 'review',
+                primaryReason: 'target-materially-clipped',
+                reasons: ['target-materially-clipped'],
+                actionableReasons: ['target-materially-clipped'],
+                diagnostics: {
+                    framePixels: 64 * 48,
+                    foregroundPixels: 1,
+                    boundaryPixels: 10,
+                    boundaryContactRatio: 0.25,
+                    connectedComponents: 1,
+                    largestComponentRatio: 1,
+                    promptPointCount: 1,
+                    promptViolationCount: 0,
+                    boxSpillPixels: null,
+                    boxSpillRatio: null
+                }
+            })
         },
         {
             proposalId: 'proposal-1',
@@ -1456,18 +1449,8 @@ test('an ambiguous proposal set preserves alternatives until explicit acceptance
             modelScore: 0.89,
             modelScoreSemantics: 'adapter-local score',
             promptConsistency: promptConsistency(),
-            rankingFeatures: rankingFeatures(
-                [
-                    {
-                        proposalId: 'proposal-0',
-                        intersectionOverUnion: 1 / 3,
-                        areaRatio: 3,
-                        containment: 'contains',
-                        materiallyDistinct: true
-                    }
-                ],
-                0.89
-            )
+            rankingFeatures: rankingFeatures(0.89),
+            review: goodReview()
         }
     ];
     const { mask } = await setup({
@@ -1475,7 +1458,7 @@ test('an ambiguous proposal set preserves alternatives until explicit acceptance
         produceMask: (request) => {
             const response = maskResponseFor(request, { proposals });
             response.proposalDecision = {
-                schemaVersion: 1,
+                schemaVersion: 2,
                 viewId: request.viewId,
                 rgbDigest: request.rgbDigest,
                 promptStateDigest: request.promptState.digest,
@@ -1483,13 +1466,7 @@ test('an ambiguous proposal set preserves alternatives until explicit acceptance
                 rankingPolicyVersion: anchorMaskRankingPolicyVersion,
                 status: 'ambiguous',
                 selectedProposalId: 'proposal-0',
-                alternativeProposalIds: ['proposal-0', 'proposal-1'],
-                reasons: [
-                    {
-                        code: 'nested-part-vs-whole',
-                        proposalIds: ['proposal-0', 'proposal-1']
-                    }
-                ]
+                alternativeProposalIds: ['proposal-0', 'proposal-1']
             };
             return Promise.resolve(response);
         }
@@ -1499,9 +1476,14 @@ test('an ambiguous proposal set preserves alternatives until explicit acceptance
 
     assert.equal(mask.state.proposalStatus, 'ambiguous');
     assert.equal(mask.state.editingMask, null);
-    assert.equal(
-        mask.state.proposalDecision.reasons[0].code,
-        'nested-part-vs-whole'
+    // The v2 decision carries no ranking reason codes; Mask-quality claims
+    // live on the per-candidate Review record.
+    assert.equal('reasons' in mask.state.proposalDecision, false);
+    assert.deepEqual(
+        mask.state.proposalSet.proposals.find(
+            (candidate) => candidate.proposalId === 'proposal-0'
+        ).review.reasons,
+        ['target-materially-clipped']
     );
 
     mask.acceptProposal('proposal-1');

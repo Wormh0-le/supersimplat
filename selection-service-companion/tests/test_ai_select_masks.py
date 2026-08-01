@@ -21,6 +21,11 @@ from selection_service_companion.masking import (
     SAM31_RUNTIME_CONFIG_DIGEST,
     Sam3ImageInstanceAdapter,
 )
+from selection_service_companion.proposal_ranking import (
+    RANKING_POLICY_VERSION,
+    add_ranking_features,
+    decide_proposals,
+)
 from selection_service_companion.server import create_server
 from selection_service_companion.state import (
     CompanionState,
@@ -31,7 +36,7 @@ from selection_service_companion.state import (
 EDITOR_ORIGIN = 'https://editor.example'
 ADAPTER_ID = 'sam3-image-instance/v1'
 PROPOSAL_POLICY_VERSION = 'auto-mask-proposals/bounded-source-order-v2'
-RANKING_POLICY_VERSION = 'anchor-mask-ranking/v2'
+VIEW_ASSESSMENT_POLICY_VERSION = 'local-view-assessment/v2'
 
 
 class ProposalIdentityDigestTests(unittest.TestCase):
@@ -55,11 +60,34 @@ class ProposalIdentityDigestTests(unittest.TestCase):
 # a stable identity so the RGB digest binding can be verified end to end.
 IMAGE_PNG = b'\x89PNG\r\n\x1a\nanchor-rgb-frame'
 IMAGE_DIGEST = f'sha256:{hashlib.sha256(IMAGE_PNG).hexdigest()}'
-IMAGE_WIDTH = 2
-IMAGE_HEIGHT = 2
+IMAGE_WIDTH = 8
+IMAGE_HEIGHT = 8
 
-# One foreground pixel at (1, 0): bit index 1 of a single bitset byte.
-ACCEPTED_MASK_BITS = bytes([0b00000010])
+
+def _mask_grid(*pixels: tuple[int, int]) -> list[list[bool]]:
+    """Build one WIDTHxHEIGHT boolean frame for the fake image runtime."""
+
+    grid = [[False] * IMAGE_WIDTH for _ in range(IMAGE_HEIGHT)]
+    for x_px, y_px in pixels:
+        grid[y_px][x_px] = True
+    return grid
+
+
+def _mask_bits(width: int, height: int, pixels: list[tuple[int, int]]) -> bytes:
+    """Encode pixels as the bitset-lsb-v1 payload the route emits."""
+
+    bits = bytearray((width * height + 7) // 8)
+    for x_px, y_px in pixels:
+        pixel_index = y_px * width + x_px
+        bits[pixel_index // 8] |= 1 << (pixel_index % 8)
+    return bytes(bits)
+
+
+# A 4x4 foreground block at rows 0-3, columns 1-4: it contains the default
+# positive Point (1, 0), clears the degenerate Mask Review floor, and stays
+# below the material boundary-clipping margin (4 boundary pixels).
+ACCEPTED_PIXELS = [(x, y) for y in range(4) for x in range(1, 5)]
+ACCEPTED_MASK_BITS = _mask_bits(IMAGE_WIDTH, IMAGE_HEIGHT, ACCEPTED_PIXELS)
 ACCEPTED_MASK_BASE64 = base64.b64encode(ACCEPTED_MASK_BITS).decode('ascii')
 
 
@@ -76,7 +104,7 @@ class FakeSam3ImageRuntime:
     def __init__(self) -> None:
         self.set_image_calls: list[bytes] = []
         self.predict_calls: list[dict[str, object]] = []
-        self.masks: list[list[list[bool]]] = [[[False, True], [False, False]]]
+        self.masks: list[list[list[bool]]] = [_mask_grid(*ACCEPTED_PIXELS)]
         self.scores: list[float] = [0.9]
         self.predict_started: Event | None = None
         self.predict_release: Event | None = None
@@ -283,7 +311,7 @@ class AISelectMaskTests(unittest.TestCase):
         )
         self.assertEqual(response['modelManifestDigest'], self.model_manifest_digest)
         proposal_set = response['proposalSet']
-        self.assertEqual(proposal_set['schemaVersion'], 3)
+        self.assertEqual(proposal_set['schemaVersion'], 4)
         self.assertEqual(proposal_set['proposalPolicyVersion'], PROPOSAL_POLICY_VERSION)
         self.assertEqual(proposal_set['proposalAttemptId'], 'proposal-attempt-1')
         self.assertNotIn('diagnostics', proposal_set)
@@ -317,15 +345,58 @@ class AISelectMaskTests(unittest.TestCase):
             mask['digest'],
             f'sha256:{hashlib.sha256(base64.b64decode(mask["data"])).hexdigest()}',
         )
-        self.assertEqual(response['proposalDecision']['status'], 'selected')
+        # Ticket 07A: the retained candidate carries the slim v3 feature
+        # record plus its bound Mask Review; the v1 ranking machinery
+        # (pairwise relations, compactness, support sanity, ...) is gone.
         self.assertEqual(
-            response['proposalDecision']['selectedProposalId'],
-            proposal['proposalId'],
+            proposal['rankingFeatures'],
+            {
+                'promptConsistency': {
+                    'positivePointsSatisfied': True,
+                    'negativePointsSatisfied': True,
+                    'positiveBoxesSatisfied': True,
+                },
+                'eligible': True,
+                'areaFraction': 16 / 64,
+                'connectedComponentCount': 1,
+                'modelScore': 0.9,
+            },
         )
         self.assertEqual(
-            response['proposalDecision']['rankingPolicyVersion'],
-            RANKING_POLICY_VERSION,
+            proposal['review'],
+            {
+                'status': 'good',
+                'reasons': [],
+                'actionableReasons': [],
+                'policyVersion': VIEW_ASSESSMENT_POLICY_VERSION,
+                'diagnostics': {
+                    'framePixels': 64,
+                    'foregroundPixels': 16,
+                    'boundaryPixels': 4,
+                    'boundaryContactRatio': 0.25,
+                    'connectedComponents': 1,
+                    'largestComponentRatio': 1.0,
+                    'promptPointCount': 1,
+                    'promptViolationCount': 0,
+                    'boxSpillPixels': None,
+                    'boxSpillRatio': None,
+                },
+            },
         )
+        decision = response['proposalDecision']
+        self.assertEqual(decision['schemaVersion'], 2)
+        self.assertEqual(decision['status'], 'selected')
+        self.assertEqual(decision['selectedProposalId'], proposal['proposalId'])
+        self.assertEqual(decision['alternativeProposalIds'], ['proposal-0'])
+        self.assertEqual(decision['rankingPolicyVersion'], RANKING_POLICY_VERSION)
+        self.assertEqual(decision['viewId'], 'anchor-view')
+        self.assertEqual(decision['rgbDigest'], IMAGE_DIGEST)
+        self.assertEqual(
+            decision['promptStateDigest'],
+            request['promptState']['digest'],  # type: ignore[index]
+        )
+        self.assertEqual(decision['proposalSetDigest'], proposal_set['digest'])
+        self.assertNotIn('reasons', decision)
 
         # The single positive point takes the multimask instance path.
         self.assertEqual(self.runtime.set_image_calls, [IMAGE_PNG])
@@ -539,7 +610,7 @@ class AISelectMaskTests(unittest.TestCase):
 
     def test_rejects_a_stale_ranking_policy_identity(self) -> None:
         request = self.request_body()
-        request['rankingPolicyVersion'] = 'anchor-mask-ranking/v1'
+        request['rankingPolicyVersion'] = 'anchor-mask-ranking/v2'
 
         self.assert_mask_error(request, 'capabilityMismatch')
         self.assertEqual(self.runtime.predict_calls, [])
@@ -560,6 +631,13 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(self.runtime.predict_calls, [])
 
     def test_forwards_a_positive_box_to_the_instance_adapter(self) -> None:
+        # A Box forces single-mask mode: even a multi-candidate runtime
+        # retains at most one response-level candidate.
+        self.runtime.masks = [
+            _mask_grid(*ACCEPTED_PIXELS),
+            _mask_grid(*[(x, y) for y in range(5) for x in range(1, 6)]),
+        ]
+        self.runtime.scores = [0.9, 0.8]
         request = self.request_body()
         request['promptState']['boxes'] = [{  # type: ignore[index]
             'promptId': 'box-1',
@@ -579,7 +657,9 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(np.asarray(predict['box']).tolist(), [0.0, 0.0, 2.0, 2.0])
         self.assertIsNone(predict['mask_input'])
         self.assertIs(predict['normalize_coords'], True)
-        proposal = response['proposalSet']['proposals'][0]
+        proposals = response['proposalSet']['proposals']
+        self.assertEqual(len(proposals), 1)
+        proposal = proposals[0]
         self.assertTrue(proposal['promptConsistency']['positiveBoxesSatisfied'])
         self.assertEqual(
             [(item['family'], item['promptId']) for item in proposal['promptDiagnostics']],
@@ -592,7 +672,7 @@ class AISelectMaskTests(unittest.TestCase):
     def test_publishes_an_empty_proposal_set_when_the_adapter_finds_no_mask(
         self,
     ) -> None:
-        self.runtime.masks = [[[False, False], [False, False]]]
+        self.runtime.masks = [_mask_grid()]
 
         first = self.state.produce_ai_select_mask(self.request_body())
         self.assertEqual(first['proposalSet']['proposals'], [])
@@ -610,15 +690,16 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(retried['proposalDecision']['status'], 'unavailable')
         self.assertEqual(len(self.runtime.predict_calls), 2)
 
-    def test_preserves_nested_part_and_whole_candidates_as_ambiguous(self) -> None:
+    def test_ambiguous_candidates_preview_the_highest_raw_model_score(self) -> None:
         # Both candidates contain the positive point. The first is a local
         # part; the second strictly contains it and adds neighbouring area.
         self.runtime.masks = [
-            [[False, True], [False, False]],
-            [[True, True], [True, False]],
+            _mask_grid(*ACCEPTED_PIXELS),
+            _mask_grid(*[(x, y) for y in range(5) for x in range(1, 6)]),
         ]
         # The oversized candidate deliberately has the much higher raw model
-        # score. Ranking must still surface the geometric ambiguity.
+        # score. The default preview is the highest raw score in source order,
+        # never a v1 geometric verdict — the ambiguity stays user-resolved.
         self.runtime.scores = [0.1, 0.99]
 
         response = self.state.produce_ai_select_mask(self.request_body())
@@ -637,33 +718,106 @@ class AISelectMaskTests(unittest.TestCase):
             [proposal['logitsRef']['sourceCandidateId'] for proposal in proposals],
             ['proposal-0', 'proposal-1'],
         )
+        for proposal in proposals:
+            self.assertTrue(proposal['rankingFeatures']['eligible'])
+            self.assertEqual(proposal['review']['status'], 'good')
+        decision = response['proposalDecision']
+        self.assertEqual(decision['schemaVersion'], 2)
+        self.assertEqual(decision['status'], 'ambiguous')
+        # Alternatives are exactly the eligible candidates ordered by raw
+        # model score descending; the default preview never auto-confirms.
+        self.assertEqual(
+            decision['alternativeProposalIds'],
+            ['proposal-1', 'proposal-0'],
+        )
+        self.assertEqual(decision['selectedProposalId'], 'proposal-1')
+        self.assertNotIn('reasons', decision)
+
+    def test_one_positive_point_retains_up_to_three_reviewed_candidates(self) -> None:
+        # The multimask path keeps at most three candidates; every retained
+        # candidate carries its own bound Mask Review record.
+        self.runtime.masks = [
+            _mask_grid(*ACCEPTED_PIXELS),
+            _mask_grid(*[(x, y) for y in range(5) for x in range(1, 6)]),
+            _mask_grid(*[(x, y) for y in range(6) for x in range(0, 7)]),
+            _mask_grid(*[(x, y) for y in range(1, 4) for x in range(1, 5)]),
+        ]
+        self.runtime.scores = [0.95, 0.9, 0.85, 0.8]
+
+        response = self.state.produce_ai_select_mask(self.request_body())
+
+        self.assertIs(self.runtime.predict_calls[0]['multimask_output'], True)
+        proposal_set = response['proposalSet']
+        proposals = proposal_set['proposals']
+        self.assertEqual(len(proposals), 3)
+        self.assertEqual(
+            [proposal['proposalId'] for proposal in proposals],
+            ['proposal-0', 'proposal-1', 'proposal-2'],
+        )
+        for proposal in proposals:
+            self.assertEqual(
+                proposal['review']['policyVersion'],
+                VIEW_ASSESSMENT_POLICY_VERSION,
+            )
+            self.assertEqual(
+                proposal['review']['diagnostics']['framePixels'],
+                IMAGE_WIDTH * IMAGE_HEIGHT,
+            )
+            self.assertIn('eligible', proposal['rankingFeatures'])
         decision = response['proposalDecision']
         self.assertEqual(decision['status'], 'ambiguous')
         self.assertEqual(
             decision['alternativeProposalIds'],
-            ['proposal-0', 'proposal-1'],
+            ['proposal-0', 'proposal-1', 'proposal-2'],
         )
-        self.assertIn(
-            'nested-part-vs-whole',
-            [reason['code'] for reason in decision['reasons']],
-        )
-        self.assertIn(
-            'neighbour-object-leak-risk',
-            [reason['code'] for reason in decision['reasons']],
-        )
+
+    def test_multiple_points_force_a_single_retained_candidate(self) -> None:
+        request = self.request_body()
+        request['promptState']['points'] = [  # type: ignore[index]
+            {'promptId': 'prompt-1', 'xPx': 1, 'yPx': 0, 'polarity': 'include'},
+            {'promptId': 'prompt-2', 'xPx': 6, 'yPx': 6, 'polarity': 'exclude'},
+        ]
+        self.refresh_prompt_state_digest(request)
+        self.runtime.masks = [
+            _mask_grid(*ACCEPTED_PIXELS),
+            _mask_grid(*[(x, y) for y in range(5) for x in range(1, 6)]),
+            _mask_grid(*[(x, y) for y in range(6) for x in range(0, 7)]),
+        ]
+        self.runtime.scores = [0.95, 0.9, 0.85]
+
+        response = self.state.produce_ai_select_mask(request)
+
+        self.assertIs(self.runtime.predict_calls[0]['multimask_output'], False)
+        self.assertEqual(len(response['proposalSet']['proposals']), 1)
+
+    def test_the_proposal_set_digest_binds_the_review_records(self) -> None:
+        response = self.post_proposals(self.request_body())
+        proposal_set = response['proposalSet']
+
+        # Schema 4 is the only emitted proposal set shape; v3 sets are gone.
+        self.assertEqual(proposal_set['schemaVersion'], 4)
+        payload = {
+            key: value
+            for key, value in proposal_set.items()
+            if key != 'digest'
+        }
         self.assertEqual(
-            proposals[0]['rankingFeatures']['optionalSupportSanity'],
-            {'participated': False, 'changedDecision': False},
+            proposal_set['digest'],
+            _proposal_identity_digest(payload),
         )
-        self.assertTrue(
-            proposals[0]['rankingFeatures']['pairwiseRelations'][0][
-                'materiallyDistinct'
-            ]
+
+        tampered = json.loads(json.dumps(payload))
+        tampered['proposals'][0]['review']['status'] = 'review'
+        tampered['proposals'][0]['review']['reasons'] = ['severely-fragmented']
+        self.assertNotEqual(
+            proposal_set['digest'],
+            _proposal_identity_digest(tampered),
         )
 
     def test_point_inconsistent_candidate_is_diagnostic_but_ineligible(self) -> None:
-        # The candidate covers (1, 0) only; prompting (0, 1) keeps the raw
-        # alternative inspectable but prevents 07A selection.
+        # The candidate covers the default block only; prompting the
+        # background pixel (0, 1) keeps the raw alternative inspectable but
+        # prevents 07A selection.
         request = self.request_body()
         request['promptState']['points'] = [  # type: ignore[index]
             {'promptId': 'prompt-1', 'xPx': 0, 'yPx': 1, 'polarity': 'include'},
@@ -677,7 +831,12 @@ class AISelectMaskTests(unittest.TestCase):
             proposal['promptConsistency']['positivePointsSatisfied']
         )
         self.assertFalse(proposal['rankingFeatures']['eligible'])
-        self.assertEqual(response['proposalDecision']['status'], 'unavailable')
+        self.assertEqual(proposal['review']['status'], 'review')
+        self.assertIn('prompt-inconsistent', proposal['review']['reasons'])
+        decision = response['proposalDecision']
+        self.assertEqual(decision['status'], 'unavailable')
+        self.assertEqual(decision['alternativeProposalIds'], [])
+        self.assertNotIn('selectedProposalId', decision)
 
     def test_replays_a_matching_mask_request_without_a_second_inference(self) -> None:
         first = self.state.produce_ai_select_mask(self.request_body())
@@ -1034,9 +1193,9 @@ class AISelectMaskTests(unittest.TestCase):
 
     def test_the_logits_store_stays_bounded(self) -> None:
         self.runtime.masks = [
-            [[False, True], [False, False]],
-            [[True, True], [False, False]],
-            [[False, True], [False, True]],
+            _mask_grid(*ACCEPTED_PIXELS),
+            _mask_grid(*[(x, y) for y in range(1, 5) for x in range(2, 6)]),
+            _mask_grid(*[(x, y) for y in range(2, 6) for x in range(0, 4)]),
         ]
         self.runtime.scores = [0.9, 0.8, 0.7]
 
@@ -1046,6 +1205,380 @@ class AISelectMaskTests(unittest.TestCase):
             self.state.produce_ai_select_mask(request)
 
         self.assertLessEqual(len(self.state._logits_store), 8)
+
+
+class AddRankingFeaturesTests(unittest.TestCase):
+    """Ticket 07A per-candidate eligibility and Mask Review attachment."""
+
+    WIDTH = 16
+    HEIGHT = 16
+
+    def _proposal(
+        self,
+        pixels: list[tuple[int, int]],
+        *,
+        declared: dict[str, object] | None = None,
+        score: float | None = 0.9,
+        source_index: int = 0,
+    ) -> dict[str, object]:
+        bits = _mask_bits(self.WIDTH, self.HEIGHT, pixels)
+        proposal: dict[str, object] = {
+            'proposalId': f'proposal-{source_index}',
+            'sourceIndex': source_index,
+            'mask': {
+                'encoding': 'bitset-lsb-v1',
+                'width': self.WIDTH,
+                'height': self.HEIGHT,
+                'data': base64.b64encode(bits).decode('ascii'),
+            },
+        }
+        if score is not None:
+            proposal['modelScore'] = score
+        if declared is not None:
+            proposal['promptConsistency'] = declared
+        return proposal
+
+    def _enrich(
+        self,
+        proposals: list[dict[str, object]],
+        *,
+        points: list[dict[str, object]] | None = None,
+        boxes: list[dict[str, object]] | None = None,
+    ) -> list[dict[str, object]]:
+        return add_ranking_features(
+            proposals,
+            width=self.WIDTH,
+            height=self.HEIGHT,
+            prompt_state={'points': points or [], 'boxes': boxes or []},
+        )
+
+    @staticmethod
+    def _block(
+        x0: int, y0: int, x1: int, y1: int
+    ) -> list[tuple[int, int]]:
+        return [(x, y) for y in range(y0, y1) for x in range(x0, x1)]
+
+    def test_a_clean_candidate_is_good_and_eligible(self) -> None:
+        declared = {
+            'positivePointsSatisfied': True,
+            'negativePointsSatisfied': True,
+            'positiveBoxesSatisfied': True,
+        }
+
+        enriched = self._enrich(
+            [self._proposal(self._block(4, 4, 8, 8), declared=declared)],
+            points=[{'xPx': 5, 'yPx': 5, 'polarity': 'include'}],
+        )
+
+        proposal = enriched[0]
+        self.assertEqual(
+            proposal['rankingFeatures'],
+            {
+                'promptConsistency': declared,
+                'eligible': True,
+                'areaFraction': 16 / 256,
+                'connectedComponentCount': 1,
+                'modelScore': 0.9,
+            },
+        )
+        review = proposal['review']
+        self.assertEqual(review['status'], 'good')
+        self.assertEqual(review['reasons'], [])
+        self.assertEqual(review['actionableReasons'], [])
+        self.assertEqual(review['policyVersion'], VIEW_ASSESSMENT_POLICY_VERSION)
+        self.assertNotIn('primaryReason', review)
+        self.assertEqual(
+            review['diagnostics'],
+            {
+                'framePixels': 256,
+                'foregroundPixels': 16,
+                'boundaryPixels': 0,
+                'boundaryContactRatio': 0.0,
+                'connectedComponents': 1,
+                'largestComponentRatio': 1.0,
+                'promptPointCount': 1,
+                'promptViolationCount': 0,
+                'boxSpillPixels': None,
+                'boxSpillRatio': None,
+            },
+        )
+
+    def test_missing_or_invalid_declared_facts_are_recomputed(self) -> None:
+        points = [{'xPx': 5, 'yPx': 5, 'polarity': 'include'}]
+        for declared in (
+            None,
+            {'positivePointsSatisfied': 'not-a-boolean'},
+            {'unknownFact': True},
+            # A partial declaration is not the exact three-fact record and
+            # falls back to recomputation like a missing one.
+            {'positivePointsSatisfied': True, 'negativePointsSatisfied': True},
+        ):
+            with self.subTest(declared=declared):
+                enriched = self._enrich(
+                    [self._proposal(self._block(4, 4, 8, 8), declared=declared)],
+                    points=points,
+                )
+                features = enriched[0]['rankingFeatures']
+                self.assertEqual(
+                    features['promptConsistency'],
+                    {
+                        'positivePointsSatisfied': True,
+                        'negativePointsSatisfied': True,
+                        # No Box family exists, so the fact holds vacuously.
+                        'positiveBoxesSatisfied': True,
+                    },
+                )
+                self.assertTrue(features['eligible'])
+
+    def test_recomputed_box_fact_requires_meaningful_overlap(self) -> None:
+        box = {'x0Px': 4, 'y0Px': 4, 'x1Px': 8, 'y1Px': 8, 'polarity': 'include'}
+        overlapping = self._enrich(
+            [self._proposal(self._block(4, 4, 8, 8))], boxes=[box]
+        )
+        self.assertTrue(
+            overlapping[0]['rankingFeatures']['promptConsistency'][
+                'positiveBoxesSatisfied'
+            ]
+        )
+        disjoint = self._enrich(
+            [self._proposal(self._block(10, 10, 14, 14))], boxes=[box]
+        )
+        self.assertFalse(
+            disjoint[0]['rankingFeatures']['promptConsistency'][
+                'positiveBoxesSatisfied'
+            ]
+        )
+        self.assertFalse(disjoint[0]['rankingFeatures']['eligible'])
+
+    def test_an_out_of_frame_box_fails_closed(self) -> None:
+        with self.assertRaises(ValueError):
+            self._enrich(
+                [self._proposal(self._block(4, 4, 8, 8))],
+                boxes=[
+                    {
+                        'x0Px': 0,
+                        'y0Px': 0,
+                        'x1Px': self.WIDTH,
+                        'y1Px': 4,
+                        'polarity': 'include',
+                    }
+                ],
+            )
+
+    def test_a_declared_prompt_contradiction_is_ineligible(self) -> None:
+        # The mask actually satisfies the Point, but the declared facts say
+        # otherwise; a declared hard contradiction never becomes eligible.
+        declared = {
+            'positivePointsSatisfied': False,
+            'negativePointsSatisfied': True,
+            'positiveBoxesSatisfied': True,
+        }
+
+        enriched = self._enrich(
+            [self._proposal(self._block(4, 4, 8, 8), declared=declared)],
+            points=[{'xPx': 5, 'yPx': 5, 'polarity': 'include'}],
+        )
+
+        proposal = enriched[0]
+        self.assertEqual(proposal['rankingFeatures']['promptConsistency'], declared)
+        self.assertFalse(proposal['rankingFeatures']['eligible'])
+        self.assertEqual(proposal['review']['status'], 'good')
+
+    def test_a_degenerate_candidate_fails_review_and_is_ineligible(self) -> None:
+        enriched = self._enrich(
+            [self._proposal([(5, 5), (5, 6), (6, 5)])],
+            points=[{'xPx': 5, 'yPx': 5, 'polarity': 'include'}],
+        )
+
+        proposal = enriched[0]
+        review = proposal['review']
+        self.assertEqual(review['status'], 'failed')
+        self.assertEqual(review['reasons'], ['empty-or-degenerate-mask'])
+        self.assertEqual(review['primaryReason'], 'empty-or-degenerate-mask')
+        self.assertEqual(review['actionableReasons'], [])
+        self.assertFalse(proposal['rankingFeatures']['eligible'])
+
+    def test_a_materially_boundary_clipped_candidate_enters_review(self) -> None:
+        # Two full top rows: 18 boundary pixels at a 0.5625 contact ratio,
+        # above the 8-pixel / 0.2 material clipping thresholds.
+        pixels = self._block(0, 0, self.WIDTH, 2)
+
+        enriched = self._enrich(
+            [self._proposal(pixels)],
+            points=[{'xPx': 5, 'yPx': 0, 'polarity': 'include'}],
+        )
+
+        proposal = enriched[0]
+        review = proposal['review']
+        self.assertEqual(review['status'], 'review')
+        self.assertEqual(review['reasons'], ['target-materially-clipped'])
+        self.assertEqual(review['primaryReason'], 'target-materially-clipped')
+        # Review status alone never blocks eligibility.
+        self.assertTrue(proposal['rankingFeatures']['eligible'])
+
+    def test_a_severely_fragmented_candidate_enters_review(self) -> None:
+        # A 25-pixel main component plus a separate 16-pixel component:
+        # 16 disconnected pixels at ~39% disconnected mass, above the
+        # 16-pixel / 10% fragmentation thresholds.
+        pixels = self._block(2, 4, 7, 9) + self._block(10, 4, 14, 8)
+
+        enriched = self._enrich(
+            [self._proposal(pixels)],
+            points=[{'xPx': 5, 'yPx': 5, 'polarity': 'include'}],
+        )
+
+        proposal = enriched[0]
+        review = proposal['review']
+        self.assertEqual(review['status'], 'review')
+        self.assertEqual(review['reasons'], ['severely-fragmented'])
+        self.assertEqual(review['primaryReason'], 'severely-fragmented')
+        self.assertEqual(review['diagnostics']['connectedComponents'], 2)
+        self.assertEqual(proposal['rankingFeatures']['connectedComponentCount'], 2)
+        self.assertTrue(proposal['rankingFeatures']['eligible'])
+
+    def test_gross_box_spill_enters_review(self) -> None:
+        # One connected blob extends 5 columns past the Box expanded by 2px:
+        # 20 spill pixels at ~42% of the candidate, above the 16-pixel / 20%
+        # gross spill thresholds.
+        pixels = self._block(4, 4, 16, 8)
+
+        enriched = self._enrich(
+            [self._proposal(pixels)],
+            points=[{'xPx': 5, 'yPx': 5, 'polarity': 'include'}],
+            boxes=[{
+                'x0Px': 4,
+                'y0Px': 4,
+                'x1Px': 8,
+                'y1Px': 8,
+                'polarity': 'include',
+            }],
+        )
+
+        proposal = enriched[0]
+        review = proposal['review']
+        self.assertEqual(review['status'], 'review')
+        self.assertEqual(review['reasons'], ['box-spill-or-neighbour-leak'])
+        self.assertEqual(review['primaryReason'], 'box-spill-or-neighbour-leak')
+        self.assertEqual(review['diagnostics']['boxSpillPixels'], 20)
+        self.assertTrue(proposal['rankingFeatures']['eligible'])
+
+
+class DecideProposalsTests(unittest.TestCase):
+    """Ticket 07A default-preview ordering and decision classification."""
+
+    def _proposal(
+        self,
+        source_index: int,
+        *,
+        eligible: bool = True,
+        score: float | None = None,
+    ) -> dict[str, object]:
+        proposal: dict[str, object] = {
+            'proposalId': f'proposal-{source_index}',
+            'sourceIndex': source_index,
+            'rankingFeatures': {'eligible': eligible},
+        }
+        if score is not None:
+            proposal['modelScore'] = score
+        return proposal
+
+    def _decide(self, proposals: list[dict[str, object]]) -> dict[str, object]:
+        return decide_proposals(
+            proposals,
+            view_id='anchor-view',
+            rgb_digest='sha256:rgb',
+            prompt_state_digest='sha256:prompt',
+            proposal_set_digest='sha256:set',
+        )
+
+    def test_default_preview_is_the_highest_score_regardless_of_order(self) -> None:
+        decision = self._decide([
+            self._proposal(0, score=0.2),
+            self._proposal(1, score=0.9),
+            self._proposal(2, score=0.5),
+        ])
+
+        self.assertEqual(decision['status'], 'ambiguous')
+        self.assertEqual(
+            decision['alternativeProposalIds'],
+            ['proposal-1', 'proposal-2', 'proposal-0'],
+        )
+        self.assertEqual(decision['selectedProposalId'], 'proposal-1')
+
+    def test_score_ties_are_broken_by_source_index(self) -> None:
+        decision = self._decide([
+            self._proposal(2, score=0.9),
+            self._proposal(0, score=0.9),
+            self._proposal(1, score=0.9),
+        ])
+
+        self.assertEqual(
+            decision['alternativeProposalIds'],
+            ['proposal-0', 'proposal-1', 'proposal-2'],
+        )
+        self.assertEqual(decision['selectedProposalId'], 'proposal-0')
+
+    def test_missing_and_non_finite_scores_sort_last(self) -> None:
+        decision = self._decide([
+            self._proposal(0),
+            self._proposal(1, score=0.1),
+            self._proposal(2, score=float('nan')),
+            self._proposal(3, score=float('inf')),
+        ])
+
+        self.assertEqual(
+            decision['alternativeProposalIds'],
+            ['proposal-1', 'proposal-0', 'proposal-2', 'proposal-3'],
+        )
+        self.assertEqual(decision['selectedProposalId'], 'proposal-1')
+
+    def test_alternatives_contain_exactly_the_eligible_ids_in_score_order(self) -> None:
+        # The highest raw score belongs to an ineligible candidate; it never
+        # enters the alternatives or the default preview.
+        decision = self._decide([
+            self._proposal(0, score=0.5),
+            self._proposal(1, eligible=False, score=0.99),
+            self._proposal(2, score=0.7),
+            self._proposal(3, eligible=False),
+        ])
+
+        self.assertEqual(
+            decision['alternativeProposalIds'],
+            ['proposal-2', 'proposal-0'],
+        )
+        self.assertEqual(decision['status'], 'ambiguous')
+        self.assertEqual(decision['selectedProposalId'], 'proposal-2')
+
+    def test_one_eligible_candidate_is_selected(self) -> None:
+        decision = self._decide([self._proposal(0, score=0.4)])
+
+        self.assertEqual(decision['status'], 'selected')
+        self.assertEqual(decision['alternativeProposalIds'], ['proposal-0'])
+        self.assertEqual(decision['selectedProposalId'], 'proposal-0')
+
+    def test_no_eligible_candidate_is_unavailable(self) -> None:
+        for proposals in (
+            [],
+            [self._proposal(0, eligible=False, score=0.99)],
+        ):
+            with self.subTest(proposals=proposals):
+                decision = self._decide(proposals)
+                self.assertEqual(decision['status'], 'unavailable')
+                self.assertEqual(decision['alternativeProposalIds'], [])
+                self.assertNotIn('selectedProposalId', decision)
+
+    def test_the_decision_shape_binds_identities_without_reasons(self) -> None:
+        decision = self._decide([self._proposal(0, score=0.4)])
+
+        self.assertEqual(decision['schemaVersion'], 2)
+        self.assertEqual(decision['rankingPolicyVersion'], RANKING_POLICY_VERSION)
+        self.assertEqual(decision['viewId'], 'anchor-view')
+        self.assertEqual(decision['rgbDigest'], 'sha256:rgb')
+        self.assertEqual(decision['promptStateDigest'], 'sha256:prompt')
+        self.assertEqual(decision['proposalSetDigest'], 'sha256:set')
+        # The v1 verdict reasons (nested-part-vs-whole, insufficient margin,
+        # ...) are deleted; ambiguity is expressed only through status.
+        self.assertNotIn('reasons', decision)
 
 
 if __name__ == '__main__':

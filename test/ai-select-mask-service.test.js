@@ -20,6 +20,9 @@ const {
     revisePromptState
 } = require('../.test-dist/src/ai-select/prompt-state.js');
 const {
+    aiSelectViewAssessmentPolicyVersion
+} = require('../.test-dist/src/ai-select/view-assessment.js');
+const {
     maskBitsetEncoding
 } = require('../.test-dist/src/ai-select/mask-annotation.js');
 const { sha256Digest } = require('../.test-dist/src/scene-snapshot-binary.js');
@@ -120,9 +123,28 @@ const promptConsistency = () => ({
     positiveBoxesSatisfied: true
 });
 
+const goodReview = () => ({
+    status: 'good',
+    reasons: [],
+    actionableReasons: [],
+    policyVersion: aiSelectViewAssessmentPolicyVersion,
+    diagnostics: {
+        framePixels: 64,
+        foregroundPixels: 2,
+        boundaryPixels: 0,
+        boundaryContactRatio: 0,
+        connectedComponents: 2,
+        largestComponentRatio: 0.5,
+        promptPointCount: 1,
+        promptViolationCount: 0,
+        boxSpillPixels: null,
+        boxSpillRatio: null
+    }
+});
+
 const proposalSetFor = (req, overrides = {}) => {
     const payload = {
-        schemaVersion: 3,
+        schemaVersion: 4,
         viewId: req.viewId,
         rgbDigest: req.rgbDigest,
         promptStateDigest: req.promptState.digest,
@@ -142,27 +164,10 @@ const proposalSetFor = (req, overrides = {}) => {
                     promptConsistency: promptConsistency(),
                     eligible: true,
                     areaFraction: 2 / 64,
-                    boundingBox: {
-                        x0Px: 0,
-                        y0Px: 0,
-                        x1Px: 2,
-                        y1Px: 0
-                    },
                     connectedComponentCount: 2,
-                    positivePointComponentIds: [0],
-                    positivePointBoundaryDistances: [1],
-                    pairwiseRelations: [],
-                    boundaryContactFraction: 0.25,
-                    compactness: 0.2,
-                    boxFillRatios: [],
-                    boxSpillRatios: [],
-                    promptMaskOverlap: 1,
-                    optionalSupportSanity: {
-                        participated: false,
-                        changedDecision: false
-                    },
                     modelScore: 2.5
-                }
+                },
+                review: goodReview()
             }
         ],
         ...overrides
@@ -188,7 +193,7 @@ const responseFor = (req, overrides = {}) => {
         proposalAttemptId: req.proposalAttemptId,
         proposalSet,
         proposalDecision: {
-            schemaVersion: 1,
+            schemaVersion: 2,
             viewId: req.viewId,
             rgbDigest: req.rgbDigest,
             promptStateDigest: req.promptState.digest,
@@ -196,8 +201,7 @@ const responseFor = (req, overrides = {}) => {
             rankingPolicyVersion: req.rankingPolicyVersion,
             status: 'selected',
             selectedProposalId: 'proposal-0',
-            alternativeProposalIds: ['proposal-0'],
-            reasons: []
+            alternativeProposalIds: ['proposal-0']
         },
         ...overrides
     };
@@ -390,4 +394,105 @@ test('a Box prompt request requires per-family candidate diagnostics', () => {
     assert.ok(
         !maskResponseMatchesRequest(responseFor(req, { proposalSet }), req)
     );
+});
+
+test('the 07A candidate bound is enforced fail-closed against the prompt shape', () => {
+    const candidateFor = (req, index, promptDiagnostics) => ({
+        proposalId: `proposal-${index}`,
+        sourceIndex: index,
+        mask: bitsetArtifact(req.rgbWidth, req.rgbHeight, 0b101),
+        modelScore: 1 - index * 0.1,
+        promptConsistency: promptConsistency(),
+        ...(promptDiagnostics === undefined ? {} : { promptDiagnostics }),
+        rankingFeatures: {
+            promptConsistency: promptConsistency(),
+            eligible: true,
+            areaFraction: 2 / 64,
+            connectedComponentCount: 2,
+            modelScore: 1 - index * 0.1
+        },
+        review: goodReview()
+    });
+    const responseWithCandidates = (req, proposals) => {
+        const payload = {
+            ...proposalSetFor(req),
+            proposals
+        };
+        delete payload.digest;
+        const proposalSet = {
+            ...payload,
+            digest: autoMaskProposalSetDigest(payload)
+        };
+        return responseFor(req, {
+            proposalSet,
+            proposalDecision: {
+                schemaVersion: 2,
+                viewId: req.viewId,
+                rgbDigest: req.rgbDigest,
+                promptStateDigest: req.promptState.digest,
+                proposalSetDigest: proposalSet.digest,
+                rankingPolicyVersion: req.rankingPolicyVersion,
+                status: proposals.length > 1 ? 'ambiguous' : 'selected',
+                selectedProposalId: 'proposal-0',
+                alternativeProposalIds: proposals.map(
+                    (proposal) => proposal.proposalId
+                )
+            }
+        });
+    };
+
+    // One include Point, no Box, no refinement: up to three candidates pass.
+    const pointReq = request();
+    const threeCandidates = responseWithCandidates(
+        pointReq,
+        [0, 1, 2].map((index) => candidateFor(pointReq, index))
+    );
+    assert.ok(isMaskResultResponse(threeCandidates));
+    assert.ok(maskResponseMatchesRequest(threeCandidates, pointReq));
+
+    // A Box prompt forces single-mask mode: two candidates fail closed even
+    // though the response is otherwise structurally valid and fully bound.
+    const boxReq = request({
+        promptState: revisePromptState(promptState(), {
+            boxes: [
+                {
+                    promptId: 'box-1',
+                    polarity: 'include',
+                    x0Px: 1,
+                    y0Px: 1,
+                    x1Px: 3,
+                    y1Px: 3
+                }
+            ]
+        })
+    });
+    const boxDiagnostics = [
+        {
+            promptId: 'p-1',
+            family: 'point',
+            polarity: 'include',
+            satisfied: true
+        },
+        {
+            promptId: 'box-1',
+            family: 'box',
+            polarity: 'include',
+            satisfied: true
+        }
+    ];
+    const twoBoxCandidates = responseWithCandidates(
+        boxReq,
+        [0, 1].map((index) => candidateFor(boxReq, index, boxDiagnostics))
+    );
+    assert.ok(isMaskResultResponse(twoBoxCandidates));
+    assert.ok(!maskResponseMatchesRequest(twoBoxCandidates, boxReq));
+
+    // A refinement attempt also forces single-mask mode.
+    const refinedReq = request({ previousLogitsRef: logitsRef() });
+    const twoRefinedCandidates = responseWithCandidates(
+        refinedReq,
+        [0, 1].map((index) => candidateFor(refinedReq, index))
+    );
+    assert.ok(isMaskResultResponse(twoRefinedCandidates));
+    assert.ok(!maskResponseMatchesRequest(twoRefinedCandidates, refinedReq));
 });

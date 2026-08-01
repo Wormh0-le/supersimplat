@@ -96,6 +96,7 @@ from .view_assessment import (
     AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
     MaskReviewPrompt,
     assess_local_view,
+    local_view_assessment_payload,
 )
 from .generated_view_planning import (
     AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION,
@@ -183,37 +184,12 @@ def _local_view_assessment_payload(
         mask=mask,
         prompt=MaskReviewPrompt(positive_points=positive_points),
     )
-    payload: dict[str, object] = {
-        'status': assessment.status,
-        'reasons': list(assessment.reasons),
-        'actionableReasons': list(assessment.actionable_reasons),
-        'policyVersion': assessment.policy_version,
-        'inputIdentity': {
-            'rgbDigest': rgb_digest,
-            'stableMaskDigest': stable_mask_digest,
-            'assessmentPolicyVersion': assessment.policy_version,
-        },
-        'diagnostics': {
-            'framePixels': assessment.diagnostics.frame_pixels,
-            'foregroundPixels': assessment.diagnostics.foreground_pixels,
-            'boundaryPixels': assessment.diagnostics.boundary_pixels,
-            'boundaryContactRatio': (
-                assessment.diagnostics.boundary_contact_ratio
-            ),
-            'connectedComponents': assessment.diagnostics.connected_components,
-            'largestComponentRatio': (
-                assessment.diagnostics.largest_component_ratio
-            ),
-            'promptPointCount': assessment.diagnostics.prompt_point_count,
-            'promptViolationCount': (
-                assessment.diagnostics.prompt_violation_count
-            ),
-            'boxSpillPixels': assessment.diagnostics.box_spill_pixels,
-            'boxSpillRatio': assessment.diagnostics.box_spill_ratio,
-        },
+    payload = local_view_assessment_payload(assessment)
+    payload['inputIdentity'] = {
+        'rgbDigest': rgb_digest,
+        'stableMaskDigest': stable_mask_digest,
+        'assessmentPolicyVersion': assessment.policy_version,
     }
-    if assessment.primary_reason is not None:
-        payload['primaryReason'] = assessment.primary_reason
     return payload
 
 
@@ -2244,10 +2220,11 @@ class CompanionState:
                 prompt_state=mask_request.prompt_state,
             )
             proposal_set: dict[str, object] = {
-                # v3 rotates the proposal schema with the v2 Prompt contract;
-                # the identity digest binds every retained candidate's opaque
-                # logits reference and the refinement fallback diagnostic.
-                'schemaVersion': 3,
+                # v4 (Ticket 07A) removes the v1 ranking machinery from every
+                # retained candidate and binds the per-candidate Mask Review
+                # record, the opaque logits references, and the refinement
+                # fallback diagnostic into the identity digest.
+                'schemaVersion': 4,
                 'viewId': mask_request.view_id,
                 'rgbDigest': mask_request.rgb_digest,
                 'promptStateDigest': mask_request.prompt_state_digest,

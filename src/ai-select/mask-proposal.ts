@@ -9,24 +9,31 @@ import {
     type PreviousPredictionLogitsRef
 } from './previous-logits-ref';
 import type { PromptState } from './prompt-state';
+import {
+    isViewAssessmentShape,
+    type ViewAssessmentShape
+} from './view-assessment';
 
 // Schema v2 binds numbers by binary64 value instead of language-specific JSON
 // spelling, keeping browser and Companion artifact identity deterministic.
-// Schema v3 (ticket 04C) rotates the proposal policy/ranking identity for the
-// SAM 3 Image instance adapter and binds the optional opaque logits ref.
-export const autoMaskProposalSetSchemaVersion = 3;
+// Schema v3 (ticket 04C) rotated the proposal policy/ranking identity for the
+// SAM 3 Image instance adapter and bound the optional opaque logits ref.
+// Schema v4 (ticket 07A) removes the superseded v1 ranking machinery
+// (pairwise relations, material-distinctness clustering, margin calibration,
+// Gaussian support sanity) and binds the per-candidate Mask Review record.
+export const autoMaskProposalSetSchemaVersion = 4;
 export const autoMaskProposalPolicyVersion =
     'auto-mask-proposals/bounded-source-order-v2';
-export const anchorMaskRankingPolicyVersion = 'anchor-mask-ranking/v2';
-export const proposalDecisionSchemaVersion = 1;
+export const anchorMaskRankingPolicyVersion = 'anchor-mask-ranking/v3';
+export const proposalDecisionSchemaVersion = 2;
 
 /** The wire-level retention bound; the policy function may tighten it. */
 export const maximumRetainedAutoMaskProposalCount = 3;
 
 /**
- * Multimask policy (04C contract §6): exactly one include Point, no Box, and
- * no previous-logits refinement retains at most 3 candidates; every other
- * program retains at most 1.
+ * Multimask policy (04C contract §6, retained by 07A): exactly one include
+ * Point, no Box, and no previous-logits refinement retains at most 3
+ * candidates; every other program retains at most 1.
  */
 export const maximumAutoMaskProposalCount = (
     promptState: PromptState,
@@ -49,8 +56,8 @@ export interface PromptConsistencyFacts {
 export type PromptDiagnosticFamily = 'point' | 'box';
 
 /**
- * Candidate-local prompt facts preserved for later 2D proposal policy. These
- * measurements deliberately do not contain a cross-candidate score.
+ * Candidate-local prompt facts preserved for prompt-consistency enforcement.
+ * These measurements deliberately do not contain a cross-candidate score.
  */
 export interface PromptFamilyDiagnostic {
     readonly promptId: string;
@@ -59,6 +66,28 @@ export interface PromptFamilyDiagnostic {
     readonly satisfied: boolean;
     readonly constraintCoverageFraction?: number;
     readonly candidateCoverageFraction?: number;
+}
+
+/**
+ * The 07A per-candidate feature record. The v1 ranking pipeline is gone:
+ * no pairwise containment/IoU, no material-distinctness clustering, no
+ * compactness, no decision-margin features, and no Gaussian support sanity
+ * (Gaussian readiness belongs to Ticket 13 Lift Readiness, never to Anchor
+ * candidate selection). What remains is exactly what the simplified decision
+ * and the candidate choice UI consume.
+ */
+export interface ProposalRankingFeatures {
+    readonly promptConsistency: PromptConsistencyFacts;
+    /**
+     * A candidate is eligible when every declared prompt fact holds and its
+     * Mask Review did not fail (empty/degenerate/full-frame). Ineligible
+     * candidates stay in the set for diagnostics but are never offered for
+     * preview or Accept.
+     */
+    readonly eligible: boolean;
+    readonly areaFraction: number;
+    readonly connectedComponentCount: number;
+    readonly modelScore?: number;
 }
 
 export interface AutoMaskProposal {
@@ -71,68 +100,29 @@ export interface AutoMaskProposal {
     readonly promptDiagnostics?: readonly PromptFamilyDiagnostic[];
     readonly rankingFeatures: ProposalRankingFeatures;
     /**
+     * The versioned local Mask Review for this candidate (Ticket 07 policy
+     * `local-view-assessment/v2`). Candidates are not Stable Masks, so the
+     * record carries no Stable-Mask input identity; Accept for editing
+     * remains explicit even when the status is Review.
+     */
+    readonly review: ViewAssessmentShape;
+    /**
      * The opaque Companion-local previous-prediction logits reference for
      * refinement lineage (04C contract §7). Never raw logits.
      */
     readonly logitsRef?: PreviousPredictionLogitsRef;
 }
 
-export interface PixelBox {
-    readonly x0Px: number;
-    readonly y0Px: number;
-    readonly x1Px: number;
-    readonly y1Px: number;
-}
-
-export interface ProposalRelation {
-    readonly proposalId: string;
-    readonly intersectionOverUnion: number;
-    readonly areaRatio: number;
-    readonly containment: 'contains' | 'contained-by' | 'none';
-    readonly materiallyDistinct: boolean;
-}
-
-export interface ProposalRankingFeatures {
-    readonly promptConsistency: PromptConsistencyFacts;
-    readonly eligible: boolean;
-    readonly areaFraction: number;
-    readonly boundingBox: PixelBox;
-    readonly connectedComponentCount: number;
-    readonly positivePointComponentIds: readonly number[];
-    readonly positivePointBoundaryDistances: readonly number[];
-    readonly pairwiseRelations: readonly ProposalRelation[];
-    readonly boundaryContactFraction: number;
-    readonly compactness: number;
-    readonly boxFillRatios: readonly number[];
-    readonly boxSpillRatios: readonly number[];
-    readonly promptMaskOverlap: number;
-    readonly modelScore?: number;
-    readonly optionalSupportSanity: {
-        readonly participated: boolean;
-        readonly changedDecision: boolean;
-        readonly policyId?: string;
-        readonly computable?: boolean;
-        readonly observedGaussianCount?: number;
-        readonly supportConcentration?: number;
-    };
-}
-
 export type ProposalDecisionStatus = 'selected' | 'ambiguous' | 'unavailable';
-export type ProposalDecisionReasonCode =
-    | 'nested-part-vs-whole'
-    | 'similar-score-different-area'
-    | 'multiple-disconnected-targets'
-    | 'box-spill'
-    | 'prompt-conflict'
-    | 'neighbour-object-leak-risk'
-    | 'model-score-disagreement'
-    | 'insufficient-decision-margin';
 
-export interface ProposalDecisionReason {
-    readonly code: ProposalDecisionReasonCode;
-    readonly proposalIds: readonly string[];
-}
-
+/**
+ * The simplified 07A pre-Stable decision. One-point multimask ambiguity is
+ * resolved by explicit user choice, not by margin calibration or clustering:
+ * the decision only enumerates the eligible candidates and names the default
+ * preview, which is the highest raw model score (never auto-confirmed, never
+ * a correctness probability). Structured ranking reason codes are removed;
+ * Mask-quality claims live on the per-candidate `review` record instead.
+ */
 export interface ProposalDecision {
     readonly schemaVersion: typeof proposalDecisionSchemaVersion;
     readonly viewId: string;
@@ -141,16 +131,32 @@ export interface ProposalDecision {
     readonly proposalSetDigest: string;
     readonly rankingPolicyVersion: typeof anchorMaskRankingPolicyVersion;
     readonly status: ProposalDecisionStatus;
-    /** Suggested proposal for selected/ambiguous; acceptance remains explicit. */
+    /**
+     * The default preview candidate: the eligible candidate with the highest
+     * raw model score (ties broken by lowest sourceIndex). Absent only when
+     * no eligible candidate exists.
+     */
     readonly selectedProposalId?: string;
+    /**
+     * Every eligible candidate, ordered by raw model score descending with
+     * ties broken by ascending sourceIndex.
+     */
     readonly alternativeProposalIds: readonly string[];
-    readonly reasons: readonly ProposalDecisionReason[];
 }
 
 export interface ProposalTruncationRecord {
     readonly originalCount: number;
     readonly retainedCount: number;
     readonly policy: string;
+}
+
+/**
+ * Publication-level diagnostics that are not Mask-quality claims. A
+ * `refinementFallback` records that a missing/expired/foreign logits ref was
+ * discarded and the inference ran fresh without `mask_input` (04C §7).
+ */
+export interface AutoMaskProposalSetDiagnostics {
+    readonly refinementFallback?: boolean;
 }
 
 export interface AutoMaskProposalSet {
@@ -164,6 +170,7 @@ export interface AutoMaskProposalSet {
     readonly proposalAttemptId: string;
     readonly proposals: readonly AutoMaskProposal[];
     readonly truncation?: ProposalTruncationRecord;
+    readonly diagnostics?: AutoMaskProposalSetDiagnostics;
     readonly digest: string;
 }
 
@@ -245,6 +252,14 @@ const exactBooleanFacts = (value: unknown): boolean => {
     );
 };
 
+const allFactsSatisfied = (value: PromptConsistencyFacts): boolean => {
+    return (
+        value.positivePointsSatisfied &&
+        value.negativePointsSatisfied &&
+        value.positiveBoxesSatisfied
+    );
+};
+
 const isFiniteNumber = (value: unknown): value is number =>
     typeof value === 'number' && Number.isFinite(value);
 
@@ -278,36 +293,6 @@ const isPromptFamilyDiagnostic = (
     );
 };
 
-const isNumberArray = (
-    value: unknown,
-    predicate: (entry: number) => boolean = () => true
-): value is number[] =>
-    Array.isArray(value) &&
-    value.every((entry) => isFiniteNumber(entry) && predicate(entry as number));
-
-const isPixelBox = (value: unknown): value is PixelBox =>
-    isRecord(value) &&
-    Object.keys(value).length === 4 &&
-    ['x0Px', 'y0Px', 'x1Px', 'y1Px'].every((key) =>
-        Number.isSafeInteger(value[key])
-    ) &&
-    (value.x0Px as number) >= 0 &&
-    (value.y0Px as number) >= 0 &&
-    (value.x1Px as number) >= (value.x0Px as number) &&
-    (value.y1Px as number) >= (value.y0Px as number);
-
-const isProposalRelation = (value: unknown): value is ProposalRelation =>
-    isRecord(value) &&
-    Object.keys(value).length === 5 &&
-    isNonEmptyString(value.proposalId) &&
-    isUnitNumber(value.intersectionOverUnion) &&
-    isFiniteNumber(value.areaRatio) &&
-    value.areaRatio >= 1 &&
-    ['contains', 'contained-by', 'none'].includes(
-        value.containment as string
-    ) &&
-    typeof value.materiallyDistinct === 'boolean';
-
 const isProposalRankingFeatures = (
     value: unknown
 ): value is ProposalRankingFeatures =>
@@ -317,68 +302,16 @@ const isProposalRankingFeatures = (
             'promptConsistency',
             'eligible',
             'areaFraction',
-            'boundingBox',
             'connectedComponentCount',
-            'positivePointComponentIds',
-            'positivePointBoundaryDistances',
-            'pairwiseRelations',
-            'boundaryContactFraction',
-            'compactness',
-            'boxFillRatios',
-            'boxSpillRatios',
-            'promptMaskOverlap',
-            'modelScore',
-            'optionalSupportSanity'
+            'modelScore'
         ].includes(key)
     ) &&
     exactBooleanFacts(value.promptConsistency) &&
     typeof value.eligible === 'boolean' &&
     isUnitNumber(value.areaFraction) &&
-    isPixelBox(value.boundingBox) &&
     Number.isSafeInteger(value.connectedComponentCount) &&
     (value.connectedComponentCount as number) >= 0 &&
-    isNumberArray(
-        value.positivePointComponentIds,
-        (entry) => Number.isSafeInteger(entry) && entry >= -1
-    ) &&
-    isNumberArray(
-        value.positivePointBoundaryDistances,
-        (entry) => entry >= 0
-    ) &&
-    Array.isArray(value.pairwiseRelations) &&
-    value.pairwiseRelations.every(isProposalRelation) &&
-    isUnitNumber(value.boundaryContactFraction) &&
-    isFiniteNumber(value.compactness) &&
-    value.compactness >= 0 &&
-    isNumberArray(value.boxFillRatios, (entry) => entry >= 0 && entry <= 1) &&
-    isNumberArray(value.boxSpillRatios, (entry) => entry >= 0 && entry <= 1) &&
-    isUnitNumber(value.promptMaskOverlap) &&
-    (value.modelScore === undefined || isFiniteNumber(value.modelScore)) &&
-    isRecord(value.optionalSupportSanity) &&
-    Object.keys(value.optionalSupportSanity).every((key) =>
-        [
-            'participated',
-            'changedDecision',
-            'policyId',
-            'computable',
-            'observedGaussianCount',
-            'supportConcentration'
-        ].includes(key)
-    ) &&
-    typeof value.optionalSupportSanity.participated === 'boolean' &&
-    typeof value.optionalSupportSanity.changedDecision === 'boolean' &&
-    (value.optionalSupportSanity.policyId === undefined ||
-        isNonEmptyString(value.optionalSupportSanity.policyId)) &&
-    (value.optionalSupportSanity.computable === undefined ||
-        typeof value.optionalSupportSanity.computable === 'boolean') &&
-    (value.optionalSupportSanity.observedGaussianCount === undefined ||
-        (Number.isSafeInteger(
-            value.optionalSupportSanity.observedGaussianCount
-        ) &&
-            (value.optionalSupportSanity.observedGaussianCount as number) >=
-                0)) &&
-    (value.optionalSupportSanity.supportConcentration === undefined ||
-        isUnitNumber(value.optionalSupportSanity.supportConcentration));
+    (value.modelScore === undefined || isFiniteNumber(value.modelScore));
 
 const promptConsistencyMatches = (left: unknown, right: unknown): boolean =>
     canonicalJson(left) === canonicalJson(right);
@@ -403,6 +336,16 @@ export const isAutoMaskProposalSet = (
         value.proposals.length > maximumRetainedAutoMaskProposalCount ||
         typeof value.digest !== 'string' ||
         !digestPattern.test(value.digest)
+    ) {
+        return false;
+    }
+    if (
+        value.diagnostics !== undefined &&
+        (!isRecord(value.diagnostics) ||
+            !Object.keys(value.diagnostics).every(
+                (key) => key === 'refinementFallback'
+            ) ||
+            typeof value.diagnostics.refinementFallback !== 'boolean')
     ) {
         return false;
     }
@@ -434,37 +377,32 @@ export const isAutoMaskProposalSet = (
                 proposal.promptConsistency,
                 proposal.rankingFeatures.promptConsistency
             ) ||
-            proposal.rankingFeatures.boundingBox.x1Px >= proposal.mask.width ||
-            proposal.rankingFeatures.boundingBox.y1Px >= proposal.mask.height ||
             proposal.rankingFeatures.modelScore !== proposal.modelScore ||
             (proposal.modelScore !== undefined &&
                 (typeof proposal.modelScore !== 'number' ||
                     !Number.isFinite(proposal.modelScore))) ||
             (proposal.modelScoreSemantics !== undefined &&
                 !isNonEmptyString(proposal.modelScoreSemantics)) ||
+            !isViewAssessmentShape(proposal.review) ||
             (proposal.logitsRef !== undefined &&
                 !isPreviousPredictionLogitsRef(proposal.logitsRef))
         ) {
             return false;
         }
-        proposalIds.add(proposal.proposalId);
-        sourceIndexes.add(proposal.sourceIndex as number);
-    }
-    for (const proposal of value.proposals) {
-        const relatedIds = new Set<string>();
-        for (const relation of proposal.rankingFeatures.pairwiseRelations) {
-            if (
-                relation.proposalId === proposal.proposalId ||
-                !proposalIds.has(relation.proposalId) ||
-                relatedIds.has(relation.proposalId)
-            ) {
-                return false;
-            }
-            relatedIds.add(relation.proposalId);
-        }
-        if (relatedIds.size !== value.proposals.length - 1) {
+        // Eligibility is a Companion decision, but its declared necessary
+        // conditions are mechanically checkable: a candidate that contradicts
+        // a declared prompt fact or failed Mask Review is never eligible.
+        if (
+            proposal.rankingFeatures.eligible &&
+            (!allFactsSatisfied(
+                proposal.promptConsistency as PromptConsistencyFacts
+            ) ||
+                proposal.review.status === 'failed')
+        ) {
             return false;
         }
+        proposalIds.add(proposal.proposalId);
+        sourceIndexes.add(proposal.sourceIndex as number);
     }
     if (
         value.truncation !== undefined &&
@@ -486,16 +424,23 @@ export const isAutoMaskProposalSet = (
     );
 };
 
-const proposalDecisionReasonCodes = new Set<ProposalDecisionReasonCode>([
-    'nested-part-vs-whole',
-    'similar-score-different-area',
-    'multiple-disconnected-targets',
-    'box-spill',
-    'prompt-conflict',
-    'neighbour-object-leak-risk',
-    'model-score-disagreement',
-    'insufficient-decision-margin'
-]);
+/**
+ * The deterministic 07A default-preview ordering: raw model score descending
+ * (absent scores sort last), ties broken by ascending sourceIndex. This is
+ * the only use the model score has; it never auto-confirms a candidate.
+ */
+export const defaultPreviewProposalOrder = (
+    proposals: readonly AutoMaskProposal[]
+): readonly AutoMaskProposal[] => {
+    return [...proposals].sort((left, right) => {
+        const leftScore = left.modelScore ?? Number.NEGATIVE_INFINITY;
+        const rightScore = right.modelScore ?? Number.NEGATIVE_INFINITY;
+        if (leftScore !== rightScore) {
+            return rightScore - leftScore;
+        }
+        return left.sourceIndex - right.sourceIndex;
+    });
+};
 
 export const isProposalDecision = (
     value: unknown,
@@ -520,65 +465,45 @@ export const isProposalDecision = (
                     'rankingPolicyVersion',
                     'status',
                     'selectedProposalId',
-                    'alternativeProposalIds',
-                    'reasons'
+                    'alternativeProposalIds'
                 ].includes(key)
         ) ||
         !['selected', 'ambiguous', 'unavailable'].includes(
             value.status as string
         ) ||
-        !Array.isArray(value.alternativeProposalIds) ||
-        !Array.isArray(value.reasons)
+        !Array.isArray(value.alternativeProposalIds)
     ) {
         return false;
     }
-    const proposalIds = new Set(
-        proposalSet.proposals.map((proposal) => proposal.proposalId)
-    );
-    const eligibleProposalIds = new Set(
-        proposalSet.proposals
-            .filter((proposal) => proposal.rankingFeatures.eligible)
-            .map((proposal) => proposal.proposalId)
-    );
+    // The decision must advertise exactly the eligible candidates in the
+    // deterministic default-preview order; nothing else is a valid v3
+    // decision for this set.
+    const expectedAlternatives = defaultPreviewProposalOrder(
+        proposalSet.proposals.filter(
+            (proposal) => proposal.rankingFeatures.eligible
+        )
+    ).map((proposal) => proposal.proposalId);
     const alternatives = value.alternativeProposalIds;
     if (
+        alternatives.length !== expectedAlternatives.length ||
         alternatives.some(
-            (proposalId) =>
-                !isNonEmptyString(proposalId) ||
-                !proposalIds.has(proposalId) ||
-                !eligibleProposalIds.has(proposalId)
-        ) ||
-        new Set(alternatives).size !== alternatives.length
+            (proposalId, index) => proposalId !== expectedAlternatives[index]
+        )
     ) {
         return false;
     }
     if (value.status === 'unavailable') {
-        if (
-            value.selectedProposalId !== undefined ||
-            alternatives.length !== 0
-        ) {
-            return false;
-        }
-    } else if (
-        !isNonEmptyString(value.selectedProposalId) ||
-        !proposalIds.has(value.selectedProposalId) ||
-        !eligibleProposalIds.has(value.selectedProposalId) ||
-        !alternatives.includes(value.selectedProposalId)
-    ) {
-        return false;
+        return (
+            alternatives.length === 0 && value.selectedProposalId === undefined
+        );
     }
-    return value.reasons.every(
-        (reason) =>
-            isRecord(reason) &&
-            Object.keys(reason).length === 2 &&
-            proposalDecisionReasonCodes.has(
-                reason.code as ProposalDecisionReasonCode
-            ) &&
-            Array.isArray(reason.proposalIds) &&
-            reason.proposalIds.every(
-                (proposalId) =>
-                    isNonEmptyString(proposalId) && proposalIds.has(proposalId)
-            ) &&
-            new Set(reason.proposalIds).size === reason.proposalIds.length
+    if (value.status === 'selected') {
+        return (
+            alternatives.length === 1 &&
+            value.selectedProposalId === alternatives[0]
+        );
+    }
+    return (
+        alternatives.length >= 2 && value.selectedProposalId === alternatives[0]
     );
 };

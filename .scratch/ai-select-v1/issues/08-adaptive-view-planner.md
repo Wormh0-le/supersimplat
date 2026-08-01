@@ -1,6 +1,6 @@
 # 08 — TargetGeometryHint + Bounded Local Key Views
 
-Status: blocked — waits for Ticket 07A
+Status: proposed — unblocked (07A implemented)
 
 Blocked by: 07A
 

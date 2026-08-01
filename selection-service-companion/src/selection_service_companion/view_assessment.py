@@ -289,6 +289,46 @@ def assess_local_view(
     )
 
 
+def local_view_assessment_payload(
+    assessment: LocalViewAssessment,
+) -> dict[str, object]:
+    """Serialize one Mask Review without any Stable-Mask input identity.
+
+    This is the single serializer for every assessment payload that crosses
+    the protocol boundary: Stable-Mask View assessments add their
+    ``inputIdentity`` at the call site, and Anchor proposal candidates
+    (Ticket 07A) carry exactly this shape.
+    """
+
+    payload: dict[str, object] = {
+        "status": assessment.status,
+        "reasons": list(assessment.reasons),
+        "actionableReasons": list(assessment.actionable_reasons),
+        "policyVersion": assessment.policy_version,
+        "diagnostics": {
+            "framePixels": assessment.diagnostics.frame_pixels,
+            "foregroundPixels": assessment.diagnostics.foreground_pixels,
+            "boundaryPixels": assessment.diagnostics.boundary_pixels,
+            "boundaryContactRatio": (
+                assessment.diagnostics.boundary_contact_ratio
+            ),
+            "connectedComponents": assessment.diagnostics.connected_components,
+            "largestComponentRatio": (
+                assessment.diagnostics.largest_component_ratio
+            ),
+            "promptPointCount": assessment.diagnostics.prompt_point_count,
+            "promptViolationCount": (
+                assessment.diagnostics.prompt_violation_count
+            ),
+            "boxSpillPixels": assessment.diagnostics.box_spill_pixels,
+            "boxSpillRatio": assessment.diagnostics.box_spill_ratio,
+        },
+    }
+    if assessment.primary_reason is not None:
+        payload["primaryReason"] = assessment.primary_reason
+    return payload
+
+
 __all__ = [
     "AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION",
     "AssessmentStatus",
@@ -297,4 +337,5 @@ __all__ = [
     "MaskReviewPrompt",
     "ReviewReason",
     "assess_local_view",
+    "local_view_assessment_payload",
 ]

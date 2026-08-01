@@ -95,18 +95,27 @@ export interface ViewAssessmentDiagnostics {
     readonly boxSpillRatio: number | null;
 }
 
-export interface ViewAssessmentResult {
+/**
+ * The Mask Review record without its Stable-Mask input identity. Anchor
+ * proposal candidates (Ticket 07A) carry exactly this shape: they are not
+ * Stable Masks, so no `inputIdentity` exists yet, but the status, reasons,
+ * and evidence-backed diagnostics follow the same version-owned policy.
+ */
+export interface ViewAssessmentShape {
     readonly status: ViewAssessmentStatus;
     readonly primaryReason?: ReviewReason;
     readonly reasons: readonly ReviewReason[];
     readonly actionableReasons: readonly ReviewReason[];
     readonly policyVersion: typeof aiSelectViewAssessmentPolicyVersion;
-    readonly inputIdentity: ViewAssessmentInputIdentity;
     /**
      * Retained only for trust-boundary verification and Advanced Diagnostics.
      * Ordinary UI maps structured reason codes to static localized actions.
      */
     readonly diagnostics?: ViewAssessmentDiagnostics;
+}
+
+export interface ViewAssessmentResult extends ViewAssessmentShape {
+    readonly inputIdentity: ViewAssessmentInputIdentity;
 }
 
 /**
@@ -296,9 +305,13 @@ const parseAssessmentDiagnostics = (
     return isDiagnostics(value) ? value : null;
 };
 
-export const isViewAssessmentResult = (
+/**
+ * Validate the shared Mask Review shape (status, reasons, evidence-backed
+ * diagnostics) independent of any Stable-Mask input identity.
+ */
+export const isViewAssessmentShape = (
     value: unknown
-): value is ViewAssessmentResult => {
+): value is ViewAssessmentShape => {
     if (!isRecord(value)) {
         return false;
     }
@@ -311,8 +324,7 @@ export const isViewAssessmentResult = (
         !isReviewReasonArray(reasons) ||
         !isReviewReasonArray(actionableReasons) ||
         actionableReasons.length > 2 ||
-        value.policyVersion !== aiSelectViewAssessmentPolicyVersion ||
-        !isInputIdentity(value.inputIdentity)
+        value.policyVersion !== aiSelectViewAssessmentPolicyVersion
     ) {
         return false;
     }
@@ -357,5 +369,15 @@ export const isViewAssessmentResult = (
         actionableReasons.length === 0 &&
         value.primaryReason === undefined &&
         diagnostics !== undefined
+    );
+};
+
+export const isViewAssessmentResult = (
+    value: unknown
+): value is ViewAssessmentResult => {
+    return (
+        isRecord(value) &&
+        isInputIdentity(value.inputIdentity) &&
+        isViewAssessmentShape(value)
     );
 };

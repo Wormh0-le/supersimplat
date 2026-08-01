@@ -5,6 +5,7 @@ const {
     anchorMaskRankingPolicyVersion,
     autoMaskProposalPolicyVersion,
     autoMaskProposalSetDigest,
+    defaultPreviewProposalOrder,
     isAutoMaskProposalSet,
     isProposalDecision,
     maximumAutoMaskProposalCount,
@@ -17,6 +18,9 @@ const {
     createEmptyPromptState,
     revisePromptState
 } = require('../.test-dist/src/ai-select/prompt-state.js');
+const {
+    aiSelectViewAssessmentPolicyVersion
+} = require('../.test-dist/src/ai-select/view-assessment.js');
 
 const digest = (character) => `sha256:${character.repeat(64)}`;
 
@@ -48,26 +52,37 @@ const promptConsistency = () => ({
     positiveBoxesSatisfied: true
 });
 
+// The slimmed 07A feature record: prompt facts, eligibility, and the geometry
+// the decision and candidate UI consume. Nothing else survives validation.
 const rankingFeatures = {
     promptConsistency: promptConsistency(),
     eligible: true,
     areaFraction: 1,
-    boundingBox: { x0Px: 0, y0Px: 0, x1Px: 0, y1Px: 0 },
     connectedComponentCount: 1,
-    positivePointComponentIds: [0],
-    positivePointBoundaryDistances: [1],
-    pairwiseRelations: [],
-    boundaryContactFraction: 1,
-    compactness: Math.PI / 4,
-    boxFillRatios: [],
-    boxSpillRatios: [],
-    promptMaskOverlap: 1,
-    optionalSupportSanity: {
-        participated: false,
-        changedDecision: false
-    },
     modelScore: 2.5
 };
+
+const reviewDiagnostics = (overrides = {}) => ({
+    framePixels: 1,
+    foregroundPixels: 1,
+    boundaryPixels: 0,
+    boundaryContactRatio: 0,
+    connectedComponents: 1,
+    largestComponentRatio: 1,
+    promptPointCount: 1,
+    promptViolationCount: 0,
+    boxSpillPixels: null,
+    boxSpillRatio: null,
+    ...overrides
+});
+
+const goodReview = () => ({
+    status: 'good',
+    reasons: [],
+    actionableReasons: [],
+    policyVersion: aiSelectViewAssessmentPolicyVersion,
+    diagnostics: reviewDiagnostics()
+});
 
 const logitsRef = () => {
     const payload = {
@@ -92,7 +107,7 @@ const logitsRef = () => {
 
 const proposalSet = () => {
     const value = {
-        schemaVersion: 3,
+        schemaVersion: 4,
         viewId: 'anchor-view',
         rgbDigest: digest('a'),
         promptStateDigest: digest('b'),
@@ -109,6 +124,7 @@ const proposalSet = () => {
                 modelScoreSemantics: 'adapter-local logit',
                 promptConsistency: promptConsistency(),
                 rankingFeatures,
+                review: goodReview(),
                 logitsRef: logitsRef()
             }
         ]
@@ -128,15 +144,55 @@ const withProposal = (value, proposal) => {
     };
 };
 
-test('policy identities rotate to the SAM 3 Image instance contract', () => {
+const proposalFor = (sourceIndex, overrides = {}) => ({
+    proposalId: `proposal-${sourceIndex}`,
+    mask,
+    sourceIndex,
+    promptConsistency: promptConsistency(),
+    rankingFeatures: {
+        promptConsistency: promptConsistency(),
+        eligible: true,
+        areaFraction: 1,
+        connectedComponentCount: 1
+    },
+    review: goodReview(),
+    ...overrides
+});
+
+const withScore = (proposal, modelScore) => ({
+    ...proposal,
+    modelScore,
+    rankingFeatures: { ...proposal.rankingFeatures, modelScore }
+});
+
+const withProposals = (base, proposals) => {
+    const payload = { ...base, proposals };
+    delete payload.digest;
+    return { ...payload, digest: autoMaskProposalSetDigest(payload) };
+};
+
+const decisionFor = (set, overrides = {}) => ({
+    schemaVersion: 2,
+    viewId: set.viewId,
+    rgbDigest: set.rgbDigest,
+    promptStateDigest: set.promptStateDigest,
+    proposalSetDigest: set.digest,
+    rankingPolicyVersion: anchorMaskRankingPolicyVersion,
+    status: 'selected',
+    selectedProposalId: 'proposal-0',
+    alternativeProposalIds: ['proposal-0'],
+    ...overrides
+});
+
+test('policy identities rotate to the 07A per-candidate Review contract', () => {
     assert.equal(
         autoMaskProposalPolicyVersion,
         'auto-mask-proposals/bounded-source-order-v2'
     );
-    assert.equal(anchorMaskRankingPolicyVersion, 'anchor-mask-ranking/v2');
+    assert.equal(anchorMaskRankingPolicyVersion, 'anchor-mask-ranking/v3');
 });
 
-test('a bounded proposal set preserves score semantics and exact identity', () => {
+test('a v4 bounded proposal set preserves score semantics and exact identity', () => {
     const value = proposalSet();
     assert.equal(isAutoMaskProposalSet(value), true);
     assert.equal(value.proposals[0].modelScoreSemantics, 'adapter-local logit');
@@ -144,8 +200,205 @@ test('a bounded proposal set preserves score semantics and exact identity', () =
         isAutoMaskProposalSet({ ...value, proposalAttemptId: 'stale-attempt' }),
         false
     );
-    // A v2 proposal set identity fails closed on the v3 schema.
-    assert.equal(isAutoMaskProposalSet({ ...value, schemaVersion: 2 }), false);
+    // A v3 proposal set identity fails closed on the v4 schema.
+    assert.equal(isAutoMaskProposalSet({ ...value, schemaVersion: 3 }), false);
+});
+
+test('the removed v1 ranking machinery fails closed', () => {
+    const value = proposalSet();
+    const proposal = value.proposals[0];
+    for (const removed of [
+        { boundingBox: { x0Px: 0, y0Px: 0, x1Px: 0, y1Px: 0 } },
+        { positivePointComponentIds: [0] },
+        { positivePointBoundaryDistances: [1] },
+        { pairwiseRelations: [] },
+        { boundaryContactFraction: 1 },
+        { compactness: Math.PI / 4 },
+        { boxFillRatios: [] },
+        { boxSpillRatios: [] },
+        { promptMaskOverlap: 1 },
+        {
+            optionalSupportSanity: {
+                participated: false,
+                changedDecision: false
+            }
+        }
+    ]) {
+        assert.equal(
+            isAutoMaskProposalSet(
+                withProposal(value, {
+                    ...proposal,
+                    rankingFeatures: {
+                        ...proposal.rankingFeatures,
+                        ...removed
+                    }
+                })
+            ),
+            false,
+            Object.keys(removed)[0]
+        );
+    }
+});
+
+test('every proposal carries an evidence-backed per-candidate Mask Review', () => {
+    const value = proposalSet();
+    const proposal = value.proposals[0];
+    // The Review record is required.
+    assert.equal(
+        isAutoMaskProposalSet(
+            withProposal(value, { ...proposal, review: undefined })
+        ),
+        false
+    );
+    // A genuine evidence-backed Review is accepted: 200 foreground pixels in
+    // 4 components with a 50% largest component leaves 100 disconnected
+    // pixels, well past the fragmentation thresholds.
+    const evidenceBackedReview = {
+        status: 'review',
+        primaryReason: 'severely-fragmented',
+        reasons: ['severely-fragmented'],
+        actionableReasons: ['severely-fragmented'],
+        policyVersion: aiSelectViewAssessmentPolicyVersion,
+        diagnostics: reviewDiagnostics({
+            framePixels: 3072,
+            foregroundPixels: 200,
+            connectedComponents: 4,
+            largestComponentRatio: 0.5
+        })
+    };
+    assert.equal(
+        isAutoMaskProposalSet(
+            withProposal(value, { ...proposal, review: evidenceBackedReview })
+        ),
+        true
+    );
+    // The same claim against a healthy single-component Mask is fabricated.
+    assert.equal(
+        isAutoMaskProposalSet(
+            withProposal(value, {
+                ...proposal,
+                review: {
+                    ...evidenceBackedReview,
+                    diagnostics: reviewDiagnostics()
+                }
+            })
+        ),
+        false
+    );
+    // A fabricated reason without any diagnostics is fabricated twice over.
+    assert.equal(
+        isAutoMaskProposalSet(
+            withProposal(value, {
+                ...proposal,
+                review: {
+                    ...evidenceBackedReview,
+                    diagnostics: undefined
+                }
+            })
+        ),
+        false
+    );
+});
+
+test('a candidate contradicting a prompt fact or a failed Review is never eligible', () => {
+    const value = proposalSet();
+    const proposal = value.proposals[0];
+    const falseFacts = {
+        positivePointsSatisfied: false,
+        negativePointsSatisfied: true,
+        positiveBoxesSatisfied: true
+    };
+    assert.equal(
+        isAutoMaskProposalSet(
+            withProposal(value, {
+                ...proposal,
+                promptConsistency: falseFacts,
+                rankingFeatures: {
+                    ...proposal.rankingFeatures,
+                    promptConsistency: falseFacts,
+                    eligible: true
+                }
+            })
+        ),
+        false
+    );
+    // The same candidate declared ineligible is a valid diagnostic record.
+    assert.equal(
+        isAutoMaskProposalSet(
+            withProposal(value, {
+                ...proposal,
+                promptConsistency: falseFacts,
+                rankingFeatures: {
+                    ...proposal.rankingFeatures,
+                    promptConsistency: falseFacts,
+                    eligible: false
+                }
+            })
+        ),
+        true
+    );
+    const failedReview = {
+        status: 'failed',
+        reasons: [],
+        actionableReasons: [],
+        policyVersion: aiSelectViewAssessmentPolicyVersion
+    };
+    // A failed Mask Review is never eligible.
+    assert.equal(
+        isAutoMaskProposalSet(
+            withProposal(value, {
+                ...proposal,
+                rankingFeatures: {
+                    ...proposal.rankingFeatures,
+                    eligible: true
+                },
+                review: failedReview
+            })
+        ),
+        false
+    );
+    // A failed, ineligible candidate stays in the set for diagnostics.
+    assert.equal(
+        isAutoMaskProposalSet(
+            withProposal(value, {
+                ...proposal,
+                rankingFeatures: {
+                    ...proposal.rankingFeatures,
+                    eligible: false
+                },
+                review: failedReview
+            })
+        ),
+        true
+    );
+});
+
+test('proposal-set diagnostics are digest-bound and closed to unknown keys', () => {
+    const base = proposalSet();
+    const payload = { ...base, diagnostics: { refinementFallback: true } };
+    delete payload.digest;
+    const value = { ...payload, digest: autoMaskProposalSetDigest(payload) };
+    assert.equal(isAutoMaskProposalSet(value), true);
+    // Flipping the flag without re-binding the set digest fails closed.
+    assert.equal(
+        isAutoMaskProposalSet({
+            ...value,
+            diagnostics: { refinementFallback: false }
+        }),
+        false
+    );
+    // Unknown diagnostics keys fail closed even with a recomputed digest.
+    const unknownPayload = {
+        ...payload,
+        diagnostics: { refinementFallback: true, confidence: 0.9 }
+    };
+    assert.equal(
+        isAutoMaskProposalSet({
+            ...unknownPayload,
+            digest: autoMaskProposalSetDigest(unknownPayload)
+        }),
+        false
+    );
 });
 
 test('per-candidate logits references are opaque and digest-bound', () => {
@@ -220,29 +473,108 @@ test('the multimask policy bounds candidates by prompt shape and refinement', ()
     assert.equal(maximumAutoMaskProposalCount(withBox, false), 1);
 });
 
-test('a ProposalDecision binds the exact proposal set and structured ambiguity reasons', () => {
+test('defaultPreviewProposalOrder is score-descending with source-index ties', () => {
+    const first = withScore(proposalFor(0), 0.5);
+    const unscored = proposalFor(1);
+    const tied = withScore(proposalFor(2), 0.5);
+    assert.deepEqual(
+        defaultPreviewProposalOrder([unscored, tied, first]).map(
+            (proposal) => proposal.proposalId
+        ),
+        // Equal scores break by ascending sourceIndex; absent scores sort last.
+        ['proposal-0', 'proposal-2', 'proposal-1']
+    );
+});
+
+test('the v2 decision carries no ranking reason codes and binds the exact set', () => {
     const proposals = proposalSet();
-    const decision = {
-        schemaVersion: 1,
-        viewId: proposals.viewId,
-        rgbDigest: proposals.rgbDigest,
-        promptStateDigest: proposals.promptStateDigest,
-        proposalSetDigest: proposals.digest,
-        rankingPolicyVersion: anchorMaskRankingPolicyVersion,
-        status: 'ambiguous',
-        selectedProposalId: 'proposal-0',
-        alternativeProposalIds: ['proposal-0'],
-        reasons: [
-            {
-                code: 'nested-part-vs-whole',
-                proposalIds: ['proposal-0']
-            }
-        ]
-    };
+    const decision = decisionFor(proposals);
     assert.equal(isProposalDecision(decision, proposals), true);
+    // Structured ranking reasons are deleted from the v2 decision.
+    assert.equal(
+        isProposalDecision({ ...decision, reasons: [] }, proposals),
+        false
+    );
+    assert.equal(
+        isProposalDecision({ ...decision, schemaVersion: 1 }, proposals),
+        false
+    );
+    assert.equal(
+        isProposalDecision(
+            { ...decision, rankingPolicyVersion: 'anchor-mask-ranking/v2' },
+            proposals
+        ),
+        false
+    );
     assert.equal(
         isProposalDecision(
             { ...decision, proposalSetDigest: digest('f') },
+            proposals
+        ),
+        false
+    );
+});
+
+test('the default preview is the highest raw model score, never set order', () => {
+    const low = withScore(proposalFor(0), 0.5);
+    const high = withScore(proposalFor(1), 0.9);
+    const proposals = withProposals(proposalSet(), [low, high]);
+    const decision = decisionFor(proposals, {
+        status: 'ambiguous',
+        selectedProposalId: 'proposal-1',
+        alternativeProposalIds: ['proposal-1', 'proposal-0']
+    });
+    assert.equal(isProposalDecision(decision, proposals), true);
+    // Set order is not the preview order.
+    assert.equal(
+        isProposalDecision(
+            {
+                ...decision,
+                selectedProposalId: 'proposal-0',
+                alternativeProposalIds: ['proposal-0', 'proposal-1']
+            },
+            proposals
+        ),
+        false
+    );
+    // The default preview is never auto-confirmed into a single selection.
+    assert.equal(
+        isProposalDecision({ ...decision, status: 'selected' }, proposals),
+        false
+    );
+});
+
+test('a ProposalDecision cannot advertise a prompt-ineligible proposal', () => {
+    const falseFacts = {
+        positivePointsSatisfied: false,
+        negativePointsSatisfied: true,
+        positiveBoxesSatisfied: true
+    };
+    const eligible = withScore(proposalFor(0), 0.9);
+    const ineligible = proposalFor(1, {
+        promptConsistency: falseFacts,
+        rankingFeatures: {
+            promptConsistency: falseFacts,
+            eligible: false,
+            areaFraction: 1,
+            connectedComponentCount: 1
+        }
+    });
+    const proposals = withProposals(proposalSet(), [eligible, ineligible]);
+    // Only the eligible candidate may be advertised.
+    const decision = decisionFor(proposals, {
+        status: 'selected',
+        selectedProposalId: 'proposal-0',
+        alternativeProposalIds: ['proposal-0']
+    });
+    assert.equal(isProposalDecision(decision, proposals), true);
+    assert.equal(
+        isProposalDecision(
+            {
+                ...decision,
+                status: 'ambiguous',
+                alternativeProposalIds: ['proposal-0', 'proposal-1']
+            },
             proposals
         ),
         false
@@ -251,7 +583,8 @@ test('a ProposalDecision binds the exact proposal set and structured ambiguity r
         isProposalDecision(
             {
                 ...decision,
-                reasons: [{ code: 'made-up-confidence', proposalIds: [] }]
+                selectedProposalId: 'proposal-1',
+                alternativeProposalIds: ['proposal-1']
             },
             proposals
         ),
@@ -259,28 +592,63 @@ test('a ProposalDecision binds the exact proposal set and structured ambiguity r
     );
 });
 
-test('a ProposalDecision cannot select or advertise a prompt-ineligible proposal', () => {
-    const base = proposalSet();
-    const proposals = withProposal(base, {
-        ...base.proposals[0],
-        rankingFeatures: {
-            ...base.proposals[0].rankingFeatures,
-            eligible: false
-        }
+test('decision status is coupled to the eligible alternatives', () => {
+    // Unavailable: no eligible candidate, no selection.
+    const empty = withProposals(proposalSet(), []);
+    const unavailable = decisionFor(empty, {
+        status: 'unavailable',
+        selectedProposalId: undefined,
+        alternativeProposalIds: []
     });
-    const decision = {
-        schemaVersion: 1,
-        viewId: proposals.viewId,
-        rgbDigest: proposals.rgbDigest,
-        promptStateDigest: proposals.promptStateDigest,
-        proposalSetDigest: proposals.digest,
-        rankingPolicyVersion: anchorMaskRankingPolicyVersion,
-        status: 'selected',
-        selectedProposalId: 'proposal-0',
-        alternativeProposalIds: ['proposal-0'],
-        reasons: []
-    };
-    assert.equal(isProposalDecision(decision, proposals), false);
+    assert.equal(isProposalDecision(unavailable, empty), true);
+    assert.equal(
+        isProposalDecision(
+            { ...unavailable, selectedProposalId: 'proposal-0' },
+            empty
+        ),
+        false
+    );
+    // Selected: exactly one eligible candidate and it is the preview.
+    const single = proposalSet();
+    assert.equal(isProposalDecision(decisionFor(single), single), true);
+    assert.equal(
+        isProposalDecision(
+            decisionFor(single, {
+                status: 'unavailable',
+                selectedProposalId: undefined,
+                alternativeProposalIds: []
+            }),
+            single
+        ),
+        false
+    );
+    // Ambiguous: two or more eligible candidates, previewing the top score.
+    const pair = withProposals(proposalSet(), [
+        withScore(proposalFor(0), 0.9),
+        withScore(proposalFor(1), 0.5)
+    ]);
+    assert.equal(
+        isProposalDecision(
+            decisionFor(pair, {
+                status: 'ambiguous',
+                selectedProposalId: 'proposal-0',
+                alternativeProposalIds: ['proposal-0', 'proposal-1']
+            }),
+            pair
+        ),
+        true
+    );
+    assert.equal(
+        isProposalDecision(
+            decisionFor(pair, {
+                status: 'unavailable',
+                selectedProposalId: undefined,
+                alternativeProposalIds: []
+            }),
+            pair
+        ),
+        false
+    );
 });
 
 test('proposal sets reject duplicate source identity and invalid truncation', () => {
@@ -356,18 +724,6 @@ test('proposal sets reject shrunk or contradictory prompt consistency facts', ()
                 ...proposal,
                 rankingFeatures: {
                     ...proposal.rankingFeatures,
-                    boundingBox: { x0Px: 0, y0Px: 0, x1Px: 1, y1Px: 0 }
-                }
-            })
-        ),
-        false
-    );
-    assert.equal(
-        isAutoMaskProposalSet(
-            withProposal(value, {
-                ...proposal,
-                rankingFeatures: {
-                    ...proposal.rankingFeatures,
                     modelScore: 1.5
                 }
             })
@@ -378,26 +734,9 @@ test('proposal sets reject shrunk or contradictory prompt consistency facts', ()
 
 test('deterministic truncation records preserve at most three source-ordered proposals', () => {
     const base = proposalSet();
-    const proposals = Array.from({ length: 3 }, (_, sourceIndex) => ({
-        ...base.proposals[0],
-        proposalId: `proposal-${sourceIndex}`,
-        sourceIndex,
-        rankingFeatures: {
-            ...rankingFeatures,
-            pairwiseRelations: Array.from(
-                { length: 3 },
-                (_, relatedIndex) => relatedIndex
-            )
-                .filter((relatedIndex) => relatedIndex !== sourceIndex)
-                .map((relatedIndex) => ({
-                    proposalId: `proposal-${relatedIndex}`,
-                    intersectionOverUnion: 1,
-                    areaRatio: 1,
-                    containment: 'none',
-                    materiallyDistinct: false
-                }))
-        }
-    }));
+    const proposals = Array.from({ length: 3 }, (_, sourceIndex) =>
+        proposalFor(sourceIndex)
+    );
     const payload = {
         ...base,
         proposals,
@@ -415,14 +754,7 @@ test('deterministic truncation records preserve at most three source-ordered pro
     assert.equal(isAutoMaskProposalSet(bounded), true);
     const tooManyPayload = {
         ...payload,
-        proposals: [
-            ...proposals,
-            {
-                ...base.proposals[0],
-                proposalId: 'proposal-3',
-                sourceIndex: 3
-            }
-        ],
+        proposals: [...proposals, proposalFor(3)],
         truncation: {
             originalCount: 5,
             retainedCount: 4,

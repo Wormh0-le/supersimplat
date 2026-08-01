@@ -1,10 +1,74 @@
 # 07A — Simplified Object-level Anchor Acquisition
 
-Status: blocked — waits for Tickets 04C and 07
+Status: implemented — `anchor-mask-ranking/v3` + proposal set schema v4 + per-candidate Mask Review
 
 Blocked by: 04A, 04C, 05, 07
 
 Blocks: 07B, 08
+
+## Implementation record
+
+- Contract rotation (both sides, fail-closed): proposal set schemaVersion
+  3 → 4, ranking policy `anchor-mask-ranking/v2` → `anchor-mask-ranking/v3`,
+  ProposalDecision schemaVersion 1 → 2. Proposal policy
+  `auto-mask-proposals/bounded-source-order-v2` and the 04C multimask
+  (≤3 for one include Point, ≤1 otherwise) and opaque logits-ref contracts
+  are unchanged.
+- Removed v1 complexity (`src/ai-select/mask-proposal.ts`,
+  Companion `proposal_ranking.py`): pairwise containment/IoU,
+  material-distinctness, compactness, box fill/spill feature vectors,
+  prompt-mask overlap, boundary distances, `optionalSupportSanity`
+  (Gaussian support is Ticket 13 Lift Readiness, never an Anchor selector),
+  and all eight ranking reason codes with the Top-1 margin calibration.
+- `ProposalRankingFeatures` v3 is exactly what candidate choice consumes:
+  prompt consistency echo, `eligible`, `areaFraction`,
+  `connectedComponentCount`, model score echo. Eligibility requires every
+  declared prompt fact and a non-failed Mask Review; the editor rejects an
+  `eligible` candidate that contradicts either.
+- Per-candidate `review`: the Ticket 07 `local-view-assessment/v2` policy
+  now also assesses Anchor candidates Companion-side
+  (`assess_local_view` with the exact instance Prompt family). Candidates
+  carry a `ViewAssessmentShape` (no Stable-Mask input identity);
+  `view_assessment.local_view_assessment_payload` is the single serializer
+  shared with Stable-Mask View assessments. Editor validation reuses
+  `isViewAssessmentShape` (evidence-backed reasons only).
+- `ProposalDecision` v2: enumerates exactly the eligible candidates in
+  deterministic default-preview order — highest raw model score, ties by
+  source order (`defaultPreviewProposalOrder`, mirrored in
+  `decide_proposals`). The score only orders the preview and never
+  auto-confirms; `selected`/`ambiguous`/`unavailable` derive purely from
+  the eligible count, and the editor re-derives and rejects any other
+  decision shape. Structured ranking reasons are deleted; Mask-quality
+  claims live on the per-candidate Review.
+- Editor-side bound enforcement: `maskResponseMatchesRequest` rejects a
+  response whose candidate count exceeds
+  `maximumAutoMaskProposalCount(promptState, hasRefinement)`.
+- Declared prompt facts must be the exact three-key record; a partial or
+  invalid declaration falls back to recomputation, which emits the same
+  three keys (Box fact vacuous without a Box family, meaningful overlap
+  with one). A declared out-of-frame Box fails closed instead of silently
+  evaporating from consistency evaluation.
+- Anchor Dock: the candidate dropdown lists the decision's alternatives
+  (score-ordered); the prompt status line shows the previewed candidate's
+  localized Review reasons (`ai-select.review.reason.*`) and a
+  refinement-fallback hint (`ai-select.proposal.refinement-fallback`,
+  all 9 locales) when the Companion discarded an expired/foreign logits
+  ref. The eight retired `ai-select.proposal.reason.*` keys are deleted
+  from every locale.
+- Accept → Editing Mask → Paint/Erase → Confirm → Anchor Stable Mask is
+  unchanged (Tickets 04/05); Accept still requires an eligible candidate
+  from the decision's alternatives, and Paint/Erase never re-enters
+  Prompt mode. Old 04B Multiplex artifacts remain rejected by
+  adapter/manifest identity (regression test retained).
+
+## Follow-ups (not in scope)
+
+- The legacy reference-adapter frame-set path still declares a two-key
+  `promptConsistency` at proposal top level, which the editor has always
+  rejected; unreachable through the current SAM 3 Image adapter.
+- Companion-restart walkthrough and locked-adapter GPU smoke remain
+  operator-side validation (the GPU test skips without
+  `SUPERSPLAT_SAM3_IMAGE_GPU_CHECKPOINT`).
 
 ## Final Spec mapping
 
@@ -106,18 +170,18 @@ Paint/Erase never rerun SAM and never enter PromptState. Confirm is the only Anc
 
 ## Acceptance criteria
 
-- [ ] one Positive Point retains at most three candidates.
-- [ ] Box/multiple-Point/refinement requests retain at most one candidate.
-- [ ] user candidate choice resolves one-point material ambiguity.
-- [ ] raw model score only controls default preview ordering.
-- [ ] Point and Positive Box consistency are enforced.
-- [ ] Negative Box and Mask Constraint evaluators are absent.
-- [ ] basic clipping/fragmentation/spill review works.
-- [ ] candidate refinement occurs before Accept and uses an opaque same-Companion logits ref.
-- [ ] Companion replacement or missing ref falls back to fresh no-logits inference.
-- [ ] Accept, Editing Mask, Confirm and Stable Mask remain distinct.
-- [ ] manual recovery exists from every state.
-- [ ] confirmed Anchor is a later geometry identity seed, not Gaussian ownership.
+- [x] one Positive Point retains at most three candidates.
+- [x] Box/multiple-Point/refinement requests retain at most one candidate.
+- [x] user candidate choice resolves one-point material ambiguity.
+- [x] raw model score only controls default preview ordering.
+- [x] Point and Positive Box consistency are enforced.
+- [x] Negative Box and Mask Constraint evaluators are absent.
+- [x] basic clipping/fragmentation/spill review works.
+- [x] candidate refinement occurs before Accept and uses an opaque same-Companion logits ref.
+- [x] Companion replacement or missing ref falls back to fresh no-logits inference.
+- [x] Accept, Editing Mask, Confirm and Stable Mask remain distinct.
+- [x] manual recovery exists from every state.
+- [x] confirmed Anchor is a later geometry identity seed, not Gaussian ownership.
 
 ## Validation
 

@@ -149,12 +149,12 @@ A deterministic bounded set of structurally valid model Mask alternatives bound 
 _Avoid_: Stable Mask, highest-score auto-confirm, ProposalDecision
 
 **Proposal Ranking Features**
-A versioned per-proposal 2D record containing hard prompt consistency, area/bounds, connected components, Point/Box geometry, pairwise containment/IoU/material-distinctness, boundary contact, compactness, and declared model score semantics. Optional Gaussian support participation and its decision effect are recorded explicitly; support is never the primary selector or formal Evidence.
-_Avoid_: calibrated confidence, Gaussian ownership, score-only ranking
+A versioned per-proposal 2D record reduced by Ticket 07A to exactly what candidate choice consumes: hard prompt consistency, eligibility, area fraction, connected component count, and the echoed raw model score. Pairwise containment/IoU, material-distinctness clustering, compactness, decision-margin features, and Gaussian support sanity are removed; Gaussian readiness belongs to Lift Readiness, never to Anchor candidate selection. Each candidate also carries its own Mask Review record under the shared `local-view-assessment/v2` policy.
+_Avoid_: calibrated confidence, Gaussian ownership, candidate clustering/ranking pipelines
 
 **ProposalDecision**
-The versioned pre-Stable result that binds one exact AutoMaskProposalSet and classifies it as Selected, Ambiguous, or Unavailable with structured reasons and bounded alternatives. A suggested proposal is not accepted automatically; explicit acceptance or manual replacement creates the Editing Mask.
-_Avoid_: ViewAssessment, Stable Mask, highest-score auto-confirm
+The versioned pre-Stable result that binds one exact AutoMaskProposalSet and classifies it as Selected, Ambiguous, or Unavailable. It enumerates exactly the eligible candidates in deterministic default-preview order — highest raw model score, ties broken by source order — and carries no ranking reason codes; Mask-quality claims live on the per-candidate Mask Review record. The default preview is never auto-confirmed; explicit user choice resolves one-point ambiguity, and explicit acceptance or manual replacement creates the Editing Mask.
+_Avoid_: ViewAssessment, Stable Mask, highest-score auto-confirm, margin calibration
 
 **Pixel Editing**
 Explicit Paint/Erase mutation of the unpublished Editing Mask. Pixel edits use Mask-local history and never rewrite PromptState or silently rerun proposal ranking.

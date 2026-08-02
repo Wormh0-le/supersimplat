@@ -1,55 +1,29 @@
-"""Versioned Generated View planning and cross-view Mask propagation policy.
+"""Versioned cross-view Mask propagation policy.
 
-The ``generated-view-planner/v1`` and ``generated-view-mask/v1`` policies are
-pure CPU geometry over immutable mmap planes, exactly like the Anchor support
-probe: they never import the locked renderer runtime (no torch, no gsplat)
-and never classify Stable Gaussian IDs or ownership. Planning derives a
-robust Seed Region from the confirmed Anchor's mask-conditioned Gaussian
-support and sweeps a deterministic anchor-relative orbit; propagation
-projects the same support into a Generated View camera to synthesize the
-point prompts of one single-frame SAM pass.
+The ``generated-view-mask/v1`` policy is pure CPU geometry over immutable mmap
+planes, exactly like the Anchor support probe: it never imports the locked
+renderer runtime (no torch, no gsplat) and never classifies Stable Gaussian
+IDs or ownership. Propagation projects the confirmed Anchor's
+mask-conditioned Gaussian support into a Generated View camera to synthesize
+the point prompts of one single-frame SAM pass. Camera planning itself moved
+to the ticket-08 ``target-geometry/v1`` / ``local-key-view-planner/v1``
+policies in ``target_geometry.py``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import math
 from statistics import median
-from typing import Iterable, Mapping, Sequence
+from typing import Iterable
 
 from .support_probe import AnchorSupportProbeCamera
 
 
-AI_SELECT_GENERATED_VIEW_PLANNER_VERSION = "generated-view-planner/v1"
 AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION = "generated-view-mask/v1"
 
-# Ticket 06 publishes the first planner-owned ring neighbours only; Ticket 08
-# owns the adaptive coverage-driven stop policy and larger budgets.
-GENERATED_VIEW_PLAN_COUNT = 2
-_ORBIT_AZIMUTH_OFFSETS_DEGREES = (45.0, -45.0)
-# A conservative floor preserves the tiny-support framing case, matching the
-# proven Seed Region arithmetic of the reference planner.
-_MIN_SEED_RADIUS = 0.05
 # Opacity gate: alpha >= 0.5 is exactly logitOpacity >= 0 (support probe parity).
 _MIN_LOGIT_OPACITY = 0.0
 _MAX_SYNTHESIZED_PROMPTS = 3
-
-
-@dataclass(frozen=True)
-class MaskSupportSeed:
-    """A robust framing hint derived from mask-conditioned Gaussian support."""
-
-    center: tuple[float, float, float]
-    radius: float
-    support_count: int
-
-
-@dataclass(frozen=True)
-class PlannedGeneratedView:
-    """One planner-owned camera candidate in the editor CameraBinding shape."""
-
-    view_id: str
-    camera_binding: Mapping[str, object]
 
 
 @dataclass(frozen=True)
@@ -118,204 +92,6 @@ def _collect_support_means(
                     (means[base], means[base + 1], means[base + 2])
                 )
     return support
-
-
-def derive_mask_support_seed(
-    *,
-    planes: Iterable[tuple[memoryview, memoryview]],
-    camera: AnchorSupportProbeCamera,
-    mask: bytes,
-) -> MaskSupportSeed | None:
-    """Estimate a robust Seed Region from mask-conditioned Gaussian support.
-
-    A background splat can still sit inside the Anchor mask, so the framing
-    center is computed in two passes: a per-axis median provisional center,
-    rejection of clearly separated support, then the retained mean. The
-    observed support count is reported independently of the rejection.
-    """
-
-    support = _collect_support_means(planes=planes, camera=camera, mask=mask)
-    if not support:
-        return None
-    provisional = tuple(median(point[axis] for point in support) for axis in range(3))
-    distances = [
-        math.dist(point, provisional)  # type: ignore[arg-type]
-        for point in support
-    ]
-    outlier_limit = max(_MIN_SEED_RADIUS, median(distances) * 3.0)
-    retained = [
-        point
-        for point, distance in zip(support, distances, strict=True)
-        if distance <= outlier_limit
-    ]
-    if not retained:
-        retained = list(support)
-    center = tuple(
-        sum(point[axis] for point in retained) / len(retained) for axis in range(3)
-    )
-    radius = max(
-        _MIN_SEED_RADIUS,
-        median([math.dist(point, center) for point in retained]) * 2.5,  # type: ignore[arg-type]
-    )
-    return MaskSupportSeed(
-        center=(float(center[0]), float(center[1]), float(center[2])),
-        radius=radius,
-        support_count=len(support),
-    )
-
-
-def _normalise(vector: Sequence[float]) -> tuple[float, float, float]:
-    length = math.sqrt(sum(float(value) * float(value) for value in vector))
-    if not math.isfinite(length) or length <= 1e-12:
-        raise ValueError("Generated View planning direction is degenerate")
-    return tuple(float(value) / length for value in vector)  # type: ignore[return-value]
-
-
-def _cross(
-    left: Sequence[float], right: Sequence[float]
-) -> tuple[float, float, float]:
-    return (
-        left[1] * right[2] - left[2] * right[1],
-        left[2] * right[0] - left[0] * right[2],
-        left[0] * right[1] - left[1] * right[0],
-    )
-
-
-def _dot(left: Sequence[float], right: Sequence[float]) -> float:
-    return sum(left[index] * right[index] for index in range(3))
-
-
-def _rotate_about(
-    direction: Sequence[float], axis: Sequence[float], degrees: float
-) -> tuple[float, float, float]:
-    """Rotate a unit direction around a unit axis by Rodrigues' formula."""
-
-    radians = math.radians(degrees)
-    cosine = math.cos(radians)
-    sine = math.sin(radians)
-    cross = _cross(axis, direction)
-    parallel = _dot(axis, direction)
-    return tuple(
-        direction[index] * cosine
-        + cross[index] * sine
-        + axis[index] * parallel * (1.0 - cosine)
-        for index in range(3)
-    )  # type: ignore[return-value]
-
-
-def _orbit_axis(base_direction: Sequence[float]) -> tuple[float, float, float]:
-    """Return the unit orbit axis perpendicular to the anchor direction.
-
-    The axis is the component of world +z orthogonal to the anchor axis, so a
-    level anchor keeps the historical world-z longitude orbit; the next world
-    axis spans the orbit plane when the anchor is aligned with world +z.
-    """
-
-    for reference in ((0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0)):
-        projection = tuple(
-            reference[index] - _dot(reference, base_direction) * base_direction[index]
-            for index in range(3)
-        )
-        if sum(value * value for value in projection) > 1e-12:
-            return _normalise(projection)
-    raise ValueError("Generated View orbit axis is degenerate")
-
-
-def _camera_binding_for(
-    *,
-    position: Sequence[float],
-    target: Sequence[float],
-    projection: Mapping[str, object],
-) -> Mapping[str, object]:
-    """Build one OpenCV camera-to-world CameraBinding looking at the target."""
-
-    forward = _normalise(tuple(target[index] - position[index] for index in range(3)))
-    world_up: tuple[float, float, float] = (0.0, 0.0, 1.0)
-    if abs(_dot(forward, world_up)) > 0.98:
-        world_up = (0.0, 1.0, 0.0)
-    right = _normalise(_cross(forward, world_up))
-    down = _normalise(_cross(forward, right))
-    # Row-major camera-to-world: its columns are the camera right/down/forward
-    # axes in world coordinates, with the position as its translation.
-    camera_to_world = [
-        right[0], down[0], forward[0], float(position[0]),
-        right[1], down[1], forward[1], float(position[1]),
-        right[2], down[2], forward[2], float(position[2]),
-        0.0, 0.0, 0.0, 1.0,
-    ]
-    return {
-        "revision": 0,
-        "cameraToWorld": camera_to_world,
-        "projection": {
-            "model": "pinhole",
-            "fx": float(projection["fx"]),  # type: ignore[arg-type]
-            "fy": float(projection["fy"]),  # type: ignore[arg-type]
-            "cx": float(projection["cx"]),  # type: ignore[arg-type]
-            "cy": float(projection["cy"]),  # type: ignore[arg-type]
-            "width": int(projection["width"]),  # type: ignore[arg-type]
-            "height": int(projection["height"]),  # type: ignore[arg-type]
-            "near": float(projection["near"]),  # type: ignore[arg-type]
-            "far": float(projection["far"]),  # type: ignore[arg-type]
-        },
-        "conventionVersion": "opencv-camera-to-world/v1",
-    }
-
-
-def plan_first_generated_views(
-    *,
-    camera_binding: Mapping[str, object],
-    seed: MaskSupportSeed,
-) -> tuple[PlannedGeneratedView, ...]:
-    """Sweep the first deterministic anchor-relative orbit neighbours.
-
-    The orbit keeps the proven planner arithmetic: the ring distance never
-    collapses below four Seed radii or four near planes, and the anchor axis
-    sweeps around the axis perpendicular to the anchor direction. Every
-    candidate inherits the exact Anchor pinhole projection and resolution.
-    """
-
-    camera_to_world = camera_binding.get("cameraToWorld")
-    projection = camera_binding.get("projection")
-    if (
-        not isinstance(camera_to_world, list)
-        or len(camera_to_world) != 16
-        or not isinstance(projection, Mapping)
-    ):
-        raise ValueError("Generated View planning Anchor camera is malformed")
-    anchor_position = (
-        float(camera_to_world[3]),
-        float(camera_to_world[7]),
-        float(camera_to_world[11]),
-    )
-    target = seed.center
-    distance = max(
-        math.dist(anchor_position, target),
-        seed.radius * 4.0,
-        float(projection["near"]) * 4.0,  # type: ignore[arg-type]
-    )
-    base_direction = _normalise(
-        tuple(anchor_position[index] - target[index] for index in range(3))
-    )
-    orbit_axis = _orbit_axis(base_direction)
-    views: list[PlannedGeneratedView] = []
-    for index, azimuth_offset in enumerate(
-        _ORBIT_AZIMUTH_OFFSETS_DEGREES[:GENERATED_VIEW_PLAN_COUNT]
-    ):
-        direction = _rotate_about(base_direction, orbit_axis, azimuth_offset)
-        position = tuple(
-            float(target[axis]) + distance * direction[axis] for axis in range(3)
-        )
-        views.append(
-            PlannedGeneratedView(
-                view_id=f"generated-{index:02d}",
-                camera_binding=_camera_binding_for(
-                    position=position,
-                    target=target,
-                    projection=projection,
-                ),
-            )
-        )
-    return tuple(views)
 
 
 def synthesize_view_prompts(
@@ -387,12 +163,6 @@ def synthesize_view_prompts(
 
 __all__ = [
     "AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION",
-    "AI_SELECT_GENERATED_VIEW_PLANNER_VERSION",
-    "GENERATED_VIEW_PLAN_COUNT",
-    "MaskSupportSeed",
-    "PlannedGeneratedView",
     "SynthesizedViewPrompts",
-    "derive_mask_support_seed",
-    "plan_first_generated_views",
     "synthesize_view_prompts",
 ]

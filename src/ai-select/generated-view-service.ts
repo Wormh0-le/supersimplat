@@ -33,60 +33,16 @@ import {
 } from './view-assessment';
 
 /**
- * The versioned Generated View planner contract (Final Spec v1.1 §27). The
- * Companion owns camera planning; the editor binds the exact confirmed-Anchor
- * Camera/RGB/Stable-Mask identity and fails closed on any other policy
- * version. Planning produces camera candidates only — never RGB, Masks, or
- * Evidence — and progressive View publication happens per View as
- * authoritative gsplat RGB arrives.
- */
-export const aiSelectGeneratedViewPlannerVersion = 'generated-view-planner/v1';
-
-/**
  * The versioned cross-view automatic Mask policy: the Companion propagates
  * the Anchor's Stable Mask support into the Generated View camera, then runs
  * one single-frame SAM pass on the Generated View RGB. The result binds the
  * exact Generated View RGB and the Anchor RGB it was conditioned on.
+ *
+ * Ticket 08 moved camera planning to the Target Geometry Hint + bounded
+ * local Key-View contracts (`./target-geometry-hint`, `./local-key-view-plan`);
+ * this module keeps the per-View render and automatic Mask contracts.
  */
 export const aiSelectGeneratedViewMaskPolicyVersion = 'generated-view-mask/v1';
-
-export interface GeneratedViewPlanRequest {
-    readonly requestBinding: AIRequestBinding;
-    readonly target: AITarget;
-    /**
-     * The editor-side Scene Snapshot payload. It never crosses the wire as
-     * planner input; the transport retains it so a scene cache/chunk miss can
-     * re-register or upload before one bounded retry.
-     */
-    readonly snapshot: PackedSceneSnapshot;
-    readonly sceneId: string;
-    readonly sceneVersion: string;
-    /**
-     * The identity of one actual planning execution. Same-attempt replay is
-     * idempotent; an explicit planning Retry submits a new attempt.
-     */
-    readonly planAttemptId: string;
-    readonly anchorCameraBinding: CameraBinding;
-    readonly anchorRgbDigest: string;
-    readonly anchorStableMask: MaskArtifact;
-    readonly plannerPolicyVersion: typeof aiSelectGeneratedViewPlannerVersion;
-}
-
-export interface PlannedGeneratedView {
-    readonly viewId: string;
-    readonly cameraBinding: CameraBinding;
-}
-
-export interface GeneratedViewPlanResponse {
-    readonly requestBinding: AIRequestBinding;
-    readonly targetSplatId: string;
-    readonly sceneId: string;
-    readonly sceneVersion: string;
-    readonly renderConfigVersion: string;
-    readonly planAttemptId: string;
-    readonly plannerPolicyVersion: string;
-    readonly views: readonly PlannedGeneratedView[];
-}
 
 /**
  * The authoritative gsplat render of one planner-owned Generated View. It is
@@ -166,12 +122,6 @@ export interface GeneratedViewMaskResponse {
     readonly modelManifestDigest: string;
 }
 
-export interface AISelectGeneratedViewPlanner {
-    planGeneratedViews(
-        request: GeneratedViewPlanRequest
-    ): Promise<GeneratedViewPlanResponse>;
-}
-
 export interface AISelectViewRenderer {
     renderView(request: AIViewRenderRequest): Promise<AIViewRenderResponse>;
     // Snapshot residency is Companion-local and disposable; see the Anchor.
@@ -204,92 +154,6 @@ const isNonNegativeSafeInteger = (value: unknown): value is number => {
 
 const isTarget = (value: unknown): value is AITarget => {
     return isRecord(value) && isNonEmptyString(value.splatId);
-};
-
-export const isGeneratedViewPlanRequest = (
-    value: unknown
-): value is GeneratedViewPlanRequest => {
-    return (
-        isRecord(value) &&
-        isAIRequestBinding(value.requestBinding) &&
-        isTarget(value.target) &&
-        value.requestBinding.dependencyToken.splatId === value.target.splatId &&
-        isRecord(value.snapshot) &&
-        value.snapshot.sceneId === value.target.splatId &&
-        isNonEmptyString(value.sceneId) &&
-        isNonEmptyString(value.sceneVersion) &&
-        value.sceneId === value.target.splatId &&
-        isNonEmptyString(value.planAttemptId) &&
-        isCameraBinding(value.anchorCameraBinding) &&
-        isDigest(value.anchorRgbDigest) &&
-        isMaskArtifact(value.anchorStableMask) &&
-        value.anchorStableMask.width ===
-            value.anchorCameraBinding.projection.width &&
-        value.anchorStableMask.height ===
-            value.anchorCameraBinding.projection.height &&
-        value.plannerPolicyVersion === aiSelectGeneratedViewPlannerVersion
-    );
-};
-
-const isPlannedGeneratedView = (
-    value: unknown
-): value is PlannedGeneratedView => {
-    return (
-        isRecord(value) &&
-        isNonEmptyString(value.viewId) &&
-        value.viewId !== 'anchor-view' &&
-        isCameraBinding(value.cameraBinding)
-    );
-};
-
-export const isGeneratedViewPlanResponse = (
-    value: unknown
-): value is GeneratedViewPlanResponse => {
-    if (
-        !isRecord(value) ||
-        !isAIRequestBinding(value.requestBinding) ||
-        !isNonEmptyString(value.targetSplatId) ||
-        !isNonEmptyString(value.sceneId) ||
-        !isNonEmptyString(value.sceneVersion) ||
-        !isNonEmptyString(value.renderConfigVersion) ||
-        !isNonEmptyString(value.planAttemptId) ||
-        value.plannerPolicyVersion !== aiSelectGeneratedViewPlannerVersion ||
-        !Array.isArray(value.views) ||
-        value.views.length === 0 ||
-        !value.views.every(isPlannedGeneratedView)
-    ) {
-        return false;
-    }
-    const viewIds = new Set(
-        (value.views as readonly PlannedGeneratedView[]).map(
-            (view) => view.viewId
-        )
-    );
-    return viewIds.size === value.views.length;
-};
-
-/** Fail-closed plan matching: every bound identity must echo the request. */
-export const generatedViewPlanResponseMatchesRequest = (
-    response: GeneratedViewPlanResponse,
-    request: GeneratedViewPlanRequest
-): boolean => {
-    return (
-        response.requestBinding.targetContextId ===
-            request.requestBinding.targetContextId &&
-        response.requestBinding.contextRevision ===
-            request.requestBinding.contextRevision &&
-        areTargetDependencyTokensEqual(
-            response.requestBinding.dependencyToken,
-            request.requestBinding.dependencyToken
-        ) &&
-        response.targetSplatId === request.target.splatId &&
-        response.sceneId === request.sceneId &&
-        response.sceneVersion === request.sceneVersion &&
-        response.renderConfigVersion ===
-            request.snapshot.renderConfiguration.version &&
-        response.planAttemptId === request.planAttemptId &&
-        response.plannerPolicyVersion === request.plannerPolicyVersion
-    );
 };
 
 export const isAIViewRenderRequest = (

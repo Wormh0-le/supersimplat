@@ -459,25 +459,33 @@ const main = async () => {
         mask: aiSelectMaskController,
         supportProbe: selectionServiceAdapter
     });
-    // Confirm Anchor starts automatic Generated View planning: the Companion
-    // owns cameras, the editor publishes each View progressively as
-    // authoritative RGB arrives, and automatic Mask production follows
-    // independently per View. Older Companions without the additive
-    // capability fail planning closed with an actionable diagnostic.
+    // Confirm Anchor starts automatic Key View planning: the Companion owns
+    // the Target Geometry Hint and the bounded local Key-View batches, the
+    // editor publishes each View progressively as authoritative RGB arrives,
+    // and automatic Mask production follows independently per View. Older
+    // Companions without the additive capabilities fail planning closed with
+    // an actionable diagnostic.
     const aiSelectGeneratedViews = new AISelectGeneratedViewController({
         anchor: aiSelectController,
         confirmation: aiSelectConfirmation,
         maskRegistry: aiSelectMaskController.maskRegistry,
         evidenceRegistry: aiSelectMaskController.evidenceRegistry,
+        geometryHints: selectionServiceAdapter,
         planner: selectionServiceAdapter,
         renderer: selectionServiceAdapter,
         maskProvider: selectionServiceAdapter,
         getModelManifestDigest: () =>
             selectionServiceReadiness.state.configuration.modelManifestDigest,
-        supportsGeneratedViews: () =>
-            selectionServiceReadiness.state.capabilities?.supportedOperations.includes(
-                'aiSelectGeneratedViewPlanning'
-            ) ?? false
+        supportsGeneratedViews: () => {
+            const operations =
+                selectionServiceReadiness.state.capabilities
+                    ?.supportedOperations;
+            return (
+                operations !== undefined &&
+                operations.includes('aiSelectTargetGeometryHint') &&
+                operations.includes('aiSelectLocalKeyViewPlanning')
+            );
+        }
     });
     const cameraInspection = new CameraInspectionController({
         anchor: aiSelectController,

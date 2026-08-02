@@ -19,24 +19,26 @@ import {
 } from './ai-select/current-target-context';
 import {
     generatedViewMaskResponseMatchesRequest,
-    generatedViewPlanResponseMatchesRequest,
     isAIViewRenderRequest,
     isAIViewRenderResponse,
     isGeneratedViewMaskRequest,
     isGeneratedViewMaskResponse,
-    isGeneratedViewPlanRequest,
-    isGeneratedViewPlanResponse,
     viewRenderResponseMatchesRequest,
     type AIViewRenderRequest,
     type AIViewRenderResponse,
     type AISelectGeneratedViewMaskProvider,
-    type AISelectGeneratedViewPlanner,
     type AISelectViewRenderer,
     type GeneratedViewMaskRequest,
-    type GeneratedViewMaskResponse,
-    type GeneratedViewPlanRequest,
-    type GeneratedViewPlanResponse
+    type GeneratedViewMaskResponse
 } from './ai-select/generated-view-service';
+import {
+    isLocalKeyViewPlanRequest,
+    isLocalKeyViewPlanResponse,
+    localKeyViewPlanResponseMatchesRequest,
+    type AISelectLocalKeyViewPlanner,
+    type LocalKeyViewPlanRequest,
+    type LocalKeyViewPlanResponse
+} from './ai-select/local-key-view-plan';
 import { isAutoMaskProposalSet } from './ai-select/mask-proposal';
 import {
     MaskArtifactInvalidError,
@@ -55,6 +57,14 @@ import {
     type AnchorSupportProbeRequest,
     type AnchorSupportProbeResponse
 } from './ai-select/support-probe';
+import {
+    isTargetGeometryHintRequest,
+    isTargetGeometryHintResponse,
+    targetGeometryHintResponseMatchesRequest,
+    type AISelectTargetGeometryProvider,
+    type TargetGeometryHintRequest,
+    type TargetGeometryHintResponse
+} from './ai-select/target-geometry-hint';
 import {
     assertCompleteMaskSet,
     assertCoverageReport,
@@ -264,7 +274,8 @@ class FetchSelectionServiceAdapter
         AISelectAnchorRenderer,
         AISelectMaskProvider,
         AISelectSupportProbeProvider,
-        AISelectGeneratedViewPlanner,
+        AISelectTargetGeometryProvider,
+        AISelectLocalKeyViewPlanner,
         AISelectViewRenderer,
         AISelectGeneratedViewMaskProvider
 {
@@ -670,7 +681,7 @@ class FetchSelectionServiceAdapter
         request:
             | AnchorRenderRequest
             | Pick<AnchorSupportProbeRequest, 'snapshot' | 'target'>
-            | Pick<GeneratedViewPlanRequest, 'snapshot' | 'target'>
+            | Pick<TargetGeometryHintRequest, 'snapshot' | 'target'>
             | Pick<AIViewRenderRequest, 'snapshot' | 'target'>
             | Pick<GeneratedViewMaskRequest, 'snapshot' | 'target'>
     ): SpatialSceneSnapshot {
@@ -1433,44 +1444,44 @@ class FetchSelectionServiceAdapter
      * Anchor support-probe path: one re-registration or chunk upload, then
      * one bounded retry.
      */
-    async planGeneratedViews(
-        request: GeneratedViewPlanRequest
-    ): Promise<GeneratedViewPlanResponse> {
-        if (!isGeneratedViewPlanRequest(request)) {
+    async produceTargetGeometryHint(
+        request: TargetGeometryHintRequest
+    ): Promise<TargetGeometryHintResponse> {
+        if (!isTargetGeometryHintRequest(request)) {
             throw transportError(
                 'invalidResponse',
-                'AI Select requires a complete bound Generated View plan request.'
+                'AI Select requires a complete bound Target Geometry Hint request.'
             );
         }
         if (this.supportsCameraAwareSpatialWorkingSet()) {
-            return this.planSpatialGeneratedViews(request);
+            return this.produceSpatialTargetGeometryHint(request);
         }
         await this.registerPackedSnapshot(request.snapshot);
-        const first = await this.sendGeneratedViewPlan(request);
+        const first = await this.sendTargetGeometryHint(request);
         if (first.status === 'complete') {
             return first.response;
         }
         await this.registerPackedSnapshot(request.snapshot, true);
-        const retry = await this.sendGeneratedViewPlan(request);
+        const retry = await this.sendTargetGeometryHint(request);
         if (retry.status !== 'complete') {
             throw transportError(
                 'invalidResponse',
-                'The Selection Service Companion repeated a Generated View plan Scene Snapshot cache miss after the editor resent the snapshot.'
+                'The Selection Service Companion repeated a Target Geometry Hint Scene Snapshot cache miss after the editor resent the snapshot.'
             );
         }
         return retry.response;
     }
 
-    private async planSpatialGeneratedViews(
-        request: GeneratedViewPlanRequest
-    ): Promise<GeneratedViewPlanResponse> {
+    private async produceSpatialTargetGeometryHint(
+        request: TargetGeometryHintRequest
+    ): Promise<TargetGeometryHintResponse> {
         const spatialSnapshot = this.spatialSnapshotFor(request);
         await this.registerSpatialSceneManifest(spatialSnapshot);
 
         let manifestRecoveryAttempts = 0;
         let chunkRecoveryAttempts = 0;
         for (;;) {
-            const result = await this.sendGeneratedViewPlan(
+            const result = await this.sendTargetGeometryHint(
                 request,
                 'spatial-v1'
             );
@@ -1481,7 +1492,7 @@ class FetchSelectionServiceAdapter
                 if (manifestRecoveryAttempts >= 1) {
                     throw transportError(
                         'invalidResponse',
-                        'The Selection Service Companion repeated a Generated View plan Spatial Scene manifest cache miss after the editor resent the manifest.'
+                        'The Selection Service Companion repeated a Target Geometry Hint Spatial Scene manifest cache miss after the editor resent the manifest.'
                     );
                 }
                 manifestRecoveryAttempts += 1;
@@ -1491,7 +1502,7 @@ class FetchSelectionServiceAdapter
             if (chunkRecoveryAttempts >= 1) {
                 throw transportError(
                     'invalidResponse',
-                    'The Selection Service Companion repeated a Generated View plan Spatial Scene chunk miss after the editor uploaded its validated working set.'
+                    'The Selection Service Companion repeated a Target Geometry Hint Spatial Scene chunk miss after the editor uploaded its validated working set.'
                 );
             }
             chunkRecoveryAttempts += 1;
@@ -1502,13 +1513,13 @@ class FetchSelectionServiceAdapter
         }
     }
 
-    private async sendGeneratedViewPlan(
-        request: GeneratedViewPlanRequest,
+    private async sendTargetGeometryHint(
+        request: TargetGeometryHintRequest,
         sceneTransport: 'packed-v1' | 'spatial-v1' = 'packed-v1'
     ): Promise<
         | {
               readonly status: 'complete';
-              readonly response: GeneratedViewPlanResponse;
+              readonly response: TargetGeometryHintResponse;
           }
         | { readonly status: 'sceneCacheMiss' }
         | {
@@ -1517,7 +1528,7 @@ class FetchSelectionServiceAdapter
           }
     > {
         const result = await this.requestJson(
-            '/ai-select/generated-view-plans',
+            '/ai-select/target-geometry-hints',
             'POST',
             {
                 requestBinding: request.requestBinding,
@@ -1526,25 +1537,26 @@ class FetchSelectionServiceAdapter
                 sceneVersion: request.sceneVersion,
                 renderConfigVersion:
                     request.snapshot.renderConfiguration.version,
-                planAttemptId: request.planAttemptId,
+                geometryAttemptId: request.geometryAttemptId,
                 anchorCameraBinding: request.anchorCameraBinding,
+                anchorCameraBindingDigest: request.anchorCameraBindingDigest,
                 anchorRgbDigest: request.anchorRgbDigest,
                 anchorStableMask: request.anchorStableMask,
-                plannerPolicyVersion: request.plannerPolicyVersion,
+                geometryPolicyVersion: request.geometryPolicyVersion,
                 ...(sceneTransport === 'spatial-v1' ? { sceneTransport } : {})
             }
         );
         if (!isRecord(result)) {
             throw transportError(
                 'invalidResponse',
-                'The Selection Service Companion returned an invalid Generated View plan response.'
+                'The Selection Service Companion returned an invalid Target Geometry Hint response.'
             );
         }
         if (result.status === 'sceneCacheMiss') {
-            if (!this.hasMatchingPlanBindings(result, request)) {
+            if (!this.hasMatchingGeometryHintBindings(result, request)) {
                 throw transportError(
                     'invalidResponse',
-                    'The Selection Service Companion returned stale Generated View plan cache-miss bindings.'
+                    'The Selection Service Companion returned stale Target Geometry Hint cache-miss bindings.'
                 );
             }
             return { status: 'sceneCacheMiss' };
@@ -1552,11 +1564,11 @@ class FetchSelectionServiceAdapter
         if (result.status === 'sceneChunkMiss') {
             if (
                 sceneTransport !== 'spatial-v1' ||
-                !this.isMatchingPlanSceneChunkMiss(result, request)
+                !this.isMatchingGeometryHintSceneChunkMiss(result, request)
             ) {
                 throw transportError(
                     'invalidResponse',
-                    'The Selection Service Companion returned stale or invalid Generated View plan chunk-miss bindings.'
+                    'The Selection Service Companion returned stale or invalid Target Geometry Hint chunk-miss bindings.'
                 );
             }
             return {
@@ -1566,12 +1578,12 @@ class FetchSelectionServiceAdapter
         }
         if (
             result.status !== 'complete' ||
-            !isGeneratedViewPlanResponse(result) ||
-            !generatedViewPlanResponseMatchesRequest(result, request)
+            !isTargetGeometryHintResponse(result) ||
+            !targetGeometryHintResponseMatchesRequest(result, request)
         ) {
             throw transportError(
                 'invalidResponse',
-                'The Selection Service Companion returned an incomplete or stale Generated View plan.'
+                'The Selection Service Companion returned an incomplete or stale Target Geometry Hint.'
             );
         }
         return {
@@ -1580,9 +1592,9 @@ class FetchSelectionServiceAdapter
         };
     }
 
-    private hasMatchingPlanBindings(
+    private hasMatchingGeometryHintBindings(
         value: Record<string, unknown>,
-        request: GeneratedViewPlanRequest
+        request: TargetGeometryHintRequest
     ): boolean {
         return (
             isAIRequestBinding(value.requestBinding) &&
@@ -1599,23 +1611,67 @@ class FetchSelectionServiceAdapter
             value.sceneVersion === request.sceneVersion &&
             value.renderConfigVersion ===
                 request.snapshot.renderConfiguration.version &&
-            value.planAttemptId === request.planAttemptId &&
-            value.plannerPolicyVersion === request.plannerPolicyVersion
+            value.geometryAttemptId === request.geometryAttemptId &&
+            value.geometryPolicyVersion === request.geometryPolicyVersion
         );
     }
 
-    private isMatchingPlanSceneChunkMiss(
+    private isMatchingGeometryHintSceneChunkMiss(
         value: Record<string, unknown>,
-        request: GeneratedViewPlanRequest
+        request: TargetGeometryHintRequest
     ): value is Record<string, unknown> & {
         missingChunkIds: readonly string[];
     } {
         return (
             value.status === 'sceneChunkMiss' &&
-            this.hasMatchingPlanBindings(value, request) &&
+            this.hasMatchingGeometryHintBindings(value, request) &&
             isSha256Digest(value.workingSetToken) &&
             isSortedUniqueChunkIds(value.missingChunkIds, true)
         );
+    }
+
+    /**
+     * Plan one bounded local Key-View batch from the bound Target Geometry
+     * Hint. The route is pure CPU on the editor-supplied hint — no Scene
+     * Snapshot resolution and no cache-miss recovery path.
+     */
+    async planLocalKeyViews(
+        request: LocalKeyViewPlanRequest
+    ): Promise<LocalKeyViewPlanResponse> {
+        if (!isLocalKeyViewPlanRequest(request)) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select requires a complete bound local Key-View plan request.'
+            );
+        }
+        const result = await this.requestJson(
+            '/ai-select/local-key-view-plans',
+            'POST',
+            {
+                requestBinding: request.requestBinding,
+                targetSplatId: request.target.splatId,
+                planAttemptId: request.planAttemptId,
+                batchOrdinal: request.batchOrdinal,
+                anchorCameraBinding: request.anchorCameraBinding,
+                anchorCameraBindingDigest: request.anchorCameraBindingDigest,
+                anchorRgbDigest: request.anchorRgbDigest,
+                anchorStableMaskDigest: request.anchorStableMaskDigest,
+                targetGeometryHint: request.targetGeometryHint,
+                localViewPolicyVersion: request.localViewPolicyVersion
+            }
+        );
+        if (
+            !isRecord(result) ||
+            result.status !== 'complete' ||
+            !isLocalKeyViewPlanResponse(result) ||
+            !localKeyViewPlanResponseMatchesRequest(result, request)
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an incomplete or stale local Key-View plan.'
+            );
+        }
+        return result;
     }
 
     /**

@@ -42,6 +42,9 @@ MASS_CONSERVATION_RTOL = 1e-5
 _GAUSSIAN_VALIDITY_CUT = 1.0 / 255.0
 _GAUSSIAN_MAX_ALPHA = 0.99
 _TRANSMITTANCE_CUT = 1e-4
+# Per-pixel alpha epsilon for the nonblank render coverage fraction: a pixel
+# counts as covered only when its raster alpha exceeds this cut.
+_ALPHA_COVERAGE_EPSILON = 1e-3
 # Boundary reconciliation windows. A contributor is ambiguous only when its
 # exact (float64) evaluation sits within float32 evaluation noise of a kernel
 # decision boundary; anything else is a real defect and fails closed. Noise
@@ -193,6 +196,7 @@ class AnchorRenderArtifact:
     rgb_digest: str
     contributor_digest: str | None = None
     reference_contributor_error: str | None = None
+    alpha_coverage: float | None = None
 
     def __post_init__(self) -> None:
         if not self.image_png:
@@ -215,6 +219,19 @@ class AnchorRenderArtifact:
         ):
             raise MaskSessionError(
                 'rendererFailure', 'gsplat Anchor contributor digest is invalid.'
+            )
+        if (
+            self.alpha_coverage is not None
+            and (
+                isinstance(self.alpha_coverage, bool)
+                or not isinstance(self.alpha_coverage, (int, float))
+                or not math.isfinite(self.alpha_coverage)
+                or self.alpha_coverage < 0.0
+                or self.alpha_coverage > 1.0
+            )
+        ):
+            raise MaskSessionError(
+                'rendererFailure', 'gsplat Anchor alpha coverage is invalid.'
             )
 
 
@@ -1426,6 +1443,18 @@ class GsplatContributorRenderer:
         )
         with timing.measure('png') if timing is not None else nullcontext():
             image_png = _rgb_png(rasterized.service_rgb_bytes, width, height)
+        # Same blank-render coverage as the typed path, from the same
+        # rasterization's alpha plane (already converted to host sequences by
+        # the compatibility backend).
+        alpha_coverage = (
+            sum(
+                1
+                for row in rasterized.alpha
+                for value in row
+                if float(value) > _ALPHA_COVERAGE_EPSILON
+            )
+            / (width * height)
+        )
         contributor_digest: str | None = None
         reference_contributor_error: str | None = None
         if include_reference_contributor:
@@ -1460,6 +1489,7 @@ class GsplatContributorRenderer:
             rgb_digest=f'sha256:{hashlib.sha256(image_png).hexdigest()}',
             contributor_digest=contributor_digest,
             reference_contributor_error=reference_contributor_error,
+            alpha_coverage=alpha_coverage,
         )
 
     def plan_views(
@@ -2293,6 +2323,14 @@ def _typed_anchor_artifact(
 
     with timing.measure('png') if timing is not None else nullcontext():
         image_png = _rgb_png(rasterized.service_rgb_bytes, width, height)
+    # Fraction of pixels with raster alpha above the blank threshold, computed
+    # from the already-rendered alpha tensor of the same launch — zero extra
+    # GPU work. The view-renders route fails closed on a blank Key View.
+    import torch
+
+    alpha_coverage = float(
+        (rasterized.alpha > _ALPHA_COVERAGE_EPSILON).to(torch.float32).mean().item()
+    )
     contributor_digest: str | None = None
     reference_contributor_error: str | None = None
     if include_reference_contributor:
@@ -2319,6 +2357,7 @@ def _typed_anchor_artifact(
         rgb_digest=f"sha256:{hashlib.sha256(image_png).hexdigest()}",
         contributor_digest=contributor_digest,
         reference_contributor_error=reference_contributor_error,
+        alpha_coverage=alpha_coverage,
     )
 
 

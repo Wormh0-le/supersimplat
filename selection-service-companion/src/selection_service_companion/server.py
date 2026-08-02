@@ -256,8 +256,11 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/ai-select/mask-proposals":
             self._produce_ai_select_mask_proposals()
             return
-        if self.path == "/ai-select/generated-view-plans":
-            self._plan_ai_select_generated_views()
+        if self.path == "/ai-select/target-geometry-hints":
+            self._produce_ai_select_target_geometry_hint()
+            return
+        if self.path == "/ai-select/local-key-view-plans":
+            self._plan_ai_select_local_key_views()
             return
         if self.path == "/ai-select/generated-view-masks":
             self._produce_ai_select_generated_view_mask()
@@ -372,8 +375,8 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json(HTTPStatus.OK, response, server_timing=timing)
 
-    def _plan_ai_select_generated_views(self) -> None:
-        """Route the first planner-owned Generated View camera planning."""
+    def _produce_ai_select_target_geometry_hint(self) -> None:
+        """Route the compact visible-surface Target Geometry Hint derivation."""
 
         try:
             self._state.require_release()
@@ -382,14 +385,45 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             return
         try:
             request = self._read_json_body()
-            response = self._state.plan_ai_select_generated_views(request)
+            response = self._state.produce_ai_select_target_geometry_hint(request)
         except MaskSessionError as error:
             # MaskSessionError subclasses ValueError, so the actionable 409
             # branch must be matched before the generic 400 validation branch.
             self._send_json(
                 HTTPStatus.CONFLICT,
                 {
-                    "status": "plannerError",
+                    "status": "geometryHintError",
+                    "code": error.code,
+                    "message": str(error),
+                },
+            )
+            return
+        except ValueError as error:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"status": "invalidRequest", "message": str(error)},
+            )
+            return
+        self._send_json(HTTPStatus.OK, response)
+
+    def _plan_ai_select_local_key_views(self) -> None:
+        """Route one bounded local Key-View batch planning request."""
+
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            request = self._read_json_body()
+            response = self._state.plan_ai_select_local_key_views(request)
+        except MaskSessionError as error:
+            # MaskSessionError subclasses ValueError, so the actionable 409
+            # branch must be matched before the generic 400 validation branch.
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {
+                    "status": "keyViewPlanError",
                     "code": error.code,
                     "message": str(error),
                 },

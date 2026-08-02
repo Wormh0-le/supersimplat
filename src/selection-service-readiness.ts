@@ -7,13 +7,15 @@ import type {
     AIViewRenderRequest,
     AIViewRenderResponse,
     AISelectGeneratedViewMaskProvider,
-    AISelectGeneratedViewPlanner,
     AISelectViewRenderer,
     GeneratedViewMaskRequest,
-    GeneratedViewMaskResponse,
-    GeneratedViewPlanRequest,
-    GeneratedViewPlanResponse
+    GeneratedViewMaskResponse
 } from './ai-select/generated-view-service';
+import type {
+    AISelectLocalKeyViewPlanner,
+    LocalKeyViewPlanRequest,
+    LocalKeyViewPlanResponse
+} from './ai-select/local-key-view-plan';
 import type {
     AISelectMaskProvider,
     AIViewMaskRequest,
@@ -24,6 +26,11 @@ import type {
     AnchorSupportProbeRequest,
     AnchorSupportProbeResponse
 } from './ai-select/support-probe';
+import type {
+    AISelectTargetGeometryProvider,
+    TargetGeometryHintRequest,
+    TargetGeometryHintResponse
+} from './ai-select/target-geometry-hint';
 import type { SelectionServiceAdapter } from './object-selection-session';
 
 const selectionServiceProtocolVersion = '2';
@@ -1278,7 +1285,8 @@ class ReadinessGatedSelectionServiceAdapter
         AISelectAnchorRenderer,
         AISelectMaskProvider,
         AISelectSupportProbeProvider,
-        AISelectGeneratedViewPlanner,
+        AISelectTargetGeometryProvider,
+        AISelectLocalKeyViewPlanner,
         AISelectViewRenderer,
         AISelectGeneratedViewMaskProvider
 {
@@ -1346,11 +1354,20 @@ class ReadinessGatedSelectionServiceAdapter
         );
     }
 
-    async planGeneratedViews(
-        request: GeneratedViewPlanRequest
-    ): Promise<GeneratedViewPlanResponse> {
+    async produceTargetGeometryHint(
+        request: TargetGeometryHintRequest
+    ): Promise<TargetGeometryHintResponse> {
         this.readiness.requireReady();
-        return await this.requireGeneratedViewPlanner().planGeneratedViews(
+        return await this.requireTargetGeometryProvider().produceTargetGeometryHint(
+            request
+        );
+    }
+
+    async planLocalKeyViews(
+        request: LocalKeyViewPlanRequest
+    ): Promise<LocalKeyViewPlanResponse> {
+        this.readiness.requireReady();
+        return await this.requireLocalKeyViewPlanner().planLocalKeyViews(
             request
         );
     }
@@ -1412,16 +1429,27 @@ class ReadinessGatedSelectionServiceAdapter
             AISelectSupportProbeProvider;
     }
 
-    private requireGeneratedViewPlanner(): AISelectGeneratedViewPlanner {
+    private requireTargetGeometryProvider(): AISelectTargetGeometryProvider {
         const adapter = this.requireAdapter();
         if (
-            typeof (adapter as Partial<AISelectGeneratedViewPlanner>)
-                .planGeneratedViews !== 'function'
+            typeof (adapter as Partial<AISelectTargetGeometryProvider>)
+                .produceTargetGeometryHint !== 'function'
         ) {
             throw new SelectionServiceAdapterNotConfiguredError();
         }
         return adapter as SelectionServiceAdapter &
-            AISelectGeneratedViewPlanner;
+            AISelectTargetGeometryProvider;
+    }
+
+    private requireLocalKeyViewPlanner(): AISelectLocalKeyViewPlanner {
+        const adapter = this.requireAdapter();
+        if (
+            typeof (adapter as Partial<AISelectLocalKeyViewPlanner>)
+                .planLocalKeyViews !== 'function'
+        ) {
+            throw new SelectionServiceAdapterNotConfiguredError();
+        }
+        return adapter as SelectionServiceAdapter & AISelectLocalKeyViewPlanner;
     }
 
     private requireViewRenderer(): AISelectViewRenderer {

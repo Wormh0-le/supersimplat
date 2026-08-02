@@ -7,7 +7,12 @@ import type {
 } from './anchor-confirmation';
 import type { AISelectAnchorController } from './anchor-controller';
 import type { AnchorRgbArtifact } from './anchor-render-service';
-import { copyCameraBinding, type CameraBinding } from './camera-binding';
+import {
+    areCameraBindingsEqual,
+    cameraBindingDigest,
+    copyCameraBinding,
+    type CameraBinding
+} from './camera-binding';
 import {
     copyDependencyToken,
     type AIRequestBinding
@@ -19,24 +24,37 @@ import {
     type PerViewEvidenceRegistry
 } from './evidence-state';
 import {
-    aiSelectGeneratedViewPlannerVersion,
     generatedViewMaskResponseMatchesRequest,
-    generatedViewPlanResponseMatchesRequest,
     isAIViewRenderResponse,
     isGeneratedViewMaskResponse,
-    isGeneratedViewPlanResponse,
     viewRenderResponseMatchesRequest,
     type AIViewRenderRequest,
     type AIViewRenderResponse,
     type AISelectGeneratedViewMaskProvider,
-    type AISelectGeneratedViewPlanner,
     type AISelectViewRenderer,
     type GeneratedViewMaskRequest,
-    type GeneratedViewMaskResponse,
-    type GeneratedViewPlanRequest,
-    type GeneratedViewPlanResponse
+    type GeneratedViewMaskResponse
 } from './generated-view-service';
+import {
+    aiSelectLocalKeyViewPlannerVersion,
+    isLocalKeyViewPlanResponse,
+    localKeyViewPlanResponseMatchesRequest,
+    type AISelectLocalKeyViewPlanner,
+    type LocalKeyViewPlan,
+    type LocalKeyViewPlanRequest,
+    type LocalKeyViewPlanResponse,
+    type PlannedKeyView
+} from './local-key-view-plan';
 import type { MaskAnnotationRegistry } from './mask-registry';
+import {
+    aiSelectTargetGeometryPolicyVersion,
+    isTargetGeometryHintResponse,
+    targetGeometryHintResponseMatchesRequest,
+    type AISelectTargetGeometryProvider,
+    type TargetGeometryHintArtifact,
+    type TargetGeometryHintRequest,
+    type TargetGeometryHintResponse
+} from './target-geometry-hint';
 import {
     defaultViewParticipation,
     type ReviewReason,
@@ -61,7 +79,9 @@ export type GeneratedViewMaskQuality =
  * Ready, and a Mask or render failure never demotes a completed View.
  * Companion-owned View Assessment supplies automatic quality and the default
  * Participation; user confirmation and explicit exclusion remain independent
- * authority (Final Spec v1.1 §§13, 26).
+ * authority (Final Spec v1.1 §§13, 26). `planQuality`/`planReasons` echo the
+ * bounded local Key-View planner's per-candidate validation (Ticket 08); they
+ * are planner diagnostics only, never Mask or Evidence state.
  */
 export interface GeneratedAIView {
     readonly viewId: string;
@@ -80,6 +100,8 @@ export interface GeneratedAIView {
     readonly assessment?: ViewAssessmentResult;
     readonly evidenceStatus: EvidenceStatus;
     readonly selected: boolean;
+    readonly planQuality?: 'usable' | 'limited';
+    readonly planReasons?: readonly string[];
 }
 
 export interface AISelectGeneratedViewState {
@@ -87,6 +109,15 @@ export interface AISelectGeneratedViewState {
     readonly plannerErrorMessage?: string;
     readonly views: readonly GeneratedAIView[];
     readonly selectedViewId: string | null;
+    /**
+     * The bound Target Geometry Hint for this run, or null before it is
+     * Ready. It is localization/framing context only — never ownership.
+     */
+    readonly geometryHint: TargetGeometryHintArtifact | null;
+    /** Accepted bounded local Key-View batches in acceptance order. */
+    readonly keyViewPlans: readonly LocalKeyViewPlan[];
+    /** Stop preserves completed Views; queued pipeline steps skip while set. */
+    readonly generationStopped: boolean;
 }
 
 export type AISelectGeneratedViewListener = (
@@ -98,21 +129,26 @@ export interface AISelectGeneratedViewControllerOptions {
     readonly confirmation: AISelectAnchorConfirmationController;
     readonly maskRegistry: MaskAnnotationRegistry;
     readonly evidenceRegistry: PerViewEvidenceRegistry;
-    readonly planner: AISelectGeneratedViewPlanner;
+    readonly geometryHints: AISelectTargetGeometryProvider;
+    readonly planner: AISelectLocalKeyViewPlanner;
     readonly renderer: AISelectViewRenderer;
     readonly maskProvider: AISelectGeneratedViewMaskProvider;
     readonly getModelManifestDigest?: () => string | null;
     /**
      * The additive Companion capability gate: an older Companion without
-     * Generated View planning keeps the Anchor flow usable, and planning
-     * fails closed with an actionable diagnostic instead of a transport 404.
+     * Target Geometry and local Key-View planning keeps the Anchor flow
+     * usable, and planning fails closed with an actionable diagnostic instead
+     * of a transport 404.
      */
     readonly supportsGeneratedViews?: () => boolean;
 }
 
 interface GeneratedViewRecord {
     readonly viewId: string;
+    readonly source: AIViewSource;
     readonly cameraBinding: CameraBinding;
+    readonly planQuality?: 'usable' | 'limited';
+    readonly planReasons?: readonly string[];
     renderStatus: GeneratedViewRenderStatus;
     rgb?: AnchorRgbArtifact;
     rendererId?: 'gsplat';
@@ -123,12 +159,154 @@ interface GeneratedViewRecord {
     participation: AIViewParticipation;
 }
 
+/**
+ * One planner-owned View in the making; user-added Views (Ticket 11) survive
+ * planner lifecycle operations by identity.
+ */
+interface ViewIdentityShape {
+    readonly viewId: string;
+    readonly source: AIViewSource;
+    readonly cameraBinding: CameraBinding;
+}
+
+/**
+ * The Generate More collision gate: a new batch may never reuse an existing
+ * View identity, planner-owned or user-owned.
+ */
+export const findKeyViewIdCollisions = (
+    existing: readonly { readonly viewId: string }[],
+    planned: readonly { readonly viewId: string }[]
+): readonly string[] => {
+    const existingIds = new Set(existing.map((view) => view.viewId));
+    return Object.freeze(
+        planned
+            .map((view) => view.viewId)
+            .filter(
+                (viewId, index, ids) =>
+                    existingIds.has(viewId) || ids.indexOf(viewId) !== index
+            )
+    );
+};
+
+export interface RegenerateMerge {
+    /** Existing planner-owned records kept untouched (identical CameraBinding). */
+    readonly preserved: readonly ViewIdentityShape[];
+    /** Existing planner-owned viewIds the new plan no longer publishes. */
+    readonly disposedViewIds: readonly string[];
+    /** Planned Views that are new or whose CameraBinding changed. */
+    readonly added: readonly PlannedKeyView[];
+    /** Planned viewIds colliding with user-owned Views: fail closed. */
+    readonly conflictingViewIds: readonly string[];
+}
+
+/**
+ * The Regenerate merge: planner-owned Views are replaced by the new batch,
+ * but a View whose exact identity (viewId + CameraBinding) survives keeps its
+ * completed RGB/Mask artifacts; user-owned Views are never touched.
+ */
+export const planRegenerateMerge = (
+    existing: readonly ViewIdentityShape[],
+    planned: readonly PlannedKeyView[]
+): RegenerateMerge => {
+    const plannerOwned = existing.filter(
+        (view) => view.source !== 'user-added'
+    );
+    const userOwnedIds = new Set(
+        existing
+            .filter((view) => view.source === 'user-added')
+            .map((view) => view.viewId)
+    );
+    const preserved: ViewIdentityShape[] = [];
+    const added: PlannedKeyView[] = [];
+    const conflictingViewIds: string[] = [];
+    const seenPlannedIds = new Set<string>();
+    for (const view of planned) {
+        if (userOwnedIds.has(view.viewId) || seenPlannedIds.has(view.viewId)) {
+            conflictingViewIds.push(view.viewId);
+            continue;
+        }
+        seenPlannedIds.add(view.viewId);
+        const current = plannerOwned.find(
+            (entry) => entry.viewId === view.viewId
+        );
+        if (
+            current !== undefined &&
+            areCameraBindingsEqual(current.cameraBinding, view.cameraBinding)
+        ) {
+            preserved.push(current);
+        } else {
+            added.push(view);
+        }
+    }
+    const preservedIds = new Set(preserved.map((view) => view.viewId));
+    return Object.freeze({
+        preserved: Object.freeze(preserved),
+        disposedViewIds: Object.freeze(
+            plannerOwned
+                .map((view) => view.viewId)
+                .filter((viewId) => !preservedIds.has(viewId))
+        ),
+        added: Object.freeze(added),
+        conflictingViewIds: Object.freeze(conflictingViewIds)
+    });
+};
+
 const copyRgb = (rgb: AnchorRgbArtifact): AnchorRgbArtifact => {
     return Object.freeze({
         pngBase64: rgb.pngBase64,
         digest: rgb.digest,
         width: rgb.width,
         height: rgb.height
+    });
+};
+
+const copyWorldTriple = (
+    triple: readonly [number, number, number]
+): readonly [number, number, number] =>
+    Object.freeze([triple[0], triple[1], triple[2]]);
+
+/**
+ * Transport responses are untrusted: retain only deep-frozen copies of the
+ * Companion-published artifacts as target-local state.
+ */
+const copyHint = (
+    hint: TargetGeometryHintArtifact
+): TargetGeometryHintArtifact => {
+    return Object.freeze({
+        schemaVersion: hint.schemaVersion,
+        targetContextId: hint.targetContextId,
+        anchorCameraBindingDigest: hint.anchorCameraBindingDigest,
+        anchorRgbDigest: hint.anchorRgbDigest,
+        anchorStableMaskDigest: hint.anchorStableMaskDigest,
+        geometryPolicyDigest: hint.geometryPolicyDigest,
+        centerWorld: copyWorldTriple(hint.centerWorld),
+        extentWorld: copyWorldTriple(hint.extentWorld),
+        visiblePoints: Object.freeze(hint.visiblePoints.map(copyWorldTriple)),
+        quality: hint.quality,
+        reasons: Object.freeze([...hint.reasons]),
+        artifactDigest: hint.artifactDigest
+    });
+};
+
+const copyPlannedKeyView = (view: PlannedKeyView): PlannedKeyView => {
+    return Object.freeze({
+        viewId: view.viewId,
+        cameraBinding: copyCameraBinding(view.cameraBinding),
+        quality: view.quality,
+        reasons: Object.freeze([...view.reasons])
+    });
+};
+
+const copyPlan = (plan: LocalKeyViewPlan): LocalKeyViewPlan => {
+    return Object.freeze({
+        schemaVersion: plan.schemaVersion,
+        targetContextId: plan.targetContextId,
+        anchorStableMaskDigest: plan.anchorStableMaskDigest,
+        targetGeometryHintDigest: plan.targetGeometryHintDigest,
+        localViewPolicyDigest: plan.localViewPolicyDigest,
+        orderedViews: Object.freeze(plan.orderedViews.map(copyPlannedKeyView)),
+        planAttemptId: plan.planAttemptId,
+        artifactDigest: plan.artifactDigest
     });
 };
 
@@ -233,7 +411,8 @@ export class AISelectGeneratedViewController {
     private readonly anchor: AISelectAnchorController;
     private readonly maskRegistry: MaskAnnotationRegistry;
     private readonly evidenceRegistry: PerViewEvidenceRegistry;
-    private readonly planner: AISelectGeneratedViewPlanner;
+    private readonly geometryHints: AISelectTargetGeometryProvider;
+    private readonly planner: AISelectLocalKeyViewPlanner;
     private readonly renderer: AISelectViewRenderer;
     private readonly maskProvider: AISelectGeneratedViewMaskProvider;
     private readonly getModelManifestDigest: () => string | null;
@@ -247,7 +426,12 @@ export class AISelectGeneratedViewController {
     private plannerErrorMessage: string | undefined;
     private views: GeneratedViewRecord[] = [];
     private selectedViewId: string | null = null;
+    private geometryHint: TargetGeometryHintArtifact | null = null;
+    private keyViewPlans: LocalKeyViewPlan[] = [];
+    private nextBatchOrdinal = 0;
+    private generationStopped = false;
     private queue: Promise<void> = Promise.resolve();
+    private nextGeometryAttemptOrdinal = 0;
     private nextPlanAttemptOrdinal = 0;
     private nextRenderAttemptOrdinal = 0;
     private nextMaskAttemptOrdinal = 0;
@@ -256,6 +440,7 @@ export class AISelectGeneratedViewController {
         this.anchor = options.anchor;
         this.maskRegistry = options.maskRegistry;
         this.evidenceRegistry = options.evidenceRegistry;
+        this.geometryHints = options.geometryHints;
         this.planner = options.planner;
         this.renderer = options.renderer;
         this.maskProvider = options.maskProvider;
@@ -275,7 +460,10 @@ export class AISelectGeneratedViewController {
                 ? {}
                 : { plannerErrorMessage: this.plannerErrorMessage }),
             views: Object.freeze(this.views.map((view) => this.compose(view))),
-            selectedViewId: this.selectedViewId
+            selectedViewId: this.selectedViewId,
+            geometryHint: this.geometryHint,
+            keyViewPlans: Object.freeze([...this.keyViewPlans]),
+            generationStopped: this.generationStopped
         });
     }
 
@@ -324,7 +512,7 @@ export class AISelectGeneratedViewController {
                 'AI Select requires the confirmed Current Target Context for a Render Retry.'
             );
         }
-        this.enqueue((run) => this.renderAndMaskView(run, viewId));
+        this.enqueue((run) => this.renderAndMaskView(run, viewId, true));
     }
 
     /** Retry only automatic Mask production; the valid RGB/View survives. */
@@ -420,6 +608,67 @@ export class AISelectGeneratedViewController {
         this.enqueue((run) => this.planViews(run));
     }
 
+    /**
+     * Stop preserves every completed View; queued pipeline steps skip while
+     * stopped, and in-flight identity-bound results may still publish
+     * (cancellation is only a resource optimization).
+     */
+    stopGeneration(): void {
+        if (this.plannerStatus !== 'active' || this.generationStopped) {
+            throw new Error(
+                'AI Select can stop generation only while planning is active.'
+            );
+        }
+        this.generationStopped = true;
+        this.publish();
+    }
+
+    /**
+     * Generate More appends one bounded local batch without dirtying any
+     * completed View. A batch failure keeps the planner active with an
+     * actionable diagnostic; the next success clears it.
+     */
+    generateMoreViews(): void {
+        if (this.identity === null || this.plannerStatus !== 'active') {
+            throw new Error(
+                'AI Select can generate more Views only while planning is active.'
+            );
+        }
+        if (this.geometryHint === null) {
+            throw new Error(
+                'AI Select requires the Target Geometry Hint before Generate More.'
+            );
+        }
+        this.generationStopped = false;
+        this.plannerErrorMessage = undefined;
+        this.publish();
+        this.enqueue((run) => this.planMoreViews(run));
+    }
+
+    /**
+     * Regenerate replaces planner-owned Views with a fresh batch 0 from the
+     * same bound Target Geometry Hint, preserving user-owned Views and any
+     * planner View whose exact identity (viewId + CameraBinding) survives —
+     * its completed RGB/Mask artifacts remain valid. The new batch is
+     * validated before any current View is disposed.
+     */
+    regenerateViews(): void {
+        if (this.identity === null || this.plannerStatus !== 'active') {
+            throw new Error(
+                'AI Select can regenerate Views only while planning is active.'
+            );
+        }
+        if (this.geometryHint === null) {
+            throw new Error(
+                'AI Select requires the Target Geometry Hint before Regenerate.'
+            );
+        }
+        this.generationStopped = false;
+        this.plannerErrorMessage = undefined;
+        this.publish();
+        this.enqueue((run) => this.regeneratePlan(run));
+    }
+
     private handleConfirmationState(
         state: AISelectAnchorConfirmationState
     ): void {
@@ -461,18 +710,21 @@ export class AISelectGeneratedViewController {
         }
         if (!this.supportsGeneratedViews()) {
             this.failPlanning(
-                'The Selection Service Companion does not advertise Generated View planning. Install the compatible locked Companion release, then refresh readiness.'
+                'The Selection Service Companion does not advertise Target Geometry and local Key-View planning. Install the compatible locked Companion release, then refresh readiness.'
             );
             return;
         }
         const snapshot = this.anchor.getAnchorSnapshot();
         if (snapshot === null) {
             this.failPlanning(
-                'AI Select requires the confirmed Anchor Scene Snapshot before Generated View planning.'
+                'AI Select requires the confirmed Anchor Scene Snapshot before Target Geometry derivation.'
             );
             return;
         }
-        const request: GeneratedViewPlanRequest = Object.freeze({
+        const anchorCameraBindingDigest = cameraBindingDigest(
+            confirmed.cameraBinding
+        );
+        const hintRequest: TargetGeometryHintRequest = Object.freeze({
             requestBinding,
             target: Object.freeze({
                 splatId: confirmed.dependencyToken.splatId
@@ -480,22 +732,27 @@ export class AISelectGeneratedViewController {
             snapshot,
             sceneId: confirmed.sceneId,
             sceneVersion: confirmed.sceneVersion,
-            planAttemptId: this.mintPlanAttemptId(),
+            geometryAttemptId: this.mintGeometryAttemptId(),
             anchorCameraBinding: copyCameraBinding(confirmed.cameraBinding),
+            anchorCameraBindingDigest,
             anchorRgbDigest: confirmed.rgbDigest,
             anchorStableMask: confirmed.stableMask.artifact,
-            plannerPolicyVersion: aiSelectGeneratedViewPlannerVersion
+            geometryPolicyVersion: aiSelectTargetGeometryPolicyVersion
         });
 
-        let response: GeneratedViewPlanResponse;
+        let hintResponse: TargetGeometryHintResponse;
         try {
-            response = await this.planner.planGeneratedViews(request);
+            hintResponse =
+                await this.geometryHints.produceTargetGeometryHint(hintRequest);
         } catch (error) {
             if (!this.isRunCurrent(run)) {
                 return;
             }
             this.failPlanning(
-                errorMessage(error, 'AI Select Generated View planning failed.')
+                errorMessage(
+                    error,
+                    'AI Select Target Geometry derivation failed.'
+                )
             );
             return;
         }
@@ -503,27 +760,286 @@ export class AISelectGeneratedViewController {
             return;
         }
         if (
-            !isGeneratedViewPlanResponse(response) ||
-            !generatedViewPlanResponseMatchesRequest(response, request)
+            !isTargetGeometryHintResponse(hintResponse) ||
+            !targetGeometryHintResponseMatchesRequest(hintResponse, hintRequest)
         ) {
             this.failPlanning(
-                'The Selection Service Companion returned an invalid or stale Generated View plan binding.'
+                'The Selection Service Companion returned an invalid or stale Target Geometry Hint binding.'
             );
             return;
         }
-        this.views = response.views.map((planned) => ({
+        const hint = copyHint(hintResponse.hint);
+
+        let planned: LocalKeyViewPlan | null;
+        try {
+            planned = await this.requestPlanBatch(run, confirmed, hint, 0);
+        } catch (error) {
+            if (!this.isRunCurrent(run)) {
+                return;
+            }
+            this.failPlanning(
+                errorMessage(error, 'AI Select local Key-View planning failed.')
+            );
+            return;
+        }
+        if (planned === null || !this.isRunCurrent(run)) {
+            return;
+        }
+        const collisions = findKeyViewIdCollisions(
+            this.views,
+            planned.orderedViews
+        );
+        if (collisions.length > 0) {
+            this.failPlanning(
+                `The Selection Service Companion reused View identity ${collisions.join(', ')}; the plan was rejected.`
+            );
+            return;
+        }
+        this.geometryHint = hint;
+        this.adoptInitialPlan(planned);
+        this.plannerStatus = 'active';
+        this.publish();
+        this.enqueuePendingViewRenders();
+    }
+
+    /**
+     * One bounded local Key-View batch request bound to the exact confirmed
+     * Anchor and Target Geometry Hint. Returns the frozen plan artifact, or
+     * null after stale-run discard; batch failures throw to the caller's
+     * failure surface.
+     */
+    private async requestPlanBatch(
+        run: number,
+        confirmed: ConfirmedAnchor,
+        hint: TargetGeometryHintArtifact,
+        batchOrdinal: number
+    ): Promise<LocalKeyViewPlan | null> {
+        const requestBinding = this.requestBinding;
+        if (requestBinding === null) {
+            return null;
+        }
+        const request: LocalKeyViewPlanRequest = Object.freeze({
+            requestBinding,
+            target: Object.freeze({
+                splatId: confirmed.dependencyToken.splatId
+            }),
+            planAttemptId: this.mintPlanAttemptId(),
+            batchOrdinal,
+            anchorCameraBinding: copyCameraBinding(confirmed.cameraBinding),
+            anchorCameraBindingDigest: cameraBindingDigest(
+                confirmed.cameraBinding
+            ),
+            anchorRgbDigest: confirmed.rgbDigest,
+            anchorStableMaskDigest: confirmed.stableMask.artifact.digest,
+            targetGeometryHint: hint,
+            localViewPolicyVersion: aiSelectLocalKeyViewPlannerVersion
+        });
+
+        const response: LocalKeyViewPlanResponse =
+            await this.planner.planLocalKeyViews(request);
+        if (!this.isRunCurrent(run)) {
+            return null;
+        }
+        if (
+            !isLocalKeyViewPlanResponse(response) ||
+            !localKeyViewPlanResponseMatchesRequest(response, request)
+        ) {
+            throw new Error(
+                'The Selection Service Companion returned an invalid or stale local Key-View plan binding.'
+            );
+        }
+        return copyPlan(response.plan);
+    }
+
+    /**
+     * The first plan replaces every planner-owned View of this run (none can
+     * have completed yet); user-owned Views are preserved.
+     */
+    private adoptInitialPlan(plan: LocalKeyViewPlan): void {
+        for (const view of this.views) {
+            if (view.source !== 'user-added') {
+                this.maskRegistry.disposeView(view.viewId);
+                this.evidenceRegistry.disposeView(view.viewId);
+            }
+        }
+        const userOwned = this.views.filter(
+            (view) => view.source === 'user-added'
+        );
+        this.views = [
+            ...plan.orderedViews.map((planned) =>
+                this.recordForPlannedView(planned)
+            ),
+            ...userOwned
+        ];
+        if (
+            this.selectedViewId !== null &&
+            !this.views.some((view) => view.viewId === this.selectedViewId)
+        ) {
+            this.selectedViewId = null;
+        }
+        this.keyViewPlans = [plan];
+        this.nextBatchOrdinal = 1;
+        this.generationStopped = false;
+    }
+
+    private recordForPlannedView(planned: PlannedKeyView): GeneratedViewRecord {
+        return {
             viewId: planned.viewId,
+            source: 'auto-generated',
             cameraBinding: copyCameraBinding(planned.cameraBinding),
+            planQuality: planned.quality,
+            planReasons: planned.reasons,
             renderStatus: 'pending',
             maskStatus: 'none',
             participation: 'excluded'
-        }));
+        };
+    }
+
+    /** Generate More appends one bounded batch; completed Views never move. */
+    private async planMoreViews(run: number): Promise<void> {
+        const confirmed = this.confirmed;
+        const hint = this.geometryHint;
+        if (!this.isRunCurrent(run) || confirmed === null || hint === null) {
+            return;
+        }
+        let plan: LocalKeyViewPlan;
+        try {
+            const planned = await this.requestPlanBatch(
+                run,
+                confirmed,
+                hint,
+                this.nextBatchOrdinal
+            );
+            if (planned === null || !this.isRunCurrent(run)) {
+                return;
+            }
+            plan = planned;
+        } catch (error) {
+            if (!this.isRunCurrent(run)) {
+                return;
+            }
+            this.plannerErrorMessage = errorMessage(
+                error,
+                'AI Select could not generate more local Key Views.'
+            );
+            this.publish();
+            return;
+        }
+        const collisions = findKeyViewIdCollisions(
+            this.views,
+            plan.orderedViews
+        );
+        if (collisions.length > 0) {
+            this.plannerErrorMessage = `The Selection Service Companion reused View identity ${collisions.join(', ')}; the batch was rejected.`;
+            this.publish();
+            return;
+        }
+        this.views = [
+            ...this.views,
+            ...plan.orderedViews.map((planned) =>
+                this.recordForPlannedView(planned)
+            )
+        ];
+        this.keyViewPlans = [...this.keyViewPlans, plan];
+        this.nextBatchOrdinal += 1;
+        this.generationStopped = false;
+        this.plannerErrorMessage = undefined;
         this.plannerStatus = 'active';
         this.publish();
-        for (const view of this.views) {
-            this.enqueue((stepRun) =>
-                this.renderAndMaskView(stepRun, view.viewId)
+        this.enqueuePendingViewRenders();
+    }
+
+    /**
+     * Regenerate plans a fresh batch 0 first, then applies the merge:
+     * preserved identities keep their completed artifacts, dropped
+     * planner-owned Views are disposed, and a planning failure keeps every
+     * current View inspectable.
+     */
+    private async regeneratePlan(run: number): Promise<void> {
+        const confirmed = this.confirmed;
+        const hint = this.geometryHint;
+        if (!this.isRunCurrent(run) || confirmed === null || hint === null) {
+            return;
+        }
+        let plan: LocalKeyViewPlan;
+        try {
+            const planned = await this.requestPlanBatch(
+                run,
+                confirmed,
+                hint,
+                0
             );
+            if (planned === null || !this.isRunCurrent(run)) {
+                return;
+            }
+            plan = planned;
+        } catch (error) {
+            if (!this.isRunCurrent(run)) {
+                return;
+            }
+            this.plannerErrorMessage = errorMessage(
+                error,
+                'AI Select could not regenerate the local Key Views.'
+            );
+            this.publish();
+            return;
+        }
+        const merge = planRegenerateMerge(this.views, plan.orderedViews);
+        if (merge.conflictingViewIds.length > 0) {
+            this.plannerErrorMessage = `The Selection Service Companion reused user-owned View identity ${merge.conflictingViewIds.join(', ')}; the batch was rejected.`;
+            this.publish();
+            return;
+        }
+        const disposed = new Set(merge.disposedViewIds);
+        for (const viewId of disposed) {
+            this.maskRegistry.disposeView(viewId);
+            this.evidenceRegistry.disposeView(viewId);
+        }
+        if (this.selectedViewId !== null && disposed.has(this.selectedViewId)) {
+            this.selectedViewId = null;
+        }
+        const preservedIds = new Set(
+            merge.preserved.map((view) => view.viewId)
+        );
+        const plannerViews = plan.orderedViews.map((planned) => {
+            if (preservedIds.has(planned.viewId)) {
+                const current = this.views.find(
+                    (view) => view.viewId === planned.viewId
+                );
+                if (current !== undefined) {
+                    return current;
+                }
+            }
+            return this.recordForPlannedView(planned);
+        });
+        this.views = [
+            ...plannerViews,
+            ...this.views.filter((view) => view.source === 'user-added')
+        ];
+        this.keyViewPlans = [plan];
+        this.nextBatchOrdinal = 1;
+        this.generationStopped = false;
+        this.plannerErrorMessage = undefined;
+        this.plannerStatus = 'active';
+        this.publish();
+        this.enqueuePendingViewRenders();
+    }
+
+    /**
+     * Queue render+Mask for every planner-owned View still waiting for RGB:
+     * new batches, and pending Views left behind by Stop. Failed Views keep
+     * their explicit-Retry semantics and are never auto-restarted here.
+     */
+    private enqueuePendingViewRenders(): void {
+        for (const view of this.views) {
+            if (
+                view.source !== 'user-added' &&
+                view.renderStatus === 'pending'
+            ) {
+                this.enqueue((stepRun) =>
+                    this.renderAndMaskView(stepRun, view.viewId)
+                );
+            }
         }
     }
 
@@ -531,19 +1047,29 @@ export class AISelectGeneratedViewController {
      * One per-view pipeline unit: publish the View the moment authoritative
      * RGB is Ready, then produce its automatic Mask without blocking
      * publication. A render or Mask failure is contained to this View; every
-     * other completed or pending View survives untouched.
+     * other completed or pending View survives untouched. Queued pipeline
+     * steps skip while generation is stopped; an explicit user Retry passes
+     * `forceRun` and always re-executes the render path.
      */
     private async renderAndMaskView(
         run: number,
-        viewId: string
+        viewId: string,
+        forceRun = false
     ): Promise<void> {
         const view = this.views.find((entry) => entry.viewId === viewId);
         const requestBinding = this.requestBinding;
         if (
             !this.isRunCurrent(run) ||
             view === undefined ||
-            requestBinding === null
+            requestBinding === null ||
+            (this.generationStopped && !forceRun)
         ) {
+            return;
+        }
+        // A queued pipeline step only ever starts a pending View; a duplicate
+        // queue entry after Stop/Generate More or an already-running View is
+        // discarded. Explicit user Retry passes forceRun for a failed View.
+        if (!forceRun && view.renderStatus !== 'pending') {
             return;
         }
         const snapshot = this.anchor.getAnchorSnapshot();
@@ -572,7 +1098,7 @@ export class AISelectGeneratedViewController {
         try {
             response = await this.renderer.renderView(request);
         } catch (error) {
-            if (!this.isRunCurrent(run)) {
+            if (!this.isRunCurrent(run) || !this.views.includes(view)) {
                 return;
             }
             this.failViewRender(
@@ -584,7 +1110,9 @@ export class AISelectGeneratedViewController {
             );
             return;
         }
-        if (!this.isRunCurrent(run)) {
+        // A Regenerate disposal mid-flight orphans the record; its late
+        // result must never resurrect the View or republish its artifacts.
+        if (!this.isRunCurrent(run) || !this.views.includes(view)) {
             return;
         }
         if (
@@ -617,7 +1145,8 @@ export class AISelectGeneratedViewController {
         if (
             !this.isRunCurrent(run) ||
             confirmed === null ||
-            requestBinding === null
+            requestBinding === null ||
+            !this.views.includes(view)
         ) {
             return;
         }
@@ -664,7 +1193,7 @@ export class AISelectGeneratedViewController {
             response =
                 await this.maskProvider.produceGeneratedViewMask(request);
         } catch (error) {
-            if (!this.isRunCurrent(run)) {
+            if (!this.isRunCurrent(run) || !this.views.includes(view)) {
                 return;
             }
             this.failViewMask(
@@ -676,7 +1205,7 @@ export class AISelectGeneratedViewController {
             );
             return;
         }
-        if (!this.isRunCurrent(run)) {
+        if (!this.isRunCurrent(run) || !this.views.includes(view)) {
             return;
         }
         if (
@@ -778,6 +1307,10 @@ export class AISelectGeneratedViewController {
         }
         this.views = [];
         this.selectedViewId = null;
+        this.geometryHint = null;
+        this.keyViewPlans = [];
+        this.nextBatchOrdinal = 0;
+        this.generationStopped = false;
         this.plannerStatus = 'idle';
         this.plannerErrorMessage = undefined;
         this.publish();
@@ -820,7 +1353,7 @@ export class AISelectGeneratedViewController {
                 : 'excluded';
         return Object.freeze({
             viewId: view.viewId,
-            source: 'auto-generated',
+            source: view.source,
             cameraBinding: copyCameraBinding(view.cameraBinding),
             renderStatus: view.renderStatus,
             ...(view.rgb === undefined ? {} : { rgb: copyRgb(view.rgb) }),
@@ -845,7 +1378,13 @@ export class AISelectGeneratedViewController {
                 view,
                 stableMask?.artifact.digest ?? null
             ),
-            selected: this.selectedViewId === view.viewId
+            selected: this.selectedViewId === view.viewId,
+            ...(view.planQuality === undefined
+                ? {}
+                : { planQuality: view.planQuality }),
+            ...(view.planReasons === undefined
+                ? {}
+                : { planReasons: Object.freeze([...view.planReasons]) })
         });
     }
 
@@ -876,6 +1415,16 @@ export class AISelectGeneratedViewController {
         );
     }
 
+    private mintGeometryAttemptId(): string {
+        if (this.nextGeometryAttemptOrdinal >= Number.MAX_SAFE_INTEGER) {
+            throw new Error(
+                'AI Select geometry attempt identity cannot advance safely.'
+            );
+        }
+        this.nextGeometryAttemptOrdinal += 1;
+        return `target-geometry-hint-attempt-${this.nextGeometryAttemptOrdinal}`;
+    }
+
     private mintPlanAttemptId(): string {
         if (this.nextPlanAttemptOrdinal >= Number.MAX_SAFE_INTEGER) {
             throw new Error(
@@ -883,7 +1432,7 @@ export class AISelectGeneratedViewController {
             );
         }
         this.nextPlanAttemptOrdinal += 1;
-        return `generated-view-plan-attempt-${this.nextPlanAttemptOrdinal}`;
+        return `local-key-view-plan-attempt-${this.nextPlanAttemptOrdinal}`;
     }
 
     private mintRenderAttemptId(): string {

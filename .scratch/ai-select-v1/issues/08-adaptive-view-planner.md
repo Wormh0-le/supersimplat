@@ -1,12 +1,76 @@
 # 08 — TargetGeometryHint + Bounded Local Key Views
 
-Status: proposed — unblocked (07A implemented)
+Status: implemented — `target-geometry/v1` + `local-key-view-planner/v1` + plan lifecycle (Stop / Generate More / Regenerate)
 
 Blocked by: 07A
 
 Blocks: 08A
 
 Runs in parallel with: 07B
+
+## Implementation record
+
+- Design contract pinned in `.scratch/ai-select-v1/issues/08-design-contract.md`
+  (wire shapes, algorithms, error taxonomy, lifecycle, test plan).
+- Companion `target_geometry.py` (pure CPU, no torch/gsplat): first-hit
+  visible surface at Gaussian-mean granularity (per set Stable Mask pixel the
+  nearest alpha ≥ 0.5 Gaussian, the spec's "equivalent visible-surface seam";
+  a production depth-render integration stays deferred), ≤64 visible points
+  by deterministic stride, robust center (median) and extent (scaled MAD,
+  1e-3 floor, never raw extrema), separated/background support filtered
+  before statistics, quality `usable|limited` with evidence-backed reasons
+  (`sparseSupport`, `separatedSupportFiltered`, `frameBoundaryContact`).
+  Empty support fails closed as `geometryUnavailable` (409); the Anchor and
+  prior completed Views are preserved.
+- Bounded local Key-View planner: fixed deterministic offset fan
+  (±30° azimuth, +20° elevation, then ±60°, ±30°/+20°, +40°), batch of ≤3,
+  distance `max(anchor distance, 4×extent radius, 4×near)`, per-candidate
+  validation (clipping, projected useful size ≥ 5% of frame, visibility
+  fraction with `reducedVisibility` Limited marking), bounded closer
+  replacement (×0.7, ×0.45), drop on failure, zero-accepted →
+  `plannerFailure`, batch overflow → `planExhausted`. viewId
+  `key-view-{batch}-{slot}` is stable and array-position independent.
+- Two new routes replace the retired `POST /ai-select/generated-view-plans`
+  (`generated-view-planner/v1` superseded, both sides fail closed):
+  `POST /ai-select/target-geometry-hints` (resolves scene planes like the
+  support probe, packed + spatial cache-miss 200s, single-slot
+  admission/replay) and `POST /ai-select/local-key-view-plans` (pure CPU on
+  the editor-supplied hint; fail-closed hint validation incl. recomputed
+  `artifactDigest`, context and anchor-digest binding). Artifact digests are
+  Companion-canonical; the editor binds them opaquely and never recomputes.
+- Capabilities: `aiSelectGeneratedViewPlanning` replaced by
+  `aiSelectTargetGeometryHint` + `aiSelectLocalKeyViewPlanning`; the editor
+  gate requires both and keeps the Anchor flow usable without them.
+- Nonblank render gate: `AnchorRenderArtifact.alpha_coverage` (fraction of
+  pixels with raster alpha > 1e-3 from the same rasterization) feeds a
+  fail-closed `blankRender` (409) check on `/ai-select/view-renders` only;
+  the Anchor route is untouched and RGB is never published from a blank
+  render.
+- Editor controller: `geometryHint` + `keyViewPlans` + `generationStopped`
+  target-local state; Stop preserves completed Views and skips queued pending
+  renders (explicit Retry still runs); Generate More appends a bounded batch
+  without dirtying completed Views (identity collisions fail closed, batch
+  failure keeps the planner active with an actionable diagnostic); Regenerate
+  validates the new batch 0 first, then preserves exact-identity
+  (viewId + CameraBinding) records with their completed RGB/Mask, disposes
+  dropped planner-owned Views, and never touches user-owned Views; pure
+  exported helpers `findKeyViewIdCollisions` / `planRegenerateMerge`.
+- Dock planner line: Stop / Generate More / Regenerate buttons in the active
+  state plus the stopped status, localized in all 9 locales
+  (`ai-select.views.planner.stop/.more/.regenerate/.stopped`).
+- Ticket 06 retained unchanged: `/ai-select/view-renders`,
+  `/ai-select/generated-view-masks` (`generated-view-mask/v1`), progressive
+  per-View RGB publication, Mask Review and Participation. Ticket 08 itself
+  runs no SAM inference.
+
+## Follow-ups (not in scope)
+
+- Production depth-render (`RGB+ED`) integration as the visible-surface seam
+  behind the same artifact contract; the Gaussian-mean first-hit seam is the
+  current production derivation.
+- `targetGeometryHintDigest` / `localKeyViewPlanDigest` consumption lands
+  with 08A/08B Prompt artifacts; the hint may seed but never hard-bounds the
+  Ticket 13 Evidence Working Set.
 
 ## Final Spec mapping
 
@@ -110,16 +174,16 @@ v1 does not require:
 
 ## Acceptance criteria
 
-- [ ] Geometry derives only from exact Anchor RGB/Mask/Camera identity.
-- [ ] Visible Points and digest replay deterministically.
-- [ ] robust center/extent handle outliers and separated background support.
-- [ ] geometry carries no ownership labels.
-- [ ] default plan contains 2–4 bounded local Views.
-- [ ] target projects with useful framing in every accepted View.
-- [ ] invalid/nonblank render checks fail conservatively.
-- [ ] Generate More appends a bounded batch without dirtying completed Views.
-- [ ] Stop/Regenerate preserve correct user-owned and completed state.
-- [ ] Ticket 08 runs no SAM inference.
+- [x] Geometry derives only from exact Anchor RGB/Mask/Camera identity.
+- [x] Visible Points and digest replay deterministically.
+- [x] robust center/extent handle outliers and separated background support.
+- [x] geometry carries no ownership labels.
+- [x] default plan contains 2–4 bounded local Views.
+- [x] target projects with useful framing in every accepted View.
+- [x] invalid/nonblank render checks fail conservatively.
+- [x] Generate More appends a bounded batch without dirtying completed Views.
+- [x] Stop/Regenerate preserve correct user-owned and completed state.
+- [x] Ticket 08 runs no SAM inference.
 
 ## Validation
 

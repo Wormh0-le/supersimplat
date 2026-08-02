@@ -4,11 +4,10 @@ import base64
 import hashlib
 from http import HTTPStatus
 import json
-import math
 from pathlib import Path
 import struct
 import tempfile
-from threading import Event, Thread
+from threading import Thread
 from typing import Any, Mapping
 import unittest
 from urllib.error import HTTPError
@@ -21,10 +20,6 @@ from selection_service_companion.binary_scene_snapshot import (
 )
 from selection_service_companion.generated_view_planning import (
     AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION,
-    AI_SELECT_GENERATED_VIEW_PLANNER_VERSION,
-    GENERATED_VIEW_PLAN_COUNT,
-    derive_mask_support_seed,
-    plan_first_generated_views,
     synthesize_view_prompts,
 )
 from selection_service_companion.gsplat_renderer import AnchorRenderArtifact
@@ -138,109 +133,8 @@ def _planes() -> list[tuple[memoryview, memoryview]]:
     return [(memoryview(means), memoryview(logits))]
 
 
-def _assert_orthonormal_rotation(test: unittest.TestCase, camera_to_world: list[float]) -> None:
-    rows = (
-        camera_to_world[0:3],
-        camera_to_world[4:7],
-        camera_to_world[8:11],
-    )
-    for row in rows:
-        test.assertAlmostEqual(sum(component * component for component in row), 1.0, places=9)
-    for first, second in ((0, 1), (0, 2), (1, 2)):
-        test.assertAlmostEqual(
-            sum(rows[first][axis] * rows[second][axis] for axis in range(3)),
-            0.0,
-            places=9,
-        )
-    determinant = (
-        rows[0][0] * (rows[1][1] * rows[2][2] - rows[1][2] * rows[2][1])
-        - rows[0][1] * (rows[1][0] * rows[2][2] - rows[1][2] * rows[2][0])
-        + rows[0][2] * (rows[1][0] * rows[2][1] - rows[1][1] * rows[2][0])
-    )
-    test.assertAlmostEqual(determinant, 1.0, places=9)
-
-
-class GeneratedViewPlanningPolicyTests(unittest.TestCase):
-    """Direct policy checks over synthetic planes, with no service state."""
-
-    def test_seed_derivation_gates_and_frames_the_mask_support(self) -> None:
-        seed = derive_mask_support_seed(
-            planes=_planes(), camera=PROBE_CAMERA, mask=FULL_MASK
-        )
-
-        self.assertIsNotNone(seed)
-        assert seed is not None
-        self.assertEqual(seed.support_count, 3)
-        # Provisional median (0.125, 0, 2); id 11 at distance ~3.0 is clearly
-        # separated support and drops out of the framing center.
-        self.assertAlmostEqual(seed.center[0], 0.1875)
-        self.assertAlmostEqual(seed.center[1], -0.125)
-        self.assertAlmostEqual(seed.center[2], 2.0)
-        self.assertAlmostEqual(
-            seed.radius, max(0.05, math.dist((0.25, 0.0, 2.0), seed.center) * 2.5)
-        )
-
-    def test_seed_derivation_reports_no_support_for_an_empty_mask(self) -> None:
-        self.assertIsNone(
-            derive_mask_support_seed(
-                planes=_planes(), camera=PROBE_CAMERA, mask=EMPTY_MASK
-            )
-        )
-
-    def test_orbit_planning_sweeps_the_first_ring_neighbours(self) -> None:
-        seed = derive_mask_support_seed(
-            planes=_planes(), camera=PROBE_CAMERA, mask=FULL_MASK
-        )
-        assert seed is not None
-
-        views = plan_first_generated_views(camera_binding=PACKED_CAMERA, seed=seed)
-
-        self.assertEqual(len(views), GENERATED_VIEW_PLAN_COUNT)
-        self.assertEqual([view.view_id for view in views], ['generated-00', 'generated-01'])
-        expected_distance = max(
-            math.dist((0.0, 0.0, 0.0), seed.center),
-            seed.radius * 4.0,
-            0.1 * 4.0,
-        )
-        directions = []
-        for view in views:
-            camera = view.camera_binding
-            self.assertEqual(camera['conventionVersion'], 'opencv-camera-to-world/v1')
-            self.assertEqual(camera['revision'], 0)
-            self.assertEqual(camera['projection'], PACKED_CAMERA['projection'])
-            camera_to_world = camera['cameraToWorld']
-            assert isinstance(camera_to_world, list)
-            self.assertEqual(camera_to_world[12:], [0.0, 0.0, 0.0, 1.0])
-            _assert_orthonormal_rotation(self, camera_to_world)
-            position = (camera_to_world[3], camera_to_world[7], camera_to_world[11])
-            self.assertAlmostEqual(math.dist(position, seed.center), expected_distance)
-            # The camera looks at the Seed Region: its forward column points
-            # from the position at the exact seed center.
-            forward = (camera_to_world[2], camera_to_world[6], camera_to_world[10])
-            expected_forward = tuple(
-                (seed.center[axis] - position[axis]) / expected_distance
-                for axis in range(3)
-            )
-            for axis in range(3):
-                self.assertAlmostEqual(forward[axis], expected_forward[axis], places=9)
-            directions.append(
-                tuple(
-                    (position[axis] - seed.center[axis]) / expected_distance
-                    for axis in range(3)
-                )
-            )
-        # The +/-45 degree ring neighbours are perpendicular around the orbit axis.
-        self.assertAlmostEqual(
-            sum(directions[0][axis] * directions[1][axis] for axis in range(3)),
-            0.0,
-            places=9,
-        )
-        # Planning is deterministic for one immutable input identity.
-        replay = plan_first_generated_views(camera_binding=PACKED_CAMERA, seed=seed)
-        self.assertEqual(
-            [view.camera_binding for view in replay],
-            [view.camera_binding for view in views],
-        )
+class GeneratedViewMaskPropagationPolicyTests(unittest.TestCase):
+    """Direct prompt-synthesis checks over synthetic planes, with no service state."""
 
     def test_prompt_synthesis_projects_support_into_the_generated_view(self) -> None:
         synthesized = synthesize_view_prompts(
@@ -397,21 +291,6 @@ def _request_binding() -> dict[str, object]:
     }
 
 
-def _plan_request_body(scene_version: str, mask: bytes) -> dict[str, object]:
-    return {
-        'requestBinding': _request_binding(),
-        'targetSplatId': 'splat-1',
-        'sceneId': 'splat-1',
-        'sceneVersion': scene_version,
-        'renderConfigVersion': 'supersplat-effective-rgb-v1',
-        'planAttemptId': 'plan-attempt-1',
-        'anchorCameraBinding': PACKED_CAMERA,
-        'anchorRgbDigest': RGB_DIGEST,
-        'anchorStableMask': _mask_payload(mask),
-        'plannerPolicyVersion': AI_SELECT_GENERATED_VIEW_PLANNER_VERSION,
-    }
-
-
 class AnchorFixtureRenderer:
     """Records the exact camera accepted at the authoritative renderer seam."""
 
@@ -420,6 +299,7 @@ class AnchorFixtureRenderer:
 
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
+        self.alpha_coverage: float | None = None
 
     def render_anchor(
         self,
@@ -447,6 +327,7 @@ class AnchorFixtureRenderer:
             image_png=png,
             rgb_digest=f'sha256:{hashlib.sha256(png).hexdigest()}',
             contributor_digest='sha256:' + ('1' * 64),
+            alpha_coverage=self.alpha_coverage,
         )
 
 
@@ -619,109 +500,77 @@ class GeneratedViewRouteTests(unittest.TestCase):
         )
         self.assertEqual(committed['status'], 'committed')
 
-    def test_plans_the_first_generated_views_from_the_confirmed_anchor(self) -> None:
-        self.register_binary_snapshot()
-        body = _plan_request_body(self.manifest.scene_version, FULL_MASK)
-
-        response = self.request_json('/ai-select/generated-view-plans', 'POST', body)
-
-        self.assertEqual(response['status'], 'complete')
-        self.assertEqual(response['requestBinding'], body['requestBinding'])
-        self.assertEqual(response['targetSplatId'], 'splat-1')
-        self.assertEqual(response['sceneId'], 'splat-1')
-        self.assertEqual(response['sceneVersion'], self.manifest.scene_version)
-        self.assertEqual(response['renderConfigVersion'], 'supersplat-effective-rgb-v1')
-        self.assertEqual(response['planAttemptId'], 'plan-attempt-1')
-        self.assertEqual(
-            response['plannerPolicyVersion'], AI_SELECT_GENERATED_VIEW_PLANNER_VERSION
-        )
-        views = response['views']
-        self.assertEqual(
-            [view['viewId'] for view in views],
-            ['generated-00', 'generated-01'],
-        )
-        for view in views:
-            camera = view['cameraBinding']
-            self.assertEqual(camera['conventionVersion'], 'opencv-camera-to-world/v1')
-            self.assertEqual(camera['projection'], PACKED_CAMERA['projection'])
-            self.assertNotEqual(
-                camera['cameraToWorld'], PACKED_CAMERA['cameraToWorld']
-            )
-        # The same immutable input plans the same cameras deterministically.
-        replay = self.request_json('/ai-select/generated-view-plans', 'POST', body)
-        self.assertEqual(replay['views'], views)
-
-    def test_plan_reports_a_bound_cache_miss_without_the_scene(self) -> None:
-        body = _plan_request_body(self.manifest.scene_version, FULL_MASK)
-
-        response = self.request_json('/ai-select/generated-view-plans', 'POST', body)
-
-        self.assertEqual(response['status'], 'sceneCacheMiss')
-        self.assertEqual(response['requestBinding'], body['requestBinding'])
-        self.assertEqual(response['planAttemptId'], 'plan-attempt-1')
-
-    def test_plan_rejects_an_unsupported_policy_version(self) -> None:
-        self.register_binary_snapshot()
-        body = {
-            **_plan_request_body(self.manifest.scene_version, FULL_MASK),
-            'plannerPolicyVersion': 'generated-view-planner/v0',
-        }
-        payload = self.post_error(
-            '/ai-select/generated-view-plans', body, HTTPStatus.BAD_REQUEST
-        )
-        self.assertEqual(payload['status'], 'invalidRequest')
-
-    def test_plan_rejects_a_stable_mask_digest_mismatch(self) -> None:
-        self.register_binary_snapshot()
-        body = _plan_request_body(self.manifest.scene_version, FULL_MASK)
-        body['anchorStableMask'] = {
-            **body['anchorStableMask'],
-            'digest': 'sha256:' + ('0' * 64),
-        }
-        payload = self.post_error(
-            '/ai-select/generated-view-plans', body, HTTPStatus.BAD_REQUEST
-        )
-        self.assertEqual(payload['status'], 'invalidRequest')
-
-    def test_plan_fails_closed_when_the_mask_has_no_observable_support(self) -> None:
-        self.register_binary_snapshot()
-        body = _plan_request_body(self.manifest.scene_version, EMPTY_MASK)
-
-        payload = self.post_error(
-            '/ai-select/generated-view-plans', body, HTTPStatus.CONFLICT
-        )
-
-        self.assertEqual(payload['status'], 'plannerError')
-        self.assertEqual(payload['code'], 'seedUnavailable')
-
-    def test_renders_a_generated_view_from_the_bound_camera(self) -> None:
-        self.register_binary_snapshot()
-        planned = self.request_json(
-            '/ai-select/generated-view-plans',
-            'POST',
-            _plan_request_body(self.manifest.scene_version, FULL_MASK),
-        )
-        view = planned['views'][0]
-        body = {
+    def _view_render_body(self, view_id: str) -> dict[str, object]:
+        return {
             'requestBinding': _request_binding(),
             'targetSplatId': 'splat-1',
             'sceneId': 'splat-1',
             'sceneVersion': self.manifest.scene_version,
             'renderConfigVersion': 'supersplat-effective-rgb-v1',
             'renderAttemptId': 'render-attempt-1',
-            'viewId': view['viewId'],
-            'cameraBinding': view['cameraBinding'],
+            'viewId': view_id,
+            'cameraBinding': VIEW_CAMERA,
         }
+
+    def _anchor_render_body(self) -> dict[str, object]:
+        return {
+            'requestBinding': _request_binding(),
+            'targetSplatId': 'splat-1',
+            'sceneId': 'splat-1',
+            'sceneVersion': self.manifest.scene_version,
+            'renderConfigVersion': 'supersplat-effective-rgb-v1',
+            'renderAttemptId': 'render-attempt-1',
+            'viewId': 'anchor-view',
+            'cameraBinding': PACKED_CAMERA,
+        }
+
+    def test_renders_a_generated_view_from_the_bound_camera(self) -> None:
+        self.register_binary_snapshot()
+        body = self._view_render_body('key-view-0-0')
 
         response = self.request_json('/ai-select/view-renders', 'POST', body)
 
         self.assertEqual(response['status'], 'complete')
-        self.assertEqual(response['viewId'], 'generated-00')
+        self.assertEqual(response['viewId'], 'key-view-0-0')
         self.assertEqual(response['renderAttemptId'], 'render-attempt-1')
-        self.assertEqual(response['cameraBinding'], view['cameraBinding'])
+        self.assertEqual(response['cameraBinding'], VIEW_CAMERA)
         self.assertEqual(response['rendererId'], 'gsplat')
         self.assertEqual(len(self.renderer.calls), 1)
-        self.assertEqual(self.renderer.calls[0]['viewId'], 'generated-00')
+        self.assertEqual(self.renderer.calls[0]['viewId'], 'key-view-0-0')
+
+    def test_view_render_fails_closed_on_a_blank_authoritative_render(self) -> None:
+        self.register_binary_snapshot()
+        self.renderer.alpha_coverage = 0.0
+
+        payload = self.post_error(
+            '/ai-select/view-renders',
+            self._view_render_body('key-view-0-0'),
+            HTTPStatus.CONFLICT,
+        )
+
+        self.assertEqual(payload['status'], 'viewRenderError')
+        self.assertEqual(payload['code'], 'blankRender')
+        # Nothing published: a true new attempt reruns the render path and
+        # fails closed again rather than replaying the blank product.
+        replay = self.post_error(
+            '/ai-select/view-renders',
+            {**self._view_render_body('key-view-0-0'), 'renderAttemptId': 'render-attempt-2'},
+            HTTPStatus.CONFLICT,
+        )
+        self.assertEqual(replay['code'], 'blankRender')
+        self.assertEqual(len(self.renderer.calls), 2)
+
+    def test_anchor_render_is_not_gated_by_alpha_coverage(self) -> None:
+        self.register_binary_snapshot()
+        self.renderer.alpha_coverage = 0.0
+
+        response = self.request_json(
+            '/ai-select/anchor-renders', 'POST', self._anchor_render_body()
+        )
+
+        self.assertEqual(response['status'], 'complete')
+        self.assertEqual(response['viewId'], 'anchor-view')
+        self.assertEqual(len(self.renderer.calls), 1)
 
     def test_view_render_rejects_the_reserved_anchor_view_id(self) -> None:
         self.register_binary_snapshot()

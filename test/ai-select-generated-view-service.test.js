@@ -7,15 +7,11 @@ const {
 } = require('../.test-dist/src/ai-select/camera-binding.js');
 const {
     aiSelectGeneratedViewMaskPolicyVersion,
-    aiSelectGeneratedViewPlannerVersion,
     generatedViewMaskResponseMatchesRequest,
-    generatedViewPlanResponseMatchesRequest,
     isAIViewRenderRequest,
     isAIViewRenderResponse,
     isGeneratedViewMaskRequest,
     isGeneratedViewMaskResponse,
-    isGeneratedViewPlanRequest,
-    isGeneratedViewPlanResponse,
     viewRenderResponseMatchesRequest
 } = require('../.test-dist/src/ai-select/generated-view-service.js');
 const {
@@ -115,37 +111,6 @@ const pngBase64 = (width, height) => {
         pngChunk('IEND', Buffer.alloc(0))
     ]).toString('base64');
 };
-
-const planRequest = (overrides = {}) => ({
-    requestBinding: requestBinding(),
-    target: target(),
-    snapshot,
-    sceneId: snapshot.sceneId,
-    sceneVersion: snapshot.sceneVersion,
-    planAttemptId: 'plan-attempt-1',
-    anchorCameraBinding: cameraBinding(),
-    anchorRgbDigest: rgbDigest('a'),
-    anchorStableMask: maskArtifact(64, 48, 0b101),
-    plannerPolicyVersion: aiSelectGeneratedViewPlannerVersion,
-    ...overrides
-});
-
-const plannedView = (viewId = 'generated-00') => ({
-    viewId,
-    cameraBinding: cameraBinding()
-});
-
-const planResponseFor = (request, overrides = {}) => ({
-    requestBinding: request.requestBinding,
-    targetSplatId: request.target.splatId,
-    sceneId: request.sceneId,
-    sceneVersion: request.sceneVersion,
-    renderConfigVersion: request.snapshot.renderConfiguration.version,
-    planAttemptId: request.planAttemptId,
-    plannerPolicyVersion: aiSelectGeneratedViewPlannerVersion,
-    views: [plannedView('generated-00'), plannedView('generated-01')],
-    ...overrides
-});
 
 const renderRequest = (overrides = {}) => ({
     requestBinding: requestBinding(),
@@ -250,88 +215,6 @@ const maskResponseFor = (request, overrides = {}) => {
         ...overrides
     };
 };
-
-test('a complete Generated View plan request validates', () => {
-    assert.ok(isGeneratedViewPlanRequest(planRequest()));
-});
-
-test('plan request validation fails closed on malformed inputs', () => {
-    const request = planRequest();
-    assert.ok(!isGeneratedViewPlanRequest(null));
-    assert.ok(
-        !isGeneratedViewPlanRequest({ ...request, requestBinding: null })
-    );
-    assert.ok(
-        !isGeneratedViewPlanRequest({
-            ...request,
-            anchorRgbDigest: 'not-a-digest'
-        })
-    );
-    assert.ok(
-        !isGeneratedViewPlanRequest({
-            ...request,
-            anchorStableMask: { ...request.anchorStableMask, digest: 'x' }
-        })
-    );
-    assert.ok(
-        !isGeneratedViewPlanRequest({
-            ...request,
-            plannerPolicyVersion: 'generated-view-planner/v0'
-        })
-    );
-    assert.ok(!isGeneratedViewPlanRequest({ ...request, planAttemptId: '' }));
-});
-
-test('a matching plan response validates against its request', () => {
-    const request = planRequest();
-    const response = planResponseFor(request);
-    assert.ok(isGeneratedViewPlanResponse(response));
-    assert.ok(generatedViewPlanResponseMatchesRequest(response, request));
-});
-
-test('plan response rejects stale bindings, empty plans, and duplicate views', () => {
-    const request = planRequest();
-    const response = planResponseFor(request);
-    assert.ok(
-        !generatedViewPlanResponseMatchesRequest(
-            planResponseFor(request, { planAttemptId: 'plan-attempt-2' }),
-            request
-        )
-    );
-    // Structural failures close at the response validator.
-    assert.ok(
-        !isGeneratedViewPlanResponse(planResponseFor(request, { views: [] }))
-    );
-    assert.ok(
-        !isGeneratedViewPlanResponse(
-            planResponseFor(request, {
-                views: [
-                    plannedView('generated-00'),
-                    plannedView('generated-00')
-                ]
-            })
-        )
-    );
-    assert.ok(
-        !generatedViewPlanResponseMatchesRequest(
-            planResponseFor(request, {
-                renderConfigVersion: 'other-config'
-            }),
-            request
-        )
-    );
-    assert.ok(
-        !isGeneratedViewPlanResponse({ ...response, views: 'generated-00' })
-    );
-    assert.ok(
-        !generatedViewPlanResponseMatchesRequest(
-            planResponseFor(request, {
-                plannerPolicyVersion: 'generated-view-planner/v0'
-            }),
-            request
-        )
-    );
-});
 
 test('a complete Generated View render request validates', () => {
     assert.ok(isAIViewRenderRequest(renderRequest()));

@@ -131,6 +131,9 @@ export class AISelectAnchorDock extends Container {
     private readonly plannerLine: Container;
     private readonly plannerStatus: Label;
     private readonly plannerRetryButton: Button;
+    private readonly plannerStopButton: Button;
+    private readonly plannerMoreButton: Button;
+    private readonly plannerRegenerateButton: Button;
     private readonly galleryCards: Container;
     private readonly anchorCard: GeneratedCardElements;
     private readonly generatedCards = new Map<string, GeneratedCardElements>();
@@ -483,8 +486,47 @@ export class AISelectAnchorDock extends Container {
                 console.error(error);
             }
         });
+        this.plannerStopButton = new Button({
+            id: 'ai-select-view-gallery-planner-stop'
+        });
+        i18n.bindText(this.plannerStopButton, 'ai-select.views.planner.stop');
+        this.plannerStopButton.on('click', () => {
+            try {
+                this.generatedViews.stopGeneration();
+            } catch (error) {
+                console.error(error);
+            }
+        });
+        this.plannerMoreButton = new Button({
+            id: 'ai-select-view-gallery-planner-more'
+        });
+        i18n.bindText(this.plannerMoreButton, 'ai-select.views.planner.more');
+        this.plannerMoreButton.on('click', () => {
+            try {
+                this.generatedViews.generateMoreViews();
+            } catch (error) {
+                console.error(error);
+            }
+        });
+        this.plannerRegenerateButton = new Button({
+            id: 'ai-select-view-gallery-planner-regenerate'
+        });
+        i18n.bindText(
+            this.plannerRegenerateButton,
+            'ai-select.views.planner.regenerate'
+        );
+        this.plannerRegenerateButton.on('click', () => {
+            try {
+                this.generatedViews.regenerateViews();
+            } catch (error) {
+                console.error(error);
+            }
+        });
         this.plannerLine.append(this.plannerStatus);
         this.plannerLine.append(this.plannerRetryButton);
+        this.plannerLine.append(this.plannerStopButton);
+        this.plannerLine.append(this.plannerMoreButton);
+        this.plannerLine.append(this.plannerRegenerateButton);
         this.galleryCards = new Container({
             id: 'ai-select-view-gallery-cards'
         });
@@ -738,12 +780,30 @@ export class AISelectAnchorDock extends Container {
                 'ai-select.views.planner.planning'
             );
             this.plannerRetryButton.hidden = true;
+            this.plannerStopButton.hidden = true;
+            this.plannerMoreButton.hidden = true;
+            this.plannerRegenerateButton.hidden = true;
         } else if (generated.plannerStatus === 'failed') {
             this.plannerLine.hidden = false;
             this.plannerStatus.text =
                 generated.plannerErrorMessage ??
                 i18n.t('ai-select.views.planner.failed');
             this.plannerRetryButton.hidden = false;
+            this.plannerStopButton.hidden = true;
+            this.plannerMoreButton.hidden = true;
+            this.plannerRegenerateButton.hidden = true;
+        } else if (generated.plannerStatus === 'active') {
+            this.plannerLine.hidden = false;
+            this.plannerStatus.text =
+                generated.plannerErrorMessage ??
+                (generated.generationStopped
+                    ? i18n.t('ai-select.views.planner.stopped')
+                    : '');
+            this.plannerRetryButton.hidden = true;
+            this.plannerStopButton.hidden = false;
+            this.plannerStopButton.enabled = !generated.generationStopped;
+            this.plannerMoreButton.hidden = false;
+            this.plannerRegenerateButton.hidden = false;
         } else {
             this.plannerLine.hidden = true;
         }

@@ -98,12 +98,23 @@ from .view_assessment import (
     assess_local_view,
     local_view_assessment_payload,
 )
+from .digests import canonical_json_digest as _canonical_json_digest
 from .generated_view_planning import (
     AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION,
-    AI_SELECT_GENERATED_VIEW_PLANNER_VERSION,
-    derive_mask_support_seed,
-    plan_first_generated_views,
     synthesize_view_prompts,
+)
+from .target_geometry import (
+    AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION,
+    AI_SELECT_TARGET_GEOMETRY_POLICY_VERSION,
+    LOCAL_KEY_VIEW_PLAN_SCHEMA_VERSION,
+    TARGET_GEOMETRY_HINT_SCHEMA_VERSION,
+    GeometryUnavailableError,
+    PlanExhaustedError,
+    PlannerFailureError,
+    derive_target_geometry_hint,
+    local_key_view_policy_digest,
+    plan_local_key_views,
+    target_geometry_policy_digest,
 )
 
 
@@ -113,20 +124,14 @@ AI_SELECT_READINESS_PROTOCOL_VERSION = "2"
 AI_SELECT_MASK_PROPOSAL_POLICY_VERSION = "auto-mask-proposals/bounded-source-order-v2"
 AI_SELECT_RGB_CACHE_LIMIT = 16
 AI_SELECT_LOGITS_STORE_LIMIT = 8
+# A planned Key View whose authoritative raster alpha covers less than this
+# fraction of the frame is blank and fails closed (view-renders only).
+_BLANK_RENDER_MIN_ALPHA_COVERAGE = 0.001
 
 # Operator-facing diagnostics: the wire carries distinguishable generic
 # failure codes, while the underlying model/runtime cause stays in the
 # Companion log where the operator can act on it.
 _logger = logging.getLogger(__name__)
-
-
-def _canonical_json_digest(payload: Mapping[str, object]) -> str:
-    """Digest one JSON-compatible payload with sorted canonical encoding."""
-
-    encoded = json.dumps(
-        payload, separators=(",", ":"), sort_keys=True, allow_nan=False
-    ).encode("utf-8")
-    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
 def _proposal_identity_json(value: object) -> str:
@@ -288,17 +293,18 @@ class AnchorRenderAdmission:
 
 
 @dataclass(frozen=True)
-class AISelectGeneratedViewPlanRequest:
-    """Validated browser binding for one Generated View planning attempt."""
+class AISelectTargetGeometryHintRequest:
+    """Validated browser binding for one Target Geometry Hint attempt."""
 
     request_binding: dict[str, object]
     target_splat_id: str
     scene_id: str
     scene_version: str
     render_config_version: str
-    plan_attempt_id: str
+    geometry_attempt_id: str
     camera_binding: dict[str, object]
     probe_camera: AnchorSupportProbeCamera
+    anchor_camera_binding_digest: str
     anchor_rgb_digest: str
     stable_mask: bytes
     stable_mask_digest: str
@@ -311,14 +317,15 @@ class AISelectGeneratedViewPlanRequest:
             'sceneId': self.scene_id,
             'sceneVersion': self.scene_version,
             'renderConfigVersion': self.render_config_version,
-            'planAttemptId': self.plan_attempt_id,
-            'plannerPolicyVersion': AI_SELECT_GENERATED_VIEW_PLANNER_VERSION,
+            'geometryAttemptId': self.geometry_attempt_id,
+            'geometryPolicyVersion': AI_SELECT_TARGET_GEOMETRY_POLICY_VERSION,
         }
 
     def identity_fields(self) -> dict[str, object]:
         return {
             **self.response_fields(),
             'cameraBinding': self.camera_binding,
+            'anchorCameraBindingDigest': self.anchor_camera_binding_digest,
             'anchorRgbDigest': self.anchor_rgb_digest,
             'stableMaskDigest': self.stable_mask_digest,
             'sceneTransport': self.scene_transport,
@@ -326,7 +333,50 @@ class AISelectGeneratedViewPlanRequest:
 
 
 @dataclass
-class GeneratedViewPlanAdmission:
+class TargetGeometryHintAdmission:
+    """One private, replayable hint publication reserved by request binding."""
+
+    completed: Event = field(default_factory=Event)
+    publication: str | None = None
+    failure: tuple[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class AISelectLocalKeyViewPlanRequest:
+    """Validated browser binding for one bounded local Key-View plan attempt."""
+
+    request_binding: dict[str, object]
+    target_splat_id: str
+    plan_attempt_id: str
+    batch_ordinal: int
+    camera_binding: dict[str, object]
+    anchor_camera_binding_digest: str
+    anchor_rgb_digest: str
+    stable_mask_digest: str
+    target_geometry_hint: dict[str, object]
+
+    def response_fields(self) -> dict[str, object]:
+        return {
+            'requestBinding': self.request_binding,
+            'targetSplatId': self.target_splat_id,
+            'planAttemptId': self.plan_attempt_id,
+            'batchOrdinal': self.batch_ordinal,
+            'localViewPolicyVersion': AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION,
+        }
+
+    def identity_fields(self) -> dict[str, object]:
+        return {
+            **self.response_fields(),
+            'cameraBinding': self.camera_binding,
+            'anchorCameraBindingDigest': self.anchor_camera_binding_digest,
+            'anchorRgbDigest': self.anchor_rgb_digest,
+            'stableMaskDigest': self.stable_mask_digest,
+            'targetGeometryHint': self.target_geometry_hint,
+        }
+
+
+@dataclass
+class LocalKeyViewPlanAdmission:
     """One private, replayable plan publication reserved by request binding."""
 
     completed: Event = field(default_factory=Event)
@@ -804,12 +854,22 @@ class CompanionState:
         init=False,
         repr=False,
     )
-    _active_generated_view_plan: str | None = field(
+    _active_target_geometry_hint: str | None = field(
         default=None,
         init=False,
         repr=False,
     )
-    _generated_view_plan_admissions: dict[str, GeneratedViewPlanAdmission] = field(
+    _target_geometry_hint_admissions: dict[str, TargetGeometryHintAdmission] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _active_local_key_view_plan: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _local_key_view_plan_admissions: dict[str, LocalKeyViewPlanAdmission] = field(
         default_factory=dict,
         init=False,
         repr=False,
@@ -1170,7 +1230,8 @@ class CompanionState:
                 "aiSelectAnchorSupportProbe",
                 "aiSelectMaskProposals",
                 "autoMaskProposalSetSchemaV3",
-                "aiSelectGeneratedViewPlanning",
+                "aiSelectTargetGeometryHint",
+                "aiSelectLocalKeyViewPlanning",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",
             ],
@@ -1665,6 +1726,18 @@ class CompanionState:
                 raise MaskSessionError(
                     'rendererFailure',
                     'The gsplat/CUDA renderer returned an invalid AI Select Anchor artifact.',
+                )
+            # Authoritative nonblank gate (view-renders only): a planned Key
+            # View whose raster alpha covers nothing fails closed before any
+            # RGB publishes. The Anchor route never takes this branch.
+            if (
+                expected_view_id is None
+                and artifact.alpha_coverage is not None
+                and artifact.alpha_coverage < _BLANK_RENDER_MIN_ALPHA_COVERAGE
+            ):
+                raise MaskSessionError(
+                    'blankRender',
+                    'The authoritative gsplat render is blank for the planned Key View.',
                 )
             with anchor_timing.measure('json-base64'):
                 response = {
@@ -4378,7 +4451,8 @@ class CompanionState:
         self._anchor_render_admissions.clear()
         self._mask_admissions.clear()
         self._support_probe_admissions.clear()
-        self._generated_view_plan_admissions.clear()
+        self._target_geometry_hint_admissions.clear()
+        self._local_key_view_plan_admissions.clear()
         self._generated_view_mask_admissions.clear()
         # Target disposal invalidates every Companion-held RGB reference and
         # previous-prediction logits reference with the same transaction.
@@ -4389,97 +4463,104 @@ class CompanionState:
         with self._scene_lock:
             self._scene_snapshots.clear()
 
-    def plan_ai_select_generated_views(
+    def produce_ai_select_target_geometry_hint(
         self, request: Mapping[str, object]
     ) -> dict[str, object]:
-        """Publish the first planner-owned Generated View camera plan.
+        """Publish the compact visible-surface Target Geometry Hint.
 
         The browser owns the confirmed Anchor identity. This state method
         validates those untrusted bindings, resolves the scene exactly like
         the support probe, reserves the single Companion operation slot, then
-        derives the mask-conditioned Seed Region and sweeps the deterministic
-        anchor-relative orbit outside every state lock. Planning is pure CPU
-        geometry: no RGB, no Contributor, no SAM, and no GPU work.
+        derives the first-hit visible-surface hint outside every state lock.
+        Derivation is pure CPU geometry: no RGB, no Contributor, no SAM, and
+        no GPU work. The hint carries no Stable Gaussian IDs, no weights, and
+        no ownership labels.
         """
 
-        plan_request = self._parse_ai_select_generated_view_plan_request(request)
+        hint_request = self._parse_ai_select_target_geometry_hint_request(request)
         planes, miss = self._resolve_ai_select_scene_planes(
-            scene_id=plan_request.scene_id,
-            scene_version=plan_request.scene_version,
-            render_config_version=plan_request.render_config_version,
-            camera_binding=plan_request.camera_binding,
-            scene_transport=plan_request.scene_transport,
-            response_fields=plan_request.response_fields(),
-            failure_code='plannerFailure',
-            failure_label='AI Select Generated View planning',
+            scene_id=hint_request.scene_id,
+            scene_version=hint_request.scene_version,
+            render_config_version=hint_request.render_config_version,
+            camera_binding=hint_request.camera_binding,
+            scene_transport=hint_request.scene_transport,
+            response_fields=hint_request.response_fields(),
+            failure_code='geometryFailure',
+            failure_label='AI Select Target Geometry Hint',
         )
         if miss is not None:
             return miss
 
-        plan_key, admission, owns_admission = self._admit_generated_view_plan(
-            plan_request
+        hint_key, admission, owns_admission = self._admit_target_geometry_hint(
+            hint_request
         )
         if not owns_admission:
-            return self._replay_generated_view_plan(admission)
+            return self._replay_target_geometry_hint(admission)
 
         try:
             try:
-                seed = derive_mask_support_seed(
+                derivation = derive_target_geometry_hint(
                     planes=planes,
-                    camera=plan_request.probe_camera,
-                    mask=plan_request.stable_mask,
+                    camera=hint_request.probe_camera,
+                    mask=hint_request.stable_mask,
                 )
-                if seed is None:
+                if derivation is None:
                     raise MaskSessionError(
-                        'seedUnavailable',
-                        'The confirmed Anchor Stable Mask has no observable Gaussian support for Generated View planning.',
+                        'geometryUnavailable',
+                        'The confirmed Anchor Stable Mask has no usable first-hit visible support for the AI Select Target Geometry Hint.',
                     )
-                views = plan_first_generated_views(
-                    camera_binding=plan_request.camera_binding,
-                    seed=seed,
-                )
+            except GeometryUnavailableError as error:
+                raise MaskSessionError('geometryUnavailable', str(error)) from error
             except MaskSessionError:
                 raise
             except Exception as error:
                 raise MaskSessionError(
-                    'plannerFailure',
-                    'The Companion failed while planning the AI Select Generated Views.',
+                    'geometryFailure',
+                    'The Companion failed while deriving the AI Select Target Geometry Hint.',
                 ) from error
+            hint_payload: dict[str, object] = {
+                'schemaVersion': TARGET_GEOMETRY_HINT_SCHEMA_VERSION,
+                'targetContextId': hint_request.request_binding['targetContextId'],
+                'anchorCameraBindingDigest': hint_request.anchor_camera_binding_digest,
+                'anchorRgbDigest': hint_request.anchor_rgb_digest,
+                'anchorStableMaskDigest': hint_request.stable_mask_digest,
+                'geometryPolicyDigest': target_geometry_policy_digest(),
+                'centerWorld': list(derivation.center),
+                'extentWorld': list(derivation.extent),
+                'visiblePoints': [list(point) for point in derivation.visible_points],
+                'quality': derivation.quality,
+                'reasons': list(derivation.reasons),
+            }
+            hint_payload['artifactDigest'] = _canonical_json_digest(hint_payload)
             response = {
                 'status': 'complete',
-                **plan_request.response_fields(),
-                'views': [
-                    {
-                        'viewId': view.view_id,
-                        'cameraBinding': view.camera_binding,
-                    }
-                    for view in views
-                ],
+                **hint_request.response_fields(),
+                'hint': hint_payload,
             }
         except MaskSessionError as error:
-            self._complete_generated_view_plan(plan_key, admission, failure=error)
+            self._complete_target_geometry_hint(hint_key, admission, failure=error)
             raise
         except Exception as error:
             failure = MaskSessionError(
-                'plannerFailure',
-                'The Companion failed while publishing the AI Select Generated View plan.',
+                'geometryFailure',
+                'The Companion failed while publishing the AI Select Target Geometry Hint.',
             )
-            self._complete_generated_view_plan(plan_key, admission, failure=failure)
+            self._complete_target_geometry_hint(hint_key, admission, failure=failure)
             raise failure from error
 
-        self._complete_generated_view_plan(plan_key, admission, response=response)
+        self._complete_target_geometry_hint(hint_key, admission, response=response)
         return response
 
-    def _parse_ai_select_generated_view_plan_request(
+    def _parse_ai_select_target_geometry_hint_request(
         self, request: Mapping[str, object]
-    ) -> AISelectGeneratedViewPlanRequest:
+    ) -> AISelectTargetGeometryHintRequest:
         request_binding_value = request.get('requestBinding')
         if not isinstance(request_binding_value, dict):
-            raise ValueError('AI Select Generated View plan requestBinding must be an object')
+            raise ValueError('AI Select Target Geometry Hint requestBinding must be an object')
         dependency_value = request_binding_value.get('dependencyToken')
         if not isinstance(dependency_value, dict):
             raise ValueError(
-                'AI Select Generated View plan requestBinding dependencyToken must be an object'
+                'AI Select Target Geometry Hint requestBinding dependencyToken must be an object'
             )
         target_splat_id = _anchor_string(
             request.get('targetSplatId'), 'targetSplatId'
@@ -4503,7 +4584,7 @@ class CompanionState:
         }
         if dependency_token['splatId'] != target_splat_id:
             raise ValueError(
-                'AI Select Generated View plan targetSplatId must match its dependency splatId'
+                'AI Select Target Geometry Hint targetSplatId must match its dependency splatId'
             )
         request_binding: dict[str, object] = {
             'targetContextId': _anchor_string(
@@ -4518,28 +4599,31 @@ class CompanionState:
         scene_version = _anchor_string(request.get('sceneVersion'), 'sceneVersion')
         if scene_id != target_splat_id:
             raise ValueError(
-                'AI Select Generated View plan sceneId must match its targetSplatId'
+                'AI Select Target Geometry Hint sceneId must match its targetSplatId'
             )
         render_config_version = _anchor_string(
             request.get('renderConfigVersion'), 'renderConfigVersion'
         )
-        plan_attempt_id = _anchor_string(
-            request.get('planAttemptId'), 'planAttemptId'
+        geometry_attempt_id = _anchor_string(
+            request.get('geometryAttemptId'), 'geometryAttemptId'
+        )
+        anchor_camera_binding_digest = _anchor_sha256_digest(
+            request.get('anchorCameraBindingDigest'), 'hint anchorCameraBindingDigest'
         )
         anchor_rgb_digest = _anchor_sha256_digest(
-            request.get('anchorRgbDigest'), 'plan anchorRgbDigest'
+            request.get('anchorRgbDigest'), 'hint anchorRgbDigest'
         )
         if (
-            request.get('plannerPolicyVersion')
-            != AI_SELECT_GENERATED_VIEW_PLANNER_VERSION
+            request.get('geometryPolicyVersion')
+            != AI_SELECT_TARGET_GEOMETRY_POLICY_VERSION
         ):
             raise ValueError(
-                'AI Select Generated View plan plannerPolicyVersion is unsupported'
+                'AI Select Target Geometry Hint geometryPolicyVersion is unsupported'
             )
         scene_transport = request.get('sceneTransport', 'packed-v1')
         if scene_transport not in ('packed-v1', 'spatial-v1'):
             raise ValueError(
-                'AI Select Generated View plan sceneTransport is unsupported'
+                'AI Select Target Geometry Hint sceneTransport is unsupported'
             )
 
         camera_binding, renderer_camera, width, height = (
@@ -4551,15 +4635,16 @@ class CompanionState:
         stable_mask, stable_mask_digest = self._parse_ai_select_support_probe_mask(
             request.get('anchorStableMask'), width=width, height=height
         )
-        return AISelectGeneratedViewPlanRequest(
+        return AISelectTargetGeometryHintRequest(
             request_binding=request_binding,
             target_splat_id=target_splat_id,
             scene_id=scene_id,
             scene_version=scene_version,
             render_config_version=render_config_version,
-            plan_attempt_id=plan_attempt_id,
+            geometry_attempt_id=geometry_attempt_id,
             camera_binding=camera_binding,
             probe_camera=probe_camera,
+            anchor_camera_binding_digest=anchor_camera_binding_digest,
             anchor_rgb_digest=anchor_rgb_digest,
             stable_mask=stable_mask,
             stable_mask_digest=stable_mask_digest,
@@ -4567,10 +4652,10 @@ class CompanionState:
         )
 
     @staticmethod
-    def _generated_view_plan_request_key(
-        request: AISelectGeneratedViewPlanRequest,
+    def _target_geometry_hint_request_key(
+        request: AISelectTargetGeometryHintRequest,
     ) -> str:
-        """Canonicalize every immutable input that can affect one camera plan."""
+        """Canonicalize every immutable input that can affect one hint."""
 
         return json.dumps(
             request.identity_fields(),
@@ -4579,14 +4664,378 @@ class CompanionState:
             allow_nan=False,
         )
 
-    def _admit_generated_view_plan(
-        self, request: AISelectGeneratedViewPlanRequest
-    ) -> tuple[str, GeneratedViewPlanAdmission, bool]:
+    def _admit_target_geometry_hint(
+        self, request: AISelectTargetGeometryHintRequest
+    ) -> tuple[str, TargetGeometryHintAdmission, bool]:
+        """Reserve or join one bound hint publication without holding locks for it."""
+
+        key = self._target_geometry_hint_request_key(request)
+        with self._session_lock:
+            admission = self._target_geometry_hint_admissions.get(key)
+            if admission is not None:
+                return key, admission, False
+            if self._operation_slot_in_use_locked():
+                raise MaskSessionError(
+                    'capacityFull',
+                    'The Companion is already serving another AI or Object Selection operation.',
+                )
+            # A completed admission stays replayable for lost-response
+            # recovery; a different request's admission then evicts every
+            # completed record here, because a newer current binding makes
+            # older hints stale anyway.
+            self._target_geometry_hint_admissions = {
+                completed_key: completed_admission
+                for completed_key, completed_admission
+                in self._target_geometry_hint_admissions.items()
+                if not completed_admission.completed.is_set()
+            }
+            admission = TargetGeometryHintAdmission()
+            self._target_geometry_hint_admissions[key] = admission
+            self._active_target_geometry_hint = key
+        return key, admission, True
+
+    @staticmethod
+    def _replay_target_geometry_hint(
+        admission: TargetGeometryHintAdmission,
+    ) -> dict[str, object]:
+        """Wait for a matching request, then return only its immutable outcome."""
+
+        admission.completed.wait()
+        if admission.publication is not None:
+            return json.loads(admission.publication)
+        if admission.failure is not None:
+            raise MaskSessionError(*admission.failure)
+        raise MaskSessionError(
+            'geometryFailure',
+            'The Companion lost an AI Select Target Geometry Hint publication before it completed.',
+        )
+
+    def _complete_target_geometry_hint(
+        self,
+        key: str,
+        admission: TargetGeometryHintAdmission,
+        *,
+        response: dict[str, object] | None = None,
+        failure: MaskSessionError | None = None,
+    ) -> None:
+        """Atomically publish one replay result and release the single slot."""
+
+        if (response is None) == (failure is None):
+            raise ValueError('AI Select Target Geometry Hint completion requires one outcome')
+        publication = None
+        if response is not None:
+            publication = json.dumps(
+                response, separators=(',', ':'), sort_keys=True, allow_nan=False
+            )
+        with self._session_lock:
+            current = self._target_geometry_hint_admissions.get(key)
+            if current is not admission:
+                return
+            if publication is not None:
+                admission.publication = publication
+            else:
+                assert failure is not None
+                admission.failure = (failure.code, str(failure))
+            if self._active_target_geometry_hint == key:
+                self._active_target_geometry_hint = None
+            admission.completed.set()
+
+    def plan_ai_select_local_key_views(
+        self, request: Mapping[str, object]
+    ) -> dict[str, object]:
+        """Publish one bounded local Key-View batch from a verified hint.
+
+        Planning is pure CPU over the fail-closed validated Target Geometry
+        Hint: no scene resolution, no RGB, no Contributor, no SAM, and no GPU
+        work. The untrusted hint must replay its own canonical artifact
+        digest and bind the exact Anchor camera/RGB/Mask identities of this
+        request before any candidate camera is planned.
+        """
+
+        plan_request = self._parse_ai_select_local_key_view_plan_request(request)
+        plan_key, admission, owns_admission = self._admit_local_key_view_plan(
+            plan_request
+        )
+        if not owns_admission:
+            return self._replay_local_key_view_plan(admission)
+
+        try:
+            try:
+                views = plan_local_key_views(
+                    anchor_camera_binding=plan_request.camera_binding,
+                    center=plan_request.target_geometry_hint['centerWorld'],  # type: ignore[arg-type]
+                    extent=plan_request.target_geometry_hint['extentWorld'],  # type: ignore[arg-type]
+                    visible_points=plan_request.target_geometry_hint['visiblePoints'],  # type: ignore[arg-type]
+                    batch_ordinal=plan_request.batch_ordinal,
+                )
+            except PlanExhaustedError as error:
+                raise MaskSessionError('planExhausted', str(error)) from error
+            except PlannerFailureError as error:
+                raise MaskSessionError('plannerFailure', str(error)) from error
+            except MaskSessionError:
+                raise
+            except Exception as error:
+                raise MaskSessionError(
+                    'plannerFailure',
+                    'The Companion failed while planning the AI Select local Key Views.',
+                ) from error
+            plan_payload: dict[str, object] = {
+                'schemaVersion': LOCAL_KEY_VIEW_PLAN_SCHEMA_VERSION,
+                'targetContextId': plan_request.request_binding['targetContextId'],
+                'anchorStableMaskDigest': plan_request.stable_mask_digest,
+                'targetGeometryHintDigest': (
+                    plan_request.target_geometry_hint['artifactDigest']
+                ),
+                'localViewPolicyDigest': local_key_view_policy_digest(),
+                'orderedViews': [
+                    {
+                        'viewId': view.view_id,
+                        'cameraBinding': view.camera_binding,
+                        'quality': view.quality,
+                        'reasons': list(view.reasons),
+                    }
+                    for view in views
+                ],
+                'planAttemptId': plan_request.plan_attempt_id,
+            }
+            plan_payload['artifactDigest'] = _canonical_json_digest(plan_payload)
+            response = {
+                'status': 'complete',
+                **plan_request.response_fields(),
+                'plan': plan_payload,
+            }
+        except MaskSessionError as error:
+            self._complete_local_key_view_plan(plan_key, admission, failure=error)
+            raise
+        except Exception as error:
+            failure = MaskSessionError(
+                'plannerFailure',
+                'The Companion failed while publishing the AI Select local Key View plan.',
+            )
+            self._complete_local_key_view_plan(plan_key, admission, failure=failure)
+            raise failure from error
+
+        self._complete_local_key_view_plan(plan_key, admission, response=response)
+        return response
+
+    def _parse_ai_select_local_key_view_plan_request(
+        self, request: Mapping[str, object]
+    ) -> AISelectLocalKeyViewPlanRequest:
+        request_binding_value = request.get('requestBinding')
+        if not isinstance(request_binding_value, dict):
+            raise ValueError('AI Select local Key View plan requestBinding must be an object')
+        dependency_value = request_binding_value.get('dependencyToken')
+        if not isinstance(dependency_value, dict):
+            raise ValueError(
+                'AI Select local Key View plan requestBinding dependencyToken must be an object'
+            )
+        target_splat_id = _anchor_string(
+            request.get('targetSplatId'), 'targetSplatId'
+        )
+        dependency_token = {
+            'splatId': _anchor_string(dependency_value.get('splatId'), 'dependency splatId'),
+            'renderStateToken': _anchor_string(
+                dependency_value.get('renderStateToken'), 'dependency renderStateToken'
+            ),
+            'geometryToken': _anchor_string(
+                dependency_value.get('geometryToken'), 'dependency geometryToken'
+            ),
+            'gaussianIdentityToken': _anchor_string(
+                dependency_value.get('gaussianIdentityToken'),
+                'dependency gaussianIdentityToken',
+            ),
+            'worldTransformToken': _anchor_string(
+                dependency_value.get('worldTransformToken'),
+                'dependency worldTransformToken',
+            ),
+        }
+        if dependency_token['splatId'] != target_splat_id:
+            raise ValueError(
+                'AI Select local Key View plan targetSplatId must match its dependency splatId'
+            )
+        target_context_id = _anchor_string(
+            request_binding_value.get('targetContextId'), 'targetContextId'
+        )
+        request_binding: dict[str, object] = {
+            'targetContextId': target_context_id,
+            'contextRevision': _anchor_nonnegative_integer(
+                request_binding_value.get('contextRevision'), 'contextRevision'
+            ),
+            'dependencyToken': dependency_token,
+        }
+        plan_attempt_id = _anchor_string(
+            request.get('planAttemptId'), 'planAttemptId'
+        )
+        batch_ordinal = _anchor_nonnegative_integer(
+            request.get('batchOrdinal'), 'batchOrdinal'
+        )
+        anchor_camera_binding_digest = _anchor_sha256_digest(
+            request.get('anchorCameraBindingDigest'), 'plan anchorCameraBindingDigest'
+        )
+        anchor_rgb_digest = _anchor_sha256_digest(
+            request.get('anchorRgbDigest'), 'plan anchorRgbDigest'
+        )
+        stable_mask_digest = _anchor_sha256_digest(
+            request.get('anchorStableMaskDigest'), 'plan anchorStableMaskDigest'
+        )
+        if (
+            request.get('localViewPolicyVersion')
+            != AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION
+        ):
+            raise ValueError(
+                'AI Select local Key View plan localViewPolicyVersion is unsupported'
+            )
+
+        camera_binding, _, _, _ = self._parse_ai_select_anchor_camera(
+            request.get('anchorCameraBinding')
+        )
+        target_geometry_hint = self._parse_ai_select_target_geometry_hint(
+            request.get('targetGeometryHint'),
+            target_context_id=target_context_id,
+            anchor_camera_binding_digest=anchor_camera_binding_digest,
+            anchor_rgb_digest=anchor_rgb_digest,
+            stable_mask_digest=stable_mask_digest,
+        )
+        return AISelectLocalKeyViewPlanRequest(
+            request_binding=request_binding,
+            target_splat_id=target_splat_id,
+            plan_attempt_id=plan_attempt_id,
+            batch_ordinal=batch_ordinal,
+            camera_binding=camera_binding,
+            anchor_camera_binding_digest=anchor_camera_binding_digest,
+            anchor_rgb_digest=anchor_rgb_digest,
+            stable_mask_digest=stable_mask_digest,
+            target_geometry_hint=target_geometry_hint,
+        )
+
+    @staticmethod
+    def _parse_ai_select_target_geometry_hint(
+        value: object,
+        *,
+        target_context_id: str,
+        anchor_camera_binding_digest: str,
+        anchor_rgb_digest: str,
+        stable_mask_digest: str,
+    ) -> dict[str, object]:
+        """Fail-closed validation of the untrusted Target Geometry Hint.
+
+        The hint is a Companion-produced artifact replayed by the browser; it
+        is trusted only after its structure, identity bindings, and canonical
+        artifact digest all verify. Any mismatch rejects the whole request.
+        """
+
+        if not isinstance(value, dict):
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint must be an object'
+            )
+        if value.get('schemaVersion') != TARGET_GEOMETRY_HINT_SCHEMA_VERSION:
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint schemaVersion is unsupported'
+            )
+        hint_target_context_id = value.get('targetContextId')
+        if not isinstance(hint_target_context_id, str) or not hint_target_context_id:
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint targetContextId must be a non-empty string'
+            )
+        if hint_target_context_id != target_context_id:
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint targetContextId must match its requestBinding'
+            )
+        hint_camera_digest = _anchor_sha256_digest(
+            value.get('anchorCameraBindingDigest'),
+            'targetGeometryHint anchorCameraBindingDigest',
+        )
+        hint_rgb_digest = _anchor_sha256_digest(
+            value.get('anchorRgbDigest'), 'targetGeometryHint anchorRgbDigest'
+        )
+        hint_mask_digest = _anchor_sha256_digest(
+            value.get('anchorStableMaskDigest'),
+            'targetGeometryHint anchorStableMaskDigest',
+        )
+        _anchor_sha256_digest(
+            value.get('geometryPolicyDigest'),
+            'targetGeometryHint geometryPolicyDigest',
+        )
+        artifact_digest = _anchor_sha256_digest(
+            value.get('artifactDigest'), 'targetGeometryHint artifactDigest'
+        )
+        if hint_camera_digest != anchor_camera_binding_digest:
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint anchorCameraBindingDigest must match the request'
+            )
+        if hint_rgb_digest != anchor_rgb_digest:
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint anchorRgbDigest must match the request'
+            )
+        if hint_mask_digest != stable_mask_digest:
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint anchorStableMaskDigest must match the request'
+            )
+        _anchor_number_sequence(
+            value.get('centerWorld'), 3, 'targetGeometryHint centerWorld'
+        )
+        _anchor_number_sequence(
+            value.get('extentWorld'), 3, 'targetGeometryHint extentWorld'
+        )
+        visible_points = value.get('visiblePoints')
+        if (
+            not isinstance(visible_points, list)
+            or len(visible_points) < 1
+            or len(visible_points) > 64
+        ):
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint visiblePoints must contain 1..64 points'
+            )
+        for index, point in enumerate(visible_points):
+            _anchor_number_sequence(
+                point, 3, f'targetGeometryHint visiblePoints[{index}]'
+            )
+        quality = value.get('quality')
+        if quality not in ('usable', 'limited', 'unavailable'):
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint quality is unsupported'
+            )
+        if quality == 'unavailable':
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint quality unavailable cannot plan Key Views'
+            )
+        reasons = value.get('reasons')
+        if not isinstance(reasons, list) or any(
+            not isinstance(reason, str) for reason in reasons
+        ):
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint reasons must be a list of strings'
+            )
+        recomputed = _canonical_json_digest(
+            {key: entry for key, entry in value.items() if key != 'artifactDigest'}
+        )
+        if recomputed != artifact_digest:
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint artifactDigest does not match its payload'
+            )
+        return value
+
+    @staticmethod
+    def _local_key_view_plan_request_key(
+        request: AISelectLocalKeyViewPlanRequest,
+    ) -> str:
+        """Canonicalize every immutable input that can affect one plan."""
+
+        return json.dumps(
+            request.identity_fields(),
+            separators=(',', ':'),
+            sort_keys=True,
+            allow_nan=False,
+        )
+
+    def _admit_local_key_view_plan(
+        self, request: AISelectLocalKeyViewPlanRequest
+    ) -> tuple[str, LocalKeyViewPlanAdmission, bool]:
         """Reserve or join one bound plan publication without holding locks for it."""
 
-        key = self._generated_view_plan_request_key(request)
+        key = self._local_key_view_plan_request_key(request)
         with self._session_lock:
-            admission = self._generated_view_plan_admissions.get(key)
+            admission = self._local_key_view_plan_admissions.get(key)
             if admission is not None:
                 return key, admission, False
             if self._operation_slot_in_use_locked():
@@ -4598,20 +5047,20 @@ class CompanionState:
             # recovery; a different request's admission then evicts every
             # completed record here, because a newer current binding makes
             # older plans stale anyway.
-            self._generated_view_plan_admissions = {
+            self._local_key_view_plan_admissions = {
                 completed_key: completed_admission
                 for completed_key, completed_admission
-                in self._generated_view_plan_admissions.items()
+                in self._local_key_view_plan_admissions.items()
                 if not completed_admission.completed.is_set()
             }
-            admission = GeneratedViewPlanAdmission()
-            self._generated_view_plan_admissions[key] = admission
-            self._active_generated_view_plan = key
+            admission = LocalKeyViewPlanAdmission()
+            self._local_key_view_plan_admissions[key] = admission
+            self._active_local_key_view_plan = key
         return key, admission, True
 
     @staticmethod
-    def _replay_generated_view_plan(
-        admission: GeneratedViewPlanAdmission,
+    def _replay_local_key_view_plan(
+        admission: LocalKeyViewPlanAdmission,
     ) -> dict[str, object]:
         """Wait for a matching request, then return only its immutable outcome."""
 
@@ -4622,13 +5071,13 @@ class CompanionState:
             raise MaskSessionError(*admission.failure)
         raise MaskSessionError(
             'plannerFailure',
-            'The Companion lost an AI Select Generated View plan publication before it completed.',
+            'The Companion lost an AI Select local Key View plan publication before it completed.',
         )
 
-    def _complete_generated_view_plan(
+    def _complete_local_key_view_plan(
         self,
         key: str,
-        admission: GeneratedViewPlanAdmission,
+        admission: LocalKeyViewPlanAdmission,
         *,
         response: dict[str, object] | None = None,
         failure: MaskSessionError | None = None,
@@ -4636,14 +5085,14 @@ class CompanionState:
         """Atomically publish one replay result and release the single slot."""
 
         if (response is None) == (failure is None):
-            raise ValueError('AI Select Generated View plan completion requires one outcome')
+            raise ValueError('AI Select local Key View plan completion requires one outcome')
         publication = None
         if response is not None:
             publication = json.dumps(
                 response, separators=(',', ':'), sort_keys=True, allow_nan=False
             )
         with self._session_lock:
-            current = self._generated_view_plan_admissions.get(key)
+            current = self._local_key_view_plan_admissions.get(key)
             if current is not admission:
                 return
             if publication is not None:
@@ -4651,8 +5100,8 @@ class CompanionState:
             else:
                 assert failure is not None
                 admission.failure = (failure.code, str(failure))
-            if self._active_generated_view_plan == key:
-                self._active_generated_view_plan = None
+            if self._active_local_key_view_plan == key:
+                self._active_local_key_view_plan = None
             admission.completed.set()
 
     def produce_ai_select_generated_view_mask(
@@ -5509,7 +5958,8 @@ class CompanionState:
             or self._active_anchor_render is not None
             or self._active_mask_request is not None
             or self._active_support_probe is not None
-            or self._active_generated_view_plan is not None
+            or self._active_target_geometry_hint is not None
+            or self._active_local_key_view_plan is not None
             or self._active_generated_view_mask is not None
         )
 
@@ -5557,7 +6007,8 @@ class CompanionState:
                 "aiSelectAnchorSupportProbe",
                 "aiSelectMaskProposals",
                 "autoMaskProposalSetSchemaV3",
-                "aiSelectGeneratedViewPlanning",
+                "aiSelectTargetGeometryHint",
+                "aiSelectLocalKeyViewPlanning",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",
             ],

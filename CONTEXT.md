@@ -94,6 +94,14 @@ _Avoid_: PlayCanvas screenshot, generated view
 A planner-owned AI View rendered to increase useful target observation and directional diversity without moving the visible Editor Camera.  
 _Avoid_: source capture, camera animation
 
+**TargetGeometryHint**  
+One compact, non-ownership geometry artifact derived by the Companion from the exact confirmed Anchor Camera/RGB/Stable Mask: bounded first-hit visible points, robust center/extent, quality, and evidence-backed reasons. It is localization, framing, and later Prompt-synthesis context only — never Stable Gaussian IDs, weights, or ownership, and it may seed but never hard-bound the Evidence Working Set.  
+_Avoid_: Gaussian ownership record, Candidate seed
+
+**Local Key View**  
+A planner-owned Generated View from the bounded local Key-View policy: left/right azimuth and modest elevation offsets around the TargetGeometryHint center with framing from its extent, validated for projection size, clipping, visibility, and nonblank authoritative RGB. The default batch is 2–4 Views; Generate More appends another bounded batch; Stop preserves completed Views; Regenerate replaces planner-owned Views but preserves user-owned Views and exact-identity artifacts.  
+_Avoid_: room-scale orbit, adaptive marginal-gain schedule
+
 **User-added View**  
 An AI View created from a user-chosen CameraBinding. It remains target-local and is discarded on Restart Current Target.  
 _Avoid_: persistent project camera
@@ -260,7 +268,7 @@ The derived state Not Ready, Limited, or Ready based on usable observation, dive
 _Avoid_: fixed N-view gate
 
 **Adaptive View Planner**  
-The planner that incrementally generates useful CameraBindings based on target observation, directional diversity, and marginal gain under bounded budgets.  
+Deferred v1 concept: a planner that incrementally generates useful CameraBindings based on target observation, directional diversity, and marginal gain under bounded budgets. v1 instead uses the bounded local Key-View policy (see Local Key View); adaptive marginal-gain optimization remains explicitly out of scope.  
 _Avoid_: fixed 4/8 view schedule
 
 **Gaussian Lifting**  

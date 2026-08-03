@@ -148,6 +148,10 @@ _Avoid_: best-effort ignored prompts, model-name feature detection
 The versioned deterministic mapping from one exact PromptState into adapter-native Point, Box, and previous-logits inputs. Its identity covers ordering, coordinate conventions, and prompt-family composition; capability identity rotates when these semantics change. The current `sam3-image-instance-compiler/v1` policy routes Points and the Positive Instance Box through the official SAM 3 Image instance-interaction path (`build_sam3_image_model` → `Sam3Processor.set_image` → `predict_inst`). Prompt Brush is never compiled into SAM `mask_input`: that field accepts only Companion-local previous-prediction logits behind an opaque reference.
 _Avoid_: implicit coordinate conversion, silently ignored prompt, model-name default
 
+**Image Instance Mask Contract**
+The compact versioned per-View boundary shared by Anchor, Generated, and User-added View acquisition. It binds a canonical pixel Prompt artifact, one resolvable authoritative RGB payload or current-Companion RGB reference, exact request identity, bounded inference-only Mask result, and opaque logits metadata. A completed empty result is semantic unavailable; transport, runtime, OOM, and cancellation failures publish no partial result. Mask Review, Stable publication, Participation, Evidence, and Candidate remain outside the provider result.
+_Avoid_: digest-only RGB, raw logits payload, backend registry, route fallback, provider-side Stable publication
+
 **PreviousPredictionLogitsRef**
 An opaque, digest-bound browser-held reference to Companion-local low-resolution previous-prediction logits. Raw logits never cross the protocol or enter PromptState/persistence. The reference resolves only inside the exact Companion Instance that minted it, for the same View/RGB/adapter lineage and chosen candidate, and forces single-mask refinement linked to the source inference attempt. An expired or unresolvable reference falls back to a fresh Point/Box prediction without `mask_input`.
 _Avoid_: binary brush as mask input, cross-session logits cache

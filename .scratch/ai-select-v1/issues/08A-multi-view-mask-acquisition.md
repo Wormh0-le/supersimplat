@@ -1,6 +1,6 @@
 # 08A — Compact Per-View Image Instance Mask Contracts
 
-Status: planned — contract foundation
+Status: implemented — contract foundation (no production per-View SAM execution)
 
 Blocked by: 08, 04C
 
@@ -16,6 +16,16 @@ Blocks: 08B
 Define the small immutable contracts required to reuse the Ticket 04C SAM 3 Image instance adapter on Generated and User-added Views.
 
 This ticket does not implement Prompt synthesis, camera planning, SAM inference, Mask Review, Stable publication, Gallery, tracker behavior or Gaussian Evidence.
+
+## Implementation record
+
+Implemented on `ai-select-v1` as a bounded cross-runtime contract slice:
+
+- `src/ai-select/image-instance-mask.ts` provides immutable, canonical-digested Prompt, RGB-reference, request, result, opaque-ref matching, and publication-command contracts. `inferImageInstanceMask()` validates requests before provider invocation and validates the complete echoed result before it can enter browser state.
+- `selection-service-companion/src/selection_service_companion/image_instance_mask_contract.py` mirrors Companion-facing request/result and RGB-resolution validation without adding a route, model execution path, backend registry, tracker, or publication side effect.
+- Shared golden vectors verify canonical Prompt, request identity, opaque logits reference, stale RGB, Companion replacement, and result score identity on both runtimes.
+
+This is contract foundation only. Ticket 08B remains responsible for 3D-guided Prompt synthesis, provider route/orchestration, SAM execution, Mask Review, and automatic Stable publication.
 
 ## ImageInstancePromptArtifact
 
@@ -170,19 +180,19 @@ The provider itself cannot publish.
 
 ## Acceptance criteria
 
-- [ ] every public artifact is schema-versioned and canonical-digestable.
-- [ ] removed Prompt fields fail structural validation.
-- [ ] one Box maximum and pixel XYXY semantics validate.
-- [ ] provider request carries resolvable authoritative RGB plus matching digest/dimensions.
-- [ ] digest-only or mismatched RGB request fails before inference.
-- [ ] previous-logits ref binds exact Companion/View/RGB/adapter/source candidate.
-- [ ] raw logits tensor cannot validate as a browser request payload.
-- [ ] result cardinality matches multimask policy.
-- [ ] empty semantic result is distinct from technical failure.
-- [ ] technical failure exposes no partial Mask/ref result.
-- [ ] provider output contains no Review, Stable publication, Participation, Evidence or Candidate.
-- [ ] no backend registry/sequence/fallback schema is required by readiness.
-- [ ] golden vectors cover valid, stale and Companion-replacement identities.
+- [x] every public artifact is schema-versioned and canonical-digestable.
+- [x] removed Prompt fields fail structural validation.
+- [x] one Box maximum and pixel XYXY semantics validate.
+- [x] provider request carries resolvable authoritative RGB plus matching digest/dimensions.
+- [x] digest-only or mismatched RGB request fails before inference.
+- [x] previous-logits ref binds exact Companion/View/RGB/adapter/source candidate.
+- [x] raw logits tensor cannot validate as a browser request payload.
+- [x] result cardinality matches multimask policy.
+- [x] empty semantic result is distinct from technical failure.
+- [x] technical failure exposes no partial Mask/ref result.
+- [x] provider output contains no Review, Stable publication, Participation, Evidence or Candidate.
+- [x] no backend registry/sequence/fallback schema is required by readiness.
+- [x] golden vectors cover valid, stale and Companion-replacement identities.
 
 ## Validation
 

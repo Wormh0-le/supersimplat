@@ -1,0 +1,122 @@
+{
+  "prompt": {
+    "schemaVersion": 1,
+    "targetContextId": "target-1",
+    "contextRevision": 4,
+    "viewId": "view-1",
+    "rgbDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "cameraBindingDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "adapterCapabilityDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "positivePoints": [{ "xPx": 2, "yPx": 3 }],
+    "negativePoints": [],
+    "positiveBox": { "x0Px": 1, "y0Px": 1, "x1Px": 6, "y1Px": 5 },
+    "multimaskOutput": false,
+    "artifactDigest": "sha256:c86a598d516d70eacc12049d4cadd5dfacd8ff5adae8de9bb76f6d2223d87b7d"
+  },
+  "unicodePrompt": {
+    "schemaVersion": 1,
+    "targetContextId": "target-雪",
+    "contextRevision": 4,
+    "viewId": "view-1",
+    "rgbDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "cameraBindingDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "adapterCapabilityDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "positivePoints": [{ "xPx": 2, "yPx": 3 }],
+    "negativePoints": [],
+    "positiveBox": { "x0Px": 1, "y0Px": 1, "x1Px": 6, "y1Px": 5 },
+    "multimaskOutput": false,
+    "artifactDigest": "sha256:3701432d794e63b430fc586a42245b7dc21ca3560cb080069dc0e40cb790be49"
+  },
+  "numericBoundaries": {
+    "largestSafeInteger": 9007199254740991,
+    "firstUnsafeInteger": 9007199254740992
+  },
+  "invalidStrings": {
+    "loneHighSurrogate": "\ud800"
+  },
+  "invalidRgb": {
+    "missingImageDataPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAAAElFTkSuQmCC",
+    "missingImageDataDigest": "sha256:cb9ee84a55dfe3cb7c73189dfce37bc0ccb2dd549f8d83093eff135d12614191"
+  },
+  "identity": {
+    "targetContextId": "target-1",
+    "contextRevision": 4,
+    "viewId": "view-1",
+    "rgbDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "promptArtifactDigest": "sha256:c86a598d516d70eacc12049d4cadd5dfacd8ff5adae8de9bb76f6d2223d87b7d",
+    "adapterId": "sam3-image-instance/v1",
+    "modelManifestDigest": "sam3-image-manifest-v1",
+    "runtimeDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "companionInstanceId": "companion-1",
+    "inferenceAttemptId": "attempt-1"
+  },
+  "identityDigest": "sha256:9e821c3c4be9564e25975343ed3c6534f10d8c54b5e53c01cc775823ebc04553",
+  "staleIdentity": {
+    "targetContextId": "target-1",
+    "contextRevision": 4,
+    "viewId": "view-1",
+    "rgbDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "promptArtifactDigest": "sha256:c86a598d516d70eacc12049d4cadd5dfacd8ff5adae8de9bb76f6d2223d87b7d",
+    "adapterId": "sam3-image-instance/v1",
+    "modelManifestDigest": "sam3-image-manifest-v1",
+    "runtimeDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "companionInstanceId": "companion-1",
+    "inferenceAttemptId": "attempt-1"
+  },
+  "staleIdentityDigest": "sha256:5b70a5db3f0b03353639f6378429ab6271eb142ba4575a8dd5eb36fe10575dee",
+  "replacementIdentity": {
+    "targetContextId": "target-1",
+    "contextRevision": 4,
+    "viewId": "view-1",
+    "rgbDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "promptArtifactDigest": "sha256:c86a598d516d70eacc12049d4cadd5dfacd8ff5adae8de9bb76f6d2223d87b7d",
+    "adapterId": "sam3-image-instance/v1",
+    "modelManifestDigest": "sam3-image-manifest-v1",
+    "runtimeDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "companionInstanceId": "companion-2",
+    "inferenceAttemptId": "attempt-1"
+  },
+  "replacementIdentityDigest": "sha256:32cc67f43edee4c229084f9dd64e727589a98f4dd72bc89dbf7ada217dfd1665",
+  "previousLogitsRef": {
+    "schemaVersion": 1,
+    "companionInstanceId": "companion-1",
+    "stateId": "logits-state-1",
+    "targetContextId": "target-1",
+    "viewId": "view-1",
+    "rgbDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sourceInferenceAttemptId": "source-attempt-1",
+    "sourceCandidateId": "source-candidate-1",
+    "adapterRuntimeDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "shape": [1, 288, 288],
+    "dtype": "float32",
+    "dataDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "refDigest": "sha256:f292325953d93c0c69cfa842f7020d6069c2b4b06bc4cee78ecac10bee384de5"
+  },
+  "result": {
+    "schemaVersion": 1,
+    "requestIdentity": {
+      "targetContextId": "target-1",
+      "contextRevision": 4,
+      "viewId": "view-1",
+      "rgbDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "promptArtifactDigest": "sha256:c86a598d516d70eacc12049d4cadd5dfacd8ff5adae8de9bb76f6d2223d87b7d",
+      "adapterId": "sam3-image-instance/v1",
+      "modelManifestDigest": "sam3-image-manifest-v1",
+      "runtimeDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "companionInstanceId": "companion-1",
+      "inferenceAttemptId": "attempt-1"
+    },
+    "masks": [
+      {
+        "encoding": "bitset-lsb-v1",
+        "width": 1,
+        "height": 1,
+        "data": "AQ==",
+        "digest": "sha256:4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a"
+      }
+    ],
+    "modelScores": [1.0],
+    "diagnostics": { "outcome": "available" },
+    "resultDigest": "sha256:60825112297bc07327c995b86b5676a597e690020ef7675da15f3767b9b95c2a"
+  }
+}

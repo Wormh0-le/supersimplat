@@ -1839,13 +1839,15 @@ class Sam3ImageInstanceAdapter:
         program: CompiledImagePromptProgram,
         refinement: Sam3ImageRefinementInput | None,
         cancelled: Callable[[], bool],
+        force_single_mask: bool = False,
     ) -> Sam3ImageProposalBatch:
         """Run unranked instance inference through the locked image API.
 
         This method owns only adapter execution, candidate-local prompt facts,
         and the pinned multimask/exact-duplicate/area candidate policy. It
         never ranks candidates or chooses a proposal; those remain downstream
-        policy concerns.
+        policy concerns. Route B passes ``force_single_mask=True`` so a
+        generated View cannot enter the single-positive-point multimask mode.
         """
 
         if model.get('adapterId') != SAM3_IMAGE_INSTANCE_ADAPTER_ID:
@@ -1875,8 +1877,10 @@ class Sam3ImageInstanceAdapter:
             )
 
         runtime = self._require_runtime(model)
-        multimask_output = resolve_multimask_output(
-            program, refinement is not None
+        multimask_output = (
+            False
+            if force_single_mask
+            else resolve_multimask_output(program, refinement is not None)
         )
         if refinement is None:
             inference_state = runtime.set_image(rgb_png)

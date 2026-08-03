@@ -43,7 +43,8 @@ export interface PublishAutoStableMaskInput {
     /** The authoritative RGB digest this automatic Mask was produced from. */
     readonly rgbDigest: string;
     readonly artifact: MaskArtifact;
-    readonly source: 'propagated';
+    /** Current automatic acquisition is one static SAM 3 Image result. */
+    readonly source: 'single-frame-sam';
     readonly status: 'auto-good' | 'auto-review';
 }
 
@@ -250,12 +251,12 @@ export class MaskAnnotationRegistry {
     }
 
     /**
-     * Atomically publish an automatic cross-view Mask directly as the Stable
-     * revision, chained from any previous Stable version. Automatic
-     * publication never creates or disturbs the Editing Mask, and it never
-     * waits for user confirmation: the Companion's Mask Review supplies the
-     * automatic quality label, with Review the fail-closed default Excluded
-     * from Lift.
+     * Atomically publish one reviewed automatic static-image Mask directly as
+     * the Stable revision, chained from any previous Stable version.
+     * Automatic publication never creates or disturbs the Editing Mask, and
+     * it never waits for user confirmation: the Companion's Mask Review
+     * supplies the automatic quality label, with Review the fail-closed
+     * default Excluded from Lift.
      */
     publishAutoStable(input: PublishAutoStableMaskInput): MaskAnnotation {
         assertDigestBoundArtifact(input.artifact);

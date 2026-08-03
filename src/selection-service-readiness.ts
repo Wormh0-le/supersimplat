@@ -6,11 +6,19 @@ import type {
 import type {
     AIViewRenderRequest,
     AIViewRenderResponse,
-    AISelectGeneratedViewMaskProvider,
+    AISelectGeneratedViewPromptSynthesizer,
+    AISelectImageInstanceMaskReviewProvider,
     AISelectViewRenderer,
-    GeneratedViewMaskRequest,
-    GeneratedViewMaskResponse
+    GeneratedViewPromptSynthesisRequest,
+    GeneratedViewPromptSynthesisResponse,
+    ImageInstanceMaskReviewRequest,
+    ImageInstanceMaskReviewResponse
 } from './ai-select/generated-view-service';
+import type {
+    ImageInstanceMaskProvider,
+    ImageInstanceMaskRequest,
+    ImageInstanceMaskResult
+} from './ai-select/image-instance-mask';
 import type {
     AISelectLocalKeyViewPlanner,
     LocalKeyViewPlanRequest,
@@ -1288,7 +1296,9 @@ class ReadinessGatedSelectionServiceAdapter
         AISelectTargetGeometryProvider,
         AISelectLocalKeyViewPlanner,
         AISelectViewRenderer,
-        AISelectGeneratedViewMaskProvider
+        AISelectGeneratedViewPromptSynthesizer,
+        ImageInstanceMaskProvider,
+        AISelectImageInstanceMaskReviewProvider
 {
     private readiness: SelectionServiceReadinessInterface;
     private adapter: SelectionServiceAdapter | null;
@@ -1379,11 +1389,27 @@ class ReadinessGatedSelectionServiceAdapter
         return await this.requireViewRenderer().renderView(request);
     }
 
-    async produceGeneratedViewMask(
-        request: GeneratedViewMaskRequest
-    ): Promise<GeneratedViewMaskResponse> {
+    async synthesizeGeneratedViewPrompt(
+        request: GeneratedViewPromptSynthesisRequest
+    ): Promise<GeneratedViewPromptSynthesisResponse> {
         this.readiness.requireReady();
-        return await this.requireGeneratedViewMaskProvider().produceGeneratedViewMask(
+        return await this.requireGeneratedViewPromptSynthesizer().synthesizeGeneratedViewPrompt(
+            request
+        );
+    }
+
+    async infer(
+        request: ImageInstanceMaskRequest
+    ): Promise<ImageInstanceMaskResult> {
+        this.readiness.requireReady();
+        return await this.requireImageInstanceMaskProvider().infer(request);
+    }
+
+    async reviewImageInstanceMask(
+        request: ImageInstanceMaskReviewRequest
+    ): Promise<ImageInstanceMaskReviewResponse> {
+        this.readiness.requireReady();
+        return await this.requireImageInstanceMaskReviewProvider().reviewImageInstanceMask(
             request
         );
     }
@@ -1463,16 +1489,39 @@ class ReadinessGatedSelectionServiceAdapter
         return adapter as SelectionServiceAdapter & AISelectViewRenderer;
     }
 
-    private requireGeneratedViewMaskProvider(): AISelectGeneratedViewMaskProvider {
+    private requireGeneratedViewPromptSynthesizer(): AISelectGeneratedViewPromptSynthesizer {
         const adapter = this.requireAdapter();
         if (
-            typeof (adapter as Partial<AISelectGeneratedViewMaskProvider>)
-                .produceGeneratedViewMask !== 'function'
+            typeof (adapter as Partial<AISelectGeneratedViewPromptSynthesizer>)
+                .synthesizeGeneratedViewPrompt !== 'function'
         ) {
             throw new SelectionServiceAdapterNotConfiguredError();
         }
         return adapter as SelectionServiceAdapter &
-            AISelectGeneratedViewMaskProvider;
+            AISelectGeneratedViewPromptSynthesizer;
+    }
+
+    private requireImageInstanceMaskProvider(): ImageInstanceMaskProvider {
+        const adapter = this.requireAdapter();
+        if (
+            typeof (adapter as Partial<ImageInstanceMaskProvider>).infer !==
+            'function'
+        ) {
+            throw new SelectionServiceAdapterNotConfiguredError();
+        }
+        return adapter as SelectionServiceAdapter & ImageInstanceMaskProvider;
+    }
+
+    private requireImageInstanceMaskReviewProvider(): AISelectImageInstanceMaskReviewProvider {
+        const adapter = this.requireAdapter();
+        if (
+            typeof (adapter as Partial<AISelectImageInstanceMaskReviewProvider>)
+                .reviewImageInstanceMask !== 'function'
+        ) {
+            throw new SelectionServiceAdapterNotConfiguredError();
+        }
+        return adapter as SelectionServiceAdapter &
+            AISelectImageInstanceMaskReviewProvider;
     }
 }
 

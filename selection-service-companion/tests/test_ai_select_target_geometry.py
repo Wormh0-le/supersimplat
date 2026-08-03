@@ -726,6 +726,9 @@ class TargetGeometryRouteTests(unittest.TestCase):
             'autoMaskProposalSetSchemaV3',
             'aiSelectTargetGeometryHint',
             'aiSelectLocalKeyViewPlanning',
+            'aiSelectGeneratedViewPromptSynthesis',
+            'aiSelectImageInstanceMasks',
+            'aiSelectImageInstanceMaskReview',
             'binarySceneSnapshotRegistrationV1',
             'cameraAwareSpatialWorkingSetV1',
         ]

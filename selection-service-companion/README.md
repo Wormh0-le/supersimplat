@@ -151,33 +151,46 @@ contract tests. Production state neither registers nor advertises it. It is
 not image or model inference and must not be selected as a substitute for the
 SAM 3.1 adapter.
 
-## Assess automatic Generated View Masks
+## Route B Generated View acquisition
 
-`POST /ai-select/generated-view-masks` publishes a Companion-owned
-`local-view-assessment/v2` Mask Review with the automatic Stable Mask. The
-result binds the exact RGB digest, Stable Mask digest, and assessment policy
-identity. It consumes only the exact Mask geometry and, when the Prompt
-family exists, the synthesized include-point Prompt; tracker propagation and
-Gaussian visibility/support are not Mask-quality inputs (weak/low support
-belongs to Lift Readiness).
-It emits only `good`, `review`, or `failed` and the v1.3 structured reasons
-`prompt-inconsistent`, `target-materially-clipped`, `severely-fragmented`,
-`box-spill-or-neighbour-leak`, and `empty-or-degenerate-mask`. It never
-publishes a unified confidence percentage or requires complete Contributor
-output.
+Generated Views use three independent endpoints after authoritative RGB is
+Ready:
 
-The v2 constants are version-owned: boundary Review requires a meaningful
-contact margin and ratio, never any one-pixel contact; fragmentation
-requires material disconnected mass, not merely multiple tiny components;
-Box spill is measured outside the margined Box and flagged only when gross;
-empty, degenerate, and full-frame Masks fail with one structured reason.
-Point/Box consistency is evaluated only when that Prompt family exists, and
-missing optional diagnostics never fabricate a reason.
+```text
+POST /ai-select/generated-view-prompts
+POST /ai-select/image-instance-masks
+POST /ai-select/image-instance-mask-reviews
+```
 
-Assessment failure does not discard a valid RGB or automatic Stable Mask. It
-publishes `failed` with no invented reasons, and the browser keeps that View
-Excluded. Auto Good defaults Included; Review and Failed default Excluded;
-Confirm as-is creates a User Confirmed Stable Mask and Included participation.
+Prompt synthesis projects the exact `TargetGeometryHintArtifact` through the
+accepted local View `CameraBinding`, verifies the browser's CameraBinding
+digest, and binds the active model, runtime digest, and Companion Instance. It
+returns either a bounded artifact with one Positive Instance Box, 1–3 Positive
+Points, at most two Negative Points, and `multimaskOutput: false`, or a
+structured `limited` result. Fully off-image or materially clipped support is
+limited rather than inflated into a frame-edge Box. It never creates a
+Negative Box, brush/mask constraint, text prompt, tracker state, or previous
+logits.
+
+The inference endpoint receives exact RGB bytes (or a current
+Companion-resolvable RGB reference), verifies digest and dimensions, and runs
+one independent official SAM 3 Image call with `multimask_output=false`.
+It returns one usable bitset Mask at most; an empty valid result is the
+semantic `unavailable` outcome, while transport/model/capacity errors remain
+technical failures. Raw logits never cross the browser boundary.
+
+Only a returned Mask from the current Companion-held Route B inference record
+reaches `local-view-assessment/v2` on the Review endpoint. It emits `good`,
+`review`, or `failed` with evidence-backed Mask quality reasons;
+`propagation-uncertain` and `weak-gaussian-support` are not Review vocabulary.
+The Companion never publishes Stable state, Participation, P/N/V, or a Lift
+from these endpoints. The browser atomically publishes Auto Good/Auto Review
+Stable Masks, preserves User Confirmed authority, and keeps technical failures
+separate from valid RGB and prior Stable state.
+
+`/ai-select/generated-view-masks` and its Multiplex/propagation execution are
+retired from the public route and capability contract. The historical source
+remains private only for frozen migration fixtures.
 
 ## Start the control plane
 
@@ -234,12 +247,14 @@ historical SAM 3.1 Multiplex-backed static shim is retired; a `sam3.1`
 manifest stays installable for the legacy Frame Set flow but never advertises
 Ready for the current `ai-select-static-image-instance/v1` profile.
 
-The remaining control plane exposes `/scene-snapshot-uploads/v1`, the AI Select
-Anchor route `/ai-select/anchor-renders`, and the prompt-conditioned proposal
-route `/ai-select/mask-proposals`. The Runtime Profile must advertise
-`aiSelectMaskProposals` and both
-`aiSelectAnchorRender` and `binarySceneSnapshotRegistrationV1` before the
-browser enables AI Select. The v1 Prompt surface is exactly positive/negative
+The current control plane exposes `/scene-snapshot-uploads/v1`, the AI Select
+Anchor route `/ai-select/anchor-renders`, the Anchor proposal route
+`/ai-select/mask-proposals`, and the three Route B Generated View endpoints
+above. The Runtime Profile must advertise `aiSelectMaskProposals`,
+`aiSelectGeneratedViewPromptSynthesis`, `aiSelectImageInstanceMasks`,
+`aiSelectImageInstanceMaskReview`, `aiSelectAnchorRender`, and
+`binarySceneSnapshotRegistrationV1` before the browser enables the relevant
+AI Select actions. The v1 Prompt surface is exactly positive/negative
 Point and at most one Positive Instance Box in authoritative-image pixel
 XYXY; Negative Box, Prompt Brush, Mask Constraints, and Text are removed from
 the schema, capability record, and compiler, and old artifacts carrying them

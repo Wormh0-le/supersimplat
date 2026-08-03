@@ -18,19 +18,33 @@ import {
     isAIRequestBinding
 } from './ai-select/current-target-context';
 import {
-    generatedViewMaskResponseMatchesRequest,
+    generatedViewPromptSynthesisResponseMatchesRequest,
+    imageInstanceMaskReviewResponseMatchesRequest,
     isAIViewRenderRequest,
     isAIViewRenderResponse,
-    isGeneratedViewMaskRequest,
-    isGeneratedViewMaskResponse,
+    isGeneratedViewImageInstanceMaskRequest,
+    isGeneratedViewPromptSynthesisRequest,
+    isGeneratedViewPromptSynthesisResponse,
+    isImageInstanceMaskReviewRequest,
+    isImageInstanceMaskReviewResponse,
     viewRenderResponseMatchesRequest,
     type AIViewRenderRequest,
     type AIViewRenderResponse,
-    type AISelectGeneratedViewMaskProvider,
+    type AISelectGeneratedViewPromptSynthesizer,
+    type AISelectImageInstanceMaskReviewProvider,
     type AISelectViewRenderer,
-    type GeneratedViewMaskRequest,
-    type GeneratedViewMaskResponse
+    type GeneratedViewPromptSynthesisRequest,
+    type GeneratedViewPromptSynthesisResponse,
+    type ImageInstanceMaskReviewRequest,
+    type ImageInstanceMaskReviewResponse
 } from './ai-select/generated-view-service';
+import {
+    imageInstanceMaskResultMatchesRequest,
+    isImageInstanceMaskResult,
+    type ImageInstanceMaskProvider,
+    type ImageInstanceMaskRequest,
+    type ImageInstanceMaskResult
+} from './ai-select/image-instance-mask';
 import {
     isLocalKeyViewPlanRequest,
     isLocalKeyViewPlanResponse,
@@ -277,7 +291,9 @@ class FetchSelectionServiceAdapter
         AISelectTargetGeometryProvider,
         AISelectLocalKeyViewPlanner,
         AISelectViewRenderer,
-        AISelectGeneratedViewMaskProvider
+        AISelectGeneratedViewPromptSynthesizer,
+        ImageInstanceMaskProvider,
+        AISelectImageInstanceMaskReviewProvider
 {
     private getConfiguration: () => SelectionServiceTransportConfiguration;
     private supportsCameraAwareSpatialWorkingSet: () => boolean;
@@ -683,7 +699,6 @@ class FetchSelectionServiceAdapter
             | Pick<AnchorSupportProbeRequest, 'snapshot' | 'target'>
             | Pick<TargetGeometryHintRequest, 'snapshot' | 'target'>
             | Pick<AIViewRenderRequest, 'snapshot' | 'target'>
-            | Pick<GeneratedViewMaskRequest, 'snapshot' | 'target'>
     ): SpatialSceneSnapshot {
         const key = this.spatialSnapshotKey(
             request.snapshot,
@@ -1886,197 +1901,108 @@ class FetchSelectionServiceAdapter
     }
 
     /**
-     * Produce the automatic Mask of one RGB Ready Generated View, conditioned
-     * on the confirmed Anchor Stable Mask identity. The Companion projects
-     * the Anchor's Gaussian support into the Generated View camera and runs
-     * one single-frame SAM pass; the response is untrusted until every bound
-     * identity and the artifact digest verify.
+     * Route B Prompt synthesis does not require a Scene Snapshot transport:
+     * its exact TargetGeometryHint and accepted LocalKeyViewPlan are already
+     * immutable Companion artifacts. A digest-only RGB input is never used.
      */
-    async produceGeneratedViewMask(
-        request: GeneratedViewMaskRequest
-    ): Promise<GeneratedViewMaskResponse> {
-        if (!isGeneratedViewMaskRequest(request)) {
+    async synthesizeGeneratedViewPrompt(
+        request: GeneratedViewPromptSynthesisRequest
+    ): Promise<GeneratedViewPromptSynthesisResponse> {
+        if (!isGeneratedViewPromptSynthesisRequest(request)) {
             throw transportError(
                 'invalidResponse',
-                'AI Select requires a complete bound Generated View Mask request.'
+                'AI Select requires a complete bound Generated View Prompt synthesis request.'
             );
         }
         this.assertConfiguredModelManifest(request.modelManifestDigest);
-        if (this.supportsCameraAwareSpatialWorkingSet()) {
-            return this.produceSpatialGeneratedViewMask(request);
-        }
-        await this.registerPackedSnapshot(request.snapshot);
-        const first = await this.sendGeneratedViewMask(request);
-        if (first.status === 'complete') {
-            return first.response;
-        }
-        await this.registerPackedSnapshot(request.snapshot, true);
-        const retry = await this.sendGeneratedViewMask(request);
-        if (retry.status !== 'complete') {
-            throw transportError(
-                'invalidResponse',
-                'The Selection Service Companion repeated a Generated View Mask Scene Snapshot cache miss after the editor resent the snapshot.'
-            );
-        }
-        return retry.response;
-    }
-
-    private async produceSpatialGeneratedViewMask(
-        request: GeneratedViewMaskRequest
-    ): Promise<GeneratedViewMaskResponse> {
-        const spatialSnapshot = this.spatialSnapshotFor(request);
-        await this.registerSpatialSceneManifest(spatialSnapshot);
-
-        let manifestRecoveryAttempts = 0;
-        let chunkRecoveryAttempts = 0;
-        for (;;) {
-            const result = await this.sendGeneratedViewMask(
-                request,
-                'spatial-v1'
-            );
-            if (result.status === 'complete') {
-                return result.response;
-            }
-            if (result.status === 'sceneCacheMiss') {
-                if (manifestRecoveryAttempts >= 1) {
-                    throw transportError(
-                        'invalidResponse',
-                        'The Selection Service Companion repeated a Generated View Mask Spatial Scene manifest cache miss after the editor resent the manifest.'
-                    );
-                }
-                manifestRecoveryAttempts += 1;
-                await this.registerSpatialSceneManifest(spatialSnapshot, true);
-                continue;
-            }
-            if (chunkRecoveryAttempts >= 1) {
-                throw transportError(
-                    'invalidResponse',
-                    'The Selection Service Companion repeated a Generated View Mask Spatial Scene chunk miss after the editor uploaded its validated working set.'
-                );
-            }
-            chunkRecoveryAttempts += 1;
-            await this.uploadSpatialSceneChunks(
-                spatialSnapshot,
-                result.missingChunkIds
-            );
-        }
-    }
-
-    private async sendGeneratedViewMask(
-        request: GeneratedViewMaskRequest,
-        sceneTransport: 'packed-v1' | 'spatial-v1' = 'packed-v1'
-    ): Promise<
-        | {
-              readonly status: 'complete';
-              readonly response: GeneratedViewMaskResponse;
-          }
-        | { readonly status: 'sceneCacheMiss' }
-        | {
-              readonly status: 'sceneChunkMiss';
-              readonly missingChunkIds: readonly string[];
-          }
-    > {
         const result = await this.requestJson(
-            '/ai-select/generated-view-masks',
+            '/ai-select/generated-view-prompts',
             'POST',
             {
                 requestBinding: request.requestBinding,
                 targetSplatId: request.target.splatId,
-                sceneId: request.sceneId,
-                sceneVersion: request.sceneVersion,
-                renderConfigVersion:
-                    request.snapshot.renderConfiguration.version,
                 viewId: request.viewId,
                 viewCameraBinding: request.viewCameraBinding,
-                maskAttemptId: request.maskAttemptId,
+                viewCameraBindingDigest: request.viewCameraBindingDigest,
                 rgb: request.rgb,
-                anchor: request.anchor,
+                targetGeometryHint: request.targetGeometryHint,
+                localKeyViewPlan: request.localKeyViewPlan,
+                adapterCapabilityDigest: request.adapterCapabilityDigest,
                 modelManifestDigest: request.modelManifestDigest,
-                ...(sceneTransport === 'spatial-v1' ? { sceneTransport } : {})
+                runtimeDigest: request.runtimeDigest,
+                companionInstanceId: request.companionInstanceId,
+                promptSynthesisAttemptId: request.promptSynthesisAttemptId,
+                promptSynthesisPolicyVersion:
+                    request.promptSynthesisPolicyVersion
             }
         );
-        if (!isRecord(result)) {
-            throw transportError(
-                'invalidResponse',
-                'The Selection Service Companion returned an invalid Generated View Mask response.'
-            );
-        }
-        if (result.status === 'sceneCacheMiss') {
-            if (!this.hasMatchingGeneratedMaskBindings(result, request)) {
-                throw transportError(
-                    'invalidResponse',
-                    'The Selection Service Companion returned stale Generated View Mask cache-miss bindings.'
-                );
-            }
-            return { status: 'sceneCacheMiss' };
-        }
-        if (result.status === 'sceneChunkMiss') {
-            if (
-                sceneTransport !== 'spatial-v1' ||
-                !this.isMatchingGeneratedMaskSceneChunkMiss(result, request)
-            ) {
-                throw transportError(
-                    'invalidResponse',
-                    'The Selection Service Companion returned stale or invalid Generated View Mask chunk-miss bindings.'
-                );
-            }
-            return {
-                status: 'sceneChunkMiss',
-                missingChunkIds: result.missingChunkIds
-            };
-        }
         if (
-            result.status !== 'complete' ||
-            !isGeneratedViewMaskResponse(result) ||
-            !generatedViewMaskResponseMatchesRequest(result, request)
+            !isGeneratedViewPromptSynthesisResponse(result) ||
+            !generatedViewPromptSynthesisResponseMatchesRequest(result, request)
         ) {
             throw transportError(
                 'invalidResponse',
-                'The Selection Service Companion returned an incomplete or stale Generated View Mask result.'
+                'The Selection Service Companion returned an incomplete or stale Generated View Prompt result.'
             );
         }
-        return {
-            status: 'complete',
-            response: result
-        };
+        return result;
     }
 
-    private hasMatchingGeneratedMaskBindings(
-        value: Record<string, unknown>,
-        request: GeneratedViewMaskRequest
-    ): boolean {
-        return (
-            isAIRequestBinding(value.requestBinding) &&
-            value.requestBinding.targetContextId ===
-                request.requestBinding.targetContextId &&
-            value.requestBinding.contextRevision ===
-                request.requestBinding.contextRevision &&
-            areTargetDependencyTokensEqual(
-                value.requestBinding.dependencyToken,
-                request.requestBinding.dependencyToken
-            ) &&
-            value.targetSplatId === request.target.splatId &&
-            value.sceneId === request.sceneId &&
-            value.sceneVersion === request.sceneVersion &&
-            value.renderConfigVersion ===
-                request.snapshot.renderConfiguration.version &&
-            value.viewId === request.viewId &&
-            value.maskAttemptId === request.maskAttemptId
+    /** Execute exactly one compact static-image SAM 3 inference request. */
+    async infer(
+        request: ImageInstanceMaskRequest
+    ): Promise<ImageInstanceMaskResult> {
+        if (!isGeneratedViewImageInstanceMaskRequest(request)) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select requires a current geometry-guided Generated View Image Instance Mask request.'
+            );
+        }
+        this.assertConfiguredModelManifest(
+            request.identity.modelManifestDigest
         );
+        const result = await this.requestJson(
+            '/ai-select/image-instance-masks',
+            'POST',
+            request
+        );
+        if (
+            !isImageInstanceMaskResult(result) ||
+            !imageInstanceMaskResultMatchesRequest(result, request)
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an incomplete or stale Image Instance Mask result.'
+            );
+        }
+        return result;
     }
 
-    private isMatchingGeneratedMaskSceneChunkMiss(
-        value: Record<string, unknown>,
-        request: GeneratedViewMaskRequest
-    ): value is Record<string, unknown> & {
-        missingChunkIds: readonly string[];
-    } {
-        return (
-            value.status === 'sceneChunkMiss' &&
-            this.hasMatchingGeneratedMaskBindings(value, request) &&
-            isSha256Digest(value.workingSetToken) &&
-            isSortedUniqueChunkIds(value.missingChunkIds, true)
+    /** Review one inference-produced Mask separately from Stable publication. */
+    async reviewImageInstanceMask(
+        request: ImageInstanceMaskReviewRequest
+    ): Promise<ImageInstanceMaskReviewResponse> {
+        if (!isImageInstanceMaskReviewRequest(request)) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select requires a complete bound Image Instance Mask Review request.'
+            );
+        }
+        const result = await this.requestJson(
+            '/ai-select/image-instance-mask-reviews',
+            'POST',
+            request
         );
+        if (
+            !isImageInstanceMaskReviewResponse(result) ||
+            !imageInstanceMaskReviewResponseMatchesRequest(result, request)
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an incomplete or stale Image Instance Mask Review result.'
+            );
+        }
+        return result;
     }
 
     private hasMatchingProbeBindings(

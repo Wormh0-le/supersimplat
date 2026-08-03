@@ -1,10 +1,41 @@
 # 08B — 3D-guided Per-View SAM 3 Image Acquisition
 
-Status: planned — simplified v1.3 production path
+Status: implemented — Route B browser/Companion slice; locked-GPU browser validation remains operator-owned
 
 Blocked by: 08A, 04C, 07
 
 Blocks: 09
+
+## Implementation record
+
+Implemented on `ai-select-v1` as the bounded Route B acquisition path:
+
+- The Companion deterministically projects the exact target geometry through
+  the accepted local Key-View `CameraBinding`, then returns either a digest-
+  bound Prompt containing one Positive Box, 1–3 Positive Points, at most two
+  local Negative Points, and `multimaskOutput: false`, or a structured
+  `limited` result. Prompt regeneration has a distinct attempt identity from
+  image inference Retry.
+- Generated View inference now uses the official 04C SAM 3 Image adapter on
+  `/ai-select/image-instance-masks`, resolves exact authoritative RGB bytes,
+  enforces one usable Mask at most, forces static single-mask inference, and
+  treats an empty result as semantic unavailable. The distinct Review endpoint
+  accepts only a returned Mask and has no publication side effect.
+- The browser owns automatic Stable publication after Review: Good → Auto Good
+  Included, Review → Auto Review Excluded, Failed/unavailable → no new
+  automatic Stable Mask and Excluded. Technical failure preserves RGB and a
+  prior Stable revision; User Confirmed authority prevents automatic
+  replacement.
+- The public propagation endpoint, provider-returned assessment coupling,
+  propagated Mask source, static Multiplex/tracker execution, and Route-A
+  fallback are retired from the Route B path. No Route B publication produces
+  P/N/V, a Lift, or a Candidate.
+- Contract/CPU validation passed with `npm test` (419 browser tests and 377
+  Companion tests; one environment-gated test skipped), `npm run lint`,
+  `npm run lint:locales`, and `npm run build`. The locked CUDA/model browser
+  walkthrough is documented at
+  `browser-validation/08B-route-b-production-acquisition-walkthrough.md` and
+  remains required before claiming production GPU validation.
 
 ## Final Spec mapping
 

@@ -3,9 +3,9 @@
 Audience: operator validating ticket 08 end to end against the locked
 Companion and a real scene. Companion unit/integration coverage lives in
 `selection-service-companion/tests/`; this document is the manual browser
-path. Ticket 08 runs no SAM inference itself, but the retained ticket-06
-pipeline still auto-produces per-View Masks after RGB Ready when a model is
-configured.
+path. Ticket 08 runs no SAM inference itself. The current Route B per-View
+SAM Image acquisition is documented separately in
+`08B-route-b-production-acquisition-walkthrough.md`.
 
 ## Prerequisites
 

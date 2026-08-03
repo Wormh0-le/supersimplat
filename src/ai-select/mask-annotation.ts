@@ -17,8 +17,7 @@ export interface MaskPrompt {
     readonly polarity: MaskPolarity;
 }
 
-export type MaskSource =
-    'single-frame-sam' | 'propagated' | 'manual' | 'hybrid';
+export type MaskSource = 'single-frame-sam' | 'manual' | 'hybrid';
 
 /**
  * Editing Masks stay `draft` until Confirm Mask publishes them as
@@ -203,7 +202,6 @@ export const isMaskAnnotation = (value: unknown): value is MaskAnnotation => {
         isNonEmptyString(value.maskId) &&
         isNonEmptyString(value.viewId) &&
         (value.source === 'single-frame-sam' ||
-            value.source === 'propagated' ||
             value.source === 'manual' ||
             value.source === 'hybrid') &&
         (value.status === 'draft' ||

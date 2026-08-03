@@ -262,8 +262,14 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/ai-select/local-key-view-plans":
             self._plan_ai_select_local_key_views()
             return
-        if self.path == "/ai-select/generated-view-masks":
-            self._produce_ai_select_generated_view_mask()
+        if self.path == "/ai-select/generated-view-prompts":
+            self._synthesize_ai_select_generated_view_prompt()
+            return
+        if self.path == "/ai-select/image-instance-masks":
+            self._produce_ai_select_image_instance_mask()
+            return
+        if self.path == "/ai-select/image-instance-mask-reviews":
+            self._review_ai_select_image_instance_mask()
             return
         if self.path == "/object-selection-sessions":
             self._open_object_selection_session()
@@ -437,8 +443,8 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json(HTTPStatus.OK, response)
 
-    def _produce_ai_select_generated_view_mask(self) -> None:
-        """Route one propagated automatic Generated View Mask request."""
+    def _synthesize_ai_select_generated_view_prompt(self) -> None:
+        """Route one geometry-guided static-image Prompt synthesis attempt."""
 
         try:
             self._state.require_release()
@@ -447,14 +453,70 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             return
         try:
             request = self._read_json_body()
-            response = self._state.produce_ai_select_generated_view_mask(request)
+            response = self._state.synthesize_ai_select_generated_view_prompt(request)
         except MaskSessionError as error:
-            # MaskSessionError subclasses ValueError, so the actionable 409
-            # branch must be matched before the generic 400 validation branch.
             self._send_json(
                 HTTPStatus.CONFLICT,
                 {
-                    "status": "maskError",
+                    "status": "promptSynthesisError",
+                    "code": error.code,
+                    "message": str(error),
+                },
+            )
+            return
+        except ValueError as error:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"status": "invalidRequest", "message": str(error)},
+            )
+            return
+        self._send_json(HTTPStatus.OK, response)
+
+    def _produce_ai_select_image_instance_mask(self) -> None:
+        """Route one independent, single-mask SAM 3 Image inference attempt."""
+
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            request = self._read_json_body()
+            response = self._state.produce_ai_select_image_instance_mask(request)
+        except MaskSessionError as error:
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {
+                    "status": "imageInstanceMaskError",
+                    "code": error.code,
+                    "message": str(error),
+                },
+            )
+            return
+        except ValueError as error:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"status": "invalidRequest", "message": str(error)},
+            )
+            return
+        self._send_json(HTTPStatus.OK, response)
+
+    def _review_ai_select_image_instance_mask(self) -> None:
+        """Route one inference-produced Mask Review; no Stable mutation occurs."""
+
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            request = self._read_json_body()
+            response = self._state.review_ai_select_image_instance_mask(request)
+        except MaskSessionError as error:
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {
+                    "status": "imageInstanceMaskReviewError",
                     "code": error.code,
                     "message": str(error),
                 },

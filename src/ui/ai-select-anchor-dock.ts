@@ -712,7 +712,6 @@ export class AISelectAnchorDock extends Container {
             hidden: true
         });
         i18n.bindText(retryButton, 'ai-select.views.retry-render');
-        i18n.bindText(retryMaskButton, 'ai-select.views.retry-mask');
         i18n.bindText(confirmReviewButton, 'ai-select.review.confirm-as-is');
         if (onRetry !== null) {
             retryButton.on('click', (event: Event) => {
@@ -875,6 +874,17 @@ export class AISelectAnchorDock extends Container {
             lines.push(view.renderErrorMessage);
         }
         if (view.renderStatus === 'ready') {
+            if (
+                view.promptStatus === 'limited' &&
+                view.promptDiagnostics !== undefined
+            ) {
+                lines.push(view.promptDiagnostics.join('; '));
+            } else if (
+                view.promptStatus === 'failed' &&
+                view.promptErrorMessage !== undefined
+            ) {
+                lines.push(view.promptErrorMessage);
+            }
             lines.push(
                 i18n.t(`ai-select.views.status.mask-${view.maskStatus}`)
             );
@@ -906,8 +916,21 @@ export class AISelectAnchorDock extends Container {
         }
         card.status.text = lines.join('\n');
         card.retryButton.hidden = view.renderStatus !== 'failed';
+        const promptRecovery =
+            view.promptStatus === 'failed' || view.promptStatus === 'limited';
+        card.retryMaskButton.text = i18n.t(
+            promptRecovery
+                ? 'ai-select.views.retry-prompt'
+                : 'ai-select.views.retry-mask'
+        );
         card.retryMaskButton.hidden =
-            view.renderStatus !== 'ready' || view.maskStatus !== 'failed';
+            view.renderStatus !== 'ready' ||
+            !(
+                promptRecovery ||
+                (view.promptStatus === 'ready' &&
+                    (view.maskStatus === 'failed' ||
+                        view.maskStatus === 'unavailable'))
+            );
         card.confirmReviewButton.hidden =
             view.maskStatus !== 'ready' ||
             view.assessment?.status !== 'review' ||
@@ -951,7 +974,17 @@ export class AISelectAnchorDock extends Container {
 
     private retryGeneratedViewMask(viewId: string): void {
         try {
-            this.generatedViews.retryViewMask(viewId);
+            const view = this.generatedState.views.find(
+                (entry) => entry.viewId === viewId
+            );
+            if (
+                view?.promptStatus === 'failed' ||
+                view?.promptStatus === 'limited'
+            ) {
+                this.generatedViews.regenerateViewPrompt(viewId);
+            } else {
+                this.generatedViews.retryViewMask(viewId);
+            }
         } catch (error) {
             console.error(error);
         }

@@ -7,8 +7,16 @@ const {
     FetchSelectionServiceAdapter
 } = require('../.test-dist/src/selection-service-fetch-adapter.js');
 const {
-    aiSelectGeneratedViewMaskPolicyVersion
+    aiSelectImageInstancePromptSynthesisPolicyDigest,
+    aiSelectImageInstancePromptSynthesisPolicyVersion
 } = require('../.test-dist/src/ai-select/generated-view-service.js');
+const {
+    cameraBindingDigest
+} = require('../.test-dist/src/ai-select/camera-binding.js');
+const {
+    createImageInstanceMaskResult,
+    createImageInstancePromptArtifact
+} = require('../.test-dist/src/ai-select/image-instance-mask.js');
 const {
     aiSelectLocalKeyViewPlannerVersion
 } = require('../.test-dist/src/ai-select/local-key-view-plan.js');
@@ -282,45 +290,134 @@ const renderResponse = (request, overrides = {}) => ({
     ...overrides
 });
 
-const maskRequest = {
+const routeBRgb = Object.freeze({
+    ...pngFor(64, 48),
+    width: 64,
+    height: 48
+});
+
+const routeBHint = hintArtifactFor(hintRequest);
+const routeBPlan = keyViewPlanResponse(keyViewPlanRequest).plan;
+
+const promptSynthesisRequest = {
     requestBinding,
     target: { splatId: 'scene-1' },
-    snapshot,
-    sceneId: snapshot.sceneId,
-    sceneVersion: snapshot.sceneVersion,
     viewId: 'key-view-0-0',
     viewCameraBinding: generatedCameraBinding,
-    maskAttemptId: 'generated-view-mask-attempt-1',
-    rgb: {
-        ...pngFor(64, 48),
-        width: 64,
-        height: 48
-    },
-    anchor: {
-        cameraBinding: anchorCameraBinding,
-        rgbDigest: anchorRgbDigest,
-        stableMask: maskArtifact
-    },
-    modelManifestDigest: 'sha256:model-v1'
+    viewCameraBindingDigest: cameraBindingDigest(generatedCameraBinding),
+    rgb: routeBRgb,
+    targetGeometryHint: routeBHint,
+    localKeyViewPlan: routeBPlan,
+    adapterCapabilityDigest: `sha256:${'2'.repeat(64)}`,
+    modelManifestDigest: 'sha256:model-v1',
+    runtimeDigest: `sha256:${'4'.repeat(64)}`,
+    companionInstanceId: 'companion-1',
+    promptSynthesisAttemptId: 'generated-view-prompt-synthesis-attempt-1',
+    promptSynthesisPolicyVersion:
+        aiSelectImageInstancePromptSynthesisPolicyVersion
 };
 
-const maskResponse = (request, overrides = {}) => ({
-    status: 'complete',
+const promptSynthesisResponse = (request, overrides = {}) => {
+    const prompt = createImageInstancePromptArtifact({
+        schemaVersion: 1,
+        targetContextId: request.requestBinding.targetContextId,
+        contextRevision: request.requestBinding.contextRevision,
+        viewId: request.viewId,
+        rgbDigest: request.rgb.digest,
+        cameraBindingDigest: request.viewCameraBindingDigest,
+        targetGeometryHintDigest: request.targetGeometryHint.artifactDigest,
+        localKeyViewPlanDigest: request.localKeyViewPlan.artifactDigest,
+        adapterCapabilityDigest: request.adapterCapabilityDigest,
+        promptSynthesisPolicyDigest:
+            aiSelectImageInstancePromptSynthesisPolicyDigest,
+        positivePoints: [{ xPx: 4, yPx: 4 }],
+        negativePoints: [],
+        positiveBox: { x0Px: 3, y0Px: 3, x1Px: 8, y1Px: 8 },
+        multimaskOutput: false
+    });
+    return {
+        requestBinding: request.requestBinding,
+        targetSplatId: request.target.splatId,
+        viewId: request.viewId,
+        viewCameraBindingDigest: request.viewCameraBindingDigest,
+        rgbDigest: request.rgb.digest,
+        targetGeometryHintDigest: request.targetGeometryHint.artifactDigest,
+        localKeyViewPlanDigest: request.localKeyViewPlan.artifactDigest,
+        adapterCapabilityDigest: request.adapterCapabilityDigest,
+        modelManifestDigest: request.modelManifestDigest,
+        runtimeDigest: request.runtimeDigest,
+        companionInstanceId: request.companionInstanceId,
+        promptSynthesisAttemptId: request.promptSynthesisAttemptId,
+        promptSynthesisPolicyVersion: request.promptSynthesisPolicyVersion,
+        status: 'ready',
+        diagnostics: ['projected-support:1'],
+        prompt,
+        ...overrides
+    };
+};
+
+const imageInstanceMaskRequest = (() => {
+    const prompt = promptSynthesisResponse(promptSynthesisRequest).prompt;
+    return {
+        schemaVersion: 1,
+        identity: {
+            targetContextId: requestBinding.targetContextId,
+            contextRevision: requestBinding.contextRevision,
+            viewId: 'key-view-0-0',
+            rgbDigest: routeBRgb.digest,
+            promptArtifactDigest: prompt.artifactDigest,
+            adapterId: 'sam3-image',
+            modelManifestDigest: 'sha256:model-v1',
+            runtimeDigest: `sha256:${'4'.repeat(64)}`,
+            companionInstanceId: 'companion-1',
+            inferenceAttemptId: 'generated-view-inference-attempt-1'
+        },
+        rgb: {
+            rgbDigest: routeBRgb.digest,
+            width: routeBRgb.width,
+            height: routeBRgb.height,
+            artifact: routeBRgb
+        },
+        prompt
+    };
+})();
+
+const imageInstanceMaskResponse = (request, overrides = {}) => {
+    const result = createImageInstanceMaskResult({
+        schemaVersion: 1,
+        requestIdentity: request.identity,
+        masks: [maskArtifact],
+        modelScores: [0.9],
+        diagnostics: { outcome: 'available' }
+    });
+    return { ...result, ...overrides };
+};
+
+const maskReviewRequest = (() => {
+    const inference = imageInstanceMaskResponse(imageInstanceMaskRequest);
+    return {
+        requestBinding,
+        target: { splatId: 'scene-1' },
+        viewId: 'key-view-0-0',
+        rgb: routeBRgb,
+        prompt: imageInstanceMaskRequest.prompt,
+        inferenceResultDigest: inference.resultDigest,
+        chosenMask: inference.masks[0],
+        reviewAttemptId: 'generated-view-mask-review-attempt-1',
+        reviewPolicyVersion: 'local-view-assessment/v2'
+    };
+})();
+
+const maskReviewResponse = (request, overrides = {}) => ({
     requestBinding: request.requestBinding,
     targetSplatId: request.target.splatId,
-    sceneId: request.sceneId,
-    sceneVersion: request.sceneVersion,
     viewId: request.viewId,
-    maskAttemptId: request.maskAttemptId,
     rgbDigest: request.rgb.digest,
-    anchorRgbDigest: request.anchor.rgbDigest,
-    mask: maskArtifact,
-    maskSource: 'propagated',
-    maskPropagation: {
-        policyVersion: aiSelectGeneratedViewMaskPolicyVersion,
-        projectedSupportCount: 7,
-        promptCount: 3
-    },
+    promptArtifactDigest: request.prompt.artifactDigest,
+    inferenceResultDigest: request.inferenceResultDigest,
+    chosenMaskDigest: request.chosenMask.digest,
+    reviewAttemptId: request.reviewAttemptId,
+    reviewPolicyVersion: request.reviewPolicyVersion,
     assessment: {
         status: 'good',
         reasons: [],
@@ -328,7 +425,7 @@ const maskResponse = (request, overrides = {}) => ({
         policyVersion: 'local-view-assessment/v2',
         inputIdentity: {
             rgbDigest: request.rgb.digest,
-            stableMaskDigest: maskArtifact.digest,
+            stableMaskDigest: request.chosenMask.digest,
             assessmentPolicyVersion: 'local-view-assessment/v2'
         },
         diagnostics: {
@@ -338,25 +435,13 @@ const maskResponse = (request, overrides = {}) => ({
             boundaryContactRatio: 0,
             connectedComponents: 1,
             largestComponentRatio: 1,
-            promptPointCount: 3,
+            promptPointCount: 1,
             promptViolationCount: 0,
             boxSpillPixels: null,
             boxSpillRatio: null
         }
     },
-    modelManifestDigest: request.modelManifestDigest,
     ...overrides
-});
-
-const maskCacheMiss = (request) => ({
-    status: 'sceneCacheMiss',
-    requestBinding: request.requestBinding,
-    targetSplatId: request.target.splatId,
-    sceneId: request.sceneId,
-    sceneVersion: request.sceneVersion,
-    renderConfigVersion: request.snapshot.renderConfiguration.version,
-    viewId: request.viewId,
-    maskAttemptId: request.maskAttemptId
 });
 
 const renderCacheMiss = (request) => ({
@@ -774,60 +859,105 @@ test('an Anchor view id is rejected on the Generated View render route', async (
     assert.equal(calls.length, 0);
 });
 
-test('produces an automatic Generated View Mask bound to the View and Anchor identity', async () => {
+test('synthesizes one bound Route B Prompt with no snapshot or legacy propagation payload', async () => {
     const { adapter, calls } = createAdapter([
-        ...stagedBinaryRegistrationReplies(snapshot),
-        maskResponse(maskRequest)
+        promptSynthesisResponse(promptSynthesisRequest)
     ]);
 
-    const response = await adapter.produceGeneratedViewMask(maskRequest);
-
-    assert.deepEqual(response, maskResponse(maskRequest));
-    const maskCall = calls.at(-1);
-    assert.match(maskCall.url, /\/ai-select\/generated-view-masks$/);
-    const body = maskCall.body;
-    assert.equal(body.viewId, 'key-view-0-0');
-    assert.deepEqual(body.viewCameraBinding, generatedCameraBinding);
-    assert.deepEqual(body.anchor, maskRequest.anchor);
-    assert.equal(body.maskAttemptId, maskRequest.maskAttemptId);
-    assert.equal(body.modelManifestDigest, 'sha256:model-v1');
-    assert.equal(body.snapshot, undefined);
-});
-
-test('a Generated View Mask cache miss re-registers once and retries', async () => {
-    const { adapter, calls } = createAdapter([
-        ...stagedBinaryRegistrationReplies(snapshot),
-        maskCacheMiss(maskRequest),
-        ...stagedBinaryRegistrationReplies(snapshot, 'upload-2'),
-        maskResponse(maskRequest)
-    ]);
-
-    const response = await adapter.produceGeneratedViewMask(maskRequest);
-    assert.deepEqual(response, maskResponse(maskRequest));
-    assert.equal(
-        calls.filter((call) => /generated-view-masks/.test(call.url)).length,
-        2
+    const response = await adapter.synthesizeGeneratedViewPrompt(
+        promptSynthesisRequest
     );
+
+    assert.deepEqual(response, promptSynthesisResponse(promptSynthesisRequest));
+    assert.equal(calls.length, 1);
+    const promptCall = calls[0];
+    assert.match(promptCall.url, /\/ai-select\/generated-view-prompts$/);
+    assert.equal(promptCall.body.viewId, 'key-view-0-0');
+    assert.deepEqual(promptCall.body.rgb, routeBRgb);
+    assert.deepEqual(promptCall.body.targetGeometryHint, routeBHint);
+    assert.deepEqual(promptCall.body.localKeyViewPlan, routeBPlan);
+    assert.equal(promptCall.body.snapshot, undefined);
+    assert.equal(promptCall.body.anchor, undefined);
+    assert.equal(promptCall.body.maskPropagation, undefined);
 });
 
-test('a stale or wrong-source Generated View Mask response fails closed', async () => {
+test('sends exact authoritative RGB to independent single-mask SAM Image inference', async () => {
+    const { adapter, calls } = createAdapter([
+        imageInstanceMaskResponse(imageInstanceMaskRequest)
+    ]);
+
+    const response = await adapter.infer(imageInstanceMaskRequest);
+
+    assert.deepEqual(
+        response,
+        imageInstanceMaskResponse(imageInstanceMaskRequest)
+    );
+    assert.equal(calls.length, 1);
+    const inferenceCall = calls[0];
+    assert.match(inferenceCall.url, /\/ai-select\/image-instance-masks$/);
+    assert.equal(inferenceCall.body.identity.viewId, 'key-view-0-0');
+    assert.equal(inferenceCall.body.rgb.rgbDigest, routeBRgb.digest);
+    assert.deepEqual(inferenceCall.body.rgb.artifact, routeBRgb);
+    assert.equal(inferenceCall.body.prompt.multimaskOutput, false);
+    assert.equal(inferenceCall.body.prompt.previousLogitsRefDigest, undefined);
+    assert.equal(inferenceCall.body.snapshot, undefined);
+    assert.equal(inferenceCall.body.maskSource, undefined);
+});
+
+test('rejects stale or multi-mask Route B inference output before browser publication', async () => {
     const stale = createAdapter([
-        ...stagedBinaryRegistrationReplies(snapshot),
-        maskResponse(maskRequest, {
-            anchorRgbDigest: `sha256:${'f'.repeat(64)}`
+        imageInstanceMaskResponse(imageInstanceMaskRequest, {
+            requestIdentity: {
+                ...imageInstanceMaskRequest.identity,
+                inferenceAttemptId: 'forged-attempt'
+            }
         })
     ]);
     await assert.rejects(
-        stale.adapter.produceGeneratedViewMask(maskRequest),
-        /incomplete or stale Generated View Mask/
+        stale.adapter.infer(imageInstanceMaskRequest),
+        /incomplete or stale Image Instance Mask/
     );
 
-    const wrongSource = createAdapter([
-        ...stagedBinaryRegistrationReplies(snapshot),
-        maskResponse(maskRequest, { maskSource: 'single-frame-sam' })
+    const multiMask = createAdapter([
+        imageInstanceMaskResponse(imageInstanceMaskRequest, {
+            masks: [maskArtifact, maskArtifact],
+            modelScores: [0.9, 0.8]
+        })
     ]);
     await assert.rejects(
-        wrongSource.adapter.produceGeneratedViewMask(maskRequest),
-        /incomplete or stale Generated View Mask/
+        multiMask.adapter.infer(imageInstanceMaskRequest),
+        /incomplete or stale Image Instance Mask/
     );
+});
+
+test('reviews one inference-produced Mask through its dedicated Route B endpoint', async () => {
+    const { adapter, calls } = createAdapter([
+        maskReviewResponse(maskReviewRequest)
+    ]);
+
+    const response = await adapter.reviewImageInstanceMask(maskReviewRequest);
+
+    assert.deepEqual(response, maskReviewResponse(maskReviewRequest));
+    assert.equal(calls.length, 1);
+    const reviewCall = calls[0];
+    assert.match(reviewCall.url, /\/ai-select\/image-instance-mask-reviews$/);
+    assert.equal(reviewCall.body.chosenMask.digest, maskArtifact.digest);
+    assert.equal(
+        reviewCall.body.inferenceResultDigest,
+        maskReviewRequest.inferenceResultDigest
+    );
+    assert.equal(reviewCall.body.maskSource, undefined);
+});
+
+test('rejects stale Route B review output and exposes no legacy generated-mask provider', async () => {
+    const stale = createAdapter([
+        maskReviewResponse(maskReviewRequest, {
+            chosenMaskDigest: `sha256:${'9'.repeat(64)}`
+        })
+    ]);
+    await assert.rejects(
+        stale.adapter.reviewImageInstanceMask(maskReviewRequest),
+        /incomplete or stale Image Instance Mask Review/
+    );
+    assert.equal(typeof stale.adapter.produceGeneratedViewMask, 'undefined');
 });

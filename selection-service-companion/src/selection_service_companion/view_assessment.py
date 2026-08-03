@@ -190,7 +190,10 @@ def assess_local_view(
                 raise ValueError("Mask Review Prompt point is outside the View")
         if prompt.box_xyxy is not None:
             x0, y0, x1, y1 = prompt.box_xyxy
-            if not (0 <= x0 < x1 < width and 0 <= y0 < y1 < height):
+            # Review boxes use inclusive endpoints, unlike the one-or-more
+            # pixel exclusive prompt box passed to SAM. A valid 1x1 prompt
+            # therefore arrives here with equal endpoints.
+            if not (0 <= x0 <= x1 < width and 0 <= y0 <= y1 < height):
                 raise ValueError("Mask Review Prompt Box is invalid")
 
     foreground, boundary, components, largest = _measure_mask(

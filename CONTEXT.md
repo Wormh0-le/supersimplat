@@ -156,6 +156,10 @@ _Avoid_: digest-only RGB, raw logits payload, backend registry, route fallback, 
 An opaque, digest-bound browser-held reference to Companion-local low-resolution previous-prediction logits. Raw logits never cross the protocol or enter PromptState/persistence. The reference resolves only inside the exact Companion Instance that minted it, for the same View/RGB/adapter lineage and chosen candidate, and forces single-mask refinement linked to the source inference attempt. An expired or unresolvable reference falls back to a fresh Point/Box prediction without `mask_input`.
 _Avoid_: binary brush as mask input, cross-session logits cache
 
+**Generated View Image Instance Prompt**
+A deterministic Route B `ImageInstancePromptArtifact` synthesized from the exact TargetGeometryHint, accepted Local Key View plan, authoritative View RGB, View CameraBinding, and locked SAM 3 Image runtime identity. It contains one positive instance Box, 1–3 positive points, at most two local negative points, and `multimaskOutput: false`; limited projection support yields no inference request. Prompt regeneration is separate from an inference Retry.
+_Avoid_: propagation/tracker state, Negative Box, text/brush/mask-constraint prompt, previous logits
+
 **AutoMaskProposalSet**
 A deterministic bounded set of structurally valid model Mask alternatives bound to exact target/context, Camera/RGB, PromptState, model, adapter capability, policy, and attempt identities. Exactly one Positive Point with no Box and no refinement yields at most three candidates; Box, multiple Points, or previous-logits refinement yields at most one. A proposal may seed Editing Mask but is never Stable without Confirm Mask. Raw adapter scores retain their declared semantics and are not correctness confidence.
 _Avoid_: Stable Mask, highest-score auto-confirm, ProposalDecision
@@ -173,7 +177,7 @@ Explicit Paint/Erase mutation of the unpublished Editing Mask. Pixel edits use M
 _Avoid_: Prompt Brush, model constraint
 
 **MaskAnnotation**  
-A versioned 2D annotation bound to one AI View and the RGB digest from which it was authored/generated. It may originate from SAM, propagation, manual authoring, or a hybrid workflow.  
+A versioned 2D annotation bound to one AI View and the RGB digest from which it was authored/generated. It may originate from a single-frame SAM Image result, manual authoring, or a hybrid workflow.
 _Avoid_: Gaussian Selection, 3D mask
 
 **Stable Mask**  
@@ -189,7 +193,7 @@ The atomic publication that promotes the current Editing Mask to the new Stable 
 _Avoid_: Selection Commit
 
 **Automatic Mask Publication**  
-The atomic publication of an automatic (propagated) Mask directly as a Stable Mask for a Generated View, without an Editing Mask or user confirmation. Its version-bound Companion View Assessment publishes in the same response: Auto Good defaults Included, while Auto Review or assessment failure stays Excluded. An assessment failure preserves the valid automatic Stable Mask and invents no Review Reason.
+The browser-owned atomic publication of one reviewed, single-frame SAM Image Mask directly as a Stable Mask for a Generated View, without an Editing Mask or user confirmation. The Companion returns inference and Review separately; the browser publishes only Good or Review results. Auto Good defaults Included, Auto Review defaults Excluded, Failed/semantic-unavailable publish no new automatic Stable Mask, and technical failure preserves RGB plus any prior Stable revision. User Confirmed authority is never silently replaced.
 _Avoid_: auto-confirm, hidden Lift participation
 
 **Mask Quality / View Assessment**  
@@ -201,7 +205,7 @@ A structured evidence-backed reason explaining why an automatic Mask/View needs 
 _Avoid_: free-form AI guess
 
 **ViewAssessmentPolicy**  
-The Companion-side versioned (`local-view-assessment/v2`) Mask Review policy deriving Good/Review/Failed plus Review Reasons from the exact RGB/Stable-Mask identity, Mask geometry, and the instance Prompt family that produced the Mask. Boundary Review requires a meaningful ratio/margin, fragmentation requires material disconnected mass, and missing optional diagnostics never fabricate a reason. It does not override a user-confirmed Stable Mask.
+The Companion-side versioned (`local-view-assessment/v2`) Mask Review policy deriving Good/Review/Failed plus Review Reasons from the exact RGB, returned Mask, and instance Prompt family. Boundary Review requires a meaningful ratio/margin, fragmentation requires material disconnected mass, and missing optional diagnostics never fabricate a reason. It returns no publication and does not override a user-confirmed Stable Mask.
 _Avoid_: SAM confidence passthrough
 
 **Participation**  
@@ -413,7 +417,7 @@ The old top-level include/exclude mask orchestration and complete publication un
 Old AI workflow modes. Add and Remove now mean native Candidate application operations together with Set and Intersect.
 
 **Correction Round (legacy)**  
-The old bounded inference-preview refresh count. Current workflows use Mask confirmation, Repropagate, Re-Lift, Generate More, and explicit correction.
+The old bounded inference-preview refresh count. Current workflows use Mask confirmation, Prompt regeneration, Re-Lift, Generate More, and explicit correction.
 
 **Selection Commit / Cancel (legacy session semantics)**  
 Old one-shot session actions. Current semantics use native Candidate operations, Restart Current Target, Exit AI Select, and Native Undo.

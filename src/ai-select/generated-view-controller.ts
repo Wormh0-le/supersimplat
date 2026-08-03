@@ -1,5 +1,5 @@
-import type { PackedSceneSnapshot } from '../scene-snapshot-binary';
 import type { AIViewParticipation, AIViewSource } from './ai-view';
+import { sha256Digest } from '../scene-snapshot-binary';
 import type {
     AISelectAnchorConfirmationController,
     AISelectAnchorConfirmationState,
@@ -24,17 +24,31 @@ import {
     type PerViewEvidenceRegistry
 } from './evidence-state';
 import {
-    generatedViewMaskResponseMatchesRequest,
+    aiSelectImageInstancePromptSynthesisPolicyVersion,
+    generatedViewPromptSynthesisResponseMatchesRequest,
+    imageInstanceMaskReviewResponseMatchesRequest,
     isAIViewRenderResponse,
-    isGeneratedViewMaskResponse,
+    isGeneratedViewPromptSynthesisResponse,
+    isImageInstanceMaskReviewResponse,
     viewRenderResponseMatchesRequest,
     type AIViewRenderRequest,
     type AIViewRenderResponse,
-    type AISelectGeneratedViewMaskProvider,
+    type AISelectGeneratedViewPromptSynthesizer,
+    type AISelectImageInstanceMaskReviewProvider,
     type AISelectViewRenderer,
-    type GeneratedViewMaskRequest,
-    type GeneratedViewMaskResponse
+    type GeneratedViewPromptSynthesisRequest,
+    type ImageInstanceMaskReviewRequest,
+    type ImageInstanceMaskReviewResponse
 } from './generated-view-service';
+import {
+    createImageInstancePromptArtifact,
+    createImageInstanceMaskPublicationCommand,
+    imageInstanceMaskPublicationCommandMatchesArtifacts,
+    inferImageInstanceMask,
+    type ImageInstanceMaskProvider,
+    type ImageInstanceMaskRequest,
+    type ImageInstancePromptArtifact
+} from './image-instance-mask';
 import {
     aiSelectLocalKeyViewPlannerVersion,
     isLocalKeyViewPlanResponse,
@@ -56,6 +70,7 @@ import {
     type TargetGeometryHintResponse
 } from './target-geometry-hint';
 import {
+    aiSelectViewAssessmentPolicyVersion,
     defaultViewParticipation,
     type ReviewReason,
     type ViewAssessmentResult
@@ -65,7 +80,10 @@ export type GeneratedViewRenderStatus =
     'pending' | 'rendering' | 'ready' | 'failed';
 
 export type GeneratedViewMaskStatus =
-    'none' | 'generating' | 'ready' | 'failed';
+    'none' | 'generating' | 'ready' | 'unavailable' | 'failed';
+
+export type GeneratedViewPromptStatus =
+    'none' | 'synthesizing' | 'ready' | 'limited' | 'failed';
 
 export type GeneratedViewPlannerStatus =
     'idle' | 'planning' | 'active' | 'failed';
@@ -93,6 +111,9 @@ export interface GeneratedAIView {
     readonly rendererId?: 'gsplat';
     readonly renderErrorMessage?: string;
     readonly participation: AIViewParticipation;
+    readonly promptStatus: GeneratedViewPromptStatus;
+    readonly promptDiagnostics?: readonly string[];
+    readonly promptErrorMessage?: string;
     readonly maskStatus: GeneratedViewMaskStatus;
     readonly maskErrorMessage?: string;
     readonly stableMaskId?: string;
@@ -132,8 +153,10 @@ export interface AISelectGeneratedViewControllerOptions {
     readonly geometryHints: AISelectTargetGeometryProvider;
     readonly planner: AISelectLocalKeyViewPlanner;
     readonly renderer: AISelectViewRenderer;
-    readonly maskProvider: AISelectGeneratedViewMaskProvider;
-    readonly getModelManifestDigest?: () => string | null;
+    readonly promptSynthesizer: AISelectGeneratedViewPromptSynthesizer;
+    readonly maskProvider: ImageInstanceMaskProvider;
+    readonly reviewProvider: AISelectImageInstanceMaskReviewProvider;
+    readonly getImageInstanceRuntimeBinding?: () => GeneratedViewImageInstanceRuntimeBinding | null;
     /**
      * The additive Companion capability gate: an older Companion without
      * Target Geometry and local Key-View planning keeps the Anchor flow
@@ -143,16 +166,37 @@ export interface AISelectGeneratedViewControllerOptions {
     readonly supportsGeneratedViews?: () => boolean;
 }
 
+/** The locked runtime identity required for one generated static-image call. */
+export interface GeneratedViewImageInstanceRuntimeBinding {
+    readonly adapterId: string;
+    readonly modelManifestDigest: string;
+    readonly runtimeDigest: string;
+    readonly companionInstanceId: string;
+    readonly adapterCapabilityDigest: string;
+}
+
 interface GeneratedViewRecord {
     readonly viewId: string;
     readonly source: AIViewSource;
     readonly cameraBinding: CameraBinding;
-    readonly planQuality?: 'usable' | 'limited';
-    readonly planReasons?: readonly string[];
+    /** The accepted plan identity embedded in this View's generated Prompt. */
+    localKeyViewPlanDigest?: string;
+    /** The newest accepted plan to use for a future Prompt synthesis. */
+    nextPromptPlanDigest?: string;
+    planQuality?: 'usable' | 'limited';
+    planReasons?: readonly string[];
     renderStatus: GeneratedViewRenderStatus;
     rgb?: AnchorRgbArtifact;
     rendererId?: 'gsplat';
     renderErrorMessage?: string;
+    promptStatus: GeneratedViewPromptStatus;
+    promptDiagnostics?: readonly string[];
+    promptErrorMessage?: string;
+    prompt?: ImageInstancePromptArtifact;
+    /** The model identity echoed by the Prompt synthesis response. */
+    promptModelManifestDigest?: string;
+    promptRuntimeDigest?: string;
+    promptCompanionInstanceId?: string;
     maskStatus: GeneratedViewMaskStatus;
     maskErrorMessage?: string;
     assessment?: ViewAssessmentResult;
@@ -258,6 +302,58 @@ const copyRgb = (rgb: AnchorRgbArtifact): AnchorRgbArtifact => {
         width: rgb.width,
         height: rgb.height
     });
+};
+
+const copyPrompt = (
+    prompt: ImageInstancePromptArtifact
+): ImageInstancePromptArtifact => {
+    return createImageInstancePromptArtifact({
+        schemaVersion: prompt.schemaVersion,
+        targetContextId: prompt.targetContextId,
+        contextRevision: prompt.contextRevision,
+        viewId: prompt.viewId,
+        rgbDigest: prompt.rgbDigest,
+        cameraBindingDigest: prompt.cameraBindingDigest,
+        ...(prompt.targetGeometryHintDigest === undefined
+            ? {}
+            : { targetGeometryHintDigest: prompt.targetGeometryHintDigest }),
+        ...(prompt.localKeyViewPlanDigest === undefined
+            ? {}
+            : { localKeyViewPlanDigest: prompt.localKeyViewPlanDigest }),
+        adapterCapabilityDigest: prompt.adapterCapabilityDigest,
+        ...(prompt.promptSynthesisPolicyDigest === undefined
+            ? {}
+            : {
+                  promptSynthesisPolicyDigest:
+                      prompt.promptSynthesisPolicyDigest
+              }),
+        positivePoints: prompt.positivePoints,
+        negativePoints: prompt.negativePoints,
+        ...(prompt.positiveBox === undefined
+            ? {}
+            : { positiveBox: prompt.positiveBox }),
+        ...(prompt.previousLogitsRefDigest === undefined
+            ? {}
+            : { previousLogitsRefDigest: prompt.previousLogitsRefDigest }),
+        multimaskOutput: prompt.multimaskOutput
+    });
+};
+
+const generatedViewPublicationPolicyDigest = sha256Digest(
+    new TextEncoder().encode('image-instance-mask-publication/v1')
+);
+
+const isImageInstanceRuntimeBinding = (
+    value: GeneratedViewImageInstanceRuntimeBinding | null
+): value is GeneratedViewImageInstanceRuntimeBinding => {
+    return (
+        value !== null &&
+        value.adapterId.trim().length > 0 &&
+        value.modelManifestDigest.trim().length > 0 &&
+        /^sha256:[a-f0-9]{64}$/i.test(value.runtimeDigest) &&
+        value.companionInstanceId.trim().length > 0 &&
+        /^sha256:[a-f0-9]{64}$/i.test(value.adapterCapabilityDigest)
+    );
 };
 
 const copyWorldTriple = (
@@ -414,8 +510,10 @@ export class AISelectGeneratedViewController {
     private readonly geometryHints: AISelectTargetGeometryProvider;
     private readonly planner: AISelectLocalKeyViewPlanner;
     private readonly renderer: AISelectViewRenderer;
-    private readonly maskProvider: AISelectGeneratedViewMaskProvider;
-    private readonly getModelManifestDigest: () => string | null;
+    private readonly promptSynthesizer: AISelectGeneratedViewPromptSynthesizer;
+    private readonly maskProvider: ImageInstanceMaskProvider;
+    private readonly reviewProvider: AISelectImageInstanceMaskReviewProvider;
+    private readonly getImageInstanceRuntimeBinding: () => GeneratedViewImageInstanceRuntimeBinding | null;
     private readonly supportsGeneratedViews: () => boolean;
     private readonly listeners = new Set<AISelectGeneratedViewListener>();
     private confirmed: ConfirmedAnchor | null = null;
@@ -434,7 +532,10 @@ export class AISelectGeneratedViewController {
     private nextGeometryAttemptOrdinal = 0;
     private nextPlanAttemptOrdinal = 0;
     private nextRenderAttemptOrdinal = 0;
+    private nextPromptSynthesisAttemptOrdinal = 0;
     private nextMaskAttemptOrdinal = 0;
+    private nextReviewAttemptOrdinal = 0;
+    private nextPublicationAttemptOrdinal = 0;
 
     constructor(options: AISelectGeneratedViewControllerOptions) {
         this.anchor = options.anchor;
@@ -443,9 +544,11 @@ export class AISelectGeneratedViewController {
         this.geometryHints = options.geometryHints;
         this.planner = options.planner;
         this.renderer = options.renderer;
+        this.promptSynthesizer = options.promptSynthesizer;
         this.maskProvider = options.maskProvider;
-        this.getModelManifestDigest =
-            options.getModelManifestDigest ?? (() => null);
+        this.reviewProvider = options.reviewProvider;
+        this.getImageInstanceRuntimeBinding =
+            options.getImageInstanceRuntimeBinding ?? (() => null);
         this.supportsGeneratedViews =
             options.supportsGeneratedViews ?? (() => true);
         options.confirmation.subscribe((state) =>
@@ -515,30 +618,57 @@ export class AISelectGeneratedViewController {
         this.enqueue((run) => this.renderAndMaskView(run, viewId, true));
     }
 
-    /** Retry only automatic Mask production; the valid RGB/View survives. */
+    /**
+     * Retry only one static-image inference attempt. It reuses the current
+     * bound Prompt artifact and RGB, but mints a new execution identity; it
+     * never rerenders or reprojects the target geometry.
+     */
     retryViewMask(viewId: string): void {
         const view = this.requireView(viewId);
         if (
             view.renderStatus !== 'ready' ||
             view.rgb === undefined ||
-            view.maskStatus !== 'failed'
+            view.promptStatus !== 'ready' ||
+            view.prompt === undefined ||
+            (view.maskStatus !== 'failed' && view.maskStatus !== 'unavailable')
         ) {
             throw new Error(
-                'AI Select can retry only a Mask Failed RGB Ready AIView.'
+                'AI Select can retry inference only for a Prompt Ready RGB Ready AIView whose previous result failed or was unavailable.'
             );
         }
         const rgb = view.rgb;
+        const prompt = view.prompt;
         this.enqueue(async (run) => {
-            const snapshot = this.anchor.getAnchorSnapshot();
-            if (snapshot === null) {
-                this.failViewMask(
-                    view,
-                    'AI Select requires the confirmed Anchor Scene Snapshot before a Mask Retry.'
-                );
-                return;
-            }
-            await this.produceViewMask(run, view, rgb, snapshot);
+            await this.produceViewMask(run, view, rgb, prompt);
         });
+    }
+
+    /**
+     * Regenerate the 3D-guided Prompt separately from an inference Retry.
+     * This mints a new prompt-synthesis attempt against the same accepted
+     * View plan, authoritative RGB, and CameraBinding.
+     */
+    regenerateViewPrompt(viewId: string): void {
+        const view = this.requireView(viewId);
+        if (
+            view.renderStatus !== 'ready' ||
+            view.rgb === undefined ||
+            view.localKeyViewPlanDigest === undefined
+        ) {
+            throw new Error(
+                'AI Select can regenerate a Prompt only for a planned RGB Ready AIView.'
+            );
+        }
+        const stable = this.maskRegistry.viewState(
+            view.viewId,
+            view.rgb.digest
+        ).stableMask;
+        if (stable?.status === 'user-confirmed') {
+            throw new Error(
+                'AI Select never replaces a User Confirmed Stable Mask through automatic Prompt regeneration.'
+            );
+        }
+        this.enqueue((run) => this.synthesizeAndProduceViewMask(run, view));
     }
 
     /**
@@ -867,7 +997,7 @@ export class AISelectGeneratedViewController {
         );
         this.views = [
             ...plan.orderedViews.map((planned) =>
-                this.recordForPlannedView(planned)
+                this.recordForPlannedView(planned, plan.artifactDigest)
             ),
             ...userOwned
         ];
@@ -882,14 +1012,20 @@ export class AISelectGeneratedViewController {
         this.generationStopped = false;
     }
 
-    private recordForPlannedView(planned: PlannedKeyView): GeneratedViewRecord {
+    private recordForPlannedView(
+        planned: PlannedKeyView,
+        localKeyViewPlanDigest: string
+    ): GeneratedViewRecord {
         return {
             viewId: planned.viewId,
             source: 'auto-generated',
             cameraBinding: copyCameraBinding(planned.cameraBinding),
+            localKeyViewPlanDigest,
+            nextPromptPlanDigest: localKeyViewPlanDigest,
             planQuality: planned.quality,
             planReasons: planned.reasons,
             renderStatus: 'pending',
+            promptStatus: 'none',
             maskStatus: 'none',
             participation: 'excluded'
         };
@@ -937,7 +1073,7 @@ export class AISelectGeneratedViewController {
         this.views = [
             ...this.views,
             ...plan.orderedViews.map((planned) =>
-                this.recordForPlannedView(planned)
+                this.recordForPlannedView(planned, plan.artifactDigest)
             )
         ];
         this.keyViewPlans = [...this.keyViewPlans, plan];
@@ -1007,10 +1143,36 @@ export class AISelectGeneratedViewController {
                     (view) => view.viewId === planned.viewId
                 );
                 if (current !== undefined) {
+                    current.nextPromptPlanDigest = plan.artifactDigest;
+                    current.planQuality = planned.quality;
+                    current.planReasons = planned.reasons;
+                    // A completed artifact remains bound to its original
+                    // Prompt plan. The replacement plan becomes active only
+                    // for a later explicit Prompt synthesis.
+                    if (current.prompt === undefined) {
+                        current.localKeyViewPlanDigest = plan.artifactDigest;
+                    }
+                    // A failed or unavailable prior inference cannot Retry
+                    // against the replaced plan. Preserve its RGB/Stable
+                    // state, but require distinct Prompt regeneration.
+                    if (
+                        current.maskStatus === 'failed' ||
+                        current.maskStatus === 'unavailable'
+                    ) {
+                        current.prompt = undefined;
+                        current.promptModelManifestDigest = undefined;
+                        current.promptRuntimeDigest = undefined;
+                        current.promptCompanionInstanceId = undefined;
+                        current.localKeyViewPlanDigest = plan.artifactDigest;
+                        current.promptStatus = 'failed';
+                        current.promptDiagnostics = undefined;
+                        current.promptErrorMessage =
+                            'The Local Key-View Plan changed; regenerate the 3D-guided Prompt before retrying inference.';
+                    }
                     return current;
                 }
             }
-            return this.recordForPlannedView(planned);
+            return this.recordForPlannedView(planned, plan.artifactDigest);
         });
         this.views = [
             ...plannerViews,
@@ -1131,20 +1293,154 @@ export class AISelectGeneratedViewController {
         view.rgb = copyRgb(response.rgb);
         view.rendererId = response.rendererId;
         this.publish();
-        await this.produceViewMask(run, view, view.rgb, snapshot);
+        await this.synthesizeAndProduceViewMask(run, view);
+    }
+
+    /**
+     * Route B prompt generation is a distinct phase from inference Retry. It
+     * binds the accepted local Key-View plan, geometry hint, exact RGB and
+     * CameraBinding to a compact static-image Prompt artifact.
+     */
+    private async synthesizeAndProduceViewMask(
+        run: number,
+        view: GeneratedViewRecord
+    ): Promise<void> {
+        const requestBinding = this.requestBinding;
+        const hint = this.geometryHint;
+        const rgb = view.rgb;
+        if (
+            !this.isRunCurrent(run) ||
+            requestBinding === null ||
+            hint === null ||
+            rgb === undefined ||
+            !this.views.includes(view)
+        ) {
+            return;
+        }
+        const stable = this.maskRegistry.viewState(
+            view.viewId,
+            rgb.digest
+        ).stableMask;
+        if (stable?.status === 'user-confirmed') {
+            return;
+        }
+        const planDigest =
+            view.nextPromptPlanDigest ?? view.localKeyViewPlanDigest;
+        const plan = this.keyViewPlans.find(
+            (candidate) => candidate.artifactDigest === planDigest
+        );
+        if (plan === undefined) {
+            this.failViewPrompt(
+                view,
+                'AI Select requires the accepted Local Key-View Plan before Prompt synthesis.'
+            );
+            return;
+        }
+        const runtime = this.getImageInstanceRuntimeBinding();
+        if (!isImageInstanceRuntimeBinding(runtime)) {
+            this.failViewPrompt(
+                view,
+                'AI Select requires a ready locked SAM 3 Image runtime before Prompt synthesis.'
+            );
+            return;
+        }
+        view.promptStatus = 'synthesizing';
+        view.promptDiagnostics = undefined;
+        view.promptErrorMessage = undefined;
+        this.publish();
+        const request: GeneratedViewPromptSynthesisRequest = Object.freeze({
+            requestBinding,
+            target: Object.freeze({
+                splatId: requestBinding.dependencyToken.splatId
+            }),
+            viewId: view.viewId,
+            viewCameraBinding: copyCameraBinding(view.cameraBinding),
+            viewCameraBindingDigest: cameraBindingDigest(view.cameraBinding),
+            rgb: copyRgb(rgb),
+            targetGeometryHint: copyHint(hint),
+            localKeyViewPlan: copyPlan(plan),
+            adapterCapabilityDigest: runtime.adapterCapabilityDigest,
+            modelManifestDigest: runtime.modelManifestDigest,
+            runtimeDigest: runtime.runtimeDigest,
+            companionInstanceId: runtime.companionInstanceId,
+            promptSynthesisAttemptId: this.mintPromptSynthesisAttemptId(),
+            promptSynthesisPolicyVersion:
+                aiSelectImageInstancePromptSynthesisPolicyVersion
+        });
+        let response;
+        try {
+            response =
+                await this.promptSynthesizer.synthesizeGeneratedViewPrompt(
+                    request
+                );
+        } catch (error) {
+            if (!this.isRunCurrent(run) || !this.views.includes(view)) {
+                return;
+            }
+            this.failViewPrompt(
+                view,
+                errorMessage(
+                    error,
+                    'AI Select Generated View Prompt synthesis failed.'
+                )
+            );
+            return;
+        }
+        if (!this.isRunCurrent(run) || !this.views.includes(view)) {
+            return;
+        }
+        if (
+            !isGeneratedViewPromptSynthesisResponse(response) ||
+            !generatedViewPromptSynthesisResponseMatchesRequest(
+                response,
+                request
+            )
+        ) {
+            this.failViewPrompt(
+                view,
+                'The Selection Service Companion returned an invalid or stale Generated View Prompt binding.'
+            );
+            return;
+        }
+        if (response.status === 'limited') {
+            view.prompt = undefined;
+            view.promptModelManifestDigest = undefined;
+            view.promptRuntimeDigest = undefined;
+            view.promptCompanionInstanceId = undefined;
+            view.localKeyViewPlanDigest = response.localKeyViewPlanDigest;
+            view.nextPromptPlanDigest = response.localKeyViewPlanDigest;
+            view.promptStatus = 'limited';
+            view.promptDiagnostics = Object.freeze([...response.diagnostics]);
+            view.promptErrorMessage = undefined;
+            view.maskStatus = 'unavailable';
+            view.maskErrorMessage = response.diagnostics.join('; ');
+            view.participation = 'excluded';
+            this.publish();
+            return;
+        }
+        const prompt = copyPrompt(response.prompt);
+        view.prompt = prompt;
+        view.localKeyViewPlanDigest = prompt.localKeyViewPlanDigest;
+        view.nextPromptPlanDigest = prompt.localKeyViewPlanDigest;
+        view.promptModelManifestDigest = response.modelManifestDigest;
+        view.promptRuntimeDigest = response.runtimeDigest;
+        view.promptCompanionInstanceId = response.companionInstanceId;
+        view.promptStatus = 'ready';
+        view.promptDiagnostics = Object.freeze([...response.diagnostics]);
+        view.promptErrorMessage = undefined;
+        this.publish();
+        await this.produceViewMask(run, view, rgb, prompt);
     }
 
     private async produceViewMask(
         run: number,
         view: GeneratedViewRecord,
         rgb: AnchorRgbArtifact,
-        snapshot: PackedSceneSnapshot
+        prompt: ImageInstancePromptArtifact
     ): Promise<void> {
-        const confirmed = this.confirmed;
         const requestBinding = this.requestBinding;
         if (
             !this.isRunCurrent(run) ||
-            confirmed === null ||
             requestBinding === null ||
             !this.views.includes(view)
         ) {
@@ -1157,41 +1453,50 @@ export class AISelectGeneratedViewController {
         if (currentStable?.status === 'user-confirmed') {
             return;
         }
-        view.maskStatus = 'generating';
-        view.maskErrorMessage = undefined;
-        this.publish();
-        const modelManifestDigest = this.getModelManifestDigest();
-        if (modelManifestDigest === null || modelManifestDigest.length === 0) {
-            this.failViewMask(
+        const runtime = this.getImageInstanceRuntimeBinding();
+        if (
+            !isImageInstanceRuntimeBinding(runtime) ||
+            prompt.adapterCapabilityDigest !==
+                runtime.adapterCapabilityDigest ||
+            view.promptModelManifestDigest !== runtime.modelManifestDigest ||
+            view.promptRuntimeDigest !== runtime.runtimeDigest ||
+            view.promptCompanionInstanceId !== runtime.companionInstanceId
+        ) {
+            this.failViewPrompt(
                 view,
-                'AI Select requires a configured Model Manifest before automatic Mask production.'
+                'The locked SAM 3 Image runtime changed after Prompt synthesis; regenerate the Prompt before automatic Mask inference.'
             );
             return;
         }
-        const request: GeneratedViewMaskRequest = Object.freeze({
-            requestBinding,
-            target: Object.freeze({
-                splatId: requestBinding.dependencyToken.splatId
+        view.maskStatus = 'generating';
+        view.maskErrorMessage = undefined;
+        this.publish();
+        const request: ImageInstanceMaskRequest = Object.freeze({
+            schemaVersion: 1,
+            identity: Object.freeze({
+                targetContextId: requestBinding.targetContextId,
+                contextRevision: requestBinding.contextRevision,
+                viewId: view.viewId,
+                rgbDigest: rgb.digest,
+                promptArtifactDigest: prompt.artifactDigest,
+                adapterId: runtime.adapterId,
+                modelManifestDigest: runtime.modelManifestDigest,
+                runtimeDigest: runtime.runtimeDigest,
+                companionInstanceId: runtime.companionInstanceId,
+                inferenceAttemptId: this.mintMaskAttemptId()
             }),
-            snapshot,
-            sceneId: confirmed.sceneId,
-            sceneVersion: confirmed.sceneVersion,
-            viewId: view.viewId,
-            viewCameraBinding: copyCameraBinding(view.cameraBinding),
-            maskAttemptId: this.mintMaskAttemptId(),
-            rgb: copyRgb(rgb),
-            anchor: Object.freeze({
-                cameraBinding: copyCameraBinding(confirmed.cameraBinding),
-                rgbDigest: confirmed.rgbDigest,
-                stableMask: confirmed.stableMask.artifact
+            rgb: Object.freeze({
+                rgbDigest: rgb.digest,
+                width: rgb.width,
+                height: rgb.height,
+                artifact: copyRgb(rgb)
             }),
-            modelManifestDigest
+            prompt: copyPrompt(prompt)
         });
 
-        let response: GeneratedViewMaskResponse;
+        let result;
         try {
-            response =
-                await this.maskProvider.produceGeneratedViewMask(request);
+            result = await inferImageInstanceMask(this.maskProvider, request);
         } catch (error) {
             if (!this.isRunCurrent(run) || !this.views.includes(view)) {
                 return;
@@ -1208,25 +1513,122 @@ export class AISelectGeneratedViewController {
         if (!this.isRunCurrent(run) || !this.views.includes(view)) {
             return;
         }
-        if (
-            !isGeneratedViewMaskResponse(response) ||
-            !generatedViewMaskResponseMatchesRequest(response, request)
-        ) {
+        if (result.previousLogitsRefs !== undefined) {
             this.failViewMask(
                 view,
-                'The Selection Service Companion returned an invalid or stale Generated View Mask binding.'
+                'Generated View automatic acquisition must not return previous-logits refinement state.'
             );
             return;
         }
+        if (result.masks.length === 0) {
+            view.maskStatus = 'unavailable';
+            view.maskErrorMessage =
+                'The SAM 3 Image model returned no usable instance Mask for this View.';
+            view.participation = 'excluded';
+            this.publish();
+            return;
+        }
+        const chosenMask = result.masks[0];
+        const reviewRequest: ImageInstanceMaskReviewRequest = Object.freeze({
+            requestBinding,
+            target: Object.freeze({
+                splatId: requestBinding.dependencyToken.splatId
+            }),
+            viewId: view.viewId,
+            rgb: copyRgb(rgb),
+            prompt: copyPrompt(prompt),
+            inferenceResultDigest: result.resultDigest,
+            chosenMask,
+            reviewAttemptId: this.mintReviewAttemptId(),
+            reviewPolicyVersion: aiSelectViewAssessmentPolicyVersion
+        });
+        let reviewResponse: ImageInstanceMaskReviewResponse;
         try {
-            // Atomic Stable Mask publication: Evidence derives missing/dirty
-            // by identity; no formal Lift is triggered here.
-            const defaults = automaticAssessmentDefaults(response.assessment);
+            reviewResponse =
+                await this.reviewProvider.reviewImageInstanceMask(
+                    reviewRequest
+                );
+        } catch (error) {
+            if (!this.isRunCurrent(run) || !this.views.includes(view)) {
+                return;
+            }
+            this.failViewMask(
+                view,
+                errorMessage(
+                    error,
+                    'AI Select Generated View Mask Review failed.'
+                )
+            );
+            return;
+        }
+        if (!this.isRunCurrent(run) || !this.views.includes(view)) {
+            return;
+        }
+        if (
+            !isImageInstanceMaskReviewResponse(reviewResponse) ||
+            !imageInstanceMaskReviewResponseMatchesRequest(
+                reviewResponse,
+                reviewRequest
+            )
+        ) {
+            this.failViewMask(
+                view,
+                'The Selection Service Companion returned an invalid or stale Generated View Mask Review binding.'
+            );
+            return;
+        }
+        if (reviewResponse.assessment.status === 'failed') {
+            view.assessment = copyAssessment(reviewResponse.assessment);
+            view.maskStatus = 'failed';
+            view.maskErrorMessage =
+                'Mask Review rejected the automatic Mask; no Stable Mask was published.';
+            view.participation = 'excluded';
+            this.publish();
+            return;
+        }
+        try {
+            const current = this.maskRegistry.viewState(
+                view.viewId,
+                rgb.digest
+            ).stableMask;
+            if (current?.status === 'user-confirmed') {
+                return;
+            }
+            const publication = createImageInstanceMaskPublicationCommand({
+                schemaVersion: 1,
+                targetContextId: requestBinding.targetContextId,
+                contextRevision: requestBinding.contextRevision,
+                viewId: view.viewId,
+                rgbDigest: rgb.digest,
+                promptArtifactDigest: prompt.artifactDigest,
+                inferenceResultDigest: result.resultDigest,
+                chosenMaskDigest: chosenMask.digest,
+                review: reviewResponse.assessment,
+                currentStableAuthority: 'automatic',
+                ...(current === null
+                    ? {}
+                    : { currentStableMaskId: current.maskId }),
+                publicationPolicyDigest: generatedViewPublicationPolicyDigest,
+                publicationAttemptId: this.mintPublicationAttemptId()
+            });
+            if (
+                !imageInstanceMaskPublicationCommandMatchesArtifacts(
+                    publication,
+                    { prompt, result }
+                )
+            ) {
+                throw new Error(
+                    'AI Select rejected an incoherent Image Instance Mask publication command.'
+                );
+            }
+            const defaults = automaticAssessmentDefaults(
+                reviewResponse.assessment
+            );
             this.maskRegistry.publishAutoStable({
                 viewId: view.viewId,
                 rgbDigest: rgb.digest,
-                artifact: response.mask,
-                source: 'propagated',
+                artifact: chosenMask,
+                source: 'single-frame-sam',
                 status: defaults.stableMaskStatus
             });
         } catch (error) {
@@ -1239,9 +1641,9 @@ export class AISelectGeneratedViewController {
             );
             return;
         }
-        view.assessment = copyAssessment(response.assessment);
+        view.assessment = copyAssessment(reviewResponse.assessment);
         view.participation = defaultViewParticipation({
-            reviewStatus: response.assessment.status,
+            reviewStatus: reviewResponse.assessment.status,
             authority: 'automatic'
         });
         view.maskStatus = 'ready';
@@ -1257,9 +1659,28 @@ export class AISelectGeneratedViewController {
     private failViewRender(view: GeneratedViewRecord, message: string): void {
         view.renderStatus = 'failed';
         view.renderErrorMessage = message;
+        view.promptStatus = 'none';
+        view.promptDiagnostics = undefined;
+        view.promptErrorMessage = undefined;
+        view.prompt = undefined;
+        view.promptModelManifestDigest = undefined;
+        view.promptRuntimeDigest = undefined;
+        view.promptCompanionInstanceId = undefined;
         view.maskStatus = 'none';
         view.assessment = undefined;
         view.participation = 'excluded';
+        this.publish();
+    }
+
+    /** A prompt-synthesis failure is distinct from Mask inference failure. */
+    private failViewPrompt(view: GeneratedViewRecord, message: string): void {
+        view.prompt = undefined;
+        view.promptModelManifestDigest = undefined;
+        view.promptRuntimeDigest = undefined;
+        view.promptCompanionInstanceId = undefined;
+        view.promptStatus = 'failed';
+        view.promptDiagnostics = undefined;
+        view.promptErrorMessage = message;
         this.publish();
     }
 
@@ -1322,7 +1743,7 @@ export class AISelectGeneratedViewController {
                 ? null
                 : this.maskRegistry.viewState(view.viewId, view.rgb.digest)
                       .stableMask;
-        const assessment =
+        const stableAssessment =
             view.rgb !== undefined &&
             stableMask !== null &&
             stableMask.status !== 'user-confirmed' &&
@@ -1331,6 +1752,16 @@ export class AISelectGeneratedViewController {
                 stableMask.artifact.digest
                 ? view.assessment
                 : undefined;
+        // A failed Review creates no Stable Mask, but its evidence-backed
+        // diagnostic remains inspectable. It never replaces the assessment
+        // attached to an existing automatic Stable revision for quality.
+        const assessment =
+            stableAssessment ??
+            (view.maskStatus === 'failed' &&
+            view.rgb !== undefined &&
+            view.assessment?.inputIdentity.rgbDigest === view.rgb.digest
+                ? view.assessment
+                : undefined);
         // Quality derives from the current Stable Mask authority, not from
         // the latest attempt: a failed refresh over an existing Stable Mask
         // preserves its quality and Participation authority.
@@ -1341,9 +1772,9 @@ export class AISelectGeneratedViewController {
                     : 'none'
                 : stableMask.status === 'user-confirmed'
                   ? 'user-confirmed'
-                  : assessment === undefined
+                  : stableAssessment === undefined
                     ? 'auto-review'
-                    : automaticAssessmentDefaults(assessment).maskQuality;
+                    : automaticAssessmentDefaults(stableAssessment).maskQuality;
         const participation: AIViewParticipation =
             view.participation === 'included' &&
             (maskQuality === 'auto-good' || maskQuality === 'user-confirmed') &&
@@ -1365,6 +1796,17 @@ export class AISelectGeneratedViewController {
                 ? {}
                 : { renderErrorMessage: view.renderErrorMessage }),
             participation,
+            promptStatus: view.promptStatus,
+            ...(view.promptDiagnostics === undefined
+                ? {}
+                : {
+                      promptDiagnostics: Object.freeze([
+                          ...view.promptDiagnostics
+                      ])
+                  }),
+            ...(view.promptErrorMessage === undefined
+                ? {}
+                : { promptErrorMessage: view.promptErrorMessage }),
             maskStatus: view.maskStatus,
             ...(view.maskErrorMessage === undefined
                 ? {}
@@ -1445,6 +1887,16 @@ export class AISelectGeneratedViewController {
         return `generated-view-render-attempt-${this.nextRenderAttemptOrdinal}`;
     }
 
+    private mintPromptSynthesisAttemptId(): string {
+        if (this.nextPromptSynthesisAttemptOrdinal >= Number.MAX_SAFE_INTEGER) {
+            throw new Error(
+                'AI Select Prompt synthesis attempt identity cannot advance safely.'
+            );
+        }
+        this.nextPromptSynthesisAttemptOrdinal += 1;
+        return `generated-view-prompt-synthesis-attempt-${this.nextPromptSynthesisAttemptOrdinal}`;
+    }
+
     private mintMaskAttemptId(): string {
         if (this.nextMaskAttemptOrdinal >= Number.MAX_SAFE_INTEGER) {
             throw new Error(
@@ -1452,7 +1904,27 @@ export class AISelectGeneratedViewController {
             );
         }
         this.nextMaskAttemptOrdinal += 1;
-        return `generated-view-mask-attempt-${this.nextMaskAttemptOrdinal}`;
+        return `generated-view-inference-attempt-${this.nextMaskAttemptOrdinal}`;
+    }
+
+    private mintReviewAttemptId(): string {
+        if (this.nextReviewAttemptOrdinal >= Number.MAX_SAFE_INTEGER) {
+            throw new Error(
+                'AI Select Mask Review attempt identity cannot advance safely.'
+            );
+        }
+        this.nextReviewAttemptOrdinal += 1;
+        return `generated-view-mask-review-attempt-${this.nextReviewAttemptOrdinal}`;
+    }
+
+    private mintPublicationAttemptId(): string {
+        if (this.nextPublicationAttemptOrdinal >= Number.MAX_SAFE_INTEGER) {
+            throw new Error(
+                'AI Select Mask publication attempt identity cannot advance safely.'
+            );
+        }
+        this.nextPublicationAttemptOrdinal += 1;
+        return `generated-view-mask-publication-attempt-${this.nextPublicationAttemptOrdinal}`;
     }
 
     private publish(): void {

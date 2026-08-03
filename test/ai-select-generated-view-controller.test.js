@@ -11,8 +11,13 @@ const {
     planRegenerateMerge
 } = require('../.test-dist/src/ai-select/generated-view-controller.js');
 const {
-    aiSelectGeneratedViewMaskPolicyVersion
+    aiSelectImageInstancePromptSynthesisPolicyDigest,
+    aiSelectImageInstancePromptSynthesisPolicyVersion
 } = require('../.test-dist/src/ai-select/generated-view-service.js');
+const {
+    createImageInstanceMaskResult,
+    createImageInstancePromptArtifact
+} = require('../.test-dist/src/ai-select/image-instance-mask.js');
 const {
     aiSelectLocalKeyViewPlannerVersion
 } = require('../.test-dist/src/ai-select/local-key-view-plan.js');
@@ -65,8 +70,6 @@ const editorCamera = () => ({
 
 const cameraBinding = () => captureEditorCameraBinding(editorCamera());
 
-const rgbDigest = (letter) => `sha256:${letter.repeat(64)}`;
-
 const pngCrc32 = (bytes) => {
     let crc = 0xffffffff;
     for (const byte of bytes) {
@@ -88,19 +91,40 @@ const pngChunk = (type, data) => {
     return Buffer.concat([length, payload, checksum]);
 };
 
-const pngBase64 = (width, height) => {
+const pngBase64 = (width, height, seed = 0) => {
     const header = Buffer.alloc(13);
     header.writeUInt32BE(width, 0);
     header.writeUInt32BE(height, 4);
     header[8] = 8;
     header[9] = 2;
     const scanlines = Buffer.alloc((width * 3 + 1) * height);
+    scanlines[1] = typeof seed === 'string' ? seed.charCodeAt(0) : seed;
     return Buffer.concat([
         Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
         pngChunk('IHDR', header),
         pngChunk('IDAT', deflateSync(scanlines)),
         pngChunk('IEND', Buffer.alloc(0))
     ]).toString('base64');
+};
+
+const pngDigest = (width, height, seed) =>
+    sha256Digest(
+        new Uint8Array(Buffer.from(pngBase64(width, height, seed), 'base64'))
+    );
+
+const rgbDigest = (letter) => pngDigest(64, 48, letter);
+
+const pngBase64ForDigest = (width, height, digest) => {
+    for (let seed = 0; seed <= 255; seed += 1) {
+        const encoded = pngBase64(width, height, seed);
+        if (
+            sha256Digest(new Uint8Array(Buffer.from(encoded, 'base64'))) ===
+            digest
+        ) {
+            return encoded;
+        }
+    }
+    throw new Error('Test RGB digest was not created from the fixture PNG.');
 };
 
 const bitsetArtifact = (width, height, foreground) => {
@@ -159,7 +183,8 @@ const anchorRenderResponseFor = (request) => ({
     rgb: {
         pngBase64: pngBase64(
             request.cameraBinding.projection.width,
-            request.cameraBinding.projection.height
+            request.cameraBinding.projection.height,
+            'a'
         ),
         digest: rgbDigest('a'),
         width: request.cameraBinding.projection.width,
@@ -254,15 +279,42 @@ const createHarness = (options = {}) => {
             return next.promise;
         }
     };
+    const promptSynthesizer = {
+        calls: [],
+        responseFactory: undefined,
+        synthesizeGeneratedViewPrompt(request) {
+            this.calls.push(request);
+            return Promise.resolve(
+                this.responseFactory?.(request) ?? promptResponseFor(request)
+            );
+        }
+    };
     const maskProvider = {
         calls: [],
         deferreds: [],
-        produceGeneratedViewMask(request) {
+        infer(request) {
             this.calls.push(request);
             const next = deferred();
             this.deferreds.push(next);
             return next.promise;
         }
+    };
+    const reviewProvider = {
+        calls: [],
+        assessmentOverrides: undefined,
+        reviewImageInstanceMask(request) {
+            this.calls.push(request);
+            return Promise.resolve(
+                reviewResponseFor(request, this.assessmentOverrides)
+            );
+        }
+    };
+    const imageInstanceRuntimeBinding = {
+        adapterId: 'sam3-image',
+        modelManifestDigest: 'manifest-digest-1',
+        runtimeDigest: rgbDigest('7'),
+        companionInstanceId: 'companion-1',
+        adapterCapabilityDigest: rgbDigest('6')
     };
     const controller = new AISelectGeneratedViewController({
         anchor: anchorController,
@@ -272,8 +324,10 @@ const createHarness = (options = {}) => {
         geometryHints,
         planner,
         renderer: viewRenderer,
+        promptSynthesizer,
         maskProvider,
-        getModelManifestDigest: () => 'manifest-digest-1',
+        reviewProvider,
+        getImageInstanceRuntimeBinding: () => imageInstanceRuntimeBinding,
         supportsGeneratedViews: options.supportsGeneratedViews ?? (() => true)
     });
     return {
@@ -284,7 +338,10 @@ const createHarness = (options = {}) => {
         geometryHints,
         planner,
         viewRenderer,
+        promptSynthesizer,
         maskProvider,
+        reviewProvider,
+        imageInstanceRuntimeBinding,
         controller
     };
 };
@@ -361,7 +418,9 @@ const planResponseFor = (request, views) => ({
         localViewPolicyDigest: rgbDigest('9'),
         orderedViews: views ?? defaultViewsForBatch(request.batchOrdinal),
         planAttemptId: request.planAttemptId,
-        artifactDigest: rgbDigest('8')
+        artifactDigest: sha256Digest(
+            new TextEncoder().encode(request.planAttemptId)
+        )
     }
 });
 
@@ -389,9 +448,10 @@ const viewRenderResponseFor = (request, digest = rgbDigest('b')) => ({
     viewId: request.viewId,
     cameraBinding: request.cameraBinding,
     rgb: {
-        pngBase64: pngBase64(
+        pngBase64: pngBase64ForDigest(
             request.cameraBinding.projection.width,
-            request.cameraBinding.projection.height
+            request.cameraBinding.projection.height,
+            digest
         ),
         digest,
         width: request.cameraBinding.projection.width,
@@ -401,58 +461,108 @@ const viewRenderResponseFor = (request, digest = rgbDigest('b')) => ({
     rendererId: 'gsplat'
 });
 
-const maskResponseFor = (request, assessmentOverrides = {}) => {
+const promptResponseFor = (request, overrides = {}) => {
+    const prompt = createImageInstancePromptArtifact({
+        schemaVersion: 1,
+        targetContextId: request.requestBinding.targetContextId,
+        contextRevision: request.requestBinding.contextRevision,
+        viewId: request.viewId,
+        rgbDigest: request.rgb.digest,
+        cameraBindingDigest: request.viewCameraBindingDigest,
+        targetGeometryHintDigest: request.targetGeometryHint.artifactDigest,
+        localKeyViewPlanDigest: request.localKeyViewPlan.artifactDigest,
+        adapterCapabilityDigest: request.adapterCapabilityDigest,
+        promptSynthesisPolicyDigest:
+            aiSelectImageInstancePromptSynthesisPolicyDigest,
+        positivePoints: [{ xPx: 4, yPx: 4 }],
+        negativePoints: [],
+        positiveBox: { x0Px: 3, y0Px: 3, x1Px: 8, y1Px: 8 },
+        multimaskOutput: false
+    });
+    return {
+        requestBinding: request.requestBinding,
+        targetSplatId: request.target.splatId,
+        viewId: request.viewId,
+        viewCameraBindingDigest: request.viewCameraBindingDigest,
+        rgbDigest: request.rgb.digest,
+        targetGeometryHintDigest: request.targetGeometryHint.artifactDigest,
+        localKeyViewPlanDigest: request.localKeyViewPlan.artifactDigest,
+        adapterCapabilityDigest: request.adapterCapabilityDigest,
+        modelManifestDigest: request.modelManifestDigest,
+        runtimeDigest: request.runtimeDigest,
+        companionInstanceId: request.companionInstanceId,
+        promptSynthesisAttemptId: request.promptSynthesisAttemptId,
+        promptSynthesisPolicyVersion:
+            aiSelectImageInstancePromptSynthesisPolicyVersion,
+        status: 'ready',
+        diagnostics: ['projected-support:1'],
+        prompt,
+        ...overrides
+    };
+};
+
+const limitedPromptResponseFor = (request) => {
+    const { prompt, ...response } = promptResponseFor(request);
+    return {
+        ...response,
+        status: 'limited',
+        diagnostics: ['sparse-projectable-support']
+    };
+};
+
+const maskResponseFor = (request) => {
     const mask = bitsetArtifact(64, 48, [
         [4, 4],
         [5, 4],
         [6, 4]
     ]);
-    return {
-        requestBinding: request.requestBinding,
-        targetSplatId: request.target.splatId,
-        sceneId: request.sceneId,
-        sceneVersion: request.sceneVersion,
-        viewId: request.viewId,
-        maskAttemptId: request.maskAttemptId,
-        rgbDigest: request.rgb.digest,
-        anchorRgbDigest: request.anchor.rgbDigest,
-        mask,
-        maskSource: 'propagated',
-        maskPropagation: {
-            policyVersion: aiSelectGeneratedViewMaskPolicyVersion,
-            projectedSupportCount: 9,
-            promptCount: 3
-        },
-        assessment: {
-            status: 'review',
-            primaryReason: 'severely-fragmented',
-            reasons: ['severely-fragmented'],
-            actionableReasons: ['severely-fragmented'],
-            policyVersion: 'local-view-assessment/v2',
-            inputIdentity: {
-                rgbDigest: request.rgb.digest,
-                stableMaskDigest: mask.digest,
-                assessmentPolicyVersion: 'local-view-assessment/v2'
-            },
-            diagnostics: {
-                framePixels: 3072,
-                foregroundPixels: 40,
-                boundaryPixels: 0,
-                boundaryContactRatio: 0,
-                connectedComponents: 2,
-                largestComponentRatio: 0.5,
-                promptPointCount: 3,
-                promptViolationCount: 0,
-                boxSpillPixels: null,
-                boxSpillRatio: null
-            },
-            ...assessmentOverrides
-        },
-        modelManifestDigest: request.modelManifestDigest
-    };
+    return createImageInstanceMaskResult({
+        schemaVersion: 1,
+        requestIdentity: request.identity,
+        masks: [mask],
+        modelScores: [0.9],
+        diagnostics: { outcome: 'available' }
+    });
 };
 
-/** Resolve the pending render and Mask of one View to full completion. */
+const reviewResponseFor = (request, assessmentOverrides = {}) => ({
+    requestBinding: request.requestBinding,
+    targetSplatId: request.target.splatId,
+    viewId: request.viewId,
+    rgbDigest: request.rgb.digest,
+    promptArtifactDigest: request.prompt.artifactDigest,
+    inferenceResultDigest: request.inferenceResultDigest,
+    chosenMaskDigest: request.chosenMask.digest,
+    reviewAttemptId: request.reviewAttemptId,
+    reviewPolicyVersion: 'local-view-assessment/v2',
+    assessment: {
+        status: 'review',
+        primaryReason: 'severely-fragmented',
+        reasons: ['severely-fragmented'],
+        actionableReasons: ['severely-fragmented'],
+        policyVersion: 'local-view-assessment/v2',
+        inputIdentity: {
+            rgbDigest: request.rgb.digest,
+            stableMaskDigest: request.chosenMask.digest,
+            assessmentPolicyVersion: 'local-view-assessment/v2'
+        },
+        diagnostics: {
+            framePixels: 3072,
+            foregroundPixels: 40,
+            boundaryPixels: 0,
+            boundaryContactRatio: 0,
+            connectedComponents: 2,
+            largestComponentRatio: 0.5,
+            promptPointCount: 3,
+            promptViolationCount: 0,
+            boxSpillPixels: null,
+            boxSpillRatio: null
+        },
+        ...assessmentOverrides
+    }
+});
+
+/** Resolve the pending render and Route B acquisition of one View. */
 const completeView = async (harness, renderIndex, digest) => {
     harness.viewRenderer.deferreds[renderIndex].resolve(
         viewRenderResponseFor(harness.viewRenderer.calls[renderIndex], digest)
@@ -563,7 +673,7 @@ test('Confirm Anchor derives the Target Geometry Hint and plans the first bounde
     assert.deepEqual(state.views[0].planReasons, []);
 });
 
-test('a Generated AIView publishes RGB Ready while its Mask is still Generating', async () => {
+test('a Generated AIView publishes RGB Ready while its Route B Mask is still Generating', async () => {
     const harness = createHarness();
     await startAnchor(harness);
     await confirmAnchor(harness);
@@ -589,11 +699,17 @@ test('a Generated AIView publishes RGB Ready while its Mask is still Generating'
     await flush();
 
     views = harness.controller.state.views;
-    // Progressive publication: RGB Ready + Mask Generating + Evidence Not
-    // Requested is a legal state; the View never waits for its Mask.
+    // Progressive publication: RGB Ready + Prompt Ready + Mask Generating +
+    // Evidence Not Requested is a legal state; the View never waits for its
+    // Mask.
     assert.equal(views[0].renderStatus, 'ready');
     assert.equal(views[0].rgbDigest, rgbDigest('b'));
-    assert.equal(views[0].maskStatus, 'generating');
+    assert.equal(views[0].promptStatus, 'ready');
+    assert.equal(
+        views[0].maskStatus,
+        'generating',
+        views[0].promptErrorMessage ?? views[0].maskErrorMessage
+    );
     assert.equal(views[0].evidenceStatus, 'not-requested');
     assert.equal(views[0].source, 'auto-generated');
     assert.equal(views[0].participation, 'excluded');
@@ -614,6 +730,128 @@ test('a Generated AIView publishes RGB Ready while its Mask is still Generating'
     assert.ok(views[0].stableMaskId);
 });
 
+test('limited Route B Prompt support is recoverable without calling inference, and Prompt regeneration is distinct', async () => {
+    const harness = createHarness();
+    harness.promptSynthesizer.responseFactory = limitedPromptResponseFor;
+    await startAnchor(harness);
+    await confirmAnchor(harness);
+    await driveToActive(harness);
+    harness.viewRenderer.deferreds[0].resolve(
+        viewRenderResponseFor(harness.viewRenderer.calls[0])
+    );
+    await flush();
+
+    let view = harness.controller.state.views[0];
+    assert.equal(view.renderStatus, 'ready');
+    assert.equal(view.promptStatus, 'limited');
+    assert.equal(view.maskStatus, 'unavailable');
+    assert.equal(view.stableMaskId, undefined);
+    assert.equal(view.participation, 'excluded');
+    assert.equal(harness.maskProvider.calls.length, 0);
+    harness.viewRenderer.deferreds[1].reject(new Error('skip second view'));
+    await flush();
+    const firstPromptAttempt =
+        harness.promptSynthesizer.calls[0].promptSynthesisAttemptId;
+
+    harness.promptSynthesizer.responseFactory = undefined;
+    harness.controller.regenerateViewPrompt('key-view-0-0');
+    await flush();
+    await flush();
+    assert.equal(harness.promptSynthesizer.calls.length, 2);
+    assert.notEqual(
+        harness.promptSynthesizer.calls[1].promptSynthesisAttemptId,
+        firstPromptAttempt
+    );
+    assert.equal(harness.maskProvider.calls.length, 1);
+    view = harness.controller.state.views[0];
+    assert.equal(view.promptStatus, 'ready');
+    assert.equal(view.maskStatus, 'generating');
+});
+
+test('semantic unavailable publishes no Mask and Retry mints a fresh inference attempt for the same RGB and Prompt', async () => {
+    const harness = createHarness();
+    await startAnchor(harness);
+    await confirmAnchor(harness);
+    await driveToActive(harness);
+    harness.viewRenderer.deferreds[0].resolve(
+        viewRenderResponseFor(harness.viewRenderer.calls[0])
+    );
+    await flush();
+    const firstRequest = harness.maskProvider.calls[0];
+    harness.maskProvider.deferreds[0].resolve(
+        createImageInstanceMaskResult({
+            schemaVersion: 1,
+            requestIdentity: firstRequest.identity,
+            masks: [],
+            modelScores: [],
+            diagnostics: { outcome: 'unavailable' }
+        })
+    );
+    await flush();
+
+    let view = harness.controller.state.views[0];
+    assert.equal(view.maskStatus, 'unavailable');
+    assert.equal(view.stableMaskId, undefined);
+    assert.equal(view.participation, 'excluded');
+    harness.viewRenderer.deferreds[1].reject(new Error('skip second view'));
+    await flush();
+
+    harness.controller.retryViewMask('key-view-0-0');
+    await flush();
+    await flush();
+    assert.equal(harness.maskProvider.calls.length, 2);
+    const retryRequest = harness.maskProvider.calls[1];
+    assert.notEqual(
+        retryRequest.identity.inferenceAttemptId,
+        firstRequest.identity.inferenceAttemptId
+    );
+    assert.equal(
+        retryRequest.identity.rgbDigest,
+        firstRequest.identity.rgbDigest
+    );
+    assert.equal(
+        retryRequest.identity.promptArtifactDigest,
+        firstRequest.identity.promptArtifactDigest
+    );
+    view = harness.controller.state.views[0];
+    assert.equal(view.maskStatus, 'generating');
+});
+
+test('a runtime manifest change after Prompt synthesis requires Prompt regeneration before inference Retry', async () => {
+    const harness = createHarness();
+    await startAnchor(harness);
+    await confirmAnchor(harness);
+    await driveToActive(harness);
+    harness.viewRenderer.deferreds[0].resolve(
+        viewRenderResponseFor(harness.viewRenderer.calls[0])
+    );
+    await flush();
+    const firstRequest = harness.maskProvider.calls[0];
+    harness.maskProvider.deferreds[0].resolve(
+        createImageInstanceMaskResult({
+            schemaVersion: 1,
+            requestIdentity: firstRequest.identity,
+            masks: [],
+            modelScores: [],
+            diagnostics: { outcome: 'unavailable' }
+        })
+    );
+    await flush();
+    harness.viewRenderer.deferreds[1].reject(new Error('skip second view'));
+    await flush();
+
+    harness.imageInstanceRuntimeBinding.modelManifestDigest =
+        'manifest-digest-2';
+    harness.controller.retryViewMask('key-view-0-0');
+    await flush();
+
+    const view = harness.controller.state.views[0];
+    assert.equal(harness.maskProvider.calls.length, 1);
+    assert.equal(view.promptStatus, 'failed');
+    assert.equal(view.maskStatus, 'unavailable');
+    assert.match(view.promptErrorMessage, /regenerate/);
+});
+
 test('a successful automatic Mask atomically publishes an auto Stable Mask bound to the View RGB', async () => {
     const harness = createHarness();
     await startAnchor(harness);
@@ -623,7 +861,17 @@ test('a successful automatic Mask atomically publishes an auto Stable Mask bound
     const views = harness.controller.state.views;
     assert.equal(views.length, 2);
     assert.ok(views.every((view) => view.renderStatus === 'ready'));
-    assert.ok(views.every((view) => view.maskStatus === 'ready'));
+    assert.ok(
+        views.every((view) => view.maskStatus === 'ready'),
+        JSON.stringify(
+            views.map((view) => ({
+                viewId: view.viewId,
+                promptStatus: view.promptStatus,
+                maskStatus: view.maskStatus,
+                maskErrorMessage: view.maskErrorMessage
+            }))
+        )
+    );
 
     const stable = harness.maskRegistry.viewState(
         'key-view-0-0',
@@ -631,20 +879,22 @@ test('a successful automatic Mask atomically publishes an auto Stable Mask bound
     ).stableMask;
     assert.ok(stable);
     assert.equal(stable.maskId, views[0].stableMaskId);
-    assert.equal(stable.source, 'propagated');
+    assert.equal(stable.source, 'single-frame-sam');
     assert.equal(stable.status, 'auto-review');
     assert.equal(stable.createdFromRgbDigest, rgbDigest('b'));
 
-    // The mask request bound the Generated View RGB, its exact CameraBinding,
-    // and the confirmed Anchor Camera/RGB/Stable-Mask identity.
+    // The Image Instance request carries exact authoritative Generated View
+    // RGB, while Prompt synthesis carries the geometry and local-plan binding.
     const maskRequest = harness.maskProvider.calls[0];
-    assert.equal(maskRequest.viewId, 'key-view-0-0');
-    assert.equal(maskRequest.rgb.digest, rgbDigest('b'));
-    assert.equal(maskRequest.anchor.rgbDigest, rgbDigest('a'));
-    assert.equal(maskRequest.anchor.stableMask.encoding, maskBitsetEncoding);
-    assert.deepEqual(
-        maskRequest.anchor.cameraBinding,
-        harness.anchorController.state.anchor.cameraBinding
+    assert.equal(maskRequest.identity.viewId, 'key-view-0-0');
+    assert.equal(maskRequest.rgb.rgbDigest, rgbDigest('b'));
+    assert.ok(maskRequest.rgb.artifact);
+    assert.equal(maskRequest.prompt.multimaskOutput, false);
+    assert.ok(maskRequest.prompt.positiveBox);
+    assert.equal(harness.promptSynthesizer.calls[0].viewId, 'key-view-0-0');
+    assert.equal(
+        harness.promptSynthesizer.calls[0].targetGeometryHint.artifactDigest,
+        rgbDigest('f')
     );
 
     // Publishing the Stable Mask marks Evidence missing/dirty only; no Lift.
@@ -664,13 +914,14 @@ test('Auto Good defaults Included while View source remains non-authoritative', 
         viewRenderResponseFor(harness.viewRenderer.calls[0])
     );
     await flush();
+    harness.reviewProvider.assessmentOverrides = {
+        status: 'good',
+        primaryReason: undefined,
+        reasons: [],
+        actionableReasons: []
+    };
     harness.maskProvider.deferreds[0].resolve(
-        maskResponseFor(harness.maskProvider.calls[0], {
-            status: 'good',
-            primaryReason: undefined,
-            reasons: [],
-            actionableReasons: []
-        })
+        maskResponseFor(harness.maskProvider.calls[0])
     );
     await flush();
 
@@ -680,7 +931,7 @@ test('Auto Good defaults Included while View source remains non-authoritative', 
     assert.equal(view.participation, 'included');
 });
 
-test('Assessment Failed preserves the Stable Mask but remains Excluded without reasons', async () => {
+test('Assessment Failed publishes no automatic Stable Mask and remains Excluded', async () => {
     const harness = createHarness();
     await startAnchor(harness);
     await confirmAnchor(harness);
@@ -689,20 +940,22 @@ test('Assessment Failed preserves the Stable Mask but remains Excluded without r
         viewRenderResponseFor(harness.viewRenderer.calls[0])
     );
     await flush();
-    const response = maskResponseFor(harness.maskProvider.calls[0], {
+    harness.reviewProvider.assessmentOverrides = {
         status: 'failed',
         primaryReason: undefined,
         reasons: [],
         actionableReasons: [],
         diagnostics: undefined
-    });
-    harness.maskProvider.deferreds[0].resolve(response);
+    };
+    harness.maskProvider.deferreds[0].resolve(
+        maskResponseFor(harness.maskProvider.calls[0])
+    );
     await flush();
 
     const view = harness.controller.state.views[0];
     assert.equal(view.renderStatus, 'ready');
-    assert.equal(view.maskStatus, 'ready');
-    assert.ok(view.stableMaskId);
+    assert.equal(view.maskStatus, 'failed');
+    assert.equal(view.stableMaskId, undefined);
     assert.equal(view.assessment.status, 'failed');
     assert.deepEqual(view.assessment.reasons, []);
     assert.equal(view.maskQuality, 'failed');
@@ -752,13 +1005,14 @@ test('a replacement Stable Mask hides assessment reasons bound to the previous r
         viewRenderResponseFor(harness.viewRenderer.calls[0])
     );
     await flush();
+    harness.reviewProvider.assessmentOverrides = {
+        status: 'good',
+        primaryReason: undefined,
+        reasons: [],
+        actionableReasons: []
+    };
     harness.maskProvider.deferreds[0].resolve(
-        maskResponseFor(harness.maskProvider.calls[0], {
-            status: 'good',
-            primaryReason: undefined,
-            reasons: [],
-            actionableReasons: []
-        })
+        maskResponseFor(harness.maskProvider.calls[0])
     );
     await flush();
     assert.equal(harness.controller.state.views[0].participation, 'included');
@@ -767,7 +1021,7 @@ test('a replacement Stable Mask hides assessment reasons bound to the previous r
         viewId: 'key-view-0-0',
         rgbDigest: rgbDigest('b'),
         artifact: bitsetArtifact(64, 48, [[20, 20]]),
-        source: 'propagated',
+        source: 'single-frame-sam',
         status: 'auto-review'
     });
 
@@ -804,8 +1058,8 @@ test('Mask failure keeps the AIView, RGB, and frustum binding: RGB Ready + Mask 
     await flush();
     assert.equal(harness.maskProvider.calls.length, 2);
     assert.notEqual(
-        harness.maskProvider.calls[1].maskAttemptId,
-        harness.maskProvider.calls[0].maskAttemptId
+        harness.maskProvider.calls[1].identity.inferenceAttemptId,
+        harness.maskProvider.calls[0].identity.inferenceAttemptId
     );
     assert.equal(harness.controller.state.views[0].maskStatus, 'generating');
 });
@@ -1131,7 +1385,17 @@ test('Generate More appends a bounded batch without dirtying completed Views', a
     await completeView(harness, 3, rgbDigest('2'));
     const views = harness.controller.state.views;
     assert.ok(views.every((view) => view.renderStatus === 'ready'));
-    assert.ok(views.every((view) => view.maskStatus === 'ready'));
+    assert.ok(
+        views.every((view) => view.maskStatus === 'ready'),
+        JSON.stringify(
+            views.map((view) => ({
+                viewId: view.viewId,
+                promptStatus: view.promptStatus,
+                maskStatus: view.maskStatus,
+                maskErrorMessage: view.maskErrorMessage
+            }))
+        )
+    );
 });
 
 test('Generate More clears Stop and re-enqueues pending Views', async () => {
@@ -1248,6 +1512,8 @@ test('Regenerate preserves identical View identities and disposes dropped planne
     await confirmAnchor(harness);
     await completeTwoViews(harness);
     const keptMaskId = harness.controller.state.views[0].stableMaskId;
+    const keptPromptPlanDigest =
+        harness.maskProvider.calls[0].prompt.localKeyViewPlanDigest;
     harness.controller.selectView('key-view-0-1');
 
     harness.controller.regenerateViews();
@@ -1297,12 +1563,30 @@ test('Regenerate preserves identical View identities and disposes dropped planne
         state.keyViewPlans[0].planAttemptId,
         'local-key-view-plan-attempt-2'
     );
+    // Completed automatic artifacts retain their exact old Prompt lineage;
+    // the accepted replan is reserved for an explicit Prompt regeneration.
+    const preservedRecord = harness.controller.views[0];
+    assert.equal(preservedRecord.localKeyViewPlanDigest, keptPromptPlanDigest);
+    assert.equal(
+        preservedRecord.nextPromptPlanDigest,
+        state.keyViewPlans[0].artifactDigest
+    );
     assert.equal(harness.viewRenderer.calls.length, 3);
     assert.equal(harness.viewRenderer.calls[2].viewId, 'key-view-0-7');
 
     // The regenerated View renders through the normal pipeline.
     await completeView(harness, 2, rgbDigest('1'));
     assert.equal(harness.controller.state.views[1].renderStatus, 'ready');
+    harness.controller.regenerateViewPrompt('key-view-0-0');
+    await flush();
+    assert.equal(
+        harness.promptSynthesizer.calls.at(-1).localKeyViewPlan.artifactDigest,
+        state.keyViewPlans[0].artifactDigest
+    );
+    harness.maskProvider.deferreds
+        .at(-1)
+        .resolve(maskResponseFor(harness.maskProvider.calls.at(-1)));
+    await flush();
     // The ordinal reset makes the next Generate More plan batch 1.
     harness.controller.generateMoreViews();
     await flush();

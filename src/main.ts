@@ -473,9 +473,33 @@ const main = async () => {
         geometryHints: selectionServiceAdapter,
         planner: selectionServiceAdapter,
         renderer: selectionServiceAdapter,
+        promptSynthesizer: selectionServiceAdapter,
         maskProvider: selectionServiceAdapter,
-        getModelManifestDigest: () =>
-            selectionServiceReadiness.state.configuration.modelManifestDigest,
+        reviewProvider: selectionServiceAdapter,
+        getImageInstanceRuntimeBinding: () => {
+            const readiness = selectionServiceReadiness.state;
+            const capabilities = readiness.capabilities;
+            const provider = capabilities?.imageInstanceProvider;
+            const manifest = capabilities?.activeModelManifest;
+            if (
+                readiness.status !== 'available' ||
+                capabilities === undefined ||
+                provider === undefined ||
+                manifest === undefined ||
+                provider.status !== 'ready' ||
+                provider.adapterCapabilityDigest === undefined ||
+                provider.adapterId !== manifest.adapterId
+            ) {
+                return null;
+            }
+            return {
+                adapterId: provider.adapterId,
+                modelManifestDigest: manifest.digest,
+                runtimeDigest: manifest.runtimeConfigDigest,
+                companionInstanceId: capabilities.companionInstanceId,
+                adapterCapabilityDigest: provider.adapterCapabilityDigest
+            };
+        },
         supportsGeneratedViews: () => {
             const operations =
                 selectionServiceReadiness.state.capabilities
@@ -483,7 +507,10 @@ const main = async () => {
             return (
                 operations !== undefined &&
                 operations.includes('aiSelectTargetGeometryHint') &&
-                operations.includes('aiSelectLocalKeyViewPlanning')
+                operations.includes('aiSelectLocalKeyViewPlanning') &&
+                operations.includes('aiSelectGeneratedViewPromptSynthesis') &&
+                operations.includes('aiSelectImageInstanceMasks') &&
+                operations.includes('aiSelectImageInstanceMaskReview')
             );
         }
     });

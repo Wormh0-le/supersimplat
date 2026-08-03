@@ -67,6 +67,25 @@ from .masking import (
     register_frame_set,
     sam3_image_instance_capabilities,
 )
+from .image_instance_mask_contract import (
+    ImageInstanceMaskContractError,
+    create_image_instance_mask_result,
+    create_image_instance_prompt_artifact,
+    image_instance_mask_result_matches_request,
+    is_image_instance_mask_request,
+    is_image_instance_prompt_artifact,
+    resolve_image_instance_rgb_input,
+)
+from .image_instance_prompt_synthesis import (
+    AI_SELECT_IMAGE_INSTANCE_PROMPT_SYNTHESIS_POLICY_VERSION,
+    LimitedImageInstancePrompt,
+    prompt_synthesis_policy_digest,
+    synthesize_image_instance_prompt,
+)
+from .generated_view_planning import (
+    AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION,
+    synthesize_view_prompts,
+)
 from .proposal_ranking import (
     RANKING_POLICY_VERSION,
     add_ranking_features,
@@ -99,10 +118,6 @@ from .view_assessment import (
     local_view_assessment_payload,
 )
 from .digests import canonical_json_digest as _canonical_json_digest
-from .generated_view_planning import (
-    AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION,
-    synthesize_view_prompts,
-)
 from .target_geometry import (
     AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION,
     AI_SELECT_TARGET_GEOMETRY_POLICY_VERSION,
@@ -124,6 +139,8 @@ AI_SELECT_READINESS_PROTOCOL_VERSION = "2"
 AI_SELECT_MASK_PROPOSAL_POLICY_VERSION = "auto-mask-proposals/bounded-source-order-v2"
 AI_SELECT_RGB_CACHE_LIMIT = 16
 AI_SELECT_LOGITS_STORE_LIMIT = 8
+AI_SELECT_ROUTE_B_PROMPT_CACHE_LIMIT = 64
+AI_SELECT_ROUTE_B_INFERENCE_RESULT_CACHE_LIMIT = 64
 # A planned Key View whose authoritative raster alpha covers less than this
 # fraction of the frame is blank and fails closed (view-renders only).
 _BLANK_RENDER_MIN_ALPHA_COVERAGE = 0.001
@@ -443,6 +460,89 @@ class GeneratedViewMaskAdmission:
 
 
 @dataclass(frozen=True)
+class AISelectGeneratedViewPromptSynthesisRequest:
+    """Validated binding for one Route B geometry-guided prompt attempt."""
+
+    request_binding: dict[str, object]
+    target_splat_id: str
+    view_id: str
+    view_camera_binding: dict[str, object]
+    view_camera_binding_digest: str
+    rgb_png: bytes
+    rgb_digest: str
+    width: int
+    height: int
+    target_geometry_hint: dict[str, object]
+    local_key_view_plan: dict[str, object]
+    adapter_capability_digest: str
+    model_manifest_digest: str
+    runtime_digest: str
+    companion_instance_id: str
+    prompt_synthesis_attempt_id: str
+
+    def response_fields(self) -> dict[str, object]:
+        return {
+            'requestBinding': self.request_binding,
+            'targetSplatId': self.target_splat_id,
+            'viewId': self.view_id,
+            'viewCameraBindingDigest': self.view_camera_binding_digest,
+            'rgbDigest': self.rgb_digest,
+            'targetGeometryHintDigest': self.target_geometry_hint['artifactDigest'],
+            'localKeyViewPlanDigest': self.local_key_view_plan['artifactDigest'],
+            'adapterCapabilityDigest': self.adapter_capability_digest,
+            'modelManifestDigest': self.model_manifest_digest,
+            'runtimeDigest': self.runtime_digest,
+            'companionInstanceId': self.companion_instance_id,
+            'promptSynthesisAttemptId': self.prompt_synthesis_attempt_id,
+            'promptSynthesisPolicyVersion': (
+                AI_SELECT_IMAGE_INSTANCE_PROMPT_SYNTHESIS_POLICY_VERSION
+            ),
+        }
+
+
+@dataclass
+class ImageInstanceMaskAdmission:
+    """One private replayable result for an exact inference attempt identity."""
+
+    completed: Event = field(default_factory=Event)
+    publication: str | None = None
+    failure: tuple[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class RouteBPromptRecord:
+    """One Companion-produced Prompt eligible for Route B inference only."""
+
+    target_context_id: str
+    context_revision: int
+    target_splat_id: str
+    view_id: str
+    rgb_digest: str
+    camera_binding_digest: str
+    target_geometry_hint_digest: str
+    local_key_view_plan_digest: str
+    adapter_capability_digest: str
+    model_manifest_digest: str
+    runtime_digest: str
+    companion_instance_id: str
+    prompt_payload: str
+
+
+@dataclass(frozen=True)
+class RouteBInferenceResultRecord:
+    """Short-lived proof that Review receives an inference-produced Mask."""
+
+    target_context_id: str
+    context_revision: int
+    target_splat_id: str
+    view_id: str
+    rgb_digest: str
+    prompt_artifact_digest: str
+    companion_instance_id: str
+    result_payload: str
+
+
+@dataclass(frozen=True)
 class AISelectMaskPrompt:
     """One validated point prompt on the single authoritative RGB frame."""
 
@@ -730,6 +830,84 @@ def _anchor_number_sequence(
     )
 
 
+def _javascript_json_number(value: float) -> str:
+    """Encode one finite float with the `JSON.stringify` number convention."""
+
+    if value == 0:
+        return '0'
+    rendered = repr(value)
+    if 'e' not in rendered and 'E' not in rendered:
+        return rendered.removesuffix('.0')
+    mantissa, exponent_text = rendered.lower().split('e', maxsplit=1)
+    exponent = int(exponent_text)
+    if -6 <= exponent < 21:
+        sign = ''
+        if mantissa.startswith('-'):
+            sign = '-'
+            mantissa = mantissa[1:]
+        whole, _, fraction = mantissa.partition('.')
+        digits = (whole + fraction).rstrip('0') or '0'
+        decimal_index = len(whole) + exponent
+        if decimal_index <= 0:
+            return f'{sign}0.{"0" * -decimal_index}{digits}'
+        if decimal_index >= len(digits):
+            return f'{sign}{digits}{"0" * (decimal_index - len(digits))}'
+        return f'{sign}{digits[:decimal_index]}.{digits[decimal_index:]}'
+    normalised_mantissa = mantissa.removesuffix('.0')
+    return f'{normalised_mantissa}e{"+" if exponent >= 0 else ""}{exponent}'
+
+
+def _route_b_camera_binding_digest(camera_binding: Mapping[str, object]) -> str:
+    """Reproduce the editor's fixed-field `cameraBindingDigest` wire digest.
+
+    The browser uses `JSON.stringify` with the explicit field order in
+    `camera-binding.ts`, rather than the Companion's sorted artifact encoding.
+    Rebuilding that exact value here makes the CameraBinding digest an actual
+    boundary check instead of an opaque, shape-only echo.
+    """
+
+    projection = camera_binding['projection']
+    assert isinstance(projection, Mapping)
+    camera_to_world = camera_binding['cameraToWorld']
+    assert isinstance(camera_to_world, list)
+    camera_values = ','.join(
+        _javascript_json_number(float(value)) for value in camera_to_world
+    )
+    projection_values = ','.join(
+        (
+            '"model":"pinhole"',
+            f'"fx":{_javascript_json_number(float(projection["fx"]))}',
+            f'"fy":{_javascript_json_number(float(projection["fy"]))}',
+            f'"cx":{_javascript_json_number(float(projection["cx"]))}',
+            f'"cy":{_javascript_json_number(float(projection["cy"]))}',
+            f'"width":{int(projection["width"])}',
+            f'"height":{int(projection["height"])}',
+            f'"near":{_javascript_json_number(float(projection["near"]))}',
+            f'"far":{_javascript_json_number(float(projection["far"]))}',
+        )
+    )
+    encoded = (
+        f'{{"revision":{int(camera_binding["revision"])}'
+        f',"cameraToWorld":[{camera_values}]'
+        f',"projection":{{{projection_values}}}'
+        ',"conventionVersion":"opencv-camera-to-world/v1"}'
+    ).encode('utf-8')
+    return f'sha256:{hashlib.sha256(encoded).hexdigest()}'
+
+
+def _route_b_review_box_xyxy(
+    positive_box: Mapping[str, object], *, width: int, height: int
+) -> tuple[int, int, int, int]:
+    """Convert the Prompt's exclusive XYXY box to Review's final-pixel box."""
+
+    return (
+        int(positive_box['x0Px']),
+        int(positive_box['y0Px']),
+        min(width - 1, int(positive_box['x1Px']) - 1),
+        min(height - 1, int(positive_box['y1Px']) - 1),
+    )
+
+
 def _anchor_digest(value: str, field_name: str) -> str:
     if (
         len(value) != len('sha256:') + 64
@@ -880,6 +1058,26 @@ class CompanionState:
         repr=False,
     )
     _generated_view_mask_admissions: dict[str, GeneratedViewMaskAdmission] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _active_image_instance_mask: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _image_instance_mask_admissions: dict[str, ImageInstanceMaskAdmission] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _route_b_prompt_records: dict[str, RouteBPromptRecord] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _route_b_inference_result_records: dict[str, RouteBInferenceResultRecord] = field(
         default_factory=dict,
         init=False,
         repr=False,
@@ -1232,6 +1430,9 @@ class CompanionState:
                 "autoMaskProposalSetSchemaV3",
                 "aiSelectTargetGeometryHint",
                 "aiSelectLocalKeyViewPlanning",
+                "aiSelectGeneratedViewPromptSynthesis",
+                "aiSelectImageInstanceMasks",
+                "aiSelectImageInstanceMaskReview",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",
             ],
@@ -4454,6 +4655,9 @@ class CompanionState:
         self._target_geometry_hint_admissions.clear()
         self._local_key_view_plan_admissions.clear()
         self._generated_view_mask_admissions.clear()
+        self._image_instance_mask_admissions.clear()
+        self._route_b_prompt_records.clear()
+        self._route_b_inference_result_records.clear()
         # Target disposal invalidates every Companion-held RGB reference and
         # previous-prediction logits reference with the same transaction.
         self._rgb_cache.clear()
@@ -5104,7 +5308,1051 @@ class CompanionState:
                 self._active_local_key_view_plan = None
             admission.completed.set()
 
-    def produce_ai_select_generated_view_mask(
+    @staticmethod
+    def _parse_route_b_request_binding(
+        value: object,
+        *,
+        target_splat_id: str,
+    ) -> dict[str, object]:
+        if not isinstance(value, dict):
+            raise ValueError('Route B requestBinding must be an object')
+        dependency_value = value.get('dependencyToken')
+        if not isinstance(dependency_value, dict):
+            raise ValueError('Route B requestBinding dependencyToken must be an object')
+        dependency_token = {
+            'splatId': _anchor_string(
+                dependency_value.get('splatId'), 'dependency splatId'
+            ),
+            'renderStateToken': _anchor_string(
+                dependency_value.get('renderStateToken'),
+                'dependency renderStateToken',
+            ),
+            'geometryToken': _anchor_string(
+                dependency_value.get('geometryToken'),
+                'dependency geometryToken',
+            ),
+            'gaussianIdentityToken': _anchor_string(
+                dependency_value.get('gaussianIdentityToken'),
+                'dependency gaussianIdentityToken',
+            ),
+            'worldTransformToken': _anchor_string(
+                dependency_value.get('worldTransformToken'),
+                'dependency worldTransformToken',
+            ),
+        }
+        if dependency_token['splatId'] != target_splat_id:
+            raise ValueError(
+                'Route B targetSplatId must match requestBinding dependency splatId'
+            )
+        return {
+            'targetContextId': _anchor_string(
+                value.get('targetContextId'), 'targetContextId'
+            ),
+            'contextRevision': _anchor_nonnegative_integer(
+                value.get('contextRevision'), 'contextRevision'
+            ),
+            'dependencyToken': dependency_token,
+        }
+
+    @staticmethod
+    def _parse_route_b_target_geometry_hint(
+        value: object,
+        *,
+        target_context_id: str,
+    ) -> dict[str, object]:
+        required = {
+            'schemaVersion',
+            'targetContextId',
+            'anchorCameraBindingDigest',
+            'anchorRgbDigest',
+            'anchorStableMaskDigest',
+            'geometryPolicyDigest',
+            'centerWorld',
+            'extentWorld',
+            'visiblePoints',
+            'quality',
+            'reasons',
+            'artifactDigest',
+        }
+        if not isinstance(value, dict) or set(value) != required:
+            raise ValueError(
+                'Route B targetGeometryHint must contain exactly the versioned artifact fields'
+            )
+        if value.get('schemaVersion') != TARGET_GEOMETRY_HINT_SCHEMA_VERSION:
+            raise ValueError('Route B targetGeometryHint schemaVersion is unsupported')
+        if value.get('targetContextId') != target_context_id:
+            raise ValueError(
+                'Route B targetGeometryHint targetContextId must match requestBinding'
+            )
+        for key in (
+            'anchorCameraBindingDigest',
+            'anchorRgbDigest',
+            'anchorStableMaskDigest',
+            'geometryPolicyDigest',
+            'artifactDigest',
+        ):
+            _anchor_sha256_digest(value.get(key), f'targetGeometryHint {key}')
+        _anchor_number_sequence(value.get('centerWorld'), 3, 'centerWorld')
+        _anchor_number_sequence(value.get('extentWorld'), 3, 'extentWorld')
+        visible_points = value.get('visiblePoints')
+        if (
+            not isinstance(visible_points, list)
+            or len(visible_points) < 1
+            or len(visible_points) > 64
+        ):
+            raise ValueError(
+                'Route B targetGeometryHint visiblePoints must contain 1..64 samples'
+            )
+        for index, point in enumerate(visible_points):
+            _anchor_number_sequence(point, 3, f'visiblePoints[{index}]')
+        if value.get('quality') not in ('usable', 'limited'):
+            raise ValueError(
+                'Route B targetGeometryHint must be usable or limited, never unavailable'
+            )
+        if not isinstance(value.get('reasons'), list) or any(
+            not isinstance(reason, str) or not reason for reason in value['reasons']
+        ):
+            raise ValueError('Route B targetGeometryHint reasons are invalid')
+        artifact_digest = _anchor_sha256_digest(
+            value.get('artifactDigest'), 'targetGeometryHint artifactDigest'
+        )
+        if artifact_digest != _canonical_json_digest(
+            {key: item for key, item in value.items() if key != 'artifactDigest'}
+        ):
+            raise ValueError(
+                'Route B targetGeometryHint artifactDigest does not match its payload'
+            )
+        return dict(value)
+
+    def _parse_route_b_local_key_view_plan(
+        self,
+        value: object,
+        *,
+        target_context_id: str,
+        target_geometry_hint_digest: str,
+        view_id: str,
+        view_camera_binding: Mapping[str, object],
+    ) -> dict[str, object]:
+        required = {
+            'schemaVersion',
+            'targetContextId',
+            'anchorStableMaskDigest',
+            'targetGeometryHintDigest',
+            'localViewPolicyDigest',
+            'orderedViews',
+            'planAttemptId',
+            'artifactDigest',
+        }
+        if not isinstance(value, dict) or set(value) != required:
+            raise ValueError(
+                'Route B localKeyViewPlan must contain exactly the versioned artifact fields'
+            )
+        if value.get('schemaVersion') != LOCAL_KEY_VIEW_PLAN_SCHEMA_VERSION:
+            raise ValueError('Route B localKeyViewPlan schemaVersion is unsupported')
+        if value.get('targetContextId') != target_context_id:
+            raise ValueError(
+                'Route B localKeyViewPlan targetContextId must match requestBinding'
+            )
+        if value.get('targetGeometryHintDigest') != target_geometry_hint_digest:
+            raise ValueError(
+                'Route B localKeyViewPlan must bind the supplied Target Geometry Hint'
+            )
+        for key in (
+            'anchorStableMaskDigest',
+            'targetGeometryHintDigest',
+            'localViewPolicyDigest',
+            'artifactDigest',
+        ):
+            _anchor_sha256_digest(value.get(key), f'localKeyViewPlan {key}')
+        _anchor_string(value.get('planAttemptId'), 'localKeyViewPlan planAttemptId')
+        ordered_views = value.get('orderedViews')
+        if (
+            not isinstance(ordered_views, list)
+            or len(ordered_views) < 1
+            or len(ordered_views) > 3
+        ):
+            raise ValueError('Route B localKeyViewPlan must contain 1..3 Views')
+        matching_view = None
+        seen_view_ids: set[str] = set()
+        for index, planned in enumerate(ordered_views):
+            if not isinstance(planned, dict) or set(planned) != {
+                'viewId', 'cameraBinding', 'quality', 'reasons'
+            }:
+                raise ValueError(
+                    'Route B localKeyViewPlan orderedViews entries are invalid'
+                )
+            planned_view_id = _anchor_string(
+                planned.get('viewId'), f'orderedViews[{index}].viewId'
+            )
+            if planned_view_id == 'anchor-view' or planned_view_id in seen_view_ids:
+                raise ValueError('Route B localKeyViewPlan View identities are invalid')
+            seen_view_ids.add(planned_view_id)
+            planned_camera, _, _, _ = self._parse_ai_select_anchor_camera(
+                planned.get('cameraBinding')
+            )
+            if planned.get('quality') not in ('usable', 'limited'):
+                raise ValueError('Route B localKeyViewPlan View quality is invalid')
+            if not isinstance(planned.get('reasons'), list) or any(
+                not isinstance(reason, str) or not reason for reason in planned['reasons']
+            ):
+                raise ValueError('Route B localKeyViewPlan View reasons are invalid')
+            if planned_view_id == view_id:
+                matching_view = planned_camera
+        if matching_view is None or matching_view != dict(view_camera_binding):
+            raise ValueError(
+                'Route B localKeyViewPlan must contain the exact requested View CameraBinding'
+            )
+        artifact_digest = _anchor_sha256_digest(
+            value.get('artifactDigest'), 'localKeyViewPlan artifactDigest'
+        )
+        if artifact_digest != _canonical_json_digest(
+            {key: item for key, item in value.items() if key != 'artifactDigest'}
+        ):
+            raise ValueError(
+                'Route B localKeyViewPlan artifactDigest does not match its payload'
+            )
+        return dict(value)
+
+    def _resolve_route_b_rgb_artifact(
+        self, value: object
+    ) -> tuple[bytes, str, int, int]:
+        if not isinstance(value, dict):
+            raise ValueError('Route B rgb must be an authoritative RGB artifact')
+        try:
+            rgb_digest = _anchor_sha256_digest(value.get('digest'), 'rgb digest')
+            width = _anchor_positive_integer(value.get('width'), 'rgb width')
+            height = _anchor_positive_integer(value.get('height'), 'rgb height')
+            png = resolve_image_instance_rgb_input(
+                {
+                    'rgbDigest': rgb_digest,
+                    'width': width,
+                    'height': height,
+                    'artifact': value,
+                },
+                self._resolve_route_b_companion_rgb_reference,
+            )
+        except ImageInstanceMaskContractError as error:
+            raise ValueError(str(error)) from error
+        return png, rgb_digest, width, height
+
+    def _resolve_route_b_companion_rgb_reference(
+        self, reference: Mapping[str, object]
+    ) -> bytes:
+        if reference.get('companionInstanceId') != self._companion_instance_id:
+            raise MaskSessionError(
+                'rgbUnresolvable',
+                'The Companion RGB reference belongs to a different Companion Instance.',
+            )
+        return self._resolve_rgb(
+            _anchor_sha256_digest(reference.get('rgbDigest'), 'RGB reference digest'),
+            _anchor_positive_integer(reference.get('width'), 'RGB reference width'),
+            _anchor_positive_integer(reference.get('height'), 'RGB reference height'),
+        )
+
+    def _parse_ai_select_generated_view_prompt_synthesis_request(
+        self, request: Mapping[str, object]
+    ) -> AISelectGeneratedViewPromptSynthesisRequest:
+        required = {
+            'requestBinding',
+            'targetSplatId',
+            'viewId',
+            'viewCameraBinding',
+            'viewCameraBindingDigest',
+            'rgb',
+            'targetGeometryHint',
+            'localKeyViewPlan',
+            'adapterCapabilityDigest',
+            'modelManifestDigest',
+            'runtimeDigest',
+            'companionInstanceId',
+            'promptSynthesisAttemptId',
+            'promptSynthesisPolicyVersion',
+        }
+        if set(request) != required:
+            raise ValueError(
+                'Route B Prompt synthesis request must contain exactly the versioned fields'
+            )
+        target_splat_id = _anchor_string(
+            request.get('targetSplatId'), 'targetSplatId'
+        )
+        request_binding = self._parse_route_b_request_binding(
+            request.get('requestBinding'), target_splat_id=target_splat_id
+        )
+        view_id = _anchor_string(request.get('viewId'), 'viewId')
+        if view_id == 'anchor-view':
+            raise ValueError('Route B Prompt synthesis viewId anchor-view is reserved')
+        camera_binding, _, width, height = self._parse_ai_select_anchor_camera(
+            request.get('viewCameraBinding')
+        )
+        view_camera_binding_digest = _anchor_sha256_digest(
+            request.get('viewCameraBindingDigest'), 'viewCameraBindingDigest'
+        )
+        if _route_b_camera_binding_digest(camera_binding) != view_camera_binding_digest:
+            raise ValueError(
+                'Route B Prompt synthesis viewCameraBindingDigest does not match the View CameraBinding'
+            )
+        rgb_png, rgb_digest, rgb_width, rgb_height = (
+            self._resolve_route_b_rgb_artifact(request.get('rgb'))
+        )
+        if rgb_width != width or rgb_height != height:
+            raise ValueError(
+                'Route B Prompt synthesis RGB dimensions must match the View CameraBinding'
+            )
+        hint = self._parse_route_b_target_geometry_hint(
+            request.get('targetGeometryHint'),
+            target_context_id=str(request_binding['targetContextId']),
+        )
+        plan = self._parse_route_b_local_key_view_plan(
+            request.get('localKeyViewPlan'),
+            target_context_id=str(request_binding['targetContextId']),
+            target_geometry_hint_digest=str(hint['artifactDigest']),
+            view_id=view_id,
+            view_camera_binding=camera_binding,
+        )
+        adapter_capability_digest = _anchor_sha256_digest(
+            request.get('adapterCapabilityDigest'), 'adapterCapabilityDigest'
+        )
+        model_manifest_digest = _anchor_string(
+            request.get('modelManifestDigest'), 'modelManifestDigest'
+        )
+        runtime_digest = _anchor_sha256_digest(
+            request.get('runtimeDigest'), 'runtimeDigest'
+        )
+        companion_instance_id = _anchor_string(
+            request.get('companionInstanceId'), 'companionInstanceId'
+        )
+        if companion_instance_id != self._companion_instance_id:
+            raise MaskSessionError(
+                'staleCompanionInstance',
+                'The Route B Prompt synthesis request belongs to a different Companion Instance.',
+            )
+        prompt_synthesis_attempt_id = _anchor_string(
+            request.get('promptSynthesisAttemptId'),
+            'promptSynthesisAttemptId',
+        )
+        if (
+            request.get('promptSynthesisPolicyVersion')
+            != AI_SELECT_IMAGE_INSTANCE_PROMPT_SYNTHESIS_POLICY_VERSION
+        ):
+            raise MaskSessionError(
+                'capabilityMismatch',
+                'The Companion does not support this Route B Prompt synthesis policy.',
+            )
+        return AISelectGeneratedViewPromptSynthesisRequest(
+            request_binding=request_binding,
+            target_splat_id=target_splat_id,
+            view_id=view_id,
+            view_camera_binding=camera_binding,
+            view_camera_binding_digest=view_camera_binding_digest,
+            rgb_png=rgb_png,
+            rgb_digest=rgb_digest,
+            width=width,
+            height=height,
+            target_geometry_hint=hint,
+            local_key_view_plan=plan,
+            adapter_capability_digest=adapter_capability_digest,
+            model_manifest_digest=model_manifest_digest,
+            runtime_digest=runtime_digest,
+            companion_instance_id=companion_instance_id,
+            prompt_synthesis_attempt_id=prompt_synthesis_attempt_id,
+        )
+
+    def _remember_route_b_prompt(
+        self,
+        prompt_request: AISelectGeneratedViewPromptSynthesisRequest,
+        prompt: Mapping[str, object],
+    ) -> None:
+        """Retain source proof for a bounded Route B Prompt lifetime."""
+
+        artifact_digest = _anchor_sha256_digest(
+            prompt.get('artifactDigest'), 'Route B Prompt artifactDigest'
+        )
+        record = RouteBPromptRecord(
+            target_context_id=str(prompt_request.request_binding['targetContextId']),
+            context_revision=int(prompt_request.request_binding['contextRevision']),
+            target_splat_id=prompt_request.target_splat_id,
+            view_id=prompt_request.view_id,
+            rgb_digest=prompt_request.rgb_digest,
+            camera_binding_digest=prompt_request.view_camera_binding_digest,
+            target_geometry_hint_digest=str(
+                prompt_request.target_geometry_hint['artifactDigest']
+            ),
+            local_key_view_plan_digest=str(
+                prompt_request.local_key_view_plan['artifactDigest']
+            ),
+            adapter_capability_digest=prompt_request.adapter_capability_digest,
+            model_manifest_digest=prompt_request.model_manifest_digest,
+            runtime_digest=prompt_request.runtime_digest,
+            companion_instance_id=self._companion_instance_id,
+            prompt_payload=json.dumps(
+                prompt, separators=(',', ':'), sort_keys=True, allow_nan=False
+            ),
+        )
+        with self._session_lock:
+            self._route_b_prompt_records[artifact_digest] = record
+            while len(self._route_b_prompt_records) > AI_SELECT_ROUTE_B_PROMPT_CACHE_LIMIT:
+                oldest_digest = next(iter(self._route_b_prompt_records))
+                self._route_b_prompt_records.pop(oldest_digest)
+
+    def _require_route_b_prompt_record(
+        self,
+        *,
+        prompt: Mapping[str, object],
+        identity: Mapping[str, object],
+    ) -> RouteBPromptRecord:
+        """Reject generic, stale, or cross-runtime Prompt artifacts at infer."""
+
+        required_lineage = (
+            'targetGeometryHintDigest',
+            'localKeyViewPlanDigest',
+            'promptSynthesisPolicyDigest',
+        )
+        if (
+            prompt.get('viewId') == 'anchor-view'
+            or any(not isinstance(prompt.get(field), str) for field in required_lineage)
+            or prompt.get('promptSynthesisPolicyDigest')
+            != prompt_synthesis_policy_digest()
+        ):
+            raise MaskSessionError(
+                'invalidPromptState',
+                'Route B requires a current geometry-guided Prompt lineage.',
+            )
+        prompt_artifact_digest = _anchor_sha256_digest(
+            prompt.get('artifactDigest'), 'Route B Prompt artifactDigest'
+        )
+        prompt_payload = json.dumps(
+            prompt, separators=(',', ':'), sort_keys=True, allow_nan=False
+        )
+        with self._session_lock:
+            record = self._route_b_prompt_records.get(prompt_artifact_digest)
+        if record is None or record.prompt_payload != prompt_payload:
+            raise MaskSessionError(
+                'stalePrompt',
+                'The Route B Prompt was not produced by this current Companion runtime.',
+            )
+        if (
+            record.target_context_id != identity['targetContextId']
+            or record.context_revision != identity['contextRevision']
+            or record.view_id != identity['viewId']
+            or record.rgb_digest != identity['rgbDigest']
+            or record.adapter_capability_digest
+            != prompt['adapterCapabilityDigest']
+            or record.model_manifest_digest != identity['modelManifestDigest']
+            or record.runtime_digest != identity['runtimeDigest']
+            or record.companion_instance_id != identity['companionInstanceId']
+            or record.camera_binding_digest != prompt['cameraBindingDigest']
+            or record.target_geometry_hint_digest
+            != prompt['targetGeometryHintDigest']
+            or record.local_key_view_plan_digest
+            != prompt['localKeyViewPlanDigest']
+        ):
+            raise MaskSessionError(
+                'stalePrompt',
+                'The Route B Prompt does not bind this exact inference request.',
+            )
+        return record
+
+    def _remember_route_b_inference_result(
+        self,
+        *,
+        request: Mapping[str, object],
+        prompt_record: RouteBPromptRecord,
+        response: Mapping[str, object],
+    ) -> None:
+        """Retain a short-lived immutable result proof for the Review route."""
+
+        identity = request['identity']
+        assert isinstance(identity, Mapping)
+        result_digest = _anchor_sha256_digest(
+            response.get('resultDigest'), 'Route B inference resultDigest'
+        )
+        record = RouteBInferenceResultRecord(
+            target_context_id=str(identity['targetContextId']),
+            context_revision=int(identity['contextRevision']),
+            target_splat_id=prompt_record.target_splat_id,
+            view_id=str(identity['viewId']),
+            rgb_digest=str(identity['rgbDigest']),
+            prompt_artifact_digest=str(identity['promptArtifactDigest']),
+            companion_instance_id=str(identity['companionInstanceId']),
+            result_payload=json.dumps(
+                response, separators=(',', ':'), sort_keys=True, allow_nan=False
+            ),
+        )
+        with self._session_lock:
+            self._route_b_inference_result_records[result_digest] = record
+            while (
+                len(self._route_b_inference_result_records)
+                > AI_SELECT_ROUTE_B_INFERENCE_RESULT_CACHE_LIMIT
+            ):
+                oldest_digest = next(iter(self._route_b_inference_result_records))
+                self._route_b_inference_result_records.pop(oldest_digest)
+
+    def _require_route_b_inference_result(
+        self,
+        *,
+        request_binding: Mapping[str, object],
+        target_splat_id: str,
+        view_id: str,
+        rgb_digest: str,
+        prompt: Mapping[str, object],
+        inference_result_digest: str,
+        chosen_mask_digest: str,
+    ) -> None:
+        """Prove Review's exact Mask came from the cited Route B inference."""
+
+        with self._session_lock:
+            record = self._route_b_inference_result_records.get(
+                inference_result_digest
+            )
+        if record is None:
+            raise MaskSessionError(
+                'staleInferenceResult',
+                'The Route B inference result is unavailable for Mask Review.',
+            )
+        if (
+            record.target_context_id != request_binding['targetContextId']
+            or record.context_revision != request_binding['contextRevision']
+            or record.target_splat_id != target_splat_id
+            or record.view_id != view_id
+            or record.rgb_digest != rgb_digest
+            or record.prompt_artifact_digest != prompt['artifactDigest']
+        ):
+            raise MaskSessionError(
+                'staleInferenceResult',
+                'The Route B inference result does not bind this Mask Review request.',
+            )
+        result = json.loads(record.result_payload)
+        if (
+            result.get('resultDigest') != inference_result_digest
+            or not any(
+                isinstance(mask, dict)
+                and mask.get('digest') == chosen_mask_digest
+                for mask in result.get('masks', [])
+            )
+        ):
+            raise MaskSessionError(
+                'staleInferenceResult',
+                'The selected Mask was not returned by the cited Route B inference.',
+            )
+
+    def synthesize_ai_select_generated_view_prompt(
+        self, request: Mapping[str, object]
+    ) -> dict[str, object]:
+        """Project a Route B TargetGeometryHint into one static Image Prompt."""
+
+        prompt_request = self._parse_ai_select_generated_view_prompt_synthesis_request(
+            request
+        )
+        model, adapter = self._require_mask_adapter(
+            prompt_request.model_manifest_digest
+        )
+        if not isinstance(adapter, Sam3ImageInstanceAdapter):
+            raise MaskSessionError(
+                'incompatibleManifest',
+                'Route B Prompt synthesis requires the locked SAM 3 Image instance adapter.',
+            )
+        capabilities = sam3_image_instance_capabilities()
+        if (
+            prompt_request.adapter_capability_digest
+            != capabilities['capabilityDigest']
+            or model.get('adapterId') != SAM3_IMAGE_INSTANCE_ADAPTER_ID
+            or prompt_request.runtime_digest != model.get('runtimeConfigDigest')
+        ):
+            raise MaskSessionError(
+                'capabilityMismatch',
+                'Route B Prompt synthesis adapter capability identity is incompatible.',
+            )
+        visible_points = prompt_request.target_geometry_hint['visiblePoints']
+        assert isinstance(visible_points, list)
+        synthesized = synthesize_image_instance_prompt(
+            visible_points=visible_points,
+            camera_binding=prompt_request.view_camera_binding,
+            width=prompt_request.width,
+            height=prompt_request.height,
+        )
+        if isinstance(synthesized, LimitedImageInstancePrompt):
+            return {
+                **prompt_request.response_fields(),
+                'status': 'limited',
+                'diagnostics': list(synthesized.diagnostics),
+            }
+        prompt = create_image_instance_prompt_artifact(
+            {
+                'schemaVersion': 1,
+                'targetContextId': prompt_request.request_binding['targetContextId'],
+                'contextRevision': prompt_request.request_binding['contextRevision'],
+                'viewId': prompt_request.view_id,
+                'rgbDigest': prompt_request.rgb_digest,
+                'cameraBindingDigest': prompt_request.view_camera_binding_digest,
+                'targetGeometryHintDigest': prompt_request.target_geometry_hint[
+                    'artifactDigest'
+                ],
+                'localKeyViewPlanDigest': prompt_request.local_key_view_plan[
+                    'artifactDigest'
+                ],
+                'adapterCapabilityDigest': prompt_request.adapter_capability_digest,
+                'promptSynthesisPolicyDigest': prompt_synthesis_policy_digest(),
+                'positivePoints': [
+                    {'xPx': x_px, 'yPx': y_px}
+                    for x_px, y_px in synthesized.positive_points
+                ],
+                'negativePoints': [
+                    {'xPx': x_px, 'yPx': y_px}
+                    for x_px, y_px in synthesized.negative_points
+                ],
+                'positiveBox': {
+                    'x0Px': synthesized.positive_box[0],
+                    'y0Px': synthesized.positive_box[1],
+                    'x1Px': synthesized.positive_box[2],
+                    'y1Px': synthesized.positive_box[3],
+                },
+                'multimaskOutput': False,
+            }
+        )
+        self._remember_route_b_prompt(prompt_request, prompt)
+        return {
+            **prompt_request.response_fields(),
+            'status': 'ready',
+            'diagnostics': list(synthesized.diagnostics),
+            'prompt': prompt,
+        }
+
+    @staticmethod
+    def _route_b_prompt_state(prompt: Mapping[str, object]) -> dict[str, object]:
+        points: list[dict[str, object]] = []
+        for index, point in enumerate(prompt['positivePoints']):
+            assert isinstance(point, dict)
+            points.append(
+                {
+                    'promptId': f'route-b-positive-{index + 1}',
+                    'polarity': 'include',
+                    'xPx': point['xPx'],
+                    'yPx': point['yPx'],
+                }
+            )
+        for index, point in enumerate(prompt['negativePoints']):
+            assert isinstance(point, dict)
+            points.append(
+                {
+                    'promptId': f'route-b-negative-{index + 1}',
+                    'polarity': 'exclude',
+                    'xPx': point['xPx'],
+                    'yPx': point['yPx'],
+                }
+            )
+        positive_box = prompt['positiveBox']
+        assert isinstance(positive_box, dict)
+        payload: dict[str, object] = {
+            'schemaVersion': 2,
+            'viewId': prompt['viewId'],
+            'rgbDigest': prompt['rgbDigest'],
+            'revision': 0,
+            'points': points,
+            'boxes': [
+                {
+                    'promptId': 'route-b-positive-box',
+                    'polarity': 'include',
+                    'x0Px': positive_box['x0Px'],
+                    'y0Px': positive_box['y0Px'],
+                    'x1Px': positive_box['x1Px'],
+                    'y1Px': positive_box['y1Px'],
+                }
+            ],
+        }
+        return {**payload, 'digest': _canonical_json_digest(payload)}
+
+    @staticmethod
+    def _route_b_mask_artifact(
+        *,
+        bits: bytes,
+        width: int,
+        height: int,
+    ) -> dict[str, object]:
+        return {
+            'encoding': 'bitset-lsb-v1',
+            'width': width,
+            'height': height,
+            'data': base64.b64encode(bits).decode('ascii'),
+            'digest': f'sha256:{hashlib.sha256(bits).hexdigest()}',
+        }
+
+    def produce_ai_select_image_instance_mask(
+        self, request: Mapping[str, object]
+    ) -> dict[str, object]:
+        """Run one independent Route B SAM 3 Image inference attempt."""
+
+        request_value = dict(request)
+        if not is_image_instance_mask_request(request_value):
+            raise ValueError('Image Instance Mask request is invalid')
+        identity = request_value['identity']
+        prompt = request_value['prompt']
+        assert isinstance(identity, dict)
+        assert isinstance(prompt, dict)
+        if identity.get('companionInstanceId') != self._companion_instance_id:
+            raise MaskSessionError(
+                'staleCompanionInstance',
+                'The Image Instance Mask request belongs to a different Companion Instance.',
+            )
+        prompt_record = self._require_route_b_prompt_record(
+            prompt=prompt,
+            identity=identity,
+        )
+        model, adapter = self._require_mask_adapter(
+            str(identity['modelManifestDigest'])
+        )
+        if not isinstance(adapter, Sam3ImageInstanceAdapter):
+            raise MaskSessionError(
+                'incompatibleManifest',
+                'Route B Image Instance Mask inference requires the locked SAM 3 Image adapter.',
+            )
+        capabilities = sam3_image_instance_capabilities()
+        if (
+            identity.get('adapterId') != model.get('adapterId')
+            or identity.get('runtimeDigest') != model.get('runtimeConfigDigest')
+            or prompt.get('adapterCapabilityDigest')
+            != capabilities['capabilityDigest']
+            or identity.get('modelManifestDigest') != model.get('digest')
+        ):
+            raise MaskSessionError(
+                'capabilityMismatch',
+                'The Image Instance Mask request does not bind the active locked runtime.',
+            )
+        if (
+            prompt.get('multimaskOutput') is not False
+            or 'previousLogitsRefDigest' in prompt
+            or 'positiveBox' not in prompt
+            or not (1 <= len(prompt['positivePoints']) <= 3)
+            or len(prompt['negativePoints']) > 2
+        ):
+            raise MaskSessionError(
+                'invalidPromptState',
+                'Route B requires one positive Instance Box, 1..3 positive points, 0..2 negative points, and multimask_output=false.',
+            )
+        try:
+            rgb_png = resolve_image_instance_rgb_input(
+                request_value['rgb'], self._resolve_route_b_companion_rgb_reference
+            )
+        except ImageInstanceMaskContractError as error:
+            raise MaskSessionError('rgbUnresolvable', str(error)) from error
+        rgb = request_value['rgb']
+        assert isinstance(rgb, dict)
+        width = int(rgb['width'])
+        height = int(rgb['height'])
+        prompt_program = compile_sam3_image_prompt_program(
+            self._route_b_prompt_state(prompt),
+            width=width,
+            height=height,
+            capabilities=capabilities,
+        )
+        key, admission, owns_admission = self._admit_image_instance_mask(
+            request_value
+        )
+        if not owns_admission:
+            return self._replay_image_instance_mask(admission)
+        try:
+            batch = adapter.produce_proposals(
+                model=model,
+                rgb_png=rgb_png,
+                width=width,
+                height=height,
+                program=prompt_program,
+                refinement=None,
+                cancelled=lambda: False,
+                force_single_mask=True,
+            )
+            if not batch.candidates:
+                response = create_image_instance_mask_result(
+                    {
+                        'schemaVersion': 1,
+                        'requestIdentity': identity,
+                        'masks': [],
+                        'modelScores': [],
+                        'diagnostics': {'outcome': 'unavailable'},
+                    }
+                )
+            else:
+                candidate = batch.candidates[0]
+                response = create_image_instance_mask_result(
+                    {
+                        'schemaVersion': 1,
+                        'requestIdentity': identity,
+                        'masks': [
+                            self._route_b_mask_artifact(
+                                bits=candidate.mask_bits,
+                                width=width,
+                                height=height,
+                            )
+                        ],
+                        'modelScores': [
+                            float(candidate.model_score)
+                            if candidate.model_score is not None
+                            else 0.0
+                        ],
+                        'diagnostics': {'outcome': 'available'},
+                    }
+                )
+            if not image_instance_mask_result_matches_request(
+                response, request_value
+            ):
+                raise MaskSessionError(
+                    'modelFailure',
+                    'The SAM 3 Image adapter produced an invalid Route B result binding.',
+                )
+        except MaskSessionError as error:
+            self._complete_image_instance_mask(key, admission, failure=error)
+            raise
+        except ImageInstanceMaskContractError as error:
+            failure = MaskSessionError('modelFailure', str(error))
+            self._complete_image_instance_mask(key, admission, failure=failure)
+            raise failure from error
+        except Exception as error:
+            _logger.exception('SAM 3 Image Route B inference failed')
+            failure = MaskSessionError(
+                'modelFailure',
+                'The locked SAM 3 Image adapter failed during Route B inference.',
+            )
+            self._complete_image_instance_mask(key, admission, failure=failure)
+            raise failure from error
+        self._remember_route_b_inference_result(
+            request=request_value,
+            prompt_record=prompt_record,
+            response=response,
+        )
+        self._complete_image_instance_mask(key, admission, response=response)
+        return response
+
+    @staticmethod
+    def _image_instance_mask_request_key(request: Mapping[str, object]) -> str:
+        return json.dumps(
+            dict(request), separators=(',', ':'), sort_keys=True, allow_nan=False
+        )
+
+    def _admit_image_instance_mask(
+        self, request: Mapping[str, object]
+    ) -> tuple[str, ImageInstanceMaskAdmission, bool]:
+        key = self._image_instance_mask_request_key(request)
+        with self._session_lock:
+            admission = self._image_instance_mask_admissions.get(key)
+            if admission is not None:
+                return key, admission, False
+            if self._operation_slot_in_use_locked():
+                raise MaskSessionError(
+                    'capacityFull',
+                    'The Companion is already serving another AI or Object Selection operation.',
+                )
+            self._image_instance_mask_admissions = {
+                completed_key: completed_admission
+                for completed_key, completed_admission
+                in self._image_instance_mask_admissions.items()
+                if not completed_admission.completed.is_set()
+            }
+            admission = ImageInstanceMaskAdmission()
+            self._image_instance_mask_admissions[key] = admission
+            self._active_image_instance_mask = key
+        return key, admission, True
+
+    @staticmethod
+    def _replay_image_instance_mask(
+        admission: ImageInstanceMaskAdmission,
+    ) -> dict[str, object]:
+        admission.completed.wait()
+        if admission.publication is not None:
+            return json.loads(admission.publication)
+        if admission.failure is not None:
+            raise MaskSessionError(*admission.failure)
+        raise MaskSessionError(
+            'modelFailure',
+            'The Companion lost an Image Instance Mask publication before it completed.',
+        )
+
+    def _complete_image_instance_mask(
+        self,
+        key: str,
+        admission: ImageInstanceMaskAdmission,
+        *,
+        response: dict[str, object] | None = None,
+        failure: MaskSessionError | None = None,
+    ) -> None:
+        if (response is None) == (failure is None):
+            raise ValueError('Image Instance Mask completion requires one outcome')
+        publication = (
+            None
+            if response is None
+            else json.dumps(
+                response, separators=(',', ':'), sort_keys=True, allow_nan=False
+            )
+        )
+        with self._session_lock:
+            current = self._image_instance_mask_admissions.get(key)
+            if current is not admission:
+                return
+            if publication is not None:
+                admission.publication = publication
+            else:
+                assert failure is not None
+                admission.failure = (failure.code, str(failure))
+            if self._active_image_instance_mask == key:
+                self._active_image_instance_mask = None
+            admission.completed.set()
+
+    @staticmethod
+    def _parse_route_b_mask_artifact(
+        value: object,
+        *,
+        width: int,
+        height: int,
+    ) -> bytes:
+        if not isinstance(value, dict) or set(value) != {
+            'encoding', 'width', 'height', 'data', 'digest'
+        }:
+            raise ValueError('Route B chosenMask must be a complete Mask artifact')
+        if (
+            value.get('encoding') != 'bitset-lsb-v1'
+            or value.get('width') != width
+            or value.get('height') != height
+        ):
+            raise ValueError('Route B chosenMask dimensions or encoding are invalid')
+        data = value.get('data')
+        if not isinstance(data, str) or not data:
+            raise ValueError('Route B chosenMask data is invalid')
+        try:
+            bits = base64.b64decode(data, validate=True)
+        except (ValueError, binascii.Error) as error:
+            raise ValueError('Route B chosenMask data is not valid base64') from error
+        if len(bits) != (width * height + 7) // 8:
+            raise ValueError('Route B chosenMask data does not match its dimensions')
+        trailing_bits = width * height % 8
+        if trailing_bits and bits[-1] & ~((1 << trailing_bits) - 1):
+            raise ValueError('Route B chosenMask sets bits outside its dimensions')
+        digest = _anchor_sha256_digest(value.get('digest'), 'chosenMask digest')
+        if digest != f'sha256:{hashlib.sha256(bits).hexdigest()}':
+            raise ValueError('Route B chosenMask digest does not match its bytes')
+        return bits
+
+    def review_ai_select_image_instance_mask(
+        self, request: Mapping[str, object]
+    ) -> dict[str, object]:
+        """Assess exactly one Route B inference output; never publish it."""
+
+        required = {
+            'requestBinding',
+            'targetSplatId',
+            'viewId',
+            'rgb',
+            'prompt',
+            'inferenceResultDigest',
+            'chosenMask',
+            'reviewAttemptId',
+            'reviewPolicyVersion',
+        }
+        if set(request) != required:
+            raise ValueError(
+                'Route B Mask Review request must contain exactly the versioned fields'
+            )
+        target_splat_id = _anchor_string(
+            request.get('targetSplatId'), 'targetSplatId'
+        )
+        request_binding = self._parse_route_b_request_binding(
+            request.get('requestBinding'), target_splat_id=target_splat_id
+        )
+        view_id = _anchor_string(request.get('viewId'), 'viewId')
+        if view_id == 'anchor-view':
+            raise ValueError('Route B Mask Review viewId anchor-view is reserved')
+        _rgb_png, rgb_digest, width, height = self._resolve_route_b_rgb_artifact(
+            request.get('rgb')
+        )
+        prompt = request.get('prompt')
+        if not is_image_instance_prompt_artifact(prompt) or not isinstance(prompt, dict):
+            raise ValueError('Route B Mask Review prompt is invalid')
+        if (
+            prompt.get('targetContextId') != request_binding['targetContextId']
+            or prompt.get('contextRevision') != request_binding['contextRevision']
+            or prompt.get('viewId') != view_id
+            or prompt.get('rgbDigest') != rgb_digest
+            or prompt.get('multimaskOutput') is not False
+            or 'previousLogitsRefDigest' in prompt
+            or 'positiveBox' not in prompt
+            or prompt.get('viewId') == 'anchor-view'
+            or not isinstance(prompt.get('targetGeometryHintDigest'), str)
+            or not isinstance(prompt.get('localKeyViewPlanDigest'), str)
+            or prompt.get('promptSynthesisPolicyDigest')
+            != prompt_synthesis_policy_digest()
+        ):
+            raise ValueError('Route B Mask Review prompt binding is invalid')
+        inference_result_digest = _anchor_sha256_digest(
+            request.get('inferenceResultDigest'), 'inferenceResultDigest'
+        )
+        review_attempt_id = _anchor_string(
+            request.get('reviewAttemptId'), 'reviewAttemptId'
+        )
+        if request.get('reviewPolicyVersion') != AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION:
+            raise MaskSessionError(
+                'capabilityMismatch',
+                'The Companion does not support this Route B Mask Review policy.',
+            )
+        mask = self._parse_route_b_mask_artifact(
+            request.get('chosenMask'), width=width, height=height
+        )
+        chosen_mask = request['chosenMask']
+        assert isinstance(chosen_mask, dict)
+        chosen_mask_digest = _anchor_sha256_digest(
+            chosen_mask.get('digest'), 'chosenMask digest'
+        )
+        self._require_route_b_inference_result(
+            request_binding=request_binding,
+            target_splat_id=target_splat_id,
+            view_id=view_id,
+            rgb_digest=rgb_digest,
+            prompt=prompt,
+            inference_result_digest=inference_result_digest,
+            chosen_mask_digest=chosen_mask_digest,
+        )
+        positive_box = prompt['positiveBox']
+        assert isinstance(positive_box, dict)
+        assessment = assess_local_view(
+            width=width,
+            height=height,
+            mask=mask,
+            prompt=MaskReviewPrompt(
+                positive_points=tuple(
+                    (int(point['xPx']), int(point['yPx']))
+                    for point in prompt['positivePoints']
+                ),
+                negative_points=tuple(
+                    (int(point['xPx']), int(point['yPx']))
+                    for point in prompt['negativePoints']
+                ),
+                # Prompt artifacts use exclusive x1/y1; Mask Review's
+                # geometry helper consumes an inclusive final pixel. Keep the
+                # enclosing box and clamp the exclusive frame edge inward.
+                box_xyxy=_route_b_review_box_xyxy(
+                    positive_box, width=width, height=height
+                ),
+            ),
+        )
+        assessment_payload = local_view_assessment_payload(assessment)
+        assessment_payload['inputIdentity'] = {
+            'rgbDigest': rgb_digest,
+            'stableMaskDigest': chosen_mask_digest,
+            'assessmentPolicyVersion': AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
+        }
+        return {
+            'requestBinding': request_binding,
+            'targetSplatId': target_splat_id,
+            'viewId': view_id,
+            'rgbDigest': rgb_digest,
+            'promptArtifactDigest': prompt['artifactDigest'],
+            'inferenceResultDigest': inference_result_digest,
+            'chosenMaskDigest': chosen_mask_digest,
+            'reviewAttemptId': review_attempt_id,
+            'reviewPolicyVersion': AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
+            'assessment': assessment_payload,
+        }
+
+    # Legacy migration reference only. Route B has no HTTP route, capability,
+    # browser transport, or fallback that can call this Multiplex/propagation
+    # implementation; keep it private until frozen benchmark fixtures retire.
+    def _legacy_produce_ai_select_generated_view_mask(
         self, request: Mapping[str, object]
     ) -> dict[str, object]:
         """Publish one propagated automatic Mask for a Generated View.
@@ -5961,6 +7209,7 @@ class CompanionState:
             or self._active_target_geometry_hint is not None
             or self._active_local_key_view_plan is not None
             or self._active_generated_view_mask is not None
+            or self._active_image_instance_mask is not None
         )
 
     def _capacity(self) -> dict[str, int]:
@@ -6009,6 +7258,9 @@ class CompanionState:
                 "autoMaskProposalSetSchemaV3",
                 "aiSelectTargetGeometryHint",
                 "aiSelectLocalKeyViewPlanning",
+                "aiSelectGeneratedViewPromptSynthesis",
+                "aiSelectImageInstanceMasks",
+                "aiSelectImageInstanceMaskReview",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",
             ],

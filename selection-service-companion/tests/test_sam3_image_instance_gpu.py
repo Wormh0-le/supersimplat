@@ -232,17 +232,17 @@ class Sam3ImageInstanceGpuTests(unittest.TestCase):
             'points': points,
             'boxes': boxes,
         }
-        prompt_state['digest'] = f'sha256:{hashlib.sha256(
+        prompt_state['digest'] = 'sha256:' + hashlib.sha256(
             json.dumps(
                 {
                     key: value
                     for key, value in prompt_state.items()
-                    if key != "digest"
+                    if key != 'digest'
                 },
-                separators=(",", ":"),
+                separators=(',', ':'),
                 sort_keys=True,
             ).encode()
-        ).hexdigest()}'
+        ).hexdigest()
         return compile_sam3_image_prompt_program(
             prompt_state,
             width=width,

@@ -12,7 +12,9 @@ This file adds repository-specific sources of truth, ownership boundaries, invar
 
 SuperSimPlat extends the upstream SuperSplat browser editor with **AI Select** for object-aware Gaussian selection.
 
-The current implementation target is **AI Select Final Spec v1.1**. It retains the v1.0 product/lifecycle model and replaces complete per-pixel Contributor artifacts as the production lifting representation with **Mask-Conditioned Direct Gaussian Evidence**.
+The current implementation target is **AI Select Final Spec v1.3**. It retains the mask-conditioned direct-Evidence product/lifecycle model, uses the official SAM 3 Image instance-interaction path for static Anchor and Key-View segmentation, and keeps target geometry as compact non-ownership Prompt/framing context before Included Stable Masks drive P/N/V Gaussian Evidence and lifting.
+
+Final Spec v1.1, its Amendments, Final Spec v1.2, ADR 0014, and DG-24 through DG-26 are historical where they conflict with Final Spec v1.3 / ADR 0016 / ADR 0017. Do not reintroduce superseded behavior merely because old implementation, fixtures, issues, or tests encode it.
 
 Repository migration baseline:
 
@@ -21,23 +23,21 @@ branch: ai-select-v1
 forked from: 42f6013438f1271fcd35a4bfdc9ba5a3eb719c06
 ```
 
-Do not reintroduce superseded behavior merely because old implementation, fixtures, or tests encode it.
-
 ## Sources of Truth
 
 Before changing non-trivial AI Select behavior, inspect these sources in order:
 
-1. `docs/specs/ai-select-final-spec-v1.1.md`
-2. `docs/specs/ai-select-final-spec-v1.1-amendment-001-renderer-evidence-identity.md`
-3. `docs/adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md`
-4. `docs/adr/0012-adopt-ai-select-final-spec-v1.md` where not superseded by ADR 0013
-5. `CONTEXT.md`
-6. Relevant non-superseded ADRs under `docs/adr/`
+1. `docs/specs/ai-select-final-spec-v1.3.md`
+2. `.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md`
+3. `docs/adr/0016-adopt-sam3-image-instance-workflow-and-minimal-multiview.md`
+4. `docs/adr/0017-separate-geometry-quality-from-route-b-prompt-support.md` when TargetGeometryHint / Prompt Support semantics are involved
+5. `docs/adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md` and `docs/adr/0015-automate-readiness-and-keep-model-resolution-operator-owned.md` where not superseded
+6. `CONTEXT.md`
 7. The associated implementation issue under `.scratch/ai-select-v1/issues/` and its audit/traceability artifacts
 8. The nearest implementation and tests
 9. Dependency/runtime declarations when installation, rendering, inference, CUDA, or calibration is affected
 
-Final Spec v1.1 is authoritative for current product, interaction, lifecycle, lifting semantics, and engineering boundaries.
+Final Spec v1.3 is authoritative for current product, interaction, lifecycle, acquisition, geometry, lifting semantics, and engineering boundaries.
 
 Frozen benchmark fixtures, manifests, and records remain authoritative only for the benchmark data they describe. Their legacy vocabulary does not override the current product model.
 
@@ -102,14 +102,16 @@ The system deliberately separates two runtimes.
 
 - locked authoritative gsplat AI observation rendering;
 - same-decision Mask-Conditioned Evidence production;
-- SAM inference and automatic Mask production/propagation;
-- Generated View planning and rendering;
+- SAM 3 Image inference and automatic static Mask production;
+- TargetGeometryHint derivation and bounded local Generated View planning/rendering;
 - evidence-backed View/Mask assessment;
 - per-view Gaussian Evidence artifacts;
 - multi-view Evidence aggregation and Gaussian Lifting policy;
 - renderer/model/Evidence/runtime readiness;
 - disposable runtime caches and service-side execution state;
 - complete Contributor only as an explicit debug/reference backend.
+
+Legacy Multiplex/video-tracker behavior may remain only behind explicitly historical benchmark/compatibility seams unless a later measured ADR adopts an ordered video workload.
 
 The Companion may cache scene tensors, RGB, Evidence, reference Contributor data, and model state. Runtime cache reuse is not user-visible AI View or target-context persistence.
 
@@ -192,7 +194,7 @@ Treat them as migration/reference code. Reuse validated primitives and trust-bou
 - Anchor, Views, Masks, Participation, Evidence dependencies, Coverage/Readiness, Candidate, and Uncertain are target-local.
 - `Restart Current Target` rotates `targetContextId` and disposes target-local state.
 - Restart preserves Native Selection, Native EditHistory, AI Select activation, tool/policy settings, and reusable runtime caches.
-- Previous target AI contexts are not restored or browsed in v1.1.
+- Previous target AI contexts are not restored or browsed in Final Spec v1.3.
 
 ### Authoritative AI rendering
 
@@ -366,7 +368,7 @@ Treat transport responses as untrusted. Validate structure, finite values, Stabl
 - Lift Readiness is `Not Ready`, `Limited`, or `Ready`, not a raw camera count.
 - Unobserved Gaussians remain Uncertain rather than Rejected.
 
-## Explicitly Deferred from v1.1
+## Explicitly Deferred from Final Spec v1.3
 
 DG-14 remains deferred. Do not expand current scope to include:
 
@@ -605,7 +607,7 @@ Do not claim production validation from an approximate or unverified environment
 Check:
 
 - terminology against `CONTEXT.md`;
-- compatibility with Final Spec v1.1, ADR 0013, and non-superseded ADR 0012 rules;
+- compatibility with Final Spec v1.3, ADR 0016 / ADR 0017 where applicable, and non-superseded ADR 0013 / ADR 0015 rules;
 - issue graph/traceability consistency when scope changed;
 - executable commands, schemas, and examples.
 

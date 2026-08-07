@@ -275,3 +275,116 @@ test('Camera Inspection observer keeps the Anchor view direction so Z-up scenes 
     // The observer still moves behind the Anchor instead of adopting it.
     assert.ok(view.position.y < 3);
 });
+
+test('Camera Inspection observes a Generated View binding without touching the Anchor', async () => {
+    const viewBinding = captureEditorCameraBinding(editorCamera());
+    const savedSceneView = sceneView();
+    const appliedSceneViews = [];
+    let anchorBindingReads = 0;
+    let anchorPoses = 0;
+    let restored = 0;
+    const inspection = new CameraInspectionController({
+        anchor: {
+            getAnchorCameraBinding: () => {
+                anchorBindingReads += 1;
+                return null;
+            },
+            updateAnchorCameraPose: () => {
+                anchorPoses += 1;
+            },
+            renderFinalPreview: async () => undefined,
+            resetAnchor: async () => undefined
+        },
+        editor: {
+            captureSceneView: () => ({
+                sceneView: savedSceneView,
+                restore: () => {
+                    restored += 1;
+                }
+            }),
+            setSceneView: (view) => appliedSceneViews.push(view)
+        }
+    });
+
+    inspection.enter({
+        kind: 'view',
+        viewId: 'view-1',
+        cameraBinding: viewBinding
+    });
+
+    assert.equal(inspection.state.mode, 'active');
+    assert.equal(inspection.state.target.kind, 'view');
+    assert.equal(inspection.state.target.viewId, 'view-1');
+    assert.equal(anchorBindingReads, 0);
+    assert.deepEqual(
+        appliedSceneViews[0],
+        cameraInspectionObserverView(viewBinding)
+    );
+    assert.deepEqual(inspection.state.savedSceneView, savedSceneView);
+
+    // A Generated View camera is planner-owned and read-only.
+    assert.throws(() => inspection.moveAnchorFrustum(cameraToWorld(7, 8, 9)));
+    await assert.rejects(() => inspection.endAnchorManipulation());
+    await assert.rejects(() => inspection.resetAnchor());
+    assert.equal(anchorPoses, 0);
+
+    inspection.returnToSceneView();
+    assert.equal(inspection.state.mode, 'inactive');
+    assert.equal(inspection.state.target, null);
+    assert.equal(restored, 1);
+});
+
+test('switching the inspection target while active keeps the saved Scene View', () => {
+    const anchorBinding = captureEditorCameraBinding(editorCamera());
+    const viewBinding = captureEditorCameraBinding({
+        ...editorCamera(),
+        worldTransform: {
+            data: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 20, 30, 40, 1]
+        }
+    });
+    const savedSceneView = sceneView();
+    const appliedSceneViews = [];
+    let captures = 0;
+    let restored = 0;
+    const inspection = new CameraInspectionController({
+        anchor: {
+            getAnchorCameraBinding: () => anchorBinding,
+            updateAnchorCameraPose: () => undefined,
+            renderFinalPreview: async () => undefined,
+            resetAnchor: async () => undefined
+        },
+        editor: {
+            captureSceneView: () => {
+                captures += 1;
+                return {
+                    sceneView: savedSceneView,
+                    restore: () => {
+                        restored += 1;
+                    }
+                };
+            },
+            setSceneView: (view) => appliedSceneViews.push(view)
+        }
+    });
+
+    inspection.enter();
+    inspection.enter({
+        kind: 'view',
+        viewId: 'view-9',
+        cameraBinding: viewBinding
+    });
+
+    // The Scene View is captured once; switching targets only re-derives the
+    // observer, so returning still restores the original editor camera.
+    assert.equal(captures, 1);
+    assert.equal(appliedSceneViews.length, 2);
+    assert.deepEqual(
+        appliedSceneViews[1],
+        cameraInspectionObserverView(viewBinding)
+    );
+    assert.deepEqual(inspection.state.savedSceneView, savedSceneView);
+    assert.equal(inspection.state.target.kind, 'view');
+
+    inspection.returnToSceneView();
+    assert.equal(restored, 1);
+});

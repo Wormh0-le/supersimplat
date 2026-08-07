@@ -6,7 +6,10 @@ import {
     getAnchorDockPresentation,
     type AnchorDockStatus
 } from '../ai-select/anchor-dock-presentation';
-import type { CameraInspectionController } from '../ai-select/camera-inspection';
+import {
+    isAnchorInspectionTarget,
+    type CameraInspectionController
+} from '../ai-select/camera-inspection';
 
 export interface AISelectToolbarOptions {
     readonly onRestart: () => Promise<void>;
@@ -128,6 +131,10 @@ export class AISelectToolbar extends Container {
             const hasAnchor = anchorState.anchor !== null;
             const contextIsActive = anchorState.context?.lifecycle === 'active';
             const inspecting = inspectionState.mode === 'active';
+            // Move/Rotate/Reset mutate the Anchor, so they exist only while
+            // the Anchor itself is inspected; Generated View inspection is
+            // read-only and keeps just the return action.
+            const inspectingAnchor = isAnchorInspectionTarget(inspectionState);
             const presentation = getAnchorDockPresentation(anchorState);
             this.hidden = !hasContext;
             tool.text = i18n.t(
@@ -150,18 +157,20 @@ export class AISelectToolbar extends Container {
             // A suspended context remains read-only inspectable. Move/Rotate
             // and Reset stay gated below because they mutate the Anchor.
             adjust.enabled = hasAnchor && hasContext && !inspecting;
-            move.hidden = !inspecting;
-            rotate.hidden = !inspecting;
+            move.hidden = !inspectingAnchor;
+            rotate.hidden = !inspectingAnchor;
             returnToSceneView.hidden = !inspecting;
-            resetAnchor.hidden = !inspecting;
+            resetAnchor.hidden = !inspectingAnchor;
             status.hidden = !inspecting;
             // The failed current preview keeps its true-Retry action next to
             // the status so the recovery path is visible from the toolbar.
-            retry.hidden = !inspecting || presentation.status !== 'failed';
-            move.enabled = inspecting && hasAnchor && contextIsActive;
-            rotate.enabled = inspecting && hasAnchor && contextIsActive;
+            retry.hidden =
+                !inspectingAnchor || presentation.status !== 'failed';
+            move.enabled = inspectingAnchor && hasAnchor && contextIsActive;
+            rotate.enabled = inspectingAnchor && hasAnchor && contextIsActive;
             returnToSceneView.enabled = inspecting;
-            resetAnchor.enabled = inspecting && hasAnchor && contextIsActive;
+            resetAnchor.enabled =
+                inspectingAnchor && hasAnchor && contextIsActive;
             retry.enabled = contextIsActive;
             restart.enabled = hasContext;
             if (!hasContext) {

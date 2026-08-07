@@ -26,6 +26,14 @@ import {
     paletteToolForShortcutKey,
     type PaletteTool
 } from '../ai-select/floating-palette';
+import {
+    filterGalleryViews,
+    galleryCardPresentation,
+    galleryViewRole,
+    orderGalleryViews,
+    type GalleryCardPresentation,
+    type GalleryFilter
+} from '../ai-select/gallery-presentation';
 import type {
     AISelectGeneratedViewController,
     AISelectGeneratedViewState,
@@ -41,8 +49,9 @@ import {
     type AISelectMaskController,
     type AISelectMaskState
 } from '../ai-select/mask-controller';
+import type { MaskAnnotationRegistry } from '../ai-select/mask-registry';
 import { promptToolCapabilityReason } from '../ai-select/prompt-state';
-import { reviewReasonActionKeys } from '../ai-select/view-assessment';
+import { createThumbnailCache } from '../ai-select/thumbnail-cache';
 import type {
     SelectionServiceReadinessInterface,
     SelectionServiceReadinessStatus
@@ -56,6 +65,8 @@ export interface AISelectAnchorDockOptions {
     readonly onConfirmAnchor: () => Promise<void>;
     readonly onAdjustAnchor: () => void;
     readonly generatedViews: AISelectGeneratedViewController;
+    readonly maskRegistry: MaskAnnotationRegistry;
+    readonly onInspectCamera: (viewId: string) => void;
     readonly readiness: SelectionServiceReadinessInterface;
 }
 
@@ -64,16 +75,23 @@ interface GeneratedCardElements {
     readonly image: HTMLImageElement;
     readonly title: Label;
     readonly status: Label;
+    readonly detail: Label;
     readonly retryButton: Button;
     readonly retryMaskButton: Button;
     readonly confirmReviewButton: Button;
     readonly participationButton: Button;
+    readonly inspectCameraButton: Button;
     rgbDigest?: string;
 }
 
 const CLICK_TOLERANCE_PX = 4;
 // DG-22 Decision 5 opacity assist proximity; unrelated to the snap threshold.
 const PALETTE_GESTURE_DIM_MARGIN_PX = 24;
+// Gallery cards are 184px wide; double for high-density displays.
+const THUMBNAIL_MAX_WIDTH_PX = 368;
+// Full-resolution RGB stays authoritative in the controller; cards keep only
+// bounded downscaled thumbnails so 10–20+ Views stay resource-bounded.
+const THUMBNAIL_CACHE_CAPACITY = 24;
 type DockAuthoringTool = PaletteTool;
 
 const cursorForTool = (tool: DockAuthoringTool): string => {
@@ -93,11 +111,81 @@ const cursorForTool = (tool: DockAuthoringTool): string => {
     return `url("data:image/svg+xml,${encodeURIComponent(document)}") 16 16, crosshair`;
 };
 
+/**
+ * The shared Mask overlay palette: orange while the displayed Mask is an
+ * unpublished Editing Mask, cyan for a Stable Mask. A null bitset yields a
+ * fully transparent layer (RGB inspectable with no Mask).
+ */
+const maskOverlayPixels = (
+    bits: Uint8Array | null,
+    pixelCount: number,
+    editing: boolean
+): Uint8ClampedArray<ArrayBuffer> => {
+    const pixels = new Uint8ClampedArray(new ArrayBuffer(pixelCount * 4));
+    if (bits === null) {
+        return pixels;
+    }
+    for (let index = 0; index < pixelCount; index += 1) {
+        if ((bits[index >> 3] & (1 << (index % 8))) === 0) {
+            continue;
+        }
+        const offset = index * 4;
+        if (editing) {
+            pixels[offset] = 255;
+            pixels[offset + 1] = 140;
+            pixels[offset + 2] = 0;
+        } else {
+            pixels[offset + 1] = 190;
+            pixels[offset + 2] = 255;
+        }
+        pixels[offset + 3] = 110;
+    }
+    return pixels;
+};
+
+/**
+ * Downscale one authoritative RGB PNG for card display. The full-resolution
+ * artifact stays in controller state; the cache keeps only this bounded copy.
+ */
+const downscaleCardThumbnail = (
+    pngBase64: string,
+    maxWidth: number
+): Promise<string> => {
+    const source = `data:image/png;base64,${pngBase64}`;
+    return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => {
+            if (image.naturalWidth <= maxWidth) {
+                resolve(source);
+                return;
+            }
+            const scale = maxWidth / image.naturalWidth;
+            const canvas = document.createElement('canvas');
+            canvas.width = maxWidth;
+            canvas.height = Math.max(
+                1,
+                Math.round(image.naturalHeight * scale)
+            );
+            const context = canvas.getContext('2d');
+            if (context === null) {
+                resolve(source);
+                return;
+            }
+            context.drawImage(image, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/png'));
+        };
+        image.onerror = () => reject(new Error('thumbnail decode failed'));
+        image.src = source;
+    });
+};
+
 /** The first AI View Dock: authoritative RGB plus the Anchor Mask surface. */
 export class AISelectAnchorDock extends Container {
     private readonly mask: AISelectMaskController;
     private readonly confirmation: AISelectAnchorConfirmationController;
     private readonly generatedViews: AISelectGeneratedViewController;
+    private readonly maskRegistry: MaskAnnotationRegistry;
+    private readonly onInspectCamera: (viewId: string) => void;
     private readonly status: Label;
     private readonly availabilityDot: HTMLSpanElement;
     private readonly availabilityLabel: Label;
@@ -134,9 +222,16 @@ export class AISelectAnchorDock extends Container {
     private readonly plannerStopButton: Button;
     private readonly plannerMoreButton: Button;
     private readonly plannerRegenerateButton: Button;
+    private readonly filterLine: Container;
+    private readonly filterButtons: ReadonlyMap<GalleryFilter, Button>;
+    private galleryFilter: GalleryFilter = 'all';
     private readonly galleryCards: Container;
     private readonly anchorCard: GeneratedCardElements;
     private readonly generatedCards = new Map<string, GeneratedCardElements>();
+    private readonly thumbnails = createThumbnailCache({
+        capacity: THUMBNAIL_CACHE_CAPACITY
+    });
+    private readonly thumbnailPending = new Set<string>();
     private state: AISelectAnchorState = { context: null, anchor: null };
     private maskState: AISelectMaskState;
     private confirmationState: AISelectAnchorConfirmationState;
@@ -162,6 +257,8 @@ export class AISelectAnchorDock extends Container {
         this.mask = mask;
         this.confirmation = confirmation;
         this.generatedViews = options.generatedViews;
+        this.maskRegistry = options.maskRegistry;
+        this.onInspectCamera = options.onInspectCamera;
         this.maskState = mask.state;
         this.confirmationState = confirmation.state;
         this.generatedState = options.generatedViews.state;
@@ -527,10 +624,40 @@ export class AISelectAnchorDock extends Container {
         this.plannerLine.append(this.plannerStopButton);
         this.plannerLine.append(this.plannerMoreButton);
         this.plannerLine.append(this.plannerRegenerateButton);
+        // Gallery filters are presentation-only: they choose which cards are
+        // visible and never call into Prompt, Mask, Participation, Evidence,
+        // or Candidate state.
+        this.filterLine = new Container({
+            id: 'ai-select-view-gallery-filters',
+            hidden: true
+        });
+        const filterEntries: readonly GalleryFilter[] = [
+            'all',
+            'included',
+            'excluded',
+            'needs-review'
+        ];
+        const filterButtons = new Map<GalleryFilter, Button>();
+        for (const filter of filterEntries) {
+            const button = new Button({
+                class: 'ai-select-view-gallery-filter'
+            });
+            i18n.bindText(button, `ai-select.views.filter.${filter}`);
+            button.on('click', () => {
+                this.galleryFilter = filter;
+                this.renderGallery(
+                    getAnchorDockPresentation(this.state, this.maskState)
+                );
+            });
+            filterButtons.set(filter, button);
+            this.filterLine.append(button);
+        }
+        this.filterButtons = filterButtons;
         this.galleryCards = new Container({
             id: 'ai-select-view-gallery-cards'
         });
         this.gallery.append(this.plannerLine);
+        this.gallery.append(this.filterLine);
         this.gallery.append(this.galleryCards);
         this.anchorCard = this.createCard(
             () => this.selectGeneratedView(null),
@@ -615,12 +742,31 @@ export class AISelectAnchorDock extends Container {
         );
     }
 
+    /** The Gallery-selected Generated View under read-only inspection. */
+    private inspectedGeneratedView(): GeneratedAIView | null {
+        const selectedViewId = this.generatedState.selectedViewId;
+        if (selectedViewId === null) {
+            return null;
+        }
+        return (
+            this.generatedState.views.find(
+                (view) => view.viewId === selectedViewId
+            ) ?? null
+        );
+    }
+
     private render(): void {
         this.renderAvailability();
         const presentation = getAnchorDockPresentation(
             this.state,
             this.maskState
         );
+        const inspected = this.inspectedGeneratedView();
+        if (inspected !== null) {
+            this.renderInspection(inspected);
+            this.renderGallery(presentation);
+            return;
+        }
         if (presentation.rgb) {
             this.image.src = `data:image/png;base64,${presentation.rgb.pngBase64}`;
             this.image.hidden = false;
@@ -683,6 +829,95 @@ export class AISelectAnchorDock extends Container {
         this.renderGallery(presentation);
     }
 
+    /**
+     * Read-only Generated View inspection: the selected card's authoritative
+     * RGB with its current Mask overlay. RGB stays inspectable while Prompt
+     * or Mask inference is pending or failed. Mask correction flows through
+     * the card actions and the Anchor surface; this surface edits nothing.
+     */
+    private renderInspection(view: GeneratedAIView): void {
+        if (view.rgb !== undefined) {
+            this.image.src = `data:image/png;base64,${view.rgb.pngBase64}`;
+            this.image.hidden = false;
+            this.imageSurface.hidden = false;
+            this.updateImageSurfaceRect(view.rgb.width, view.rgb.height);
+        } else {
+            this.image.hidden = true;
+            this.imageSurface.hidden = true;
+            this.overlay.hidden = true;
+        }
+        const roleKey =
+            galleryViewRole(view.source) === 'user-added'
+                ? 'ai-select.views.role.user-added'
+                : 'ai-select.views.generated';
+        this.status.text = `${i18n.t(roleKey)} — ${i18n.t('ai-select.views.inspecting')}`;
+        this.failureActions.hidden = true;
+        this.maskStatus.hidden = true;
+        this.promptStatus.hidden = true;
+        this.technicalDetails.hidden = true;
+        this.proposalSelect.hidden = true;
+        this.acceptProposalButton.hidden = true;
+        this.maskActions.hidden = true;
+        this.anchorActions.hidden = true;
+        this.validationStatus.hidden = true;
+        this.boxPreview.hidden = true;
+        this.image.style.cursor = 'default';
+        const availability = new Map<PaletteTool, PaletteToolAvailability>();
+        for (const tool of PALETTE_TOOLS) {
+            availability.set(tool, { enabled: false, reason: null });
+        }
+        this.palette.render({
+            visible: false,
+            activeTool: this.activeTool,
+            availability,
+            canUndoPrompt: false,
+            canRedoPrompt: false,
+            canClearPrompts: false
+        });
+        this.renderInspectedMaskOverlay(view);
+    }
+
+    /**
+     * Display currency, not publication authority: the unpublished Editing
+     * Mask (edit color) is the draft under correction, while the Stable Mask
+     * (confirmed color) remains the only Evidence input. Mirrors the Anchor
+     * surface's editing-first display rule.
+     */
+    private renderInspectedMaskOverlay(view: GeneratedAIView): void {
+        const rgb = view.rgb;
+        if (rgb === undefined) {
+            this.overlay.hidden = true;
+            return;
+        }
+        const masks = this.maskRegistry.viewState(view.viewId, rgb.digest);
+        const annotation = masks.editingMask ?? masks.stableMask;
+        const artifact = annotation?.artifact;
+        if (
+            artifact === undefined ||
+            artifact.width !== rgb.width ||
+            artifact.height !== rgb.height
+        ) {
+            this.overlay.hidden = true;
+            return;
+        }
+        const { width, height } = rgb;
+        const pixels = maskOverlayPixels(
+            decodeMaskArtifact(artifact),
+            width * height,
+            masks.editingMask !== null
+        );
+        this.overlay.width = width;
+        this.overlay.height = height;
+        const context = this.overlay.getContext('2d');
+        if (context === null) {
+            this.overlay.hidden = true;
+            return;
+        }
+        context.putImageData(new ImageData(pixels, width, height), 0, 0);
+        this.positionOverlay();
+        this.overlay.hidden = false;
+    }
+
     private createCard(
         onClick: () => void,
         onRetry: (() => void) | null
@@ -695,6 +930,10 @@ export class AISelectAnchorDock extends Container {
         image.draggable = false;
         const title = new Label({ class: 'ai-select-view-card-title' });
         const status = new Label({ class: 'ai-select-view-card-status' });
+        // Raw technical messages stay available but visually subordinate, so
+        // a transport/OOM string can never replace a semantic status line.
+        const detail = new Label({ class: 'ai-select-view-card-detail' });
+        detail.hidden = true;
         const retryButton = new Button({
             class: 'ai-select-view-card-retry',
             hidden: true
@@ -711,8 +950,13 @@ export class AISelectAnchorDock extends Container {
             class: 'ai-select-view-card-participation',
             hidden: true
         });
+        const inspectCameraButton = new Button({
+            class: 'ai-select-view-card-inspect-camera',
+            hidden: true
+        });
         i18n.bindText(retryButton, 'ai-select.views.retry-render');
         i18n.bindText(confirmReviewButton, 'ai-select.review.confirm-as-is');
+        i18n.bindText(inspectCameraButton, 'ai-select.views.inspect-camera');
         if (onRetry !== null) {
             retryButton.on('click', (event: Event) => {
                 event.stopPropagation();
@@ -740,13 +984,22 @@ export class AISelectAnchorDock extends Container {
                 this.toggleGeneratedViewParticipation(viewId);
             }
         });
+        inspectCameraButton.on('click', (event: Event) => {
+            event.stopPropagation();
+            const viewId = root.dom.dataset.viewId;
+            if (viewId !== undefined) {
+                this.onInspectCamera(viewId);
+            }
+        });
         root.dom.appendChild(image);
         root.append(title);
         root.append(status);
+        root.append(detail);
         root.append(retryButton);
         root.append(retryMaskButton);
         root.append(confirmReviewButton);
         root.append(participationButton);
+        root.append(inspectCameraButton);
         root.dom.addEventListener('pointerdown', (event) =>
             event.stopPropagation()
         );
@@ -756,10 +1009,12 @@ export class AISelectAnchorDock extends Container {
             image,
             title,
             status,
+            detail,
             retryButton,
             retryMaskButton,
             confirmReviewButton,
-            participationButton
+            participationButton,
+            inspectCameraButton
         };
     }
 
@@ -817,17 +1072,20 @@ export class AISelectAnchorDock extends Container {
         }[presentation.status];
         this.anchorCard.title.text = i18n.t('ai-select.views.anchor');
         this.anchorCard.status.text = i18n.t(anchorStatusKey);
+        this.anchorCard.detail.hidden = true;
         this.anchorCard.retryButton.hidden = true;
         this.anchorCard.retryMaskButton.hidden = true;
         this.anchorCard.confirmReviewButton.hidden = true;
         this.anchorCard.participationButton.hidden = true;
+        this.anchorCard.inspectCameraButton.hidden = true;
         if (presentation.rgb !== undefined) {
-            if (this.anchorCard.rgbDigest !== presentation.rgb.digest) {
-                this.anchorCard.rgbDigest = presentation.rgb.digest;
-                this.anchorCard.image.src = `data:image/png;base64,${presentation.rgb.pngBase64}`;
-            }
-            this.anchorCard.image.hidden = false;
+            this.applyCardThumbnail(
+                this.anchorCard,
+                presentation.rgb.digest,
+                presentation.rgb.pngBase64
+            );
         } else {
+            this.anchorCard.rgbDigest = undefined;
             this.anchorCard.image.hidden = true;
         }
         this.anchorCard.root.dom.classList.toggle(
@@ -835,8 +1093,34 @@ export class AISelectAnchorDock extends Container {
             this.generatedState.selectedViewId === null
         );
 
+        // Stable order (Anchor, generated local Views in creation order, then
+        // user-added Views) with per-role title ordinals; the filter only
+        // changes card visibility.
+        const ordered = orderGalleryViews(generated.views);
+        const visible = new Set(
+            filterGalleryViews(ordered, this.galleryFilter).map(
+                (view) => view.viewId
+            )
+        );
+        this.filterLine.hidden = ordered.length === 0;
+        for (const [filter, button] of this.filterButtons) {
+            button.dom.classList.toggle(
+                'active',
+                filter === this.galleryFilter
+            );
+        }
+        const ordinals = new Map<string, number>();
+        let generatedOrdinal = 0;
+        let userAddedOrdinal = 0;
+        for (const view of ordered) {
+            const ordinal =
+                galleryViewRole(view.source) === 'user-added'
+                    ? (userAddedOrdinal += 1)
+                    : (generatedOrdinal += 1);
+            ordinals.set(view.viewId, ordinal);
+        }
         const seen = new Set<string>();
-        generated.views.forEach((view, index) => {
+        for (const view of ordered) {
             seen.add(view.viewId);
             let card = this.generatedCards.get(view.viewId);
             if (card === undefined) {
@@ -847,8 +1131,13 @@ export class AISelectAnchorDock extends Container {
                 this.generatedCards.set(view.viewId, card);
                 this.galleryCards.append(card.root);
             }
-            this.updateGeneratedCard(card, view, index);
-        });
+            this.updateGeneratedCard(
+                card,
+                galleryCardPresentation(view, ordinals.get(view.viewId) ?? 0),
+                view
+            );
+            card.root.hidden = !visible.has(view.viewId);
+        }
         for (const [viewId, card] of this.generatedCards) {
             if (!seen.has(viewId)) {
                 card.root.destroy();
@@ -859,101 +1148,116 @@ export class AISelectAnchorDock extends Container {
 
     private updateGeneratedCard(
         card: GeneratedCardElements,
-        view: GeneratedAIView,
-        index: number
+        presentation: GalleryCardPresentation,
+        view: GeneratedAIView
     ): void {
-        card.title.text = `${i18n.t('ai-select.views.generated')} ${index + 1}`;
-        card.root.dom.dataset.viewId = view.viewId;
-        const lines: string[] = [
-            i18n.t(`ai-select.views.status.${view.renderStatus}`)
-        ];
-        if (
-            view.renderStatus === 'failed' &&
-            view.renderErrorMessage !== undefined
-        ) {
-            lines.push(view.renderErrorMessage);
-        }
-        if (view.renderStatus === 'ready') {
-            if (
-                view.promptStatus === 'limited' &&
-                view.promptDiagnostics !== undefined
-            ) {
-                lines.push(view.promptDiagnostics.join('; '));
-            } else if (
-                view.promptStatus === 'failed' &&
-                view.promptErrorMessage !== undefined
-            ) {
-                lines.push(view.promptErrorMessage);
-            }
-            lines.push(
-                i18n.t(`ai-select.views.status.mask-${view.maskStatus}`)
-            );
-            if (
-                view.maskStatus === 'failed' &&
-                view.maskErrorMessage !== undefined
-            ) {
-                lines.push(view.maskErrorMessage);
-                lines.push(i18n.t('ai-select.review.mask-failure-options'));
-            }
-            // Ticket 06 never requests Evidence; later statuses arrive with
-            // the formal Evidence path and their own localized keys.
-            if (view.evidenceStatus === 'not-requested') {
-                lines.push(
-                    i18n.t('ai-select.views.status.evidence-not-requested')
+        const titleKey =
+            presentation.role === 'user-added'
+                ? 'ai-select.views.role.user-added'
+                : 'ai-select.views.generated';
+        card.title.text = `${i18n.t(titleKey)} ${i18n.formatInteger(presentation.titleOrdinal)}`;
+        card.root.dom.dataset.viewId = presentation.viewId;
+        const statusLines: string[] = [];
+        const detailLines: string[] = [];
+        for (const line of presentation.lines) {
+            if (line.kind === 'detail') {
+                detailLines.push(line.text);
+            } else {
+                statusLines.push(
+                    line.key.startsWith('ai-select.review.action.')
+                        ? `• ${i18n.t(line.key)}`
+                        : i18n.t(line.key)
                 );
             }
-            lines.push(i18n.t(`ai-select.review.quality.${view.maskQuality}`));
-            lines.push(i18n.t(`ai-select.participation.${view.participation}`));
-            if (view.assessment?.status === 'review') {
-                for (const reason of view.assessment.actionableReasons) {
-                    lines.push(i18n.t(`ai-select.review.reason.${reason}`));
-                    for (const actionKey of reviewReasonActionKeys(reason)) {
-                        lines.push(`• ${i18n.t(actionKey)}`);
-                    }
-                }
-                lines.push(i18n.t('ai-select.review.correction-options'));
-            }
         }
-        card.status.text = lines.join('\n');
-        card.retryButton.hidden = view.renderStatus !== 'failed';
-        const promptRecovery =
-            view.promptStatus === 'failed' || view.promptStatus === 'limited';
-        card.retryMaskButton.text = i18n.t(
-            promptRecovery
-                ? 'ai-select.views.retry-prompt'
-                : 'ai-select.views.retry-mask'
-        );
+        card.status.text = statusLines.join('\n');
+        card.detail.text = detailLines.join('\n');
+        card.detail.hidden = detailLines.length === 0;
+
+        card.retryButton.hidden = !presentation.actions.retryRender;
         card.retryMaskButton.hidden =
-            view.renderStatus !== 'ready' ||
-            !(
-                promptRecovery ||
-                (view.promptStatus === 'ready' &&
-                    (view.maskStatus === 'failed' ||
-                        view.maskStatus === 'unavailable'))
+            presentation.actions.retryMaskOrPrompt === null;
+        if (presentation.actions.retryMaskOrPrompt !== null) {
+            card.retryMaskButton.text = i18n.t(
+                presentation.actions.retryMaskOrPrompt === 'prompt'
+                    ? 'ai-select.views.retry-prompt'
+                    : 'ai-select.views.retry-mask'
             );
-        card.confirmReviewButton.hidden =
-            view.maskStatus !== 'ready' ||
-            view.assessment?.status !== 'review' ||
-            view.maskQuality === 'user-confirmed';
-        const canToggleParticipation =
-            view.participation === 'included' ||
-            view.maskQuality === 'auto-good' ||
-            view.maskQuality === 'user-confirmed';
-        card.participationButton.hidden = !canToggleParticipation;
-        card.participationButton.text =
-            view.participation === 'included'
-                ? i18n.t('ai-select.participation.exclude')
-                : i18n.t('ai-select.participation.include');
+        }
+        card.confirmReviewButton.hidden = !presentation.actions.confirmAsIs;
+        card.participationButton.hidden =
+            presentation.actions.participationToggle === null;
+        if (presentation.actions.participationToggle !== null) {
+            card.participationButton.text = i18n.t(
+                `ai-select.participation.${presentation.actions.participationToggle}`
+            );
+        }
+        card.inspectCameraButton.hidden = !presentation.actions.inspectCamera;
         if (view.rgb !== undefined) {
-            if (card.rgbDigest !== view.rgb.digest) {
-                card.rgbDigest = view.rgb.digest;
-                card.image.src = `data:image/png;base64,${view.rgb.pngBase64}`;
-            }
-            card.image.hidden = false;
+            this.applyCardThumbnail(card, view.rgb.digest, view.rgb.pngBase64);
         } else {
+            card.rgbDigest = undefined;
             card.image.hidden = true;
         }
-        card.root.dom.classList.toggle('selected', view.selected);
+        card.root.dom.classList.toggle('selected', presentation.selected);
+    }
+
+    /**
+     * Cards display bounded thumbnails keyed by authoritative RGB digest; the
+     * full-resolution artifact stays in controller state and is never realized
+     * as a card image — on a cache miss the card waits for its downscaled
+     * thumbnail so a large Gallery stays inside the resource bound. Unchanged
+     * digests keep their thumbnail, so Generate More never visually stales
+     * prior completed Views.
+     */
+    private applyCardThumbnail(
+        card: GeneratedCardElements,
+        digest: string,
+        pngBase64: string
+    ): void {
+        if (card.rgbDigest === digest) {
+            return;
+        }
+        card.rgbDigest = digest;
+        const cached = this.thumbnails.get(digest);
+        if (cached !== undefined) {
+            card.image.src = cached;
+            card.image.hidden = false;
+            return;
+        }
+        card.image.hidden = true;
+        if (this.thumbnailPending.has(digest)) {
+            return;
+        }
+        this.thumbnailPending.add(digest);
+        downscaleCardThumbnail(pngBase64, THUMBNAIL_MAX_WIDTH_PX)
+            .then((thumbnail) => {
+                this.thumbnailPending.delete(digest);
+                this.thumbnails.set(digest, thumbnail);
+                for (const current of this.allCards()) {
+                    if (current.rgbDigest === digest) {
+                        current.image.src = thumbnail;
+                        current.image.hidden = false;
+                    }
+                }
+            })
+            .catch((error) => {
+                this.thumbnailPending.delete(digest);
+                console.error(error);
+                // Correctness over the resource bound: a decode failure falls
+                // back to the authoritative RGB rather than a blank card.
+                const source = `data:image/png;base64,${pngBase64}`;
+                for (const current of this.allCards()) {
+                    if (current.rgbDigest === digest) {
+                        current.image.src = source;
+                        current.image.hidden = false;
+                    }
+                }
+            });
+    }
+
+    private allCards(): GeneratedCardElements[] {
+        return [this.anchorCard, ...this.generatedCards.values()];
     }
 
     private selectGeneratedView(viewId: string | null): void {
@@ -1256,6 +1560,11 @@ export class AISelectAnchorDock extends Container {
      * button activation, or modals that own focus.
      */
     private handleDockKeydown(event: KeyboardEvent): void {
+        // The Generated View inspection surface is read-only: no mask-local
+        // Undo/Redo routing, no palette shortcuts, no tool switching.
+        if (this.inspectedGeneratedView() !== null) {
+            return;
+        }
         this.routeEditingKeys(event);
         if (event.defaultPrevented) {
             return;
@@ -1348,27 +1657,11 @@ export class AISelectAnchorDock extends Container {
         const { width, height } = rgb;
         const bits =
             artifact === undefined ? null : decodeMaskArtifact(artifact);
-        const pixels = new Uint8ClampedArray(width * height * 4);
-        const editing =
-            this.maskState.editingMask !== null || proposal !== undefined;
-        for (let index = 0; index < width * height; index += 1) {
-            if (
-                bits === null ||
-                (bits[index >> 3] & (1 << (index % 8))) === 0
-            ) {
-                continue;
-            }
-            const offset = index * 4;
-            if (editing) {
-                pixels[offset] = 255;
-                pixels[offset + 1] = 140;
-                pixels[offset + 2] = 0;
-            } else {
-                pixels[offset + 1] = 190;
-                pixels[offset + 2] = 255;
-            }
-            pixels[offset + 3] = 110;
-        }
+        const pixels = maskOverlayPixels(
+            bits,
+            width * height,
+            this.maskState.editingMask !== null || proposal !== undefined
+        );
         this.overlay.width = width;
         this.overlay.height = height;
         const context = this.overlay.getContext('2d');
@@ -1503,6 +1796,7 @@ export class AISelectAnchorDock extends Container {
         if (
             event.button !== 0 ||
             this.confirmation.locked ||
+            this.inspectedGeneratedView() !== null ||
             getAnchorDockPresentation(this.state, this.maskState).status !==
                 'ready'
         ) {

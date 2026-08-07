@@ -1,6 +1,12 @@
 # 09 — Scalable Gallery + Frustum Sync + Mask Inspection
 
-Status: ready — Ticket 08B prerequisite is implemented; current implementation frontier after 08C closure
+Status: implemented — separated card presentation, read-only View/Mask
+inspection, per-View Camera Inspection, presentation-only filters, and bounded
+thumbnails implemented with repository test/lint/locales/build green;
+large-Gallery browser walkthrough remains operator validation. Point/Box/Paint
+correction for Generated Views remains on the Anchor surface and card
+Retry/Confirm/Participation actions; per-View Mask editing arrives with the
+user-added View and refresh Tickets (11/12).
 
 Blocked by: 08B (satisfied)
 
@@ -88,16 +94,16 @@ Depending on state:
 
 ## Acceptance criteria
 
-- [ ] Render, Prompt, Mask inference, Mask Review, Participation and Evidence remain separate.
-- [ ] semantic unavailable differs from technical inference failure.
-- [ ] no obsolete backend/fallback/tracker state appears.
-- [ ] no Prompt Brush/Negative Box action appears.
-- [ ] Anchor candidate choice is not duplicated into every card.
-- [ ] role and Participation remain independent.
-- [ ] 10–20+ Views remain resource-bounded.
-- [ ] card↔frustum selection and Camera Inspection are deterministic.
-- [ ] Generate More appends local Views without visually staling prior completed Views.
-- [ ] filtering/navigation never mutates formal state.
+- [x] Render, Prompt, Mask inference, Mask Review, Participation and Evidence remain separate.
+- [x] semantic unavailable differs from technical inference failure.
+- [x] no obsolete backend/fallback/tracker state appears.
+- [x] no Prompt Brush/Negative Box action appears.
+- [x] Anchor candidate choice is not duplicated into every card.
+- [x] role and Participation remain independent.
+- [x] 10–20+ Views remain resource-bounded.
+- [x] card↔frustum selection and Camera Inspection are deterministic.
+- [x] Generate More appends local Views without visually staling prior completed Views.
+- [x] filtering/navigation never mutates formal state.
 
 ## Validation
 

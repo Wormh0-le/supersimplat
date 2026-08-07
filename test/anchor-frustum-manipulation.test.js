@@ -52,7 +52,8 @@ test('a suspended target keeps its Anchor inspectable but disables frustum manip
     const inspectionState = {
         mode: 'active',
         manipulation: 'move',
-        savedSceneView: null
+        savedSceneView: null,
+        target: { kind: 'anchor' }
     };
     const anchor = { cameraBinding: {} };
 
@@ -69,5 +70,23 @@ test('a suspended target keeps its Anchor inspectable but disables frustum manip
             inspectionState
         ),
         true
+    );
+});
+
+test('inspecting a Generated View never enables Anchor frustum manipulation', () => {
+    const inspectionState = {
+        mode: 'active',
+        manipulation: 'move',
+        savedSceneView: null,
+        target: { kind: 'view', viewId: 'view-1', cameraBinding: {} }
+    };
+    const anchor = { cameraBinding: {} };
+
+    assert.equal(
+        canManipulateAnchorFrustum(
+            { context: { lifecycle: 'active' }, anchor },
+            inspectionState
+        ),
+        false
     );
 });

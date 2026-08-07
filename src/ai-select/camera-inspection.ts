@@ -50,10 +50,25 @@ export interface CameraInspectionAnchor {
 export type CameraInspectionMode = 'inactive' | 'active';
 export type CameraInspectionManipulation = 'move' | 'rotate';
 
+/**
+ * What Camera Inspection observes. The Anchor remains the only manipulable
+ * target; a Generated View camera is planner-owned and read-only — the
+ * observer looks at its frustum exactly as it does the Anchor's, and the
+ * observer pose never becomes an implicit new Anchor or View camera.
+ */
+export type CameraInspectionTarget =
+    | { readonly kind: 'anchor' }
+    | {
+          readonly kind: 'view';
+          readonly viewId: string;
+          readonly cameraBinding: CameraBinding;
+      };
+
 export interface CameraInspectionState {
     readonly mode: CameraInspectionMode;
     readonly manipulation: CameraInspectionManipulation;
     readonly savedSceneView: SavedSceneView | null;
+    readonly target: CameraInspectionTarget | null;
 }
 
 export interface CameraInspectionOptions {
@@ -181,6 +196,28 @@ export const cameraInspectionObserverView = (
     });
 };
 
+const copyTarget = (target: CameraInspectionTarget): CameraInspectionTarget => {
+    if (target.kind === 'anchor') {
+        return Object.freeze({ kind: 'anchor' });
+    }
+    return Object.freeze({
+        kind: 'view',
+        viewId: target.viewId,
+        cameraBinding: copyCameraBinding(target.cameraBinding)
+    });
+};
+
+/**
+ * True only while Camera Inspection observes the Anchor itself. Generated
+ * View inspection is read-only, so Anchor frustum display and manipulation
+ * gate on this single predicate.
+ */
+export const isAnchorInspectionTarget = (
+    state: CameraInspectionState | undefined
+): boolean => {
+    return state?.mode === 'active' && state.target?.kind === 'anchor';
+};
+
 const copyState = (state: CameraInspectionState): CameraInspectionState => {
     return Object.freeze({
         mode: state.mode,
@@ -188,7 +225,8 @@ const copyState = (state: CameraInspectionState): CameraInspectionState => {
         savedSceneView:
             state.savedSceneView === null
                 ? null
-                : copySavedSceneView(state.savedSceneView)
+                : copySavedSceneView(state.savedSceneView),
+        target: state.target === null ? null : copyTarget(state.target)
     });
 };
 
@@ -206,6 +244,7 @@ export class CameraInspectionController {
     private manipulation: CameraInspectionManipulation = 'move';
     private savedSceneView: SavedSceneView | null = null;
     private restoreSceneView: (() => void) | null = null;
+    private target: CameraInspectionTarget | null = null;
     /** Serialize fixed-pose renders because the Companion admits one at a time. */
     private anchorRenderTail: Promise<void> | null = null;
 
@@ -218,7 +257,8 @@ export class CameraInspectionController {
         return copyState({
             mode: this.mode,
             manipulation: this.manipulation,
-            savedSceneView: this.savedSceneView
+            savedSceneView: this.savedSceneView,
+            target: this.target
         });
     }
 
@@ -228,15 +268,31 @@ export class CameraInspectionController {
         return () => this.listeners.delete(listener);
     }
 
-    enter(): void {
-        if (this.mode === 'active') {
-            return;
+    private bindingForTarget(target: CameraInspectionTarget): CameraBinding {
+        if (target.kind === 'view') {
+            return copyCameraBinding(target.cameraBinding);
         }
         const anchorBinding = this.anchor.getAnchorCameraBinding();
         if (anchorBinding === null) {
             throw new Error(
                 'Camera Inspection requires an active Anchor CameraBinding.'
             );
+        }
+        return anchorBinding;
+    }
+
+    enter(target: CameraInspectionTarget = { kind: 'anchor' }): void {
+        const binding = this.bindingForTarget(target);
+        const observerView = cameraInspectionObserverView(binding);
+        const nextTarget = copyTarget(target);
+        if (this.mode === 'active') {
+            // Switching targets only re-derives the external observer; the
+            // original saved Scene View and its atomic restore are kept, so
+            // returning still recovers the exact pre-inspection editor camera.
+            this.editor.setSceneView(observerView);
+            this.target = nextTarget;
+            this.publish();
+            return;
         }
         const capturedSceneView = this.editor.captureSceneView();
         if (typeof capturedSceneView.restore !== 'function') {
@@ -245,12 +301,12 @@ export class CameraInspectionController {
             );
         }
         const savedSceneView = copySavedSceneView(capturedSceneView.sceneView);
-        const observerView = cameraInspectionObserverView(anchorBinding);
         this.editor.setSceneView(observerView);
         this.mode = 'active';
         this.manipulation = 'move';
         this.savedSceneView = savedSceneView;
         this.restoreSceneView = capturedSceneView.restore;
+        this.target = nextTarget;
         this.publish();
     }
 
@@ -262,12 +318,14 @@ export class CameraInspectionController {
 
     moveAnchorFrustum(cameraToWorld: readonly number[]): void {
         this.requireActive();
+        this.requireAnchorTarget();
         assertCameraToWorldMatrix(cameraToWorld);
         this.anchor.updateAnchorCameraPose(Object.freeze([...cameraToWorld]));
     }
 
     async endAnchorManipulation(): Promise<void> {
         this.requireActive();
+        this.requireAnchorTarget();
         await this.queueFinalAnchorRender(() =>
             this.anchor.renderFinalPreview()
         );
@@ -275,6 +333,7 @@ export class CameraInspectionController {
 
     async resetAnchor(): Promise<void> {
         this.requireActive();
+        this.requireAnchorTarget();
         await this.queueFinalAnchorRender(() => this.anchor.resetAnchor());
     }
 
@@ -295,6 +354,7 @@ export class CameraInspectionController {
         this.mode = 'inactive';
         this.savedSceneView = null;
         this.restoreSceneView = null;
+        this.target = null;
         this.publish();
     }
 
@@ -324,6 +384,15 @@ export class CameraInspectionController {
         if (this.mode !== 'active') {
             throw new Error(
                 'Camera Inspection must be active for this operation.'
+            );
+        }
+    }
+
+    /** Generated View cameras are planner-owned and never manipulable. */
+    private requireAnchorTarget(): void {
+        if (this.target?.kind !== 'anchor') {
+            throw new Error(
+                'Camera Inspection manipulation is only available for the Anchor.'
             );
         }
     }

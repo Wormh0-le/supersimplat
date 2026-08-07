@@ -1,6 +1,6 @@
 # Current Final Spec v1.3 → Ticket Mapping — v2.14
 
-Status: **current normative ticket mapping — Ticket-local migration complete; implementation frontier Ticket 09**
+Status: **current normative ticket mapping — Ticket-local migration complete; implementation frontier Tickets 11 + 12**
 
 This file maps every active AI Select Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
@@ -48,18 +48,16 @@ All 31 Ticket files carry a direct current mapping to Final Spec v1.3. An older 
 implemented prerequisites:
 - 04C, 07, 02C, 07A, 07B
 - 08, 08A, 08B, 08C
+- 09
 
 ready now:
-- 09 — Scalable Gallery + Frustum Sync + Mask Inspection
-
-after 09:
 - 11 and 12 in parallel
 
 after 11 + 12:
 - 14
 ```
 
-`next_implementation_ticket = 09` is the current compatibility field. Ticket 10 remains optional and may execute after 14 + 09 + 07 without blocking the core release path.
+`next_implementation_ticket = 11` is the current compatibility field; Tickets 11 and 12 are ready in parallel after the Ticket 09 closure. Ticket 10 remains optional and may execute after 14 + 09 + 07 without blocking the core release path.
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported.
 

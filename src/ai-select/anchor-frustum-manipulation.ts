@@ -1,6 +1,9 @@
 import type { AISelectAnchorState } from './anchor-controller';
 import { cameraToWorldFromPlayCanvasWorldTransform } from './camera-binding';
-import type { CameraInspectionState } from './camera-inspection';
+import {
+    isAnchorInspectionTarget,
+    type CameraInspectionState
+} from './camera-inspection';
 
 export interface AnchorFrustumManipulationTarget {
     moveAnchorFrustum(cameraToWorld: readonly number[]): void;
@@ -13,7 +16,9 @@ export const canManipulateAnchorFrustum = (
     inspectionState: CameraInspectionState | undefined
 ): boolean => {
     return Boolean(
-        inspectionState?.mode === 'active' &&
+        // Inspecting a Generated View is read-only: its camera is
+        // planner-owned, and the Anchor frustum stays untouched.
+        isAnchorInspectionTarget(inspectionState) &&
         anchorState?.context?.lifecycle === 'active' &&
         anchorState?.anchor !== null &&
         anchorState?.anchor !== undefined

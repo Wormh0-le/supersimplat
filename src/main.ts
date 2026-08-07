@@ -3,7 +3,10 @@ import { Color, Vec3, createGraphicsDevice } from 'playcanvas';
 
 import { AISelectAnchorConfirmationController } from './ai-select/anchor-confirmation';
 import { AISelectAnchorController } from './ai-select/anchor-controller';
-import { CameraInspectionController } from './ai-select/camera-inspection';
+import {
+    CameraInspectionController,
+    isAnchorInspectionTarget
+} from './ai-select/camera-inspection';
 import { AnchorFrustumManipulator } from './ai-select/camera-inspection-manipulator';
 import { pickGeneratedViewFrustum } from './ai-select/generated-frustum-picking';
 import { AISelectGeneratedViewController } from './ai-select/generated-view-controller';
@@ -537,11 +540,16 @@ const main = async () => {
     await scene.add(anchorFrustum);
     const updateAnchorFrustum = () => {
         const anchor = aiSelectController.state.anchor;
-        const inspecting = cameraInspection.state.mode === 'active';
-        anchorFrustum.setCameraBinding(
-            inspecting ? (anchor?.cameraBinding ?? null) : null
+        // The Anchor frustum appears only while the Anchor itself is
+        // inspected; Generated View inspection highlights that View's own
+        // frustum through the Gallery selection instead.
+        const inspectingAnchor = isAnchorInspectionTarget(
+            cameraInspection.state
         );
-        anchorFrustum.setVisible(inspecting && anchor !== null);
+        anchorFrustum.setCameraBinding(
+            inspectingAnchor ? (anchor?.cameraBinding ?? null) : null
+        );
+        anchorFrustum.setVisible(inspectingAnchor && anchor !== null);
     };
     aiSelectController.subscribe(updateAnchorFrustum);
     cameraInspection.subscribe(updateAnchorFrustum);
@@ -716,6 +724,25 @@ const main = async () => {
         aiSelectConfirmation,
         {
             generatedViews: aiSelectGeneratedViews,
+            maskRegistry: aiSelectMaskController.maskRegistry,
+            onInspectCamera: (viewId) => {
+                const view = aiSelectGeneratedViews.state.views.find(
+                    (entry) => entry.viewId === viewId
+                );
+                if (view === undefined) {
+                    return;
+                }
+                // Inspecting a Generated View selects it so its frustum
+                // highlights, then observes its planner-owned CameraBinding;
+                // the Editor Camera only moves to the external observer and
+                // never becomes an implicit new Anchor or View camera.
+                aiSelectGeneratedViews.selectView(viewId);
+                cameraInspection.enter({
+                    kind: 'view',
+                    viewId,
+                    cameraBinding: view.cameraBinding
+                });
+            },
             readiness: selectionServiceReadiness,
             onRetry: () => aiSelectController.retryAnchorPreview(),
             onReconnect: async () => {

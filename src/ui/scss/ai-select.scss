@@ -531,6 +531,25 @@
     }
 }
 
+#ai-select-view-gallery-filters {
+    gap: 4px;
+
+    &:not(.pcui-hidden) {
+        display: flex;
+    }
+
+    .ai-select-view-gallery-filter {
+        min-height: 22px;
+        font-size: 10px;
+        flex-grow: 1;
+
+        &.active {
+            border-color: $clr-icon-hilight;
+            color: $clr-icon-hilight;
+        }
+    }
+}
+
 .ai-select-view-card {
     flex-direction: column;
     gap: 4px;
@@ -570,10 +589,19 @@
         word-break: break-word;
     }
 
+    .ai-select-view-card-detail {
+        color: $text-dark;
+        font-size: 9px;
+        font-style: italic;
+        white-space: pre-line;
+        word-break: break-word;
+    }
+
     .ai-select-view-card-retry,
     .ai-select-view-card-retry-mask,
     .ai-select-view-card-confirm-review,
-    .ai-select-view-card-participation {
+    .ai-select-view-card-participation,
+    .ai-select-view-card-inspect-camera {
         min-height: 24px;
     }
 }

@@ -1,8 +1,8 @@
 # SuperSimPlat AI Select — Domain Context
 
-This context defines the current **AI Select Final Spec v1.2** vocabulary for turning a user's object-level intent into a native SuperSplat Gaussian Selection.
+This context defines the current **AI Select Final Spec v1.3** vocabulary for turning a user's object-level intent into a native SuperSplat Gaussian Selection.
 
-Final Spec v1.2 retains the mask-conditioned direct-Evidence product/lifecycle model while consolidating the current sparse route-B acquisition architecture. Historical v1.0 Contributor terminology remains valid only for migration, reference fixtures, diagnostics, and the explicit debug/reference backend.
+Final Spec v1.3 retains the mask-conditioned direct-Evidence product/lifecycle model while standardizing the official SAM 3 Image static instance workflow, retained-support TargetGeometryHint semantics, and bounded local Key-View acquisition. Final Spec v1.1, its Amendments, and Final Spec v1.2 are historical where superseded. Historical v1.0 Contributor terminology remains valid only for migration, reference fixtures, diagnostics, and the explicit debug/reference backend.
 
 ## Current Product Vocabulary
 
@@ -19,7 +19,7 @@ The transient Selected Gaussian set produced by Gaussian Lifting from the curren
 _Avoid_: committed selection, editable 3D mask
 
 **AITarget / Target Splat**  
-The one Active Splat currently targeted by AI Select, bound to the scene/splat dependency state required by rendering and lifting. AI Select v1.1 does not combine Candidate IDs across multiple Target Splats in one Current Target Context.  
+The one Active Splat currently targeted by AI Select, bound to the scene/splat dependency state required by rendering and lifting. AI Select Final Spec v1.3 does not combine Candidate IDs across multiple Target Splats in one Current Target Context.  
 _Avoid_: whole scene, persistent semantic instance
 
 **Stable Gaussian ID**  
@@ -332,7 +332,7 @@ _Avoid_: inference mode, Prompt operation
 **Intersect** — `S' = S ∩ C`
 
 **Transient AI Selection State**  
-Anchor/Views/Masks/Evidence/Candidate state that exists only for the Current Target Context/runtime. v1.1 does not persist or reopen previous target contexts as semantic project data.  
+Anchor/Views/Masks/Evidence/Candidate state that exists only for the Current Target Context/runtime. Final Spec v1.3 does not persist or reopen previous target contexts as semantic project data.  
 _Avoid_: object annotation database, persistent AI session
 
 ## Selection Service and Runtime Vocabulary
@@ -394,10 +394,10 @@ An already reconstructed Gaussian scene used as the sole scene input to AI Selec
 
 ## Legacy / Reference Vocabulary
 
-The following terms may appear in old implementation, fixtures, issues, or benchmarks. They are not the target v1.1 product architecture.
+The following terms may appear in old implementation, fixtures, issues, or benchmarks. They are not the target Final Spec v1.3 product architecture.
 
 **Complete Contributor Production Path (v1.0 legacy)**  
-The former normal path that published complete per-pixel Contributor IDs/weights and required mass alignment with RGB raster alpha before View readiness/lifting. In v1.1 it is retained only as the Reference Contributor Backend.
+The former normal path that published complete per-pixel Contributor IDs/weights and required mass alignment with RGB raster alpha before View readiness/lifting. In the current Final Spec v1.3 architecture it is retained only as the Reference Contributor Backend.
 
 **Contributor Alpha Reconciliation (reference/debug)**  
 The bounded fail-closed logic that attempts to explain boundary differences between separately executed RGB and complete Contributor kernels. It remains useful for diagnosing the reference backend but is not a production Direct Evidence requirement.
@@ -456,11 +456,11 @@ A frozen method-independent Selected/Rejected/Ambiguous Gaussian classification 
 
 ## Naming Rules
 
-Use the Current Product Vocabulary for Final Spec v1.1 code and documentation.
+Use the Current Product Vocabulary for Final Spec v1.3 code and documentation.
 
 Qualify historical concepts with `legacy`, `reference`, or `debug` when ambiguity is possible.
 
-Do not use `Contributor` as a generic synonym for production Evidence. In v1.1:
+Do not use `Contributor` as a generic synonym for production Evidence. In Final Spec v1.3:
 
 ```text
 Contributor = complete per-pixel reference/debug attribution

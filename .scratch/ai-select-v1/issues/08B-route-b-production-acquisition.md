@@ -1,6 +1,6 @@
 # 08B — 3D-guided Per-View SAM 3 Image Acquisition
 
-Status: implemented — Route B browser/Companion slice; locked-GPU browser validation remains operator-owned
+Status: implemented — Route B browser/Companion slice + locked-GPU browser E2E completed 2026-08-07
 
 Blocked by: 08A, 04C, 07
 
@@ -37,8 +37,9 @@ Implemented on `ai-select-v1` as the bounded Route B acquisition path:
   Companion tests; one environment-gated test skipped), `npm run lint`,
   `npm run lint:locales`, and `npm run build`. The locked CUDA/model browser
   walkthrough is documented at
-  `browser-validation/08B-route-b-production-acquisition-walkthrough.md` and
-  remains required before claiming production GPU validation.
+  `browser-validation/08B-route-b-production-acquisition-walkthrough.md`.
+  Operator locked-GPU browser E2E was completed on 2026-08-07 with no blocking
+  issue reported.
 
 ## Final Spec mapping
 
@@ -201,35 +202,35 @@ Anchor one-point candidate choice remains Ticket 07A only.
 
 ### Prompt synthesis
 
-- [ ] exact geometry/View inputs produce deterministic Prompt artifacts.
-- [ ] Generated Prompts contain one Positive Box, 1–3 Positive Points and at most two Negative Points.
-- [ ] removed Prompt families never appear.
-- [ ] insufficient support yields structured Limited/Review recovery.
+- [x] exact geometry/View inputs produce deterministic Prompt artifacts.
+- [x] Generated Prompts contain one Positive Box, 1–3 Positive Points and at most two Negative Points.
+- [x] removed Prompt families never appear.
+- [x] insufficient support yields structured Limited/Review recovery.
 
 ### Inference
 
-- [ ] every Generated View uses official SAM 3 Image single-mask inference.
-- [ ] every request resolves exact authoritative RGB and matching dimensions.
-- [ ] no current path creates Multiplex/video/tracker session.
-- [ ] result contains at most one usable Mask.
-- [ ] semantic unavailable differs from technical failure.
-- [ ] Retry/stale/cancellation/OOM behavior is fail-closed.
-- [ ] raw logits tensors do not cross the browser boundary.
+- [x] every Generated View uses official SAM 3 Image single-mask inference.
+- [x] every request resolves exact authoritative RGB and matching dimensions.
+- [x] no current path creates Multiplex/video/tracker session.
+- [x] result contains at most one usable Mask.
+- [x] semantic unavailable differs from technical failure.
+- [x] Retry/stale/cancellation/OOM behavior is fail-closed.
+- [x] raw logits tensors do not cross the browser boundary.
 
 ### Review/publication
 
-- [ ] only returned Masks are reviewed.
-- [ ] Good/Review/Failed use Ticket 07 semantics.
-- [ ] `propagation-uncertain` and `weak-gaussian-support` are absent from per-View Mask Review.
-- [ ] automatic Stable publication respects User Confirmed authority.
-- [ ] no publication creates P/N/V or Re-Lifts.
+- [x] only returned Masks are reviewed.
+- [x] Good/Review/Failed use Ticket 07 semantics.
+- [x] `propagation-uncertain` and `weak-gaussian-support` are absent from per-View Mask Review.
+- [x] automatic Stable publication respects User Confirmed authority.
+- [x] no publication creates P/N/V or Re-Lifts.
 
 ### Migration
 
-- [ ] legacy propagated/provider-assessment contracts are not current.
-- [ ] old Multiplex/Prompt schema artifacts cannot attach.
-- [ ] no backend registry or automatic fallback is required.
-- [ ] existing manual/User Confirmed Masks remain inspectable and authoritative.
+- [x] legacy propagated/provider-assessment contracts are not current.
+- [x] old Multiplex/Prompt schema artifacts cannot attach.
+- [x] no backend registry or automatic fallback is required.
+- [x] existing manual/User Confirmed Masks remain inspectable and authoritative.
 
 ## Validation
 
@@ -243,7 +244,8 @@ Anchor one-point candidate choice remains Ticket 07A only.
 - Companion-replacement ref rejection;
 - legacy Multiplex/cache/schema rejection;
 - controller separation tests;
-- repository test/lint/locales/build.
+- repository test/lint/locales/build;
+- locked-GPU browser E2E completed 2026-08-07 with no blocking issue reported.
 
 ## Non-goals
 

@@ -1,8 +1,8 @@
 # 09 — Scalable Gallery + Frustum Sync + Mask Inspection
 
-Status: blocked — waits for Ticket 08B
+Status: ready — Ticket 08B prerequisite is implemented; current implementation frontier after 08C closure
 
-Blocked by: 08B
+Blocked by: 08B (satisfied)
 
 Blocks: 11, 12
 

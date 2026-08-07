@@ -1,6 +1,6 @@
 # 08C — Reliable Target Geometry Prompt Support
 
-Status: implemented — Companion/browser contract and CPU regression coverage complete 2026-08-07; locked GPU browser E2E remains operator-owned
+Status: implemented — Companion/browser contract, CPU regression coverage, HAR replay, and locked-GPU browser E2E complete 2026-08-07
 
 Blocked by: 08B
 
@@ -20,8 +20,9 @@ Blocks: none
   change Mask Review Participation.
 - Old Hint schema/policy/digest payloads fail closed and must be regenerated.
 - `npm test` (419 browser tests, 383 Companion tests with one skip), lint,
-  locale checks, and build pass. Locked CUDA/model browser E2E has not run in
-  this turn.
+  locale checks, and build pass. HAR replay and operator locked-GPU browser E2E
+  completed on 2026-08-07 for the Route B / retained-support flow with no
+  blocking issue reported.
 
 ## Final Spec mapping
 
@@ -34,12 +35,13 @@ Blocks: none
 Make the recoverable part of Route B Target Geometry usable without allowing
 separated or boundary-contaminated support to become false SAM constraints.
 
-The current implementation computes robust center/extent from retained support
-but exposes the original first-hit points to Prompt synthesis. When the
-separated-support filter drops more than the policy threshold, Route B must
-either use only the retained support or remain Limited. This ticket implements
-the retained-support path; it does not introduce tracker memory, ordered video,
-or ArtisanGS-style multi-view mask aggregation.
+Before this ticket, robust center/extent were computed from retained support
+while Prompt synthesis could still consume the original pre-filter first-hit
+points. When the separated-support filter dropped more than the policy
+threshold, those discarded points could become false Prompt constraints. The
+implemented contract now exposes only retained support; a View uses that
+support when eligible or remains Limited. This ticket does not introduce
+tracker memory, ordered video, or ArtisanGS-style multi-view mask aggregation.
 
 ## Decision contract
 
@@ -102,9 +104,9 @@ Mask Review.
 
 - [x] Companion geometry and Prompt route regression tests;
 - [x] browser protocol, controller, stale-identity, and old-schema tests;
-- [ ] HAR replay proving the former `prompt-inconsistent` inputs use only
+- [x] HAR replay proving the former `prompt-inconsistent` inputs use only
       retained points;
-- [ ] locked-runtime browser E2E on a recoverable separated-support scene and
+- [x] locked-runtime browser E2E on a recoverable separated-support scene and
       on sparse/boundary Limited scenes;
 - [x] `npm test`, `npm run lint`, `npm run lint:locales`, `npm run build`, and
       Companion tests pass.

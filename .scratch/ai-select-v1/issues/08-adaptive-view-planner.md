@@ -58,24 +58,29 @@ Runs in parallel with: 07B
 - Dock planner line: Stop / Generate More / Regenerate buttons in the active
   state plus the stopped status, localized in all 9 locales
   (`ai-select.views.planner.stop/.more/.regenerate/.stopped`).
-- Ticket 06 retained unchanged: `/ai-select/view-renders`,
-  `/ai-select/generated-view-masks` (`generated-view-mask/v1`), progressive
-  per-View RGB publication, Mask Review and Participation. Ticket 08 itself
-  runs no SAM inference.
+- Historical implementation note: Ticket 08 originally left Ticket 06's
+  `/ai-select/generated-view-masks` (`generated-view-mask/v1`) path untouched
+  while landing geometry/planning only. Ticket 08B subsequently retired that
+  legacy production Mask path in favor of RGB-bound SAM 3 Image acquisition.
+  Ticket 08 itself still owns no SAM inference.
 
 ## Follow-ups (not in scope)
 
 - Production depth-render (`RGB+ED`) integration as the visible-surface seam
   behind the same artifact contract; the Gaussian-mean first-hit seam is the
   current production derivation.
-- `targetGeometryHintDigest` / `localKeyViewPlanDigest` consumption lands
+- `targetGeometryHintDigest` / `localKeyViewPlanDigest` consumption landed
   with 08A/08B Prompt artifacts; the hint may seed but never hard-bounds the
   Ticket 13 Evidence Working Set.
+- Ticket 08C tightened the same artifact to retained distinct first-hit
+  `visiblePoints` and independent Prompt Support without changing geometry's
+  non-ownership role.
 
 ## Final Spec mapping
 
 - Final Spec v1.3 §§9–10, 19, 21, 24–26
 - ADR 0016
+- ADR 0017 Prompt Support follow-up
 - ADR 0013 ownership boundary
 
 ## Purpose
@@ -95,7 +100,7 @@ This ticket uses geometry for localization, framing and later Prompt synthesis o
 
 ```ts
 interface TargetGeometryHintArtifact {
-    schemaVersion: number;
+    schemaVersion: 2;
     targetContextId: string;
     anchorCameraBindingDigest: string;
     anchorRgbDigest: string;
@@ -106,6 +111,7 @@ interface TargetGeometryHintArtifact {
     visiblePoints: readonly [number, number, number][];
     quality: 'usable' | 'limited' | 'unavailable';
     reasons: readonly string[];
+    promptSupport: 'usable' | 'limited';
     artifactDigest: string;
 }
 ```
@@ -113,9 +119,15 @@ interface TargetGeometryHintArtifact {
 Requirements:
 
 - derives from the exact confirmed Anchor revision;
-- visible Points are bounded, finite, deterministic and canonical-digestable;
-- invalid depth, background-dominated and separated samples are filtered or lower quality;
-- center/extent use robust statistics rather than raw extrema;
+- formal `visiblePoints` are the bounded, finite, deterministic, distinct
+  retained first-hit samples after separated-support filtering;
+- raw pre-filter separated support is not a browser-consumable Prompt input;
+- center/extent use robust statistics over retained support rather than raw
+  extrema;
+- Geometry Quality and Prompt Support are independent identities;
+- Prompt Support is usable only with at least four distinct retained samples
+  and no disqualifying Geometry reason; `separatedSupportFiltered` is the only
+  promotable Limited reason;
 - no Stable Gaussian ID, sample weight or ownership class is required;
 - geometry may seed later Evidence Working Set but never hard-bound it;
 - Anchor absence cannot classify Rejected or Out of Scope.

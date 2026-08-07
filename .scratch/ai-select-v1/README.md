@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.13
+# AI Select v1 — Implementation Ticket Graph v2.14
 
-Status: **ready-for-agent planning graph — all Ticket-local current mappings migrated to Final Spec v1.3**
+Status: **ready-for-agent planning graph — Final Spec v1.3 source-of-truth synchronized; current frontier Ticket 09**
 
 Branch: `ai-select-v1`
 
@@ -9,15 +9,16 @@ Branch: `ai-select-v1`
 1. `docs/specs/ai-select-final-spec-v1.3.md`
 2. `.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md`
 3. ADR 0016
-4. ADR 0013 and ADR 0015 where not superseded
-5. current Ticket acceptance criteria
-6. implementation and tests
+4. ADR 0017 where TargetGeometryHint / Prompt Support semantics are involved
+5. ADR 0013 and ADR 0015 where not superseded
+6. current Ticket acceptance criteria
+7. implementation and tests
 
 Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical only. ADR 0014 and DG-24 through DG-26 are historical where they conflict with ADR 0016 / Final Spec v1.3.
 
-All 31 Ticket files now contain a current mapping to Final Spec v1.3. Older spec names may remain only inside sections explicitly labeled historical provenance, historical implementation record, superseded surface, or migration input; they cannot be used as current closure sources.
+All 31 Ticket files contain a current mapping to Final Spec v1.3. Older spec names may remain only inside sections explicitly labeled historical provenance, historical implementation record, superseded surface, or migration input; they cannot be used as current closure sources.
 
-## v2.13 review closures
+## v2.14 review closures
 
 - Static Anchor and Key-View segmentation use official SAM 3 Image instance interactivity.
 - SAM 3.1 Multiplex/private tracker heads are removed from the current static path.
@@ -38,6 +39,9 @@ All 31 Ticket files now contain a current mapping to Final Spec v1.3. Older spec
 - Every Ticket-local `Current Final Spec mapping` or equivalent current mapping resolves directly to Final Spec v1.3.
 - TargetGeometryHint formal points are retained distinct first-hit support; Route B Prompt Support is independent from Geometry Quality.
 - Old TargetGeometryHint schema/policy/digest identities fail closed and regenerate.
+- Tickets 04C, 07, 02C, 07A, 07B, 08, 08A, 08B and 08C are implemented prerequisites, not current frontier work.
+- Locked-GPU browser E2E for 08B and 08C completed on 2026-08-07 with no blocking issue reported.
+- Ticket 09 is the current implementation frontier.
 
 ## Dependency graph
 
@@ -80,23 +84,22 @@ Paint/Erase palette                + local Key Views
                                     ▼
                                 08B per-View
                                 SAM 3 Image
-                                    │
-                         ┌──────────┴──────────┐
-                         ▼                     ▼
-                    08C reliable            09 Gallery
-                    Prompt Support
-                                 ├────────────┐
+                                  ├──────────────► 08C reliable Prompt Support
+                                  │                 (implemented; no blocker)
+                                  ▼
+                                09 Gallery
+                              ┌────┴────┐
+                              ▼         ▼
+                             11        12
+                              └────┬────┘
+                                   ▼
+                                  14 P/N/V + Candidate
+                                 ┌─┴──────────┐
                                  ▼            ▼
-                                11           12
-                                 └──────┬─────┘
-                                        ▼
-                                       14 P/N/V + Candidate
-                                      ┌─┴──────────┐
-                                      ▼            ▼
-                                10 optional       13 Lift Readiness
-                                diagnostics        │
-                                                   ▼
-                                15 → 16 → 17 → 18 → 19 → 20 → 21 → 22
+                           10 optional       13 Lift Readiness
+                           diagnostics        │
+                                              ▼
+                           15 → 16 → 17 → 18 → 19 → 20 → 21 → 22
 ```
 
 Ticket 10 does not block Ticket 13, Ticket 21 or native application.
@@ -104,21 +107,23 @@ Ticket 10 does not block Ticket 13, Ticket 21 or native application.
 ## Current implementation frontier
 
 ```text
+implemented prerequisites:
+- 04C — SAM 3 Image migration
+- 07 / 07A / 07B — Mask Review, Anchor acquisition, authoring/edit UX
+- 02C — automatic runtime readiness
+- 08 / 08A / 08B / 08C — target geometry, local views, per-View SAM acquisition, retained Prompt Support
+
 ready now:
-- 04C — critical SAM 3 Image migration gate
-- 07  — parallel MaskReview policy correction
-- 08C — retained TargetGeometryHint Prompt Support follow-up after 08B
+- 09 — Scalable Gallery + Frustum Sync + Mask Inspection
 ```
 
 Compatibility field:
 
 ```text
-next_implementation_ticket = 04C
+next_implementation_ticket = 09
 ```
 
-After 04C, Ticket 02C may proceed independently. Ticket 07A begins after both 04C and 07. Ticket 07B and 08 then proceed in parallel.
-
-After 08B, Ticket 08C and Ticket 09 proceed in parallel.
+After Ticket 09, Tickets 11 and 12 become parallel ready work. Ticket 14 requires both 11 and 12. Ticket 10 remains optional and off the core release path.
 
 ## One valid topological order
 

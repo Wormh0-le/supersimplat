@@ -3,7 +3,7 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.13 / Ticket 08C follow-up
+**规划版本：** Ticket Graph v2.14 / Ticket 09 frontier
 **日期：** 2026-08-07
 **适用分支：** `ai-select-v1`  
 **决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017
@@ -21,9 +21,10 @@
 1. Final Spec v1.3；
 2. 当前 Ticket mapping；
 3. ADR 0016；
-4. ADR 0013、ADR 0015；
-5. 未冲突的 Ticket acceptance criteria；
-6. 当前实现与测试。
+4. ADR 0017（TargetGeometryHint / Prompt Support 语义）；
+5. ADR 0013、ADR 0015；
+6. 未冲突的 Ticket acceptance criteria；
+7. 当前实现与测试。
 
 历史 Ticket 中的 Negative Box、Prompt Brush、Mask Constraint、Multiplex static path、Route fallback、backend registry 和 adaptive planner 文字均不具有当前规范效力，除非本文件明确保留。
 
@@ -710,31 +711,31 @@ Required validation：
 # 26. Ticket ownership and current frontier
 
 ```text
-04C  SAM 3 Image adapter + Prompt/RGB/refinement contract migration
-07   MaskReviewPolicy correction
-02C  automatic readiness for the new Active Model Manifest
-07A  simplified Anchor candidate choice and confirmation
-07B  Point/Box + Paint/Erase palette hardening
-08   TargetGeometryHint + bounded local Key Views
-08A  compact Image Instance Mask contracts
-08B  3D-guided per-View SAM 3 Image acquisition
-08C  reliable retained TargetGeometryHint support and Route B Prompt eligibility
-09   simplified Gallery states
-12   simplified dirty/refresh lifecycle
-13   sole Lift Readiness / visibility authority
-10   optional cross-view Evidence-conflict diagnostics
+04C  SAM 3 Image adapter + Prompt/RGB/refinement contract migration        implemented
+07   MaskReviewPolicy correction                                           implemented
+02C  automatic readiness for the new Active Model Manifest                 implemented
+07A  simplified Anchor candidate choice and confirmation                   implemented
+07B  Point/Box + Paint/Erase palette hardening                             implemented
+08   TargetGeometryHint + bounded local Key Views                           implemented
+08A  compact Image Instance Mask contracts                                 implemented
+08B  3D-guided per-View SAM 3 Image acquisition                            implemented
+08C  reliable retained TargetGeometryHint support and Route B Prompt eligibility implemented
+09   simplified Gallery states                                              ready / current frontier
+12   simplified dirty/refresh lifecycle                                     after 09
+13   sole Lift Readiness / visibility authority                             after 14 + 11 + 12
+10   optional cross-view Evidence-conflict diagnostics                      nonblocking
 ```
 
 Current ready frontier：
 
 ```text
-04C  critical model migration gate
-07   parallel MaskReview policy correction
-08C  retained geometry/Prompt Support follow-up after 08B
+09  Scalable Gallery + Frustum Sync + Mask Inspection
 ```
 
-After 04C：
+After 09：
 
-- 02C may proceed independently；
-- 07A proceeds after both 04C and 07；
-- 07B and 08 proceed in parallel after 07A。
+- 11 and 12 proceed in parallel；
+- 14 proceeds after both 11 and 12；
+- Ticket 10 remains optional and off the core release path。
+
+Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported。

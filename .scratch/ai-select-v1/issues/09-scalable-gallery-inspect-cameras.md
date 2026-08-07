@@ -3,10 +3,10 @@
 Status: implemented — separated card presentation, read-only View/Mask
 inspection, per-View Camera Inspection, presentation-only filters, and bounded
 thumbnails implemented with repository test/lint/locales/build green;
-large-Gallery browser walkthrough remains operator validation. Point/Box/Paint
-correction for Generated Views remains on the Anchor surface and card
-Retry/Confirm/Participation actions; per-View Mask editing arrives with the
-user-added View and refresh Tickets (11/12).
+locked-GPU large-Gallery browser walkthrough passed 2026-08-07.
+Point/Box/Paint correction for Generated Views remains on the Anchor surface
+and card Retry/Confirm/Participation actions; per-View Mask editing arrives
+with the user-added View and refresh Tickets (11/12).
 
 Blocked by: 08B (satisfied)
 

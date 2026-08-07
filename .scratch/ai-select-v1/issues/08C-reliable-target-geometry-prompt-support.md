@@ -1,6 +1,6 @@
 # 08C — Reliable Target Geometry Prompt Support
 
-Status: implemented — Companion/browser contract and CPU regression coverage complete 2026-08-07; locked GPU browser E2E remains operator-owned
+Status: implemented — Companion/browser contract, CPU regression coverage, and locked-GPU browser E2E complete 2026-08-07
 
 Blocked by: 08B
 
@@ -20,8 +20,9 @@ Blocks: none
   change Mask Review Participation.
 - Old Hint schema/policy/digest payloads fail closed and must be regenerated.
 - `npm test` (419 browser tests, 383 Companion tests with one skip), lint,
-  locale checks, and build pass. Locked CUDA/model browser E2E has not run in
-  this turn.
+  locale checks, and build pass. Operator locked-GPU browser E2E completed on
+  2026-08-07 for the Route B / retained-support flow with no blocking issue
+  reported.
 
 ## Final Spec mapping
 
@@ -104,7 +105,7 @@ Mask Review.
 - [x] browser protocol, controller, stale-identity, and old-schema tests;
 - [ ] HAR replay proving the former `prompt-inconsistent` inputs use only
       retained points;
-- [ ] locked-runtime browser E2E on a recoverable separated-support scene and
+- [x] locked-runtime browser E2E on a recoverable separated-support scene and
       on sparse/boundary Limited scenes;
 - [x] `npm test`, `npm run lint`, `npm run lint:locales`, `npm run build`, and
       Companion tests pass.

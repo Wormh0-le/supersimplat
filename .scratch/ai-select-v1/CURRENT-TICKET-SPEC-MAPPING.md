@@ -1,12 +1,12 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.13
+# Current Final Spec v1.3 → Ticket Mapping — v2.14
 
-Status: **current normative ticket mapping — Ticket-local migration complete**
+Status: **current normative ticket mapping — Ticket-local migration complete; implementation frontier Ticket 09**
 
 This file maps every active AI Select Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
-Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical. ADR 0016 supersedes conflicting route/backend/planner details in ADR 0014 and DG-24 through DG-26.
+Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical. ADR 0016 supersedes conflicting route/backend/planner details in ADR 0014 and DG-24 through DG-26. ADR 0017 is current where TargetGeometryHint Geometry Quality and Prompt Support semantics are involved.
 
-All 31 Ticket files now carry a direct current mapping to Final Spec v1.3. An older spec may appear only inside an explicitly labeled historical-provenance, historical-implementation, superseded-surface or migration-input section. Such text is non-normative and cannot satisfy current acceptance or closure criteria.
+All 31 Ticket files carry a direct current mapping to Final Spec v1.3. An older spec may appear only inside an explicitly labeled historical-provenance, historical-implementation, superseded-surface or migration-input section. Such text is non-normative and cannot satisfy current acceptance or closure criteria.
 
 | Ticket | Final Spec v1.3 mapping    | Current responsibility                                                         |
 | ------ | -------------------------- | ------------------------------------------------------------------------------ |
@@ -45,24 +45,23 @@ All 31 Ticket files now carry a direct current mapping to Final Spec v1.3. An ol
 ## Current implementation frontier
 
 ```text
+implemented prerequisites:
+- 04C, 07, 02C, 07A, 07B
+- 08, 08A, 08B, 08C
+
 ready now:
-- 04C — critical model migration gate
-- 07  — parallel MaskReview policy correction
+- 09 — Scalable Gallery + Frustum Sync + Mask Inspection
 
-after 04C:
-- 02C may proceed independently
+after 09:
+- 11 and 12 in parallel
 
-after 04C + 07:
-- 07A
-
-after 07A:
-- 07B and 08 in parallel
-
-after 08B:
-- 08C and 09 in parallel
+after 11 + 12:
+- 14
 ```
 
-`next_implementation_ticket = 04C` is retained as the critical-path compatibility field, but it is not the only ready Ticket.
+`next_implementation_ticket = 09` is the current compatibility field. Ticket 10 remains optional and may execute after 14 + 09 + 07 without blocking the core release path.
+
+Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported.
 
 ## Supersession rules
 
@@ -93,8 +92,8 @@ The mapping passes only when:
 - every Ticket-local current mapping block points directly to Final Spec v1.3;
 - no Ticket-local current mapping block names Final Spec v1.1, an Amendment, or Final Spec v1.2 as authority;
 - older spec names appear only under explicit historical/superseded/migration labels;
-- 04C and 07 are recognized as the current ready frontier;
-- 04C remains the critical migration gate;
+- implemented prerequisites through 08C are not reported as current ready work;
+- Ticket 09 is recognized as the current ready frontier and next implementation Ticket;
 - no active closure criterion relies on superseded v1.2 architecture;
 - provider requests carry resolvable authoritative RGB;
 - previous logits remain Companion-local behind opaque refs;

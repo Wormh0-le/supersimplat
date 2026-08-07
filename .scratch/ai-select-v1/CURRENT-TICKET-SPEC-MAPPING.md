@@ -1,4 +1,4 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.14
+# Current Final Spec v1.3 → Ticket Mapping — v2.15
 
 Status: **current normative ticket mapping — Ticket-local migration complete; implementation frontier Tickets 11 + 12**
 
@@ -59,7 +59,7 @@ after 11 + 12:
 
 `next_implementation_ticket = 11` is the current compatibility field; Tickets 11 and 12 are ready in parallel after the Ticket 09 closure. Ticket 10 remains optional and may execute after 14 + 09 + 07 without blocking the core release path.
 
-Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported.
+Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported. The locked-GPU large-Gallery browser walkthrough for Ticket 09 passed on 2026-08-07.
 
 ## Supersession rules
 
@@ -90,8 +90,8 @@ The mapping passes only when:
 - every Ticket-local current mapping block points directly to Final Spec v1.3;
 - no Ticket-local current mapping block names Final Spec v1.1, an Amendment, or Final Spec v1.2 as authority;
 - older spec names appear only under explicit historical/superseded/migration labels;
-- implemented prerequisites through 08C are not reported as current ready work;
-- Ticket 09 is recognized as the current ready frontier and next implementation Ticket;
+- implemented prerequisites through 09 are not reported as current ready work;
+- Tickets 11 and 12 are recognized as the parallel current ready frontier and `next_implementation_ticket = 11` is the compatibility field;
 - no active closure criterion relies on superseded v1.2 architecture;
 - provider requests carry resolvable authoritative RGB;
 - previous logits remain Companion-local behind opaque refs;

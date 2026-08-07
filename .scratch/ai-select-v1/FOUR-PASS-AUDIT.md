@@ -1,4 +1,4 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.14
+# Eight-Pass Bidirectional Traceability Audit — v2.15
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
@@ -35,16 +35,31 @@ from tracker state and P/N/V ownership.
 - Ticket 08's local contract now states TargetGeometryHint schema v2,
   retained first-hit `visiblePoints`, and independent `promptSupport`.
 
+## v2.15 Ticket 09 closure
+
+- Ticket 09 is implemented: separated Gallery card presentation (Render,
+  Prompt, Mask inference, Mask Review, Participation, Evidence), read-only
+  Generated View RGB/Mask inspection, per-View read-only Camera Inspection,
+  presentation-only filters, and bounded digest-keyed thumbnails; the
+  Anchor candidate choice remains Anchor-surface only and no backend-route,
+  fallback, tracker, ProposalDecision, Prompt Brush or Negative Box surface
+  appears.
+- Locked-GPU large-Gallery browser walkthrough for Ticket 09 passed on
+  2026-08-07.
+- Tickets 11 and 12 are the parallel current ready frontier; Ticket 14
+  follows after both.
+- Mapping audit rule, TRACEABILITY R040, graph README, manifest and the
+  Final Spec planning header are synchronized to graph v2.15.
+
 ## Pass 1 — Ticket graph and current frontier
 
 - Ticket count: 31 total.
 - Missing blocker references: 0.
 - Ticket cycle: false.
 - Topological order length: 31/31.
-- Implemented prerequisite chain is closed through 08C.
-- Current ready frontier: `[09]`.
-- Next implementation Ticket / current critical gate: `09`.
-- Tickets 11 and 12 become parallel ready work after 09.
+- Implemented prerequisite chain is closed through 09.
+- Current ready frontier: `[11, 12]`.
+- Next implementation Ticket / current critical gate: `11` (12 in parallel).
 - Ticket 14 requires both 11 and 12.
 - Ticket 10 is optional and does not block Ticket 13 or Ticket 21.
 
@@ -203,8 +218,8 @@ Result: **PASS**
 Active planning MUST NOT require:
 
 - Final Spec v1.1, an Amendment, or Final Spec v1.2 as a current closure source;
-- implemented Tickets 04C, 07 or 08C as current ready work;
-- a `next_implementation_ticket` other than 09 while Ticket 09 remains unimplemented;
+- implemented Tickets 04C, 07, 08C or 09 as current ready work;
+- a `next_implementation_ticket` other than 11 while Tickets 11 and 12 remain unimplemented;
 - ArtisanGS dense turnaround views, Cutie tracking, tracker reference frames or one-channel Gaussian Mask-feature optimization as current v1 requirements;
 - a current video-tracker/sequence interface merely because ArtisanGS is cited as inspiration;
 - static Multiplex for Anchor/Key Views;

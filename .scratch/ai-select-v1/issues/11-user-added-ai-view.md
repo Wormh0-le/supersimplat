@@ -1,8 +1,8 @@
 # 11 — User-added AIView Using Current or Adjusted Camera
 
-Status: blocked — waits for Gallery and complete correction UX
+Status: ready — Ticket 09 prerequisite is implemented; current implementation frontier (parallel with 12)
 
-Blocked by: 09, 07B, 07, 05
+Blocked by: 09 (satisfied), 07B (satisfied), 07 (satisfied), 05 (satisfied)
 
 ## Final Spec mapping
 

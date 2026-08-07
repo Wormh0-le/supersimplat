@@ -119,8 +119,12 @@ The bottom editing surface for authoritative RGB, Gallery navigation, Mask promp
 _Avoid_: separate AI workspace
 
 **Camera Inspection**  
-An explicit mode that saves the Scene View Camera, moves the Editor Camera to an observer pose, and exposes the Anchor/selected View Frustum. Manipulation changes only the View CameraBinding. A final authoritative RGB is requested when manipulation ends. The observer pose is never silently adopted as the Anchor.  
+An explicit mode that saves the Scene View Camera, moves the Editor Camera to an observer pose, and exposes the Anchor/selected View Frustum. Inspection has an explicit target: the Anchor remains the only manipulable target (a final authoritative RGB is requested when Anchor manipulation ends), while a Generated View camera is planner-owned and observed read-only. The observer pose is never silently adopted as the Anchor.  
 _Avoid_: normal scene navigation
+
+**Gallery Filter**  
+A presentation-only projection over Gallery cards (All / Included / Excluded / Needs Review). Applying or changing a filter never mutates Prompt, Mask, Participation, Evidence, or Candidate state.  
+_Avoid_: state mutation, trust signal
 
 **RGB Ready**  
 The AI View has valid authoritative gsplat RGB bound to its exact CameraBinding and target dependency identity. RGB Ready does not imply Mask Ready, Evidence Ready, or Candidate Ready.  

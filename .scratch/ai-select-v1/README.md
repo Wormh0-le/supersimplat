@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.14
+# AI Select v1 — Implementation Ticket Graph v2.15
 
-Status: **ready-for-agent planning graph — Final Spec v1.3 source-of-truth synchronized; current frontier Ticket 09**
+Status: **ready-for-agent planning graph — Final Spec v1.3 source-of-truth synchronized; current frontier Tickets 11 + 12**
 
 Branch: `ai-select-v1`
 
@@ -41,7 +41,9 @@ All 31 Ticket files contain a current mapping to Final Spec v1.3. Older spec nam
 - Old TargetGeometryHint schema/policy/digest identities fail closed and regenerate.
 - Tickets 04C, 07, 02C, 07A, 07B, 08, 08A, 08B and 08C are implemented prerequisites, not current frontier work.
 - Locked-GPU browser E2E for 08B and 08C completed on 2026-08-07 with no blocking issue reported.
-- Ticket 09 is the current implementation frontier.
+- Ticket 09 is implemented: separated Gallery card states, read-only View RGB/Mask inspection, per-View read-only Camera Inspection, presentation-only filters, bounded thumbnails; no backend/fallback/tracker/ProposalDecision/Prompt-Brush/Negative-Box surface.
+- Locked-GPU large-Gallery browser walkthrough for Ticket 09 passed on 2026-08-07.
+- Tickets 11 and 12 are the current implementation frontier in parallel.
 
 ## Dependency graph
 
@@ -112,18 +114,20 @@ implemented prerequisites:
 - 07 / 07A / 07B — Mask Review, Anchor acquisition, authoring/edit UX
 - 02C — automatic runtime readiness
 - 08 / 08A / 08B / 08C — target geometry, local views, per-View SAM acquisition, retained Prompt Support
+- 09 — scalable Gallery, frustum sync and View camera/Mask inspection
 
 ready now:
-- 09 — Scalable Gallery + Frustum Sync + Mask Inspection
+- 11 — User-added AIView Using Current or Adjusted Camera
+- 12 — Explicit Mask Refresh + Evidence Dirty / Candidate Stale
 ```
 
 Compatibility field:
 
 ```text
-next_implementation_ticket = 09
+next_implementation_ticket = 11
 ```
 
-After Ticket 09, Tickets 11 and 12 become parallel ready work. Ticket 14 requires both 11 and 12. Ticket 10 remains optional and off the core release path.
+Tickets 11 and 12 proceed in parallel. Ticket 14 requires both 11 and 12. Ticket 10 remains optional and off the core release path.
 
 ## One valid topological order
 

@@ -1,8 +1,8 @@
 # 12 — Explicit Mask Refresh + Evidence Dirty / Candidate Stale
 
-Status: blocked — waits for 08B and 09
+Status: ready — Ticket 09 prerequisite is implemented; current implementation frontier (parallel with 11)
 
-Blocked by: 08B, 09, 07, 05
+Blocked by: 08B (satisfied), 09 (satisfied), 07 (satisfied), 05 (satisfied)
 
 ## Final Spec mapping
 

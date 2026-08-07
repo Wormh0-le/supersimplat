@@ -3,7 +3,7 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.14 / Ticket 09 frontier
+**规划版本：** Ticket Graph v2.15 / Tickets 11 + 12 frontier
 **日期：** 2026-08-07
 **适用分支：** `ai-select-v1`  
 **决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017
@@ -720,8 +720,9 @@ Required validation：
 08A  compact Image Instance Mask contracts                                 implemented
 08B  3D-guided per-View SAM 3 Image acquisition                            implemented
 08C  reliable retained TargetGeometryHint support and Route B Prompt eligibility implemented
-09   simplified Gallery states                                              ready / current frontier
-12   simplified dirty/refresh lifecycle                                     after 09
+09   simplified Gallery states                                              implemented
+11   user-added Views through current image path                            ready / current frontier
+12   simplified dirty/refresh lifecycle                                     ready / current frontier
 13   sole Lift Readiness / visibility authority                             after 14 + 11 + 12
 10   optional cross-view Evidence-conflict diagnostics                      nonblocking
 ```
@@ -729,13 +730,15 @@ Required validation：
 Current ready frontier：
 
 ```text
-09  Scalable Gallery + Frustum Sync + Mask Inspection
+11  User-added AIView Using Current or Adjusted Camera
+12  Explicit Mask Refresh + Evidence Dirty / Candidate Stale
 ```
 
-After 09：
+After 11 + 12：
 
-- 11 and 12 proceed in parallel；
 - 14 proceeds after both 11 and 12；
 - Ticket 10 remains optional and off the core release path。
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported。
+
+Locked-GPU large-Gallery browser walkthrough for Ticket 09 passed on 2026-08-07。

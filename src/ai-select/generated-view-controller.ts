@@ -380,6 +380,7 @@ const copyHint = (
         visiblePoints: Object.freeze(hint.visiblePoints.map(copyWorldTriple)),
         quality: hint.quality,
         reasons: Object.freeze([...hint.reasons]),
+        promptSupport: hint.promptSupport,
         artifactDigest: hint.artifactDigest
     });
 };

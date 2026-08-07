@@ -1,4 +1,4 @@
-# AI Select v1 — Implementation Ticket Graph v2.12
+# AI Select v1 — Implementation Ticket Graph v2.13
 
 Status: **ready-for-agent planning graph — all Ticket-local current mappings migrated to Final Spec v1.3**
 
@@ -15,9 +15,9 @@ Branch: `ai-select-v1`
 
 Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical only. ADR 0014 and DG-24 through DG-26 are historical where they conflict with ADR 0016 / Final Spec v1.3.
 
-All 30 Ticket files now contain a current mapping to Final Spec v1.3. Older spec names may remain only inside sections explicitly labeled historical provenance, historical implementation record, superseded surface, or migration input; they cannot be used as current closure sources.
+All 31 Ticket files now contain a current mapping to Final Spec v1.3. Older spec names may remain only inside sections explicitly labeled historical provenance, historical implementation record, superseded surface, or migration input; they cannot be used as current closure sources.
 
-## v2.12 review closures
+## v2.13 review closures
 
 - Static Anchor and Key-View segmentation use official SAM 3 Image instance interactivity.
 - SAM 3.1 Multiplex/private tracker heads are removed from the current static path.
@@ -36,6 +36,8 @@ All 30 Ticket files now contain a current mapping to Final Spec v1.3. Older spec
 - Generic backend registry, Route B/C/D, sequence extensions and automatic Route-A fallback are removed from v1.
 - Ticket 04A and Ticket 06 old Prompt/fallback language is explicitly historical.
 - Every Ticket-local `Current Final Spec mapping` or equivalent current mapping resolves directly to Final Spec v1.3.
+- TargetGeometryHint formal points are retained distinct first-hit support; Route B Prompt Support is independent from Geometry Quality.
+- Old TargetGeometryHint schema/policy/digest identities fail closed and regenerate.
 
 ## Dependency graph
 
@@ -79,8 +81,10 @@ Paint/Erase palette                + local Key Views
                                 08B per-View
                                 SAM 3 Image
                                     │
-                                    ▼
-                                09 Gallery
+                         ┌──────────┴──────────┐
+                         ▼                     ▼
+                    08C reliable            09 Gallery
+                    Prompt Support
                                  ├────────────┐
                                  ▼            ▼
                                 11           12
@@ -103,6 +107,7 @@ Ticket 10 does not block Ticket 13, Ticket 21 or native application.
 ready now:
 - 04C — critical SAM 3 Image migration gate
 - 07  — parallel MaskReview policy correction
+- 08C — retained TargetGeometryHint Prompt Support follow-up after 08B
 ```
 
 Compatibility field:
@@ -113,12 +118,14 @@ next_implementation_ticket = 04C
 
 After 04C, Ticket 02C may proceed independently. Ticket 07A begins after both 04C and 07. Ticket 07B and 08 then proceed in parallel.
 
+After 08B, Ticket 08C and Ticket 09 proceed in parallel.
+
 ## One valid topological order
 
 ```text
 01 → 02 → 03 → 04 → 05
 → 04A → 04B → 06 → 07 → 04C
-→ 02C → 07A → 07B / 08 → 08A → 08B → 09
+→ 02C → 07A → 07B / 08 → 08A → 08B → 08C / 09
 → 11 → 12 → 14 → 13 → 15 → 16 → 17 → 18
 → 19 → 20 → 21 → 22
 

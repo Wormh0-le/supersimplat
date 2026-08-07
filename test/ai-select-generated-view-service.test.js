@@ -157,7 +157,7 @@ const renderResponseFor = (request, overrides = {}) => ({
 });
 
 const geometryHint = (binding, rgb) => ({
-    schemaVersion: 1,
+    schemaVersion: 2,
     targetContextId: binding.targetContextId,
     anchorCameraBindingDigest: digest('a'),
     anchorRgbDigest: digest('b'),
@@ -165,9 +165,15 @@ const geometryHint = (binding, rgb) => ({
     geometryPolicyDigest: digest('d'),
     centerWorld: [0, 0, 0],
     extentWorld: [1, 1, 1],
-    visiblePoints: [[0, 0, 0]],
+    visiblePoints: [
+        [0, 0, 0],
+        [1, 0, 0],
+        [0, 1, 0],
+        [1, 1, 0]
+    ],
     quality: 'usable',
     reasons: [],
+    promptSupport: 'usable',
     artifactDigest: digest('e')
 });
 

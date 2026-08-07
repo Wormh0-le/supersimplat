@@ -117,7 +117,10 @@ from .view_assessment import (
     assess_local_view,
     local_view_assessment_payload,
 )
-from .digests import canonical_json_digest as _canonical_json_digest
+from .digests import (
+    canonical_json_digest as _canonical_json_digest,
+    route_b_artifact_digest as _route_b_artifact_digest,
+)
 from .target_geometry import (
     AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION,
     AI_SELECT_TARGET_GEOMETRY_POLICY_VERSION,
@@ -129,6 +132,7 @@ from .target_geometry import (
     derive_target_geometry_hint,
     local_key_view_policy_digest,
     plan_local_key_views,
+    prompt_support_is_usable,
     target_geometry_policy_digest,
 )
 
@@ -4734,8 +4738,9 @@ class CompanionState:
                 'visiblePoints': [list(point) for point in derivation.visible_points],
                 'quality': derivation.quality,
                 'reasons': list(derivation.reasons),
+                'promptSupport': derivation.prompt_support,
             }
-            hint_payload['artifactDigest'] = _canonical_json_digest(hint_payload)
+            hint_payload['artifactDigest'] = _route_b_artifact_digest(hint_payload)
             response = {
                 'status': 'complete',
                 **hint_request.response_fields(),
@@ -5002,7 +5007,7 @@ class CompanionState:
                 ],
                 'planAttemptId': plan_request.plan_attempt_id,
             }
-            plan_payload['artifactDigest'] = _canonical_json_digest(plan_payload)
+            plan_payload['artifactDigest'] = _route_b_artifact_digest(plan_payload)
             response = {
                 'status': 'complete',
                 **plan_request.response_fields(),
@@ -5156,10 +5161,14 @@ class CompanionState:
             value.get('anchorStableMaskDigest'),
             'targetGeometryHint anchorStableMaskDigest',
         )
-        _anchor_sha256_digest(
+        geometry_policy_digest = _anchor_sha256_digest(
             value.get('geometryPolicyDigest'),
             'targetGeometryHint geometryPolicyDigest',
         )
+        if geometry_policy_digest != target_geometry_policy_digest():
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint geometryPolicyDigest is unsupported'
+            )
         artifact_digest = _anchor_sha256_digest(
             value.get('artifactDigest'), 'targetGeometryHint artifactDigest'
         )
@@ -5210,7 +5219,24 @@ class CompanionState:
             raise ValueError(
                 'AI Select local Key View plan targetGeometryHint reasons must be a list of strings'
             )
-        recomputed = _canonical_json_digest(
+        prompt_support = value.get('promptSupport')
+        if prompt_support not in ('usable', 'limited'):
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint promptSupport is unsupported'
+            )
+        expected_quality = 'limited' if reasons else 'usable'
+        if quality != expected_quality:
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint quality/reasons are inconsistent'
+            )
+        computed_prompt_support = prompt_support_is_usable(
+            visible_points, reasons
+        )
+        if (prompt_support == 'usable') != computed_prompt_support:
+            raise ValueError(
+                'AI Select local Key View plan targetGeometryHint promptSupport is inconsistent with its retained support'
+            )
+        recomputed = _route_b_artifact_digest(
             {key: entry for key, entry in value.items() if key != 'artifactDigest'}
         )
         if recomputed != artifact_digest:
@@ -5372,6 +5398,7 @@ class CompanionState:
             'visiblePoints',
             'quality',
             'reasons',
+            'promptSupport',
             'artifactDigest',
         }
         if not isinstance(value, dict) or set(value) != required:
@@ -5384,6 +5411,7 @@ class CompanionState:
             raise ValueError(
                 'Route B targetGeometryHint targetContextId must match requestBinding'
             )
+        geometry_policy_digest = None
         for key in (
             'anchorCameraBindingDigest',
             'anchorRgbDigest',
@@ -5391,7 +5419,13 @@ class CompanionState:
             'geometryPolicyDigest',
             'artifactDigest',
         ):
-            _anchor_sha256_digest(value.get(key), f'targetGeometryHint {key}')
+            digest = _anchor_sha256_digest(value.get(key), f'targetGeometryHint {key}')
+            if key == 'geometryPolicyDigest':
+                geometry_policy_digest = digest
+        if geometry_policy_digest != target_geometry_policy_digest():
+            raise ValueError(
+                'Route B targetGeometryHint geometryPolicyDigest is unsupported'
+            )
         _anchor_number_sequence(value.get('centerWorld'), 3, 'centerWorld')
         _anchor_number_sequence(value.get('extentWorld'), 3, 'extentWorld')
         visible_points = value.get('visiblePoints')
@@ -5413,10 +5447,25 @@ class CompanionState:
             not isinstance(reason, str) or not reason for reason in value['reasons']
         ):
             raise ValueError('Route B targetGeometryHint reasons are invalid')
+        prompt_support = value.get('promptSupport')
+        if prompt_support not in ('usable', 'limited'):
+            raise ValueError('Route B targetGeometryHint promptSupport is invalid')
+        expected_quality = 'limited' if value['reasons'] else 'usable'
+        if value['quality'] != expected_quality:
+            raise ValueError(
+                'Route B targetGeometryHint quality/reasons are inconsistent'
+            )
+        computed_prompt_support = prompt_support_is_usable(
+            visible_points, value['reasons']
+        )
+        if (prompt_support == 'usable') != computed_prompt_support:
+            raise ValueError(
+                'Route B targetGeometryHint promptSupport is inconsistent with its retained support'
+            )
         artifact_digest = _anchor_sha256_digest(
             value.get('artifactDigest'), 'targetGeometryHint artifactDigest'
         )
-        if artifact_digest != _canonical_json_digest(
+        if artifact_digest != _route_b_artifact_digest(
             {key: item for key, item in value.items() if key != 'artifactDigest'}
         ):
             raise ValueError(
@@ -5505,7 +5554,7 @@ class CompanionState:
         artifact_digest = _anchor_sha256_digest(
             value.get('artifactDigest'), 'localKeyViewPlan artifactDigest'
         )
-        if artifact_digest != _canonical_json_digest(
+        if artifact_digest != _route_b_artifact_digest(
             {key: item for key, item in value.items() if key != 'artifactDigest'}
         ):
             raise ValueError(
@@ -5863,7 +5912,42 @@ class CompanionState:
                 'Route B Prompt synthesis adapter capability identity is incompatible.',
             )
         visible_points = prompt_request.target_geometry_hint['visiblePoints']
-        assert isinstance(visible_points, list)
+        if not isinstance(visible_points, list):
+            raise ValueError(
+                'Route B targetGeometryHint visiblePoints must be an array'
+            )
+        geometry_quality = prompt_request.target_geometry_hint.get('quality')
+        geometry_reasons = prompt_request.target_geometry_hint.get('reasons')
+        prompt_support = prompt_request.target_geometry_hint.get('promptSupport')
+        if (
+            geometry_quality not in ('usable', 'limited')
+            or prompt_support not in ('usable', 'limited')
+            or not isinstance(geometry_reasons, list)
+            or any(
+                not isinstance(reason, str) or not reason
+                for reason in geometry_reasons
+            )
+        ):
+            raise ValueError(
+                'Route B targetGeometryHint quality/reasons/promptSupport are invalid'
+            )
+        geometry_diagnostics = (
+            ['geometry-limited', *geometry_reasons]
+            if geometry_quality == 'limited'
+            else []
+        )
+        if prompt_support == 'limited':
+            # Prompt Support is an independent, fail-closed eligibility state.
+            # Geometry may be diagnostically limited while a separated-support
+            # filter still leaves enough retained support for Prompt synthesis.
+            return {
+                **prompt_request.response_fields(),
+                'status': 'limited',
+                'diagnostics': [
+                    *geometry_diagnostics,
+                    'prompt-support-limited',
+                ],
+            }
         synthesized = synthesize_image_instance_prompt(
             visible_points=visible_points,
             camera_binding=prompt_request.view_camera_binding,
@@ -5874,7 +5958,7 @@ class CompanionState:
             return {
                 **prompt_request.response_fields(),
                 'status': 'limited',
-                'diagnostics': list(synthesized.diagnostics),
+                'diagnostics': [*geometry_diagnostics, *synthesized.diagnostics],
             }
         prompt = create_image_instance_prompt_artifact(
             {
@@ -5913,7 +5997,7 @@ class CompanionState:
         return {
             **prompt_request.response_fields(),
             'status': 'ready',
-            'diagnostics': list(synthesized.diagnostics),
+            'diagnostics': [*geometry_diagnostics, *synthesized.diagnostics],
             'prompt': prompt,
         }
 

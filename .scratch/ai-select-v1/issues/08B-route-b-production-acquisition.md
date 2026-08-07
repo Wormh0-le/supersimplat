@@ -26,11 +26,14 @@ Implemented on `ai-select-v1` as the bounded Route B acquisition path:
   automatic Stable Mask and Excluded. Technical failure preserves RGB and a
   prior Stable revision; User Confirmed authority prevents automatic
   replacement.
+- Route B Target Geometry Hint and Local Key-View Plan artifacts use a
+  wire-round-trip-stable IEEE-754 numeric digest encoding, so browser
+  JSON.parse/JSON.stringify does not invalidate their opaque artifact identity.
 - The public propagation endpoint, provider-returned assessment coupling,
   propagated Mask source, static Multiplex/tracker execution, and Route-A
   fallback are retired from the Route B path. No Route B publication produces
   P/N/V, a Lift, or a Candidate.
-- Contract/CPU validation passed with `npm test` (419 browser tests and 377
+- Contract/CPU validation passed with `npm test` (419 browser tests and 381
   Companion tests; one environment-gated test skipped), `npm run lint`,
   `npm run lint:locales`, and `npm run build`. The locked CUDA/model browser
   walkthrough is documented at

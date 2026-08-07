@@ -213,6 +213,9 @@ def synthesize_image_instance_prompt(
     if clipped_count > len(samples):
         diagnostics.append('target-materially-clipped')
         return LimitedImageInstancePrompt(diagnostics=tuple(diagnostics))
+    if len(set(samples)) < 2:
+        diagnostics.append('sparse-projectable-support')
+        return LimitedImageInstancePrompt(diagnostics=tuple(diagnostics))
     x_values = [sample[0] for sample in samples]
     y_values = [sample[1] for sample in samples]
     x0 = min(x_values)
@@ -220,8 +223,6 @@ def synthesize_image_instance_prompt(
     x1 = max(x_values) + 1
     y1 = max(y_values) + 1
     diagnostics.insert(0, f'projected-support:{len(samples)}')
-    if len(set(samples)) < 2:
-        diagnostics.append('sparse-projectable-support')
     return SynthesizedImageInstancePrompt(
         positive_points=_select_positive_points(samples),
         negative_points=(),

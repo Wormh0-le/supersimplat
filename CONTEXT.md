@@ -94,9 +94,13 @@ _Avoid_: PlayCanvas screenshot, generated view
 A planner-owned AI View rendered to increase useful target observation and directional diversity without moving the visible Editor Camera.  
 _Avoid_: source capture, camera animation
 
-**TargetGeometryHint**  
-One compact, non-ownership geometry artifact derived by the Companion from the exact confirmed Anchor Camera/RGB/Stable Mask: bounded first-hit visible points, robust center/extent, quality, and evidence-backed reasons. It is localization, framing, and later Prompt-synthesis context only — never Stable Gaussian IDs, weights, or ownership, and it may seed but never hard-bound the Evidence Working Set.  
+**TargetGeometryHint**
+One compact, non-ownership geometry artifact derived by the Companion from the exact confirmed Anchor Camera/RGB/Stable Mask: bounded reliable first-hit visible points, robust center/extent, geometry quality, Prompt support, and evidence-backed reasons. Its formal visible points are the retained support after the separated-support filter; geometry quality remains a diagnostic independent from Prompt support. It is localization, framing, and later Prompt-synthesis context only — never Stable Gaussian IDs, weights, or ownership, and it may seed but never hard-bound the Evidence Working Set.
 _Avoid_: Gaussian ownership record, Candidate seed
+
+**Prompt Support**
+The independent eligibility state for turning a TargetGeometryHint's retained visible points into a Route B Image Instance Prompt. Global support is `usable` only when at least four distinct retained first-hit 3D support samples remain and there is no disqualifying geometry reason; when geometry is `limited`, the only promotable reason is `separatedSupportFiltered`. Each Generated View must additionally project at least two distinct points into its authoritative image. `limited` means no Prompt or Mask inference may be issued for that View, even when its RGB is Ready. Geometry warnings remain visible and do not by themselves change Participation.
+_Avoid_: geometry quality, model confidence, Participation
 
 **Local Key View**  
 A planner-owned Generated View from the bounded local Key-View policy: left/right azimuth and modest elevation offsets around the TargetGeometryHint center with framing from its extent, validated for projection size, clipping, visibility, and nonblank authoritative RGB. The default batch is 2–4 Views; Generate More appends another bounded batch; Stop preserves completed Views; Regenerate replaces planner-owned Views but preserves user-owned Views and exact-identity artifacts.  
@@ -157,7 +161,7 @@ An opaque, digest-bound browser-held reference to Companion-local low-resolution
 _Avoid_: binary brush as mask input, cross-session logits cache
 
 **Generated View Image Instance Prompt**
-A deterministic Route B `ImageInstancePromptArtifact` synthesized from the exact TargetGeometryHint, accepted Local Key View plan, authoritative View RGB, View CameraBinding, and locked SAM 3 Image runtime identity. It contains one positive instance Box, 1–3 positive points, at most two local negative points, and `multimaskOutput: false`; limited projection support yields no inference request. Prompt regeneration is separate from an inference Retry.
+A deterministic Route B `ImageInstancePromptArtifact` synthesized from the exact TargetGeometryHint's retained visible points, accepted Local Key View plan, authoritative View RGB, View CameraBinding, and locked SAM 3 Image runtime identity. It contains one positive instance Box, 1–3 positive points, at most two local negative points, and `multimaskOutput: false`; `Prompt Support: limited` yields no inference request even when geometry quality is limited for a separately disclosed reason. Prompt regeneration is separate from an inference Retry.
 _Avoid_: propagation/tracker state, Negative Box, text/brush/mask-constraint prompt, previous logits
 
 **AutoMaskProposalSet**

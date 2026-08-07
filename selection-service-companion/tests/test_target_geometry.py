@@ -190,13 +190,14 @@ class TargetGeometryHintDerivationTests(unittest.TestCase):
 
         self.assertIsNotNone(hint)
         assert hint is not None
-        self.assertEqual(len(hint.visible_points), 11)
+        self.assertEqual(len(hint.visible_points), 8)
         self.assertEqual(hint.center, (0.0, 0.0, 4.0))
         self.assertAlmostEqual(hint.extent[0], 0.7413)
         self.assertAlmostEqual(hint.extent[1], 0.7413)
         self.assertAlmostEqual(hint.extent[2], 1e-3)
         self.assertEqual(hint.quality, "limited")
         self.assertEqual(hint.reasons, ("separatedSupportFiltered",))
+        self.assertEqual(hint.prompt_support, "usable")
 
     def test_frame_boundary_contact_lowers_quality(self) -> None:
         gaussians = tuple(
@@ -220,6 +221,7 @@ class TargetGeometryHintDerivationTests(unittest.TestCase):
         self.assertEqual(len(hint.visible_points), 8)
         self.assertEqual(hint.quality, "limited")
         self.assertEqual(hint.reasons, ("frameBoundaryContact",))
+        self.assertEqual(hint.prompt_support, "limited")
 
     def test_visible_points_are_bounded_by_a_deterministic_stride(self) -> None:
         # 100 first-hit samples on pixels (u, v) for u, v in 1..10 of the 16x16
@@ -282,7 +284,7 @@ class TargetGeometryHintDerivationTests(unittest.TestCase):
 class TargetGeometryPolicyDigestTests(unittest.TestCase):
     def test_geometry_policy_descriptor_golden_digest(self) -> None:
         expected_descriptor = {
-            "version": "target-geometry/v1",
+            "version": "target-geometry/v2",
             "minLogitOpacity": 0.0,
             "maxVisiblePoints": 64,
             "outlierMinDistance": 0.05,
@@ -291,6 +293,9 @@ class TargetGeometryPolicyDigestTests(unittest.TestCase):
             "extentEpsilon": 1e-3,
             "sparseSupportCount": 8,
             "separatedDropFraction": 0.25,
+            "promptSupportMinCount": 4,
+            "promptSupportPromotableReasons": ["separatedSupportFiltered"],
+            "visiblePointIdentity": "distinct-first-hit-world-mean-v1",
         }
         self.assertEqual(
             target_geometry_policy_digest(),

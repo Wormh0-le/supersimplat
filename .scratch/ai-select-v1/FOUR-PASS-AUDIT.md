@@ -1,4 +1,4 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.12
+# Eight-Pass Bidirectional Traceability Audit — v2.13
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
@@ -15,13 +15,20 @@ The filename is retained for compatibility. Final Spec v1.3 is the sole current 
 
 All eight are corrected below.
 
+## v2.13 follow-up closure
+
+Ticket 08C records the accepted retained-visible-support contract from the
+08B browser investigation. It separates Geometry Quality from Route B Prompt
+Support, rejects old TargetGeometryHint identities, and remains parallel with
+Ticket 09 rather than introducing a tracker or changing P/N/V ownership.
+
 ## Pass 1 — Ticket graph and current frontier
 
-- Ticket count: 30 total.
+- Ticket count: 31 total.
 - Missing blocker references: 0.
 - Ticket cycle: false.
-- Topological order length: 30/30.
-- Current ready frontier: `[04C, 07]`.
+- Topological order length: 31/31.
+- Current ready frontier: `[04C, 07, 08C]`.
 - Critical migration gate: `04C`.
 - Ticket 02C may proceed after 04C.
 - Ticket 07A requires both 04C and 07.
@@ -35,7 +42,7 @@ One valid order:
 ```text
 01 → 02 → 03 → 04 → 05
 → 04A → 04B → 06 → 07 → 04C
-→ 02C → 07A → 07B → 08 → 08A → 08B → 09
+→ 02C → 07A → 07B → 08 → 08A → 08B → 08C / 09
 → 11 → 12 → 14 → 13 → 15 → 16 → 17 → 18
 → 19 → 20 → 21 → 22 → 10
 ```
@@ -50,8 +57,8 @@ Checks:
 - Final Spec v1.2 is historical.
 - ADR 0016 is accepted and indexed.
 - ADR 0016 records ArtisanGS as non-normative design provenance and explicitly states that Final Spec v1.3 remains the requirement authority.
-- CURRENT-TICKET-SPEC-MAPPING maps all 30 Tickets to v1.3.
-- every one of the 30 Ticket files contains a direct current mapping to Final Spec v1.3;
+- CURRENT-TICKET-SPEC-MAPPING maps all 31 Tickets to v1.3.
+- every one of the 31 Ticket files contains a direct current mapping to Final Spec v1.3;
 - zero Ticket-local current mapping/status blocks name Final Spec v1.1, an Amendment, or Final Spec v1.2 as current authority;
 - older spec names appear only inside explicitly historical-provenance, historical-implementation, superseded-surface or migration-input sections;
 - ADR 0014 / DG-24–26 are historical where conflicting;
@@ -151,16 +158,16 @@ Ticket-local Final Spec v1.1/v1.2 current mapping text
 VisibleTargetSupport/TargetBootstrap current Evidence-seed wording
 ```
 
-Every target is owned by 04C, 06, 08B, 12, 14, 20, 22 or 21. User Confirmed Stable Masks are preserved.
+Every target is owned by 04C, 06, 08B, 08C, 12, 14, 20, 22 or 21. User Confirmed Stable Masks are preserved.
 
 Result: **PASS**
 
 ## Pass 8 — Traceability and walkthrough coverage
 
-- Requirements: 52.
+- Requirements: 56.
 - Unmapped requirements: 0.
 - Orphan active Tickets: 0.
-- Ticket-local direct v1.3 mappings: 30/30.
+- Ticket-local direct v1.3 mappings: 31/31.
 - Ticket-local legacy current mappings: 0.
 - Typical walkthroughs: 16.
 - Error walkthroughs: 16.

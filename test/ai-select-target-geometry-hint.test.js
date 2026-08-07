@@ -74,7 +74,7 @@ const maskArtifact = (width, height, seedByte) => {
 };
 
 const hintArtifactFor = (request, overrides = {}) => ({
-    schemaVersion: 1,
+    schemaVersion: 2,
     targetContextId: request.requestBinding.targetContextId,
     anchorCameraBindingDigest: request.anchorCameraBindingDigest,
     anchorRgbDigest: request.anchorRgbDigest,
@@ -84,10 +84,13 @@ const hintArtifactFor = (request, overrides = {}) => ({
     extentWorld: [0.5, 0.25, 0.125],
     visiblePoints: [
         [1, 2, 3],
-        [4, 5, 6]
+        [4, 5, 6],
+        [1, 2, 4],
+        [4, 5, 7]
     ],
     quality: 'usable',
     reasons: [],
+    promptSupport: 'usable',
     artifactDigest: digest('f'),
     ...overrides
 });
@@ -206,7 +209,8 @@ test('a complete Target Geometry Hint artifact validates', () => {
         isTargetGeometryHintArtifact(
             hintArtifactFor(request, {
                 quality: 'limited',
-                reasons: ['sparseSupport']
+                reasons: ['sparseSupport'],
+                promptSupport: 'limited'
             })
         )
     );
@@ -216,7 +220,7 @@ test('hint artifact validation fails closed on malformed fields', () => {
     const request = hintRequest();
     const artifact = hintArtifactFor(request);
     assert.ok(!isTargetGeometryHintArtifact(null));
-    assert.ok(!isTargetGeometryHintArtifact({ ...artifact, schemaVersion: 2 }));
+    assert.ok(!isTargetGeometryHintArtifact({ ...artifact, schemaVersion: 1 }));
     assert.ok(
         !isTargetGeometryHintArtifact({ ...artifact, schemaVersion: '1' })
     );
@@ -275,7 +279,8 @@ test('hint artifact validation fails closed on malformed fields', () => {
     assert.ok(
         isTargetGeometryHintArtifact({
             ...artifact,
-            visiblePoints: Array.from({ length: 64 }, () => [0, 0, 0])
+            visiblePoints: Array.from({ length: 64 }, () => [0, 0, 0]),
+            promptSupport: 'limited'
         })
     );
     assert.ok(
@@ -288,6 +293,17 @@ test('hint artifact validation fails closed on malformed fields', () => {
         !isTargetGeometryHintArtifact({ ...artifact, visiblePoints: [[1, 2]] })
     );
     assert.ok(!isTargetGeometryHintArtifact({ ...artifact, quality: 'good' }));
+    assert.ok(
+        !isTargetGeometryHintArtifact({ ...artifact, promptSupport: 'invalid' })
+    );
+    assert.ok(
+        !isTargetGeometryHintArtifact({
+            ...artifact,
+            quality: 'usable',
+            reasons: ['separatedSupportFiltered'],
+            promptSupport: 'usable'
+        })
+    );
     assert.ok(!isTargetGeometryHintArtifact({ ...artifact, reasons: [''] }));
     assert.ok(!isTargetGeometryHintArtifact({ ...artifact, reasons: [7] }));
     assert.ok(
@@ -330,7 +346,7 @@ test('hint response validation fails closed on malformed inputs', () => {
     assert.ok(
         !isTargetGeometryHintResponse({
             ...response,
-            hint: hintArtifactFor(request, { schemaVersion: 2 })
+            hint: hintArtifactFor(request, { schemaVersion: 1 })
         })
     );
 });

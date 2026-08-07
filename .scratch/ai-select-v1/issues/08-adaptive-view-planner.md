@@ -1,6 +1,6 @@
 # 08 — TargetGeometryHint + Bounded Local Key Views
 
-Status: implemented — `target-geometry/v1` + `local-key-view-planner/v1` + plan lifecycle (Stop / Generate More / Regenerate)
+Status: implemented — `target-geometry/v2` + `local-key-view-planner/v1` + plan lifecycle (Stop / Generate More / Regenerate)
 
 Blocked by: 07A
 

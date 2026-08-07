@@ -46,7 +46,7 @@ const cameraBinding = () => captureEditorCameraBinding(editorCamera());
 const digest = (letter) => `sha256:${letter.repeat(64)}`;
 
 const hintArtifact = (overrides = {}) => ({
-    schemaVersion: 1,
+    schemaVersion: 2,
     targetContextId: 'ai-target-context-1',
     anchorCameraBindingDigest: digest('b'),
     anchorRgbDigest: digest('a'),
@@ -54,9 +54,15 @@ const hintArtifact = (overrides = {}) => ({
     geometryPolicyDigest: digest('e'),
     centerWorld: [1, 2, 3],
     extentWorld: [0.5, 0.25, 0.125],
-    visiblePoints: [[1, 2, 3]],
+    visiblePoints: [
+        [1, 2, 3],
+        [4, 5, 6],
+        [1, 2, 4],
+        [4, 5, 7]
+    ],
     quality: 'usable',
     reasons: [],
+    promptSupport: 'usable',
     artifactDigest: digest('f'),
     ...overrides
 });
@@ -159,7 +165,7 @@ test('plan request validation fails closed on malformed inputs', () => {
     assert.ok(
         !isLocalKeyViewPlanRequest({
             ...request,
-            targetGeometryHint: hintArtifact({ schemaVersion: 2 })
+            targetGeometryHint: hintArtifact({ schemaVersion: 1 })
         })
     );
     assert.ok(

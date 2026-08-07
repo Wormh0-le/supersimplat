@@ -128,7 +128,7 @@ const hintRequest = {
 };
 
 const hintArtifactFor = (request, overrides = {}) => ({
-    schemaVersion: 1,
+    schemaVersion: 2,
     targetContextId: request.requestBinding.targetContextId,
     anchorCameraBindingDigest: request.anchorCameraBindingDigest,
     anchorRgbDigest: request.anchorRgbDigest,
@@ -136,9 +136,15 @@ const hintArtifactFor = (request, overrides = {}) => ({
     geometryPolicyDigest: `sha256:${'e'.repeat(64)}`,
     centerWorld: [1, 2, 3],
     extentWorld: [0.5, 0.5, 0.5],
-    visiblePoints: [[1, 2, 3]],
+    visiblePoints: [
+        [1, 2, 3],
+        [4, 5, 6],
+        [1, 2, 4],
+        [4, 5, 7]
+    ],
     quality: 'usable',
     reasons: [],
+    promptSupport: 'usable',
     artifactDigest: `sha256:${'f'.repeat(64)}`,
     ...overrides
 });
@@ -734,7 +740,7 @@ test('an incomplete Key-View plan request is rejected before any transport call'
         adapter.planLocalKeyViews({
             ...keyViewPlanRequest,
             targetGeometryHint: hintArtifactFor(hintRequest, {
-                schemaVersion: 2
+                schemaVersion: 1
             })
         }),
         /complete bound local Key-View plan request/
@@ -941,6 +947,19 @@ test('reviews one inference-produced Mask through its dedicated Route B endpoint
     assert.equal(calls.length, 1);
     const reviewCall = calls[0];
     assert.match(reviewCall.url, /\/ai-select\/image-instance-mask-reviews$/);
+    assert.deepEqual(Object.keys(reviewCall.body).sort(), [
+        'chosenMask',
+        'inferenceResultDigest',
+        'prompt',
+        'requestBinding',
+        'reviewAttemptId',
+        'reviewPolicyVersion',
+        'rgb',
+        'targetSplatId',
+        'viewId'
+    ]);
+    assert.equal(reviewCall.body.targetSplatId, 'scene-1');
+    assert.equal(reviewCall.body.target, undefined);
     assert.equal(reviewCall.body.chosenMask.digest, maskArtifact.digest);
     assert.equal(
         reviewCall.body.inferenceResultDigest,

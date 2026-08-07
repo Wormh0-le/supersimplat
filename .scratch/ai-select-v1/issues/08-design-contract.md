@@ -36,7 +36,7 @@ Authority: Final Spec v1.3 §§9–10, 19, 21, 24–26; ADR 0016 items 8–10.
 
 ## Constants
 
-- Geometry policy version: `target-geometry/v1`; hint `schemaVersion: 1`.
+- Geometry policy version: `target-geometry/v2`; hint `schemaVersion: 2`.
 - Key-View planner policy version: `local-key-view-planner/v1`; plan
   `schemaVersion: 1`.
 - Routes: `POST /ai-select/target-geometry-hints`,
@@ -64,7 +64,7 @@ Authority: Final Spec v1.3 §§9–10, 19, 21, 24–26; ADR 0016 items 8–10.
   "anchorCameraBindingDigest": "sha256:...",  // editor-computed, opaque to Companion
   "anchorRgbDigest": "sha256:...",            // identity binding only
   "anchorStableMask": MaskArtifact,           // bytes, digest-verified
-  "geometryPolicyVersion": "target-geometry/v1",
+  "geometryPolicyVersion": "target-geometry/v2",
   "sceneTransport": "packed-v1" | "spatial-v1"  // optional
 }
 ```
@@ -81,9 +81,9 @@ same single-slot admission/replay treatment.
   // ... identity echo of every request field above except the mask bytes:
   "requestBinding", "targetSplatId", "sceneId", "sceneVersion",
   "renderConfigVersion", "geometryAttemptId",
-  "geometryPolicyVersion": "target-geometry/v1",
+  "geometryPolicyVersion": "target-geometry/v2",
   "hint": {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "targetContextId": string,               // === requestBinding.targetContextId
     "anchorCameraBindingDigest": "sha256:...",  // echo of request value
     "anchorRgbDigest": "sha256:...",            // echo of request value
@@ -91,10 +91,11 @@ same single-slot admission/replay treatment.
     "geometryPolicyDigest": "sha256:...",       // Companion policy descriptor digest
     "centerWorld": [x, y, z],
     "extentWorld": [x, y, z],
-    "visiblePoints": [[x, y, z], ...],       // 1..64, deterministic order
+    "visiblePoints": [[x, y, z], ...],       // 1..64 retained distinct support
     "quality": "usable" | "limited",         // "unavailable" is contract-only;
                                              // production fails closed with 409
     "reasons": [string, ...],                // evidence-backed, may be empty
+    "promptSupport": "usable" | "limited", // independent Prompt eligibility
     "artifactDigest": "sha256:..."           // Companion canonical digest
   }
 }
@@ -111,14 +112,16 @@ visible-surface seam"; a production depth-render integration is deferred):
    bit set at that pixel.
 2. Per set mask pixel keep the NEAREST (min depth) Gaussian: its world mean is
    the first-hit visible-surface sample at that pixel.
-3. `visiblePoints` = those world positions ordered by ascending source pixel
-   index (row-major), then bounded: if count > 64, keep `points[::ceil(n/64)]`
-   (deterministic stride, first point always kept).
+3. Deduplicate equal world means (one retained support sample must not be
+   counted once per repeated pixel), then bound the distinct points: if count
+    > 64, keep `points[::ceil(n/64)]` (deterministic stride, first point always
+    > kept). Formal `visiblePoints` never contains the pre-filter raw support.
 4. Empty support → route raises `MaskSessionError('geometryUnavailable', ...)`
    (409). The editor keeps the Anchor and may still add user Views.
-5. Robust center: per-axis median of visible points (provisional), drop samples
+5. Robust center: per-axis median of the bounded distinct points (provisional), drop samples
    farther than `max(0.05, 3 × median distance)` (separated/background
-   filter); if all dropped, retain the unfiltered set.
+   filter); if all are dropped, fail closed with `geometryUnavailable` rather
+   than publishing rejected points.
 6. `centerWorld` = per-axis median of retained points.
    `extentWorld[axis]` = `max(1e-3, 1.4826 × median(|retained[axis] −
 center[axis]|))` (scaled MAD; never a raw extremum; epsilon floor keeps
@@ -128,11 +131,19 @@ center[axis]|))` (scaled MAD; never a raw extremum; epsilon floor keeps
     - `separatedSupportFiltered` when dropped fraction > 0.25;
     - `frameBoundaryContact` when the Stable Mask touches the frame border;
     - quality = `limited` when reasons non-empty, else `usable`.
+8. Prompt Support is independent from Geometry Quality. It is `usable` only
+   when at least four distinct retained samples remain and the only possible
+   quality reason is `separatedSupportFiltered`; it is otherwise `limited`.
+   Each Generated View must additionally project at least two distinct
+   in-frame samples. `sparseSupport` and `frameBoundaryContact` therefore stay
+   Prompt-limited even when RGB and geometry localization remain available.
 
 `geometryPolicyDigest` = `_canonical_json_digest` of the policy descriptor
-(dict with `version` + every numeric constant above). `artifactDigest` =
-`_canonical_json_digest` of the full hint payload minus `artifactDigest`.
-Float determinism is Companion-internal (Python repr); the editor NEVER
+(dict with `version` + every numeric constant above). Route B
+`artifactDigest` uses the Companion `route_b_artifact_digest` encoding over the
+full payload minus `artifactDigest`: sorted object keys, finite numbers as
+IEEE-754 binary64 tokens, and tight separators. This keeps identity stable
+when the browser parses and re-stringifies the artifact. The editor NEVER
 recomputes artifact digests — it binds them opaquely. Cross-runtime identity
 fields (`anchorCameraBindingDigest` etc.) are always editor-computed and only
 string-compared by the Companion.
@@ -156,7 +167,7 @@ string-compared by the Companion.
 
 No scene resolution (pure CPU on the hint) → no snapshot, no cache-miss path.
 The route validates the untrusted hint fail-closed: structure, `schemaVersion
-== 1`, `quality != "unavailable"`, recomputed `artifactDigest` equality,
+== 2`, `quality != "unavailable"`, `promptSupport` enum, recomputed `artifactDigest` equality,
 `hint.targetContextId === requestBinding.targetContextId`, and string equality
 of the three anchor digests against the request fields. Any mismatch → 400.
 Single-slot admission/replay like the other routes.
@@ -217,7 +228,8 @@ Single-slot admission/replay like the other routes.
   `d × 0.45`; first passing wins. All fail → candidate dropped.
 - Zero accepted views in a batch → 409 `plannerFailure`.
 - `localViewPolicyDigest` = canonical digest of the planner policy descriptor.
-- `plan.artifactDigest` = canonical digest of the plan minus `artifactDigest`.
+- `plan.artifactDigest` = `route_b_artifact_digest` of the plan minus
+  `artifactDigest`.
 
 ## Nonblank render gate (Companion, view-renders only)
 
@@ -278,9 +290,11 @@ alpha_coverage < 0.001`. The view's RGB is not published; the editor marks
   `hint.anchorCameraBindingDigest === request.anchorCameraBindingDigest` +
   `hint.anchorRgbDigest === request.anchorRgbDigest` +
   `hint.anchorStableMaskDigest === request.anchorStableMask.digest` +
-  `hint.schemaVersion === 1` + `quality ∈ {usable, limited, unavailable}`
+  `hint.schemaVersion === 2` + `quality ∈ {usable, limited, unavailable}`
   (unavailable from transport is treated as failure) + visiblePoints: 1..64
-  finite triples + reasons: strings + all digests `sha256:<64hex>`.
+  finite retained triples + reasons: strings + promptSupport semantic gate
+  (four distinct points for `usable`, only `separatedSupportFiltered`
+  promotable) + all digests `sha256:<64hex>`.
 - Plan response: structural + identity echo + `batchOrdinal` echo +
   `plan.schemaVersion === 1` + `plan.targetGeometryHintDigest ===
 hint.artifactDigest` + `plan.anchorStableMaskDigest ===

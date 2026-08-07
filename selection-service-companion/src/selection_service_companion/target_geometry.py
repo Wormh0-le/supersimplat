@@ -1,6 +1,6 @@
 """Ticket 08 TargetGeometryHint and bounded local Key-View planning policies.
 
-The ``target-geometry/v1`` policy compresses the exact confirmed Anchor Stable
+The ``target-geometry/v2`` policy compresses the exact confirmed Anchor Stable
 Mask into one compact visible-surface geometry hint, and the
 ``local-key-view-planner/v1`` policy turns that hint into a small bounded local
 Key-View batch. Both policies are pure CPU geometry over immutable mmap planes
@@ -26,9 +26,9 @@ from .digests import canonical_json_digest
 from .support_probe import AnchorSupportProbeCamera
 
 
-AI_SELECT_TARGET_GEOMETRY_POLICY_VERSION = "target-geometry/v1"
+AI_SELECT_TARGET_GEOMETRY_POLICY_VERSION = "target-geometry/v2"
 AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION = "local-key-view-planner/v1"
-TARGET_GEOMETRY_HINT_SCHEMA_VERSION = 1
+TARGET_GEOMETRY_HINT_SCHEMA_VERSION = 2
 LOCAL_KEY_VIEW_PLAN_SCHEMA_VERSION = 1
 
 # Opacity gate: alpha >= 0.5 is exactly logitOpacity >= 0 (support probe parity).
@@ -42,6 +42,8 @@ _EXTENT_MAD_SCALE = 1.4826
 _EXTENT_EPSILON = 1e-3
 _SPARSE_SUPPORT_COUNT = 8
 _SEPARATED_DROP_FRACTION = 0.25
+_PROMPT_SUPPORT_MIN_COUNT = 4
+_PROMPT_SUPPORT_PROMOTABLE_REASONS = frozenset({"separatedSupportFiltered"})
 
 # Bounded local movement: the ring distance never collapses below four extent
 # radii or four near planes, and candidates inherit the exact Anchor pinhole
@@ -90,6 +92,7 @@ class TargetGeometryHintDerivation:
     visible_points: tuple[tuple[float, float, float], ...]
     quality: str
     reasons: tuple[str, ...]
+    prompt_support: str
 
 
 @dataclass(frozen=True)
@@ -115,11 +118,29 @@ def target_geometry_policy_descriptor() -> dict[str, object]:
         "extentEpsilon": _EXTENT_EPSILON,
         "sparseSupportCount": _SPARSE_SUPPORT_COUNT,
         "separatedDropFraction": _SEPARATED_DROP_FRACTION,
+        "promptSupportMinCount": _PROMPT_SUPPORT_MIN_COUNT,
+        "promptSupportPromotableReasons": sorted(_PROMPT_SUPPORT_PROMOTABLE_REASONS),
+        "visiblePointIdentity": "distinct-first-hit-world-mean-v1",
     }
 
 
 def target_geometry_policy_digest() -> str:
     return canonical_json_digest(target_geometry_policy_descriptor())
+
+
+def prompt_support_is_usable(
+    visible_points: Sequence[Sequence[float]], reasons: Sequence[str]
+) -> bool:
+    """Validate the semantic meaning of a published Prompt Support enum."""
+
+    distinct_points = {
+        (float(point[0]), float(point[1]), float(point[2]))
+        for point in visible_points
+    }
+    return (
+        len(distinct_points) >= _PROMPT_SUPPORT_MIN_COUNT
+        and set(reasons).issubset(_PROMPT_SUPPORT_PROMOTABLE_REASONS)
+    )
 
 
 def local_key_view_policy_descriptor() -> dict[str, object]:
@@ -218,6 +239,22 @@ def _collect_first_hit_support(
     ]
 
 
+def _distinct_points(
+    points: Iterable[tuple[float, float, float]],
+) -> list[tuple[float, float, float]]:
+    """Deduplicate first-hit world means without introducing protocol IDs."""
+
+    seen: set[tuple[float, float, float]] = set()
+    distinct: list[tuple[float, float, float]] = []
+    for point in points:
+        canonical = (float(point[0]), float(point[1]), float(point[2]))
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        distinct.append(canonical)
+    return distinct
+
+
 def _mask_touches_frame_border(
     *, camera: AnchorSupportProbeCamera, mask: bytes
 ) -> bool:
@@ -253,7 +290,9 @@ def derive_target_geometry_hint(
     clearly separated background support is filtered before either is computed.
     """
 
-    points = _collect_first_hit_support(planes=planes, camera=camera, mask=mask)
+    points = _distinct_points(
+        _collect_first_hit_support(planes=planes, camera=camera, mask=mask)
+    )
     if not points:
         return None
     if len(points) > _MAX_VISIBLE_POINTS:
@@ -273,8 +312,11 @@ def derive_target_geometry_hint(
     ]
     dropped_fraction = (len(points) - len(retained)) / len(points)
     if not retained:
-        retained = list(points)
-        dropped_fraction = 1.0
+        # There is no trustworthy localization when robust filtering rejects
+        # every distinct support sample. Do not reintroduce those rejected
+        # points as a formal Prompt input; the route turns this into the same
+        # fail-closed geometryUnavailable surface as an empty mask support.
+        return None
 
     center = tuple(median(point[axis] for point in retained) for axis in range(3))
     extent = tuple(
@@ -293,12 +335,19 @@ def derive_target_geometry_hint(
         reasons.append("separatedSupportFiltered")
     if _mask_touches_frame_border(camera=camera, mask=mask):
         reasons.append("frameBoundaryContact")
+    prompt_support = (
+        "usable"
+        if len(retained) >= _PROMPT_SUPPORT_MIN_COUNT
+        and set(reasons).issubset(_PROMPT_SUPPORT_PROMOTABLE_REASONS)
+        else "limited"
+    )
     return TargetGeometryHintDerivation(
         center=(float(center[0]), float(center[1]), float(center[2])),
         extent=(float(extent[0]), float(extent[1]), float(extent[2])),
-        visible_points=tuple(points),
+        visible_points=tuple(retained),
         quality="limited" if reasons else "usable",
         reasons=tuple(reasons),
+        prompt_support=prompt_support,
     )
 
 
@@ -605,6 +654,7 @@ __all__ = [
     "local_key_view_policy_descriptor",
     "local_key_view_policy_digest",
     "plan_local_key_views",
+    "prompt_support_is_usable",
     "target_geometry_policy_descriptor",
     "target_geometry_policy_digest",
 ]

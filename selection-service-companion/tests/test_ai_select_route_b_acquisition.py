@@ -15,6 +15,7 @@ import zlib
 
 import numpy as np
 
+from selection_service_companion.digests import route_b_artifact_digest
 from selection_service_companion.image_instance_prompt_synthesis import (
     AI_SELECT_IMAGE_INSTANCE_PROMPT_SYNTHESIS_POLICY_VERSION,
     LimitedImageInstancePrompt,
@@ -36,6 +37,7 @@ from selection_service_companion.state import (
     _route_b_camera_binding_digest,
     _route_b_review_box_xyxy,
 )
+from selection_service_companion.target_geometry import target_geometry_policy_digest
 
 
 EDITOR_ORIGIN = 'https://editor.example'
@@ -63,6 +65,8 @@ CAMERA: dict[str, object] = {
 
 
 def _digest(value: object) -> str:
+    if isinstance(value, dict):
+        return route_b_artifact_digest(value)
     return 'sha256:' + hashlib.sha256(
         json.dumps(value, separators=(',', ':'), sort_keys=True, allow_nan=False).encode(
             'utf-8'
@@ -219,12 +223,12 @@ class RouteBAcquisitionTests(unittest.TestCase):
         self, visible_points: list[list[float]] | None = None
     ) -> dict[str, object]:
         payload: dict[str, object] = {
-            'schemaVersion': 1,
+            'schemaVersion': 2,
             'targetContextId': self.binding['targetContextId'],
             'anchorCameraBindingDigest': _digest('anchor-camera'),
             'anchorRgbDigest': _digest('anchor-rgb'),
             'anchorStableMaskDigest': _digest('anchor-mask'),
-            'geometryPolicyDigest': _digest('target-geometry/v1'),
+            'geometryPolicyDigest': target_geometry_policy_digest(),
             'centerWorld': [0.0, 0.0, 3.0],
             'extentWorld': [0.5, 0.5, 1.5],
             'visiblePoints': (
@@ -232,12 +236,14 @@ class RouteBAcquisitionTests(unittest.TestCase):
                 if visible_points is not None
                 else [
                     [0.0, 0.0, 5.0],
+                    [0.0, 0.0, 4.0],
                     [0.25, 0.0, 2.0],
                     [0.125, -0.25, 2.0],
                 ]
             ),
             'quality': 'usable',
             'reasons': [],
+            'promptSupport': 'usable',
         }
         return {**payload, 'artifactDigest': _digest(payload)}
 
@@ -368,7 +374,13 @@ class RouteBAcquisitionTests(unittest.TestCase):
     def test_prompt_synthesis_reports_limited_support_and_rejects_legacy_payloads(self) -> None:
         unavailable_hint = {
             **self.hint,
-            'visiblePoints': [[0.0, 0.0, -5.0]],
+            'visiblePoints': [
+                [0.0, 0.0, -5.0],
+                [0.25, 0.0, -5.0],
+                [0.0, 0.25, -5.0],
+                [0.25, 0.25, -5.0],
+            ],
+            'promptSupport': 'usable',
         }
         without_digest = {
             key: value for key, value in unavailable_hint.items()
@@ -400,6 +412,74 @@ class RouteBAcquisitionTests(unittest.TestCase):
         )
         self.assertEqual(payload['status'], 'invalidRequest')
 
+    def test_prompt_synthesis_fails_closed_for_limited_geometry_support(self) -> None:
+        limited_hint = {
+            **self.hint,
+            'quality': 'limited',
+            'reasons': ['sparseSupport', 'separatedSupportFiltered'],
+            'promptSupport': 'limited',
+        }
+        limited_hint['artifactDigest'] = _digest({
+            key: value for key, value in limited_hint.items()
+            if key != 'artifactDigest'
+        })
+        plan_payload = {
+            key: value for key, value in self.plan.items()
+            if key != 'artifactDigest'
+        }
+        plan_payload['targetGeometryHintDigest'] = limited_hint['artifactDigest']
+        limited_plan = {**plan_payload, 'artifactDigest': _digest(plan_payload)}
+
+        response = self.request_json(
+            '/ai-select/generated-view-prompts',
+            self._prompt_request(
+                targetGeometryHint=limited_hint,
+                localKeyViewPlan=limited_plan,
+            ),
+        )
+
+        self.assertEqual(response['status'], 'limited')
+        self.assertNotIn('prompt', response)
+        self.assertIn('geometry-limited', response['diagnostics'])
+        self.assertIn('separatedSupportFiltered', response['diagnostics'])
+
+    def test_prompt_synthesis_allows_promotable_limited_geometry_with_usable_prompt_support(self) -> None:
+        limited_hint = {
+            **self.hint,
+            'quality': 'limited',
+            'reasons': ['separatedSupportFiltered'],
+            'promptSupport': 'usable',
+            'visiblePoints': [
+                [0.25, 0.0, 2.0],
+                [0.125, -0.25, 2.0],
+                [0.5, 0.0, 2.0],
+                [0.0, 0.25, 2.0],
+            ],
+        }
+        limited_hint['artifactDigest'] = _digest({
+            key: value for key, value in limited_hint.items()
+            if key != 'artifactDigest'
+        })
+        plan_payload = {
+            key: value for key, value in self.plan.items()
+            if key != 'artifactDigest'
+        }
+        plan_payload['targetGeometryHintDigest'] = limited_hint['artifactDigest']
+        limited_plan = {**plan_payload, 'artifactDigest': _digest(plan_payload)}
+
+        response = self.request_json(
+            '/ai-select/generated-view-prompts',
+            self._prompt_request(
+                targetGeometryHint=limited_hint,
+                localKeyViewPlan=limited_plan,
+            ),
+        )
+
+        self.assertEqual(response['status'], 'ready')
+        self.assertIn('prompt', response)
+        self.assertIn('geometry-limited', response['diagnostics'])
+        self.assertIn('separatedSupportFiltered', response['diagnostics'])
+
     def test_prompt_synthesis_rejects_a_camera_digest_that_does_not_bind_the_camera(self) -> None:
         payload = self.post_error(
             '/ai-select/generated-view-prompts',
@@ -407,6 +487,37 @@ class RouteBAcquisitionTests(unittest.TestCase):
             HTTPStatus.BAD_REQUEST,
         )
         self.assertEqual(payload['status'], 'invalidRequest')
+
+    def test_prompt_synthesis_rejects_stale_policy_and_cross_field_geometry_claims(self) -> None:
+        for overrides in (
+            {'geometryPolicyDigest': _digest('old-policy')},
+            {
+                'quality': 'usable',
+                'reasons': ['separatedSupportFiltered'],
+                'promptSupport': 'usable',
+            },
+        ):
+            with self.subTest(overrides=overrides):
+                hint = {**self.hint, **overrides}
+                hint['artifactDigest'] = _digest({
+                    key: value for key, value in hint.items()
+                    if key != 'artifactDigest'
+                })
+                plan_payload = {
+                    key: value for key, value in self.plan.items()
+                    if key != 'artifactDigest'
+                }
+                plan_payload['targetGeometryHintDigest'] = hint['artifactDigest']
+                plan = {**plan_payload, 'artifactDigest': _digest(plan_payload)}
+                payload = self.post_error(
+                    '/ai-select/generated-view-prompts',
+                    self._prompt_request(
+                        targetGeometryHint=hint,
+                        localKeyViewPlan=plan,
+                    ),
+                    HTTPStatus.BAD_REQUEST,
+                )
+                self.assertEqual(payload['status'], 'invalidRequest')
 
     def test_inference_rejects_an_unpublished_generic_prompt_artifact(self) -> None:
         prompt = create_image_instance_prompt_artifact({
@@ -470,24 +581,22 @@ class RouteBAcquisitionTests(unittest.TestCase):
         self.assertEqual(payload['status'], 'imageInstanceMaskReviewError')
         self.assertEqual(payload['code'], 'staleInferenceResult')
 
-    def test_single_pixel_prompt_box_reaches_mask_review(self) -> None:
-        self.hint = self._hint(visible_points=[[0.5, 0.0, 5.0]])
+    def test_single_projected_support_is_limited_before_mask_inference(self) -> None:
+        self.hint = self._hint(
+            visible_points=[
+                [0.5, 0.0, 5.0],
+                [0.5, 0.0, 4.0],
+                [0.5, 0.0, 3.0],
+                [0.5, 0.0, 2.0],
+            ]
+        )
         self.plan = self._plan()
-        prompt = self.request_json(
+        response = self.request_json(
             '/ai-select/generated-view-prompts', self._prompt_request()
-        )['prompt']
-        box = prompt['positiveBox']
-        self.assertEqual(box['x1Px'], box['x0Px'] + 1)
-        self.assertEqual(box['y1Px'], box['y0Px'] + 1)
-
-        result = self.request_json(
-            '/ai-select/image-instance-masks', self._inference_request(prompt)
         )
-        review = self.request_json(
-            '/ai-select/image-instance-mask-reviews',
-            self._review_request(prompt, result),
-        )
-        self.assertEqual(review['assessment']['status'], 'good')
+        self.assertEqual(response['status'], 'limited')
+        self.assertNotIn('prompt', response)
+        self.assertIn('sparse-projectable-support', response['diagnostics'])
 
     def test_semantic_unavailable_is_completed_result_while_technical_failure_is_distinct(self) -> None:
         prompt = self.request_json(
@@ -556,7 +665,11 @@ class PromptSynthesisUnitTests(unittest.TestCase):
 
     def test_keeps_near_edge_in_frame_support_as_a_clipped_prompt(self) -> None:
         synthesized = synthesize_image_instance_prompt(
-            visible_points=[[0.0, 0.0, 5.0], [1.3, 0.0, 5.0]],
+            visible_points=[
+                [0.0, 0.0, 5.0],
+                [0.5, 0.0, 5.0],
+                [1.3, 0.0, 5.0],
+            ],
             camera_binding=CAMERA,
             width=4,
             height=4,

@@ -364,7 +364,7 @@ const confirmAnchor = async (harness) => {
 };
 
 const hintArtifactFor = (request, overrides = {}) => ({
-    schemaVersion: 1,
+    schemaVersion: 2,
     targetContextId: request.requestBinding.targetContextId,
     anchorCameraBindingDigest: request.anchorCameraBindingDigest,
     anchorRgbDigest: request.anchorRgbDigest,
@@ -372,9 +372,15 @@ const hintArtifactFor = (request, overrides = {}) => ({
     geometryPolicyDigest: rgbDigest('e'),
     centerWorld: [1, 2, 3],
     extentWorld: [0.5, 0.5, 0.5],
-    visiblePoints: [[1, 2, 3]],
+    visiblePoints: [
+        [1, 2, 3],
+        [4, 5, 6],
+        [1, 2, 4],
+        [4, 5, 7]
+    ],
     quality: 'usable',
     reasons: [],
+    promptSupport: 'usable',
     artifactDigest: rgbDigest('f'),
     ...overrides
 });

@@ -19,7 +19,7 @@ from selection_service_companion.binary_scene_snapshot import (
     BinarySceneSnapshotManifest,
     binary_scene_snapshot_content_digest,
 )
-from selection_service_companion.digests import canonical_json_digest
+from selection_service_companion.digests import route_b_artifact_digest
 from selection_service_companion.masking import (
     SAM31_RUNTIME_CONFIG_DIGEST,
     Sam3PointMaskAdapter,
@@ -86,7 +86,9 @@ EMPTY_MASK = bytes([0x01, 0x00])    # pixel {0}: foreground, but nothing project
 # out of the robust center/extent.
 EXPECTED_CENTER = [0.1875, -0.125, 2.0]
 EXPECTED_EXTENT = [0.0926625, 0.185325, 0.001]
-EXPECTED_VISIBLE_POINTS = [[0.125, -0.25, 2.0], [0.0, 0.0, 5.0], [0.25, 0.0, 2.0]]
+# Formal visiblePoints contains only the retained support after robust
+# separation filtering; the distant (0, 0, 5) sample is never a Prompt input.
+EXPECTED_VISIBLE_POINTS = [[0.125, -0.25, 2.0], [0.25, 0.0, 2.0]]
 
 
 def _binary_fixture() -> tuple[bytes, BinarySceneSnapshotManifest]:
@@ -178,6 +180,21 @@ def _mask_payload(mask: bytes, width: int = 4, height: int = 4) -> dict[str, obj
         'data': base64.b64encode(mask).decode('ascii'),
         'digest': 'sha256:' + hashlib.sha256(mask).hexdigest(),
     }
+
+
+def _browser_json_number_round_trip(value: object) -> object:
+    """Model JSON.parse/JSON.stringify's integral-number normalization."""
+
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, list):
+        return [_browser_json_number_round_trip(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: _browser_json_number_round_trip(item)
+            for key, item in value.items()
+        }
+    return value
 
 
 def _request_binding() -> dict[str, object]:
@@ -393,7 +410,7 @@ class TargetGeometryRouteTests(unittest.TestCase):
             response['geometryPolicyVersion'], AI_SELECT_TARGET_GEOMETRY_POLICY_VERSION
         )
         hint = response['hint']
-        self.assertEqual(hint['schemaVersion'], 1)
+        self.assertEqual(hint['schemaVersion'], 2)
         self.assertEqual(hint['targetContextId'], 'context-1')
         self.assertEqual(hint['anchorCameraBindingDigest'], CAMERA_DIGEST)
         self.assertEqual(hint['anchorRgbDigest'], RGB_DIGEST)
@@ -407,13 +424,14 @@ class TargetGeometryRouteTests(unittest.TestCase):
             self.assertAlmostEqual(actual, expected, places=12)
         self.assertEqual(hint['visiblePoints'], EXPECTED_VISIBLE_POINTS)
         self.assertEqual(hint['quality'], 'limited')
+        self.assertEqual(hint['promptSupport'], 'limited')
         self.assertEqual(
             hint['reasons'],
             ['sparseSupport', 'separatedSupportFiltered', 'frameBoundaryContact'],
         )
         self.assertEqual(
             hint['artifactDigest'],
-            canonical_json_digest(
+            route_b_artifact_digest(
                 {key: value for key, value in hint.items() if key != 'artifactDigest'}
             ),
         )
@@ -618,10 +636,28 @@ class TargetGeometryRouteTests(unittest.TestCase):
             )
         self.assertEqual(
             plan['artifactDigest'],
-            canonical_json_digest(
+            route_b_artifact_digest(
                 {key: value for key, value in plan.items() if key != 'artifactDigest'}
             ),
         )
+
+    def test_plan_digest_survives_browser_json_number_round_trip(self) -> None:
+        self.register_binary_snapshot()
+        hint_response = self.produce_hint()
+        body = _plan_request_body(hint_response)
+        response = self.request_json('/ai-select/local-key-view-plans', 'POST', body)
+        plan = _browser_json_number_round_trip(response['plan'])
+        assert isinstance(plan, dict)
+
+        parsed = self.state._parse_route_b_local_key_view_plan(
+            plan,
+            target_context_id=body['requestBinding']['targetContextId'],
+            target_geometry_hint_digest=hint_response['hint']['artifactDigest'],
+            view_id=plan['orderedViews'][0]['viewId'],
+            view_camera_binding=plan['orderedViews'][0]['cameraBinding'],
+        )
+
+        self.assertEqual(parsed, plan)
 
     def test_plans_batch_one_with_append_view_ids(self) -> None:
         self.register_binary_snapshot()
@@ -674,7 +710,7 @@ class TargetGeometryRouteTests(unittest.TestCase):
         # fails the requestBinding identity binding.
         foreign = _deep_copy(body['targetGeometryHint'])
         foreign['targetContextId'] = 'context-9'
-        foreign['artifactDigest'] = canonical_json_digest(
+        foreign['artifactDigest'] = route_b_artifact_digest(
             {key: value for key, value in foreign.items() if key != 'artifactDigest'}
         )
         body['targetGeometryHint'] = foreign

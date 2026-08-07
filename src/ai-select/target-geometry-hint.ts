@@ -17,9 +17,9 @@ import { isMaskArtifact, type MaskArtifact } from './mask-annotation';
  * context only: it never carries Stable Gaussian IDs, sample weights, or
  * ownership classification, and it never bounds the Evidence Working Set.
  */
-export const aiSelectTargetGeometryPolicyVersion = 'target-geometry/v1';
+export const aiSelectTargetGeometryPolicyVersion = 'target-geometry/v2';
 
-export const targetGeometryHintSchemaVersion = 1;
+export const targetGeometryHintSchemaVersion = 2;
 
 /**
  * The Companion-computed geometry hint for one exact confirmed Anchor. All
@@ -38,6 +38,7 @@ export interface TargetGeometryHintArtifact {
     readonly visiblePoints: readonly (readonly [number, number, number])[];
     readonly quality: 'usable' | 'limited' | 'unavailable';
     readonly reasons: readonly string[];
+    readonly promptSupport: 'usable' | 'limited';
     readonly artifactDigest: string;
 }
 
@@ -117,6 +118,43 @@ const isWorldTriple = (
     );
 };
 
+const isPromptSupportSemanticallyValid = (
+    promptSupport: unknown,
+    visiblePoints: unknown,
+    reasons: unknown
+): boolean => {
+    if (promptSupport === 'limited') {
+        return true;
+    }
+    if (
+        promptSupport !== 'usable' ||
+        !Array.isArray(visiblePoints) ||
+        !Array.isArray(reasons)
+    ) {
+        return false;
+    }
+    const distinctPoints = new Set(
+        visiblePoints.map((point) => JSON.stringify(point))
+    );
+    return (
+        distinctPoints.size >= 4 &&
+        reasons.every((reason) => reason === 'separatedSupportFiltered')
+    );
+};
+
+const isGeometryQualitySemanticallyValid = (
+    quality: unknown,
+    reasons: unknown
+): boolean => {
+    if (!Array.isArray(reasons)) {
+        return false;
+    }
+    if (quality === 'unavailable') {
+        return true;
+    }
+    return quality === (reasons.length > 0 ? 'limited' : 'usable');
+};
+
 export const isTargetGeometryHintArtifact = (
     value: unknown
 ): value is TargetGeometryHintArtifact => {
@@ -140,6 +178,12 @@ export const isTargetGeometryHintArtifact = (
         Array.isArray(value.reasons) &&
         value.reasons.every(
             (reason) => typeof reason === 'string' && reason.length > 0
+        ) &&
+        isGeometryQualitySemanticallyValid(value.quality, value.reasons) &&
+        isPromptSupportSemanticallyValid(
+            value.promptSupport,
+            value.visiblePoints,
+            value.reasons
         ) &&
         isDigest(value.artifactDigest)
     );

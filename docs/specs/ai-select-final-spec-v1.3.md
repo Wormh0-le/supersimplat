@@ -3,10 +3,10 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.12 review-closure revision  
-**日期：** 2026-07-30  
+**规划版本：** Ticket Graph v2.13 / Ticket 08C follow-up
+**日期：** 2026-08-07
 **适用分支：** `ai-select-v1`  
-**决策依据：** ADR 0013、ADR 0015、ADR 0016
+**决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017
 
 ---
 
@@ -311,7 +311,7 @@ After Anchor confirmation, Ticket 08 publishes one compact non-ownership artifac
 
 ```ts
 interface TargetGeometryHintArtifact {
-    schemaVersion: number;
+    schemaVersion: 2;
     targetContextId: string;
     anchorCameraBindingDigest: string;
     anchorRgbDigest: string;
@@ -322,6 +322,7 @@ interface TargetGeometryHintArtifact {
     visiblePoints: readonly [number, number, number][];
     quality: 'usable' | 'limited' | 'unavailable';
     reasons: readonly string[];
+    promptSupport: 'usable' | 'limited';
     artifactDigest: string;
 }
 ```
@@ -329,8 +330,19 @@ interface TargetGeometryHintArtifact {
 Requirements：
 
 - visible Points derive from exact Anchor Mask plus depth、first hit or equivalent visible-surface seam；
+- per set Mask pixel only the nearest valid Gaussian mean contributes; equal
+  world means are deduplicated before deterministic bounding；
+- formal `visiblePoints` contains only retained support after separated-support
+  filtering, never the pre-filter raw samples；
 - Points are bounded、finite、deterministically ordered and filtered for invalid/background-separated support；
 - center and extent use robust statistics；
+- `quality` is `limited` when evidence-backed reasons are present, otherwise
+  `usable`; if robust filtering rejects every distinct sample, the route fails
+  closed as `geometryUnavailable`；
+- `promptSupport` is an independent eligibility state. It is `usable` only
+  with at least four distinct retained first-hit samples and no disqualifying
+  reason; when `quality` is `limited`, the only promotable reason is
+  `separatedSupportFiltered`；
 - no Stable Gaussian IDs、weights or ownership labels are required；
 - geometry is localization and Prompt context only；
 - Anchor absence cannot classify a Gaussian as Rejected or Out of Scope。
@@ -445,6 +457,14 @@ Prompt synthesis MUST NOT create：
 - guessed oversized target regions when support is insufficient。
 
 Prompt regeneration and Mask Retry are distinct operations。
+
+Prompt Support is also a per-View gate: at least two distinct retained points
+must project inside the authoritative View image. A failed global or per-View
+gate returns structured `status: "limited"` and issues no Mask inference.
+When global and per-View Prompt Support are usable, synthesis may return
+`status: "ready"` even when Geometry Quality is `limited` for the sole
+recoverable `separatedSupportFiltered` reason. Geometry diagnostics remain
+visible and do not automatically change Mask Review Participation。
 
 ---
 
@@ -698,6 +718,7 @@ Required validation：
 08   TargetGeometryHint + bounded local Key Views
 08A  compact Image Instance Mask contracts
 08B  3D-guided per-View SAM 3 Image acquisition
+08C  reliable retained TargetGeometryHint support and Route B Prompt eligibility
 09   simplified Gallery states
 12   simplified dirty/refresh lifecycle
 13   sole Lift Readiness / visibility authority
@@ -709,6 +730,7 @@ Current ready frontier：
 ```text
 04C  critical model migration gate
 07   parallel MaskReview policy correction
+08C  retained geometry/Prompt Support follow-up after 08B
 ```
 
 After 04C：

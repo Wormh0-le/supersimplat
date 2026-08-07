@@ -1991,7 +1991,19 @@ class FetchSelectionServiceAdapter
         const result = await this.requestJson(
             '/ai-select/image-instance-mask-reviews',
             'POST',
-            request
+            // The editor request keeps the shared AITarget object; Route B's
+            // HTTP schema carries its splat identity as targetSplatId.
+            {
+                requestBinding: request.requestBinding,
+                targetSplatId: request.target.splatId,
+                viewId: request.viewId,
+                rgb: request.rgb,
+                prompt: request.prompt,
+                inferenceResultDigest: request.inferenceResultDigest,
+                chosenMask: request.chosenMask,
+                reviewAttemptId: request.reviewAttemptId,
+                reviewPolicyVersion: request.reviewPolicyVersion
+            }
         );
         if (
             !isImageInstanceMaskReviewResponse(result) ||

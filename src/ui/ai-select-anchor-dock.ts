@@ -15,8 +15,11 @@ import {
 } from '../ai-select/anchor-controller';
 import {
     getAnchorDockPresentation,
+    getViewMaskPresentation,
+    type AnchorDockMaskPresentation,
     type AnchorDockPresentation
 } from '../ai-select/anchor-dock-presentation';
+import type { AnchorRgbArtifact } from '../ai-select/anchor-render-service';
 import {
     PointerStrokeBuffer,
     pointerActionForTool
@@ -46,12 +49,14 @@ import {
 } from '../ai-select/image-viewport';
 import { decodeMaskArtifact } from '../ai-select/mask-annotation';
 import {
+    type AISelectMaskAuthoring,
     type AISelectMaskController,
     type AISelectMaskState
 } from '../ai-select/mask-controller';
 import type { MaskAnnotationRegistry } from '../ai-select/mask-registry';
 import { promptToolCapabilityReason } from '../ai-select/prompt-state';
 import { createThumbnailCache } from '../ai-select/thumbnail-cache';
+import type { AISelectUserViewMaskController } from '../ai-select/user-view-mask-controller';
 import type {
     SelectionServiceReadinessInterface,
     SelectionServiceReadinessStatus
@@ -66,7 +71,12 @@ export interface AISelectAnchorDockOptions {
     readonly onAdjustAnchor: () => void;
     readonly generatedViews: AISelectGeneratedViewController;
     readonly maskRegistry: MaskAnnotationRegistry;
+    readonly userViewMasks: AISelectUserViewMaskController;
     readonly onInspectCamera: (viewId: string) => void;
+    /** Use Current View: add a user AIView from the Current Editor Camera. */
+    readonly onUseCurrentView: () => void;
+    /** Adjust New View…: provisional Camera Inspection + Confirm View. */
+    readonly onAdjustNewView: () => void;
     readonly readiness: SelectionServiceReadinessInterface;
 }
 
@@ -81,7 +91,23 @@ interface GeneratedCardElements {
     readonly confirmReviewButton: Button;
     readonly participationButton: Button;
     readonly inspectCameraButton: Button;
+    readonly autoMaskButton: Button;
+    readonly manualDrawButton: Button;
+    readonly excludeViewButton: Button;
     rgbDigest?: string;
+}
+
+/**
+ * The View whose Mask authoring surface currently owns the Dock's image:
+ * the inspected user-added AIView, or the Anchor when nothing is inspected.
+ * Null while a planner-owned Generated View is inspected (read-only).
+ */
+interface DockAuthoringTarget {
+    readonly ops: AISelectMaskAuthoring;
+    readonly maskState: AISelectMaskState;
+    readonly locked: boolean;
+    readonly ready: boolean;
+    readonly rgb?: AnchorRgbArtifact;
 }
 
 const CLICK_TOLERANCE_PX = 4;
@@ -185,6 +211,7 @@ export class AISelectAnchorDock extends Container {
     private readonly confirmation: AISelectAnchorConfirmationController;
     private readonly generatedViews: AISelectGeneratedViewController;
     private readonly maskRegistry: MaskAnnotationRegistry;
+    private readonly userViewMasks: AISelectUserViewMaskController;
     private readonly onInspectCamera: (viewId: string) => void;
     private readonly status: Label;
     private readonly availabilityDot: HTMLSpanElement;
@@ -222,6 +249,9 @@ export class AISelectAnchorDock extends Container {
     private readonly plannerStopButton: Button;
     private readonly plannerMoreButton: Button;
     private readonly plannerRegenerateButton: Button;
+    private readonly userViewLine: Container;
+    private readonly useCurrentViewButton: Button;
+    private readonly adjustNewViewButton: Button;
     private readonly filterLine: Container;
     private readonly filterButtons: ReadonlyMap<GalleryFilter, Button>;
     private galleryFilter: GalleryFilter = 'all';
@@ -258,6 +288,7 @@ export class AISelectAnchorDock extends Container {
         this.confirmation = confirmation;
         this.generatedViews = options.generatedViews;
         this.maskRegistry = options.maskRegistry;
+        this.userViewMasks = options.userViewMasks;
         this.onInspectCamera = options.onInspectCamera;
         this.maskState = mask.state;
         this.confirmationState = confirmation.state;
@@ -373,25 +404,25 @@ export class AISelectAnchorDock extends Container {
             onSelectTool: (tool) => {
                 this.cancelPointerGesture();
                 this.activeTool = tool;
-                this.renderTools();
+                this.renderAuthoringTools();
             },
             onPromptUndo: () => {
                 try {
-                    this.mask.undoPromptEdit();
+                    this.authoring()?.ops.undoPromptEdit();
                 } catch (error) {
                     console.error(error);
                 }
             },
             onPromptRedo: () => {
                 try {
-                    this.mask.redoPromptEdit();
+                    this.authoring()?.ops.redoPromptEdit();
                 } catch (error) {
                     console.error(error);
                 }
             },
             onClearPrompts: () => {
                 try {
-                    this.mask.clearPrompts();
+                    this.authoring()?.ops.clearPrompts();
                 } catch (error) {
                     console.error(error);
                 }
@@ -412,25 +443,26 @@ export class AISelectAnchorDock extends Container {
             // The previewed candidate owns the refinement lineage: a later
             // Prompt revision refines from this candidate's logits reference.
             try {
-                this.mask.previewProposal(this.proposalSelect.value);
+                this.authoring()?.ops.previewProposal(
+                    this.proposalSelect.value
+                );
             } catch (error) {
                 console.error(error);
             }
-            this.renderMaskOverlay(
-                getAnchorDockPresentation(this.state, this.maskState)
-            );
+            this.renderCurrentMaskOverlay();
         });
         i18n.bindText(this.acceptProposalButton, 'ai-select.proposal.accept');
         this.acceptProposalButton.on('click', () => {
-            const proposal = this.maskState.proposalSet?.proposals.find(
+            const authoring = this.authoring();
+            const proposal = authoring?.maskState.proposalSet?.proposals.find(
                 (candidate) =>
                     candidate.proposalId === this.proposalSelect.value
             );
-            if (proposal === undefined) {
+            if (authoring === null || proposal === undefined) {
                 return;
             }
             try {
-                this.mask.acceptProposal(proposal.proposalId);
+                authoring.ops.acceptProposal(proposal.proposalId);
             } catch (error) {
                 console.error(error);
             }
@@ -461,38 +493,40 @@ export class AISelectAnchorDock extends Container {
         i18n.bindText(this.redoMaskButton, 'ai-select.mask.redo');
         this.confirmMaskButton.on('click', () => {
             try {
-                this.mask.confirmEditingMask();
+                this.authoring()?.ops.confirmEditingMask();
             } catch (error) {
                 console.error(error);
             }
         });
         this.retryMaskButton.on('click', () => {
-            this.mask.retryMaskRequest().catch((error) => console.error(error));
+            this.authoring()
+                ?.ops.retryMaskRequest()
+                .catch((error) => console.error(error));
         });
         this.clearMaskButton.on('click', () => {
             try {
-                this.mask.clearEditingMask();
+                this.authoring()?.ops.clearEditingMask();
             } catch (error) {
                 console.error(error);
             }
         });
         this.restoreAutoButton.on('click', () => {
             try {
-                this.mask.restoreAutoMask();
+                this.authoring()?.ops.restoreAutoMask();
             } catch (error) {
                 console.error(error);
             }
         });
         this.undoMaskButton.on('click', () => {
             try {
-                this.mask.undoMaskEdit();
+                this.authoring()?.ops.undoMaskEdit();
             } catch (error) {
                 console.error(error);
             }
         });
         this.redoMaskButton.on('click', () => {
             try {
-                this.mask.redoMaskEdit();
+                this.authoring()?.ops.redoMaskEdit();
             } catch (error) {
                 console.error(error);
             }
@@ -624,6 +658,24 @@ export class AISelectAnchorDock extends Container {
         this.plannerLine.append(this.plannerStopButton);
         this.plannerLine.append(this.plannerMoreButton);
         this.plannerLine.append(this.plannerRegenerateButton);
+        // User-added Views (Ticket 11): explicit captures from the Current
+        // Editor Camera, never an automatic extension of planner generation.
+        this.userViewLine = new Container({
+            id: 'ai-select-view-gallery-user-views',
+            hidden: true
+        });
+        this.useCurrentViewButton = new Button({
+            id: 'ai-select-view-gallery-use-current-view'
+        });
+        i18n.bindText(this.useCurrentViewButton, 'ai-select.views.use-current');
+        this.useCurrentViewButton.on('click', () => options.onUseCurrentView());
+        this.adjustNewViewButton = new Button({
+            id: 'ai-select-view-gallery-adjust-new-view'
+        });
+        i18n.bindText(this.adjustNewViewButton, 'ai-select.views.adjust-new');
+        this.adjustNewViewButton.on('click', () => options.onAdjustNewView());
+        this.userViewLine.append(this.useCurrentViewButton);
+        this.userViewLine.append(this.adjustNewViewButton);
         // Gallery filters are presentation-only: they choose which cards are
         // visible and never call into Prompt, Mask, Participation, Evidence,
         // or Candidate state.
@@ -657,6 +709,7 @@ export class AISelectAnchorDock extends Container {
             id: 'ai-select-view-gallery-cards'
         });
         this.gallery.append(this.plannerLine);
+        this.gallery.append(this.userViewLine);
         this.gallery.append(this.filterLine);
         this.gallery.append(this.galleryCards);
         this.anchorCard = this.createCard(
@@ -732,6 +785,7 @@ export class AISelectAnchorDock extends Container {
             this.generatedState = generatedState;
             this.render();
         });
+        options.userViewMasks.subscribe(() => this.render());
         i18n.onChange(() => this.render(), this);
     }
 
@@ -763,7 +817,15 @@ export class AISelectAnchorDock extends Container {
         );
         const inspected = this.inspectedGeneratedView();
         if (inspected !== null) {
-            this.renderInspection(inspected);
+            const userAuthoring =
+                galleryViewRole(inspected.source) === 'user-added'
+                    ? this.authoring()
+                    : null;
+            if (userAuthoring !== null) {
+                this.renderUserViewInspection(inspected);
+            } else {
+                this.renderInspection(inspected);
+            }
             this.renderGallery(presentation);
             return;
         }
@@ -789,15 +851,39 @@ export class AISelectAnchorDock extends Container {
         this.status.text = i18n.t(textKey);
         this.failureActions.hidden = !presentation.showFailureActions;
 
-        const mask = presentation.mask;
-        if (mask.status === 'none' && presentation.status !== 'ready') {
+        this.renderMaskSurface(
+            presentation.mask,
+            this.maskState,
+            presentation.status === 'ready',
+            this.confirmation.locked
+        );
+        this.renderPromptStatus(presentation.mask, this.maskState);
+        this.renderEditingActions();
+        this.renderAuthoringTools();
+        this.renderAnchorActions(presentation);
+        this.renderCurrentMaskOverlay();
+        this.renderGallery(presentation);
+    }
+
+    /**
+     * The Mask surface shared by the Anchor and user-added Views: request
+     * currency, draft/confirmed Mask currency, technical failure details, and
+     * the Confirm/Retry affordances.
+     */
+    private renderMaskSurface(
+        mask: AnchorDockMaskPresentation,
+        maskState: AISelectMaskState,
+        ready: boolean,
+        locked: boolean
+    ): void {
+        if (mask.status === 'none' && !ready) {
             this.maskStatus.hidden = true;
         } else {
             this.maskStatus.hidden = false;
             this.maskStatus.text =
                 mask.status === 'failed'
                     ? i18n.t(
-                          this.maskState.failureKind === 'maskArtifactInvalid'
+                          maskState.failureKind === 'maskArtifactInvalid'
                               ? 'ai-select.mask.artifact-invalid'
                               : 'ai-select.mask.failed'
                       )
@@ -806,7 +892,7 @@ export class AISelectAnchorDock extends Container {
                       : mask.proposalStatus === 'ambiguous'
                         ? i18n.t('ai-select.proposal.ambiguous')
                         : mask.proposalStatus === 'selected' &&
-                            this.maskState.editingMask === null
+                            maskState.editingMask === null
                           ? i18n.t('ai-select.proposal.selected')
                           : i18n.t(`ai-select.mask.${mask.status}`);
         }
@@ -817,16 +903,83 @@ export class AISelectAnchorDock extends Container {
         this.technicalDetailsBody.textContent = technicalMessage ?? '';
         this.confirmMaskButton.hidden = !mask.showConfirm;
         this.retryMaskButton.hidden = !mask.showRetry;
-        this.confirmMaskButton.enabled =
-            mask.showConfirm && !this.confirmation.locked;
-        this.retryMaskButton.enabled =
-            mask.showRetry && !this.confirmation.locked;
-        this.renderPromptStatus(presentation);
-        this.renderEditingActions(presentation);
-        this.renderTools();
-        this.renderAnchorActions(presentation);
-        this.renderMaskOverlay(presentation);
-        this.renderGallery(presentation);
+        this.confirmMaskButton.enabled = mask.showConfirm && !locked;
+        this.retryMaskButton.enabled = mask.showRetry && !locked;
+    }
+
+    /**
+     * The editable user View surface: the same Prompt/candidate/Brush/Confirm
+     * UI as the Anchor, bound to the user View's own Mask session. The
+     * Anchor's actions stay hidden; the View's identity line names its role.
+     */
+    private renderUserViewInspection(view: GeneratedAIView): void {
+        const authoring = this.authoring();
+        if (authoring === null) {
+            this.renderInspection(view);
+            return;
+        }
+        if (view.rgb !== undefined) {
+            this.image.src = `data:image/png;base64,${view.rgb.pngBase64}`;
+            this.image.hidden = false;
+            this.imageSurface.hidden = false;
+            this.updateImageSurfaceRect(view.rgb.width, view.rgb.height);
+        } else {
+            this.image.hidden = true;
+            this.imageSurface.hidden = true;
+            this.overlay.hidden = true;
+        }
+        this.status.text = i18n.t('ai-select.views.inspecting-user');
+        this.failureActions.hidden = true;
+        this.anchorActions.hidden = true;
+        this.validationStatus.hidden = true;
+        const mask = getViewMaskPresentation(authoring.maskState);
+        this.renderMaskSurface(
+            mask,
+            authoring.maskState,
+            authoring.ready,
+            authoring.locked
+        );
+        this.renderPromptStatus(mask, authoring.maskState);
+        this.renderEditingActions();
+        this.renderAuthoringTools();
+        this.renderCurrentMaskOverlay();
+    }
+
+    /**
+     * The Mask authoring target that currently owns the Dock's image surface:
+     * the inspected user-added AIView's session, or the Anchor when no View
+     * is inspected. Null while a planner-owned Generated View is inspected —
+     * that surface stays read-only.
+     */
+    private authoring(): DockAuthoringTarget | null {
+        const inspected = this.inspectedGeneratedView();
+        if (inspected !== null) {
+            if (galleryViewRole(inspected.source) !== 'user-added') {
+                return null;
+            }
+            const session = this.userViewMasks.sessionFor(inspected.viewId);
+            if (session === null) {
+                return null;
+            }
+            return {
+                ops: session,
+                maskState: session.state,
+                locked: false,
+                ready: inspected.renderStatus === 'ready',
+                ...(inspected.rgb === undefined ? {} : { rgb: inspected.rgb })
+            };
+        }
+        const presentation = getAnchorDockPresentation(
+            this.state,
+            this.maskState
+        );
+        return {
+            ops: this.mask,
+            maskState: this.maskState,
+            locked: this.confirmation.locked,
+            ready: presentation.status === 'ready',
+            ...(presentation.rgb === undefined ? {} : { rgb: presentation.rgb })
+        };
     }
 
     /**
@@ -954,9 +1107,24 @@ export class AISelectAnchorDock extends Container {
             class: 'ai-select-view-card-inspect-camera',
             hidden: true
         });
+        const autoMaskButton = new Button({
+            class: 'ai-select-view-card-auto-mask',
+            hidden: true
+        });
+        const manualDrawButton = new Button({
+            class: 'ai-select-view-card-manual-draw',
+            hidden: true
+        });
+        const excludeViewButton = new Button({
+            class: 'ai-select-view-card-exclude',
+            hidden: true
+        });
         i18n.bindText(retryButton, 'ai-select.views.retry-render');
         i18n.bindText(confirmReviewButton, 'ai-select.review.confirm-as-is');
         i18n.bindText(inspectCameraButton, 'ai-select.views.inspect-camera');
+        i18n.bindText(autoMaskButton, 'ai-select.views.auto-mask');
+        i18n.bindText(manualDrawButton, 'ai-select.views.manual-draw');
+        i18n.bindText(excludeViewButton, 'ai-select.participation.exclude');
         if (onRetry !== null) {
             retryButton.on('click', (event: Event) => {
                 event.stopPropagation();
@@ -991,6 +1159,34 @@ export class AISelectAnchorDock extends Container {
                 this.onInspectCamera(viewId);
             }
         });
+        autoMaskButton.on('click', (event: Event) => {
+            event.stopPropagation();
+            const viewId = root.dom.dataset.viewId;
+            if (viewId !== undefined) {
+                this.authorUserViewMask(viewId, 'positive-point');
+            }
+        });
+        manualDrawButton.on('click', (event: Event) => {
+            event.stopPropagation();
+            const viewId = root.dom.dataset.viewId;
+            if (viewId !== undefined) {
+                this.authorUserViewMask(viewId, 'paint');
+            }
+        });
+        excludeViewButton.on('click', (event: Event) => {
+            event.stopPropagation();
+            const viewId = root.dom.dataset.viewId;
+            if (viewId !== undefined) {
+                try {
+                    this.generatedViews.setViewParticipation(
+                        viewId,
+                        'excluded'
+                    );
+                } catch (error) {
+                    console.error(error);
+                }
+            }
+        });
         root.dom.appendChild(image);
         root.append(title);
         root.append(status);
@@ -1000,6 +1196,9 @@ export class AISelectAnchorDock extends Container {
         root.append(confirmReviewButton);
         root.append(participationButton);
         root.append(inspectCameraButton);
+        root.append(autoMaskButton);
+        root.append(manualDrawButton);
+        root.append(excludeViewButton);
         root.dom.addEventListener('pointerdown', (event) =>
             event.stopPropagation()
         );
@@ -1014,8 +1213,21 @@ export class AISelectAnchorDock extends Container {
             retryMaskButton,
             confirmReviewButton,
             participationButton,
-            inspectCameraButton
+            inspectCameraButton,
+            autoMaskButton,
+            manualDrawButton,
+            excludeViewButton
         };
+    }
+
+    /**
+     * The No-Mask choices land on the user View's authoring surface: Auto
+     * Generate Mask starts from a Positive Point, Manual Draw from Paint.
+     * Selecting the View makes its authoritative RGB the editing surface.
+     */
+    private authorUserViewMask(viewId: string, tool: DockAuthoringTool): void {
+        this.selectGeneratedView(viewId);
+        this.activeTool = tool;
     }
 
     private renderGallery(presentation: AnchorDockPresentation): void {
@@ -1062,6 +1274,10 @@ export class AISelectAnchorDock extends Container {
             this.plannerLine.hidden = true;
         }
 
+        // User View capture needs the confirmed run the Views bind to.
+        this.userViewLine.hidden =
+            this.confirmationState.confirmedAnchor === null;
+
         // The Anchor card mirrors the Anchor's own render surface.
         const anchorStatusKey = {
             idle: 'ai-select.panel.idle',
@@ -1078,6 +1294,9 @@ export class AISelectAnchorDock extends Container {
         this.anchorCard.confirmReviewButton.hidden = true;
         this.anchorCard.participationButton.hidden = true;
         this.anchorCard.inspectCameraButton.hidden = true;
+        this.anchorCard.autoMaskButton.hidden = true;
+        this.anchorCard.manualDrawButton.hidden = true;
+        this.anchorCard.excludeViewButton.hidden = true;
         if (presentation.rgb !== undefined) {
             this.applyCardThumbnail(
                 this.anchorCard,
@@ -1193,6 +1412,9 @@ export class AISelectAnchorDock extends Container {
             );
         }
         card.inspectCameraButton.hidden = !presentation.actions.inspectCamera;
+        card.autoMaskButton.hidden = !presentation.actions.autoMask;
+        card.manualDrawButton.hidden = !presentation.actions.manualDraw;
+        card.excludeViewButton.hidden = !presentation.actions.excludeView;
         if (view.rgb !== undefined) {
             this.applyCardThumbnail(card, view.rgb.digest, view.rgb.pngBase64);
         } else {
@@ -1319,23 +1541,27 @@ export class AISelectAnchorDock extends Container {
         }
     }
 
-    private renderEditingActions(presentation: AnchorDockPresentation): void {
-        const editingReady =
-            presentation.status === 'ready' && !this.confirmation.locked;
+    private renderEditingActions(): void {
+        const authoring = this.authoring();
+        if (authoring === null) {
+            this.maskActions.hidden = true;
+            return;
+        }
+        const editingReady = authoring.ready && !authoring.locked;
+        const maskState = authoring.maskState;
         this.clearMaskButton.hidden = !editingReady;
         this.restoreAutoButton.hidden = !editingReady;
         this.undoMaskButton.hidden = !editingReady;
         this.redoMaskButton.hidden = !editingReady;
         this.clearMaskButton.enabled =
-            editingReady && this.maskState.editingMask !== null;
+            editingReady && maskState.editingMask !== null;
         this.restoreAutoButton.enabled =
-            editingReady && this.maskState.canRestoreAuto;
-        this.undoMaskButton.enabled = editingReady && this.maskState.canUndo;
-        this.redoMaskButton.enabled = editingReady && this.maskState.canRedo;
+            editingReady && maskState.canRestoreAuto;
+        this.undoMaskButton.enabled = editingReady && maskState.canUndo;
+        this.redoMaskButton.enabled = editingReady && maskState.canRedo;
+        const mask = getViewMaskPresentation(maskState);
         this.maskActions.hidden =
-            !presentation.mask.showConfirm &&
-            !presentation.mask.showRetry &&
-            !editingReady;
+            !mask.showConfirm && !mask.showRetry && !editingReady;
     }
 
     /**
@@ -1343,24 +1569,48 @@ export class AISelectAnchorDock extends Container {
      * are local Editing Mask operations and stay usable without the model
      * service; inference tools gate on Prompt Adapter capabilities.
      */
-    private toolUnavailableReason(tool: PaletteTool): string | null {
+    private toolUnavailableReason(
+        tool: PaletteTool,
+        maskState: AISelectMaskState
+    ): string | null {
         if (tool === 'paint' || tool === 'erase') {
             return null;
         }
-        const capabilities = this.maskState.promptCapabilities;
+        const capabilities = maskState.promptCapabilities;
         return capabilities === null
             ? i18n.t('ai-select.prompt.capabilities-unavailable')
             : promptToolCapabilityReason(tool, capabilities);
     }
 
-    private renderTools(): void {
-        const ready =
-            getAnchorDockPresentation(this.state, this.maskState).status ===
-                'ready' && !this.confirmation.locked;
-        const capabilities = this.maskState.promptCapabilities;
+    private renderAuthoringTools(): void {
+        const authoring = this.authoring();
+        if (authoring === null) {
+            const availability = new Map<
+                PaletteTool,
+                PaletteToolAvailability
+            >();
+            for (const tool of PALETTE_TOOLS) {
+                availability.set(tool, { enabled: false, reason: null });
+            }
+            this.palette.render({
+                visible: false,
+                activeTool: this.activeTool,
+                availability,
+                canUndoPrompt: false,
+                canRedoPrompt: false,
+                canClearPrompts: false
+            });
+            this.proposalSelect.hidden = true;
+            this.acceptProposalButton.hidden = true;
+            this.image.style.cursor = 'default';
+            return;
+        }
+        const maskState = authoring.maskState;
+        const ready = authoring.ready && !authoring.locked;
+        const capabilities = maskState.promptCapabilities;
         const availability = new Map<PaletteTool, PaletteToolAvailability>();
         for (const tool of PALETTE_TOOLS) {
-            const reason = this.toolUnavailableReason(tool);
+            const reason = this.toolUnavailableReason(tool, maskState);
             availability.set(tool, {
                 enabled: ready && reason === null,
                 reason
@@ -1376,20 +1626,20 @@ export class AISelectAnchorDock extends Container {
             visible: ready,
             activeTool: this.activeTool,
             availability,
-            canUndoPrompt: ready && this.maskState.canUndoPrompt,
-            canRedoPrompt: ready && this.maskState.canRedoPrompt,
+            canUndoPrompt: ready && maskState.canUndoPrompt,
+            canRedoPrompt: ready && maskState.canRedoPrompt,
             canClearPrompts:
                 ready &&
-                this.maskState.promptState !== null &&
-                (this.maskState.promptState.points.length > 0 ||
-                    this.maskState.promptState.boxes.length > 0)
+                maskState.promptState !== null &&
+                (maskState.promptState.points.length > 0 ||
+                    maskState.promptState.boxes.length > 0)
         });
         const proposalIds =
-            this.maskState.proposalDecision?.alternativeProposalIds ?? [];
+            maskState.proposalDecision?.alternativeProposalIds ?? [];
         const previousSelection = this.proposalSelect.value;
         this.proposalSelect.replaceChildren(
             ...proposalIds.map((proposalId, index) => {
-                const proposal = this.maskState.proposalSet?.proposals.find(
+                const proposal = maskState.proposalSet?.proposals.find(
                     (candidate) => candidate.proposalId === proposalId
                 );
                 const option = document.createElement('option');
@@ -1400,18 +1650,18 @@ export class AISelectAnchorDock extends Container {
         );
         const preferredProposalId = proposalIds.includes(previousSelection)
             ? previousSelection
-            : (this.maskState.acceptedProposalId ??
-              this.maskState.proposalDecision?.selectedProposalId ??
+            : (maskState.acceptedProposalId ??
+              maskState.proposalDecision?.selectedProposalId ??
               proposalIds[0] ??
               '');
         this.proposalSelect.value = preferredProposalId;
-        const proposal = this.maskState.proposalSet?.proposals.find(
+        const proposal = maskState.proposalSet?.proposals.find(
             (candidate) => candidate.proposalId === preferredProposalId
         );
         this.proposalSelect.hidden = proposalIds.length === 0;
         this.acceptProposalButton.hidden =
             proposal === undefined ||
-            proposal.proposalId === this.maskState.acceptedProposalId;
+            proposal.proposalId === maskState.acceptedProposalId;
         this.acceptProposalButton.enabled =
             ready && !this.acceptProposalButton.hidden;
         this.image.style.cursor = cursorForTool(this.activeTool);
@@ -1421,8 +1671,10 @@ export class AISelectAnchorDock extends Container {
         this.setAccessibleLabel(this.redoMaskButton, maskRedo);
     }
 
-    private renderPromptStatus(presentation: AnchorDockPresentation): void {
-        const prompt = presentation.mask;
+    private renderPromptStatus(
+        prompt: AnchorDockMaskPresentation,
+        maskState: AISelectMaskState
+    ): void {
         if (prompt.promptCount === 0) {
             this.promptStatus.hidden = true;
             return;
@@ -1437,23 +1689,23 @@ export class AISelectAnchorDock extends Container {
         // (the simplified 07A decision carries no ranking reason codes). The
         // candidate choice control is authoritative for which candidate the
         // user is previewing; fall back to the decision's default preview.
-        const chosenProposalId = this.maskState.proposalSet?.proposals.some(
+        const chosenProposalId = maskState.proposalSet?.proposals.some(
             (candidate) => candidate.proposalId === this.proposalSelect.value
         )
             ? this.proposalSelect.value
             : undefined;
         const previewedProposalId =
             chosenProposalId ??
-            this.maskState.acceptedProposalId ??
-            this.maskState.proposalDecision?.selectedProposalId ??
-            this.maskState.proposalDecision?.alternativeProposalIds[0];
-        const previewedProposal = this.maskState.proposalSet?.proposals.find(
+            maskState.acceptedProposalId ??
+            maskState.proposalDecision?.selectedProposalId ??
+            maskState.proposalDecision?.alternativeProposalIds[0];
+        const previewedProposal = maskState.proposalSet?.proposals.find(
             (candidate) => candidate.proposalId === previewedProposalId
         );
         const reasons = (previewedProposal?.review.reasons ?? []).map(
             (reason) => i18n.t(`ai-select.review.reason.${reason}`)
         );
-        if (this.maskState.proposalSet?.diagnostics?.refinementFallback) {
+        if (maskState.proposalSet?.diagnostics?.refinementFallback) {
             reasons.push(i18n.t('ai-select.proposal.refinement-fallback'));
         }
         this.promptStatus.text = [summary, ...reasons]
@@ -1515,6 +1767,10 @@ export class AISelectAnchorDock extends Container {
         if (!(event.ctrlKey || event.metaKey)) {
             return;
         }
+        const authoring = this.authoring();
+        if (authoring === null) {
+            return;
+        }
         const key = event.key.toLowerCase();
         const redo =
             (key === 'z' && event.shiftKey) || (!event.shiftKey && key === 'y');
@@ -1526,11 +1782,11 @@ export class AISelectAnchorDock extends Container {
             this.activeTool !== 'paint' && this.activeTool !== 'erase';
         const available = promptMode
             ? redo
-                ? this.maskState.canRedoPrompt
-                : this.maskState.canUndoPrompt
+                ? authoring.maskState.canRedoPrompt
+                : authoring.maskState.canUndoPrompt
             : redo
-              ? this.maskState.canRedo
-              : this.maskState.canUndo;
+              ? authoring.maskState.canRedo
+              : authoring.maskState.canUndo;
         if (!available) {
             return;
         }
@@ -1539,14 +1795,14 @@ export class AISelectAnchorDock extends Container {
         try {
             if (promptMode) {
                 if (redo) {
-                    this.mask.redoPromptEdit();
+                    authoring.ops.redoPromptEdit();
                 } else {
-                    this.mask.undoPromptEdit();
+                    authoring.ops.undoPromptEdit();
                 }
             } else if (redo) {
-                this.mask.redoMaskEdit();
+                authoring.ops.redoMaskEdit();
             } else {
-                this.mask.undoMaskEdit();
+                authoring.ops.undoMaskEdit();
             }
         } catch (error) {
             console.error(error);
@@ -1560,9 +1816,13 @@ export class AISelectAnchorDock extends Container {
      * button activation, or modals that own focus.
      */
     private handleDockKeydown(event: KeyboardEvent): void {
-        // The Generated View inspection surface is read-only: no mask-local
-        // Undo/Redo routing, no palette shortcuts, no tool switching.
-        if (this.inspectedGeneratedView() !== null) {
+        // A planner-owned Generated View inspection surface is read-only: no
+        // mask-local Undo/Redo routing, no palette shortcuts, no tool
+        // switching. A user-added View's surface authors its own session.
+        if (
+            this.inspectedGeneratedView() !== null &&
+            this.authoring() === null
+        ) {
             return;
         }
         this.routeEditingKeys(event);
@@ -1610,16 +1870,19 @@ export class AISelectAnchorDock extends Container {
         if (tool === null) {
             return;
         }
-        const ready =
-            getAnchorDockPresentation(this.state, this.maskState).status ===
-                'ready' && !this.confirmation.locked;
-        if (!ready || this.toolUnavailableReason(tool) !== null) {
+        const authoring = this.authoring();
+        if (
+            authoring === null ||
+            !authoring.ready ||
+            authoring.locked ||
+            this.toolUnavailableReason(tool, authoring.maskState) !== null
+        ) {
             return;
         }
         event.preventDefault();
         this.cancelPointerGesture();
         this.activeTool = tool;
-        this.renderTools();
+        this.renderAuthoringTools();
     }
 
     private setSpaceHeld(held: boolean): void {
@@ -1630,22 +1893,25 @@ export class AISelectAnchorDock extends Container {
         this.palette.setTransientHidden(held);
     }
 
-    private renderMaskOverlay(presentation: AnchorDockPresentation): void {
-        const selectedProposal = this.maskState.proposalSet?.proposals.find(
+    private renderMaskOverlay(
+        maskState: AISelectMaskState,
+        rgb: AnchorRgbArtifact | undefined,
+        ready: boolean
+    ): void {
+        const selectedProposal = maskState.proposalSet?.proposals.find(
             (candidate) => candidate.proposalId === this.proposalSelect.value
         );
         const proposal =
-            selectedProposal?.proposalId !== this.maskState.acceptedProposalId
+            selectedProposal?.proposalId !== maskState.acceptedProposalId
                 ? selectedProposal
                 : undefined;
         const annotation =
             proposal === undefined
-                ? (this.maskState.editingMask ?? this.maskState.stableMask)
+                ? (maskState.editingMask ?? maskState.stableMask)
                 : null;
         const artifact = annotation?.artifact ?? proposal?.mask;
-        const rgb = presentation.rgb;
         if (
-            presentation.status !== 'ready' ||
+            !ready ||
             rgb === undefined ||
             (artifact !== undefined &&
                 (artifact.width !== rgb.width ||
@@ -1660,7 +1926,7 @@ export class AISelectAnchorDock extends Container {
         const pixels = maskOverlayPixels(
             bits,
             width * height,
-            this.maskState.editingMask !== null || proposal !== undefined
+            maskState.editingMask !== null || proposal !== undefined
         );
         this.overlay.width = width;
         this.overlay.height = height;
@@ -1671,18 +1937,21 @@ export class AISelectAnchorDock extends Container {
         }
         context.putImageData(new ImageData(pixels, width, height), 0, 0);
         this.renderPendingPixelStroke(context);
-        this.renderBoxPrompts(context);
-        this.renderPointMarkers(context);
+        this.renderBoxPrompts(context, maskState);
+        this.renderPointMarkers(context, maskState);
         this.positionOverlay();
         this.overlay.hidden =
             artifact === undefined &&
-            (this.maskState.promptState?.points.length ?? 0) === 0 &&
-            (this.maskState.promptState?.boxes.length ?? 0) === 0 &&
+            (maskState.promptState?.points.length ?? 0) === 0 &&
+            (maskState.promptState?.boxes.length ?? 0) === 0 &&
             this.pixelStroke.previewSamples.length === 0;
     }
 
-    private renderBoxPrompts(context: CanvasRenderingContext2D): void {
-        for (const box of this.maskState.promptState?.boxes ?? []) {
+    private renderBoxPrompts(
+        context: CanvasRenderingContext2D,
+        maskState: AISelectMaskState
+    ): void {
+        for (const box of maskState.promptState?.boxes ?? []) {
             const include = box.polarity === 'include';
             context.save();
             context.lineWidth = 3;
@@ -1698,8 +1967,11 @@ export class AISelectAnchorDock extends Container {
         }
     }
 
-    private renderPointMarkers(context: CanvasRenderingContext2D): void {
-        for (const point of this.maskState.promptState?.points ?? []) {
+    private renderPointMarkers(
+        context: CanvasRenderingContext2D,
+        maskState: AISelectMaskState
+    ): void {
+        for (const point of maskState.promptState?.points ?? []) {
             const include = point.polarity === 'include';
             context.save();
             context.lineWidth = 3;
@@ -1793,12 +2065,12 @@ export class AISelectAnchorDock extends Container {
     }
 
     private beginStroke(event: PointerEvent): void {
+        const authoring = this.authoring();
         if (
             event.button !== 0 ||
-            this.confirmation.locked ||
-            this.inspectedGeneratedView() !== null ||
-            getAnchorDockPresentation(this.state, this.maskState).status !==
-                'ready'
+            authoring === null ||
+            authoring.locked ||
+            !authoring.ready
         ) {
             return;
         }
@@ -1858,6 +2130,11 @@ export class AISelectAnchorDock extends Container {
         if (this.dragStart === null) {
             return;
         }
+        const authoring = this.authoring();
+        if (authoring === null) {
+            this.cancelPointerGesture();
+            return;
+        }
         this.palette.setGestureDimmed(false);
         const moved =
             Math.abs(event.clientX - this.dragStart.x) +
@@ -1875,7 +2152,7 @@ export class AISelectAnchorDock extends Container {
                 return;
             }
             try {
-                this.mask.applyBrushGesture({
+                authoring.ops.applyBrushGesture({
                     samples,
                     radiusPx: this.brushRadius(),
                     mode: this.activeTool === 'erase' ? 'erase' : 'add'
@@ -1897,7 +2174,7 @@ export class AISelectAnchorDock extends Container {
             if (moved > CLICK_TOLERANCE_PX) {
                 return;
             }
-            this.mask
+            authoring.ops
                 .addPrompt({
                     xPx: pixel.xPx,
                     yPx: pixel.yPx,
@@ -1913,7 +2190,7 @@ export class AISelectAnchorDock extends Container {
             if (startPixel.xPx === pixel.xPx || startPixel.yPx === pixel.yPx) {
                 return;
             }
-            this.mask
+            authoring.ops
                 .addBoxPrompt({
                     x0Px: startPixel.xPx,
                     y0Px: startPixel.yPx,
@@ -1964,8 +2241,31 @@ export class AISelectAnchorDock extends Container {
     }
 
     private renderCurrentMaskOverlay(): void {
+        const inspected = this.inspectedGeneratedView();
+        if (inspected !== null) {
+            const authoring =
+                galleryViewRole(inspected.source) === 'user-added'
+                    ? this.authoring()
+                    : null;
+            if (authoring === null) {
+                this.renderInspectedMaskOverlay(inspected);
+                return;
+            }
+            this.renderMaskOverlay(
+                authoring.maskState,
+                inspected.rgb,
+                authoring.ready
+            );
+            return;
+        }
+        const presentation = getAnchorDockPresentation(
+            this.state,
+            this.maskState
+        );
         this.renderMaskOverlay(
-            getAnchorDockPresentation(this.state, this.maskState)
+            this.maskState,
+            presentation.rgb,
+            presentation.status === 'ready'
         );
     }
 

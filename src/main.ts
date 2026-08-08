@@ -3,6 +3,7 @@ import { Color, Vec3, createGraphicsDevice } from 'playcanvas';
 
 import { AISelectAnchorConfirmationController } from './ai-select/anchor-confirmation';
 import { AISelectAnchorController } from './ai-select/anchor-controller';
+import { captureEditorCameraBinding } from './ai-select/camera-binding';
 import {
     CameraInspectionController,
     isAnchorInspectionTarget
@@ -12,6 +13,7 @@ import { pickGeneratedViewFrustum } from './ai-select/generated-frustum-picking'
 import { AISelectGeneratedViewController } from './ai-select/generated-view-controller';
 import { AISelectMaskController } from './ai-select/mask-controller';
 import { createPromptAdapterCapabilities } from './ai-select/prompt-state';
+import { AISelectUserViewMaskController } from './ai-select/user-view-mask-controller';
 import { AnchorFrustum } from './ai-select-anchor-frustum';
 import { AISelectEditorTargetFactory } from './ai-select-editor-target';
 import { GeneratedViewFrustums } from './ai-select-generated-frustums';
@@ -409,7 +411,37 @@ const main = async () => {
     // just below, so the lock reads through a lazy reference.
     let aiSelectConfirmation: AISelectAnchorConfirmationController | null =
         null;
+    // Declared ahead of the readiness/Instance event registrations; assigned
+    // once the Generated View controller exists below.
+    let aiSelectUserViewMasks: AISelectUserViewMaskController | null = null;
     const isAISelectAnchorLocked = () => aiSelectConfirmation?.locked ?? false;
+    const getAISelectModelManifestDigest = () =>
+        selectionServiceReadiness.state.configuration.modelManifestDigest;
+    const getAISelectPromptAdapterCapabilities = () => {
+        // Rebuild the exact Prompt Adapter capability record from the
+        // ready provider's advertised flags and compiler policy, and
+        // trust it only when the recomputed digest matches the
+        // advertised adapter capability digest (04C contract §3).
+        const readiness = selectionServiceReadiness.state;
+        const provider = readiness.capabilities?.imageInstanceProvider;
+        if (
+            readiness.status !== 'available' ||
+            provider === undefined ||
+            provider.status !== 'ready' ||
+            provider.compilerPolicyVersion === undefined ||
+            provider.adapterCapabilityDigest === undefined
+        ) {
+            return null;
+        }
+        const capabilities = createPromptAdapterCapabilities({
+            ...provider.promptCapabilities,
+            compilerPolicyVersion: provider.compilerPolicyVersion
+        });
+        return capabilities.capabilityDigest ===
+            provider.adapterCapabilityDigest
+            ? capabilities
+            : null;
+    };
     const aiSelectController = new AISelectAnchorController({
         renderer: selectionServiceAdapter,
         isAnchorLocked: isAISelectAnchorLocked
@@ -417,33 +449,8 @@ const main = async () => {
     const aiSelectMaskController = new AISelectMaskController({
         anchor: aiSelectController,
         maskProvider: selectionServiceAdapter,
-        getModelManifestDigest: () =>
-            selectionServiceReadiness.state.configuration.modelManifestDigest,
-        getPromptAdapterCapabilities: () => {
-            // Rebuild the exact Prompt Adapter capability record from the
-            // ready provider's advertised flags and compiler policy, and
-            // trust it only when the recomputed digest matches the
-            // advertised adapter capability digest (04C contract §3).
-            const readiness = selectionServiceReadiness.state;
-            const provider = readiness.capabilities?.imageInstanceProvider;
-            if (
-                readiness.status !== 'available' ||
-                provider === undefined ||
-                provider.status !== 'ready' ||
-                provider.compilerPolicyVersion === undefined ||
-                provider.adapterCapabilityDigest === undefined
-            ) {
-                return null;
-            }
-            const capabilities = createPromptAdapterCapabilities({
-                ...provider.promptCapabilities,
-                compilerPolicyVersion: provider.compilerPolicyVersion
-            });
-            return capabilities.capabilityDigest ===
-                provider.adapterCapabilityDigest
-                ? capabilities
-                : null;
-        },
+        getModelManifestDigest: getAISelectModelManifestDigest,
+        getPromptAdapterCapabilities: getAISelectPromptAdapterCapabilities,
         isAnchorLocked: isAISelectAnchorLocked
     });
     // Companion Instance replacement invalidates the prior Instance's
@@ -451,11 +458,13 @@ const main = async () => {
     // Mask artifacts keep their own identity and are not touched.
     events.on('selectionService.companionInstanceChanged', () => {
         aiSelectMaskController.handleCompanionInstanceChanged();
+        aiSelectUserViewMasks?.handleCompanionInstanceChanged();
     });
     // Prompt Adapter capabilities derive from live readiness; a readiness
     // transition must republish or Prompt tools keep a stale gating snapshot.
     events.on('selectionService.readinessChanged', () => {
         aiSelectMaskController.refreshAvailability();
+        aiSelectUserViewMasks?.refreshAvailability();
     });
     aiSelectConfirmation = new AISelectAnchorConfirmationController({
         anchor: aiSelectController,
@@ -517,6 +526,17 @@ const main = async () => {
             );
         }
     });
+    // User-added AIVews (Ticket 11): their 04C Mask authoring sessions share
+    // the Anchor's Mask/Evidence registries and provider bindings; only the
+    // RGB/binding seams route through the Generated View run identity.
+    aiSelectUserViewMasks = new AISelectUserViewMaskController({
+        generatedViews: aiSelectGeneratedViews,
+        maskProvider: selectionServiceAdapter,
+        maskRegistry: aiSelectMaskController.maskRegistry,
+        evidenceRegistry: aiSelectMaskController.evidenceRegistry,
+        getModelManifestDigest: getAISelectModelManifestDigest,
+        getPromptAdapterCapabilities: getAISelectPromptAdapterCapabilities
+    });
     const cameraInspection = new CameraInspectionController({
         anchor: aiSelectController,
         editor: {
@@ -542,7 +562,14 @@ const main = async () => {
         const anchor = aiSelectController.state.anchor;
         // The Anchor frustum appears only while the Anchor itself is
         // inspected; Generated View inspection highlights that View's own
-        // frustum through the Gallery selection instead.
+        // frustum through the Gallery selection instead. The provisional
+        // Adjust New View draft reuses this manipulable frustum display.
+        const draftTarget = cameraInspection.state.target;
+        if (draftTarget?.kind === 'user-view-draft') {
+            anchorFrustum.setCameraBinding(draftTarget.cameraBinding);
+            anchorFrustum.setVisible(true);
+            return;
+        }
         const inspectingAnchor = isAnchorInspectionTarget(
             cameraInspection.state
         );
@@ -649,6 +676,33 @@ const main = async () => {
             message: i18n.t('ai-select.start-error')
         });
     };
+    const reportAISelectUserViewError = (error: unknown) => {
+        console.error(error);
+        events.invoke('showPopup', {
+            type: 'error',
+            header: i18n.t('popup.error'),
+            message: i18n.t('ai-select.user-view.error')
+        });
+    };
+    // Use Current View / Confirm View share one entry point: the captured or
+    // adjusted CameraBinding becomes a user-owned AIView whose authoritative
+    // render starts immediately. The Editor Camera is never moved. If Camera
+    // Inspection is active, the visible camera is the external observer — the
+    // saved Scene View is restored first so the capture binds the real
+    // Current Editor Camera.
+    const addAISelectUserViewFromCurrentCamera = () => {
+        try {
+            cameraInspection.returnToSceneView();
+            aiSelectGeneratedViews.addUserView(
+                captureEditorCameraBinding(
+                    scene.camera,
+                    nextCameraBindingRevision++
+                )
+            );
+        } catch (error) {
+            reportAISelectUserViewError(error);
+        }
+    };
     const startAISelect = async (restart: boolean) => {
         if (restart) {
             // Restart must use the saved Scene View as its baseline. The
@@ -725,6 +779,25 @@ const main = async () => {
         {
             generatedViews: aiSelectGeneratedViews,
             maskRegistry: aiSelectMaskController.maskRegistry,
+            userViewMasks: aiSelectUserViewMasks,
+            onUseCurrentView: addAISelectUserViewFromCurrentCamera,
+            onAdjustNewView: () => {
+                try {
+                    // A live inspection observes through the external
+                    // observer camera; restore the real Scene View first so
+                    // the provisional draft starts from it.
+                    cameraInspection.returnToSceneView();
+                    cameraInspection.enter({
+                        kind: 'user-view-draft',
+                        cameraBinding: captureEditorCameraBinding(
+                            scene.camera,
+                            nextCameraBindingRevision++
+                        )
+                    });
+                } catch (error) {
+                    reportAISelectUserViewError(error);
+                }
+            },
             onInspectCamera: (viewId) => {
                 const view = aiSelectGeneratedViews.state.views.find(
                     (entry) => entry.viewId === viewId
@@ -816,7 +889,15 @@ const main = async () => {
                     await cameraInspection.resetAnchor();
                 }
             },
-            onRetryPreview: () => aiSelectController.retryAnchorPreview()
+            onRetryPreview: () => aiSelectController.retryAnchorPreview(),
+            onConfirmDraftView: () => {
+                try {
+                    const binding = cameraInspection.confirmDraftView();
+                    aiSelectGeneratedViews.addUserView(binding);
+                } catch (error) {
+                    reportAISelectUserViewError(error);
+                }
+            }
         }
     );
     let lastAISelectPanelContextId: string | null = null;

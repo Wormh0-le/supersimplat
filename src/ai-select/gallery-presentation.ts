@@ -38,6 +38,15 @@ export interface GalleryCardActions {
     readonly confirmAsIs: boolean;
     readonly participationToggle: 'include' | 'exclude' | null;
     readonly inspectCamera: boolean;
+    /**
+     * The user-added No-Mask choices (Final Spec v1.3 §17): Auto Generate
+     * Mask through the 04C Prompt tools, Manual Draw through Paint/Erase, or
+     * an explicit Exclude decision. Generated Views never show these; their
+     * Mask acquisition is the Route-B pipeline.
+     */
+    readonly autoMask: boolean;
+    readonly manualDraw: boolean;
+    readonly excludeView: boolean;
 }
 
 export interface GalleryCardPresentation {
@@ -176,6 +185,13 @@ export const galleryCardPresentation = (
         view.participation === 'included' ||
         view.maskQuality === 'auto-good' ||
         view.maskQuality === 'user-confirmed';
+    // The No-Mask choices belong to user-owned RGB Ready Views without a
+    // Stable Mask; Participation authority stays with the explicit toggle
+    // once a User Confirmed Mask exists.
+    const userOwnedNoMask =
+        galleryViewRole(view.source) === 'user-added' &&
+        view.stableMaskId === undefined;
+    const noMaskChoices = userOwnedNoMask && view.renderStatus === 'ready';
     const actions: GalleryCardActions = Object.freeze({
         retryRender: view.renderStatus === 'failed',
         retryMaskOrPrompt,
@@ -190,7 +206,12 @@ export const galleryCardPresentation = (
             : null,
         // The planner-owned CameraBinding always exists, even for a failed
         // render, so Camera Inspection is always available.
-        inspectCamera: true
+        inspectCamera: true,
+        autoMask: noMaskChoices,
+        manualDraw: noMaskChoices,
+        // Render failure still offers the explicit Exclude decision next to
+        // Retry (Ticket 11 failure contract); Mask choices need RGB Ready.
+        excludeView: userOwnedNoMask
     });
     return Object.freeze({
         viewId: view.viewId,

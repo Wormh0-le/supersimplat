@@ -1,126 +1,42 @@
-import { SelectionServiceTransportError } from '../selection-service-readiness';
 import type {
     AISelectAnchorController,
     AISelectAnchorState
 } from './anchor-controller';
-import {
-    aiSelectEvidencePolicyVersion,
-    PerViewEvidenceRegistry,
-    type EvidenceDependencyIdentity,
-    type ViewEvidenceState
-} from './evidence-state';
-import {
-    type BrushStroke,
-    type MaskAnnotation,
-    type MaskPolarity,
-    type MaskPrompt
-} from './mask-annotation';
-import {
-    autoMaskProposalPolicyVersion,
-    type AutoMaskProposalSet,
-    type ProposalDecision
-} from './mask-proposal';
+import type { AnchorRgbArtifact } from './anchor-render-service';
+import { PerViewEvidenceRegistry } from './evidence-state';
+import type { BrushStroke } from './mask-annotation';
 import { MaskAnnotationRegistry } from './mask-registry';
-import {
-    isMaskResultResponse,
-    MaskArtifactInvalidError,
-    type AISelectMaskProvider,
-    type AIViewMaskRequest,
-    type MaskResultResponse,
-    type PreviousPredictionLogitsRef
+import type {
+    AISelectMaskProvider,
+    AIViewMaskRequest,
+    MaskResultResponse,
+    PreviousPredictionLogitsRef
 } from './mask-service';
+import type { PromptAdapterCapabilities, PromptState } from './prompt-state';
 import {
-    createEmptyPromptState,
-    createPromptAdapterCapabilities,
-    promptStateHasConstraints,
-    promptToolCapabilityReason,
-    revisePromptState,
-    type BoxPrompt,
-    type PointPrompt,
-    type PromptAdapterCapabilities,
-    type PromptState,
-    type PromptTool
-} from './prompt-state';
+    AISelectViewMaskSession,
+    type AddBoxPromptInput,
+    type AddMaskPromptInput,
+    type AISelectMaskAuthoring,
+    type AISelectMaskListener,
+    type AISelectMaskState,
+    type ApplyBrushGestureInput
+} from './view-mask-session';
+
+export type {
+    AddBoxPromptInput,
+    AddMaskPromptInput,
+    AISelectMaskAuthoring,
+    AISelectMaskListener,
+    AISelectMaskState,
+    ApplyBrushGestureInput,
+    BrushGestureSample,
+    MaskFailureKind,
+    MaskProposalStatus,
+    MaskRequestStatus
+} from './view-mask-session';
 
 const ANCHOR_VIEW_ID = 'anchor-view';
-
-export type MaskRequestStatus = 'idle' | 'pending' | 'failed';
-export type MaskFailureKind = 'maskProposalFailed' | 'maskArtifactInvalid';
-export type MaskProposalStatus =
-    | 'none'
-    | 'pending'
-    | 'selected'
-    | 'ambiguous'
-    | 'unavailable'
-    | 'editing'
-    | 'failed';
-
-export interface AddMaskPromptInput {
-    readonly xPx: number;
-    readonly yPx: number;
-    readonly polarity: MaskPolarity;
-}
-
-/** Positive Instance Box only; adding a box replaces any existing one. */
-export interface AddBoxPromptInput {
-    readonly x0Px: number;
-    readonly y0Px: number;
-    readonly x1Px: number;
-    readonly y1Px: number;
-}
-
-export interface BrushGestureSample {
-    readonly xPx: number;
-    readonly yPx: number;
-}
-
-export interface ApplyBrushGestureInput {
-    readonly mode: BrushStroke['mode'];
-    readonly radiusPx: number;
-    readonly samples: readonly BrushGestureSample[];
-}
-
-/** The Anchor's current Mask/Evidence surface, composed per state read. */
-export interface AISelectMaskState {
-    readonly viewId: string;
-    /** The unpublished Editing Mask bound to the current RGB, if any. */
-    readonly editingMask: MaskAnnotation | null;
-    /** The published Stable Mask bound to the current RGB, if any. */
-    readonly stableMask: MaskAnnotation | null;
-    /** The current prompt set for the current RGB identity. */
-    readonly prompts: readonly MaskPrompt[];
-    readonly promptState: PromptState | null;
-    readonly promptCapabilities: PromptAdapterCapabilities | null;
-    readonly proposalSet: AutoMaskProposalSet | null;
-    readonly proposalDecision: ProposalDecision | null;
-    readonly acceptedProposalId: string | null;
-    readonly proposalStatus: MaskProposalStatus;
-    readonly requestStatus: MaskRequestStatus;
-    readonly failureKind?: MaskFailureKind;
-    readonly errorMessage?: string;
-    readonly evidence: ViewEvidenceState;
-    /** Mask-local Undo/Redo availability for the current RGB identity. */
-    readonly canUndo: boolean;
-    readonly canRedo: boolean;
-    readonly canUndoPrompt: boolean;
-    readonly canRedoPrompt: boolean;
-    /** A restorable automatic Mask version exists for the current RGB. */
-    readonly canRestoreAuto: boolean;
-    /**
-     * Unconfirmed Prompt/Editing state an Anchor change would discard: an
-     * in-flight SAM revision, target-intent prompts with no Mask, or a draft
-     * that diverges from the confirmed Stable Mask.
-     */
-    readonly hasUnconfirmedChanges: boolean;
-}
-
-export type AISelectMaskListener = (state: AISelectMaskState) => void;
-
-interface PendingMaskRequest {
-    readonly request: AIViewMaskRequest;
-    readonly editingRevision: number;
-    readonly promptRevision: number;
-}
 
 export interface AISelectMaskControllerOptions {
     readonly anchor: AISelectAnchorController;
@@ -134,61 +50,15 @@ export interface AISelectMaskControllerOptions {
     readonly isAnchorLocked?: () => boolean;
 }
 
-const pointOnlyCapabilities = createPromptAdapterCapabilities({
-    positivePoints: true,
-    negativePoints: true,
-    positiveInstanceBox: false,
-    previousLogitsRefinement: false,
-    singlePointMultimask: false,
-    negativeBox: false,
-    promptBrush: false,
-    maskConstraints: false,
-    text: false,
-    compilerPolicyVersion: 'point-mask-compiler/v1'
-});
-
-const errorMessage = (error: unknown): string => {
-    // Transport failures keep the Companion's distinguishable error code and
-    // message so the technical details can name the actual recovery class
-    // (capability mismatch, unresolvable RGB, capacity, …) instead of a bare
-    // HTTP status.
-    if (
-        error instanceof SelectionServiceTransportError &&
-        error.serviceCode !== undefined
-    ) {
-        const detail = error.serviceMessage ?? '';
-        return `${error.message} [${error.serviceCode}] ${detail}`.trim();
-    }
-    return error instanceof Error && error.message
-        ? error.message
-        : 'AI Select mask production failed.';
-};
-
-const immutableTransportCopy = <T>(value: T): T => {
-    const copy = structuredClone(value);
-    const freeze = (entry: unknown): void => {
-        if (typeof entry !== 'object' || entry === null) {
-            return;
-        }
-        Object.values(entry as Record<string, unknown>).forEach(freeze);
-        Object.freeze(entry);
-    };
-    freeze(copy);
-    return copy;
-};
-
 /**
- * Owns the Anchor's Mask domain: prompts, single-frame SAM feedback, local
- * brush edits, and atomic Confirm Mask publication, plus the per-view
- * Evidence dependency identity those transitions invalidate. RGB/render
- * lifecycle stays in the Anchor controller; Mask and Evidence state here are
- * independent and never demote a ready render.
+ * The Anchor's Mask surface: one AISelectViewMaskSession bound to the Anchor
+ * host seams. The session owns the view-agnostic Mask domain (prompts,
+ * single-frame SAM feedback, brush edits, Confirm publication); this wrapper
+ * only binds Anchor RGB currency, the confirmed-Anchor authoring lock, and
+ * the Anchor's request/response binding validation.
  */
-export class AISelectMaskController {
+export class AISelectMaskController implements AISelectMaskAuthoring {
     private readonly anchor: AISelectAnchorController;
-    private readonly maskProvider: AISelectMaskProvider;
-    private readonly getModelManifestDigest: () => string | null;
-    private readonly getPromptAdapterCapabilities: () => PromptAdapterCapabilities | null;
     private readonly isAnchorLocked: () => boolean;
     /**
      * The one versioned Mask registry for every AI View in the Current Target
@@ -202,949 +72,152 @@ export class AISelectMaskController {
      * publication already derives its invalidation.
      */
     readonly evidenceRegistry = new PerViewEvidenceRegistry();
-    private readonly listeners = new Set<AISelectMaskListener>();
+    private readonly session: AISelectViewMaskSession;
     private anchorState: AISelectAnchorState = { context: null, anchor: null };
-    private targetContextId: string | null = null;
-    private lastRgbDigest: string | null = null;
-    private promptState: PromptState | null = null;
-    private proposalSet: AutoMaskProposalSet | null = null;
-    private proposalDecision: ProposalDecision | null = null;
-    private acceptedProposalId: string | null = null;
-    private readonly acceptedProposalMaskIdsByPromptDigest = new Map<
-        string,
-        string
-    >();
-    private requestStatus: MaskRequestStatus = 'idle';
-    private failureKind: MaskFailureKind | undefined;
-    private lastErrorMessage: string | undefined;
-    private activeMaskRequest: PendingMaskRequest | null = null;
-    /**
-     * Bumped by every local editing mutation so a late SAM response can
-     * never overwrite a newer local brush edit.
-     */
-    private editingRevision = 0;
-    /**
-     * Set when prompting arrives while a SAM attempt is still in flight. The
-     * Companion reserves one global operation slot and rejects a concurrent
-     * attempt with 409 capacityFull, so the latest prompt set resubmits only
-     * after the in-flight attempt settles.
-     */
-    private resubmitMaskRequested = false;
-    private nextMaskAttemptOrdinal = 0;
-    private nextPromptOrdinal = 0;
-    private promptUndoStack: PromptState[] = [];
-    private promptRedoStack: PromptState[] = [];
-    /**
-     * The opaque logits reference of the currently previewed proposal
-     * candidate. Held only while still in Prompt mode: a subsequent Prompt
-     * revision for the same View/RGB sends it as `previousLogitsRef`, an
-     * explicit Retry omits it, and Accept/RGB/View/Target changes clear it.
-     */
-    private refinementLogitsRef: PreviousPredictionLogitsRef | null = null;
-    /**
-     * RGB digests whose artifact already reached the Companion in this target
-     * context. Later requests for a shipped digest may omit the artifact; the
-     * Companion resolves its immutable RGB cache by digest (04C contract §5).
-     */
-    private readonly shippedRgbDigests = new Set<string>();
-    /**
-     * The mask-local history: Editing-chain maskIds (or null for the empty
-     * start state) for the current RGB identity. It is independent from
-     * native EditHistory and resets with RGB/context identity.
-     */
-    private undoStack: (string | null)[] = [];
-    private redoStack: (string | null)[] = [];
 
     constructor(options: AISelectMaskControllerOptions) {
         this.anchor = options.anchor;
-        this.maskProvider = options.maskProvider;
-        this.getModelManifestDigest =
-            options.getModelManifestDigest ?? (() => null);
-        this.getPromptAdapterCapabilities =
-            options.getPromptAdapterCapabilities ??
-            (() => pointOnlyCapabilities);
         this.isAnchorLocked = options.isAnchorLocked ?? (() => false);
-        this.anchor.subscribe((state) => this.handleAnchorState(state));
-    }
-
-    get state(): AISelectMaskState {
-        const rgbDigest = this.currentRgbDigest();
-        const view = this.maskRegistry.viewState(
-            ANCHOR_VIEW_ID,
-            rgbDigest ?? ''
-        );
-        const currentIdentity = this.currentEvidenceIdentity(
-            rgbDigest,
-            view.stableMask
-        );
-        const restorableAutoMaskId =
-            this.promptState === null
-                ? null
-                : (this.acceptedProposalMaskIdsByPromptDigest.get(
-                      this.promptState.digest
-                  ) ?? null);
-        const promptCapabilities = this.getPromptAdapterCapabilities();
-        return Object.freeze({
-            viewId: ANCHOR_VIEW_ID,
-            editingMask: view.editingMask,
-            stableMask: view.stableMask,
-            prompts: Object.freeze(
-                (this.promptState?.points ?? []).map((point) =>
-                    Object.freeze({ ...point })
-                )
-            ),
-            promptState: this.promptState,
-            promptCapabilities,
-            proposalSet: this.proposalSet,
-            proposalDecision: this.proposalDecision,
-            acceptedProposalId: this.acceptedProposalId,
-            proposalStatus:
-                this.requestStatus === 'pending'
-                    ? 'pending'
-                    : this.requestStatus === 'failed'
-                      ? 'failed'
-                      : this.proposalDecision === null
-                        ? 'none'
-                        : this.acceptedProposalId !== null ||
-                            view.editingMask?.source === 'manual' ||
-                            view.editingMask?.source === 'hybrid'
-                          ? 'editing'
-                          : this.proposalDecision.status,
-            requestStatus: this.requestStatus,
-            ...(this.failureKind === undefined
+        this.session = new AISelectViewMaskSession({
+            host: {
+                viewId: ANCHOR_VIEW_ID,
+                targetContextId: () =>
+                    this.anchorState.context?.targetContextId ?? null,
+                currentRgb: () => this.currentAnchorRgb(),
+                lockReason: () =>
+                    this.isAnchorLocked()
+                        ? 'AI Select Mask authoring is locked while the Anchor is confirmed. Adjust or restart the Anchor first.'
+                        : null,
+                createMaskRequest: (
+                    promptState: PromptState,
+                    proposalAttemptId: string,
+                    modelManifestDigest: string,
+                    adapterCapabilityDigest: string,
+                    proposalPolicyVersion: string,
+                    requestOptions: {
+                        readonly includeRgbArtifact: boolean;
+                        readonly previousLogitsRef?: PreviousPredictionLogitsRef;
+                    }
+                ): AIViewMaskRequest | null =>
+                    this.anchor.createAnchorMaskRequest(
+                        promptState,
+                        proposalAttemptId,
+                        modelManifestDigest,
+                        adapterCapabilityDigest,
+                        proposalPolicyVersion,
+                        requestOptions
+                    ),
+                acceptsMaskResponse: (
+                    response: MaskResultResponse,
+                    request: AIViewMaskRequest
+                ): boolean => this.anchor.acceptsMaskResponse(response, request)
+            },
+            maskProvider: options.maskProvider,
+            maskRegistry: this.maskRegistry,
+            evidenceRegistry: this.evidenceRegistry,
+            ...(options.getModelManifestDigest === undefined
                 ? {}
-                : { failureKind: this.failureKind }),
-            ...(this.lastErrorMessage === undefined
+                : {
+                      getModelManifestDigest: options.getModelManifestDigest
+                  }),
+            ...(options.getPromptAdapterCapabilities === undefined
                 ? {}
-                : { errorMessage: this.lastErrorMessage }),
-            evidence: this.evidenceRegistry.statusFor(
-                ANCHOR_VIEW_ID,
-                currentIdentity
-            ),
-            canUndo: this.undoStack.length > 0,
-            canRedo: this.redoStack.length > 0,
-            canUndoPrompt: this.promptUndoStack.length > 0,
-            canRedoPrompt: this.promptRedoStack.length > 0,
-            canRestoreAuto:
-                restorableAutoMaskId !== null &&
-                restorableAutoMaskId !== view.editingMask?.maskId,
-            hasUnconfirmedChanges: this.deriveHasUnconfirmedChanges(view)
+                : {
+                      getPromptAdapterCapabilities:
+                          options.getPromptAdapterCapabilities
+                  })
+        });
+        this.anchor.subscribe((state) => {
+            this.anchorState = state;
+            this.session.notifyHostStateChanged();
         });
     }
 
-    subscribe(listener: AISelectMaskListener): () => void {
-        this.listeners.add(listener);
-        listener(this.state);
-        return () => this.listeners.delete(listener);
-    }
-
-    /**
-     * Add one prompt point and automatically request single-frame SAM
-     * feedback for the full current prompt set — no extra apply action.
-     */
-    async addPrompt(input: AddMaskPromptInput): Promise<void> {
-        this.requireUnlocked();
-        const rgb = this.requireReadyRgb();
-        const tool: PromptTool =
-            input.polarity === 'include' ? 'positive-point' : 'negative-point';
-        this.requirePromptCapability(tool);
-        if (
-            !Number.isSafeInteger(input.xPx) ||
-            !Number.isSafeInteger(input.yPx) ||
-            input.xPx < 0 ||
-            input.yPx < 0 ||
-            input.xPx >= rgb.width ||
-            input.yPx >= rgb.height
-        ) {
-            throw new Error(
-                'AI Select prompts must be integer pixels inside the Anchor RGB bounds.'
-            );
-        }
-        const current = this.requirePromptState(rgb.digest);
-        const point: PointPrompt = Object.freeze({
-            promptId: this.mintPromptId(),
-            xPx: input.xPx,
-            yPx: input.yPx,
-            polarity: input.polarity
-        });
-        this.publishPromptRevision(
-            revisePromptState(current, {
-                points: [...current.points, point]
-            })
-        );
-        await this.submitMaskRequest();
-    }
-
-    async addBoxPrompt(input: AddBoxPromptInput): Promise<void> {
-        this.requireUnlocked();
-        const rgb = this.requireReadyRgb();
-        this.requirePromptCapability('positive-box');
-        const x0Px = Math.min(input.x0Px, input.x1Px);
-        const y0Px = Math.min(input.y0Px, input.y1Px);
-        const x1Px = Math.max(input.x0Px, input.x1Px);
-        const y1Px = Math.max(input.y0Px, input.y1Px);
-        if (
-            ![x0Px, y0Px, x1Px, y1Px].every(Number.isSafeInteger) ||
-            x0Px < 0 ||
-            y0Px < 0 ||
-            x1Px >= rgb.width ||
-            y1Px >= rgb.height ||
-            x0Px === x1Px ||
-            y0Px === y1Px
-        ) {
-            throw new Error(
-                'AI Select Box prompts must have a non-empty in-bounds pixel area.'
-            );
-        }
-        const current = this.requirePromptState(rgb.digest);
-        const box: BoxPrompt = Object.freeze({
-            promptId: this.mintPromptId(),
-            polarity: 'include',
-            x0Px,
-            y0Px,
-            x1Px,
-            y1Px
-        });
-        // At most one Positive Instance Box: a new box replaces the old one.
-        this.publishPromptRevision(
-            revisePromptState(current, {
-                boxes: [box]
-            })
-        );
-        await this.submitMaskRequest();
-    }
-
-    /**
-     * Choose the previewed proposal candidate. The chosen candidate's opaque
-     * logits reference becomes the refinement lineage for the next Prompt
-     * revision (04C contract §7); it never leaves the request boundary.
-     */
-    previewProposal(proposalId: string): void {
-        const proposal = this.proposalSet?.proposals.find(
-            (candidate) => candidate.proposalId === proposalId
-        );
-        if (proposal === undefined) {
-            throw new Error(
-                'AI Select cannot preview an unknown Mask proposal.'
-            );
-        }
-        this.refinementLogitsRef = proposal.logitsRef ?? null;
-    }
-
-    clearPrompts(): void {
-        this.requireUnlocked();
-        const rgb = this.requireReadyRgb();
-        const current = this.requirePromptState(rgb.digest);
-        this.publishPromptRevision(
-            revisePromptState(current, {
-                points: [],
-                boxes: []
-            })
-        );
-        this.refinementLogitsRef = null;
-        this.requestStatus = 'idle';
-        this.failureKind = undefined;
-        this.resubmitMaskRequested = false;
-        this.publish();
-    }
-
-    /**
-     * Companion Instance replacement invalidates every Companion-local
-     * reference minted by the prior Instance (02C availability lifecycle):
-     * the held refinement logits ref is dropped, and the next request for an
-     * already-seen RGB digest re-ships the exact artifact instead of relying
-     * on the prior Instance's RGB cache. Editor-owned Prompt and Mask
-     * artifacts keep their own identity and stay valid.
-     */
-    handleCompanionInstanceChanged(): void {
-        this.refinementLogitsRef = null;
-        this.shippedRgbDigests.clear();
-    }
-
-    /**
-     * Prompt Adapter capabilities derive from the live readiness state, so a
-     * readiness transition (first connection, recovery, Instance change) must
-     * republish: Prompt tools gate on the latest negotiated capability record
-     * rather than a stale snapshot from an earlier publish.
-     */
-    refreshAvailability(): void {
-        this.publish();
-    }
-
-    undoPromptEdit(): void {
-        this.restorePromptHistory(this.promptUndoStack, this.promptRedoStack);
-    }
-
-    redoPromptEdit(): void {
-        this.restorePromptHistory(this.promptRedoStack, this.promptUndoStack);
-    }
-
-    acceptProposal(proposalId: string): void {
-        this.requireUnlocked();
-        const rgb = this.requireReadyRgb();
-        const proposal = this.proposalSet?.proposals.find(
-            (candidate) => candidate.proposalId === proposalId
-        );
-        if (
-            proposal === undefined ||
-            !proposal.rankingFeatures.eligible ||
-            !this.proposalDecision?.alternativeProposalIds.includes(proposalId)
-        ) {
-            throw new Error(
-                'AI Select cannot accept an unknown, ineligible, or stale Mask proposal.'
-            );
-        }
-        const promptState = this.promptState;
-        if (promptState === null) {
-            throw new Error(
-                'AI Select cannot accept a proposal without its Prompt identity.'
-            );
-        }
-        this.recordEdit(rgb.digest);
-        const editing = this.maskRegistry.registerSamResult({
-            viewId: ANCHOR_VIEW_ID,
-            rgbDigest: rgb.digest,
-            artifact: proposal.mask,
-            prompts: (this.promptState?.points ?? []).map((point) => ({
-                promptId: point.promptId,
-                xPx: point.xPx,
-                yPx: point.yPx,
-                polarity: point.polarity
-            }))
-        });
-        this.acceptedProposalMaskIdsByPromptDigest.set(
-            promptState.digest,
-            editing.maskId
-        );
-        this.acceptedProposalId = proposalId;
-        // Accept leaves Prompt mode: refinement lineage is dropped and any
-        // later return to Prompt mode mints a fresh inference attempt.
-        this.refinementLogitsRef = null;
-        this.editingRevision += 1;
-        this.failureKind = undefined;
-        this.lastErrorMessage = undefined;
-        this.publish();
-    }
-
-    /**
-     * Apply one local brush stroke to the Editing Mask. Brush edits are
-     * editor-local, never call SAM, and supersede any in-flight SAM response.
-     */
-    applyBrushStroke(stroke: BrushStroke): void {
-        this.applyBrushGesture({
-            mode: stroke.mode,
-            radiusPx: stroke.radiusPx,
-            samples: [{ xPx: stroke.xPx, yPx: stroke.yPx }]
-        });
-    }
-
-    /**
-     * Apply one complete pointer gesture atomically. Linear interpolation in
-     * image-pixel space makes the result independent of browser event rate.
-     */
-    applyBrushGesture(input: ApplyBrushGestureInput): void {
-        this.requireUnlocked();
-        const rgb = this.requireReadyRgb();
-        const strokes = this.interpolateBrushGesture(input);
-        const previousEditingMaskId = this.currentEditingMaskId(rgb.digest);
-        this.maskRegistry.applyBrushGesture({
-            viewId: ANCHOR_VIEW_ID,
-            rgbDigest: rgb.digest,
-            strokes,
-            width: rgb.width,
-            height: rgb.height
-        });
-        this.undoStack.push(previousEditingMaskId);
-        this.redoStack = [];
-        this.supersedeLocalEditing();
-    }
-
-    /**
-     * Atomically publish the current Editing Mask as the new Stable Mask
-     * revision. Until this synchronous swap succeeds, observers keep seeing
-     * the previous Stable Mask and current Evidence. Dependent per-view
-     * Evidence derives stale by exact RGB/Mask/policy identity.
-     */
-    confirmEditingMask(): void {
-        this.requireUnlocked();
-        const rgb = this.requireReadyRgb();
-        this.maskRegistry.confirm(ANCHOR_VIEW_ID, rgb.digest);
-        this.failureKind = undefined;
-        this.lastErrorMessage = undefined;
-        this.publish();
-    }
-
-    /**
-     * Clear replaces the Editing Mask with an empty manual draft. The Stable
-     * Mask and the replaced draft are untouched; the draft stays reachable
-     * through mask-local Undo.
-     */
-    clearEditingMask(): void {
-        this.requireUnlocked();
-        const rgb = this.requireReadyRgb();
-        this.recordEdit(rgb.digest);
-        this.maskRegistry.clearEditing(
-            ANCHOR_VIEW_ID,
-            rgb.digest,
-            rgb.width,
-            rgb.height
-        );
-        this.supersedeLocalEditing();
-    }
-
-    /**
-     * Restore Auto brings back the explicitly accepted SAM Mask for the
-     * current RGB and exact Prompt identity.
-     */
-    restoreAutoMask(): void {
-        this.requireUnlocked();
-        const rgb = this.requireReadyRgb();
-        const promptState = this.promptState;
-        const latestMaskId =
-            promptState === null
-                ? null
-                : (this.acceptedProposalMaskIdsByPromptDigest.get(
-                      promptState.digest
-                  ) ?? null);
-        const currentEditing = this.maskRegistry.viewState(
-            ANCHOR_VIEW_ID,
-            rgb.digest
-        ).editingMask;
-        if (latestMaskId === null || latestMaskId === currentEditing?.maskId) {
-            throw new Error(
-                'AI Select has no restorable accepted Mask for the current RGB and Prompt identity.'
-            );
-        }
-        this.recordEdit(rgb.digest);
-        this.maskRegistry.restoreEditing(
-            ANCHOR_VIEW_ID,
-            latestMaskId,
-            rgb.digest
-        );
-        this.supersedeLocalEditing();
-    }
-
-    /**
-     * Mask-local Undo, routed explicitly by Mask Editor focus. It walks the
-     * Editing chain only: Stable Mask publication is a separate atomic act
-     * and is never an Undo step.
-     */
-    undoMaskEdit(): void {
-        this.requireUnlocked();
-        const rgb = this.requireReadyRgb();
-        const target = this.undoStack.pop();
-        if (target === undefined) {
-            throw new Error('AI Select has no Mask edit to undo.');
-        }
-        this.redoStack.push(this.currentEditingMaskId(rgb.digest));
-        this.maskRegistry.restoreEditing(ANCHOR_VIEW_ID, target, rgb.digest);
-        this.supersedeLocalEditing();
-    }
-
-    /** Mask-local Redo, the mirror of `undoMaskEdit`. */
-    redoMaskEdit(): void {
-        this.requireUnlocked();
-        const rgb = this.requireReadyRgb();
-        const target = this.redoStack.pop();
-        if (target === undefined) {
-            throw new Error('AI Select has no Mask edit to redo.');
-        }
-        this.undoStack.push(this.currentEditingMaskId(rgb.digest));
-        this.maskRegistry.restoreEditing(ANCHOR_VIEW_ID, target, rgb.digest);
-        this.supersedeLocalEditing();
-    }
-
-    /**
-     * An explicit Retry submits a new attempt for the same prompt set. Retry
-     * is not a refinement: it must actually rerun the render/inference path,
-     * so the held logits reference is omitted (04C contract §7).
-     */
-    async retryMaskRequest(): Promise<void> {
-        this.requireUnlocked();
-        this.requireReadyRgb();
-        if (
-            this.promptState === null ||
-            !promptStateHasConstraints(this.promptState)
-        ) {
-            throw new Error('AI Select has no Mask prompt set to retry.');
-        }
-        await this.submitMaskRequest({ omitRefinementRef: true });
-    }
-
-    private async submitMaskRequest(
-        options: { readonly omitRefinementRef?: boolean } = {}
-    ): Promise<void> {
-        if (this.activeMaskRequest !== null) {
-            // One in-flight SAM attempt per view: a concurrent attempt would
-            // hit the Companion's single operation slot as a 409. Supersede
-            // the in-flight response locally and resubmit the latest prompt
-            // set as a fresh attempt once the slot settles.
-            this.resubmitMaskRequested = true;
-            this.editingRevision += 1;
-            return;
-        }
-        const modelManifestDigest = this.getModelManifestDigest();
-        if (modelManifestDigest === null || modelManifestDigest.length === 0) {
-            this.failMaskRequest(
-                'AI Select requires a configured Model Manifest before SAM mask production.'
-            );
-            return;
-        }
-        const promptCapabilities = this.getPromptAdapterCapabilities();
-        if (promptCapabilities === null || this.promptState === null) {
-            this.failMaskRequest(
-                'AI Select requires negotiated Prompt Adapter capabilities before proposal production.'
-            );
-            return;
-        }
-        const rgbDigest = this.promptState.rgbDigest;
-        const refinementRef = this.currentRefinementRef(
-            promptCapabilities,
-            options.omitRefinementRef === true
-        );
-        const request = this.anchor.createAnchorMaskRequest(
-            this.promptState,
-            this.mintMaskAttemptId(),
-            modelManifestDigest,
-            promptCapabilities.capabilityDigest,
-            autoMaskProposalPolicyVersion,
-            {
-                includeRgbArtifact: !this.shippedRgbDigests.has(rgbDigest),
-                ...(refinementRef === null
-                    ? {}
-                    : { previousLogitsRef: refinementRef })
-            }
-        );
-        if (request === null) {
-            this.failMaskRequest(
-                'AI Select requires an RGB Ready Anchor before SAM mask production.'
-            );
-            return;
-        }
-        const pending: PendingMaskRequest = {
-            request,
-            editingRevision: this.editingRevision,
-            promptRevision: this.promptState.revision
-        };
-        this.activeMaskRequest = pending;
-        this.requestStatus = 'pending';
-        this.failureKind = undefined;
-        this.lastErrorMessage = undefined;
-        this.publish();
-
-        let response: MaskResultResponse;
-        try {
-            response = await this.maskProvider.produceMaskProposals(request);
-        } catch (error) {
-            if (!this.isCurrentMaskRequest(pending)) {
-                this.discardStaleMaskRequest(pending);
-                return;
-            }
-            this.failMaskRequest(
-                errorMessage(error),
-                error instanceof MaskArtifactInvalidError ||
-                    (error instanceof SelectionServiceTransportError &&
-                        error.serviceCode === 'incompleteMaskSet')
-                    ? 'maskArtifactInvalid'
-                    : 'maskProposalFailed'
-            );
-            this.resubmitLatestPromptSet();
-            return;
-        }
-        if (!this.isCurrentMaskRequest(pending)) {
-            this.discardStaleMaskRequest(pending);
-            return;
-        }
-        if (!isMaskResultResponse(response)) {
-            this.failMaskRequest(
-                'The Selection Service Companion returned an invalid Mask artifact publication.',
-                'maskArtifactInvalid'
-            );
-            this.resubmitLatestPromptSet();
-            return;
-        }
-        if (!this.anchor.acceptsMaskResponse(response, request)) {
-            this.failMaskRequest(
-                'The Selection Service Companion returned an invalid or stale Mask binding.'
-            );
-            this.resubmitLatestPromptSet();
-            return;
-        }
-        try {
-            this.proposalSet = immutableTransportCopy(response.proposalSet);
-            this.proposalDecision = immutableTransportCopy(
-                response.proposalDecision
-            );
-            this.acceptedProposalId = null;
-            // The Companion accepted this RGB digest; later attempts in this
-            // target context may reference it without reshipping the bytes.
-            this.shippedRgbDigests.add(request.rgbDigest);
-            // The suggested candidate is the default preview; its opaque
-            // logits reference is the refinement lineage until the user
-            // previews another candidate or leaves Prompt mode.
-            const suggested = this.proposalSet.proposals.find(
-                (candidate) =>
-                    candidate.proposalId ===
-                    this.proposalDecision?.selectedProposalId
-            );
-            this.refinementLogitsRef = suggested?.logitsRef ?? null;
-        } catch (error) {
-            this.failMaskRequest(errorMessage(error));
-            this.resubmitLatestPromptSet();
-            return;
-        }
-        this.activeMaskRequest = null;
-        this.requestStatus = 'idle';
-        this.failureKind = undefined;
-        this.publish();
-        this.resubmitLatestPromptSet();
-    }
-
-    /**
-     * A superseded attempt settled: release the slot it held (only when the
-     * tracked request is still this one) so the latest prompt set can
-     * actually resubmit instead of deferring against itself.
-     */
-    private discardStaleMaskRequest(pending: PendingMaskRequest): void {
-        if (this.activeMaskRequest === pending) {
-            this.activeMaskRequest = null;
-        }
-        this.resubmitLatestPromptSet();
-    }
-
-    private resubmitLatestPromptSet(): void {
-        if (!this.resubmitMaskRequested) {
-            return;
-        }
-        this.resubmitMaskRequested = false;
-        if (
-            this.promptState === null ||
-            !promptStateHasConstraints(this.promptState)
-        ) {
-            return;
-        }
-        this.submitMaskRequest().catch((error: unknown) => {
-            console.error(error);
-        });
-    }
-
-    private isCurrentMaskRequest(pending: PendingMaskRequest): boolean {
-        return (
-            this.activeMaskRequest === pending &&
-            pending.editingRevision === this.editingRevision &&
-            pending.promptRevision === this.promptState?.revision
-        );
-    }
-
-    private failMaskRequest(
-        message: string,
-        failureKind: MaskFailureKind = 'maskProposalFailed'
-    ): void {
-        this.activeMaskRequest = null;
-        this.requestStatus = 'failed';
-        this.failureKind = failureKind;
-        this.lastErrorMessage = message;
-        this.publish();
-    }
-
-    private handleAnchorState(state: AISelectAnchorState): void {
-        this.anchorState = state;
-        const contextId = state.context?.targetContextId ?? null;
-        const rgbDigest = this.currentRgbDigest();
-        if (contextId !== this.targetContextId) {
-            // Restart/exit rotates targetContextId and disposes every
-            // target-local Mask/Evidence record.
-            this.targetContextId = contextId;
-            this.maskRegistry.disposeView(ANCHOR_VIEW_ID);
-            this.evidenceRegistry.disposeView(ANCHOR_VIEW_ID);
-            this.resetForNewRgbIdentity(rgbDigest);
-            return;
-        }
-        if (rgbDigest !== this.lastRgbDigest) {
-            // A new RGB identity makes the old prompt set and in-flight SAM
-            // work stale; Mask versions stay retained but stop being current.
-            this.resetForNewRgbIdentity(rgbDigest);
-            return;
-        }
-        this.publish();
-    }
-
-    private resetForNewRgbIdentity(rgbDigest: string | null): void {
-        this.lastRgbDigest = rgbDigest;
-        this.promptState =
-            rgbDigest === null
-                ? null
-                : createEmptyPromptState(ANCHOR_VIEW_ID, rgbDigest);
-        this.proposalSet = null;
-        this.proposalDecision = null;
-        this.acceptedProposalId = null;
-        this.refinementLogitsRef = null;
-        this.shippedRgbDigests.clear();
-        this.acceptedProposalMaskIdsByPromptDigest.clear();
-        this.activeMaskRequest = null;
-        this.resubmitMaskRequested = false;
-        this.requestStatus = 'idle';
-        this.failureKind = undefined;
-        this.lastErrorMessage = undefined;
-        this.editingRevision += 1;
-        this.undoStack = [];
-        this.redoStack = [];
-        this.promptUndoStack = [];
-        this.promptRedoStack = [];
-        this.publish();
-    }
-
-    private currentRgbDigest(): string | null {
-        const anchor = this.anchorState.anchor;
-        if (anchor?.renderStatus !== 'ready' || anchor.rgb === undefined) {
-            return null;
-        }
-        return anchor.rgb.digest;
-    }
-
-    private currentEvidenceIdentity(
-        rgbDigest: string | null,
-        stableMask: MaskAnnotation | null
-    ): EvidenceDependencyIdentity | null {
-        if (rgbDigest === null || stableMask === null) {
-            return null;
-        }
-        return {
-            viewId: ANCHOR_VIEW_ID,
-            rgbDigest,
-            stableMaskDigest: stableMask.artifact.digest,
-            evidencePolicyDigest: aiSelectEvidencePolicyVersion
-        };
-    }
-
-    private requireUnlocked(): void {
-        if (this.isAnchorLocked()) {
-            throw new Error(
-                'AI Select Mask authoring is locked while the Anchor is confirmed. Adjust or restart the Anchor first.'
-            );
-        }
-    }
-
-    private currentEditingMaskId(rgbDigest: string): string | null {
-        return (
-            this.maskRegistry.viewState(ANCHOR_VIEW_ID, rgbDigest).editingMask
-                ?.maskId ?? null
-        );
-    }
-
-    private interpolateBrushGesture(
-        input: ApplyBrushGestureInput
-    ): readonly BrushStroke[] {
-        if (
-            !Number.isSafeInteger(input.radiusPx) ||
-            input.radiusPx <= 0 ||
-            input.samples.length === 0
-        ) {
-            throw new Error(
-                'AI Select brush gestures need samples and a positive integer radius.'
-            );
-        }
-        const strokes: BrushStroke[] = [];
-        let previous: BrushGestureSample | null = null;
-        for (const sample of input.samples) {
-            if (
-                !Number.isSafeInteger(sample.xPx) ||
-                !Number.isSafeInteger(sample.yPx)
-            ) {
-                throw new Error(
-                    'AI Select brush gesture samples must use integer pixels.'
-                );
-            }
-            if (previous === null) {
-                strokes.push({
-                    xPx: sample.xPx,
-                    yPx: sample.yPx,
-                    radiusPx: input.radiusPx,
-                    mode: input.mode
-                });
-                previous = sample;
-                continue;
-            }
-            const dx = sample.xPx - previous.xPx;
-            const dy = sample.yPx - previous.yPx;
-            const steps = Math.max(Math.abs(dx), Math.abs(dy));
-            for (let step = 1; step <= steps; step += 1) {
-                strokes.push({
-                    xPx: Math.round(previous.xPx + (dx * step) / steps),
-                    yPx: Math.round(previous.yPx + (dy * step) / steps),
-                    radiusPx: input.radiusPx,
-                    mode: input.mode
-                });
-            }
-            previous = sample;
-        }
-        return Object.freeze(strokes);
-    }
-
-    /**
-     * Every local editing mutation pushes the previous Editing-chain
-     * position onto the mask-local Undo stack and clears Redo.
-     */
-    private recordEdit(rgbDigest: string): void {
-        this.undoStack.push(this.currentEditingMaskId(rgbDigest));
-        this.redoStack = [];
-    }
-
-    /**
-     * A local editing change supersedes in-flight SAM work: the late
-     * response must never overwrite user-authored content.
-     */
-    private supersedeLocalEditing(): void {
-        this.editingRevision += 1;
-        if (this.activeMaskRequest !== null) {
-            this.requestStatus = 'idle';
-        }
-        this.failureKind = undefined;
-        this.lastErrorMessage = undefined;
-        this.publish();
-    }
-
-    private deriveHasUnconfirmedChanges(view: {
-        readonly editingMask: MaskAnnotation | null;
-        readonly stableMask: MaskAnnotation | null;
-    }): boolean {
-        if (this.requestStatus === 'pending') {
-            return true;
-        }
-        if (view.editingMask !== null) {
-            return (
-                view.editingMask.artifact.digest !==
-                view.stableMask?.artifact.digest
-            );
-        }
-        return (
-            view.stableMask === null &&
-            this.promptState !== null &&
-            promptStateHasConstraints(this.promptState)
-        );
-    }
-
-    private requireReadyRgb() {
+    private currentAnchorRgb(): AnchorRgbArtifact | null {
         const anchor = this.anchorState.anchor;
         if (
             this.anchorState.context?.lifecycle !== 'active' ||
             anchor?.renderStatus !== 'ready' ||
             anchor.rgb === undefined
         ) {
-            throw new Error(
-                'AI Select requires an RGB Ready Anchor for Mask authoring.'
-            );
+            return null;
         }
         return anchor.rgb;
     }
 
-    private mintMaskAttemptId(): string {
-        if (this.nextMaskAttemptOrdinal >= Number.MAX_SAFE_INTEGER) {
-            throw new Error(
-                'AI Select mask attempt identity cannot advance safely.'
-            );
-        }
-        this.nextMaskAttemptOrdinal += 1;
-        return `proposal-attempt-${this.nextMaskAttemptOrdinal}`;
+    get state(): AISelectMaskState {
+        return this.session.state;
     }
 
-    private mintPromptId(): string {
-        if (this.nextPromptOrdinal >= Number.MAX_SAFE_INTEGER) {
-            throw new Error('AI Select prompt identity cannot advance safely.');
-        }
-        this.nextPromptOrdinal += 1;
-        return `prompt-${this.nextPromptOrdinal}`;
+    subscribe(listener: AISelectMaskListener): () => void {
+        return this.session.subscribe(listener);
     }
 
-    private requirePromptState(rgbDigest: string): PromptState {
-        if (
-            this.promptState === null ||
-            this.promptState.rgbDigest !== rgbDigest
-        ) {
-            throw new Error(
-                'AI Select PromptState is not bound to the current Anchor RGB.'
-            );
-        }
-        return this.promptState;
+    async addPrompt(input: AddMaskPromptInput): Promise<void> {
+        await this.session.addPrompt(input);
     }
 
-    /**
-     * The held logits reference crosses the boundary only for a same-View,
-     * same-RGB, same-target refinement attempt on an adapter that advertised
-     * previous-logits refinement; Retry never reuses it silently.
-     */
-    private currentRefinementRef(
-        capabilities: PromptAdapterCapabilities,
-        omitted: boolean
-    ): PreviousPredictionLogitsRef | null {
-        const ref = this.refinementLogitsRef;
-        if (
-            omitted ||
-            ref === null ||
-            !capabilities.previousLogitsRefinement ||
-            this.promptState === null ||
-            ref.viewId !== this.promptState.viewId ||
-            ref.rgbDigest !== this.promptState.rgbDigest ||
-            ref.targetContextId !== this.targetContextId
-        ) {
-            return null;
-        }
-        return ref;
+    async addBoxPrompt(input: AddBoxPromptInput): Promise<void> {
+        await this.session.addBoxPrompt(input);
     }
 
-    private requirePromptCapability(tool: PromptTool): void {
-        const capabilities = this.getPromptAdapterCapabilities();
-        if (capabilities === null) {
-            throw new Error(
-                'AI Select Prompt Adapter capabilities are unavailable.'
-            );
-        }
-        const reason = promptToolCapabilityReason(tool, capabilities);
-        if (reason !== null) {
-            throw new Error(reason);
-        }
+    previewProposal(proposalId: string): void {
+        this.session.previewProposal(proposalId);
     }
 
-    private publishPromptRevision(next: PromptState): void {
-        if (this.promptState !== null) {
-            this.promptUndoStack.push(this.promptState);
-        }
-        this.promptState = next;
-        this.promptRedoStack = [];
-        this.proposalSet = null;
-        this.proposalDecision = null;
-        this.acceptedProposalId = null;
-        this.editingRevision += 1;
-        this.failureKind = undefined;
-        this.lastErrorMessage = undefined;
-        this.publish();
+    clearPrompts(): void {
+        this.session.clearPrompts();
     }
 
-    private restorePromptHistory(
-        source: PromptState[],
-        destination: PromptState[]
-    ): void {
-        this.requireUnlocked();
-        this.requireReadyRgb();
-        const target = source.pop();
-        if (target === undefined || this.promptState === null) {
-            throw new Error('AI Select has no Prompt edit to restore.');
-        }
-        destination.push(this.promptState);
-        this.promptState = target;
-        this.proposalSet = null;
-        this.proposalDecision = null;
-        this.acceptedProposalId = null;
-        this.resubmitMaskRequested = false;
-        this.requestStatus = 'idle';
-        this.editingRevision += 1;
-        this.failureKind = undefined;
-        this.lastErrorMessage = undefined;
-        this.publish();
+    handleCompanionInstanceChanged(): void {
+        this.session.handleCompanionInstanceChanged();
     }
 
-    private publish(): void {
-        const state = this.state;
-        this.listeners.forEach((listener) => listener(state));
+    refreshAvailability(): void {
+        this.session.refreshAvailability();
+    }
+
+    undoPromptEdit(): void {
+        this.session.undoPromptEdit();
+    }
+
+    redoPromptEdit(): void {
+        this.session.redoPromptEdit();
+    }
+
+    acceptProposal(proposalId: string): void {
+        this.session.acceptProposal(proposalId);
+    }
+
+    applyBrushStroke(stroke: BrushStroke): void {
+        this.session.applyBrushStroke(stroke);
+    }
+
+    applyBrushGesture(input: ApplyBrushGestureInput): void {
+        this.session.applyBrushGesture(input);
+    }
+
+    confirmEditingMask(): void {
+        this.session.confirmEditingMask();
+    }
+
+    clearEditingMask(): void {
+        this.session.clearEditingMask();
+    }
+
+    restoreAutoMask(): void {
+        this.session.restoreAutoMask();
+    }
+
+    undoMaskEdit(): void {
+        this.session.undoMaskEdit();
+    }
+
+    redoMaskEdit(): void {
+        this.session.redoMaskEdit();
+    }
+
+    async retryMaskRequest(): Promise<void> {
+        await this.session.retryMaskRequest();
     }
 }

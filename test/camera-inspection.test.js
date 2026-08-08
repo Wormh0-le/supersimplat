@@ -388,3 +388,118 @@ test('switching the inspection target while active keeps the saved Scene View', 
     inspection.returnToSceneView();
     assert.equal(restored, 1);
 });
+
+test('Adjust New View draft inspection observes the provisional binding without moving the Editor Camera', () => {
+    const anchorBinding = captureEditorCameraBinding(editorCamera());
+    const draftBinding = captureEditorCameraBinding(editorCamera(), 3);
+    const savedSceneView = sceneView();
+    const appliedSceneViews = [];
+    let restored = 0;
+    const inspection = new CameraInspectionController({
+        anchor: {
+            getAnchorCameraBinding: () => anchorBinding,
+            updateAnchorCameraPose: () => {
+                throw new Error('draft inspection never touches the Anchor');
+            },
+            renderFinalPreview: async () => undefined,
+            resetAnchor: async () => undefined
+        },
+        editor: {
+            captureSceneView: () => ({
+                sceneView: savedSceneView,
+                restore: () => {
+                    restored += 1;
+                }
+            }),
+            setSceneView: (view) => appliedSceneViews.push(view)
+        }
+    });
+
+    inspection.enter({ kind: 'user-view-draft', cameraBinding: draftBinding });
+
+    assert.equal(inspection.state.mode, 'active');
+    assert.equal(inspection.state.target.kind, 'user-view-draft');
+    // The Editor Camera moves only to the external observer of the draft
+    // frustum; it never adopts the draft pose.
+    assert.deepEqual(
+        appliedSceneViews[0],
+        cameraInspectionObserverView(draftBinding)
+    );
+    assert.deepEqual(inspection.state.savedSceneView, savedSceneView);
+
+    inspection.returnToSceneView();
+    assert.equal(restored, 1);
+});
+
+test('draft frustum manipulation revises only the draft pose; Confirm View publishes the exact adjusted binding', () => {
+    const anchorBinding = captureEditorCameraBinding(editorCamera());
+    const draftBinding = captureEditorCameraBinding(editorCamera(), 3);
+    const inspection = new CameraInspectionController({
+        anchor: {
+            getAnchorCameraBinding: () => anchorBinding,
+            updateAnchorCameraPose: () => {
+                throw new Error('draft inspection never touches the Anchor');
+            },
+            renderFinalPreview: async () => undefined,
+            resetAnchor: async () => undefined
+        },
+        editor: {
+            captureSceneView: () => ({
+                sceneView: sceneView(),
+                restore: () => undefined
+            }),
+            setSceneView: () => undefined
+        }
+    });
+
+    inspection.enter({ kind: 'user-view-draft', cameraBinding: draftBinding });
+    // Anchor-directed manipulation is not available on a draft target.
+    assert.throws(() => inspection.moveAnchorFrustum(cameraToWorld(9, 9, 9)));
+
+    inspection.moveDraftFrustum(cameraToWorld(7, 8, 9));
+    const moved = inspection.state.target;
+    assert.equal(moved.kind, 'user-view-draft');
+    assert.deepEqual(
+        moved.cameraBinding.cameraToWorld,
+        [1, 0, 0, 7, 0, -1, 0, 8, 0, 0, -1, 9, 0, 0, 0, 1]
+    );
+    // Projection, clipping, convention, and revision stay as captured.
+    assert.deepEqual(moved.cameraBinding.projection, draftBinding.projection);
+    assert.equal(moved.cameraBinding.revision, draftBinding.revision);
+    assert.equal(
+        moved.cameraBinding.conventionVersion,
+        draftBinding.conventionVersion
+    );
+
+    const confirmed = inspection.confirmDraftView();
+    assert.deepEqual(confirmed, moved.cameraBinding);
+    // Confirm ends the inspection: the Scene View was restored atomically.
+    assert.equal(inspection.state.mode, 'inactive');
+    assert.equal(inspection.state.target, null);
+});
+
+test('returning from a draft inspection discards the provisional View', () => {
+    const anchorBinding = captureEditorCameraBinding(editorCamera());
+    const draftBinding = captureEditorCameraBinding(editorCamera(), 3);
+    const inspection = new CameraInspectionController({
+        anchor: {
+            getAnchorCameraBinding: () => anchorBinding,
+            updateAnchorCameraPose: () => undefined,
+            renderFinalPreview: async () => undefined,
+            resetAnchor: async () => undefined
+        },
+        editor: {
+            captureSceneView: () => ({
+                sceneView: sceneView(),
+                restore: () => undefined
+            }),
+            setSceneView: () => undefined
+        }
+    });
+
+    inspection.enter({ kind: 'user-view-draft', cameraBinding: draftBinding });
+    inspection.returnToSceneView();
+
+    assert.equal(inspection.state.mode, 'inactive');
+    assert.throws(() => inspection.confirmDraftView());
+});

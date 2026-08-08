@@ -8,6 +8,7 @@ import {
 } from '../ai-select/anchor-dock-presentation';
 import {
     isAnchorInspectionTarget,
+    isUserViewDraftInspectionTarget,
     type CameraInspectionController
 } from '../ai-select/camera-inspection';
 
@@ -18,6 +19,8 @@ export interface AISelectToolbarOptions {
     readonly onReturnToSceneView: () => void;
     readonly onResetAnchor: () => Promise<void>;
     readonly onRetryPreview: () => Promise<void>;
+    /** Confirm View publishes the provisional Adjust New View draft. */
+    readonly onConfirmDraftView: () => void;
 }
 
 const statusTextKeys: Record<AnchorDockStatus, string> = {
@@ -67,6 +70,10 @@ export class AISelectToolbar extends Container {
             id: 'ai-select-toolbar-reset-anchor',
             hidden: true
         });
+        const confirmDraftView = new Button({
+            id: 'ai-select-toolbar-confirm-view',
+            hidden: true
+        });
         const status = new Label({
             id: 'ai-select-toolbar-status',
             hidden: true
@@ -95,6 +102,7 @@ export class AISelectToolbar extends Container {
                 .onResetAnchor()
                 .catch((error: unknown): void => console.error(error));
         });
+        confirmDraftView.on('click', () => options.onConfirmDraftView());
         retry.on('click', () => {
             options
                 .onRetryPreview()
@@ -117,6 +125,7 @@ export class AISelectToolbar extends Container {
         this.append(rotate);
         this.append(returnToSceneView);
         this.append(resetAnchor);
+        this.append(confirmDraftView);
         this.append(status);
         this.append(retry);
         this.append(more);
@@ -135,10 +144,16 @@ export class AISelectToolbar extends Container {
             // the Anchor itself is inspected; Generated View inspection is
             // read-only and keeps just the return action.
             const inspectingAnchor = isAnchorInspectionTarget(inspectionState);
+            const inspectingDraft =
+                isUserViewDraftInspectionTarget(inspectionState);
             const presentation = getAnchorDockPresentation(anchorState);
             this.hidden = !hasContext;
             tool.text = i18n.t(
-                inspecting ? 'ai-select.camera-inspection' : 'ai-select.tool'
+                inspectingDraft
+                    ? 'ai-select.user-view.adjusting'
+                    : inspecting
+                      ? 'ai-select.camera-inspection'
+                      : 'ai-select.tool'
             );
             anchor.text = i18n.t('ai-select.anchor.current-view');
             adjust.text = i18n.t('ai-select.adjust-anchor');
@@ -146,6 +161,7 @@ export class AISelectToolbar extends Container {
             rotate.text = i18n.t('ai-select.rotate');
             returnToSceneView.text = i18n.t('ai-select.return-to-scene-view');
             resetAnchor.text = i18n.t('ai-select.reset-anchor');
+            confirmDraftView.text = i18n.t('ai-select.user-view.confirm');
             status.text = i18n.t(statusTextKeys[presentation.status]);
             retry.text = i18n.t('ai-select.retry');
             restart.text = i18n.t('ai-select.restart-current-target');
@@ -157,17 +173,22 @@ export class AISelectToolbar extends Container {
             // A suspended context remains read-only inspectable. Move/Rotate
             // and Reset stay gated below because they mutate the Anchor.
             adjust.enabled = hasAnchor && hasContext && !inspecting;
-            move.hidden = !inspectingAnchor;
-            rotate.hidden = !inspectingAnchor;
+            move.hidden = !inspectingAnchor && !inspectingDraft;
+            rotate.hidden = !inspectingAnchor && !inspectingDraft;
             returnToSceneView.hidden = !inspecting;
             resetAnchor.hidden = !inspectingAnchor;
+            confirmDraftView.hidden = !inspectingDraft;
             status.hidden = !inspecting;
             // The failed current preview keeps its true-Retry action next to
             // the status so the recovery path is visible from the toolbar.
             retry.hidden =
                 !inspectingAnchor || presentation.status !== 'failed';
-            move.enabled = inspectingAnchor && hasAnchor && contextIsActive;
-            rotate.enabled = inspectingAnchor && hasAnchor && contextIsActive;
+            move.enabled =
+                (inspectingAnchor && hasAnchor && contextIsActive) ||
+                inspectingDraft;
+            rotate.enabled =
+                (inspectingAnchor && hasAnchor && contextIsActive) ||
+                inspectingDraft;
             returnToSceneView.enabled = inspecting;
             resetAnchor.enabled =
                 inspectingAnchor && hasAnchor && contextIsActive;

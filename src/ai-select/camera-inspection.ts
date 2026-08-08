@@ -51,16 +51,24 @@ export type CameraInspectionMode = 'inactive' | 'active';
 export type CameraInspectionManipulation = 'move' | 'rotate';
 
 /**
- * What Camera Inspection observes. The Anchor remains the only manipulable
- * target; a Generated View camera is planner-owned and read-only — the
+ * What Camera Inspection observes. The Anchor remains manipulable through the
+ * Anchor port; a Generated View camera is planner-owned and read-only — the
  * observer looks at its frustum exactly as it does the Anchor's, and the
- * observer pose never becomes an implicit new Anchor or View camera.
+ * observer pose never becomes an implicit new Anchor or View camera. A
+ * `user-view-draft` is the provisional Adjust New View target (Ticket 11):
+ * manipulable like the Anchor, but its binding lives only inside the
+ * inspection until an explicit Confirm View publishes it as a user-added
+ * AIView; returning without confirming discards it.
  */
 export type CameraInspectionTarget =
     | { readonly kind: 'anchor' }
     | {
           readonly kind: 'view';
           readonly viewId: string;
+          readonly cameraBinding: CameraBinding;
+      }
+    | {
+          readonly kind: 'user-view-draft';
           readonly cameraBinding: CameraBinding;
       };
 
@@ -200,6 +208,12 @@ const copyTarget = (target: CameraInspectionTarget): CameraInspectionTarget => {
     if (target.kind === 'anchor') {
         return Object.freeze({ kind: 'anchor' });
     }
+    if (target.kind === 'user-view-draft') {
+        return Object.freeze({
+            kind: 'user-view-draft',
+            cameraBinding: copyCameraBinding(target.cameraBinding)
+        });
+    }
     return Object.freeze({
         kind: 'view',
         viewId: target.viewId,
@@ -216,6 +230,17 @@ export const isAnchorInspectionTarget = (
     state: CameraInspectionState | undefined
 ): boolean => {
     return state?.mode === 'active' && state.target?.kind === 'anchor';
+};
+
+/**
+ * True only while Camera Inspection holds the provisional Adjust New View
+ * draft: the draft frustum is manipulable and Confirm View is available,
+ * but nothing is a View yet — Confirm mints it, Return discards it.
+ */
+export const isUserViewDraftInspectionTarget = (
+    state: CameraInspectionState | undefined
+): boolean => {
+    return state?.mode === 'active' && state.target?.kind === 'user-view-draft';
 };
 
 const copyState = (state: CameraInspectionState): CameraInspectionState => {
@@ -269,7 +294,7 @@ export class CameraInspectionController {
     }
 
     private bindingForTarget(target: CameraInspectionTarget): CameraBinding {
-        if (target.kind === 'view') {
+        if (target.kind === 'view' || target.kind === 'user-view-draft') {
             return copyCameraBinding(target.cameraBinding);
         }
         const anchorBinding = this.anchor.getAnchorCameraBinding();
@@ -321,6 +346,40 @@ export class CameraInspectionController {
         this.requireAnchorTarget();
         assertCameraToWorldMatrix(cameraToWorld);
         this.anchor.updateAnchorCameraPose(Object.freeze([...cameraToWorld]));
+    }
+
+    /**
+     * Drag the provisional Adjust New View draft. Only the draft binding's
+     * pose changes — projection, clipping, convention, and revision stay
+     * exactly as captured from the Editor Camera — and nothing renders until
+     * Confirm View publishes the draft as a user-added AIView.
+     */
+    moveDraftFrustum(cameraToWorld: readonly number[]): void {
+        this.requireActive();
+        const target = this.requireDraftTarget();
+        assertCameraToWorldMatrix(cameraToWorld);
+        this.target = Object.freeze({
+            kind: 'user-view-draft',
+            cameraBinding: copyCameraBinding({
+                ...target.cameraBinding,
+                cameraToWorld: Object.freeze([...cameraToWorld])
+            })
+        });
+        this.publish();
+    }
+
+    /**
+     * Confirm View: atomically end the inspection (restoring the exact
+     * pre-inspection Scene View) and hand the adjusted CameraBinding to the
+     * caller, which publishes it as a user-added AIView. The Editor Camera
+     * never adopted the draft pose.
+     */
+    confirmDraftView(): CameraBinding {
+        this.requireActive();
+        const target = this.requireDraftTarget();
+        const binding = copyCameraBinding(target.cameraBinding);
+        this.returnToSceneView();
+        return binding;
     }
 
     async endAnchorManipulation(): Promise<void> {
@@ -395,6 +454,18 @@ export class CameraInspectionController {
                 'Camera Inspection manipulation is only available for the Anchor.'
             );
         }
+    }
+
+    private requireDraftTarget(): {
+        readonly kind: 'user-view-draft';
+        readonly cameraBinding: CameraBinding;
+    } {
+        if (this.target?.kind !== 'user-view-draft') {
+            throw new Error(
+                'Camera Inspection has no provisional user View draft.'
+            );
+        }
+        return this.target;
     }
 
     private publish(): void {

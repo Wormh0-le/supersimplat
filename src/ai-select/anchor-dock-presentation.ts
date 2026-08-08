@@ -79,14 +79,14 @@ const emptyMaskPresentation = (
     });
 };
 
-/** Derive the Mask surface independently from render presentation. */
-export const getAnchorDockMaskPresentation = (
-    state: AISelectAnchorState,
-    maskState?: AISelectMaskState
+/**
+ * The Mask surface of any one View's Mask state (Anchor or user-added
+ * AIView): request currency, draft/confirmed Mask currency, prompt summary,
+ * and the Confirm/Retry affordances. View source never determines trust.
+ */
+export const getViewMaskPresentation = (
+    maskState: AISelectMaskState
 ): AnchorDockMaskPresentation => {
-    if (state.context === null || state.anchor === null || !maskState) {
-        return emptyMaskPresentation();
-    }
     let status: AnchorDockMaskStatus = 'none';
     if (maskState.requestStatus === 'failed') {
         status = 'failed';
@@ -139,6 +139,17 @@ export const getAnchorDockMaskPresentation = (
             ? {}
             : { errorMessage: maskState.errorMessage })
     });
+};
+
+/** Derive the Mask surface independently from render presentation. */
+export const getAnchorDockMaskPresentation = (
+    state: AISelectAnchorState,
+    maskState?: AISelectMaskState
+): AnchorDockMaskPresentation => {
+    if (state.context === null || state.anchor === null || !maskState) {
+        return emptyMaskPresentation();
+    }
+    return getViewMaskPresentation(maskState);
 };
 
 /**

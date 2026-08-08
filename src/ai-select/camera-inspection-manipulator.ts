@@ -14,6 +14,7 @@ import {
     type CameraBinding
 } from './camera-binding';
 import {
+    isUserViewDraftInspectionTarget,
     type CameraInspectionController,
     type CameraInspectionManipulation,
     type CameraInspectionState
@@ -22,7 +23,9 @@ import {
 /**
  * The display entity is deliberately separate from the Editor Camera. Gizmo
  * transforms flow only into CameraInspectionController, which revises the
- * Anchor CameraBinding and requests its authoritative gsplat preview.
+ * Anchor CameraBinding and requests its authoritative gsplat preview — or,
+ * for the provisional Adjust New View draft, updates only the draft binding
+ * until Confirm View publishes it (Ticket 11).
  */
 export class AnchorFrustumManipulator {
     private readonly scene: Scene;
@@ -44,7 +47,24 @@ export class AnchorFrustumManipulator {
     }) {
         this.scene = options.scene;
         this.inspection = options.inspection;
-        this.manipulation = new AnchorFrustumManipulation(this.inspection);
+        // One drag lifecycle; the target routes by inspected kind. The draft
+        // ends without a render: its authoritative RGB is requested only when
+        // Confirm View publishes the user-added AIView.
+        this.manipulation = new AnchorFrustumManipulation({
+            moveAnchorFrustum: (cameraToWorld) => {
+                if (isUserViewDraftInspectionTarget(this.inspectionState)) {
+                    this.inspection.moveDraftFrustum(cameraToWorld);
+                    return;
+                }
+                this.inspection.moveAnchorFrustum(cameraToWorld);
+            },
+            endAnchorManipulation: async () => {
+                if (isUserViewDraftInspectionTarget(this.inspectionState)) {
+                    return;
+                }
+                await this.inspection.endAnchorManipulation();
+            }
+        });
         this.translateGizmo = new TranslateGizmo(
             this.scene.camera.camera,
             this.scene.gizmoLayer
@@ -105,19 +125,13 @@ export class AnchorFrustumManipulator {
     }
 
     private refresh(): void {
-        const binding = this.anchorState?.anchor?.cameraBinding;
-        if (
-            !canManipulateAnchorFrustum(
-                this.anchorState,
-                this.inspectionState
-            ) ||
-            binding === undefined
-        ) {
+        const target = this.manipulableTarget();
+        if (target === null) {
             this.detachGizmos();
             return;
         }
         if (!this.dragging) {
-            this.setEntityFromBinding(binding);
+            this.setEntityFromBinding(target);
         }
         const mode = this.inspectionState.manipulation;
         if (this.attachedMode === mode) {
@@ -129,6 +143,31 @@ export class AnchorFrustumManipulator {
         gizmo.attach([this.entity]);
         this.attachedMode = mode;
         this.scene.forceRender = true;
+    }
+
+    /**
+     * The binding the gizmos currently drive: the Anchor while it is
+     * inspected in an active context, or the provisional user View draft.
+     */
+    private manipulableTarget(): CameraBinding | null {
+        const target = this.inspectionState?.target;
+        if (
+            target?.kind === 'user-view-draft' &&
+            this.inspectionState?.mode === 'active'
+        ) {
+            return target.cameraBinding;
+        }
+        const binding = this.anchorState?.anchor?.cameraBinding;
+        if (
+            !canManipulateAnchorFrustum(
+                this.anchorState,
+                this.inspectionState
+            ) ||
+            binding === undefined
+        ) {
+            return null;
+        }
+        return binding;
     }
 
     private detachGizmos(): void {

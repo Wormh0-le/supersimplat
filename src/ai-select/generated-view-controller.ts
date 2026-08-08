@@ -59,7 +59,16 @@ import {
     type LocalKeyViewPlanResponse,
     type PlannedKeyView
 } from './local-key-view-plan';
+import { anchorMaskRankingPolicyVersion } from './mask-proposal';
 import type { MaskAnnotationRegistry } from './mask-registry';
+import {
+    isMaskResultResponse,
+    maskResponseMatchesRequest,
+    type AIViewMaskRequest,
+    type MaskResultResponse,
+    type PreviousPredictionLogitsRef
+} from './mask-service';
+import type { PromptState } from './prompt-state';
 import {
     aiSelectTargetGeometryPolicyVersion,
     isTargetGeometryHintResponse,
@@ -537,6 +546,7 @@ export class AISelectGeneratedViewController {
     private nextMaskAttemptOrdinal = 0;
     private nextReviewAttemptOrdinal = 0;
     private nextPublicationAttemptOrdinal = 0;
+    private nextUserViewOrdinal = 0;
 
     constructor(options: AISelectGeneratedViewControllerOptions) {
         this.anchor = options.anchor;
@@ -724,6 +734,168 @@ export class AISelectGeneratedViewController {
         }
         view.participation = participation;
         this.publish();
+    }
+
+    /**
+     * Add one user-owned AIView from an explicitly captured CameraBinding
+     * (Use Current View or a confirmed adjusted Camera Inspection). The
+     * Editor Camera is never moved by capture, and adding the View never
+     * resumes stopped or completed local generation: the View renders
+     * authoritative RGB on its own explicit pipeline step and then waits —
+     * Mask authoring is the user's explicit 04C Prompt/Manual Draw choice,
+     * never the Route-B planner pipeline (Final Spec v1.3 §§5, 17–18).
+     */
+    addUserView(cameraBinding: CameraBinding): string {
+        if (!this.isRunCurrent(this.runOrdinal)) {
+            throw new Error(
+                'AI Select requires the confirmed Current Target Context before adding a user View.'
+            );
+        }
+        const viewId = this.mintUserViewId();
+        const view: GeneratedViewRecord = {
+            viewId,
+            source: 'user-added',
+            cameraBinding: copyCameraBinding(cameraBinding),
+            renderStatus: 'pending',
+            promptStatus: 'none',
+            maskStatus: 'none',
+            participation: 'excluded'
+        };
+        this.views = [...this.views, view];
+        this.selectedViewId = viewId;
+        this.publish();
+        // forceRun: an explicit user action always re-executes the render
+        // path, even while planner-owned generation is stopped.
+        this.enqueue((run) => this.renderAndMaskView(run, viewId, true));
+        return viewId;
+    }
+
+    /**
+     * Build a single-frame 04C SAM mask request bound to one user-owned
+     * View's exact current RGB and CameraBinding. Returns null unless that
+     * identity is current: a mask must never be produced for superseded RGB.
+     * The RGB artifact crosses only when the caller marks this digest as not
+     * yet shipped to the Companion; a refinement attempt carries the opaque
+     * same-View logits reference (04C contract §§5, 7).
+     */
+    createUserViewMaskRequest(
+        viewId: string,
+        promptState: PromptState,
+        proposalAttemptId: string,
+        modelManifestDigest: string,
+        adapterCapabilityDigest: string,
+        proposalPolicyVersion: string,
+        options: {
+            readonly includeRgbArtifact: boolean;
+            readonly previousLogitsRef?: PreviousPredictionLogitsRef;
+        }
+    ): AIViewMaskRequest | null {
+        const view = this.views.find((entry) => entry.viewId === viewId);
+        const requestBinding = this.requestBinding;
+        const confirmed = this.confirmed;
+        if (
+            view === undefined ||
+            view.source !== 'user-added' ||
+            requestBinding === null ||
+            confirmed === null ||
+            !this.isRunCurrent(this.runOrdinal) ||
+            view.renderStatus !== 'ready' ||
+            view.rgb === undefined ||
+            promptState.viewId !== viewId ||
+            promptState.rgbDigest !== view.rgb.digest
+        ) {
+            return null;
+        }
+        const rgb = view.rgb;
+        return Object.freeze({
+            requestBinding,
+            target: Object.freeze({
+                splatId: requestBinding.dependencyToken.splatId
+            }),
+            sceneId: confirmed.sceneId,
+            sceneVersion: confirmed.sceneVersion,
+            viewId,
+            cameraBindingDigest: cameraBindingDigest(view.cameraBinding),
+            rgbDigest: rgb.digest,
+            rgbWidth: rgb.width,
+            rgbHeight: rgb.height,
+            ...(options.includeRgbArtifact ? { rgb: copyRgb(rgb) } : {}),
+            promptState,
+            ...(options.previousLogitsRef === undefined
+                ? {}
+                : { previousLogitsRef: options.previousLogitsRef }),
+            modelManifestDigest,
+            adapterCapabilityDigest,
+            proposalPolicyVersion,
+            rankingPolicyVersion: anchorMaskRankingPolicyVersion,
+            proposalAttemptId
+        });
+    }
+
+    /**
+     * The stale-result gate for user View mask responses, mirroring the
+     * Anchor's: the full request binding must still be accepted by the target
+     * kernel and the View's current RGB identity must still be the one the
+     * mask was produced from.
+     */
+    acceptsUserViewMaskResponse(
+        response: MaskResultResponse,
+        request: AIViewMaskRequest
+    ): boolean {
+        const view = this.views.find(
+            (entry) => entry.viewId === request.viewId
+        );
+        return (
+            view !== undefined &&
+            view.source === 'user-added' &&
+            view.renderStatus === 'ready' &&
+            view.rgb !== undefined &&
+            view.rgb.digest === request.rgbDigest &&
+            this.anchor.acceptsTargetBinding(request.requestBinding) &&
+            isMaskResultResponse(response) &&
+            maskResponseMatchesRequest(response, request)
+        );
+    }
+
+    /**
+     * Apply the Ticket 07 Participation default after a user View's Stable
+     * Mask publication: User Confirmed authority defaults Included. The
+     * publication itself is the mask registry's atomic swap; this only
+     * projects its quality/Participation consequences onto the View record.
+     * Evidence staleness derives from the rotated Mask identity — nothing
+     * here lifts.
+     */
+    noteUserViewStablePublication(viewId: string): void {
+        const view = this.views.find((entry) => entry.viewId === viewId);
+        if (
+            view === undefined ||
+            view.source !== 'user-added' ||
+            view.renderStatus !== 'ready' ||
+            view.rgb === undefined
+        ) {
+            return;
+        }
+        const stable = this.maskRegistry.viewState(
+            viewId,
+            view.rgb.digest
+        ).stableMask;
+        if (stable === null) {
+            return;
+        }
+        view.maskStatus = 'ready';
+        view.participation = defaultViewParticipation({
+            reviewStatus: null,
+            authority:
+                stable.status === 'user-confirmed'
+                    ? 'user-confirmed'
+                    : 'automatic'
+        });
+        this.publish();
+    }
+
+    /** The Current Target Context identity of the active run, if any. */
+    getRunTargetContextId(): string | null {
+        return this.requestBinding?.targetContextId ?? null;
     }
 
     /** Re-run automatic planning after a planner failure; Views are kept. */
@@ -1294,6 +1466,11 @@ export class AISelectGeneratedViewController {
         view.rgb = copyRgb(response.rgb);
         view.rendererId = response.rendererId;
         this.publish();
+        // User-owned Views stop at authoritative RGB: Mask authoring is the
+        // explicit 04C Prompt/Manual Draw choice, never the Route-B pipeline.
+        if (view.source === 'user-added') {
+            return;
+        }
         await this.synthesizeAndProduceViewMask(run, view);
     }
 
@@ -1732,6 +1909,7 @@ export class AISelectGeneratedViewController {
         this.geometryHint = null;
         this.keyViewPlans = [];
         this.nextBatchOrdinal = 0;
+        this.nextUserViewOrdinal = 0;
         this.generationStopped = false;
         this.plannerStatus = 'idle';
         this.plannerErrorMessage = undefined;
@@ -1886,6 +2064,19 @@ export class AISelectGeneratedViewController {
         }
         this.nextRenderAttemptOrdinal += 1;
         return `generated-view-render-attempt-${this.nextRenderAttemptOrdinal}`;
+    }
+
+    private mintUserViewId(): string {
+        if (this.nextUserViewOrdinal >= Number.MAX_SAFE_INTEGER) {
+            throw new Error('AI Select View identity cannot advance safely.');
+        }
+        this.nextUserViewOrdinal += 1;
+        const viewId = `user-view-${this.nextUserViewOrdinal}`;
+        // Fail closed rather than collide with any planner-owned identity.
+        if (this.views.some((view) => view.viewId === viewId)) {
+            return this.mintUserViewId();
+        }
+        return viewId;
     }
 
     private mintPromptSynthesisAttemptId(): string {

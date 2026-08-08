@@ -84,6 +84,10 @@ Create user-owned Views through the same authoritative RGB, SAM 3 Image instance
 - Ticket 07B palette walkthrough;
 - repository test/lint/locales/build.
 
+Manual browser E2E script:
+`browser-validation/11-user-added-ai-view-walkthrough.md` (locked-GPU pass
+pending).
+
 ## Non-goals
 
 - No persistent cross-target View library.

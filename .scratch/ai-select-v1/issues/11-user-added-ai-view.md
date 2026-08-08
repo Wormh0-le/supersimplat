@@ -1,6 +1,14 @@
 # 11 — User-added AIView Using Current or Adjusted Camera
 
-Status: ready — Ticket 09 prerequisite is implemented; current implementation frontier (parallel with 12)
+Status: implemented — Use Current View / Adjust New View… capture, provisional
+Camera Inspection with explicit Confirm View, RGB-Ready-without-Mask lifecycle,
+04C Auto Mask authoring sessions, No-Mask Auto/Manual/Exclude choices
+(Exclude also offered next to Retry on render failure), and user-owned
+Regenerate preservation implemented with repository
+test/lint/locales/build green. Locked-GPU browser walkthrough not yet run.
+
+Historical context (implementation frontier at authoring time): Ticket 09
+prerequisite was implemented; this ticket ran parallel with 12.
 
 Blocked by: 09 (satisfied), 07B (satisfied), 07 (satisfied), 05 (satisfied)
 
@@ -54,16 +62,16 @@ Create user-owned Views through the same authoritative RGB, SAM 3 Image instance
 
 ## Acceptance criteria
 
-- [ ] Current/Adjusted View creation preserves exact CameraBinding/frustum identity.
-- [ ] RGB Ready does not require Mask or Evidence.
-- [ ] Auto Mask uses current SAM 3 Image adapter and v1 Prompt set.
-- [ ] provider resolves authoritative RGB and validates dimensions/digest.
-- [ ] candidate cardinality follows current multimask policy.
-- [ ] refinement refs bind same View/RGB/Companion/candidate.
-- [ ] Manual Draw and Paint/Erase remain available.
-- [ ] no removed backend/tool/tracker state appears.
-- [ ] Stable publication and Participation match generated Views.
-- [ ] user-owned lifecycle is preserved across Regenerate Auto Views.
+- [x] Current/Adjusted View creation preserves exact CameraBinding/frustum identity.
+- [x] RGB Ready does not require Mask or Evidence.
+- [x] Auto Mask uses current SAM 3 Image adapter and v1 Prompt set.
+- [x] provider resolves authoritative RGB and validates dimensions/digest.
+- [x] candidate cardinality follows current multimask policy.
+- [x] refinement refs bind same View/RGB/Companion/candidate.
+- [x] Manual Draw and Paint/Erase remain available.
+- [x] no removed backend/tool/tracker state appears.
+- [x] Stable publication and Participation match generated Views.
+- [x] user-owned lifecycle is preserved across Regenerate Auto Views.
 
 ## Validation
 

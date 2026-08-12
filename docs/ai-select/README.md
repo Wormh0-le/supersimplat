@@ -13,22 +13,30 @@ docs/ai-select/
 ├── TRACEABILITY.md
 ├── WALKTHROUGHS.md
 ├── FOUR-PASS-AUDIT.md
-└── MIGRATION-STATUS.md
+├── MIGRATION-STATUS.md
+├── contracts/
+│   └── 04C-protocol-contract.md
+├── benchmarks/
+│   └── 02b-real-sh3-result.md
+└── walkthroughs/
+    ├── 08-local-key-views-walkthrough.md
+    ├── 08B-route-b-production-acquisition-walkthrough.md
+    └── 11-user-added-ai-view-walkthrough.md
 ```
 
 Repository-wide specifications and ADRs remain in their existing canonical locations under `docs/specs/` and `docs/adr/`.
 
 ## Scratch policy
 
-Keep `.scratch` for disposable or investigation-oriented material:
+Executable and disposable investigation material lives under:
 
-- experiments and probes;
-- reproduction scripts;
-- temporary benchmark runs;
-- browser/GPU validation scripts before promotion;
-- one-off investigation notes.
+```text
+.scratch/experiments/ai-select-v1/
+```
 
-Normative mapping, ticket graph, traceability, audits and durable walkthrough coverage must not live only under `.scratch`.
+This includes repro probes, cross-check scripts, benchmark harnesses and browser/GPU validation harnesses.
+
+Normative mapping, ticket graph, protocol contracts, traceability, audits, durable benchmark results and durable walkthrough evidence must not live only under `.scratch`.
 
 ## Current frontier
 

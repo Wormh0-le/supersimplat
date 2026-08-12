@@ -28,12 +28,12 @@ forked from: 42f6013438f1271fcd35a4bfdc9ba5a3eb719c06
 Before changing non-trivial AI Select behavior, inspect these sources in order:
 
 1. `docs/specs/ai-select-final-spec-v1.3.md`
-2. `.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md`
+2. `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`
 3. `docs/adr/0016-adopt-sam3-image-instance-workflow-and-minimal-multiview.md`
 4. `docs/adr/0017-separate-geometry-quality-from-route-b-prompt-support.md` when TargetGeometryHint / Prompt Support semantics are involved
 5. `docs/adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md` and `docs/adr/0015-automate-readiness-and-keep-model-resolution-operator-owned.md` where not superseded
 6. `CONTEXT.md`
-7. The associated implementation issue under `.scratch/ai-select-v1/issues/` and its audit/traceability artifacts
+7. The associated implementation Ticket under `docs/ai-select/tickets/` and its audit/traceability artifacts under `docs/ai-select/`
 8. The nearest implementation and tests
 9. Dependency/runtime declarations when installation, rendering, inference, CUDA, or calibration is affected
 

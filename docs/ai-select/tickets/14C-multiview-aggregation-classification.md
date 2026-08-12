@@ -1,8 +1,8 @@
 # 14C — Multi-view Aggregation & Classification
 
-Status: blocked — execution stage of parent Ticket 14
+Status: ready-for-agent — execution stage of parent Ticket 14
 
-Blocked by: 14B
+Blocked by: none (14B implemented)
 
 Blocks: 14D
 

@@ -23,6 +23,7 @@ from typing import Any, ClassVar, Mapping, Protocol, Sequence
 
 from .anchor_timing import AnchorServerTiming
 from .binary_scene_snapshot import PackedBinarySceneSnapshot
+from .camera_binding import camera_binding_digest, parse_camera_binding
 from .evidence import ContributorSample, RenderedContributorView
 from .generated_views import (
     CameraPreflightResult,
@@ -32,6 +33,10 @@ from .generated_views import (
     SeedRegion,
 )
 from .masking import MaskSessionError, RegisteredFrame
+from .renderer_runtime import (
+    EXPECTED_RENDERER_LOCK_DIGEST,
+    current_renderer_runtime,
+)
 from .spatial_scene_working_set import SpatialWorkingSet
 
 
@@ -88,6 +93,9 @@ ANCHOR_PARITY_SEVERE_MAE = 0.25
 _TYPED_CONTRIBUTOR_MAGIC = b"SSPAICTR"
 _TYPED_CONTRIBUTOR_VERSION = 1
 _TYPED_CONTRIBUTOR_TRANSFER_MAX_BYTES = 16 * 1024 * 1024
+REFERENCE_EVIDENCE_RASTER_IMPLEMENTATION_ID = 'gsplat-reference-rgb/v1'
+REFERENCE_CONTRIBUTOR_EVIDENCE_BACKEND_ID = 'complete-contributor/reference-v1'
+REFERENCE_EVIDENCE_RUNTIME_BUILD_ID = EXPECTED_RENDERER_LOCK_DIGEST
 
 
 SceneSnapshotInput = Mapping[str, Any] | PackedBinarySceneSnapshot | SpatialWorkingSet
@@ -755,6 +763,39 @@ def _stable_id_tensor(torch: Any, stable_ids: StableGaussianIds, device: Any) ->
     return values.to(dtype=torch.int32, device=device)
 
 
+def _stable_ids_as_uint32_list(stable_ids: Any) -> list[int]:
+    """Copy a validated tuple/memoryview/tensor row map into protocol uint32s."""
+
+    values = stable_ids.tolist() if hasattr(stable_ids, 'tolist') else list(stable_ids)
+    result: list[int] = []
+    for value in values:
+        if hasattr(value, 'item'):
+            value = value.item()
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise MaskSessionError(
+                'rendererInvalidContributor',
+                'gsplat Stable Gaussian ID mapping is invalid.',
+            )
+        result.append(value & 0xFFFFFFFF)
+    if not result or len(set(result)) != len(result):
+        raise MaskSessionError(
+            'rendererInvalidContributor',
+            'gsplat Stable Gaussian ID mapping is invalid.',
+        )
+    return result
+
+
+def _render_working_set_token(scene_snapshot: SceneSnapshotInput) -> str | None:
+    """Return the content-backed token for the exact rasterized Working Set."""
+
+    if isinstance(scene_snapshot, SpatialWorkingSet):
+        return scene_snapshot.working_set_token
+    if isinstance(scene_snapshot, PackedBinarySceneSnapshot):
+        return scene_snapshot.content_digest
+    scene_version = scene_snapshot.get('sceneVersion')
+    return scene_version if isinstance(scene_version, str) else None
+
+
 def _packed_locked_inputs(
     snapshot: PackedBinarySceneSnapshot, camera: Mapping[str, Any], device: Any
 ) -> dict[str, Any]:
@@ -1346,6 +1387,157 @@ class GsplatContributorRenderer:
             stable_ids=stable_ids,
             frame=frame,
             renderer_id=self.renderer_id,
+        )
+
+    def compute_reference_evidence(
+        self,
+        *,
+        admission_input: Mapping[str, object],
+        stable_mask_artifact: Mapping[str, object],
+        policy: Mapping[str, object],
+        scene_snapshot: SceneSnapshotInput,
+        camera_binding: Mapping[str, object],
+    ) -> dict[str, object]:
+        """Render the complete Working Set and compute Ticket 14B Evidence.
+
+        This explicit reference-only adapter is the declared trusted
+        Contributor backend. It reruns the exact CameraBinding through the
+        locked renderer, retains out-of-scope occluders in compositing, and
+        hands complete ``alpha * incoming-T`` weights to the per-view P/N/V
+        algorithm. It is not the Ticket 20 production same-decision path.
+        """
+
+        from .gaussian_evidence_contract import admit_gaussian_evidence
+        from .reference_gaussian_evidence import (
+            ReferenceGaussianEvidenceError,
+            compute_reference_contributor_evidence,
+        )
+
+        admission_result = admit_gaussian_evidence(admission_input)
+        if admission_result['status'] != 'admitted':
+            raise ReferenceGaussianEvidenceError(
+                'AI Select reference Evidence admission failed closed: '
+                f"{admission_result['reason']}.",
+                code='referenceAdmissionRejected',
+                cause_code=str(admission_result['reason']),
+            )
+        admission = admission_result['admission']
+        assert isinstance(admission, dict)
+        if (
+            admission_input.get('rasterImplementationId')
+            != REFERENCE_EVIDENCE_RASTER_IMPLEMENTATION_ID
+            or admission_input.get('evidenceBackendKind')
+            != 'reference-contributor'
+            or admission_input.get('evidenceBackendId')
+            != REFERENCE_CONTRIBUTOR_EVIDENCE_BACKEND_ID
+            or admission_input.get('runtimeBuildId')
+            != REFERENCE_EVIDENCE_RUNTIME_BUILD_ID
+            or type(self.backend) is not LockedGsplatBackend
+        ):
+            raise ReferenceGaussianEvidenceError(
+                'AI Select reference Contributor backend identity is incompatible.',
+                code='referenceBackendIncompatible',
+            )
+        try:
+            immutable_binding, immutable_camera, width, height = parse_camera_binding(
+                dict(camera_binding)
+            )
+        except (KeyError, OverflowError, TypeError, ValueError) as error:
+            raise ReferenceGaussianEvidenceError(
+                'AI Select reference Evidence CameraBinding is invalid.',
+                code='referenceCameraBindingMismatch',
+            ) from error
+        if camera_binding_digest(immutable_binding) != admission['cameraBindingDigest']:
+            raise ReferenceGaussianEvidenceError(
+                'AI Select reference Evidence CameraBinding digest does not match admission.',
+                code='referenceCameraBindingMismatch',
+            )
+        if current_renderer_runtime().status().status != 'ready':
+            raise ReferenceGaussianEvidenceError(
+                'AI Select reference Contributor requires the verified locked runtime.',
+                code='referenceRuntimeUnavailable',
+            )
+        render_working_set = admission_input.get('renderWorkingSet')
+        if (
+            not isinstance(render_working_set, Mapping)
+            or _render_working_set_token(scene_snapshot)
+            != render_working_set.get('renderWorkingSetToken')
+        ):
+            raise ReferenceGaussianEvidenceError(
+                'AI Select reference Evidence Render Working Set token does not match the rasterized scene.',
+                code='referenceRenderWorkingSetMismatch',
+            )
+        try:
+            stable_ids = validate_supported_snapshot(scene_snapshot)
+            canonical_stable_ids = _stable_ids_as_uint32_list(stable_ids)
+        except (KeyError, MaskSessionError, TypeError, ValueError) as error:
+            raise ReferenceGaussianEvidenceError(
+                'AI Select reference Evidence Render Working Set is invalid.',
+                code='referenceRenderWorkingSetMismatch',
+            ) from error
+        try:
+            rasterized = self.backend.rasterize(
+                snapshot=scene_snapshot,
+                camera=immutable_camera,
+                width=width,
+                height=height,
+            )
+        except Exception as error:
+            failure_code = getattr(error, 'code', type(error).__name__)
+            raise ReferenceGaussianEvidenceError(
+                'AI Select reference Contributor Evidence rendering failed '
+                f'({failure_code}).',
+                code='referenceRenderFailed',
+                cause_code=str(failure_code),
+            ) from error
+        if (
+            not isinstance(rasterized, GsplatRasterization)
+            or not isinstance(rasterized.service_rgb_bytes, bytes)
+            or len(rasterized.service_rgb_bytes) != width * height * 3
+            or rasterized.contributor_ids is None
+            or rasterized.contributor_weights is None
+        ):
+            raise ReferenceGaussianEvidenceError(
+                'AI Select locked reference Contributor raster is incomplete.',
+                code='referenceContributorInvalid',
+            )
+        self.last_peak_vram_bytes = rasterized.peak_vram_bytes
+        self.peak_vram_bytes = max(
+            self.peak_vram_bytes,
+            int(rasterized.peak_vram_bytes or 0),
+        )
+        try:
+            image_png = _rgb_png(rasterized.service_rgb_bytes, width, height)
+        except MaskSessionError as error:
+            raise ReferenceGaussianEvidenceError(
+                'AI Select reference Contributor Evidence RGB validation failed '
+                f'({error.code}).',
+                code='referenceRenderFailed',
+                cause_code=error.code,
+            ) from error
+        rgb_digest = f'sha256:{hashlib.sha256(image_png).hexdigest()}'
+        # The P/N/V computation below owns the proof-producing validation of
+        # complete shape, finiteness, Stable-ID mapping and alpha mass. Avoid
+        # constructing the legacy per-contribution object graph a second time.
+        return compute_reference_contributor_evidence(
+            dict(admission_input),
+            dict(stable_mask_artifact),
+            {
+                'width': width,
+                'height': height,
+                'rgbDigest': rgb_digest,
+                'stableGaussianIdsByTensorRow': canonical_stable_ids,
+                'alpha': rasterized.alpha,
+                'contributorIds': rasterized.contributor_ids,
+                'contributorWeights': rasterized.contributor_weights,
+                'rasterImplementationId': (
+                    REFERENCE_EVIDENCE_RASTER_IMPLEMENTATION_ID
+                ),
+                'evidenceBackendKind': 'reference-contributor',
+                'evidenceBackendId': REFERENCE_CONTRIBUTOR_EVIDENCE_BACKEND_ID,
+                'runtimeBuildId': REFERENCE_EVIDENCE_RUNTIME_BUILD_ID,
+            },
+            dict(policy),
         )
 
     def render_anchor(

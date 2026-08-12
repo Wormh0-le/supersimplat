@@ -1,6 +1,6 @@
 # 14 — Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain
 
-Status: in-progress — 14A implemented; 14B is the current execution stage
+Status: in-progress — 14A and 14B implemented; 14C is the current execution stage
 
 Blocked by: 11, 12
 

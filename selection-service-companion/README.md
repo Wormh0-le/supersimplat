@@ -81,6 +81,26 @@ The legacy PoC route's editor-registered Anchor PNG parity policy remains
 limited to legacy fixture/session compatibility. It is not used by AI Select
 v1 and must not be extended as an alternate Anchor RGB path.
 
+## Compute reference per-View P/N/V Evidence
+
+Ticket 14B keeps a trusted complete-Contributor reference backend behind the
+explicit `GsplatContributorRenderer.compute_reference_evidence` boundary. It
+rerenders the exact CameraBinding and full conservative Render Working Set,
+verifies the admitted token against the exact full/packed SceneSnapshot content
+or spatial Working Set, validates complete `alpha × incoming-transmittance`
+mass and Stable Gaussian ID mapping, then writes raw P/N/V (plus separate
+Boundary Mass) only for the Evidence Working Set. Its versioned pixel policy separates strong positive
+interior, boundary/ignore, local negative context and far-neutral regions;
+the three weights are independent and `P + N = V` is never assumed.
+
+The companion-side discrepancy report compares every available trusted
+reference artifact pair (Contributor and stock-gsplat autograd when an
+autograd producer is supplied) using max/p95/p99 absolute and relative error,
+support differences and threshold-near differences. It never retunes Evidence
+thresholds to hide disagreement. This is a reference/debug path for Tickets
+14C/14D and later production comparison; it is not Ticket 20 same-decision
+production Evidence and it adds no browser route or Candidate publication.
+
 The locked gsplat build evaluates the shared per-Gaussian alpha in separate
 CUDA translation units, so the RGB and contributor kernels can disagree by a
 few float32 ulps exactly at the `1/255` validity cut, the `1e-4` transmittance

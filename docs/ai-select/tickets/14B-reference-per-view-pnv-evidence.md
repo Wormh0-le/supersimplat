@@ -1,6 +1,6 @@
 # 14B — Reference Per-View P/N/V Evidence
 
-Status: ready-for-agent — execution stage of parent Ticket 14
+Status: implemented — execution stage of parent Ticket 14
 
 Blocked by: none (14A implemented)
 
@@ -35,20 +35,36 @@ Implement and validate a trusted reference path for per-view Mask-conditioned Ga
 
 ## Acceptance criteria
 
-- [ ] Reference contribution uses `w(v,p,g) = alpha(v,p,g) × incomingTransmittance(v,p,g)`.
-- [ ] `P(v,g) = Σ positiveWeight(v,p) × w(v,p,g)`.
-- [ ] `N(v,g) = Σ negativeWeight(v,p) × w(v,p,g)`.
-- [ ] `V(v,g) = Σ roiOrVisibleWeight(v,p) × w(v,p,g)`.
-- [ ] Positive, negative and visible weights are independently versioned; implementation does not assume `P + N = V`.
-- [ ] Strong Positive Interior, Boundary/Ignore Band, Local Negative Context Ring and Far Neutral Region are explicitly represented by policy.
-- [ ] Far image exterior is not automatically strong negative.
-- [ ] Raw per-view P/N/V is preserved before aggregation.
-- [ ] Gaussians outside Evidence Working Set receive no P/N/V writes while still participating in Render Working Set compositing when required.
-- [ ] Non-finite or incomplete Evidence fails closed and no partial artifact publishes.
-- [ ] At least one trusted reference backend is mandatory; Contributor and stock-gsplat autograd are compared together when both are available.
-- [ ] Backend discrepancies are measured rather than hidden by threshold changes.
-- [ ] Comparison reports max/p95/p99 error, relative error, support differences and threshold-near differences where applicable.
-- [ ] Fixtures cover positive interior, local background, boundary mixed, unobserved, occlusion, large cross-boundary Gaussian and thin structures.
+- [x] Reference contribution uses `w(v,p,g) = alpha(v,p,g) × incomingTransmittance(v,p,g)`.
+- [x] `P(v,g) = Σ positiveWeight(v,p) × w(v,p,g)`.
+- [x] `N(v,g) = Σ negativeWeight(v,p) × w(v,p,g)`.
+- [x] `V(v,g) = Σ roiOrVisibleWeight(v,p) × w(v,p,g)`.
+- [x] Positive, negative and visible weights are independently versioned; implementation does not assume `P + N = V`.
+- [x] Strong Positive Interior, Boundary/Ignore Band, Local Negative Context Ring and Far Neutral Region are explicitly represented by policy.
+- [x] Far image exterior is not automatically strong negative.
+- [x] Raw per-view P/N/V is preserved before aggregation.
+- [x] Gaussians outside Evidence Working Set receive no P/N/V writes while still participating in Render Working Set compositing when required.
+- [x] Non-finite or incomplete Evidence fails closed and no partial artifact publishes.
+- [x] At least one trusted reference backend is mandatory; Contributor and stock-gsplat autograd are compared together when both are available.
+- [x] Backend discrepancies are measured rather than hidden by threshold changes.
+- [x] Comparison reports max/p95/p99 error, relative error, support differences and threshold-near differences where applicable.
+- [x] Fixtures cover positive interior, local background, boundary mixed, unobserved, occlusion, large cross-boundary Gaussian and thin structures.
+
+## Implementation evidence
+
+- Reference pixel policy, P/N/V accumulation and backend comparison:
+  `selection-service-companion/src/selection_service_companion/reference_gaussian_evidence.py`.
+- Locked complete-Contributor adapter with CameraBinding, snapshot/Working-Set
+  token, renderer/runtime and full Render Working Set verification:
+  `GsplatContributorRenderer.compute_reference_evidence`.
+- CPU fixtures and a locked-CUDA integration fixture:
+  `selection-service-companion/tests/test_reference_gaussian_evidence.py`.
+
+The shipped trusted backend is the complete Contributor reference path. The
+comparison API also accepts a declared `reference-autograd` artifact and
+compares both when available; 14B does not claim that an autograd producer is
+installed. This remains reference/debug work, not Ticket 20 production
+same-decision Evidence.
 
 ## Failure / recovery
 

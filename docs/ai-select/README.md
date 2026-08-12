@@ -4,11 +4,40 @@ Stable AI Select documentation lives here.
 
 ## Structure
 
-- `TICKET-14-SPLIT.md` — implementation decomposition for the current Ticket 14 frontier.
-- Future stable specifications, ADRs, benchmarks and walkthrough records should move here from scratch storage.
+```text
+docs/ai-select/
+├── README.md
+├── TICKET-14-SPLIT.md
+├── adr/
+├── spec/
+├── benchmark/
+└── walkthroughs/
+```
 
-## Scratch policy
+## Migration policy
 
-`.scratch/ai-select-v1` remains for temporary experiments, repro scripts and investigation artifacts.
+Move stable, long-lived project knowledge from scratch storage into this area:
 
-Normative product decisions and release evidence should live under `docs/ai-select/`.
+- specifications
+- architecture decisions
+- acceptance records
+- release evidence
+- walkthrough documentation
+
+Keep `.scratch/ai-select-v1` for:
+
+- experiments
+- reproduction scripts
+- temporary benchmark runs
+- investigation artifacts
+
+## Current frontier
+
+Ticket 14 is decomposed into:
+
+- 14A Evidence Aggregation Layer
+- 14B Gaussian Projection Scoring
+- 14C Candidate Artifact
+- 14D Candidate Review Surface
+
+Ticket 13 Lift Readiness remains downstream of Ticket 14 completion.

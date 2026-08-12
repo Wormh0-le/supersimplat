@@ -3,8 +3,8 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.17 / Ticket 14 ready implementation frontier
-**日期：** 2026-08-07
+**规划版本：** Ticket Graph v2.18 / parent Ticket 14 decomposed; 14A current implementation stage
+**日期：** 2026-08-12
 **适用分支：** `ai-select-v1`  
 **决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017
 
@@ -16,7 +16,7 @@
 
 它取代 Final Spec v1.2 的当前规范效力。Final Spec v1.1、Amendment 001–005、Final Spec v1.2、ADR 0014 及 DG-20～DG-26 继续作为历史依据，但不得覆盖本文件。
 
-当前 Ticket 映射由 `.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md` 维护。发生冲突时，权威顺序为：
+当前 Ticket 映射由 `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md` 维护。发生冲突时，权威顺序为：
 
 1. Final Spec v1.3；
 2. 当前 Ticket mapping；
@@ -723,18 +723,32 @@ Required validation：
 09   simplified Gallery states                                              implemented
 11   user-added Views through current image path                            implemented
 12   simplified dirty/refresh lifecycle                                     implemented
-14   reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain   ready / current frontier
-13   sole Lift Readiness / visibility authority                             after 14 + 11 + 12
+14   reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain   ready / parent frontier
+14A  Evidence Contract & Working Set                                        ready / current stage
+14B  Reference Per-View P/N/V Evidence                                      after 14A
+14C  Multi-view Aggregation & Classification                                after 14B
+14D  Atomic Candidate Publication & Reference Validation                    after 14C
+13   sole Lift Readiness / visibility authority                             after parent 14 + 11 + 12
 10   optional cross-view Evidence-conflict diagnostics                      nonblocking
 ```
 
 Current ready implementation frontier：
 
 ```text
-14  Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain
+parent: 14  Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain
+stage:  14A Evidence Contract & Working Set
+
+14A → 14B → 14C → 14D → 13
 ```
 
-After Ticket 14：
+Compatibility fields：
+
+```text
+next_implementation_ticket = 14
+next_implementation_subticket = 14A
+```
+
+After parent Ticket 14：
 
 - 13 proceeds after Ticket 14 closes；
 - Ticket 10 remains optional and off the core release path。

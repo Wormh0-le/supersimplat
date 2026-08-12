@@ -1,43 +1,44 @@
 # AI Select Documentation
 
-Stable AI Select documentation lives here.
+Stable, long-lived AI Select planning and validation documentation lives here.
 
-## Structure
+## Stable documents
 
 ```text
 docs/ai-select/
 ├── README.md
+├── CURRENT-TICKET-SPEC-MAPPING.md
+├── TICKET-GRAPH.md
 ├── TICKET-14-SPLIT.md
-├── adr/
-├── spec/
-├── benchmark/
-└── walkthroughs/
+├── TRACEABILITY.md
+├── WALKTHROUGHS.md
+├── FOUR-PASS-AUDIT.md
+└── MIGRATION-STATUS.md
 ```
 
-## Migration policy
+Repository-wide specifications and ADRs remain in their existing canonical locations under `docs/specs/` and `docs/adr/`.
 
-Move stable, long-lived project knowledge from scratch storage into this area:
+## Scratch policy
 
-- specifications
-- architecture decisions
-- acceptance records
-- release evidence
-- walkthrough documentation
+Keep `.scratch` for disposable or investigation-oriented material:
 
-Keep `.scratch/ai-select-v1` for:
+- experiments and probes;
+- reproduction scripts;
+- temporary benchmark runs;
+- browser/GPU validation scripts before promotion;
+- one-off investigation notes.
 
-- experiments
-- reproduction scripts
-- temporary benchmark runs
-- investigation artifacts
+Normative mapping, ticket graph, traceability, audits and durable walkthrough coverage must not live only under `.scratch`.
 
 ## Current frontier
 
-Ticket 14 is decomposed into:
+Parent Ticket 14 is decomposed into:
 
-- 14A Evidence Aggregation Layer
-- 14B Gaussian Projection Scoring
-- 14C Candidate Artifact
-- 14D Candidate Review Surface
+- 14A Evidence Aggregation Layer;
+- 14B Gaussian Projection Scoring;
+- 14C Candidate Artifact;
+- 14D Candidate Review Surface.
 
-Ticket 13 Lift Readiness remains downstream of Ticket 14 completion.
+Execution order is `14A → 14B → 14C → 14D → 13`.
+
+Compatibility remains `next_implementation_ticket = 14`; the stage-level frontier is `next_implementation_subticket = 14A`.

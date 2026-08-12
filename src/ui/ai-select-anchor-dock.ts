@@ -73,10 +73,6 @@ export interface AISelectAnchorDockOptions {
     readonly maskRegistry: MaskAnnotationRegistry;
     readonly userViewMasks: AISelectUserViewMaskController;
     readonly onInspectCamera: (viewId: string) => void;
-    /** Use Current View: add a user AIView from the Current Editor Camera. */
-    readonly onUseCurrentView: () => void;
-    /** Adjust New View…: provisional Camera Inspection + Confirm View. */
-    readonly onAdjustNewView: () => void;
     readonly readiness: SelectionServiceReadinessInterface;
 }
 
@@ -92,16 +88,14 @@ interface GeneratedCardElements {
     readonly confirmReviewButton: Button;
     readonly participationButton: Button;
     readonly inspectCameraButton: Button;
-    readonly autoMaskButton: Button;
-    readonly manualDrawButton: Button;
     readonly excludeViewButton: Button;
     rgbDigest?: string;
 }
 
 /**
  * The View whose Mask authoring surface currently owns the Dock's image:
- * the inspected user-added AIView, or the Anchor when nothing is inspected.
- * Null while a planner-owned Generated View is inspected (read-only).
+ * the inspected Gallery AIView, or the Anchor when nothing is inspected.
+ * Every RGB Ready View supports explicit Prompt/Mask correction.
  */
 interface DockAuthoringTarget {
     readonly ops: AISelectMaskAuthoring;
@@ -234,10 +228,7 @@ export class AISelectAnchorDock extends Container {
     private readonly boxPreview: HTMLDivElement;
     private readonly confirmMaskButton: Button;
     private readonly retryMaskButton: Button;
-    private readonly clearMaskButton: Button;
     private readonly restoreAutoButton: Button;
-    private readonly undoMaskButton: Button;
-    private readonly redoMaskButton: Button;
     private readonly anchorActions: Container;
     private readonly validateButton: Button;
     private readonly confirmAnchorButton: Button;
@@ -250,9 +241,6 @@ export class AISelectAnchorDock extends Container {
     private readonly plannerStopButton: Button;
     private readonly plannerMoreButton: Button;
     private readonly plannerRegenerateButton: Button;
-    private readonly userViewLine: Container;
-    private readonly useCurrentViewButton: Button;
-    private readonly adjustNewViewButton: Button;
     private readonly filterLine: Container;
     private readonly filterButtons: ReadonlyMap<GalleryFilter, Button>;
     private galleryFilter: GalleryFilter = 'all';
@@ -407,23 +395,35 @@ export class AISelectAnchorDock extends Container {
                 this.activeTool = tool;
                 this.renderAuthoringTools();
             },
-            onPromptUndo: () => {
+            onHistoryUndo: (kind) => {
                 try {
-                    this.authoring()?.ops.undoPromptEdit();
+                    if (kind === 'mask') {
+                        this.authoring()?.ops.undoMaskEdit();
+                    } else {
+                        this.authoring()?.ops.undoPromptEdit();
+                    }
                 } catch (error) {
                     console.error(error);
                 }
             },
-            onPromptRedo: () => {
+            onHistoryRedo: (kind) => {
                 try {
-                    this.authoring()?.ops.redoPromptEdit();
+                    if (kind === 'mask') {
+                        this.authoring()?.ops.redoMaskEdit();
+                    } else {
+                        this.authoring()?.ops.redoPromptEdit();
+                    }
                 } catch (error) {
                     console.error(error);
                 }
             },
-            onClearPrompts: () => {
+            onHistoryClear: (kind) => {
                 try {
-                    this.authoring()?.ops.clearPrompts();
+                    if (kind === 'mask') {
+                        this.authoring()?.ops.clearEditingMask();
+                    } else {
+                        this.authoring()?.ops.clearPrompts();
+                    }
                 } catch (error) {
                     console.error(error);
                 }
@@ -474,24 +474,12 @@ export class AISelectAnchorDock extends Container {
         this.retryMaskButton = new Button({
             id: 'ai-select-anchor-dock-retry-mask'
         });
-        this.clearMaskButton = new Button({
-            id: 'ai-select-anchor-dock-clear-mask'
-        });
         this.restoreAutoButton = new Button({
             id: 'ai-select-anchor-dock-restore-auto'
         });
-        this.undoMaskButton = new Button({
-            id: 'ai-select-anchor-dock-undo-mask'
-        });
-        this.redoMaskButton = new Button({
-            id: 'ai-select-anchor-dock-redo-mask'
-        });
         i18n.bindText(this.confirmMaskButton, 'ai-select.mask.confirm');
         i18n.bindText(this.retryMaskButton, 'ai-select.mask.retry');
-        i18n.bindText(this.clearMaskButton, 'ai-select.mask.clear');
         i18n.bindText(this.restoreAutoButton, 'ai-select.mask.restore-auto');
-        i18n.bindText(this.undoMaskButton, 'ai-select.mask.undo');
-        i18n.bindText(this.redoMaskButton, 'ai-select.mask.redo');
         this.confirmMaskButton.on('click', () => {
             try {
                 this.authoring()?.ops.confirmEditingMask();
@@ -504,13 +492,6 @@ export class AISelectAnchorDock extends Container {
                 ?.ops.retryMaskRequest()
                 .catch((error) => console.error(error));
         });
-        this.clearMaskButton.on('click', () => {
-            try {
-                this.authoring()?.ops.clearEditingMask();
-            } catch (error) {
-                console.error(error);
-            }
-        });
         this.restoreAutoButton.on('click', () => {
             try {
                 this.authoring()?.ops.restoreAutoMask();
@@ -518,26 +499,9 @@ export class AISelectAnchorDock extends Container {
                 console.error(error);
             }
         });
-        this.undoMaskButton.on('click', () => {
-            try {
-                this.authoring()?.ops.undoMaskEdit();
-            } catch (error) {
-                console.error(error);
-            }
-        });
-        this.redoMaskButton.on('click', () => {
-            try {
-                this.authoring()?.ops.redoMaskEdit();
-            } catch (error) {
-                console.error(error);
-            }
-        });
         this.maskActions.append(this.confirmMaskButton);
         this.maskActions.append(this.retryMaskButton);
-        this.maskActions.append(this.clearMaskButton);
         this.maskActions.append(this.restoreAutoButton);
-        this.maskActions.append(this.undoMaskButton);
-        this.maskActions.append(this.redoMaskButton);
 
         this.anchorActions = new Container({
             id: 'ai-select-anchor-dock-anchor-actions',
@@ -659,24 +623,6 @@ export class AISelectAnchorDock extends Container {
         this.plannerLine.append(this.plannerStopButton);
         this.plannerLine.append(this.plannerMoreButton);
         this.plannerLine.append(this.plannerRegenerateButton);
-        // User-added Views (Ticket 11): explicit captures from the Current
-        // Editor Camera, never an automatic extension of planner generation.
-        this.userViewLine = new Container({
-            id: 'ai-select-view-gallery-user-views',
-            hidden: true
-        });
-        this.useCurrentViewButton = new Button({
-            id: 'ai-select-view-gallery-use-current-view'
-        });
-        i18n.bindText(this.useCurrentViewButton, 'ai-select.views.use-current');
-        this.useCurrentViewButton.on('click', () => options.onUseCurrentView());
-        this.adjustNewViewButton = new Button({
-            id: 'ai-select-view-gallery-adjust-new-view'
-        });
-        i18n.bindText(this.adjustNewViewButton, 'ai-select.views.adjust-new');
-        this.adjustNewViewButton.on('click', () => options.onAdjustNewView());
-        this.userViewLine.append(this.useCurrentViewButton);
-        this.userViewLine.append(this.adjustNewViewButton);
         // Gallery filters are presentation-only: they choose which cards are
         // visible and never call into Prompt, Mask, Participation, Evidence,
         // or Candidate state.
@@ -710,7 +656,6 @@ export class AISelectAnchorDock extends Container {
             id: 'ai-select-view-gallery-cards'
         });
         this.gallery.append(this.plannerLine);
-        this.gallery.append(this.userViewLine);
         this.gallery.append(this.filterLine);
         this.gallery.append(this.galleryCards);
         this.anchorCard = this.createCard(
@@ -743,9 +688,12 @@ export class AISelectAnchorDock extends Container {
         const primaryActions = new Container({
             id: 'ai-select-anchor-dock-primary-actions'
         });
+        // Anchor confirmation stays first in the fixed action area so a
+        // wrapped Mask action never pushes the next lifecycle step below the
+        // dock's clipped edge.
+        primaryActions.append(this.anchorActions);
         primaryActions.append(this.acceptProposalButton);
         primaryActions.append(this.maskActions);
-        primaryActions.append(this.anchorActions);
         primaryActions.append(this.failureActions);
         sidePanel.append(information);
         sidePanel.append(primaryActions);
@@ -818,12 +766,9 @@ export class AISelectAnchorDock extends Container {
         );
         const inspected = this.inspectedGeneratedView();
         if (inspected !== null) {
-            const userAuthoring =
-                galleryViewRole(inspected.source) === 'user-added'
-                    ? this.authoring()
-                    : null;
-            if (userAuthoring !== null) {
-                this.renderUserViewInspection(inspected);
+            const viewAuthoring = this.authoring();
+            if (viewAuthoring !== null && viewAuthoring.ready) {
+                this.renderViewMaskAuthoring(inspected);
             } else {
                 this.renderInspection(inspected);
             }
@@ -909,11 +854,10 @@ export class AISelectAnchorDock extends Container {
     }
 
     /**
-     * The editable user View surface: the same Prompt/candidate/Brush/Confirm
-     * UI as the Anchor, bound to the user View's own Mask session. The
-     * Anchor's actions stay hidden; the View's identity line names its role.
+     * The editable Gallery View surface: the same Prompt/candidate/Brush/
+     * Confirm UI as the Anchor, bound to this View's exact Mask session.
      */
-    private renderUserViewInspection(view: GeneratedAIView): void {
+    private renderViewMaskAuthoring(view: GeneratedAIView): void {
         const authoring = this.authoring();
         if (authoring === null) {
             this.renderInspection(view);
@@ -929,7 +873,7 @@ export class AISelectAnchorDock extends Container {
             this.imageSurface.hidden = true;
             this.overlay.hidden = true;
         }
-        this.status.text = i18n.t('ai-select.views.inspecting-user');
+        this.status.text = i18n.t('ai-select.views.inspecting-editing');
         this.failureActions.hidden = true;
         this.anchorActions.hidden = true;
         this.validationStatus.hidden = true;
@@ -948,16 +892,12 @@ export class AISelectAnchorDock extends Container {
 
     /**
      * The Mask authoring target that currently owns the Dock's image surface:
-     * the inspected user-added AIView's session, or the Anchor when no View
-     * is inspected. Null while a planner-owned Generated View is inspected —
-     * that surface stays read-only.
+     * an inspected Gallery View's session, or the Anchor when none is
+     * inspected. Render-pending Views have no ready authoring surface.
      */
     private authoring(): DockAuthoringTarget | null {
         const inspected = this.inspectedGeneratedView();
         if (inspected !== null) {
-            if (galleryViewRole(inspected.source) !== 'user-added') {
-                return null;
-            }
             const session = this.userViewMasks.sessionFor(inspected.viewId);
             if (session === null) {
                 return null;
@@ -983,12 +923,7 @@ export class AISelectAnchorDock extends Container {
         };
     }
 
-    /**
-     * Read-only Generated View inspection: the selected card's authoritative
-     * RGB with its current Mask overlay. RGB stays inspectable while Prompt
-     * or Mask inference is pending or failed. Mask correction flows through
-     * the card actions and the Anchor surface; this surface edits nothing.
-     */
+    /** Read-only fallback when an inspected View has no authoring session. */
     private renderInspection(view: GeneratedAIView): void {
         if (view.rgb !== undefined) {
             this.image.src = `data:image/png;base64,${view.rgb.pngBase64}`;
@@ -1024,9 +959,10 @@ export class AISelectAnchorDock extends Container {
             visible: false,
             activeTool: this.activeTool,
             availability,
-            canUndoPrompt: false,
-            canRedoPrompt: false,
-            canClearPrompts: false
+            historyKind: 'prompt',
+            canUndoHistory: false,
+            canRedoHistory: false,
+            canClearHistory: false
         });
         this.renderInspectedMaskOverlay(view);
     }
@@ -1112,14 +1048,6 @@ export class AISelectAnchorDock extends Container {
             class: 'ai-select-view-card-inspect-camera',
             hidden: true
         });
-        const autoMaskButton = new Button({
-            class: 'ai-select-view-card-auto-mask',
-            hidden: true
-        });
-        const manualDrawButton = new Button({
-            class: 'ai-select-view-card-manual-draw',
-            hidden: true
-        });
         const excludeViewButton = new Button({
             class: 'ai-select-view-card-exclude',
             hidden: true
@@ -1128,8 +1056,6 @@ export class AISelectAnchorDock extends Container {
         i18n.bindText(regeneratePromptButton, 'ai-select.views.retry-prompt');
         i18n.bindText(confirmReviewButton, 'ai-select.review.confirm-as-is');
         i18n.bindText(inspectCameraButton, 'ai-select.views.inspect-camera');
-        i18n.bindText(autoMaskButton, 'ai-select.views.auto-mask');
-        i18n.bindText(manualDrawButton, 'ai-select.views.manual-draw');
         i18n.bindText(excludeViewButton, 'ai-select.participation.exclude');
         if (onRetry !== null) {
             retryButton.on('click', (event: Event) => {
@@ -1172,20 +1098,6 @@ export class AISelectAnchorDock extends Container {
                 this.onInspectCamera(viewId);
             }
         });
-        autoMaskButton.on('click', (event: Event) => {
-            event.stopPropagation();
-            const viewId = root.dom.dataset.viewId;
-            if (viewId !== undefined) {
-                this.authorUserViewMask(viewId, 'positive-point');
-            }
-        });
-        manualDrawButton.on('click', (event: Event) => {
-            event.stopPropagation();
-            const viewId = root.dom.dataset.viewId;
-            if (viewId !== undefined) {
-                this.authorUserViewMask(viewId, 'paint');
-            }
-        });
         excludeViewButton.on('click', (event: Event) => {
             event.stopPropagation();
             const viewId = root.dom.dataset.viewId;
@@ -1204,15 +1116,17 @@ export class AISelectAnchorDock extends Container {
         root.append(title);
         root.append(status);
         root.append(detail);
-        root.append(retryButton);
-        root.append(regeneratePromptButton);
-        root.append(refreshMaskButton);
-        root.append(confirmReviewButton);
-        root.append(participationButton);
-        root.append(inspectCameraButton);
-        root.append(autoMaskButton);
-        root.append(manualDrawButton);
-        root.append(excludeViewButton);
+        const actions = new Container({
+            class: 'ai-select-view-card-actions'
+        });
+        actions.append(confirmReviewButton);
+        actions.append(participationButton);
+        actions.append(inspectCameraButton);
+        actions.append(regeneratePromptButton);
+        actions.append(refreshMaskButton);
+        actions.append(retryButton);
+        actions.append(excludeViewButton);
+        root.append(actions);
         root.dom.addEventListener('pointerdown', (event) =>
             event.stopPropagation()
         );
@@ -1229,20 +1143,8 @@ export class AISelectAnchorDock extends Container {
             confirmReviewButton,
             participationButton,
             inspectCameraButton,
-            autoMaskButton,
-            manualDrawButton,
             excludeViewButton
         };
-    }
-
-    /**
-     * The No-Mask choices land on the user View's authoring surface: Auto
-     * Generate Mask starts from a Positive Point, Manual Draw from Paint.
-     * Selecting the View makes its authoritative RGB the editing surface.
-     */
-    private authorUserViewMask(viewId: string, tool: DockAuthoringTool): void {
-        this.selectGeneratedView(viewId);
-        this.activeTool = tool;
     }
 
     private renderGallery(presentation: AnchorDockPresentation): void {
@@ -1279,7 +1181,7 @@ export class AISelectAnchorDock extends Container {
                 generated.plannerErrorMessage ??
                 (generated.generationStopped
                     ? i18n.t('ai-select.views.planner.stopped')
-                    : '');
+                    : i18n.t('ai-select.views.planner.active'));
             this.plannerRetryButton.hidden = true;
             this.plannerStopButton.hidden = false;
             this.plannerStopButton.enabled = !generated.generationStopped;
@@ -1288,10 +1190,6 @@ export class AISelectAnchorDock extends Container {
         } else {
             this.plannerLine.hidden = true;
         }
-
-        // User View capture needs the confirmed run the Views bind to.
-        this.userViewLine.hidden =
-            this.confirmationState.confirmedAnchor === null;
 
         // The Anchor card mirrors the Anchor's own render surface.
         const anchorStatusKey = {
@@ -1310,8 +1208,6 @@ export class AISelectAnchorDock extends Container {
         this.anchorCard.confirmReviewButton.hidden = true;
         this.anchorCard.participationButton.hidden = true;
         this.anchorCard.inspectCameraButton.hidden = true;
-        this.anchorCard.autoMaskButton.hidden = true;
-        this.anchorCard.manualDrawButton.hidden = true;
         this.anchorCard.excludeViewButton.hidden = true;
         if (presentation.rgb !== undefined) {
             this.applyCardThumbnail(
@@ -1430,8 +1326,6 @@ export class AISelectAnchorDock extends Container {
             );
         }
         card.inspectCameraButton.hidden = !presentation.actions.inspectCamera;
-        card.autoMaskButton.hidden = !presentation.actions.autoMask;
-        card.manualDrawButton.hidden = !presentation.actions.manualDraw;
         card.excludeViewButton.hidden = !presentation.actions.excludeView;
         if (view.rgb !== undefined) {
             this.applyCardThumbnail(card, view.rgb.digest, view.rgb.pngBase64);
@@ -1565,16 +1459,9 @@ export class AISelectAnchorDock extends Container {
         }
         const editingReady = authoring.ready && !authoring.locked;
         const maskState = authoring.maskState;
-        this.clearMaskButton.hidden = !editingReady;
         this.restoreAutoButton.hidden = !editingReady;
-        this.undoMaskButton.hidden = !editingReady;
-        this.redoMaskButton.hidden = !editingReady;
-        this.clearMaskButton.enabled =
-            editingReady && maskState.editingMask !== null;
         this.restoreAutoButton.enabled =
             editingReady && maskState.canRestoreAuto;
-        this.undoMaskButton.enabled = editingReady && maskState.canUndo;
-        this.redoMaskButton.enabled = editingReady && maskState.canRedo;
         const mask = getViewMaskPresentation(maskState);
         this.maskActions.hidden =
             !mask.showConfirm && !mask.showRetry && !editingReady;
@@ -1612,9 +1499,10 @@ export class AISelectAnchorDock extends Container {
                 visible: false,
                 activeTool: this.activeTool,
                 availability,
-                canUndoPrompt: false,
-                canRedoPrompt: false,
-                canClearPrompts: false
+                historyKind: 'prompt',
+                canUndoHistory: false,
+                canRedoHistory: false,
+                canClearHistory: false
             });
             this.proposalSelect.hidden = true;
             this.acceptProposalButton.hidden = true;
@@ -1638,17 +1526,25 @@ export class AISelectAnchorDock extends Container {
                     ? 'positive-point'
                     : 'paint';
         }
+        const editingMask =
+            this.activeTool === 'paint' || this.activeTool === 'erase';
         this.palette.render({
             visible: ready,
             activeTool: this.activeTool,
             availability,
-            canUndoPrompt: ready && maskState.canUndoPrompt,
-            canRedoPrompt: ready && maskState.canRedoPrompt,
-            canClearPrompts:
+            historyKind: editingMask ? 'mask' : 'prompt',
+            canUndoHistory:
                 ready &&
-                maskState.promptState !== null &&
-                (maskState.promptState.points.length > 0 ||
-                    maskState.promptState.boxes.length > 0)
+                (editingMask ? maskState.canUndo : maskState.canUndoPrompt),
+            canRedoHistory:
+                ready &&
+                (editingMask ? maskState.canRedo : maskState.canRedoPrompt),
+            canClearHistory: editingMask
+                ? ready && maskState.editingMask !== null
+                : ready &&
+                  maskState.promptState !== null &&
+                  (maskState.promptState.points.length > 0 ||
+                      maskState.promptState.boxes.length > 0)
         });
         const proposalIds =
             maskState.proposalDecision?.alternativeProposalIds ?? [];
@@ -1681,10 +1577,6 @@ export class AISelectAnchorDock extends Container {
         this.acceptProposalButton.enabled =
             ready && !this.acceptProposalButton.hidden;
         this.image.style.cursor = cursorForTool(this.activeTool);
-        const maskUndo = i18n.t('ai-select.mask.undo');
-        const maskRedo = i18n.t('ai-select.mask.redo');
-        this.setAccessibleLabel(this.undoMaskButton, maskUndo);
-        this.setAccessibleLabel(this.redoMaskButton, maskRedo);
     }
 
     private renderPromptStatus(
@@ -1728,11 +1620,6 @@ export class AISelectAnchorDock extends Container {
             .filter((entry) => entry.length > 0)
             .join(' · ');
         this.promptStatus.hidden = false;
-    }
-
-    private setAccessibleLabel(button: Button, label: string): void {
-        button.dom.title = label;
-        button.dom.setAttribute('aria-label', label);
     }
 
     private renderAnchorActions(presentation: AnchorDockPresentation): void {

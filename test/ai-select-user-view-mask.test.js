@@ -689,6 +689,27 @@ const addReadyUserView = async (harness) => {
     return viewId;
 };
 
+/** Resolve one planner-owned View far enough to exercise its editor surface. */
+const addReadyGeneratedView = async (harness) => {
+    await startAnchor(harness);
+    await confirmAnchor(harness);
+    harness.geometryHints.deferreds[0].resolve(
+        hintResponseFor(harness.geometryHints.calls[0])
+    );
+    await flush();
+    harness.planner.deferreds[0].resolve(
+        planResponseFor(harness.planner.calls[0])
+    );
+    await flush();
+    const request = harness.viewRenderer.calls[0];
+    assert.ok(request);
+    harness.viewRenderer.deferreds[0].resolve(viewRenderResponseFor(request));
+    await flush();
+    const view = viewById(harness, request.viewId);
+    assert.equal(view?.renderStatus, 'ready');
+    return request.viewId;
+};
+
 const viewById = (harness, viewId) =>
     harness.controller.state.views.find((view) => view.viewId === viewId);
 
@@ -709,6 +730,57 @@ test('an RGB Ready user View exposes a No-Mask session bound to its RGB', async 
     assert.equal(state.promptState.viewId, viewId);
     assert.equal(state.promptState.rgbDigest, rgbDigest('b'));
     assert.equal(state.promptState.points.length, 0);
+});
+
+test('an automatic Generated View can be corrected through the same Mask session', async () => {
+    const harness = createHarness();
+    const viewId = await addReadyGeneratedView(harness);
+    const view = viewById(harness, viewId);
+    assert.equal(view?.rgbDigest, rgbDigest('b'));
+
+    // This models an automatic Stable Mask already published by Route B. A
+    // later editor session must retain it, offer brush correction, and then
+    // publish the replacement as User Confirmed rather than treating the
+    // planner-owned View as read-only.
+    harness.maskRegistry.publishAutoStable({
+        viewId,
+        rgbDigest: rgbDigest('b'),
+        artifact: bitsetArtifact(64, 48, [[4, 4]]),
+        source: 'single-frame-sam',
+        status: 'auto-good'
+    });
+    // Attach after the automatic publication as a fresh Dock would. This
+    // catches an initialization bug where session setup disposed the current
+    // automatic Stable Mask before the user could correct it.
+    const lateSessions = new AISelectUserViewMaskController({
+        generatedViews: harness.controller,
+        maskProvider: harness.proposalProvider,
+        maskRegistry: harness.maskRegistry,
+        evidenceRegistry: harness.evidenceRegistry,
+        getModelManifestDigest: () => 'manifest-digest-1',
+        getPromptAdapterCapabilities: () => harness.promptCapabilities
+    });
+    const session = lateSessions.sessionFor(viewId);
+    assert.ok(session);
+    assert.equal(session.state.stableMask?.status, 'auto-good');
+
+    session.applyBrushGesture({
+        mode: 'add',
+        radiusPx: 2,
+        samples: [{ xPx: 8, yPx: 8 }]
+    });
+    assert.ok(session.state.editingMask);
+    session.confirmEditingMask();
+
+    const corrected = viewById(harness, viewId);
+    assert.equal(session.state.stableMask?.status, 'user-confirmed');
+    assert.equal(corrected?.maskQuality, 'user-confirmed');
+    assert.equal(corrected?.participation, 'included');
+    assert.ok(
+        harness.controller.state.dirtyState.evidenceDirtyViewIds.includes(
+            viewId
+        )
+    );
 });
 
 test('one Point auto-generates up to three candidates with exact RGB on first ship', async () => {

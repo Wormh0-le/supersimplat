@@ -260,6 +260,8 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
     private readonly onStableMaskPublished: (() => void) | undefined;
     private readonly listeners = new Set<AISelectMaskListener>();
     private targetContextId: string | null = null;
+    /** A session may attach after an automatic Stable Mask already exists. */
+    private hasObservedHostIdentity = false;
     private lastRgbDigest: string | null = null;
     private promptState: PromptState | null = null;
     private proposalSet: AutoMaskProposalSet | null = null;
@@ -411,6 +413,15 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
     notifyHostStateChanged(): void {
         const contextId = this.host.targetContextId();
         const rgbDigest = this.currentRgbDigest();
+        // First observation establishes the session-local Prompt/history
+        // identity without disposing an automatic Stable Mask that predated
+        // this explicit correction session.
+        if (!this.hasObservedHostIdentity) {
+            this.hasObservedHostIdentity = true;
+            this.targetContextId = contextId;
+            this.resetForNewRgbIdentity(rgbDigest);
+            return;
+        }
         if (contextId !== this.targetContextId) {
             this.targetContextId = contextId;
             this.maskRegistry.disposeView(this.host.viewId);

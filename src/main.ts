@@ -685,7 +685,7 @@ const main = async () => {
             message: i18n.t('ai-select.user-view.error')
         });
     };
-    // Use Current View / Confirm View share one entry point: the captured or
+    // Add Current View / Confirm View share one entry point: the captured or
     // adjusted CameraBinding becomes a user-owned AIView whose authoritative
     // render starts immediately. The Editor Camera is never moved. If Camera
     // Inspection is active, the visible camera is the external observer — the
@@ -781,24 +781,6 @@ const main = async () => {
             generatedViews: aiSelectGeneratedViews,
             maskRegistry: aiSelectMaskController.maskRegistry,
             userViewMasks: aiSelectUserViewMasks,
-            onUseCurrentView: addAISelectUserViewFromCurrentCamera,
-            onAdjustNewView: () => {
-                try {
-                    // A live inspection observes through the external
-                    // observer camera; restore the real Scene View first so
-                    // the provisional draft starts from it.
-                    cameraInspection.returnToSceneView();
-                    cameraInspection.enter({
-                        kind: 'user-view-draft',
-                        cameraBinding: captureEditorCameraBinding(
-                            scene.camera,
-                            nextCameraBindingRevision++
-                        )
-                    });
-                } catch (error) {
-                    reportAISelectUserViewError(error);
-                }
-            },
             onInspectCamera: (viewId) => {
                 const view = aiSelectGeneratedViews.state.views.find(
                     (entry) => entry.viewId === viewId
@@ -872,6 +854,7 @@ const main = async () => {
     const aiSelectToolbar = new AISelectToolbar(
         aiSelectController,
         cameraInspection,
+        aiSelectConfirmation,
         {
             onRestart: restartAISelect,
             onExit: exitAISelect,
@@ -891,6 +874,24 @@ const main = async () => {
                 }
             },
             onRetryPreview: () => aiSelectController.retryAnchorPreview(),
+            onAddCurrentView: addAISelectUserViewFromCurrentCamera,
+            onAdjustNewView: () => {
+                try {
+                    // A live inspection observes through the external
+                    // observer camera; restore the real Scene View first so
+                    // the provisional draft starts from it.
+                    cameraInspection.returnToSceneView();
+                    cameraInspection.enter({
+                        kind: 'user-view-draft',
+                        cameraBinding: captureEditorCameraBinding(
+                            scene.camera,
+                            nextCameraBindingRevision++
+                        )
+                    });
+                } catch (error) {
+                    reportAISelectUserViewError(error);
+                }
+            },
             onConfirmDraftView: () => {
                 try {
                     const binding = cameraInspection.confirmDraftView();

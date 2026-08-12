@@ -363,11 +363,9 @@ test('filters project presentation only and never mutate formal state', () => {
 test('card actions carry no obsolete backend, tracker or prompt-family surface', () => {
     const presentation = galleryCardPresentation(view(), 1);
     assert.deepEqual(Object.keys(presentation.actions).sort(), [
-        'autoMask',
         'confirmAsIs',
         'excludeView',
         'inspectCamera',
-        'manualDraw',
         'participationToggle',
         'refreshMask',
         'regeneratePrompt',
@@ -470,7 +468,7 @@ test('presentation output is frozen and selection projects through', () => {
     assert.ok(Object.isFrozen(presentation.actions));
 });
 
-test('a user-added RGB Ready View without a Stable Mask offers Auto Mask, Manual Draw and Exclude', () => {
+test('card selection owns Mask editing; a user View without a Mask offers only Exclude', () => {
     const noMask = galleryCardPresentation(
         view({
             viewId: 'user-view-1',
@@ -485,16 +483,14 @@ test('a user-added RGB Ready View without a Stable Mask offers Auto Mask, Manual
         1
     );
     assert.equal(noMask.role, 'user-added');
-    assert.equal(noMask.actions.autoMask, true);
-    assert.equal(noMask.actions.manualDraw, true);
     assert.equal(noMask.actions.excludeView, true);
     assert.equal(noMask.actions.participationToggle, null);
     assert.equal(noMask.actions.regeneratePrompt, false);
     assert.equal(noMask.actions.refreshMask, false);
     assert.equal(noMask.actions.confirmAsIs, false);
 
-    // A User Confirmed Stable Mask replaces the No-Mask choices with the
-    // Participation toggle, exactly as for generated Views.
+    // A User Confirmed Stable Mask adds the Participation toggle. Selecting
+    // the card, rather than a duplicate action, exposes later correction.
     const confirmed = galleryCardPresentation(
         view({
             viewId: 'user-view-2',
@@ -508,15 +504,11 @@ test('a user-added RGB Ready View without a Stable Mask offers Auto Mask, Manual
         }),
         2
     );
-    assert.equal(confirmed.actions.autoMask, false);
-    assert.equal(confirmed.actions.manualDraw, false);
     assert.equal(confirmed.actions.excludeView, false);
     assert.equal(confirmed.actions.participationToggle, 'exclude');
 
-    // Generated Views never show the user-owned No-Mask choices.
+    // Generated Views are likewise selected to enter manual correction.
     const generated = galleryCardPresentation(view(), 3);
-    assert.equal(generated.actions.autoMask, false);
-    assert.equal(generated.actions.manualDraw, false);
     assert.equal(generated.actions.excludeView, false);
 });
 
@@ -538,6 +530,4 @@ test('a render-failed user-added View offers Retry and Exclude but no Mask choic
     );
     assert.equal(failed.actions.retryRender, true);
     assert.equal(failed.actions.excludeView, true);
-    assert.equal(failed.actions.autoMask, false);
-    assert.equal(failed.actions.manualDraw, false);
 });

@@ -36,21 +36,25 @@ export interface PaletteToolAvailability {
     readonly reason: string | null;
 }
 
+export type PaletteHistoryKind = 'prompt' | 'mask';
+
 /** Everything the palette needs to render one dock state. */
 export interface FloatingPaletteView {
     readonly visible: boolean;
     readonly activeTool: PaletteTool;
     readonly availability: ReadonlyMap<PaletteTool, PaletteToolAvailability>;
-    readonly canUndoPrompt: boolean;
-    readonly canRedoPrompt: boolean;
-    readonly canClearPrompts: boolean;
+    /** History follows the active Prompt or Paint/Erase tool family. */
+    readonly historyKind: PaletteHistoryKind;
+    readonly canUndoHistory: boolean;
+    readonly canRedoHistory: boolean;
+    readonly canClearHistory: boolean;
 }
 
 export interface AISelectFloatingPaletteOptions {
     readonly onSelectTool: (tool: PaletteTool) => void;
-    readonly onPromptUndo: () => void;
-    readonly onPromptRedo: () => void;
-    readonly onClearPrompts: () => void;
+    readonly onHistoryUndo: (kind: PaletteHistoryKind) => void;
+    readonly onHistoryRedo: (kind: PaletteHistoryKind) => void;
+    readonly onHistoryClear: (kind: PaletteHistoryKind) => void;
     readonly onBrushSizeChange: (sizePx: number) => void;
 }
 
@@ -174,15 +178,21 @@ export class AISelectFloatingPalette {
         this.undoButton = createIconButton('palette-action', undoSvg);
         this.redoButton = createIconButton('palette-action', redoSvg);
         this.clearButton = createIconButton('palette-action', deleteSvg);
-        this.undoButton.addEventListener('click', () =>
-            this.options.onPromptUndo()
-        );
-        this.redoButton.addEventListener('click', () =>
-            this.options.onPromptRedo()
-        );
-        this.clearButton.addEventListener('click', () =>
-            this.options.onClearPrompts()
-        );
+        this.undoButton.addEventListener('click', () => {
+            if (this.view !== null) {
+                this.options.onHistoryUndo(this.view.historyKind);
+            }
+        });
+        this.redoButton.addEventListener('click', () => {
+            if (this.view !== null) {
+                this.options.onHistoryRedo(this.view.historyKind);
+            }
+        });
+        this.clearButton.addEventListener('click', () => {
+            if (this.view !== null) {
+                this.options.onHistoryClear(this.view.historyKind);
+            }
+        });
         historyGroup.appendChild(this.undoButton);
         historyGroup.appendChild(this.redoButton);
         historyGroup.appendChild(this.clearButton);
@@ -451,12 +461,14 @@ export class AISelectFloatingPalette {
             );
             button.classList.toggle('unavailable', !enabled);
         }
-        this.undoButton.disabled = !view.canUndoPrompt;
-        this.redoButton.disabled = !view.canRedoPrompt;
-        this.clearButton.disabled = !view.canClearPrompts;
-        this.setActionLabel(this.undoButton, 'ai-select.prompt.undo');
-        this.setActionLabel(this.redoButton, 'ai-select.prompt.redo');
-        this.setActionLabel(this.clearButton, 'ai-select.prompt.clear');
+        this.undoButton.disabled = !view.canUndoHistory;
+        this.redoButton.disabled = !view.canRedoHistory;
+        this.clearButton.disabled = !view.canClearHistory;
+        const historyPrefix =
+            view.historyKind === 'mask' ? 'ai-select.mask' : 'ai-select.prompt';
+        this.setActionLabel(this.undoButton, `${historyPrefix}.undo`);
+        this.setActionLabel(this.redoButton, `${historyPrefix}.redo`);
+        this.setActionLabel(this.clearButton, `${historyPrefix}.clear`);
 
         const collapseKey =
             this.state.mode === 'expanded'

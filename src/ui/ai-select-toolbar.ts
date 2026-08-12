@@ -1,6 +1,7 @@
 import { Button, Container, Label } from '@playcanvas/pcui';
 
 import { i18n } from './localization';
+import type { AISelectAnchorConfirmationController } from '../ai-select/anchor-confirmation';
 import type { AISelectAnchorController } from '../ai-select/anchor-controller';
 import {
     getAnchorDockPresentation,
@@ -19,6 +20,10 @@ export interface AISelectToolbarOptions {
     readonly onReturnToSceneView: () => void;
     readonly onResetAnchor: () => Promise<void>;
     readonly onRetryPreview: () => Promise<void>;
+    /** Add a user View from the Current Editor Camera. */
+    readonly onAddCurrentView: () => void;
+    /** Enter a provisional camera inspection before adding a user View. */
+    readonly onAdjustNewView: () => void;
     /** Confirm View publishes the provisional Adjust New View draft. */
     readonly onConfirmDraftView: () => void;
 }
@@ -36,6 +41,7 @@ export class AISelectToolbar extends Container {
     constructor(
         controller: AISelectAnchorController,
         inspection: CameraInspectionController,
+        confirmation: AISelectAnchorConfirmationController,
         options: AISelectToolbarOptions,
         args = {}
     ) {
@@ -82,6 +88,14 @@ export class AISelectToolbar extends Container {
             id: 'ai-select-toolbar-retry-preview',
             hidden: true
         });
+        const addCurrentView = new Button({
+            id: 'ai-select-toolbar-add-current-view',
+            hidden: true
+        });
+        const adjustNewView = new Button({
+            id: 'ai-select-toolbar-adjust-new-view',
+            hidden: true
+        });
         const more = new Button({
             id: 'ai-select-toolbar-more',
             text: '⋯'
@@ -108,6 +122,11 @@ export class AISelectToolbar extends Container {
                 .onRetryPreview()
                 .catch((error: unknown): void => console.error(error));
         });
+        addCurrentView.on('click', () => options.onAddCurrentView());
+        adjustNewView.on('click', () => {
+            overflow.hidden = true;
+            options.onAdjustNewView();
+        });
         restart.on('click', () => {
             options
                 .onRestart()
@@ -128,18 +147,26 @@ export class AISelectToolbar extends Container {
         this.append(confirmDraftView);
         this.append(status);
         this.append(retry);
+        this.append(addCurrentView);
         this.append(more);
+        overflow.append(adjustNewView);
         overflow.append(restart);
         overflow.append(exit);
         this.append(overflow);
 
         let anchorState = controller.state;
         let inspectionState = inspection.state;
+        let confirmationState = confirmation.state;
         const render = () => {
             const hasContext = anchorState.context !== null;
             const hasAnchor = anchorState.anchor !== null;
             const contextIsActive = anchorState.context?.lifecycle === 'active';
             const inspecting = inspectionState.mode === 'active';
+            const canAddUserView =
+                contextIsActive &&
+                hasAnchor &&
+                confirmationState.confirmedAnchor !== null &&
+                !inspecting;
             // Move/Rotate/Reset mutate the Anchor, so they exist only while
             // the Anchor itself is inspected; Generated View inspection is
             // read-only and keeps just the return action.
@@ -164,6 +191,8 @@ export class AISelectToolbar extends Container {
             confirmDraftView.text = i18n.t('ai-select.user-view.confirm');
             status.text = i18n.t(statusTextKeys[presentation.status]);
             retry.text = i18n.t('ai-select.retry');
+            addCurrentView.text = i18n.t('ai-select.views.use-current');
+            adjustNewView.text = i18n.t('ai-select.views.adjust-new');
             restart.text = i18n.t('ai-select.restart-current-target');
             exit.text = i18n.t('ai-select.exit');
             more.dom.setAttribute('aria-label', i18n.t('ai-select.more'));
@@ -183,6 +212,8 @@ export class AISelectToolbar extends Container {
             // the status so the recovery path is visible from the toolbar.
             retry.hidden =
                 !inspectingAnchor || presentation.status !== 'failed';
+            addCurrentView.hidden = !canAddUserView;
+            adjustNewView.hidden = !canAddUserView;
             move.enabled =
                 (inspectingAnchor && hasAnchor && contextIsActive) ||
                 inspectingDraft;
@@ -193,6 +224,8 @@ export class AISelectToolbar extends Container {
             resetAnchor.enabled =
                 inspectingAnchor && hasAnchor && contextIsActive;
             retry.enabled = contextIsActive;
+            addCurrentView.enabled = canAddUserView;
+            adjustNewView.enabled = canAddUserView;
             restart.enabled = hasContext;
             if (!hasContext) {
                 overflow.hidden = true;
@@ -204,6 +237,10 @@ export class AISelectToolbar extends Container {
         });
         inspection.subscribe((state) => {
             inspectionState = state;
+            render();
+        });
+        confirmation.subscribe((state) => {
+            confirmationState = state;
             render();
         });
         i18n.onChange(render, this);

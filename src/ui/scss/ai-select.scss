@@ -6,7 +6,9 @@
     bottom: 92px;
     transform: translate(-50%, 0);
     align-items: center;
+    justify-content: center;
     gap: 6px;
+    flex-wrap: wrap;
     max-width: calc(100% - 32px);
     padding: 8px;
     border-radius: 8px;
@@ -149,6 +151,7 @@
     width: 340px;
     max-width: 45%;
     min-height: 0;
+    overflow: hidden;
     flex-shrink: 0;
 
     &:not(.pcui-hidden) {
@@ -201,9 +204,11 @@
     flex-direction: column;
     gap: 6px;
     flex: 0 0 auto;
+    max-height: 42%;
     padding: 8px 4px 0 6px;
     border-top: 1px solid $bcg-lighter;
     background-color: $bcg-primary;
+    overflow-y: auto;
 
     &:not(.pcui-hidden) {
         display: flex;
@@ -498,6 +503,7 @@
     flex-direction: column;
     gap: 6px;
     flex-shrink: 0;
+    min-width: 0;
     border-top: 1px solid $bcg-lighter;
     padding-top: 6px;
 
@@ -509,6 +515,7 @@
 #ai-select-view-gallery-planner {
     gap: 6px;
     align-items: center;
+    flex-wrap: wrap;
 
     &:not(.pcui-hidden) {
         display: flex;
@@ -518,13 +525,20 @@
         color: $text-secondary;
         white-space: normal;
         word-break: break-word;
+        flex-basis: 100%;
         flex-grow: 1;
+    }
+
+    > .pcui-button {
+        min-width: 0;
+        flex: 1 1 120px;
     }
 }
 
 #ai-select-view-gallery-cards {
+    flex-direction: column;
     gap: 8px;
-    flex-wrap: wrap;
+    min-width: 0;
 
     &:not(.pcui-hidden) {
         display: flex;
@@ -551,9 +565,11 @@
 }
 
 .ai-select-view-card {
+    box-sizing: border-box;
     flex-direction: column;
     gap: 4px;
-    width: 184px;
+    width: 100%;
+    min-width: 0;
     padding: 4px;
     border: 1px solid $bcg-lighter;
     border-radius: 4px;
@@ -597,11 +613,19 @@
         word-break: break-word;
     }
 
-    .ai-select-view-card-retry,
-    .ai-select-view-card-retry-mask,
-    .ai-select-view-card-confirm-review,
-    .ai-select-view-card-participation,
-    .ai-select-view-card-inspect-camera {
-        min-height: 24px;
+    .ai-select-view-card-actions {
+        flex-direction: row;
+        gap: 4px;
+        flex-wrap: wrap;
+
+        &:not(.pcui-hidden) {
+            display: flex;
+        }
+
+        > .pcui-button {
+            min-width: 0;
+            min-height: 24px;
+            flex: 1 1 120px;
+        }
     }
 }

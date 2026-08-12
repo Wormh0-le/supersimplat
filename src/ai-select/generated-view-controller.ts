@@ -830,14 +830,11 @@ export class AISelectGeneratedViewController {
     }
 
     /**
-     * Build a single-frame 04C SAM mask request bound to one user-owned
-     * View's exact current RGB and CameraBinding. Returns null unless that
-     * identity is current: a mask must never be produced for superseded RGB.
-     * The RGB artifact crosses only when the caller marks this digest as not
-     * yet shipped to the Companion; a refinement attempt carries the opaque
-     * same-View logits reference (04C contract §§5, 7).
+     * Build a single-frame SAM mask request for an explicitly edited View.
+     * This supports both user-added Views and manual correction of a
+     * planner-owned View; automatic Route-B acquisition remains separate.
      */
-    createUserViewMaskRequest(
+    createViewMaskRequest(
         viewId: string,
         promptState: PromptState,
         proposalAttemptId: string,
@@ -854,7 +851,6 @@ export class AISelectGeneratedViewController {
         const confirmed = this.confirmed;
         if (
             view === undefined ||
-            view.source !== 'user-added' ||
             requestBinding === null ||
             confirmed === null ||
             !this.isRunCurrent(this.runOrdinal) ||
@@ -892,12 +888,38 @@ export class AISelectGeneratedViewController {
     }
 
     /**
-     * The stale-result gate for user View mask responses, mirroring the
-     * Anchor's: the full request binding must still be accepted by the target
-     * kernel and the View's current RGB identity must still be the one the
-     * mask was produced from.
+     * Compatibility alias for existing user-View callers. The request
+     * binding is now intentionally source-agnostic so a Generated View can
+     * enter the same explicit Prompt/Mask correction surface.
      */
-    acceptsUserViewMaskResponse(
+    createUserViewMaskRequest(
+        viewId: string,
+        promptState: PromptState,
+        proposalAttemptId: string,
+        modelManifestDigest: string,
+        adapterCapabilityDigest: string,
+        proposalPolicyVersion: string,
+        options: {
+            readonly includeRgbArtifact: boolean;
+            readonly previousLogitsRef?: PreviousPredictionLogitsRef;
+        }
+    ): AIViewMaskRequest | null {
+        return this.createViewMaskRequest(
+            viewId,
+            promptState,
+            proposalAttemptId,
+            modelManifestDigest,
+            adapterCapabilityDigest,
+            proposalPolicyVersion,
+            options
+        );
+    }
+
+    /**
+     * The stale-result gate for explicit View-mask correction. The full
+     * request binding and the View's current RGB identity must still match.
+     */
+    acceptsViewMaskResponse(
         response: MaskResultResponse,
         request: AIViewMaskRequest
     ): boolean {
@@ -906,7 +928,6 @@ export class AISelectGeneratedViewController {
         );
         return (
             view !== undefined &&
-            view.source === 'user-added' &&
             view.renderStatus === 'ready' &&
             view.rgb !== undefined &&
             view.rgb.digest === request.rgbDigest &&
@@ -916,19 +937,23 @@ export class AISelectGeneratedViewController {
         );
     }
 
+    /** Compatibility alias for existing user-View callers. */
+    acceptsUserViewMaskResponse(
+        response: MaskResultResponse,
+        request: AIViewMaskRequest
+    ): boolean {
+        return this.acceptsViewMaskResponse(response, request);
+    }
+
     /**
-     * Apply the Ticket 07 Participation default after a user View's Stable
-     * Mask publication: User Confirmed authority defaults Included. The
-     * publication itself is the mask registry's atomic swap; this only
-     * projects its quality/Participation consequences onto the View record.
-     * Evidence staleness derives from the rotated Mask identity — nothing
-     * here lifts.
+     * Project an explicitly published Stable Mask onto any View record.
+     * User Confirmed authority defaults Included; the registry performs the
+     * atomic swap and its rotated identity dirties Evidence without lifting.
      */
-    noteUserViewStablePublication(viewId: string): void {
+    noteViewStablePublication(viewId: string): void {
         const view = this.views.find((entry) => entry.viewId === viewId);
         if (
             view === undefined ||
-            view.source !== 'user-added' ||
             view.renderStatus !== 'ready' ||
             view.rgb === undefined
         ) {
@@ -958,6 +983,11 @@ export class AISelectGeneratedViewController {
             this.dirtyState.markParticipationChanged(viewId);
         }
         this.publish();
+    }
+
+    /** Compatibility alias for existing user-View callers. */
+    noteUserViewStablePublication(viewId: string): void {
+        this.noteViewStablePublication(viewId);
     }
 
     /** The Current Target Context identity of the active run, if any. */

@@ -3,7 +3,7 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.18 / parent Ticket 14 decomposed; 14A current implementation stage
+**规划版本：** Ticket Graph v2.19 / parent Ticket 14 decomposed; 14A implemented, 14B current implementation stage
 **日期：** 2026-08-12
 **适用分支：** `ai-select-v1`  
 **决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017
@@ -723,9 +723,9 @@ Required validation：
 09   simplified Gallery states                                              implemented
 11   user-added Views through current image path                            implemented
 12   simplified dirty/refresh lifecycle                                     implemented
-14   reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain   ready / parent frontier
-14A  Evidence Contract & Working Set                                        ready / current stage
-14B  Reference Per-View P/N/V Evidence                                      after 14A
+14   reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain   in progress / parent frontier
+14A  Evidence Contract & Working Set                                        implemented
+14B  Reference Per-View P/N/V Evidence                                      ready / current stage
 14C  Multi-view Aggregation & Classification                                after 14B
 14D  Atomic Candidate Publication & Reference Validation                    after 14C
 13   sole Lift Readiness / visibility authority                             after parent 14 + 11 + 12
@@ -736,16 +736,16 @@ Current ready implementation frontier：
 
 ```text
 parent: 14  Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain
-stage:  14A Evidence Contract & Working Set
+stage:  14B Reference Per-View P/N/V Evidence
 
-14A → 14B → 14C → 14D → 13
+14A (implemented) → 14B → 14C → 14D → 13
 ```
 
 Compatibility fields：
 
 ```text
 next_implementation_ticket = 14
-next_implementation_subticket = 14A
+next_implementation_subticket = 14B
 ```
 
 After parent Ticket 14：

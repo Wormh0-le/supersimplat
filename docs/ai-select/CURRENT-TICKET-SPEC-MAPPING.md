@@ -1,6 +1,6 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.18
+# Current Final Spec v1.3 → Ticket Mapping — v2.19
 
-Status: **current normative ticket mapping — Ticket 12 implemented; parent Ticket 14 decomposed into 14A–14D; 14A ready**
+Status: **current normative ticket mapping — Ticket 14A implemented; parent Ticket 14 remains decomposed into 14A–14D; 14B ready**
 
 This file maps every active AI Select parent Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
@@ -22,7 +22,7 @@ All 31 parent Ticket files carry a direct current mapping to Final Spec v1.3. Ti
 | 06     | §§0, 5, 13–16, 24–26       | progressive Generated RGB tracer; legacy Mask/fallback isolated                |
 | 07     | §§7, 13–15, 18–19, 24–26   | MaskReviewPolicy and Participation                                             |
 | 07A    | §§4, 6–8, 14–16, 24–26     | simplified Anchor candidate choice/refinement/confirmation                     |
-| 07B    | §8, §§17–19, 26             | Point/Box + Paint/Erase floating palette                                       |
+| 07B    | §8, §§17–19, 26            | Point/Box + Paint/Erase floating palette                                       |
 | 08     | §§9–10, 19, 21, 24–26      | TargetGeometryHint and bounded local Views                                     |
 | 08A    | §§4–6, 9–13, 16, 19, 24–26 | compact RGB-bound image instance Mask contracts                                |
 | 08B    | §§9–19, 24–26              | 3D-guided per-View SAM 3 Image acquisition                                     |
@@ -44,12 +44,12 @@ All 31 parent Ticket files carry a direct current mapping to Final Spec v1.3. Ti
 
 ## Ticket 14 implementation decomposition
 
-| Stage | Parent mapping | Responsibility |
-| --- | --- | --- |
-| 14A | Ticket 14 / §§20–22, 24–25 | Evidence contract, admission, identities and Working Sets |
-| 14B | Ticket 14 / §§20–22, 24–25 | Trusted reference per-view P/N/V computation |
-| 14C | Ticket 14 / §§20–22, 24–25 | Multi-view aggregation and four-state classification |
-| 14D | Ticket 14 / §§20–22, 24–25 | Atomic Candidate publication and parent reference quality gate |
+| Stage | Parent mapping             | Responsibility                                                 |
+| ----- | -------------------------- | -------------------------------------------------------------- |
+| 14A   | Ticket 14 / §§20–22, 24–25 | Evidence contract, admission, identities and Working Sets      |
+| 14B   | Ticket 14 / §§20–22, 24–25 | Trusted reference per-view P/N/V computation                   |
+| 14C   | Ticket 14 / §§20–22, 24–25 | Multi-view aggregation and four-state classification           |
+| 14D   | Ticket 14 / §§20–22, 24–25 | Atomic Candidate publication and parent reference quality gate |
 
 Dependency:
 
@@ -66,12 +66,13 @@ implemented prerequisites:
 - 04C, 07, 02C, 07A, 07B
 - 08, 08A, 08B, 08C
 - 09, 11, 12
-
-ready now:
 - 14A — Evidence Contract & Working Set
 
+ready now:
+- 14B — Reference Per-View P/N/V Evidence
+
 then:
-- 14B → 14C → 14D
+- 14C → 14D
 
 after parent Ticket 14 closes:
 - 13
@@ -81,7 +82,7 @@ Compatibility fields:
 
 ```text
 next_implementation_ticket = 14
-next_implementation_subticket = 14A
+next_implementation_subticket = 14B
 ```
 
 Ticket 14 remains the sole current parent implementation frontier after Ticket 12 closure. Ticket 10 remains optional and may execute after parent Ticket 14 + 09 + 07 without blocking the core release path.
@@ -121,7 +122,7 @@ The mapping passes only when:
 - older spec names appear only under explicit historical/superseded/migration labels;
 - implemented prerequisites through 12 are not reported as current ready work;
 - parent Ticket 14 is recognized as the sole current parent implementation frontier;
-- 14A is recognized as the first implementation stage;
+- 14A is recognized as implemented and 14B as the current implementation stage;
 - `next_implementation_ticket = 14` remains the compatibility field;
 - no active closure criterion relies on superseded v1.2 architecture;
 - provider requests carry resolvable authoritative RGB;

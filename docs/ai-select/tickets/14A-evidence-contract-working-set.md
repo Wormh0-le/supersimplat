@@ -1,8 +1,8 @@
 # 14A — Evidence Contract & Working Set
 
-Status: ready-for-agent — execution stage of parent Ticket 14
+Status: implemented — execution stage of parent Ticket 14
 
-Blocked by: 11, 12
+Blocked by: none (Tickets 11 and 12 are implemented)
 
 Blocks: 14B
 
@@ -41,18 +41,27 @@ Define the exact formal Evidence admission contract and Working Set boundaries r
 
 ## Acceptance criteria
 
-- [ ] Formal Evidence input is exactly a current View with Render Ready + Stable Mask + Participation Included and matching current identities.
-- [ ] Excluded Views and Views without Stable Mask are rejected before Evidence computation.
-- [ ] View role/source, Prompt geometry, SAM score, previous-logits refs and MaskReview reasons never become ownership Evidence.
-- [ ] Define Core Target Set, Context Set and Evidence Working Set without treating TargetGeometryHint as ownership.
-- [ ] Render Working Set remains conservative enough to preserve occluders/transmittance contributors outside Evidence Working Set.
-- [ ] Gaussians outside Evidence Working Set may composite but receive no P/N/V writes.
-- [ ] TargetGeometryHint may seed Evidence Working Set but is not a hard upper bound; later Included View support may expand it.
-- [ ] Working-Set boundary contact produces declared expansion/fail-closed diagnostics rather than silent truncation.
-- [ ] Per-view artifact binds target/context/dependency, CameraBinding, RGB, Stable Mask, Evidence Policy, Render/Evidence Working Sets, Stable IDs, raster/reference backend and runtime identity.
-- [ ] Incompatible identity changes invalidate the artifact deterministically.
-- [ ] Reference artifact identity cannot be mistaken for Ticket 20 production same-decision Evidence.
-- [ ] Artifact contract supports exclude/reinclude, Stable Mask replacement and incremental Re-Lift invalidation.
+- [x] Formal Evidence input is exactly a current View with Render Ready + Stable Mask + Participation Included and matching current identities.
+- [x] Excluded Views and Views without Stable Mask are rejected before Evidence computation.
+- [x] View role/source, Prompt geometry, SAM score, previous-logits refs and MaskReview reasons never become ownership Evidence.
+- [x] Define Core Target Set, Context Set and Evidence Working Set without treating TargetGeometryHint as ownership.
+- [x] Render Working Set remains conservative enough to preserve occluders/transmittance contributors outside Evidence Working Set.
+- [x] Gaussians outside Evidence Working Set may composite but receive no P/N/V writes.
+- [x] TargetGeometryHint may seed Evidence Working Set but is not a hard upper bound; later Included View support may expand it.
+- [x] Working-Set boundary contact produces declared expansion/fail-closed diagnostics rather than silent truncation.
+- [x] Per-view artifact binds target/context/dependency, CameraBinding, RGB, Stable Mask, Evidence Policy, Render/Evidence Working Sets, Stable IDs, raster/reference backend and runtime identity.
+- [x] Incompatible identity changes invalidate the artifact deterministically.
+- [x] Reference artifact identity cannot be mistaken for Ticket 20 production same-decision Evidence.
+- [x] Artifact contract supports exclude/reinclude, Stable Mask replacement and incremental Re-Lift invalidation.
+
+## Implementation evidence
+
+- Browser contract and fail-closed admission: `src/ai-select/gaussian-evidence-contract.ts`.
+- Companion contract mirror: `selection-service-companion/src/selection_service_companion/gaussian_evidence_contract.py`.
+- Shared Unicode and IEEE-754 digest vector: `test/fixtures/ai-select-gaussian-evidence-contract-vectors.json`.
+- Browser and Companion contract tests cover admission, exclusion, Stable Mask absence, Render/Evidence Working Set separation, boundary handling, identity invalidation, and reference-only backend identity.
+
+This stage creates no P/N/V computation, aggregation, Candidate publication, UI action, or production same-decision GPU path. Those remain respectively 14B–14D and Ticket 20 work.
 
 ## Failure / recovery
 

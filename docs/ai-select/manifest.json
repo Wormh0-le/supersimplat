@@ -1,5 +1,5 @@
 {
-  "version": "v2.18",
+  "version": "v2.19",
   "feature": "ai-select-v1",
   "spec_version": "ai-select-final-spec-v1.3",
   "ticket_spec_mapping": "CURRENT-TICKET-SPEC-MAPPING.md",
@@ -75,7 +75,7 @@
       "future_sequence_tracker_requires_new_measured_adr": true
     }
   },
-  "status": "ready-v2.18-final-spec-v1.3-ticket-14A",
+  "status": "active-v2.19-final-spec-v1.3-ticket-14B",
   "branch": "ai-select-v1",
   "baseline": "2b5ae623995963730bbeb9c06329b95e7726f4a7",
   "ticket_count": 31,
@@ -92,9 +92,9 @@
   ],
   "structural_initial_frontier": ["01"],
   "current_ready_frontier": ["14"],
-  "current_ready_subfrontier": ["14A"],
+  "current_ready_subfrontier": ["14B"],
   "next_implementation_ticket": "14",
-  "next_implementation_subticket": "14A",
+  "next_implementation_subticket": "14B",
   "next_critical_gate": "14",
   "ticket_14_stages": ["14A", "14B", "14C", "14D"],
   "optional_nonblocking_tickets": ["10"],
@@ -223,7 +223,7 @@
     "ArtisanGS provenance does not reserve or implement a current video-tracker interface",
     "04C, 07, 02C, 07A, 07B, 08, 08A, 08B and 08C are implemented prerequisites",
     "09, 11 and 12 are implemented prerequisites",
-    "14 is the sole current parent implementation frontier; 14A is the current implementation stage",
+    "14 is the sole current parent implementation frontier; 14A is implemented and 14B is the current implementation stage",
     "08B and 08C locked-GPU browser E2E completed 2026-08-07 with no blocking issue reported",
     "provider requests include resolvable authoritative RGB",
     "actual previous logits remain Companion-local behind opaque same-Instance refs",
@@ -237,36 +237,213 @@
     "video tracking requires a future experiment-backed ADR"
   ],
   "tickets": [
-    {"id":"01","number":1,"slug":"current-target-context-kernel","title":"CurrentTargetContext lifecycle kernel","blocked_by":[]},
-    {"id":"02","number":2,"slug":"ai-select-shell-authoritative-anchor","title":"AI Select shell + authoritative gsplat Anchor tracer bullet","blocked_by":["01"]},
-    {"id":"03","number":3,"slug":"camera-inspection-live-preview","title":"Camera Inspection + authoritative RGB final preview + true Retry","blocked_by":["02"]},
-    {"id":"04","number":4,"slug":"anchor-mask-versioning","title":"Anchor AIView + independent Editing / Stable Mask / Evidence lifecycle","blocked_by":["02"]},
-    {"id":"05","number":5,"slug":"anchor-editing-validation-restart","title":"Anchor editing + validation + atomic Confirm Anchor + early Restart","blocked_by":["03","04"]},
-    {"id":"04A","slug":"prompt-authoring-proposal-foundation","title":"Historical Prompt Authoring + Proposal Foundation","blocked_by":["03","04","05"]},
-    {"id":"04B","slug":"visual-prompt-adapter-enablement","title":"Historical Multiplex Visual Prompt Adapter Baseline","blocked_by":["04A"]},
-    {"id":"04C","slug":"sam3-image-instance-adapter-migration","title":"SAM 3 Image Adapter + Prompt/RGB/Refinement Migration","blocked_by":["04B"]},
-    {"id":"02C","slug":"automatic-runtime-readiness-minimal-availability","title":"Automatic Runtime Readiness + Minimal Availability UI","blocked_by":["02","04C"]},
-    {"id":"06","number":6,"slug":"first-progressive-generated-view-mask","title":"Progressive Generated RGB + Legacy Mask Baseline Isolation","blocked_by":["05"]},
-    {"id":"07","number":7,"slug":"local-assessment-participation","title":"Local MaskReviewPolicy + Participation","blocked_by":["06"]},
-    {"id":"07A","slug":"three-stage-anchor-mask-pipeline","title":"Simplified Object-level Anchor Acquisition","blocked_by":["04A","04C","05","07"]},
-    {"id":"07B","slug":"floating-prompt-edit-palette","title":"Floating Point/Box + Paint/Erase Palette UX","blocked_by":["07A"]},
-    {"id":"08","number":8,"slug":"adaptive-view-planner","title":"TargetGeometryHint + Bounded Local Key Views","blocked_by":["07A"]},
-    {"id":"08A","slug":"multi-view-mask-acquisition","title":"Compact RGB-bound Per-View Image Instance Contracts","blocked_by":["08","04C"]},
-    {"id":"08B","slug":"route-b-production-acquisition","title":"3D-guided Per-View SAM 3 Image Acquisition","blocked_by":["08A","04C","07"]},
-    {"id":"08C","slug":"reliable-target-geometry-prompt-support","title":"Reliable Target Geometry Prompt Support","blocked_by":["08B"]},
-    {"id":"09","number":9,"slug":"scalable-gallery-inspect-cameras","title":"Scalable Gallery + Frustum Sync + Mask Inspection","blocked_by":["08B"]},
-    {"id":"10","number":10,"slug":"cross-view-assessment","title":"Optional Cross-view Evidence Consistency Diagnostics","blocked_by":["14","09","07"]},
-    {"id":"11","number":11,"slug":"user-added-ai-view","title":"User-added AIView using current or adjusted camera","blocked_by":["09","07B","07","05"]},
-    {"id":"12","number":12,"slug":"explicit-repropagate-dirty-state","title":"Explicit Mask Refresh + Evidence Dirty / Candidate Stale","blocked_by":["08B","09","07","05"]},
-    {"id":"13","number":13,"slug":"coverage-diversity-readiness","title":"Visible Evidence Coverage + View Diversity + Lift Readiness","blocked_by":["14","11","12","08"]},
-    {"id":"14","number":14,"slug":"gaussian-lifting-candidate","title":"Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain","blocked_by":["11","12"]},
-    {"id":"15","number":15,"slug":"preapply-candidate-correction","title":"Pre-apply Candidate correction + explicit Evidence-aware Re-Lift","blocked_by":["14","13","12","09"]},
-    {"id":"16","number":16,"slug":"native-candidate-operations","title":"Candidate → Native Set / Add / Remove / Intersect","blocked_by":["15"]},
-    {"id":"17","number":17,"slug":"applied-undo-fix-restart-multitarget","title":"Applied Undo-and-Fix + complete Restart + multi-object/tool-switch lifecycle","blocked_by":["16","05","03"]},
-    {"id":"18","number":18,"slug":"scene-mutation-suspended-undo","title":"Scene mutation Suspended state + exact Undo recovery","blocked_by":["17","01"]},
-    {"id":"19","number":19,"slug":"scene-render-data-path-hardening","title":"Large SceneSnapshot + authoritative RGB / Render Working Set hardening","blocked_by":["18","14"]},
-    {"id":"20","number":20,"slug":"evidence-artifact-working-set-hardening","title":"Same-decision GPU Evidence + artifact / working-set hardening","blocked_by":["19","14","09"]},
-    {"id":"21","number":21,"slug":"failure-calibration-hardening","title":"Retry / cancellation / OOM / atomic publication + calibration hardening","blocked_by":["20","18","02C","07B","08B","13"]},
-    {"id":"22","number":22,"slug":"contract-legacy-product-path","title":"Contract superseded legacy product and Contributor paths","blocked_by":["21"]}
+    {
+      "id": "01",
+      "number": 1,
+      "slug": "current-target-context-kernel",
+      "title": "CurrentTargetContext lifecycle kernel",
+      "blocked_by": []
+    },
+    {
+      "id": "02",
+      "number": 2,
+      "slug": "ai-select-shell-authoritative-anchor",
+      "title": "AI Select shell + authoritative gsplat Anchor tracer bullet",
+      "blocked_by": ["01"]
+    },
+    {
+      "id": "03",
+      "number": 3,
+      "slug": "camera-inspection-live-preview",
+      "title": "Camera Inspection + authoritative RGB final preview + true Retry",
+      "blocked_by": ["02"]
+    },
+    {
+      "id": "04",
+      "number": 4,
+      "slug": "anchor-mask-versioning",
+      "title": "Anchor AIView + independent Editing / Stable Mask / Evidence lifecycle",
+      "blocked_by": ["02"]
+    },
+    {
+      "id": "05",
+      "number": 5,
+      "slug": "anchor-editing-validation-restart",
+      "title": "Anchor editing + validation + atomic Confirm Anchor + early Restart",
+      "blocked_by": ["03", "04"]
+    },
+    {
+      "id": "04A",
+      "slug": "prompt-authoring-proposal-foundation",
+      "title": "Historical Prompt Authoring + Proposal Foundation",
+      "blocked_by": ["03", "04", "05"]
+    },
+    {
+      "id": "04B",
+      "slug": "visual-prompt-adapter-enablement",
+      "title": "Historical Multiplex Visual Prompt Adapter Baseline",
+      "blocked_by": ["04A"]
+    },
+    {
+      "id": "04C",
+      "slug": "sam3-image-instance-adapter-migration",
+      "title": "SAM 3 Image Adapter + Prompt/RGB/Refinement Migration",
+      "blocked_by": ["04B"]
+    },
+    {
+      "id": "02C",
+      "slug": "automatic-runtime-readiness-minimal-availability",
+      "title": "Automatic Runtime Readiness + Minimal Availability UI",
+      "blocked_by": ["02", "04C"]
+    },
+    {
+      "id": "06",
+      "number": 6,
+      "slug": "first-progressive-generated-view-mask",
+      "title": "Progressive Generated RGB + Legacy Mask Baseline Isolation",
+      "blocked_by": ["05"]
+    },
+    {
+      "id": "07",
+      "number": 7,
+      "slug": "local-assessment-participation",
+      "title": "Local MaskReviewPolicy + Participation",
+      "blocked_by": ["06"]
+    },
+    {
+      "id": "07A",
+      "slug": "three-stage-anchor-mask-pipeline",
+      "title": "Simplified Object-level Anchor Acquisition",
+      "blocked_by": ["04A", "04C", "05", "07"]
+    },
+    {
+      "id": "07B",
+      "slug": "floating-prompt-edit-palette",
+      "title": "Floating Point/Box + Paint/Erase Palette UX",
+      "blocked_by": ["07A"]
+    },
+    {
+      "id": "08",
+      "number": 8,
+      "slug": "adaptive-view-planner",
+      "title": "TargetGeometryHint + Bounded Local Key Views",
+      "blocked_by": ["07A"]
+    },
+    {
+      "id": "08A",
+      "slug": "multi-view-mask-acquisition",
+      "title": "Compact RGB-bound Per-View Image Instance Contracts",
+      "blocked_by": ["08", "04C"]
+    },
+    {
+      "id": "08B",
+      "slug": "route-b-production-acquisition",
+      "title": "3D-guided Per-View SAM 3 Image Acquisition",
+      "blocked_by": ["08A", "04C", "07"]
+    },
+    {
+      "id": "08C",
+      "slug": "reliable-target-geometry-prompt-support",
+      "title": "Reliable Target Geometry Prompt Support",
+      "blocked_by": ["08B"]
+    },
+    {
+      "id": "09",
+      "number": 9,
+      "slug": "scalable-gallery-inspect-cameras",
+      "title": "Scalable Gallery + Frustum Sync + Mask Inspection",
+      "blocked_by": ["08B"]
+    },
+    {
+      "id": "10",
+      "number": 10,
+      "slug": "cross-view-assessment",
+      "title": "Optional Cross-view Evidence Consistency Diagnostics",
+      "blocked_by": ["14", "09", "07"]
+    },
+    {
+      "id": "11",
+      "number": 11,
+      "slug": "user-added-ai-view",
+      "title": "User-added AIView using current or adjusted camera",
+      "blocked_by": ["09", "07B", "07", "05"]
+    },
+    {
+      "id": "12",
+      "number": 12,
+      "slug": "explicit-repropagate-dirty-state",
+      "title": "Explicit Mask Refresh + Evidence Dirty / Candidate Stale",
+      "blocked_by": ["08B", "09", "07", "05"]
+    },
+    {
+      "id": "13",
+      "number": 13,
+      "slug": "coverage-diversity-readiness",
+      "title": "Visible Evidence Coverage + View Diversity + Lift Readiness",
+      "blocked_by": ["14", "11", "12", "08"]
+    },
+    {
+      "id": "14",
+      "number": 14,
+      "slug": "gaussian-lifting-candidate",
+      "title": "Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain",
+      "blocked_by": ["11", "12"]
+    },
+    {
+      "id": "15",
+      "number": 15,
+      "slug": "preapply-candidate-correction",
+      "title": "Pre-apply Candidate correction + explicit Evidence-aware Re-Lift",
+      "blocked_by": ["14", "13", "12", "09"]
+    },
+    {
+      "id": "16",
+      "number": 16,
+      "slug": "native-candidate-operations",
+      "title": "Candidate → Native Set / Add / Remove / Intersect",
+      "blocked_by": ["15"]
+    },
+    {
+      "id": "17",
+      "number": 17,
+      "slug": "applied-undo-fix-restart-multitarget",
+      "title": "Applied Undo-and-Fix + complete Restart + multi-object/tool-switch lifecycle",
+      "blocked_by": ["16", "05", "03"]
+    },
+    {
+      "id": "18",
+      "number": 18,
+      "slug": "scene-mutation-suspended-undo",
+      "title": "Scene mutation Suspended state + exact Undo recovery",
+      "blocked_by": ["17", "01"]
+    },
+    {
+      "id": "19",
+      "number": 19,
+      "slug": "scene-render-data-path-hardening",
+      "title": "Large SceneSnapshot + authoritative RGB / Render Working Set hardening",
+      "blocked_by": ["18", "14"]
+    },
+    {
+      "id": "20",
+      "number": 20,
+      "slug": "evidence-artifact-working-set-hardening",
+      "title": "Same-decision GPU Evidence + artifact / working-set hardening",
+      "blocked_by": ["19", "14", "09"]
+    },
+    {
+      "id": "21",
+      "number": 21,
+      "slug": "failure-calibration-hardening",
+      "title": "Retry / cancellation / OOM / atomic publication + calibration hardening",
+      "blocked_by": ["20", "18", "02C", "07B", "08B", "13"]
+    },
+    {
+      "id": "22",
+      "number": 22,
+      "slug": "contract-legacy-product-path",
+      "title": "Contract superseded legacy product and Contributor paths",
+      "blocked_by": ["21"]
+    }
   ]
 }

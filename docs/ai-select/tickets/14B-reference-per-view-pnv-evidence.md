@@ -1,8 +1,8 @@
 # 14B — Reference Per-View P/N/V Evidence
 
-Status: blocked — execution stage of parent Ticket 14
+Status: ready-for-agent — execution stage of parent Ticket 14
 
-Blocked by: 14A
+Blocked by: none (14A implemented)
 
 Blocks: 14C
 

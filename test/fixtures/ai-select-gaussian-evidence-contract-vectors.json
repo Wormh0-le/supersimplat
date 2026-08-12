@@ -1,0 +1,84 @@
+{
+  "evidenceWorkingSet": {
+    "schemaVersion": 1,
+    "targetSplatId": "editor-splat:雪",
+    "coreTargetStableIds": [2, 5],
+    "contextStableGaussianIds": [9],
+    "stableGaussianIds": [2, 5, 9],
+    "targetGeometryHintSeedDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "evidenceWorkingSetToken": "sha256:617378bc91dc3b888e3214bc970ecbf7aba89253411b2757147c605300fdac54"
+  },
+  "admissionInput": {
+    "requestBinding": {
+      "targetContextId": "target-雪",
+      "contextRevision": 3,
+      "dependencyToken": {
+        "splatId": "editor-splat:雪",
+        "renderStateToken": "render-v1",
+        "geometryToken": "geometry-v1",
+        "gaussianIdentityToken": "gaussians-v1",
+        "worldTransformToken": "transform-v1"
+      }
+    },
+    "targetSplatId": "editor-splat:雪",
+    "view": {
+      "viewId": "view-1",
+      "renderStatus": "ready",
+      "participation": "included",
+      "cameraBindingDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "rgbDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "stableMaskDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "evidencePolicyDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "renderWorkingSet": {
+      "targetSplatId": "editor-splat:雪",
+      "dependencyToken": {
+        "splatId": "editor-splat:雪",
+        "renderStateToken": "render-v1",
+        "geometryToken": "geometry-v1",
+        "gaussianIdentityToken": "gaussians-v1",
+        "worldTransformToken": "transform-v1"
+      },
+      "cameraBindingDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "renderWorkingSetToken": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "stableGaussianIds": [2, 5, 9, 42],
+      "completeness": "complete"
+    },
+    "rasterImplementationId": "gsplat-reference-rgb/v1",
+    "evidenceBackendKind": "reference-contributor",
+    "evidenceBackendId": "complete-contributor/reference-v1",
+    "runtimeBuildId": "locked-runtime-build-1"
+  },
+  "artifact": {
+    "schemaVersion": 1,
+    "requestBinding": {
+      "targetContextId": "target-雪",
+      "contextRevision": 3,
+      "dependencyToken": {
+        "splatId": "editor-splat:雪",
+        "renderStateToken": "render-v1",
+        "geometryToken": "geometry-v1",
+        "gaussianIdentityToken": "gaussians-v1",
+        "worldTransformToken": "transform-v1"
+      }
+    },
+    "targetSplatId": "editor-splat:雪",
+    "viewId": "view-1",
+    "cameraBindingDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "rgbDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "stableMaskDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "evidencePolicyDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "renderWorkingSetToken": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "evidenceWorkingSetToken": "sha256:617378bc91dc3b888e3214bc970ecbf7aba89253411b2757147c605300fdac54",
+    "stableGaussianIds": [2, 5, 9],
+    "positiveMass": [0.5, 1, 0],
+    "negativeMass": [0, 0.25, 0.125],
+    "visibleMass": [0.5, 1.25, 0.125],
+    "boundaryMass": [0, 0.01, 0],
+    "rasterImplementationId": "gsplat-reference-rgb/v1",
+    "evidenceBackendKind": "reference-contributor",
+    "evidenceBackendId": "complete-contributor/reference-v1",
+    "runtimeBuildId": "locked-runtime-build-1",
+    "artifactDigest": "sha256:4be3e625bb4775819781d530ab1266ff435d62af8d565b938411862a6d4c7835"
+  }
+}

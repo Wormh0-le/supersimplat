@@ -1,6 +1,6 @@
 # 14 — Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain
 
-Status: ready-for-agent — Final Spec v1.3 aligned
+Status: in-progress — 14A implemented; 14B is the current execution stage
 
 Blocked by: 11, 12
 

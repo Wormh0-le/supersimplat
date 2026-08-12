@@ -1,4 +1,4 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.18
+# Eight-Pass Bidirectional Traceability Audit — v2.19
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
@@ -76,10 +76,10 @@ from tracker state and P/N/V ownership.
 - Parent Ticket 14 remains the sole current parent implementation frontier.
 - Parent Ticket 14 is partitioned into four execution stages without changing
   its Final Spec v1.3 requirement ownership:
-  - 14A Evidence Contract & Working Set;
-  - 14B Reference Per-View P/N/V Evidence;
-  - 14C Multi-view Aggregation & Classification;
-  - 14D Atomic Candidate Publication & Reference Validation.
+    - 14A Evidence Contract & Working Set;
+    - 14B Reference Per-View P/N/V Evidence;
+    - 14C Multi-view Aggregation & Classification;
+    - 14D Atomic Candidate Publication & Reference Validation.
 - 14A is the sole current execution stage. `next_implementation_ticket = 14`
   remains the parent compatibility field and
   `next_implementation_subticket = 14A` records the stage frontier.
@@ -97,6 +97,21 @@ from tracker state and P/N/V ownership.
   it does not change Final Spec v1.3 product semantics, ADR authority,
   renderer/runtime locks, Evidence policy, or calibration.
 
+## v2.19 Ticket 14A implementation closure
+
+- 14A is implemented as a fail-closed browser/Companion contract for formal
+  Evidence admission, Render/Evidence Working Set separation, artifact
+  identity, boundary expansion and reference-only backend identity.
+- A shared Unicode and IEEE-754 golden vector verifies matching browser and
+  Companion Working-Set and artifact digests.
+- 14A performs no P/N/V calculation, aggregation, Candidate publication or
+  same-decision GPU work; those remain 14B–14D and Ticket 20 responsibilities.
+- Parent Ticket 14 remains the sole current parent frontier. 14B is the sole
+  current execution stage, with `next_implementation_ticket = 14` and
+  `next_implementation_subticket = 14B`.
+- The focused contract tests passed in both runtimes. Production GPU validation
+  was not applicable to this contract-only stage.
+
 ## Pass 1 — Ticket graph and current frontier
 
 - Parent Ticket count: 31 total.
@@ -104,11 +119,11 @@ from tracker state and P/N/V ownership.
 - Missing blocker references: 0.
 - Parent Ticket cycle: false.
 - Parent topological order length: 31/31.
-- Implemented prerequisite chain is closed through 12.
+- Implemented prerequisite chain is closed through 12 and 14A.
 - Current parent implementation frontier: `[14]`.
-- Current execution-stage frontier: `[14A]`.
+- Current execution-stage frontier: `[14B]`.
 - Next implementation Ticket / current parent critical gate: `14`.
-- Next implementation subticket: `14A`.
+- Next implementation subticket: `14B`.
 - Ticket 13 requires parent Ticket 14 to close after 14D.
 - Ticket 10 is optional and does not block Ticket 13 or Ticket 21.
 
@@ -282,7 +297,7 @@ Active planning MUST NOT require:
 - Final Spec v1.1, an Amendment, or Final Spec v1.2 as a current closure source;
 - implemented Tickets 04C, 07, 08C or 09 as current ready work;
 - a `next_implementation_ticket` other than 14 while parent Ticket 14 remains current;
-- a `next_implementation_subticket` other than 14A while 14A is current;
+- a `next_implementation_subticket` other than 14B while 14B is current;
 - Candidate provenance/source inspection, Gaussian Evidence inspection or direct Candidate editing as a 14D requirement;
 - ArtisanGS dense turnaround views, Cutie tracking, tracker reference frames or one-channel Gaussian Mask-feature optimization as current v1 requirements;
 - a current video-tracker/sequence interface merely because ArtisanGS is cited as inspiration;

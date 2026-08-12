@@ -1,6 +1,6 @@
-# Final Spec v1.3 → Ticket Traceability Matrix — v2.17
+# Final Spec v1.3 → Ticket Traceability Matrix — v2.18
 
-A requirement counts as covered only when a mapped Ticket contains explicit acceptance, failure, validation or migration criteria. Every Ticket-local current mapping points directly to Final Spec v1.3; older specs are historical provenance only.
+A requirement counts as covered only when a mapped parent Ticket contains explicit acceptance, failure, validation or migration criteria. Every parent Ticket-local current mapping points directly to Final Spec v1.3; older specs are historical provenance only. Ticket 14A–14D are execution stages under parent Ticket 14 and preserve the parent requirement mapping.
 
 | ID   | Requirement                                                                                                     | Ticket(s)                         |
 | ---- | --------------------------------------------------------------------------------------------------------------- | --------------------------------- |
@@ -43,7 +43,7 @@ A requirement counts as covered only when a mapped Ticket contains explicit acce
 | R037 | local Views validate projection, clipping and nonblank RGB                                                      | 08, 21                            |
 | R038 | adaptive/free-space/room-scale planner is deferred                                                              | 08, 21                            |
 | R039 | 07B and 08 run in parallel after 07A                                                                            | 07A, 07B, 08                      |
-| R040 | Tickets through 12 are implemented prerequisites; Ticket 14 is the current ready implementation frontier        | 09, 11, 12, 14                    |
+| R040 | Tickets through 12 are implemented prerequisites; parent Ticket 14 is the current parent frontier; 14A is the current execution stage | 09, 11, 12, 14, 14A |
 | R041 | 02C may proceed after 04C; 07A requires both 04C and 07                                                         | 02C, 07A                          |
 | R042 | 08A defines compact RGB-bound Image Instance Prompt/Mask contracts                                              | 08A                               |
 | R043 | current contracts require no backend registry, route bundle or sequence extension                               | 08A, 08B, 12, 21                  |
@@ -61,18 +61,32 @@ A requirement counts as covered only when a mapped Ticket contains explicit acce
 | R055 | Prompt Support requires four distinct retained 3D samples and two distinct in-frame points per View             | 08C                               |
 | R056 | old TargetGeometryHint schema/policy/digest identities fail closed and regenerate                               | 08B, 08C, 21                      |
 
+## Ticket 14 stage coverage
+
+Parent Ticket 14 requirements are partitioned without changing requirement ownership:
+
+- 14A — formal Evidence admission, identities and Working Sets;
+- 14B — trusted reference per-view P/N/V computation;
+- 14C — multi-view aggregation and Selected/Rejected/Uncertain/Out-of-Scope classification;
+- 14D — atomic Candidate publication, stale/current binding and parent reference validation gate.
+
+14D explicitly excludes Candidate provenance/source inspection and Gaussian-level Evidence inspection.
+
 ## Coverage result
 
 - requirements: 56;
 - unmapped requirements: 0;
-- orphan active Tickets: 0;
-- Ticket files with direct current Final Spec v1.3 mapping: 31/31;
+- orphan active parent Tickets: 0;
+- parent Ticket files with direct current Final Spec v1.3 mapping: 31/31;
+- Ticket 14 execution-stage files mapped through parent 14 + Final Spec v1.3: 4/4;
 - Ticket files with v1.1/v1.2 as current mapping authority: 0;
 - older-spec references outside explicit historical/superseded/migration sections: 0;
 - implemented prerequisite chain: through 12;
 - Ticket 09 locked-GPU large-Gallery browser walkthrough: passed 2026-08-07;
-- current ready implementation frontier: 14;
-- next implementation Ticket / current critical gate: 14;
-- after Ticket 14: Ticket 13 becomes ready;
+- current parent implementation frontier: 14;
+- current execution stage: 14A;
+- next implementation Ticket: 14;
+- next implementation subticket: 14A;
+- after 14D closes parent Ticket 14: Ticket 13 becomes ready;
 - optional nonblocking Ticket: 10;
 - current normative spec: Final Spec v1.3.

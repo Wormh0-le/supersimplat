@@ -463,6 +463,7 @@
   "ai-select.views.filter.excluded": "Excluidas",
   "ai-select.views.filter.needs-review": "Requiere revisión",
   "ai-select.views.retry-mask": "Reintentar máscara",
+  "ai-select.views.refresh-mask": "Actualizar máscara automática",
   "ai-select.views.retry-prompt": "Regenerar indicación",
   "ai-select.review.quality.none": "Calidad: sin máscara estable",
   "ai-select.review.quality.auto-good": "Calidad: buena automática",

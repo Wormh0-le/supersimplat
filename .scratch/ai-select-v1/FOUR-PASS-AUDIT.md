@@ -1,4 +1,4 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.15
+# Eight-Pass Bidirectional Traceability Audit — v2.17
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
@@ -51,16 +51,38 @@ from tracker state and P/N/V ownership.
 - Mapping audit rule, TRACEABILITY R040, graph README, manifest and the
   Final Spec planning header are synchronized to graph v2.15.
 
+## v2.16 Ticket 11 closure / Ticket 12 start
+
+- Ticket 11 is implemented; its repository validation passed, while its
+  locked-GPU browser walkthrough remains pending.
+- Ticket 12 is the sole active implementation frontier; Ticket 14 remains
+  blocked until Ticket 12 closes.
+- Mapping, manifest, graph README, traceability, Ticket 12 status, and the
+  Final Spec planning header are synchronized to that tracker state.
+
+## v2.17 Ticket 12 closure / Ticket 14 ready
+
+- Ticket 12 is implemented: Anchor/View/Mask publications now drive an
+  explicit bounded dirty state, and Prompt regeneration remains separate
+  from automatic Mask refresh/retry.
+- Repository TypeScript and Companion tests, lint, locale lint, and the
+  production build passed. This editor/domain/UI slice did not exercise the
+  locked GPU renderer path.
+- Ticket 14 is the sole current ready implementation frontier; Ticket 13
+  remains blocked until Ticket 14 closes.
+- Mapping, manifest, graph README, traceability, Ticket 12 status, and the
+  Final Spec planning header are synchronized to that tracker state.
+
 ## Pass 1 — Ticket graph and current frontier
 
 - Ticket count: 31 total.
 - Missing blocker references: 0.
 - Ticket cycle: false.
 - Topological order length: 31/31.
-- Implemented prerequisite chain is closed through 09.
-- Current ready frontier: `[11, 12]`.
-- Next implementation Ticket / current critical gate: `11` (12 in parallel).
-- Ticket 14 requires both 11 and 12.
+- Implemented prerequisite chain is closed through 12.
+- Current ready implementation frontier: `[14]`.
+- Next implementation Ticket / current critical gate: `14`.
+- Ticket 13 requires Ticket 14 to close.
 - Ticket 10 is optional and does not block Ticket 13 or Ticket 21.
 
 Result: **PASS**
@@ -219,7 +241,7 @@ Active planning MUST NOT require:
 
 - Final Spec v1.1, an Amendment, or Final Spec v1.2 as a current closure source;
 - implemented Tickets 04C, 07, 08C or 09 as current ready work;
-- a `next_implementation_ticket` other than 11 while Tickets 11 and 12 remain unimplemented;
+- a `next_implementation_ticket` other than 14 while Ticket 14 remains current;
 - ArtisanGS dense turnaround views, Cutie tracking, tracker reference frames or one-channel Gaussian Mask-feature optimization as current v1 requirements;
 - a current video-tracker/sequence interface merely because ArtisanGS is cited as inspiration;
 - static Multiplex for Anchor/Key Views;

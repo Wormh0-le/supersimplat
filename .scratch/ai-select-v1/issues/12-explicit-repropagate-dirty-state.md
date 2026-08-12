@@ -1,6 +1,6 @@
 # 12 — Explicit Mask Refresh + Evidence Dirty / Candidate Stale
 
-Status: ready — Ticket 09 prerequisite is implemented; current implementation frontier (parallel with 11)
+Status: implemented — Ticket 14 is the current ready implementation frontier
 
 Blocked by: 08B (satisfied), 09 (satisfied), 07 (satisfied), 05 (satisfied)
 
@@ -88,20 +88,20 @@ Existing User Confirmed Stable Masks remain current when their own RGB/Mask iden
 
 ## Acceptance criteria
 
-- [ ] Anchor Stable change invalidates geometry, plan and dependent View Prompt/Mask work.
-- [ ] geometry or local plan replacement invalidates only bound dependants.
-- [ ] Camera/RGB change dirties only that View plus downstream Lift.
-- [ ] unconfirmed Editing changes do not dirty Evidence.
-- [ ] Prompt regeneration and Mask Retry remain separate operations.
-- [ ] explicit Retry creates a new inference attempt.
-- [ ] every inference request resolves exact authoritative RGB bytes/ref.
-- [ ] previous-logits ref validates exact same-image and same-Companion lineage.
-- [ ] Companion replacement or expired ref falls back to fresh no-logits inference.
-- [ ] semantic unavailable differs from technical failure.
-- [ ] failure preserves prior Stable Mask and matching Evidence/Candidate state.
-- [ ] no backend fallback or propagation dirty state exists.
-- [ ] old Multiplex/Prompt/cache artifacts fail current validation.
-- [ ] no refresh automatically Re-Lifts.
+- [x] Anchor Stable change invalidates geometry, plan and dependent View Prompt/Mask work.
+- [x] geometry or local plan replacement invalidates only bound dependants.
+- [x] Camera/RGB change dirties only that View plus downstream Lift.
+- [x] unconfirmed Editing changes do not dirty Evidence.
+- [x] Prompt regeneration and Mask Retry remain separate operations.
+- [x] explicit Retry creates a new inference attempt.
+- [x] every inference request resolves exact authoritative RGB bytes/ref.
+- [x] previous-logits ref validates exact same-image and same-Companion lineage.
+- [x] Companion replacement or expired ref falls back to fresh no-logits inference.
+- [x] semantic unavailable differs from technical failure.
+- [x] failure preserves prior Stable Mask and matching Evidence/Candidate state.
+- [x] no backend fallback or propagation dirty state exists.
+- [x] old Multiplex/Prompt/cache artifacts fail current validation.
+- [x] no refresh automatically Re-Lifts.
 
 ## Validation
 
@@ -114,6 +114,13 @@ Existing User Confirmed Stable Masks remain current when their own RGB/Mask iden
 - old schema/cache rejection;
 - Generate More no-dirty regression;
 - repository test/lint/build.
+
+Implementation evidence: `npm test` (474 TypeScript tests; 384 Companion
+tests with 1 skipped), `npm run lint`, `npm run lint:locales`, and `npm run
+build` passed. This change is editor/domain/UI only: it does not change the
+Companion protocol, runtime lock, Evidence policy, calibration, or production
+GPU renderer path. Local development serving returned HTTP 200; interactive
+browser inspection was unavailable because no browser session was provisioned.
 
 ## Non-goals
 

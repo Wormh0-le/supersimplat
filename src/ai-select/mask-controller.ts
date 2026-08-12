@@ -3,6 +3,7 @@ import type {
     AISelectAnchorState
 } from './anchor-controller';
 import type { AnchorRgbArtifact } from './anchor-render-service';
+import { AISelectDirtyStateTracker } from './dirty-state';
 import { PerViewEvidenceRegistry } from './evidence-state';
 import type { BrushStroke } from './mask-annotation';
 import { MaskAnnotationRegistry } from './mask-registry';
@@ -43,6 +44,8 @@ export interface AISelectMaskControllerOptions {
     readonly maskProvider: AISelectMaskProvider;
     readonly getModelManifestDigest?: () => string | null;
     readonly getPromptAdapterCapabilities?: () => PromptAdapterCapabilities | null;
+    /** Shared target-local recompute state for Anchor and Generated Views. */
+    readonly dirtyState?: AISelectDirtyStateTracker;
     /**
      * A confirmed Anchor locks Mask authoring until an explicit adjustment or
      * restart flow unlocks it (Final Spec v1.1 §12.4).
@@ -72,12 +75,16 @@ export class AISelectMaskController implements AISelectMaskAuthoring {
      * publication already derives its invalidation.
      */
     readonly evidenceRegistry = new PerViewEvidenceRegistry();
+    /** The explicit Ticket 12 dirty state for this Current Target Context. */
+    readonly dirtyState: AISelectDirtyStateTracker;
     private readonly session: AISelectViewMaskSession;
     private anchorState: AISelectAnchorState = { context: null, anchor: null };
+    private targetContextId: string | null = null;
 
     constructor(options: AISelectMaskControllerOptions) {
         this.anchor = options.anchor;
         this.isAnchorLocked = options.isAnchorLocked ?? (() => false);
+        this.dirtyState = options.dirtyState ?? new AISelectDirtyStateTracker();
         this.session = new AISelectViewMaskSession({
             host: {
                 viewId: ANCHOR_VIEW_ID,
@@ -125,9 +132,18 @@ export class AISelectMaskController implements AISelectMaskAuthoring {
                 : {
                       getPromptAdapterCapabilities:
                           options.getPromptAdapterCapabilities
-                  })
+                  }),
+            onStableMaskPublished: () =>
+                // The generated controller binds any existing dependent View
+                // identities when it starts the next confirmed run.
+                this.dirtyState.markAnchorStableChanged([])
         });
         this.anchor.subscribe((state) => {
+            const targetContextId = state.context?.targetContextId ?? null;
+            if (targetContextId !== this.targetContextId) {
+                this.targetContextId = targetContextId;
+                this.dirtyState.reset();
+            }
             this.anchorState = state;
             this.session.notifyHostStateChanged();
         });

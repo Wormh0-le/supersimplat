@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.15
+# AI Select v1 — Implementation Ticket Graph v2.17
 
-Status: **ready-for-agent planning graph — Final Spec v1.3 source-of-truth synchronized; current frontier Tickets 11 + 12**
+Status: **ready planning graph — Final Spec v1.3 source-of-truth synchronized; Ticket 14 is the current frontier**
 
 Branch: `ai-select-v1`
 
@@ -43,7 +43,7 @@ All 31 Ticket files contain a current mapping to Final Spec v1.3. Older spec nam
 - Locked-GPU browser E2E for 08B and 08C completed on 2026-08-07 with no blocking issue reported.
 - Ticket 09 is implemented: separated Gallery card states, read-only View RGB/Mask inspection, per-View read-only Camera Inspection, presentation-only filters, bounded thumbnails; no backend/fallback/tracker/ProposalDecision/Prompt-Brush/Negative-Box surface.
 - Locked-GPU large-Gallery browser walkthrough for Ticket 09 passed on 2026-08-07.
-- Tickets 11 and 12 are the current implementation frontier in parallel.
+- Ticket 11 and Ticket 12 are implemented prerequisites; Ticket 14 is ready next.
 
 ## Dependency graph
 
@@ -115,19 +115,20 @@ implemented prerequisites:
 - 02C — automatic runtime readiness
 - 08 / 08A / 08B / 08C — target geometry, local views, per-View SAM acquisition, retained Prompt Support
 - 09 — scalable Gallery, frustum sync and View camera/Mask inspection
-
-ready now:
-- 11 — User-added AIView Using Current or Adjusted Camera
+- 11 — user-added AIView using current or adjusted camera
 - 12 — Explicit Mask Refresh + Evidence Dirty / Candidate Stale
+
+ready next:
+- 14 — Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain
 ```
 
 Compatibility field:
 
 ```text
-next_implementation_ticket = 11
+next_implementation_ticket = 14
 ```
 
-Tickets 11 and 12 proceed in parallel. Ticket 14 requires both 11 and 12. Ticket 10 remains optional and off the core release path.
+Ticket 14 is the sole current ready implementation frontier. Ticket 13 requires Ticket 14 plus implemented Tickets 11 and 12. Ticket 10 remains optional and off the core release path.
 
 ## One valid topological order
 

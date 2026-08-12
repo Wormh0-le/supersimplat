@@ -1,4 +1,4 @@
-# Final Spec v1.3 → Ticket Traceability Matrix — v2.15
+# Final Spec v1.3 → Ticket Traceability Matrix — v2.17
 
 A requirement counts as covered only when a mapped Ticket contains explicit acceptance, failure, validation or migration criteria. Every Ticket-local current mapping points directly to Final Spec v1.3; older specs are historical provenance only.
 
@@ -43,7 +43,7 @@ A requirement counts as covered only when a mapped Ticket contains explicit acce
 | R037 | local Views validate projection, clipping and nonblank RGB                                                      | 08, 21                            |
 | R038 | adaptive/free-space/room-scale planner is deferred                                                              | 08, 21                            |
 | R039 | 07B and 08 run in parallel after 07A                                                                            | 07A, 07B, 08                      |
-| R040 | Tickets through 09 are implemented prerequisites; Tickets 11 and 12 are the parallel current ready frontier     | 09, 11, 12                        |
+| R040 | Tickets through 12 are implemented prerequisites; Ticket 14 is the current ready implementation frontier        | 09, 11, 12, 14                    |
 | R041 | 02C may proceed after 04C; 07A requires both 04C and 07                                                         | 02C, 07A                          |
 | R042 | 08A defines compact RGB-bound Image Instance Prompt/Mask contracts                                              | 08A                               |
 | R043 | current contracts require no backend registry, route bundle or sequence extension                               | 08A, 08B, 12, 21                  |
@@ -69,10 +69,10 @@ A requirement counts as covered only when a mapped Ticket contains explicit acce
 - Ticket files with direct current Final Spec v1.3 mapping: 31/31;
 - Ticket files with v1.1/v1.2 as current mapping authority: 0;
 - older-spec references outside explicit historical/superseded/migration sections: 0;
-- implemented prerequisite chain: through 09;
+- implemented prerequisite chain: through 12;
 - Ticket 09 locked-GPU large-Gallery browser walkthrough: passed 2026-08-07;
-- current ready frontier: 11 and 12 in parallel;
-- next implementation Ticket / current critical gate: 11;
-- after 11 + 12: Ticket 14 becomes ready;
+- current ready implementation frontier: 14;
+- next implementation Ticket / current critical gate: 14;
+- after Ticket 14: Ticket 13 becomes ready;
 - optional nonblocking Ticket: 10;
 - current normative spec: Final Spec v1.3.

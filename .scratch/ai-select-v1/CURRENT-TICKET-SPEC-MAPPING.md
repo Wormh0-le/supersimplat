@@ -1,6 +1,6 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.16
+# Current Final Spec v1.3 → Ticket Mapping — v2.17
 
-Status: **current normative ticket mapping — Ticket 11 implemented; implementation frontier Ticket 12**
+Status: **current normative ticket mapping — Ticket 12 implemented; Ticket 14 ready for implementation**
 
 This file maps every active AI Select Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
@@ -48,16 +48,16 @@ All 31 Ticket files carry a direct current mapping to Final Spec v1.3. An older 
 implemented prerequisites:
 - 04C, 07, 02C, 07A, 07B
 - 08, 08A, 08B, 08C
-- 09, 11
+- 09, 11, 12
 
 ready now:
-- 12
-
-after 12:
 - 14
+
+after 14:
+- 13
 ```
 
-`next_implementation_ticket = 12` is the current compatibility field; Ticket 12 is the sole remaining ready frontier item after the Ticket 11 implementation. Ticket 10 remains optional and may execute after 14 + 09 + 07 without blocking the core release path.
+`next_implementation_ticket = 14` is the current compatibility field; Ticket 14 is the sole current ready implementation frontier after Ticket 12 closure. Ticket 10 remains optional and may execute after 14 + 09 + 07 without blocking the core release path.
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported. The locked-GPU large-Gallery browser walkthrough for Ticket 09 passed on 2026-08-07. Ticket 11 shipped with repository test/lint/locales/build green; its locked-GPU browser walkthrough is still pending.
 
@@ -90,8 +90,8 @@ The mapping passes only when:
 - every Ticket-local current mapping block points directly to Final Spec v1.3;
 - no Ticket-local current mapping block names Final Spec v1.1, an Amendment, or Final Spec v1.2 as authority;
 - older spec names appear only under explicit historical/superseded/migration labels;
-- implemented prerequisites through 11 are not reported as current ready work;
-- Ticket 12 is recognized as the sole current ready frontier and `next_implementation_ticket = 12` is the compatibility field;
+- implemented prerequisites through 12 are not reported as current ready work;
+- Ticket 14 is recognized as the sole current ready implementation frontier and `next_implementation_ticket = 14` is the compatibility field;
 - no active closure criterion relies on superseded v1.2 architecture;
 - provider requests carry resolvable authoritative RGB;
 - previous logits remain Companion-local behind opaque refs;

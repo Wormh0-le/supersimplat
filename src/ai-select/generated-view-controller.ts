@@ -18,6 +18,10 @@ import {
     type AIRequestBinding
 } from './current-target-context';
 import {
+    AISelectDirtyStateTracker,
+    type AISelectDirtyState
+} from './dirty-state';
+import {
     aiSelectEvidencePolicyVersion,
     type EvidenceDependencyIdentity,
     type EvidenceStatus,
@@ -59,6 +63,7 @@ import {
     type LocalKeyViewPlanResponse,
     type PlannedKeyView
 } from './local-key-view-plan';
+import type { MaskAnnotation } from './mask-annotation';
 import { anchorMaskRankingPolicyVersion } from './mask-proposal';
 import type { MaskAnnotationRegistry } from './mask-registry';
 import {
@@ -148,6 +153,8 @@ export interface AISelectGeneratedViewState {
     readonly keyViewPlans: readonly LocalKeyViewPlan[];
     /** Stop preserves completed Views; queued pipeline steps skip while set. */
     readonly generationStopped: boolean;
+    /** Explicit target-local recompute state; it never starts work itself. */
+    readonly dirtyState: AISelectDirtyState;
 }
 
 export type AISelectGeneratedViewListener = (
@@ -165,6 +172,8 @@ export interface AISelectGeneratedViewControllerOptions {
     readonly promptSynthesizer: AISelectGeneratedViewPromptSynthesizer;
     readonly maskProvider: ImageInstanceMaskProvider;
     readonly reviewProvider: AISelectImageInstanceMaskReviewProvider;
+    /** Shared with the Anchor Mask controller for one Current Target Context. */
+    readonly dirtyState?: AISelectDirtyStateTracker;
     readonly getImageInstanceRuntimeBinding?: () => GeneratedViewImageInstanceRuntimeBinding | null;
     /**
      * The additive Companion capability gate: an older Companion without
@@ -208,6 +217,8 @@ interface GeneratedViewRecord {
     promptCompanionInstanceId?: string;
     maskStatus: GeneratedViewMaskStatus;
     maskErrorMessage?: string;
+    /** Last observed Stable Mask artifact digest for dirty-state comparison. */
+    stableMaskDigest?: string;
     assessment?: ViewAssessmentResult;
     participation: AIViewParticipation;
 }
@@ -517,6 +528,7 @@ export class AISelectGeneratedViewController {
     private readonly anchor: AISelectAnchorController;
     private readonly maskRegistry: MaskAnnotationRegistry;
     private readonly evidenceRegistry: PerViewEvidenceRegistry;
+    private readonly dirtyState: AISelectDirtyStateTracker;
     private readonly geometryHints: AISelectTargetGeometryProvider;
     private readonly planner: AISelectLocalKeyViewPlanner;
     private readonly renderer: AISelectViewRenderer;
@@ -552,6 +564,7 @@ export class AISelectGeneratedViewController {
         this.anchor = options.anchor;
         this.maskRegistry = options.maskRegistry;
         this.evidenceRegistry = options.evidenceRegistry;
+        this.dirtyState = options.dirtyState ?? new AISelectDirtyStateTracker();
         this.geometryHints = options.geometryHints;
         this.planner = options.planner;
         this.renderer = options.renderer;
@@ -562,6 +575,7 @@ export class AISelectGeneratedViewController {
             options.getImageInstanceRuntimeBinding ?? (() => null);
         this.supportsGeneratedViews =
             options.supportsGeneratedViews ?? (() => true);
+        this.dirtyState.subscribe(() => this.publish());
         options.confirmation.subscribe((state) =>
             this.handleConfirmationState(state)
         );
@@ -577,7 +591,8 @@ export class AISelectGeneratedViewController {
             selectedViewId: this.selectedViewId,
             geometryHint: this.geometryHint,
             keyViewPlans: Object.freeze([...this.keyViewPlans]),
-            generationStopped: this.generationStopped
+            generationStopped: this.generationStopped,
+            dirtyState: this.dirtyState.state
         });
     }
 
@@ -635,16 +650,43 @@ export class AISelectGeneratedViewController {
      * never rerenders or reprojects the target geometry.
      */
     retryViewMask(viewId: string): void {
+        this.enqueueViewMaskRefresh(viewId, true);
+    }
+
+    /**
+     * Explicitly refresh one automatic Mask from its current Prompt artifact.
+     * This is deliberately independent from 3D-guided Prompt regeneration:
+     * the new inference attempt never reruns planning or synthesis.
+     */
+    refreshViewMask(viewId: string): void {
+        this.enqueueViewMaskRefresh(viewId, false);
+    }
+
+    private enqueueViewMaskRefresh(viewId: string, retryOnly: boolean): void {
         const view = this.requireView(viewId);
         if (
             view.renderStatus !== 'ready' ||
             view.rgb === undefined ||
             view.promptStatus !== 'ready' ||
             view.prompt === undefined ||
-            (view.maskStatus !== 'failed' && view.maskStatus !== 'unavailable')
+            view.maskStatus === 'generating' ||
+            (retryOnly &&
+                view.maskStatus !== 'failed' &&
+                view.maskStatus !== 'unavailable')
         ) {
             throw new Error(
-                'AI Select can retry inference only for a Prompt Ready RGB Ready AIView whose previous result failed or was unavailable.'
+                retryOnly
+                    ? 'AI Select can retry inference only for a Prompt Ready RGB Ready AIView whose previous result failed or was unavailable.'
+                    : 'AI Select can refresh an automatic Mask only for a Prompt Ready RGB Ready AIView that is not already generating.'
+            );
+        }
+        const stable = this.maskRegistry.viewState(
+            view.viewId,
+            view.rgb.digest
+        ).stableMask;
+        if (stable?.status === 'user-confirmed') {
+            throw new Error(
+                'AI Select never replaces a User Confirmed Stable Mask through automatic Mask refresh.'
             );
         }
         const rgb = view.rgb;
@@ -664,7 +706,9 @@ export class AISelectGeneratedViewController {
         if (
             view.renderStatus !== 'ready' ||
             view.rgb === undefined ||
-            view.localKeyViewPlanDigest === undefined
+            view.localKeyViewPlanDigest === undefined ||
+            view.promptStatus === 'none' ||
+            view.promptStatus === 'synthesizing'
         ) {
             throw new Error(
                 'AI Select can regenerate a Prompt only for a planned RGB Ready AIView.'
@@ -679,7 +723,9 @@ export class AISelectGeneratedViewController {
                 'AI Select never replaces a User Confirmed Stable Mask through automatic Prompt regeneration.'
             );
         }
-        this.enqueue((run) => this.synthesizeAndProduceViewMask(run, view));
+        this.enqueue(async (run) => {
+            await this.synthesizeViewPrompt(run, view);
+        });
     }
 
     /**
@@ -702,10 +748,19 @@ export class AISelectGeneratedViewController {
         this.maskRegistry.confirmStableAsIs(viewId, view.rgb.digest);
         // Authority dominates the default: User Confirmed grants Included
         // regardless of the underlying automatic review status.
+        const previousParticipation = view.participation;
+        const stable = this.maskRegistry.viewState(
+            viewId,
+            view.rgb.digest
+        ).stableMask;
+        view.stableMaskDigest = stable?.artifact.digest;
         view.participation = defaultViewParticipation({
             reviewStatus: view.assessment.status,
             authority: 'user-confirmed'
         });
+        if (previousParticipation !== view.participation) {
+            this.dirtyState.markParticipationChanged(viewId);
+        }
         this.publish();
     }
 
@@ -732,7 +787,11 @@ export class AISelectGeneratedViewController {
                 );
             }
         }
+        if (view.participation === participation) {
+            return;
+        }
         view.participation = participation;
+        this.dirtyState.markParticipationChanged(viewId);
         this.publish();
     }
 
@@ -882,6 +941,9 @@ export class AISelectGeneratedViewController {
         if (stable === null) {
             return;
         }
+        const stableChanged = view.stableMaskDigest !== stable.artifact.digest;
+        const previousParticipation = view.participation;
+        view.stableMaskDigest = stable.artifact.digest;
         view.maskStatus = 'ready';
         view.participation = defaultViewParticipation({
             reviewStatus: null,
@@ -890,6 +952,11 @@ export class AISelectGeneratedViewController {
                     ? 'user-confirmed'
                     : 'automatic'
         });
+        if (stableChanged) {
+            this.dirtyState.markStableMaskPublished(viewId);
+        } else if (previousParticipation !== view.participation) {
+            this.dirtyState.markParticipationChanged(viewId);
+        }
         this.publish();
     }
 
@@ -968,6 +1035,7 @@ export class AISelectGeneratedViewController {
         }
         this.generationStopped = false;
         this.plannerErrorMessage = undefined;
+        this.dirtyState.markLocalKeyViewPlanDirty();
         this.publish();
         this.enqueue((run) => this.regeneratePlan(run));
     }
@@ -996,6 +1064,10 @@ export class AISelectGeneratedViewController {
             contextRevision: confirmed.contextRevision,
             dependencyToken: copyDependencyToken(confirmed.dependencyToken)
         });
+        // A confirmed Anchor is an explicit Stable input to the bounded
+        // geometry/plan pipeline. Fresh runs have no dependent Views yet;
+        // the accepted plan records them below.
+        this.dirtyState.markAnchorStableChanged([]);
         this.plannerStatus = 'planning';
         this.publish();
         this.enqueue((run) => this.planViews(run));
@@ -1101,6 +1173,10 @@ export class AISelectGeneratedViewController {
         this.geometryHint = hint;
         this.adoptInitialPlan(planned);
         this.plannerStatus = 'active';
+        this.dirtyState.markTargetGeometryReady();
+        this.dirtyState.markLocalKeyViewPlanReady(
+            planned.orderedViews.map((view) => view.viewId)
+        );
         this.publish();
         this.enqueuePendingViewRenders();
     }
@@ -1159,11 +1235,12 @@ export class AISelectGeneratedViewController {
      * have completed yet); user-owned Views are preserved.
      */
     private adoptInitialPlan(plan: LocalKeyViewPlan): void {
-        for (const view of this.views) {
-            if (view.source !== 'user-added') {
-                this.maskRegistry.disposeView(view.viewId);
-                this.evidenceRegistry.disposeView(view.viewId);
-            }
+        const displacedPlannerViews = this.views.filter(
+            (view) => view.source !== 'user-added'
+        );
+        for (const view of displacedPlannerViews) {
+            this.maskRegistry.disposeView(view.viewId);
+            this.evidenceRegistry.disposeView(view.viewId);
         }
         const userOwned = this.views.filter(
             (view) => view.source === 'user-added'
@@ -1183,6 +1260,12 @@ export class AISelectGeneratedViewController {
         this.keyViewPlans = [plan];
         this.nextBatchOrdinal = 1;
         this.generationStopped = false;
+        for (const view of displacedPlannerViews) {
+            if (view.participation === 'included') {
+                this.dirtyState.markParticipationChanged(view.viewId);
+            }
+            this.dirtyState.forgetView(view.viewId);
+        }
     }
 
     private recordForPlannedView(
@@ -1300,9 +1383,12 @@ export class AISelectGeneratedViewController {
             return;
         }
         const disposed = new Set(merge.disposedViewIds);
-        for (const viewId of disposed) {
-            this.maskRegistry.disposeView(viewId);
-            this.evidenceRegistry.disposeView(viewId);
+        const disposedViews = this.views.filter((view) =>
+            disposed.has(view.viewId)
+        );
+        for (const view of disposedViews) {
+            this.maskRegistry.disposeView(view.viewId);
+            this.evidenceRegistry.disposeView(view.viewId);
         }
         if (this.selectedViewId !== null && disposed.has(this.selectedViewId)) {
             this.selectedViewId = null;
@@ -1356,6 +1442,15 @@ export class AISelectGeneratedViewController {
         this.generationStopped = false;
         this.plannerErrorMessage = undefined;
         this.plannerStatus = 'active';
+        for (const view of disposedViews) {
+            if (view.participation === 'included') {
+                this.dirtyState.markParticipationChanged(view.viewId);
+            }
+            this.dirtyState.forgetView(view.viewId);
+        }
+        this.dirtyState.markLocalKeyViewPlanReady(
+            plannerViews.map((view) => view.viewId)
+        );
         this.publish();
         this.enqueuePendingViewRenders();
     }
@@ -1462,9 +1557,17 @@ export class AISelectGeneratedViewController {
         }
         // Atomic View publication: RGB Ready is independent from Mask and
         // Evidence; the Gallery may show it immediately.
+        const previousRgbDigest = view.rgb?.digest;
         view.renderStatus = 'ready';
         view.rgb = copyRgb(response.rgb);
         view.rendererId = response.rendererId;
+        if (
+            previousRgbDigest !== undefined &&
+            previousRgbDigest !== view.rgb.digest
+        ) {
+            view.stableMaskDigest = undefined;
+            this.dirtyState.markViewCameraOrRgbChanged(viewId);
+        }
         this.publish();
         // User-owned Views stop at authoritative RGB: Mask authoring is the
         // explicit 04C Prompt/Manual Draw choice, never the Route-B pipeline.
@@ -1483,6 +1586,31 @@ export class AISelectGeneratedViewController {
         run: number,
         view: GeneratedViewRecord
     ): Promise<void> {
+        const synthesized = await this.synthesizeViewPrompt(run, view);
+        if (synthesized === null) {
+            return;
+        }
+        await this.produceViewMask(
+            run,
+            view,
+            synthesized.rgb,
+            synthesized.prompt
+        );
+    }
+
+    /**
+     * Publish a regenerated Prompt without implicitly starting SAM. The
+     * initial acquisition pipeline explicitly composes this with
+     * `produceViewMask`; the user-facing Prompt action intentionally does
+     * not, so refresh remains an explicit second operation.
+     */
+    private async synthesizeViewPrompt(
+        run: number,
+        view: GeneratedViewRecord
+    ): Promise<{
+        readonly rgb: AnchorRgbArtifact;
+        readonly prompt: ImageInstancePromptArtifact;
+    } | null> {
         const requestBinding = this.requestBinding;
         const hint = this.geometryHint;
         const rgb = view.rgb;
@@ -1493,14 +1621,14 @@ export class AISelectGeneratedViewController {
             rgb === undefined ||
             !this.views.includes(view)
         ) {
-            return;
+            return null;
         }
         const stable = this.maskRegistry.viewState(
             view.viewId,
             rgb.digest
         ).stableMask;
         if (stable?.status === 'user-confirmed') {
-            return;
+            return null;
         }
         const planDigest =
             view.nextPromptPlanDigest ?? view.localKeyViewPlanDigest;
@@ -1512,7 +1640,7 @@ export class AISelectGeneratedViewController {
                 view,
                 'AI Select requires the accepted Local Key-View Plan before Prompt synthesis.'
             );
-            return;
+            return null;
         }
         const runtime = this.getImageInstanceRuntimeBinding();
         if (!isImageInstanceRuntimeBinding(runtime)) {
@@ -1520,11 +1648,12 @@ export class AISelectGeneratedViewController {
                 view,
                 'AI Select requires a ready locked SAM 3 Image runtime before Prompt synthesis.'
             );
-            return;
+            return null;
         }
         view.promptStatus = 'synthesizing';
         view.promptDiagnostics = undefined;
         view.promptErrorMessage = undefined;
+        this.dirtyState.markPromptDirty(view.viewId);
         this.publish();
         const request: GeneratedViewPromptSynthesisRequest = Object.freeze({
             requestBinding,
@@ -1553,7 +1682,7 @@ export class AISelectGeneratedViewController {
                 );
         } catch (error) {
             if (!this.isRunCurrent(run) || !this.views.includes(view)) {
-                return;
+                return null;
             }
             this.failViewPrompt(
                 view,
@@ -1562,10 +1691,10 @@ export class AISelectGeneratedViewController {
                     'AI Select Generated View Prompt synthesis failed.'
                 )
             );
-            return;
+            return null;
         }
         if (!this.isRunCurrent(run) || !this.views.includes(view)) {
-            return;
+            return null;
         }
         if (
             !isGeneratedViewPromptSynthesisResponse(response) ||
@@ -1578,7 +1707,7 @@ export class AISelectGeneratedViewController {
                 view,
                 'The Selection Service Companion returned an invalid or stale Generated View Prompt binding.'
             );
-            return;
+            return null;
         }
         if (response.status === 'limited') {
             view.prompt = undefined;
@@ -1592,9 +1721,12 @@ export class AISelectGeneratedViewController {
             view.promptErrorMessage = undefined;
             view.maskStatus = 'unavailable';
             view.maskErrorMessage = response.diagnostics.join('; ');
-            view.participation = 'excluded';
+            // A failed Prompt replacement cannot demote the valid Stable
+            // Mask/Evidence/Candidate inputs it did not replace. A View with
+            // no Stable Mask remains Excluded by default.
+            this.excludeWithoutCurrentStableMask(view);
             this.publish();
-            return;
+            return null;
         }
         const prompt = copyPrompt(response.prompt);
         view.prompt = prompt;
@@ -1606,8 +1738,9 @@ export class AISelectGeneratedViewController {
         view.promptStatus = 'ready';
         view.promptDiagnostics = Object.freeze([...response.diagnostics]);
         view.promptErrorMessage = undefined;
+        this.dirtyState.markPromptRegenerated(view.viewId);
         this.publish();
-        await this.produceViewMask(run, view, rgb, prompt);
+        return Object.freeze({ rgb, prompt });
     }
 
     private async produceViewMask(
@@ -1702,7 +1835,10 @@ export class AISelectGeneratedViewController {
             view.maskStatus = 'unavailable';
             view.maskErrorMessage =
                 'The SAM 3 Image model returned no usable instance Mask for this View.';
-            view.participation = 'excluded';
+            // Semantic unavailability is an unsuccessful replacement, not a
+            // Stable Mask publication. Preserve a current Stable revision
+            // and its Participation/Evidence inputs when one exists.
+            this.excludeWithoutCurrentStableMask(view);
             this.publish();
             return;
         }
@@ -1756,11 +1892,16 @@ export class AISelectGeneratedViewController {
             return;
         }
         if (reviewResponse.assessment.status === 'failed') {
-            view.assessment = copyAssessment(reviewResponse.assessment);
+            // A failed Review publishes no replacement Stable Mask. Retain
+            // any previous Stable revision and the assessment bound to it so
+            // a failed refresh cannot silently change Candidate inputs.
+            if (this.currentStableMask(view) === null) {
+                view.assessment = copyAssessment(reviewResponse.assessment);
+                this.excludeWithoutCurrentStableMask(view);
+            }
             view.maskStatus = 'failed';
             view.maskErrorMessage =
                 'Mask Review rejected the automatic Mask; no Stable Mask was published.';
-            view.participation = 'excluded';
             this.publish();
             return;
         }
@@ -1809,6 +1950,21 @@ export class AISelectGeneratedViewController {
                 source: 'single-frame-sam',
                 status: defaults.stableMaskStatus
             });
+            const stableChanged =
+                current?.artifact.digest !== chosenMask.digest;
+            const previousParticipation = view.participation;
+            view.stableMaskDigest = chosenMask.digest;
+            view.assessment = copyAssessment(reviewResponse.assessment);
+            view.participation = defaultViewParticipation({
+                reviewStatus: reviewResponse.assessment.status,
+                authority: 'automatic'
+            });
+            view.maskStatus = 'ready';
+            if (stableChanged) {
+                this.dirtyState.markStableMaskPublished(view.viewId);
+            } else if (previousParticipation !== view.participation) {
+                this.dirtyState.markParticipationChanged(view.viewId);
+            }
         } catch (error) {
             this.failViewMask(
                 view,
@@ -1819,12 +1975,6 @@ export class AISelectGeneratedViewController {
             );
             return;
         }
-        view.assessment = copyAssessment(reviewResponse.assessment);
-        view.participation = defaultViewParticipation({
-            reviewStatus: reviewResponse.assessment.status,
-            authority: 'automatic'
-        });
-        view.maskStatus = 'ready';
         this.publish();
     }
 
@@ -1859,6 +2009,7 @@ export class AISelectGeneratedViewController {
         view.promptStatus = 'failed';
         view.promptDiagnostics = undefined;
         view.promptErrorMessage = message;
+        this.dirtyState.markPromptDirty(view.viewId);
         this.publish();
     }
 
@@ -1871,6 +2022,32 @@ export class AISelectGeneratedViewController {
         view.maskStatus = 'failed';
         view.maskErrorMessage = message;
         this.publish();
+    }
+
+    /** The current registry revision, never a stale RGB-bound Stable Mask. */
+    private currentStableMask(
+        view: GeneratedViewRecord
+    ): MaskAnnotation | null {
+        return view.rgb === undefined
+            ? null
+            : this.maskRegistry.viewState(view.viewId, view.rgb.digest)
+                  .stableMask;
+    }
+
+    /**
+     * Failed Prompt/Mask replacements retain a prior Stable revision. Only a
+     * View with no current Stable Mask defaults to Excluded; if an external
+     * lifecycle transition had marked it Included, propagate that real
+     * Participation change through Evidence/Lift/Candidate state.
+     */
+    private excludeWithoutCurrentStableMask(view: GeneratedViewRecord): void {
+        if (
+            this.currentStableMask(view) === null &&
+            view.participation !== 'excluded'
+        ) {
+            view.participation = 'excluded';
+            this.dirtyState.markParticipationChanged(view.viewId);
+        }
     }
 
     private requireView(viewId: string): GeneratedViewRecord {
@@ -1913,6 +2090,7 @@ export class AISelectGeneratedViewController {
         this.generationStopped = false;
         this.plannerStatus = 'idle';
         this.plannerErrorMessage = undefined;
+        this.dirtyState.reset();
         this.publish();
     }
 

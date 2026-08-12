@@ -34,7 +34,13 @@ export type GalleryCardLine =
  */
 export interface GalleryCardActions {
     readonly retryRender: boolean;
-    readonly retryMaskOrPrompt: 'mask' | 'prompt' | null;
+    /** Rebuild the Route-B 3D-guided Prompt without running SAM. */
+    readonly regeneratePrompt: boolean;
+    /**
+     * Start one explicit Auto Mask inference attempt from the current Prompt.
+     * It is a Retry for failed/unavailable inference and a Refresh otherwise.
+     */
+    readonly refreshMask: boolean;
     readonly confirmAsIs: boolean;
     readonly participationToggle: 'include' | 'exclude' | null;
     readonly inspectCamera: boolean;
@@ -169,18 +175,21 @@ export const galleryCardPresentation = (
         }
     }
 
-    const promptRecovery =
-        view.promptStatus === 'failed' || view.promptStatus === 'limited';
-    const retryMaskOrPrompt =
-        view.renderStatus !== 'ready'
-            ? null
-            : promptRecovery
-              ? 'prompt'
-              : view.promptStatus === 'ready' &&
-                  (view.maskStatus === 'failed' ||
-                      view.maskStatus === 'unavailable')
-                ? 'mask'
-                : null;
+    const generatedAutoView =
+        galleryViewRole(view.source) === 'generated' &&
+        view.maskQuality !== 'user-confirmed';
+    // These are deliberately independent user actions. Rebuilding a Prompt
+    // never starts SAM; refresh uses the current immutable Prompt artifact.
+    const regeneratePrompt =
+        generatedAutoView &&
+        view.renderStatus === 'ready' &&
+        view.promptStatus !== 'none' &&
+        view.promptStatus !== 'synthesizing';
+    const refreshMask =
+        generatedAutoView &&
+        view.renderStatus === 'ready' &&
+        view.promptStatus === 'ready' &&
+        view.maskStatus !== 'generating';
     const canToggleParticipation =
         view.participation === 'included' ||
         view.maskQuality === 'auto-good' ||
@@ -194,7 +203,8 @@ export const galleryCardPresentation = (
     const noMaskChoices = userOwnedNoMask && view.renderStatus === 'ready';
     const actions: GalleryCardActions = Object.freeze({
         retryRender: view.renderStatus === 'failed',
-        retryMaskOrPrompt,
+        regeneratePrompt,
+        refreshMask,
         confirmAsIs:
             view.maskStatus === 'ready' &&
             view.assessment?.status === 'review' &&

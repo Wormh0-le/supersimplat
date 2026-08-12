@@ -482,6 +482,7 @@ const main = async () => {
         confirmation: aiSelectConfirmation,
         maskRegistry: aiSelectMaskController.maskRegistry,
         evidenceRegistry: aiSelectMaskController.evidenceRegistry,
+        dirtyState: aiSelectMaskController.dirtyState,
         geometryHints: selectionServiceAdapter,
         planner: selectionServiceAdapter,
         renderer: selectionServiceAdapter,

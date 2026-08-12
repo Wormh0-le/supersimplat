@@ -369,7 +369,8 @@ test('card actions carry no obsolete backend, tracker or prompt-family surface',
         'inspectCamera',
         'manualDraw',
         'participationToggle',
-        'retryMaskOrPrompt',
+        'refreshMask',
+        'regeneratePrompt',
         'retryRender'
     ]);
     for (const key of statusKeys(presentation)) {
@@ -392,7 +393,8 @@ test('action visibility follows Render / Prompt / Mask / Review state', () => {
         1
     );
     assert.equal(renderFailed.actions.retryRender, true);
-    assert.equal(renderFailed.actions.retryMaskOrPrompt, null);
+    assert.equal(renderFailed.actions.regeneratePrompt, false);
+    assert.equal(renderFailed.actions.refreshMask, false);
     assert.deepEqual(detailTexts(renderFailed), ['oom']);
 
     const promptFailed = galleryCardPresentation(
@@ -405,7 +407,8 @@ test('action visibility follows Render / Prompt / Mask / Review state', () => {
         }),
         1
     );
-    assert.equal(promptFailed.actions.retryMaskOrPrompt, 'prompt');
+    assert.equal(promptFailed.actions.regeneratePrompt, true);
+    assert.equal(promptFailed.actions.refreshMask, false);
 
     const maskFailed = galleryCardPresentation(
         view({
@@ -416,7 +419,8 @@ test('action visibility follows Render / Prompt / Mask / Review state', () => {
         }),
         1
     );
-    assert.equal(maskFailed.actions.retryMaskOrPrompt, 'mask');
+    assert.equal(maskFailed.actions.regeneratePrompt, true);
+    assert.equal(maskFailed.actions.refreshMask, true);
 
     const reviewPending = galleryCardPresentation(
         view({
@@ -485,7 +489,8 @@ test('a user-added RGB Ready View without a Stable Mask offers Auto Mask, Manual
     assert.equal(noMask.actions.manualDraw, true);
     assert.equal(noMask.actions.excludeView, true);
     assert.equal(noMask.actions.participationToggle, null);
-    assert.equal(noMask.actions.retryMaskOrPrompt, null);
+    assert.equal(noMask.actions.regeneratePrompt, false);
+    assert.equal(noMask.actions.refreshMask, false);
     assert.equal(noMask.actions.confirmAsIs, false);
 
     // A User Confirmed Stable Mask replaces the No-Mask choices with the

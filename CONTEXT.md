@@ -165,7 +165,7 @@ An opaque, digest-bound browser-held reference to Companion-local low-resolution
 _Avoid_: binary brush as mask input, cross-session logits cache
 
 **Generated View Image Instance Prompt**
-A deterministic Route B `ImageInstancePromptArtifact` synthesized from the exact TargetGeometryHint's retained visible points, accepted Local Key View plan, authoritative View RGB, View CameraBinding, and locked SAM 3 Image runtime identity. It contains one positive instance Box, 1–3 positive points, at most two local negative points, and `multimaskOutput: false`; `Prompt Support: limited` yields no inference request even when geometry quality is limited for a separately disclosed reason. Prompt regeneration is separate from an inference Retry.
+A deterministic Route B `ImageInstancePromptArtifact` synthesized from the exact TargetGeometryHint's retained visible points, accepted Local Key View plan, authoritative View RGB, View CameraBinding, and locked SAM 3 Image runtime identity. It contains one positive instance Box, 1–3 positive points, at most two local negative points, and `multimaskOutput: false`; `Prompt Support: limited` yields no inference request even when geometry quality is limited for a separately disclosed reason. Regenerate Prompt publishes only a new Prompt artifact; explicit Auto Mask Refresh/Retry separately consumes that current Prompt and authoritative RGB.
 _Avoid_: propagation/tracker state, Negative Box, text/brush/mask-constraint prompt, previous logits
 
 **AutoMaskProposalSet**
@@ -305,6 +305,10 @@ _Avoid_: rejected/background Gaussian
 A Gaussian outside the current Evidence Working Set or declared target scope. It is not forced into Selected, Rejected, or Uncertain product overlays unless policy requires it.
 
 ## Candidate and Dependency Vocabulary
+
+**Explicit Recompute State**
+The target-local dependency record for the simplified static-image pipeline: `targetGeometryDirty`, `localKeyViewPlanDirty`, `promptDirtyViewIds`, `maskInferenceDirtyViewIds`, `evidenceDirtyViewIds`, `liftDirty`, and `candidateStale`. An Anchor Stable change dirties geometry, planning, and only bound View Prompt/Mask work; a View Camera/RGB change dirties that View plus downstream Evidence/Lift; Stable Mask publication or Participation change dirties that View's Evidence and marks Lift/Candidate stale. Unpublished Editing Mask changes never dirty Evidence or Candidate, and no dirty transition starts inference, Evidence, or Re-Lift automatically.
+_Avoid_: propagation state, sequence state, reference state, automatic Re-Lift
 
 **Candidate Stale**  
 The Candidate no longer corresponds to current stable lifting inputs. It remains inspectable but cannot be applied until explicit Re-Lift succeeds.  

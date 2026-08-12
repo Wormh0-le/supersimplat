@@ -864,6 +864,13 @@ test('Accept and Confirm publish the Stable Mask with User Confirmed Participati
     assert.equal(view.maskStatus, 'ready');
     // Publication dirties Evidence by identity only; nothing lifts.
     assert.equal(view.evidenceStatus, 'not-requested');
+    assert.ok(
+        harness.controller.state.dirtyState.evidenceDirtyViewIds.includes(
+            viewId
+        )
+    );
+    assert.equal(harness.controller.state.dirtyState.liftDirty, true);
+    assert.equal(harness.controller.state.dirtyState.candidateStale, true);
 });
 
 test('Paint/Erase author a manual Mask without entering inference', async () => {

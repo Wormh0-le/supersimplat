@@ -736,7 +736,7 @@ test('a Generated AIView publishes RGB Ready while its Route B Mask is still Gen
     assert.ok(views[0].stableMaskId);
 });
 
-test('limited Route B Prompt support is recoverable without calling inference, and Prompt regeneration is distinct', async () => {
+test('Prompt regeneration is recoverable without calling inference, and Auto Mask refresh is explicit', async () => {
     const harness = createHarness();
     harness.promptSynthesizer.responseFactory = limitedPromptResponseFor;
     await startAnchor(harness);
@@ -768,10 +768,27 @@ test('limited Route B Prompt support is recoverable without calling inference, a
         harness.promptSynthesizer.calls[1].promptSynthesisAttemptId,
         firstPromptAttempt
     );
-    assert.equal(harness.maskProvider.calls.length, 1);
+    // Regenerating the 3D-guided Prompt publishes only a new Prompt artifact.
+    // It must never silently start a SAM attempt or replace Stable Mask state.
+    assert.equal(harness.maskProvider.calls.length, 0);
     view = harness.controller.state.views[0];
     assert.equal(view.promptStatus, 'ready');
-    assert.equal(view.maskStatus, 'generating');
+    assert.equal(view.maskStatus, 'unavailable');
+    assert.deepEqual(
+        harness.controller.state.dirtyState.evidenceDirtyViewIds,
+        []
+    );
+    assert.equal(harness.controller.state.dirtyState.liftDirty, false);
+    assert.equal(harness.controller.state.dirtyState.candidateStale, false);
+    assert.deepEqual(
+        harness.controller.state.dirtyState.maskInferenceDirtyViewIds,
+        ['key-view-0-0', 'key-view-0-1']
+    );
+
+    harness.controller.refreshViewMask('key-view-0-0');
+    await flush();
+    assert.equal(harness.maskProvider.calls.length, 1);
+    assert.equal(harness.controller.state.views[0].maskStatus, 'generating');
 });
 
 test('semantic unavailable publishes no Mask and Retry mints a fresh inference attempt for the same RGB and Prompt', async () => {
@@ -821,6 +838,131 @@ test('semantic unavailable publishes no Mask and Retry mints a fresh inference a
     );
     view = harness.controller.state.views[0];
     assert.equal(view.maskStatus, 'generating');
+});
+
+test('a failed Prompt or automatic Mask replacement preserves current Stable inputs', async () => {
+    const harness = createHarness();
+    await startAnchor(harness);
+    await confirmAnchor(harness);
+    await driveToActive(harness);
+    harness.viewRenderer.deferreds[0].resolve(
+        viewRenderResponseFor(harness.viewRenderer.calls[0])
+    );
+    await flush();
+    harness.reviewProvider.assessmentOverrides = {
+        status: 'good',
+        primaryReason: undefined,
+        reasons: [],
+        actionableReasons: []
+    };
+    harness.maskProvider.deferreds[0].resolve(
+        maskResponseFor(harness.maskProvider.calls[0])
+    );
+    await flush();
+    harness.viewRenderer.deferreds[1].reject(new Error('skip second view'));
+    await flush();
+
+    const before = harness.controller.state;
+    const stableMaskId = before.views[0].stableMaskId;
+    assert.equal(before.views[0].participation, 'included');
+    assert.equal(before.views[0].maskQuality, 'auto-good');
+
+    harness.promptSynthesizer.responseFactory = limitedPromptResponseFor;
+    harness.controller.regenerateViewPrompt('key-view-0-0');
+    await flush();
+    await flush();
+
+    let view = harness.controller.state.views[0];
+    assert.equal(view.promptStatus, 'limited');
+    assert.equal(view.maskStatus, 'unavailable');
+    assert.equal(view.stableMaskId, stableMaskId);
+    assert.equal(view.maskQuality, 'auto-good');
+    assert.equal(view.participation, 'included');
+    assert.deepEqual(
+        harness.controller.state.dirtyState.evidenceDirtyViewIds,
+        before.dirtyState.evidenceDirtyViewIds
+    );
+    assert.equal(
+        harness.controller.state.dirtyState.liftDirty,
+        before.dirtyState.liftDirty
+    );
+    assert.equal(
+        harness.controller.state.dirtyState.candidateStale,
+        before.dirtyState.candidateStale
+    );
+
+    harness.promptSynthesizer.responseFactory = undefined;
+    harness.controller.regenerateViewPrompt('key-view-0-0');
+    await flush();
+    await flush();
+
+    harness.controller.refreshViewMask('key-view-0-0');
+    await flush();
+    const unavailableRequest = harness.maskProvider.calls.at(-1);
+    assert.ok(unavailableRequest);
+    harness.maskProvider.deferreds.at(-1).resolve(
+        createImageInstanceMaskResult({
+            schemaVersion: 1,
+            requestIdentity: unavailableRequest.identity,
+            masks: [],
+            modelScores: [],
+            diagnostics: { outcome: 'unavailable' }
+        })
+    );
+    await flush();
+
+    view = harness.controller.state.views[0];
+    assert.equal(view.maskStatus, 'unavailable');
+    assert.equal(view.stableMaskId, stableMaskId);
+    assert.equal(view.maskQuality, 'auto-good');
+    assert.equal(view.participation, 'included');
+    assert.deepEqual(
+        harness.controller.state.dirtyState.evidenceDirtyViewIds,
+        before.dirtyState.evidenceDirtyViewIds
+    );
+    assert.equal(
+        harness.controller.state.dirtyState.liftDirty,
+        before.dirtyState.liftDirty
+    );
+    assert.equal(
+        harness.controller.state.dirtyState.candidateStale,
+        before.dirtyState.candidateStale
+    );
+
+    harness.controller.refreshViewMask('key-view-0-0');
+    await flush();
+    harness.reviewProvider.assessmentOverrides = {
+        status: 'failed',
+        primaryReason: undefined,
+        reasons: [],
+        actionableReasons: [],
+        diagnostics: undefined
+    };
+    const failedReviewRequest = harness.maskProvider.calls.at(-1);
+    assert.ok(failedReviewRequest);
+    harness.maskProvider.deferreds
+        .at(-1)
+        .resolve(maskResponseFor(failedReviewRequest));
+    await flush();
+
+    view = harness.controller.state.views[0];
+    assert.equal(view.maskStatus, 'failed');
+    assert.equal(view.stableMaskId, stableMaskId);
+    assert.equal(view.maskQuality, 'auto-good');
+    assert.equal(view.participation, 'included');
+    assert.equal(view.assessment.status, 'good');
+    assert.deepEqual(
+        harness.controller.state.dirtyState.evidenceDirtyViewIds,
+        before.dirtyState.evidenceDirtyViewIds
+    );
+    assert.equal(
+        harness.controller.state.dirtyState.liftDirty,
+        before.dirtyState.liftDirty
+    );
+    assert.equal(
+        harness.controller.state.dirtyState.candidateStale,
+        before.dirtyState.candidateStale
+    );
 });
 
 test('a runtime manifest change after Prompt synthesis requires Prompt regeneration before inference Retry', async () => {
@@ -909,6 +1051,15 @@ test('a successful automatic Mask atomically publishes an auto Stable Mask bound
     assert.deepEqual(views[0].assessment.reasons, ['severely-fragmented']);
     assert.equal(views[0].maskQuality, 'auto-review');
     assert.equal(views[0].participation, 'excluded');
+    assert.deepEqual(harness.controller.state.dirtyState, {
+        targetGeometryDirty: false,
+        localKeyViewPlanDirty: false,
+        promptDirtyViewIds: [],
+        maskInferenceDirtyViewIds: [],
+        evidenceDirtyViewIds: ['key-view-0-0', 'key-view-0-1'],
+        liftDirty: true,
+        candidateStale: true
+    });
 });
 
 test('Auto Good defaults Included while View source remains non-authoritative', async () => {
@@ -1339,6 +1490,7 @@ test('Generate More appends a bounded batch without dirtying completed Views', a
     await confirmAnchor(harness);
     await completeTwoViews(harness);
     const completedMaskId = harness.controller.state.views[0].stableMaskId;
+    const dirtyBeforeGenerateMore = harness.controller.state.dirtyState;
 
     harness.controller.generateMoreViews();
     await flush();
@@ -1374,6 +1526,7 @@ test('Generate More appends a bounded batch without dirtying completed Views', a
     assert.equal(state.views[2].viewId, 'key-view-1-0');
     assert.equal(state.views[3].viewId, 'key-view-1-1');
     assert.equal(state.keyViewPlans.length, 2);
+    assert.deepEqual(state.dirtyState, dirtyBeforeGenerateMore);
     assert.equal(
         state.keyViewPlans[1].planAttemptId,
         moreRequest.planAttemptId
@@ -1577,6 +1730,17 @@ test('Regenerate preserves identical View identities and disposes dropped planne
         preservedRecord.nextPromptPlanDigest,
         state.keyViewPlans[0].artifactDigest
     );
+    // A local-plan replacement dirties every View bound to that new plan,
+    // including an exact-identity View whose prior RGB/Mask remains
+    // inspectable until an explicit Prompt/Mask refresh.
+    assert.deepEqual(state.dirtyState.promptDirtyViewIds, [
+        'key-view-0-0',
+        'key-view-0-7'
+    ]);
+    assert.deepEqual(state.dirtyState.maskInferenceDirtyViewIds, [
+        'key-view-0-0',
+        'key-view-0-7'
+    ]);
     assert.equal(harness.viewRenderer.calls.length, 3);
     assert.equal(harness.viewRenderer.calls[2].viewId, 'key-view-0-7');
 

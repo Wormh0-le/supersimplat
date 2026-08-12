@@ -87,7 +87,8 @@ interface GeneratedCardElements {
     readonly status: Label;
     readonly detail: Label;
     readonly retryButton: Button;
-    readonly retryMaskButton: Button;
+    readonly regeneratePromptButton: Button;
+    readonly refreshMaskButton: Button;
     readonly confirmReviewButton: Button;
     readonly participationButton: Button;
     readonly inspectCameraButton: Button;
@@ -1091,8 +1092,12 @@ export class AISelectAnchorDock extends Container {
             class: 'ai-select-view-card-retry',
             hidden: true
         });
-        const retryMaskButton = new Button({
-            class: 'ai-select-view-card-retry-mask',
+        const regeneratePromptButton = new Button({
+            class: 'ai-select-view-card-regenerate-prompt',
+            hidden: true
+        });
+        const refreshMaskButton = new Button({
+            class: 'ai-select-view-card-refresh-mask',
             hidden: true
         });
         const confirmReviewButton = new Button({
@@ -1120,6 +1125,7 @@ export class AISelectAnchorDock extends Container {
             hidden: true
         });
         i18n.bindText(retryButton, 'ai-select.views.retry-render');
+        i18n.bindText(regeneratePromptButton, 'ai-select.views.retry-prompt');
         i18n.bindText(confirmReviewButton, 'ai-select.review.confirm-as-is');
         i18n.bindText(inspectCameraButton, 'ai-select.views.inspect-camera');
         i18n.bindText(autoMaskButton, 'ai-select.views.auto-mask');
@@ -1131,11 +1137,18 @@ export class AISelectAnchorDock extends Container {
                 onRetry();
             });
         }
-        retryMaskButton.on('click', (event: Event) => {
+        regeneratePromptButton.on('click', (event: Event) => {
             event.stopPropagation();
             const viewId = root.dom.dataset.viewId;
             if (viewId !== undefined) {
-                this.retryGeneratedViewMask(viewId);
+                this.regenerateGeneratedViewPrompt(viewId);
+            }
+        });
+        refreshMaskButton.on('click', (event: Event) => {
+            event.stopPropagation();
+            const viewId = root.dom.dataset.viewId;
+            if (viewId !== undefined) {
+                this.refreshGeneratedViewMask(viewId);
             }
         });
         confirmReviewButton.on('click', (event: Event) => {
@@ -1192,7 +1205,8 @@ export class AISelectAnchorDock extends Container {
         root.append(status);
         root.append(detail);
         root.append(retryButton);
-        root.append(retryMaskButton);
+        root.append(regeneratePromptButton);
+        root.append(refreshMaskButton);
         root.append(confirmReviewButton);
         root.append(participationButton);
         root.append(inspectCameraButton);
@@ -1210,7 +1224,8 @@ export class AISelectAnchorDock extends Container {
             status,
             detail,
             retryButton,
-            retryMaskButton,
+            regeneratePromptButton,
+            refreshMaskButton,
             confirmReviewButton,
             participationButton,
             inspectCameraButton,
@@ -1290,7 +1305,8 @@ export class AISelectAnchorDock extends Container {
         this.anchorCard.status.text = i18n.t(anchorStatusKey);
         this.anchorCard.detail.hidden = true;
         this.anchorCard.retryButton.hidden = true;
-        this.anchorCard.retryMaskButton.hidden = true;
+        this.anchorCard.regeneratePromptButton.hidden = true;
+        this.anchorCard.refreshMaskButton.hidden = true;
         this.anchorCard.confirmReviewButton.hidden = true;
         this.anchorCard.participationButton.hidden = true;
         this.anchorCard.inspectCameraButton.hidden = true;
@@ -1394,13 +1410,15 @@ export class AISelectAnchorDock extends Container {
         card.detail.hidden = detailLines.length === 0;
 
         card.retryButton.hidden = !presentation.actions.retryRender;
-        card.retryMaskButton.hidden =
-            presentation.actions.retryMaskOrPrompt === null;
-        if (presentation.actions.retryMaskOrPrompt !== null) {
-            card.retryMaskButton.text = i18n.t(
-                presentation.actions.retryMaskOrPrompt === 'prompt'
-                    ? 'ai-select.views.retry-prompt'
-                    : 'ai-select.views.retry-mask'
+        card.regeneratePromptButton.hidden =
+            !presentation.actions.regeneratePrompt;
+        card.refreshMaskButton.hidden = !presentation.actions.refreshMask;
+        if (presentation.actions.refreshMask) {
+            card.refreshMaskButton.text = i18n.t(
+                view.maskStatus === 'failed' ||
+                    view.maskStatus === 'unavailable'
+                    ? 'ai-select.views.retry-mask'
+                    : 'ai-select.views.refresh-mask'
             );
         }
         card.confirmReviewButton.hidden = !presentation.actions.confirmAsIs;
@@ -1498,19 +1516,17 @@ export class AISelectAnchorDock extends Container {
         }
     }
 
-    private retryGeneratedViewMask(viewId: string): void {
+    private regenerateGeneratedViewPrompt(viewId: string): void {
         try {
-            const view = this.generatedState.views.find(
-                (entry) => entry.viewId === viewId
-            );
-            if (
-                view?.promptStatus === 'failed' ||
-                view?.promptStatus === 'limited'
-            ) {
-                this.generatedViews.regenerateViewPrompt(viewId);
-            } else {
-                this.generatedViews.retryViewMask(viewId);
-            }
+            this.generatedViews.regenerateViewPrompt(viewId);
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    private refreshGeneratedViewMask(viewId: string): void {
+        try {
+            this.generatedViews.refreshViewMask(viewId);
         } catch (error) {
             console.error(error);
         }

@@ -623,6 +623,42 @@ test('Confirm Mask atomically publishes the Editing Mask as a new Stable revisio
     assert.equal(mask.state.editingMask.maskId, editing.maskId);
 });
 
+test('Anchor Stable publication starts only geometry and local-plan recompute', async () => {
+    const { mask } = await setup();
+    assert.deepEqual(mask.dirtyState.state, {
+        targetGeometryDirty: false,
+        localKeyViewPlanDirty: false,
+        promptDirtyViewIds: [],
+        maskInferenceDirtyViewIds: [],
+        evidenceDirtyViewIds: [],
+        liftDirty: false,
+        candidateStale: false
+    });
+
+    mask.applyBrushStroke({ xPx: 8, yPx: 8, radiusPx: 2, mode: 'add' });
+    // Editing remains unpublished, so it is not an Evidence/Lift input.
+    assert.deepEqual(mask.dirtyState.state, {
+        targetGeometryDirty: false,
+        localKeyViewPlanDirty: false,
+        promptDirtyViewIds: [],
+        maskInferenceDirtyViewIds: [],
+        evidenceDirtyViewIds: [],
+        liftDirty: false,
+        candidateStale: false
+    });
+
+    mask.confirmEditingMask();
+    assert.deepEqual(mask.dirtyState.state, {
+        targetGeometryDirty: true,
+        localKeyViewPlanDirty: true,
+        promptDirtyViewIds: [],
+        maskInferenceDirtyViewIds: [],
+        evidenceDirtyViewIds: [],
+        liftDirty: false,
+        candidateStale: false
+    });
+});
+
 test('Confirm Mask invalidates dependent Evidence only at publication', async () => {
     const { mask } = await setup();
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });

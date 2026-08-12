@@ -463,6 +463,7 @@
   "ai-select.views.filter.excluded": "除外",
   "ai-select.views.filter.needs-review": "要レビュー",
   "ai-select.views.retry-mask": "マスクを再試行",
+  "ai-select.views.refresh-mask": "自動マスクを更新",
   "ai-select.views.retry-prompt": "プロンプトを再生成",
   "ai-select.review.quality.none": "品質：Stable Mask なし",
   "ai-select.review.quality.auto-good": "品質：自動判定良好",

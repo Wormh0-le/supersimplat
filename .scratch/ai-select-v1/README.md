@@ -1,7 +1,15 @@
-# Moved: AI Select Ticket Graph
+# AI Select scratch compatibility root
 
-The authoritative implementation graph now lives at:
+Authoritative durable AI Select planning now lives under:
 
-`docs/ai-select/TICKET-GRAPH.md`
+`docs/ai-select/`
 
-This compatibility pointer remains temporarily for historical scratch-path references.
+Active Ticket contracts:
+
+`docs/ai-select/tickets/`
+
+Executable/disposable investigation tooling:
+
+`.scratch/experiments/ai-select-v1/`
+
+Files retained under this historical `.scratch/ai-select-v1/` root are compatibility pointers only. Do not add new normative planning content here.

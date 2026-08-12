@@ -1,28 +1,46 @@
 # AI Select Documentation Migration Status
 
+Status: **substantive migration complete; historical scratch paths are compatibility-only**
+
 ## Completed
 
-- Added stable documentation root: `docs/ai-select/`.
-- Added Ticket 14 decomposition.
-- Restored the complete 31-parent-ticket Final Spec v1.3 mapping after an accidental simplified replacement.
-- Promoted the current ticket mapping and implementation graph to `docs/ai-select/`.
-- Promoted durable traceability, walkthrough and audit records to `docs/ai-select/`.
-- Promoted the 04C protocol contract to `docs/ai-select/contracts/`.
-- Split benchmark material: durable result records under `docs/ai-select/benchmarks/`, executable harnesses under `.scratch/experiments/ai-select-v1/benchmarks/`.
-- Split browser validation material: durable walkthrough evidence under `docs/ai-select/walkthroughs/`, executable browser/GPU harnesses under `.scratch/experiments/ai-select-v1/browser-validation/`.
-- Moved 04C cross-check/repro tooling to `.scratch/experiments/ai-select-v1/04c/`.
-- Historical scratch locations for promoted durable documents retain small compatibility pointers where useful.
+- Stable AI Select planning root established at `docs/ai-select/`.
+- Full 31-parent-ticket Final Spec v1.3 mapping restored and promoted.
+- Ticket graph promoted and synchronized to v2.18.
+- Parent Ticket 14 decomposed into executable 14A–14D stage contracts without changing normative product scope.
+- Active Ticket control plane promoted to `docs/ai-select/tickets/`.
+- Planning manifest promoted to `docs/ai-select/manifest.json` and updated with parent/stage frontier fields.
+- Durable traceability, walkthrough, audit, protocol-contract, benchmark-result and browser-walkthrough evidence promoted to `docs/ai-select/`.
+- Executable cross-check/repro, benchmark and browser/GPU harnesses moved to `.scratch/experiments/ai-select-v1/`.
+- `AGENTS.md` source routing updated to stable docs/Ticket locations.
+- Historical `.scratch/ai-select-v1` planning paths reduced to compatibility pointers/readmes rather than duplicate normative content.
 
-## Pending migration
+## Directory ownership
 
-The remaining `.scratch/ai-select-v1` control-plane content is:
+```text
+docs/ai-select/
+  durable planning, Tickets, mappings, manifest, traceability and acceptance evidence
 
-- `issues/` — active Ticket contracts;
-- `manifest.json` — ticket/planning manifest;
-- compatibility pointers for historical paths.
+.scratch/experiments/ai-select-v1/
+  executable/disposable experiments, repros and validation harnesses
 
-`issues/` and `manifest.json` are intentionally handled as the final migration stage because repository guidance currently routes agents through `.scratch/ai-select-v1/issues/` and may parse the manifest directly.
+.scratch/ai-select-v1/
+  compatibility redirects only; no new normative content
+```
 
-## Rule
+## Remaining compatibility cleanup
 
-`docs/ai-select/` owns durable planning, traceability and release/acceptance knowledge. `.scratch/experiments/ai-select-v1/` owns executable/disposable investigation artifacts. Compatibility stubs may remain at historical scratch paths until inbound references are migrated.
+Old scratch compatibility pointers may be removed in a future cleanup only after any external tooling or local agent configuration that still hardcodes those paths has migrated. They are not authoritative.
+
+## Current execution frontier
+
+```text
+next_implementation_ticket = 14
+next_implementation_subticket = 14A
+
+14A Evidence Contract & Working Set
+→ 14B Reference Per-View P/N/V Evidence
+→ 14C Multi-view Aggregation & Classification
+→ 14D Atomic Candidate Publication & Reference Validation
+→ 13 Lift Readiness
+```

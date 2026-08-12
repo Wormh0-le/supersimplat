@@ -1,8 +1,8 @@
 # Current Final Spec v1.3 → Ticket Mapping — v2.18
 
-Status: **current normative ticket mapping — Ticket 12 implemented; Ticket 14 decomposed into 14A–14D and ready for implementation**
+Status: **current normative ticket mapping — Ticket 12 implemented; parent Ticket 14 decomposed into 14A–14D; 14A ready**
 
-This file maps every active AI Select Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
+This file maps every active AI Select parent Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
 Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical. ADR 0016 supersedes conflicting route/backend/planner details in ADR 0014 and DG-24 through DG-26. ADR 0017 is current where TargetGeometryHint Geometry Quality and Prompt Support semantics are involved.
 
@@ -46,10 +46,10 @@ All 31 parent Ticket files carry a direct current mapping to Final Spec v1.3. Ti
 
 | Stage | Parent mapping | Responsibility |
 | --- | --- | --- |
-| 14A | Ticket 14 / §§20–22, 24–25 | Evidence aggregation and traceable input set |
-| 14B | Ticket 14 / §§20–22, 24–25 | Gaussian projection/support scoring |
-| 14C | Ticket 14 / §§20–22, 24–25 | Candidate artifact publication |
-| 14D | Ticket 14 / §§20–22, 24–25 | Candidate review surface and rejection boundary |
+| 14A | Ticket 14 / §§20–22, 24–25 | Evidence contract, admission, identities and Working Sets |
+| 14B | Ticket 14 / §§20–22, 24–25 | Trusted reference per-view P/N/V computation |
+| 14C | Ticket 14 / §§20–22, 24–25 | Multi-view aggregation and four-state classification |
+| 14D | Ticket 14 / §§20–22, 24–25 | Atomic Candidate publication and parent reference quality gate |
 
 Dependency:
 
@@ -57,7 +57,7 @@ Dependency:
 14A → 14B → 14C → 14D → 13
 ```
 
-The detailed implementation-stage contract is `docs/ai-select/TICKET-14-SPLIT.md`.
+Stage contracts live under `docs/ai-select/tickets/14A-*` through `14D-*`. `docs/ai-select/TICKET-14-SPLIT.md` is the decomposition overview.
 
 ## Current implementation frontier
 
@@ -68,7 +68,7 @@ implemented prerequisites:
 - 09, 11, 12
 
 ready now:
-- 14A
+- 14A — Evidence Contract & Working Set
 
 then:
 - 14B → 14C → 14D
@@ -107,7 +107,8 @@ Implementation agents MUST NOT reintroduce current requirements for:
 - Ticket 10 as a core release blocker;
 - Ticket 06 as a current production fallback;
 - `VisibleTargetSupportArtifact` / `TargetBootstrapArtifact` as current v1 geometry contracts;
-- ProposalSet/Decision/fallback identities as current Generated-View ownership or Evidence inputs.
+- ProposalSet/Decision/fallback identities as current Generated-View ownership or Evidence inputs;
+- Candidate provenance browser / Gaussian Evidence inspector as part of Ticket 14D.
 
 ## Audit rule
 
@@ -115,10 +116,11 @@ The mapping passes only when:
 
 - every parent Ticket resolves here;
 - every Ticket-local current mapping block points directly to Final Spec v1.3;
+- Ticket 14A–14D point to parent Ticket 14 and Final Spec v1.3 rather than creating a separate authority;
 - no Ticket-local current mapping block names Final Spec v1.1, an Amendment, or Final Spec v1.2 as authority;
 - older spec names appear only under explicit historical/superseded/migration labels;
 - implemented prerequisites through 12 are not reported as current ready work;
-- parent Ticket 14 is recognized as the sole current ready implementation frontier;
+- parent Ticket 14 is recognized as the sole current parent implementation frontier;
 - 14A is recognized as the first implementation stage;
 - `next_implementation_ticket = 14` remains the compatibility field;
 - no active closure criterion relies on superseded v1.2 architecture;

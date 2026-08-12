@@ -1,88 +1,78 @@
-# Ticket 14 Split Plan — Reference P/N/V Evidence → Candidate
+# Ticket 14 Decomposition — Reference P/N/V Evidence → Candidate / Uncertain
 
-Status: planning decomposition
+Status: **current execution decomposition for parent Ticket 14**
 
-Parent ticket:
-- Ticket 14 — Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain
+Parent Ticket: `14-gaussian-lifting-candidate.md`
 
-## 14A — Evidence Aggregation Layer
+Normative authority remains:
 
-Goal:
-- Normalize multi-view evidence into a traceable evidence set.
+1. `docs/specs/ai-select-final-spec-v1.3.md`
+2. `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`
+3. parent Ticket 14 acceptance criteria
 
-Input:
-- View artifacts
-- RGB artifacts
-- Mask artifacts
-- Camera metadata
-- TargetGeometryHint
+The stages below are implementation slices, not new product requirements.
 
-Output:
-- Unified Evidence Set
+## 14A — Evidence Contract & Working Set
 
-Acceptance:
-- Every evidence item retains source View identity.
-- Evidence lifecycle is compatible with existing Ticket 12 dirty/stale rules.
+Owns the formal admissible inputs, Evidence Policy identities, Core Target / Context / Evidence Working Set seams, Render Working Set preservation, and the versioned per-view `GaussianEvidenceArtifact` contract.
 
-## 14B — Gaussian Projection Scoring
+Must establish that only Included Stable Views can contribute formal Evidence and that geometry/Prompt/SAM/review metadata is provenance or Working-Set context, never Gaussian ownership Evidence.
 
-Goal:
-- Score Gaussian support from reference evidence.
+## 14B — Reference Per-View P/N/V Evidence
 
-Input:
-- Unified Evidence Set
-- Gaussian set
-
-Output:
-- Per-Gaussian support score
-
-Acceptance:
-- Projection results are reproducible from the same evidence snapshot.
-- Scoring does not introduce removed proposal/ranking abstractions.
-
-## 14C — Candidate Artifact
-
-Goal:
-- Produce the first stable AI Select candidate object.
-
-Output:
+Owns the trusted reference computation for per-view P/N/V (plus optional boundary diagnostics), using declared alpha-compositing contribution semantics:
 
 ```text
-Candidate
-- gaussianIds
-- confidence
-- evidenceRefs
+w(v,p,g) = alpha(v,p,g) × incomingTransmittance(v,p,g)
 ```
 
-Acceptance:
-- Candidate ownership and lifecycle are explicit.
-- Ticket 13 Lift Readiness can consume Candidate output.
+It validates reference backends and preserves raw per-view P/N/V without classifying the final Candidate.
 
-## 14D — Candidate Review Surface
+## 14C — Multi-view Aggregation & Classification
 
-Goal:
-- Allow inspection and confirmation of generated candidates.
+Owns versioned multi-view aggregation over valid per-view Evidence and produces the four distinct internal classes:
 
-Acceptance:
-- User can inspect candidate evidence.
-- Candidate rejection does not corrupt source evidence.
+```text
+Selected
+Rejected
+Uncertain
+Out of Scope
+```
+
+Candidate contains Selected only. Unobserved or materially mixed support remains Uncertain rather than default Rejected.
+
+## 14D — Atomic Candidate Publication & Reference Validation
+
+Owns atomic publication, stale/current binding, preservation of the previous inspectable Candidate on failed replacement, minimal Candidate/Uncertain overlay integration, and the parent Ticket 14 reference quality gate.
+
+This stage does **not** add a Candidate provenance browser, Gaussian-level Evidence inspector, or direct Candidate editing surface.
 
 ## Dependency
 
 ```text
-14A
- |
- v
-14B
- |
- v
-14C
- |
- v
-14D
- |
- v
-13 Lift Readiness
+11 + 12
+   |
+   v
+  14A
+   |
+   v
+  14B
+   |
+   v
+  14C
+   |
+   v
+  14D
+   |
+   v
+  13 Lift Readiness
 ```
 
-Ticket 14 remains the current implementation frontier. This split only reduces implementation scope; it does not change the Final Spec authority chain.
+Ticket 10 remains optional and nonblocking.
+
+Compatibility fields remain:
+
+```text
+next_implementation_ticket = 14
+next_implementation_subticket = 14A
+```

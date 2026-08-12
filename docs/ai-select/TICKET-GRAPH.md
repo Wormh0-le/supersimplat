@@ -36,7 +36,7 @@ All 31 parent Ticket files contain a current mapping to Final Spec v1.3. Ticket 
 - Ticket 10 is an optional Evidence-conflict enhancement and does not block core release.
 - Generic backend registry, Route B/C/D, sequence extensions and automatic Route-A fallback are removed from v1.
 - Tickets 04C, 07, 02C, 07A, 07B, 08, 08A, 08B, 08C, 09, 11 and 12 are implemented prerequisites.
-- Parent Ticket 14 is decomposed into 14A Evidence Aggregation, 14B Gaussian Projection Scoring, 14C Candidate Artifact and 14D Candidate Review Surface.
+- Parent Ticket 14 is decomposed into 14A Evidence Contract & Working Set, 14B Reference Per-View P/N/V Evidence, 14C Multi-view Aggregation & Classification, and 14D Atomic Candidate Publication & Reference Validation.
 
 ## Dependency graph
 
@@ -87,16 +87,16 @@ Paint/Erase palette                + local Key Views
                              11        12
                               └────┬────┘
                                    ▼
-                          14A Evidence aggregation
+                       14A Evidence contract + Working Set
                                    │
                                    ▼
-                          14B Gaussian scoring
+                       14B Reference per-View P/N/V
                                    │
                                    ▼
-                          14C Candidate artifact
+                       14C Aggregation + classification
                                    │
                                    ▼
-                          14D Candidate review
+                       14D Atomic Candidate publication
                               ┌────┴────┐
                               ▼         ▼
                        10 optional      13 Lift Readiness
@@ -123,7 +123,7 @@ current parent frontier:
 - 14 — Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain
 
 current implementation stage:
-- 14A — Evidence Aggregation Layer
+- 14A — Evidence Contract & Working Set
 
 then:
 - 14B → 14C → 14D → 13
@@ -163,6 +163,7 @@ Ticket 14 remains the sole current parent implementation frontier. Ticket 13 req
 - no automatic route fallback;
 - no visibility-readiness claims outside Ticket 13;
 - no ownership before Included Stable Masks → P/N/V;
+- no Candidate provenance browser or Gaussian Evidence inspector in Ticket 14D;
 - Complete Contributor remains reference/debug only.
 
-See `docs/ai-select/TICKET-14-SPLIT.md` for the stage-level Ticket 14 contract.
+See `docs/ai-select/TICKET-14-SPLIT.md` and the `docs/ai-select/tickets/14A-*` through `14D-*` stage contracts.

@@ -1,4 +1,4 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.17
+# Eight-Pass Bidirectional Traceability Audit — v2.18
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
@@ -68,50 +68,79 @@ from tracker state and P/N/V ownership.
 - Repository TypeScript and Companion tests, lint, locale lint, and the
   production build passed. This editor/domain/UI slice did not exercise the
   locked GPU renderer path.
-- Ticket 14 is the sole current ready implementation frontier; Ticket 13
-  remains blocked until Ticket 14 closes.
-- Mapping, manifest, graph README, traceability, Ticket 12 status, and the
-  Final Spec planning header are synchronized to that tracker state.
+- Ticket 14 became the sole current ready parent implementation frontier;
+  Ticket 13 remains blocked until Ticket 14 closes.
+
+## v2.18 Ticket 14 decomposition / planning-control migration
+
+- Parent Ticket 14 remains the sole current parent implementation frontier.
+- Parent Ticket 14 is partitioned into four execution stages without changing
+  its Final Spec v1.3 requirement ownership:
+  - 14A Evidence Contract & Working Set;
+  - 14B Reference Per-View P/N/V Evidence;
+  - 14C Multi-view Aggregation & Classification;
+  - 14D Atomic Candidate Publication & Reference Validation.
+- 14A is the sole current execution stage. `next_implementation_ticket = 14`
+  remains the parent compatibility field and
+  `next_implementation_subticket = 14A` records the stage frontier.
+- The former 14D Candidate-review wording was corrected: 14D does not add a
+  Candidate provenance/source browser, Gaussian Evidence inspector or direct
+  Candidate editing system.
+- Durable AI Select planning, active Tickets, manifest, mapping, traceability,
+  audits and acceptance records now live under `docs/ai-select/`.
+- Executable/disposable investigation tooling lives under
+  `.scratch/experiments/ai-select-v1/`.
+- Historical `.scratch/ai-select-v1/` planning paths are compatibility-only.
+- Root `AGENTS.md`, Final Spec planning header, mapping, graph, manifest and
+  traceability are synchronized to v2.18 and the 14A execution frontier.
+- This migration changes planning structure and execution granularity only;
+  it does not change Final Spec v1.3 product semantics, ADR authority,
+  renderer/runtime locks, Evidence policy, or calibration.
 
 ## Pass 1 — Ticket graph and current frontier
 
-- Ticket count: 31 total.
+- Parent Ticket count: 31 total.
+- Ticket 14 execution-stage count: 4.
 - Missing blocker references: 0.
-- Ticket cycle: false.
-- Topological order length: 31/31.
+- Parent Ticket cycle: false.
+- Parent topological order length: 31/31.
 - Implemented prerequisite chain is closed through 12.
-- Current ready implementation frontier: `[14]`.
-- Next implementation Ticket / current critical gate: `14`.
-- Ticket 13 requires Ticket 14 to close.
+- Current parent implementation frontier: `[14]`.
+- Current execution-stage frontier: `[14A]`.
+- Next implementation Ticket / current parent critical gate: `14`.
+- Next implementation subticket: `14A`.
+- Ticket 13 requires parent Ticket 14 to close after 14D.
 - Ticket 10 is optional and does not block Ticket 13 or Ticket 21.
 
 Result: **PASS**
 
-One valid order:
+One valid execution order:
 
 ```text
 01 → 02 → 03 → 04 → 05
 → 04A → 04B → 06 → 07 → 04C
 → 02C → 07A → 07B → 08 → 08A → 08B → 08C / 09
-→ 11 → 12 → 14 → 13 → 15 → 16 → 17 → 18
+→ 11 → 12 → 14A → 14B → 14C → 14D → 13 → 15 → 16 → 17 → 18
 → 19 → 20 → 21 → 22 → 10
 ```
 
-Ticket 10 may execute at any point after 14 + 09 + 07.
+Ticket 10 may execute at any point after parent Ticket 14 + 09 + 07.
 
-## Pass 2 — Specification authority and Ticket-local migration
+## Pass 2 — specification authority and Ticket-local migration
 
 Checks:
 
 - Final Spec v1.3 exists and is indexed as current.
 - Final Spec v1.2 and Final Spec v1.1 + Amendments are historical.
-- root `AGENTS.md` identifies Final Spec v1.3 and the current mapping/ADR chain as the source of truth;
+- root `AGENTS.md` identifies Final Spec v1.3 and `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md` as the source-of-truth chain;
+- root `AGENTS.md` routes active Ticket work to `docs/ai-select/tickets/`;
 - `CONTEXT.md` identifies Final Spec v1.3 as the current domain vocabulary;
-- ADR 0016 is accepted and indexed.
-- ADR 0017 is accepted for Geometry Quality / Prompt Support semantics.
-- ADR 0016 records ArtisanGS as non-normative design provenance and explicitly states that Final Spec v1.3 remains the requirement authority.
-- CURRENT-TICKET-SPEC-MAPPING maps all 31 Tickets to v1.3.
-- every one of the 31 Ticket files contains a direct current mapping to Final Spec v1.3;
+- ADR 0016 is accepted and indexed;
+- ADR 0017 is accepted for Geometry Quality / Prompt Support semantics;
+- ADR 0016 records ArtisanGS as non-normative design provenance and explicitly states that Final Spec v1.3 remains the requirement authority;
+- CURRENT-TICKET-SPEC-MAPPING maps all 31 parent Tickets to v1.3;
+- every one of the 31 parent Ticket files contains a direct current mapping to Final Spec v1.3;
+- 14A–14D explicitly inherit parent Ticket 14 + Final Spec v1.3 authority;
 - zero Ticket-local current mapping/status blocks name Final Spec v1.1, an Amendment, or Final Spec v1.2 as current authority;
 - older spec names appear only inside explicitly historical-provenance, historical-implementation, superseded-surface or migration-input sections;
 - ADR 0014 / DG-24–26 are historical where conflicting;
@@ -189,13 +218,14 @@ Checks:
 - Ticket 10 owns optional Evidence-conflict diagnostics only;
 - Ticket 10 output is not required for Ticket 13 or core release;
 - Participation defaults remain independent from View role;
-- only Included Stable Masks contribute to P/N/V.
+- only Included Stable Masks contribute to P/N/V;
+- 14D owns only atomic publication/reference validation and does not absorb Ticket 13 readiness or Ticket 10 diagnostics.
 
 Result: **PASS**
 
-## Pass 7 — Legacy migration
+## Pass 7 — Legacy and planning migration
 
-Current migration targets:
+Current product migration targets:
 
 ```text
 SAM 3.1 Multiplex static shim
@@ -215,7 +245,15 @@ Ticket-local Final Spec v1.1/v1.2 current mapping text
 VisibleTargetSupport/TargetBootstrap current Evidence-seed wording
 ```
 
-Every target is owned by 04C, 06, 08B, 08C, 12, 14, 20, 22 or 21. User Confirmed Stable Masks are preserved.
+Every product target is owned by 04C, 06, 08B, 08C, 12, 14, 20, 22 or 21. User Confirmed Stable Masks are preserved.
+
+Planning/document ownership now follows:
+
+```text
+docs/ai-select/                       durable planning and acceptance knowledge
+.scratch/experiments/ai-select-v1/   executable/disposable investigation tooling
+.scratch/ai-select-v1/               compatibility redirects only
+```
 
 Result: **PASS**
 
@@ -223,15 +261,17 @@ Result: **PASS**
 
 - Requirements: 56.
 - Unmapped requirements: 0.
-- Orphan active Tickets: 0.
-- Ticket-local direct v1.3 mappings: 31/31.
+- Orphan active parent Tickets: 0.
+- Parent Ticket-local direct v1.3 mappings: 31/31.
+- Ticket 14 execution-stage mappings: 4/4.
 - Ticket-local legacy current mappings: 0.
 - Typical walkthroughs: 16.
 - Error walkthroughs: 16.
 - Invalid ADR refs: 0.
 - Invalid current mapping refs: 0.
 - Critical phrase failures: 0.
-- Current frontier mismatch: 0.
+- Parent frontier mismatch: 0.
+- Stage frontier mismatch: 0.
 
 Result: **PASS**
 
@@ -241,7 +281,9 @@ Active planning MUST NOT require:
 
 - Final Spec v1.1, an Amendment, or Final Spec v1.2 as a current closure source;
 - implemented Tickets 04C, 07, 08C or 09 as current ready work;
-- a `next_implementation_ticket` other than 14 while Ticket 14 remains current;
+- a `next_implementation_ticket` other than 14 while parent Ticket 14 remains current;
+- a `next_implementation_subticket` other than 14A while 14A is current;
+- Candidate provenance/source inspection, Gaussian Evidence inspection or direct Candidate editing as a 14D requirement;
 - ArtisanGS dense turnaround views, Cutie tracking, tracker reference frames or one-channel Gaussian Mask-feature optimization as current v1 requirements;
 - a current video-tracker/sequence interface merely because ArtisanGS is cited as inspiration;
 - static Multiplex for Anchor/Key Views;
@@ -265,12 +307,12 @@ Current active planning contains no such requirement.
 ## Final audit result
 
 ```text
-Ticket graph / current frontier               PASS
+Ticket graph / parent + stage frontier       PASS
 Specification authority / all-ticket mapping PASS
 SAM model / Prompt / RGB / refinement         PASS
 Geometry / local multi-view / provenance      PASS
 Per-View Mask architecture / GPU E2E          PASS
 Mask Review / Lift Readiness / optional P1    PASS
-Legacy migration                              PASS
+Legacy + planning migration                   PASS
 Traceability / walkthroughs                   PASS
 ```

@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.22
+# AI Select v1 — Implementation Ticket Graph v2.23
 
-Status: **active implementation graph — Final Spec v1.3 synchronized; parent Ticket 14 is implemented and Ticket 13 is current**
+Status: **active implementation graph — Final Spec v1.3 synchronized; Ticket 13 is implemented and Ticket 15 is current**
 
 Branch: `ai-select-v1`
 
@@ -37,6 +37,7 @@ All 31 parent Ticket files contain a current mapping to Final Spec v1.3. Ticket 
 - Generic backend registry, Route B/C/D, sequence extensions and automatic Route-A fallback are removed from v1.
 - Tickets 04C, 07, 02C, 07A, 07B, 08, 08A, 08B, 08C, 09, 11 and 12 are implemented prerequisites.
 - Parent Ticket 14 is complete through 14A Evidence Contract & Working Set, 14B Reference Per-View P/N/V Evidence, 14C Multi-view Aggregation & Classification, and 14D Atomic Candidate Publication & Reference Validation.
+- Ticket 13 is complete as the versioned reference/calibration Visible Evidence Coverage, View Diversity and Lift Readiness path.
 
 ## Dependency graph
 
@@ -122,9 +123,10 @@ implemented prerequisites:
 - 14B — Reference Per-View P/N/V Evidence
 - 14C — Multi-view Aggregation & Classification
 - 14D — Atomic Candidate Publication & Reference Validation
+- 13 — Visible Evidence Coverage + View Diversity + Lift Readiness
 
 current parent frontier:
-- 13 — Visible Evidence Coverage + View Diversity + Lift Readiness
+- 15 — Pre-apply Candidate correction + explicit Evidence-aware Re-Lift
 
 current implementation stage:
 - no active Ticket 14 substage
@@ -133,11 +135,11 @@ current implementation stage:
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 13
+next_implementation_ticket = 15
 next_implementation_subticket = null
 ```
 
-Ticket 13 is the sole current parent implementation frontier. Its parent Ticket 14 plus Tickets 11, 12 and 08 prerequisites are implemented. Ticket 10 remains optional and off the core release path.
+Ticket 15 is the sole current parent implementation frontier. Ticket 13 and its parent Ticket 14 prerequisites are implemented. Ticket 10 remains optional and off the core release path.
 
 ## One valid topological order
 

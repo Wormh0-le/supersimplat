@@ -1,5 +1,5 @@
 {
-  "version": "v2.22",
+  "version": "v2.23",
   "feature": "ai-select-v1",
   "spec_version": "ai-select-final-spec-v1.3",
   "ticket_spec_mapping": "CURRENT-TICKET-SPEC-MAPPING.md",
@@ -75,7 +75,7 @@
       "future_sequence_tracker_requires_new_measured_adr": true
     }
   },
-  "status": "active-v2.22-final-spec-v1.3-ticket-13",
+  "status": "active-v2.23-final-spec-v1.3-ticket-15",
   "branch": "ai-select-v1",
   "baseline": "2b5ae623995963730bbeb9c06329b95e7726f4a7",
   "ticket_count": 31,
@@ -91,11 +91,11 @@
     "08B"
   ],
   "structural_initial_frontier": ["01"],
-  "current_ready_frontier": ["13"],
+  "current_ready_frontier": ["15"],
   "current_ready_subfrontier": [],
-  "next_implementation_ticket": "13",
+  "next_implementation_ticket": "15",
   "next_implementation_subticket": null,
-  "next_critical_gate": "13",
+  "next_critical_gate": "15",
   "ticket_14_stages": ["14A", "14B", "14C", "14D"],
   "optional_nonblocking_tickets": ["10"],
   "core_release_path_excludes": ["10"],
@@ -133,7 +133,7 @@
     "10"
   ],
   "parallel_after_ticket_05": ["04A", "06"],
-  "parallel_current_frontier": ["13"],
+  "parallel_current_frontier": ["15"],
   "parallel_after_ticket_04C_and_07": ["02C", "07A"],
   "parallel_after_ticket_07A": ["07B", "08"],
   "parallel_after_ticket_08B": ["08C", "09"],
@@ -180,6 +180,9 @@
     "automatic_route_a_fallback": false,
     "propagation_uncertain_is_current_mask_reason": false,
     "weak_gaussian_support_owner": "Ticket 13 Lift Readiness",
+    "ticket_13_reference_readiness_implemented": true,
+    "lift_readiness_policy": "lift-readiness/reference-v1",
+    "lift_readiness_production_same_decision_gpu_validated": false,
     "ticket_10_is_release_blocker": false,
     "ticket_06_is_current_fallback": false,
     "browser_selects_active_model_manifest": false,
@@ -223,7 +226,7 @@
     "ArtisanGS provenance does not reserve or implement a current video-tracker interface",
     "04C, 07, 02C, 07A, 07B, 08, 08A, 08B and 08C are implemented prerequisites",
     "09, 11 and 12 are implemented prerequisites",
-    "parent Ticket 14 and stages 14A through 14D are implemented; Ticket 13 is the sole current parent implementation frontier",
+    "parent Ticket 14, stages 14A through 14D and Ticket 13 are implemented; Ticket 15 is the sole current parent implementation frontier",
     "08B and 08C locked-GPU browser E2E completed 2026-08-07 with no blocking issue reported",
     "provider requests include resolvable authoritative RGB",
     "actual previous logits remain Companion-local behind opaque same-Instance refs",

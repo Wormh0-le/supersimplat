@@ -272,15 +272,15 @@ The complete per-pixel Contributor IDs/weights path retained only for diagnostic
 _Avoid_: production View readiness requirement
 
 **Observation Coverage**  
-The measured extent of relevant Core Target Gaussian evidence actually observed through valid Visible Mass from Included Stable Views. It is not raw View count, frustum inclusion, or whole-scene Gaussian count.  
+The measured extent of relevant Core Target Gaussian evidence actually observed through valid Visible Mass from Included Stable Views. The current reference policy uses each Core Target Gaussian's maximum normalized effective Visible Mass across exact Included Evidence Views, then averages over the Core Target; duplicating a View therefore cannot manufacture coverage. Low-cost support diagnostics may report formal Evidence pending but never a numeric Observation Coverage. It is not raw View count, frustum inclusion, or whole-scene Gaussian count.  
 _Avoid_: cameras generated, whole-scene coverage
 
 **View Diversity**  
-A separate measure of useful directional/viewpoint diversity. More Views do not automatically imply higher diversity.  
+A separate measure of useful directional/viewpoint diversity. The current reference policy uses maximum angular separation between V-backed useful OpenCV camera-forward directions. More or duplicate Views do not automatically imply higher diversity.  
 _Avoid_: View count
 
 **Lift Readiness**  
-The derived state Not Ready, Limited, or Ready based on usable observation, diversity, and required identities/artifacts rather than a universal fixed View count.  
+The versioned, target-local derived state Not Ready, Limited, or Ready based on exact Included Evidence, Observation Coverage, useful directional diversity, generation state, and required identities/artifacts rather than a universal fixed View count. `lift-readiness/reference-v1` is the current reference/calibration policy; its thresholds do not claim production calibration until Ticket 21 closes. Stable input changes keep the last result inspectable but stale.  
 _Avoid_: fixed N-view gate
 
 **Adaptive View Planner**  

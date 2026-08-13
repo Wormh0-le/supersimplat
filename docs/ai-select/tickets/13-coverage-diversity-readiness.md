@@ -1,6 +1,7 @@
 # 13 — Visible Evidence Coverage + View Diversity + Lift Readiness
 
-Status: ready-for-agent — parent Ticket 14 and other prerequisites implemented
+Status: implemented — reference/calibration readiness path; production
+same-decision Evidence remains Ticket 20
 
 Blocked by: 14, 11, 12, 08
 
@@ -48,17 +49,17 @@ Not Ready / Limited / Ready
 
 ## Acceptance criteria
 
-- [ ] `weak-gaussian-support` is emitted only by Lift Readiness or related diagnostics.
-- [ ] MaskReviewPolicy and Ticket 10 do not emit weak/low-support readiness claims.
-- [ ] Observation Coverage uses valid visible mass/evidence.
-- [ ] View Diversity is separate from View count.
-- [ ] readiness is Not Ready / Limited / Ready from current exact Included inputs.
-- [ ] missing support fails conservatively without manufacturing coverage.
-- [ ] unobserved target regions remain Uncertain.
-- [ ] Stable Mask/Participation changes refresh readiness and dirty Lift correctly.
-- [ ] Generate More may respond to coverage/direction gaps without erasing current readiness.
-- [ ] base readiness works without Ticket 10 output.
-- [ ] readiness never mutates Stable Masks, Native Selection or Candidate.
+- [x] `weak-gaussian-support` is emitted only by Lift Readiness or related diagnostics.
+- [x] MaskReviewPolicy and Ticket 10 do not emit weak/low-support readiness claims.
+- [x] Observation Coverage uses valid visible mass/evidence.
+- [x] View Diversity is separate from View count.
+- [x] readiness is Not Ready / Limited / Ready from current exact Included inputs.
+- [x] missing support fails conservatively without manufacturing coverage.
+- [x] unobserved target regions remain Uncertain.
+- [x] Stable Mask/Participation changes refresh readiness and dirty Lift correctly.
+- [x] Generate More may respond to coverage/direction gaps without erasing current readiness.
+- [x] base readiness works without Ticket 10 output.
+- [x] readiness never mutates Stable Masks, Native Selection or Candidate.
 
 ## Validation
 
@@ -76,3 +77,39 @@ Not Ready / Limited / Ready
 - No per-View Mask quality decision.
 - No production Direct Evidence kernel.
 - No Candidate application.
+
+## Implementation evidence
+
+- `selection-service-companion/src/selection_service_companion/lift_readiness.py`
+  owns the versioned `lift-readiness/reference-v1` policy and immutable
+  evaluator. Formal coverage averages, over the current Core Target, the
+  maximum normalized per-View effective Visible Mass. This prevents duplicate
+  Views from manufacturing coverage. Formal diversity is the maximum angular
+  separation between useful Included Evidence camera directions, independent
+  from raw View count.
+- A low-cost Anchor support diagnostic can produce only an early
+  Limited/Not Ready result with `pending-formal-evidence`; it cannot publish a
+  numeric Observation Coverage or P/N/V. Exact formal Evidence overrides it.
+- The evaluator binds request/dependency, target splat, Evidence Working Set,
+  source Evidence set, aggregation, CameraBindings, policy and result digest.
+  Missing or mismatched identities fail closed.
+- `src/ai-select/lift-readiness.ts` validates the untrusted Companion artifact,
+  defensively copies it, and publishes target-local current/stale presentation
+  state. Editing Mask changes preserve current readiness; Stable Mask or
+  Participation changes reuse the Ticket 12 dirty state and keep the previous
+  readiness inspectable as stale.
+- The AI View Dock presents readiness, formal coverage/pending state,
+  directional diversity and the bounded Wait / Generate More / Add View
+  recommendation. The store does not start Lift or mutate Stable Masks,
+  Candidate, Uncertain or Native Selection.
+- Cross-runtime golden-vector tests, Visible Mass calibration fixtures,
+  duplicate-direction fixtures, low-cost fallback fixtures, expanded Working
+  Set fixtures and atomic browser publication tests are under
+  `selection-service-companion/tests/test_lift_readiness.py`,
+  `test/ai-select-lift-readiness.test.js` and
+  `test/fixtures/ai-select-lift-readiness-contract-vector.json`.
+
+This closure is reference/calibration work built on Ticket 14's complete-
+Contributor reference aggregation. It does not claim a production Direct
+Evidence kernel, locked-GPU production validation, Ticket 10 output, or final
+threshold calibration. Ticket 20/21 retain those responsibilities.

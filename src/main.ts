@@ -12,6 +12,7 @@ import { AnchorFrustumManipulator } from './ai-select/camera-inspection-manipula
 import { CandidatePublicationStore } from './ai-select/candidate-publication';
 import { pickGeneratedViewFrustum } from './ai-select/generated-frustum-picking';
 import { AISelectGeneratedViewController } from './ai-select/generated-view-controller';
+import { LiftReadinessStore } from './ai-select/lift-readiness';
 import { AISelectMaskController } from './ai-select/mask-controller';
 import { createPromptAdapterCapabilities } from './ai-select/prompt-state';
 import { AISelectUserViewMaskController } from './ai-select/user-view-mask-controller';
@@ -457,11 +458,15 @@ const main = async () => {
     const aiSelectCandidatePublications = new CandidatePublicationStore(
         aiSelectMaskController.dirtyState
     );
+    const aiSelectLiftReadiness = new LiftReadinessStore(
+        aiSelectMaskController.dirtyState
+    );
     let aiSelectCandidateContextId: string | null = null;
     aiSelectController.subscribe((state) => {
         const contextId = state.context?.targetContextId ?? null;
         if (contextId !== aiSelectCandidateContextId) {
             aiSelectCandidatePublications.reset();
+            aiSelectLiftReadiness.reset();
             aiSelectCandidateContextId = contextId;
         }
     });
@@ -792,6 +797,7 @@ const main = async () => {
         {
             generatedViews: aiSelectGeneratedViews,
             candidatePublications: aiSelectCandidatePublications,
+            liftReadiness: aiSelectLiftReadiness,
             maskRegistry: aiSelectMaskController.maskRegistry,
             userViewMasks: aiSelectUserViewMasks,
             onInspectCamera: (viewId) => {

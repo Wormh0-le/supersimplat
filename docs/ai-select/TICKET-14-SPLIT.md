@@ -66,6 +66,9 @@ This stage does **not** add a Candidate provenance browser, Gaussian-level Evide
    |
    v
   13 Lift Readiness
+   |
+   v
+  15 Candidate correction / Re-Lift
 ```
 
 Ticket 10 remains optional and nonblocking.
@@ -73,6 +76,6 @@ Ticket 10 remains optional and nonblocking.
 Compatibility fields remain:
 
 ```text
-next_implementation_ticket = 13
+next_implementation_ticket = 15
 next_implementation_subticket = null
 ```

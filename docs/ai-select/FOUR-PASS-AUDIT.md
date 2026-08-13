@@ -1,4 +1,4 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.22
+# Eight-Pass Bidirectional Traceability Audit — v2.23
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
@@ -179,6 +179,29 @@ from tracker state and P/N/V ownership.
   sole current parent frontier, with `next_implementation_ticket = 13` and no
   active substage.
 
+## v2.23 Ticket 13 implementation closure
+
+- Ticket 13 implements versioned reference/calibration Observation Coverage,
+  useful directional View Diversity, Not Ready/Limited/Ready classification,
+  and bounded Wait / Generate More / Add View recommendations.
+- Formal coverage uses valid effective Visible Mass over the current Core
+  Target and a max-per-View reduction per Gaussian, so duplicate Views do not
+  manufacture support. Formal diversity uses V-backed useful camera-forward
+  directions and remains independent from View count.
+- Low-cost support can only expose formal Evidence pending; it never
+  manufactures numeric coverage or P/N/V. Exact formal Evidence takes
+  precedence, and Ticket 10 remains optional.
+- The Companion evaluator and browser publication state are exact-identity
+  bound and fail closed. Stable Mask/Participation dirties Lift and keeps the
+  prior readiness inspectable as stale; readiness never mutates Candidate,
+  Stable Mask or Native Selection.
+- Cross-runtime, calibration, duplicate-view, Working-Set expansion and atomic
+  publication fixtures passed. This is reference/debug work, not production
+  same-decision GPU validation; Tickets 20/21 retain production and final
+  calibration ownership.
+- Ticket 15 is the sole current parent frontier, with
+  `next_implementation_ticket = 15` and no active substage.
+
 ## Pass 1 — Ticket graph and current frontier
 
 - Parent Ticket count: 31 total.
@@ -186,12 +209,12 @@ from tracker state and P/N/V ownership.
 - Missing blocker references: 0.
 - Parent Ticket cycle: false.
 - Parent topological order length: 31/31.
-- Implemented prerequisite chain is closed through 12 and parent Ticket 14 / 14D.
-- Current parent implementation frontier: `[13]`.
+- Implemented prerequisite chain is closed through 12, parent Ticket 14 / 14D and Ticket 13.
+- Current parent implementation frontier: `[15]`.
 - Current Ticket 14 execution-stage frontier: `[]`.
-- Next implementation Ticket / current parent critical gate: `13`.
+- Next implementation Ticket / current parent critical gate: `15`.
 - Next implementation subticket: none.
-- Ticket 13 prerequisites are implemented.
+- Ticket 15 prerequisites are implemented.
 - Ticket 10 is optional and does not block Ticket 13 or Ticket 21.
 
 Result: **PASS**
@@ -363,7 +386,7 @@ Active planning MUST NOT require:
 
 - Final Spec v1.1, an Amendment, or Final Spec v1.2 as a current closure source;
 - implemented Tickets 04C, 07, 08C or 09 as current ready work;
-- a `next_implementation_ticket` other than 13 while Ticket 13 is current;
+- a `next_implementation_ticket` other than 15 while Ticket 15 is current;
 - a non-null `next_implementation_subticket` after all Ticket 14 stages close;
 - Candidate provenance/source inspection, Gaussian Evidence inspection or direct Candidate editing as a 14D requirement;
 - ArtisanGS dense turnaround views, Cutie tracking, tracker reference frames or one-channel Gaussian Mask-feature optimization as current v1 requirements;

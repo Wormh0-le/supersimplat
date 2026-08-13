@@ -51,6 +51,10 @@ import {
     mapClientPointToImagePixel,
     type ImagePixel
 } from '../ai-select/image-viewport';
+import type {
+    LiftReadinessState,
+    LiftReadinessStore
+} from '../ai-select/lift-readiness';
 import { decodeMaskArtifact } from '../ai-select/mask-annotation';
 import {
     type AISelectMaskAuthoring,
@@ -75,6 +79,7 @@ export interface AISelectAnchorDockOptions {
     readonly onAdjustAnchor: () => void;
     readonly generatedViews: AISelectGeneratedViewController;
     readonly candidatePublications: CandidatePublicationStore;
+    readonly liftReadiness: LiftReadinessStore;
     readonly maskRegistry: MaskAnnotationRegistry;
     readonly userViewMasks: AISelectUserViewMaskController;
     readonly onInspectCamera: (viewId: string) => void;
@@ -220,6 +225,7 @@ export class AISelectAnchorDock extends Container {
     private readonly maskStatus: Label;
     private readonly promptStatus: Label;
     private readonly candidateStatus: Label;
+    private readonly liftReadinessStatus: Label;
     private readonly imageViewport: HTMLDivElement;
     private readonly imageSurface: HTMLDivElement;
     private readonly image: HTMLImageElement;
@@ -262,6 +268,7 @@ export class AISelectAnchorDock extends Container {
     private confirmationState: AISelectAnchorConfirmationState;
     private generatedState: AISelectGeneratedViewState;
     private candidateState: CandidatePublicationState;
+    private liftReadinessState: LiftReadinessState;
     private dragStart: { x: number; y: number } | null = null;
     private gestureStartPixel: ImagePixel | null = null;
     private lastStrokePixel: ImagePixel | null = null;
@@ -290,6 +297,7 @@ export class AISelectAnchorDock extends Container {
         this.confirmationState = confirmation.state;
         this.generatedState = options.generatedViews.state;
         this.candidateState = options.candidatePublications.presentationState;
+        this.liftReadinessState = options.liftReadiness.presentationState;
         this.dom.addEventListener('pointerdown', (event) =>
             event.stopPropagation()
         );
@@ -377,6 +385,10 @@ export class AISelectAnchorDock extends Container {
         });
         this.candidateStatus = new Label({
             id: 'ai-select-anchor-dock-candidate-status',
+            hidden: true
+        });
+        this.liftReadinessStatus = new Label({
+            id: 'ai-select-anchor-dock-lift-readiness-status',
             hidden: true
         });
         this.technicalDetails = document.createElement('details');
@@ -693,6 +705,7 @@ export class AISelectAnchorDock extends Container {
         information.append(this.status);
         information.append(this.promptStatus);
         information.append(this.maskStatus);
+        information.append(this.liftReadinessStatus);
         information.append(this.candidateStatus);
         information.dom.appendChild(this.technicalDetails);
         information.dom.appendChild(this.proposalSelect);
@@ -752,6 +765,10 @@ export class AISelectAnchorDock extends Container {
             this.candidateState = candidateState;
             this.renderCandidateStatus();
         });
+        options.liftReadiness.subscribe((liftReadinessState) => {
+            this.liftReadinessState = liftReadinessState;
+            this.renderLiftReadinessStatus();
+        });
         i18n.onChange(() => this.render(), this);
     }
 
@@ -777,6 +794,7 @@ export class AISelectAnchorDock extends Container {
 
     private render(): void {
         this.renderAvailability();
+        this.renderLiftReadinessStatus();
         this.renderCandidateStatus();
         const presentation = getAnchorDockPresentation(
             this.state,
@@ -852,6 +870,51 @@ export class AISelectAnchorDock extends Container {
             'ai-select.candidate.uncertain'
         )} ${uncertain} · ${i18n.t('ai-select.candidate.reference-only')}`;
         this.candidateStatus.hidden = false;
+    }
+
+    private renderLiftReadinessStatus(): void {
+        const { liftReadinessState } = this;
+        if (liftReadinessState.status === 'empty') {
+            this.liftReadinessStatus.hidden = true;
+            return;
+        }
+        const currency = i18n.t(
+            liftReadinessState.status === 'current'
+                ? 'ai-select.lift-readiness.current'
+                : 'ai-select.lift-readiness.stale'
+        );
+        const readiness = i18n.t(
+            `ai-select.lift-readiness.${liftReadinessState.readiness}`
+        );
+        const coverage =
+            liftReadinessState.observationCoverage.status === 'available'
+                ? `${i18n.t('ai-select.lift-readiness.coverage')} ${i18n.formatInteger(
+                      Math.round(
+                          liftReadinessState.observationCoverage.coverageRatio *
+                              100
+                      )
+                  )}%`
+                : i18n.t('ai-select.lift-readiness.coverage-pending');
+        const diversity =
+            liftReadinessState.viewDiversity.status ===
+            'pending-formal-evidence'
+                ? i18n.t('ai-select.lift-readiness.diversity-pending')
+                : `${i18n.t(
+                      'ai-select.lift-readiness.diversity'
+                  )} ${i18n.formatInteger(
+                      Math.round(
+                          liftReadinessState.viewDiversity
+                              .maximumAngularSeparationDegrees
+                      )
+                  )}°`;
+        const recommendation =
+            liftReadinessState.recommendation === 'none'
+                ? ''
+                : ` · ${i18n.t(
+                      `ai-select.lift-readiness.recommend-${liftReadinessState.recommendation}`
+                  )}`;
+        this.liftReadinessStatus.text = `${currency}: ${readiness} · ${coverage} · ${diversity}${recommendation}`;
+        this.liftReadinessStatus.hidden = false;
     }
 
     /**

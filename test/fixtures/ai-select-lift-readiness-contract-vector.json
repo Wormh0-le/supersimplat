@@ -1,0 +1,72 @@
+{
+  "artifact": {
+    "aggregationResultDigest": "sha256:485b432418cb690b99e4937b679885e3c6863e47365a8619c78b56ebbd22832e",
+    "evidenceArtifactSetDigest": "sha256:2d2a4151b1956ebe90e27ca3b2690eac7fb539ca05dc366b1ef3479cc01731d6",
+    "evidenceWorkingSetToken": "sha256:5cb48f61483e994eee981aeaa072502cac291aa58be814e1066297ce39a92478",
+    "generationState": "complete",
+    "kind": "lift-readiness/reference-v1",
+    "lowCostSupportDiagnosticDigest": null,
+    "observationCoverage": {
+      "coverageRatio": 1.0,
+      "observedCoreGaussianCount": 4,
+      "status": "available",
+      "totalCoreGaussianCount": 4
+    },
+    "readiness": "ready",
+    "readinessPolicy": {
+      "coverageAggregationMode": "max-per-view-visible-mass/v1",
+      "minimumLimitedCoverageRatio": 0.25,
+      "minimumPerGaussianVisibleMass": 0.1,
+      "minimumReadyCoverageRatio": 0.75,
+      "minimumReadyViewDiversityDegrees": 20.0,
+      "minimumUsefulViewCoverageRatio": 0.1,
+      "policyId": "lift-readiness/reference-v1",
+      "readinessPolicyDigest": "sha256:73f913a8f4d45b70a5542062177c422b11768cde282ee9e5d92e938853674d66",
+      "schemaVersion": 1,
+      "viewDirectionMode": "opencv-camera-forward/v1"
+    },
+    "readinessPolicyDigest": "sha256:73f913a8f4d45b70a5542062177c422b11768cde282ee9e5d92e938853674d66",
+    "reasons": [],
+    "recommendation": "none",
+    "requestBinding": {
+      "contextRevision": 3,
+      "dependencyToken": {
+        "gaussianIdentityToken": "gaussians-v1",
+        "geometryToken": "geometry-v1",
+        "renderStateToken": "render-v1",
+        "splatId": "editor-splat:1",
+        "worldTransformToken": "transform-v1"
+      },
+      "targetContextId": "ai-target-context-1"
+    },
+    "resultDigest": "sha256:ddeafe83eeac3bb87815a06853cb09aa8c8479e58905749e8e2ee6387016f0c6",
+    "schemaVersion": 1,
+    "source": "formal-evidence",
+    "targetSplatId": "editor-splat:1",
+    "viewDiversity": {
+      "maximumAngularSeparationDegrees": 30.0,
+      "status": "available",
+      "usefulViewCount": 2
+    }
+  },
+  "binding": {
+    "aggregationResultDigest": "sha256:485b432418cb690b99e4937b679885e3c6863e47365a8619c78b56ebbd22832e",
+    "evidenceArtifactSetDigest": "sha256:2d2a4151b1956ebe90e27ca3b2690eac7fb539ca05dc366b1ef3479cc01731d6",
+    "evidenceWorkingSetToken": "sha256:5cb48f61483e994eee981aeaa072502cac291aa58be814e1066297ce39a92478",
+    "lowCostSupportDiagnosticDigest": null,
+    "readinessPolicyDigest": "sha256:73f913a8f4d45b70a5542062177c422b11768cde282ee9e5d92e938853674d66",
+    "requestBinding": {
+      "contextRevision": 3,
+      "dependencyToken": {
+        "gaussianIdentityToken": "gaussians-v1",
+        "geometryToken": "geometry-v1",
+        "renderStateToken": "render-v1",
+        "splatId": "editor-splat:1",
+        "worldTransformToken": "transform-v1"
+      },
+      "targetContextId": "ai-target-context-1"
+    },
+    "source": "formal-evidence",
+    "targetSplatId": "editor-splat:1"
+  }
+}

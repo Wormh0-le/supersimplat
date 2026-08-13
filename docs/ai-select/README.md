@@ -54,9 +54,9 @@ Parent Ticket 14 is decomposed into:
 Execution order is:
 
 ```text
-14A → 14B → 14C → 14D → 13
+14A → 14B → 14C → 14D → 13 → 15
 ```
 
-14A through 14D and parent Ticket 14 are implemented. The current frontier is
-Ticket 13 (`next_implementation_ticket = 13`); there is no active Ticket 14
+14A through 14D, parent Ticket 14 and Ticket 13 are implemented. The current
+frontier is Ticket 15 (`next_implementation_ticket = 15`); there is no active Ticket 14
 substage.

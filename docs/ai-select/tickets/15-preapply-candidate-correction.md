@@ -1,6 +1,6 @@
 # 15 — Pre-apply Candidate correction + explicit Evidence-aware Re-Lift
 
-Status: ready-for-agent — Final Spec v1.3 mapped
+Status: ready-for-agent — Ticket 13 and other prerequisites implemented
 
 Blocked by: 14, 13, 12, 09
 

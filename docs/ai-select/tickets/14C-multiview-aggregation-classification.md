@@ -55,8 +55,10 @@ Aggregate valid per-view reference Evidence without destroying per-view provenan
   `selection-service-companion/src/selection_service_companion/reference_gaussian_evidence_aggregation.py`.
 - Single/multi-view, dominance, mixed/conflicting, insufficient-V,
   exclude/reinclude, Stable Mask replacement, TargetGeometryHint
-  non-ownership and identity fixtures:
+  non-ownership, cross-View compatibility and forged-result rejection fixtures:
   `selection-service-companion/tests/test_reference_gaussian_evidence_aggregation.py`.
+- Recorded raw-sum versus per-View-cap reference result:
+  `docs/ai-select/benchmarks/14c-reference-aggregation-policy-result.md`.
 
 This is reference CPU aggregation/classification over 14B artifacts. It does
 not publish a Candidate, mutate Native Selection, claim Lift Readiness, or
@@ -77,6 +79,10 @@ constitute Ticket 20 production same-decision GPU Evidence.
 - exclude/reinclude fixture;
 - Stable Mask replacement fixture;
 - TargetGeometryHint non-ownership fixture;
+- explicit classification-scope fixture for IDs outside the geometry-seeded
+  Evidence Working Set;
+- incompatible per-View Evidence policy/backend rejection fixture;
+- complete result reconstruction against bound source Evidence;
 - deterministic policy/identity invalidation tests.
 
 ## Non-goals

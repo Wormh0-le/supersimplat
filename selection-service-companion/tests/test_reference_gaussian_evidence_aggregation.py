@@ -46,10 +46,22 @@ def current_input(
     stable_ids: list[int] | None = None,
     participation: str = "included",
     stable_mask_digest: str | None = None,
+    evidence_policy_digest: str | None = None,
+    evidence_backend_id: str = "complete-contributor/reference-v1",
+    target_geometry_hint_seed_digest: str | None = None,
 ) -> dict[str, object]:
     ids = stable_ids or [5, 9, 11, 13]
     camera_digest = digest("a" if view_id == "view-1" else "f")
     mask_digest = stable_mask_digest or digest(view_id[-1])
+    working_set_input: dict[str, object] = {
+        "targetSplatId": "editor-splat:1",
+        "coreTargetStableIds": ids[:-1],
+        "contextStableGaussianIds": ids[-1:],
+    }
+    if target_geometry_hint_seed_digest is not None:
+        working_set_input["targetGeometryHintSeedDigest"] = (
+            target_geometry_hint_seed_digest
+        )
     return {
         "requestBinding": request_binding(),
         "targetSplatId": "editor-splat:1",
@@ -61,7 +73,7 @@ def current_input(
             "rgbDigest": digest("b"),
             "stableMaskDigest": mask_digest,
         },
-        "evidencePolicyDigest": digest("e"),
+        "evidencePolicyDigest": evidence_policy_digest or digest("e"),
         "renderWorkingSet": {
             "targetSplatId": "editor-splat:1",
             "dependencyToken": dependency(),
@@ -70,16 +82,10 @@ def current_input(
             "stableGaussianIds": sorted({*ids, 42}),
             "completeness": "complete",
         },
-        "evidenceWorkingSet": create_evidence_working_set(
-            {
-                "targetSplatId": "editor-splat:1",
-                "coreTargetStableIds": ids[:-1],
-                "contextStableGaussianIds": ids[-1:],
-            }
-        ),
+        "evidenceWorkingSet": create_evidence_working_set(working_set_input),
         "rasterImplementationId": "gsplat-reference-rgb/v1",
         "evidenceBackendKind": "reference-contributor",
-        "evidenceBackendId": "complete-contributor/reference-v1",
+        "evidenceBackendId": evidence_backend_id,
         "runtimeBuildId": "locked-runtime-build-1",
     }
 
@@ -105,14 +111,22 @@ def artifact(
 
 def aggregation_input(
     views: list[dict[str, object]],
+    *,
+    classification_scope: list[int] | None = None,
 ) -> dict[str, object]:
+    evidence_working_set = deepcopy(
+        views[0]["currentInput"]["evidenceWorkingSet"]
+    )
     return {
         "requestBinding": request_binding(),
         "targetSplatId": "editor-splat:1",
         "classificationUniverseStableGaussianIds": [5, 9, 11, 13, 42],
-        "evidenceWorkingSet": deepcopy(
-            views[0]["currentInput"]["evidenceWorkingSet"]
+        "classificationScopeStableGaussianIds": (
+            classification_scope
+            if classification_scope is not None
+            else list(evidence_working_set["stableGaussianIds"])
         ),
+        "evidenceWorkingSet": evidence_working_set,
         "views": views,
     }
 
@@ -353,6 +367,13 @@ class ReferenceGaussianEvidenceAggregationTests(unittest.TestCase):
         changed = deepcopy(result)
         changed["selectedStableGaussianIds"] = []
         self.assertFalse(is_reference_gaussian_evidence_aggregation_result(changed))
+        forged = deepcopy(result)
+        forged["gaussians"][0]["rawPositiveMass"] = "not-a-number"
+        forged_payload = {
+            key: item for key, item in forged.items() if key != "resultDigest"
+        }
+        forged["resultDigest"] = canonical_json_digest(forged_payload)
+        self.assertFalse(is_reference_gaussian_evidence_aggregation_result(forged))
 
     def test_later_view_evidence_can_select_ids_absent_from_anchor_geometry(self) -> None:
         expanded_input = current_input("view-2", stable_ids=[42])
@@ -377,6 +398,36 @@ class ReferenceGaussianEvidenceAggregationTests(unittest.TestCase):
 
         self.assertEqual(result["selectedStableGaussianIds"], [42])
         self.assertNotIn("targetGeometryHintDigest", result)
+
+    def test_geometry_seed_alone_cannot_make_unwritten_ids_out_of_scope(self) -> None:
+        seeded_input = current_input(
+            "view-1",
+            stable_ids=[5],
+            target_geometry_hint_seed_digest=digest("6"),
+        )
+        seeded_artifact = artifact(
+            seeded_input,
+            positive=[1.0],
+            negative=[0.0],
+            visible=[1.0],
+        )
+
+        result = aggregate_reference_gaussian_evidence(
+            aggregation_input(
+                [
+                    {
+                        "currentInput": seeded_input,
+                        "artifact": seeded_artifact,
+                    }
+                ],
+                classification_scope=[5, 9, 11, 13, 42],
+            ),
+            default_reference_aggregation_policy(),
+        )
+
+        self.assertEqual(result["selectedStableGaussianIds"], [5])
+        self.assertEqual(result["uncertainStableGaussianIds"], [9, 11, 13, 42])
+        self.assertEqual(result["outOfScopeStableGaussianIds"], [])
 
     def test_missing_or_non_finite_aggregate_evidence_fails_without_a_result(
         self,
@@ -479,6 +530,57 @@ class ReferenceGaussianEvidenceAggregationTests(unittest.TestCase):
         self.assertIn(9, result["uncertainStableGaussianIds"])
         self.assertNotIn(9, result["rejectedStableGaussianIds"])
         self.assertNotIn(9, result["outOfScopeStableGaussianIds"])
+
+    def test_included_artifacts_must_share_evidence_and_backend_identity(self) -> None:
+        first_input = current_input("view-1", stable_ids=[5])
+        first_artifact = artifact(
+            first_input,
+            positive=[1.0],
+            negative=[0.0],
+            visible=[1.0],
+        )
+        changed_policy_input = current_input(
+            "view-2", stable_ids=[5], evidence_policy_digest=digest("7")
+        )
+        changed_policy_artifact = artifact(
+            changed_policy_input,
+            positive=[1.0],
+            negative=[0.0],
+            visible=[1.0],
+        )
+        changed_backend_input = current_input(
+            "view-2", stable_ids=[5], evidence_backend_id="autograd/reference-v1"
+        )
+        changed_backend_artifact = artifact(
+            changed_backend_input,
+            positive=[1.0],
+            negative=[0.0],
+            visible=[1.0],
+        )
+
+        for incompatible_input, incompatible_artifact in (
+            (changed_policy_input, changed_policy_artifact),
+            (changed_backend_input, changed_backend_artifact),
+        ):
+            with self.assertRaisesRegex(
+                ReferenceGaussianEvidenceAggregationError,
+                "incompatible source identities",
+            ):
+                aggregate_reference_gaussian_evidence(
+                    aggregation_input(
+                        [
+                            {
+                                "currentInput": first_input,
+                                "artifact": first_artifact,
+                            },
+                            {
+                                "currentInput": incompatible_input,
+                                "artifact": incompatible_artifact,
+                            },
+                        ]
+                    ),
+                    default_reference_aggregation_policy(),
+                )
 
 
 if __name__ == "__main__":

@@ -119,17 +119,21 @@ Ticket 14C consumes the independently published 14B per-View artifacts through
 `aggregate_reference_gaussian_evidence`. Every Included View must carry exact
 current target/dependency, Camera, RGB, Stable Mask, Working Set, policy,
 renderer, backend and runtime identity; missing or stale Included Evidence
-fails before a result is returned. Excluded Views are omitted and never become
-negative Evidence.
+fails before a result is returned. Included artifacts must also share Evidence
+policy, raster implementation, backend and runtime identity. Excluded Views
+are omitted and never become negative Evidence.
 
 The default versioned policy caps each View's Visible Mass contribution per
 Gaussian and scales that View's P/N channels by the same factor. A declared
 raw-mass mode remains available for benchmark comparison. The result preserves
 the source artifacts, raw and effective per-View P/N/V, supporting/conflicting
 View IDs, policy/artifact-set/backend identities and a deterministic digest.
-It classifies the declared universe into Selected, Rejected, Uncertain and Out
-of Scope; only Selected IDs enter the handoff set for Ticket 14D. Unobserved,
-insufficient, mixed or conflicting support remains Uncertain.
+It classifies the declared universe against an explicit classification scope
+into Selected, Rejected, Uncertain and Out of Scope; only Selected IDs enter
+the handoff set for Ticket 14D. The classification scope is independent of a
+TargetGeometryHint-seeded Evidence Working Set, so an unwritten ID inside that
+scope remains Uncertain instead of becoming Rejected or Out of Scope.
+Unobserved, insufficient, mixed or conflicting support remains Uncertain.
 
 This is CPU reference aggregation/classification. It adds no browser route,
 does not publish a Candidate or mutate Native Selection, and is not Ticket 20

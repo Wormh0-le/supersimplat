@@ -199,6 +199,9 @@ from tracker state and P/N/V ownership.
   publication fixtures passed. This is reference/debug work, not production
   same-decision GPU validation; Tickets 20/21 retain production and final
   calibration ownership.
+- No live transport/publisher or production Dock row is claimed by this
+  reference closure; the later Evidence/Re-Lift vertical slice owns that
+  product integration.
 - Ticket 15 is the sole current parent frontier, with
   `next_implementation_ticket = 15` and no active substage.
 

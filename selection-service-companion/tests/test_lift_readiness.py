@@ -331,6 +331,12 @@ class LiftReadinessTests(unittest.TestCase):
         malformed = deepcopy(result)
         malformed["observationCoverage"]["coverageRatio"] = float("nan")
         self.assertFalse(is_lift_readiness_result(malformed))
+        malformed_source = deepcopy(result)
+        malformed_source["source"] = []
+        self.assertFalse(is_lift_readiness_result(malformed_source))
+        malformed_reasons = deepcopy(result)
+        malformed_reasons["reasons"] = [[]]
+        self.assertFalse(is_lift_readiness_result(malformed_reasons))
         contradictory = deepcopy(result)
         contradictory["readiness"] = "limited"
         contradictory["reasons"] = ["weak-gaussian-support"]
@@ -353,6 +359,14 @@ class LiftReadinessTests(unittest.TestCase):
         ):
             evaluate_lift_readiness(
                 stale_camera,
+                default_lift_readiness_policy(),
+            )
+
+        malformed_input = deepcopy(value)
+        malformed_input["generationState"] = []
+        with self.assertRaisesRegex(ValueError, "input is invalid"):
+            evaluate_lift_readiness(
+                malformed_input,
                 default_lift_readiness_policy(),
             )
 

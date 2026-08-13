@@ -98,10 +98,11 @@ Not Ready / Limited / Ready
   state. Editing Mask changes preserve current readiness; Stable Mask or
   Participation changes reuse the Ticket 12 dirty state and keep the previous
   readiness inspectable as stale.
-- The AI View Dock presents readiness, formal coverage/pending state,
-  directional diversity and the bounded Wait / Generate More / Add View
-  recommendation. The store does not start Lift or mutate Stable Masks,
-  Candidate, Uncertain or Native Selection.
+- The browser store provides the exact-bound current/stale presentation state
+  required by a future Re-Lift vertical slice. This reference Ticket does not
+  add a live Companion transport/publisher or expose an inert production Dock
+  row. The store does not start Lift or mutate Stable Masks, Candidate,
+  Uncertain or Native Selection.
 - Cross-runtime golden-vector tests, Visible Mass calibration fixtures,
   duplicate-direction fixtures, low-cost fallback fixtures, expanded Working
   Set fixtures and atomic browser publication tests are under
@@ -112,4 +113,7 @@ Not Ready / Limited / Ready
 This closure is reference/calibration work built on Ticket 14's complete-
 Contributor reference aggregation. It does not claim a production Direct
 Evidence kernel, locked-GPU production validation, Ticket 10 output, or final
-threshold calibration. Ticket 20/21 retain those responsibilities.
+threshold calibration. It also does not claim a live editor workflow: the
+production Evidence/Re-Lift vertical slice must invoke the evaluator and
+publish its exact binding before a user-facing readiness row is shipped.
+Ticket 20/21 retain those responsibilities.

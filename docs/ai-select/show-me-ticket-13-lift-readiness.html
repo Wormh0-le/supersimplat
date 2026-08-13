@@ -270,7 +270,7 @@
 
             <section class="grid">
                 <article class="card">
-                    <h2>用户看到什么</h2>
+                    <h2>用户语义预演（尚未接入生产 Dock）</h2>
                     <div class="switcher" aria-label="切换示例状态">
                         <button data-state="not-ready" aria-pressed="false">
                             Not Ready
@@ -283,7 +283,7 @@
                         </button>
                     </div>
                     <div class="dock">
-                        <div class="dock-title">AI View Dock</div>
+                        <div class="dock-title">AI View Dock · 说明模型</div>
                         <div class="dock-body">
                             <div id="line" class="readiness-line">
                                 提升就绪度：已就绪
@@ -452,9 +452,10 @@
             <section class="card warning">
                 <strong>诚实的完成边界：</strong>这是基于 complete-Contributor
                 reference aggregation 的 Ticket 13
-                参考/校准闭环。它完成算法、跨运行时契约、浏览器状态与展示，但没有把
-                reference 路径包装成生产 same-decision GPU
-                Evidence，也没有宣称最终阈值已经完成 GPU 标定。
+                参考/校准闭环。它完成算法、跨运行时契约与浏览器发布状态，但说明页中的
+                Dock 是交互语义预演，不是当前生产截图；仓库尚未新增 live
+                transport/publisher。它也没有把 reference 路径包装成生产
+                same-decision GPU Evidence，或宣称最终阈值已经完成 GPU 标定。
             </section>
         </main>
         <script>

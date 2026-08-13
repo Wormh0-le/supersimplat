@@ -84,6 +84,7 @@ export interface LiftReadinessBinding {
     readonly readinessPolicyDigest: string;
     readonly source: LiftReadinessSource;
     readonly lowCostSupportDiagnosticDigest: string | null;
+    readonly generationState: LiftReadinessGenerationState;
 }
 
 export type LiftReadinessState =
@@ -153,6 +154,28 @@ const hasExactKeys = (
         Object.keys(value).length === required.length &&
         required.every((key) => Object.hasOwn(value, key))
     );
+};
+
+const isExactRequestBinding = (value: unknown): value is AIRequestBinding => {
+    if (
+        !isRecord(value) ||
+        !hasExactKeys(value, [
+            'targetContextId',
+            'contextRevision',
+            'dependencyToken'
+        ]) ||
+        !isAIRequestBinding(value) ||
+        !isRecord(value.dependencyToken)
+    ) {
+        return false;
+    }
+    return hasExactKeys(value.dependencyToken, [
+        'splatId',
+        'renderStateToken',
+        'geometryToken',
+        'gaussianIdentityToken',
+        'worldTransformToken'
+    ]);
 };
 
 const isNonEmptyString = (value: unknown): value is string => {
@@ -441,7 +464,7 @@ export const isLiftReadinessArtifact = (
         ]) ||
         value.schemaVersion !== liftReadinessSchemaVersion ||
         value.kind !== liftReadinessKind ||
-        !isAIRequestBinding(value.requestBinding) ||
+        !isExactRequestBinding(value.requestBinding) ||
         !isNonEmptyString(value.targetSplatId) ||
         value.requestBinding.dependencyToken.splatId !== value.targetSplatId ||
         !isDigest(value.evidenceWorkingSetToken) ||
@@ -525,7 +548,8 @@ const copyBinding = (value: LiftReadinessBinding): LiftReadinessBinding => {
         aggregationResultDigest: value.aggregationResultDigest,
         readinessPolicyDigest: value.readinessPolicyDigest,
         source: value.source,
-        lowCostSupportDiagnosticDigest: value.lowCostSupportDiagnosticDigest
+        lowCostSupportDiagnosticDigest: value.lowCostSupportDiagnosticDigest,
+        generationState: value.generationState
     });
 };
 
@@ -540,9 +564,10 @@ const isBinding = (value: unknown): value is LiftReadinessBinding => {
             'aggregationResultDigest',
             'readinessPolicyDigest',
             'source',
-            'lowCostSupportDiagnosticDigest'
+            'lowCostSupportDiagnosticDigest',
+            'generationState'
         ]) &&
-        isAIRequestBinding(value.requestBinding) &&
+        isExactRequestBinding(value.requestBinding) &&
         isNonEmptyString(value.targetSplatId) &&
         value.requestBinding.dependencyToken.splatId === value.targetSplatId &&
         isDigest(value.evidenceWorkingSetToken) &&
@@ -553,7 +578,10 @@ const isBinding = (value: unknown): value is LiftReadinessBinding => {
         isDigest(value.readinessPolicyDigest) &&
         readinessSources.has(value.source as LiftReadinessSource) &&
         (value.lowCostSupportDiagnosticDigest === null ||
-            isDigest(value.lowCostSupportDiagnosticDigest))
+            isDigest(value.lowCostSupportDiagnosticDigest)) &&
+        generationStates.has(
+            value.generationState as LiftReadinessGenerationState
+        )
     );
 };
 
@@ -578,7 +606,8 @@ export const liftReadinessBindingFromArtifact = (
         aggregationResultDigest: value.aggregationResultDigest,
         readinessPolicyDigest: value.readinessPolicyDigest,
         source: value.source,
-        lowCostSupportDiagnosticDigest: value.lowCostSupportDiagnosticDigest
+        lowCostSupportDiagnosticDigest: value.lowCostSupportDiagnosticDigest,
+        generationState: value.generationState
     });
 };
 
@@ -680,7 +709,13 @@ export class LiftReadinessStore {
                 'AI Select Lift Readiness does not match current inputs.'
             );
         }
-        this.published = copyArtifact(value);
+        const replacement = copyArtifact(value);
+        if (!isLiftReadinessArtifact(replacement)) {
+            throw new Error(
+                'AI Select Lift Readiness defensive copy is invalid.'
+            );
+        }
+        this.published = replacement;
         this.currentBinding = copyBinding(currentBinding);
         this.staleSincePublication = false;
         this.notify();

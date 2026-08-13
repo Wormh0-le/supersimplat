@@ -120,6 +120,10 @@ def _is_finite_number(value: object) -> bool:
     )
 
 
+def _is_enum_value(value: object, allowed: set[str]) -> bool:
+    return isinstance(value, str) and value in allowed
+
+
 def _is_coverage(value: object, source: str) -> bool:
     if not isinstance(value, dict):
         return False
@@ -261,13 +265,16 @@ def is_lift_readiness_result(value: object) -> bool:
         or value["readinessPolicy"] != default_lift_readiness_policy()
         or value["readinessPolicyDigest"]
         != default_lift_readiness_policy()["readinessPolicyDigest"]
-        or source not in {"formal-evidence", "low-cost-diagnostic", "none"}
-        or value["readiness"] not in _READINESS_STATES
+        or not _is_enum_value(
+            source, {"formal-evidence", "low-cost-diagnostic", "none"}
+        )
+        or not _is_enum_value(value["readiness"], _READINESS_STATES)
         or not isinstance(reasons, list)
+        or any(not isinstance(reason, str) for reason in reasons)
         or len(reasons) != len(set(reasons))
         or any(reason not in _REASONS for reason in reasons)
-        or value["generationState"] not in _GENERATION_STATES
-        or value["recommendation"] not in _RECOMMENDATIONS
+        or not _is_enum_value(value["generationState"], _GENERATION_STATES)
+        or not _is_enum_value(value["recommendation"], _RECOMMENDATIONS)
         or not _is_coverage(value["observationCoverage"], source)
         or not _is_diversity(value["viewDiversity"], source)
         or not _is_digest(value["resultDigest"])
@@ -579,7 +586,9 @@ def evaluate_lift_readiness(
         or not is_evidence_working_set(readiness_input["evidenceWorkingSet"])
         or readiness_input["evidenceWorkingSet"]["targetSplatId"]
         != readiness_input["targetSplatId"]
-        or readiness_input["generationState"] not in _GENERATION_STATES
+        or not _is_enum_value(
+            readiness_input["generationState"], _GENERATION_STATES
+        )
         or (
             readiness_input["aggregationResult"] is not None
             and not is_reference_gaussian_evidence_aggregation_result(

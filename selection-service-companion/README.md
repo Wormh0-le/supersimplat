@@ -133,7 +133,10 @@ into Selected, Rejected, Uncertain and Out of Scope; only Selected IDs enter
 the handoff set for Ticket 14D. The classification scope is independent of a
 TargetGeometryHint-seeded Evidence Working Set, so an unwritten ID inside that
 scope remains Uncertain instead of becoming Rejected or Out of Scope.
-Unobserved, insufficient, mixed or conflicting support remains Uncertain.
+When the Working Set records a TargetGeometryHint seed, the Companion rejects
+any classification scope narrower than the declared universe, preventing the
+geometry seed from becoming an ownership boundary. Unobserved, insufficient,
+mixed or conflicting support remains Uncertain.
 
 This is CPU reference aggregation/classification. It adds no browser route,
 does not publish a Candidate or mutate Native Selection, and is not Ticket 20

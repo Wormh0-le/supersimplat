@@ -224,14 +224,15 @@ class _MassAccumulator:
         )
 
 
-def _per_view_support(
+def _support_flags(
     positive: float,
     negative: float,
+    minimum_evidence_mass: float,
     policy: dict[str, object],
-) -> tuple[bool, bool, bool]:
+) -> tuple[bool, bool, bool] | None:
     evidence_mass = positive + negative
-    if evidence_mass < float(policy["minimumPerViewEvidenceMass"]):
-        return False, False, False
+    if evidence_mass < minimum_evidence_mass:
+        return None
     positive_ratio = positive / evidence_mass
     negative_ratio = negative / evidence_mass
     return (
@@ -253,24 +254,22 @@ def _classification(
 ) -> tuple[str, str | None]:
     if effective_visible < float(policy["minimumAggregateVisibleMass"]):
         return "uncertain", "unobserved-or-insufficient"
-    evidence_mass = effective_positive + effective_negative
-    if evidence_mass < float(policy["minimumAggregateEvidenceMass"]):
+    support = _support_flags(
+        effective_positive,
+        effective_negative,
+        float(policy["minimumAggregateEvidenceMass"]),
+        policy,
+    )
+    if support is None:
         return "uncertain", "insufficient-evidence"
-    positive_ratio = effective_positive / evidence_mass
-    negative_ratio = effective_negative / evidence_mass
+    positive_support, negative_support, mixed_support = support
     if positive_view_ids and negative_view_ids:
         return "uncertain", "conflicting-views"
-    if (
-        mixed_view_ids
-        or (
-            positive_ratio >= float(policy["materialPositiveRatioThreshold"])
-            and negative_ratio >= float(policy["materialNegativeRatioThreshold"])
-        )
-    ):
+    if mixed_view_ids or mixed_support:
         return "uncertain", "mixed-positive-negative"
-    if positive_ratio >= float(policy["selectedPositiveRatioThreshold"]):
+    if positive_support:
         return "selected", None
-    if negative_ratio >= float(policy["rejectedNegativeRatioThreshold"]):
+    if negative_support:
         return "rejected", None
     return "uncertain", "undecided-support"
 
@@ -316,17 +315,20 @@ def _aggregate_one_gaussian(
 
         if capped_visible >= float(policy["minimumPerViewVisibleMass"]):
             observed_view_ids.append(view_id)
-        positive_support, negative_support, mixed_support = _per_view_support(
+        support = _support_flags(
             capped_positive,
             capped_negative,
+            float(policy["minimumPerViewEvidenceMass"]),
             policy,
         )
-        if positive_support:
-            positive_view_ids.append(view_id)
-        if negative_support:
-            negative_view_ids.append(view_id)
-        if mixed_support:
-            mixed_view_ids.append(view_id)
+        if support is not None:
+            positive_support, negative_support, mixed_support = support
+            if positive_support:
+                positive_view_ids.append(view_id)
+            if negative_support:
+                negative_view_ids.append(view_id)
+            if mixed_support:
+                mixed_view_ids.append(view_id)
         per_view.append(
             {
                 "viewId": view_id,
@@ -427,12 +429,17 @@ def _build_result(
     classification_scope_set = set(classification_scope)
     evidence_scope = list(evidence_working_set["stableGaussianIds"])
     evidence_scope_set = set(evidence_scope)
+    geometry_seeded = "targetGeometryHintSeedDigest" in evidence_working_set
     if (
         not classification_scope_set.issubset(universe_set)
         or not evidence_scope_set.issubset(classification_scope_set)
     ):
         raise ReferenceGaussianEvidenceAggregationError(
             "AI Select classification scope is incompatible with the Evidence scope."
+        )
+    if geometry_seeded and classification_scope != universe:
+        raise ReferenceGaussianEvidenceAggregationError(
+            "AI Select TargetGeometryHint-seeded Evidence cannot narrow the classification scope."
         )
     for _, source in included:
         if source["stableGaussianIds"] != evidence_scope:

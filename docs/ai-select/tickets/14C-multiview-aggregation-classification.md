@@ -80,7 +80,8 @@ constitute Ticket 20 production same-decision GPU Evidence.
 - Stable Mask replacement fixture;
 - TargetGeometryHint non-ownership fixture;
 - explicit classification-scope fixture for IDs outside the geometry-seeded
-  Evidence Working Set;
+  Evidence Working Set, including fail-closed rejection of a geometry-seeded
+  narrow scope;
 - incompatible per-View Evidence policy/backend rejection fixture;
 - complete result reconstruction against bound source Evidence;
 - deterministic policy/identity invalidation tests.

@@ -429,6 +429,23 @@ class ReferenceGaussianEvidenceAggregationTests(unittest.TestCase):
         self.assertEqual(result["uncertainStableGaussianIds"], [9, 11, 13, 42])
         self.assertEqual(result["outOfScopeStableGaussianIds"], [])
 
+        with self.assertRaisesRegex(
+            ReferenceGaussianEvidenceAggregationError,
+            "TargetGeometryHint-seeded Evidence cannot narrow",
+        ):
+            aggregate_reference_gaussian_evidence(
+                aggregation_input(
+                    [
+                        {
+                            "currentInput": seeded_input,
+                            "artifact": seeded_artifact,
+                        }
+                    ],
+                    classification_scope=[5],
+                ),
+                default_reference_aggregation_policy(),
+            )
+
     def test_missing_or_non_finite_aggregate_evidence_fails_without_a_result(
         self,
     ) -> None:

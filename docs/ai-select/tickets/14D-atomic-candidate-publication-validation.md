@@ -1,8 +1,8 @@
 # 14D — Atomic Candidate Publication & Reference Validation
 
-Status: blocked — execution stage of parent Ticket 14
+Status: ready-for-agent — execution stage of parent Ticket 14
 
-Blocked by: 14C
+Blocked by: none (14C implemented)
 
 Blocks: 13
 

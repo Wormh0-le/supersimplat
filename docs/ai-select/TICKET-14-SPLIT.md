@@ -1,6 +1,6 @@
 # Ticket 14 Decomposition — Reference P/N/V Evidence → Candidate / Uncertain
 
-Status: **14A and 14B implemented; 14C is the current execution stage for parent Ticket 14**
+Status: **14A through 14C implemented; 14D is the current execution stage for parent Ticket 14**
 
 Parent Ticket: `14-gaussian-lifting-candidate.md`
 
@@ -74,5 +74,5 @@ Compatibility fields remain:
 
 ```text
 next_implementation_ticket = 14
-next_implementation_subticket = 14C
+next_implementation_subticket = 14D
 ```

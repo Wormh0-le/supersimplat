@@ -1,6 +1,6 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.20
+# Current Final Spec v1.3 → Ticket Mapping — v2.21
 
-Status: **current normative ticket mapping — Tickets 14A and 14B implemented; parent Ticket 14 remains decomposed into 14A–14D; 14C ready**
+Status: **current normative ticket mapping — Tickets 14A through 14C implemented; parent Ticket 14 remains decomposed into 14A–14D; 14D ready**
 
 This file maps every active AI Select parent Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
@@ -68,12 +68,10 @@ implemented prerequisites:
 - 09, 11, 12
 - 14A — Evidence Contract & Working Set
 - 14B — Reference Per-View P/N/V Evidence
-
-ready now:
 - 14C — Multi-view Aggregation & Classification
 
-then:
-- 14D
+ready now:
+- 14D — Atomic Candidate Publication & Reference Validation
 
 after parent Ticket 14 closes:
 - 13
@@ -83,7 +81,7 @@ Compatibility fields:
 
 ```text
 next_implementation_ticket = 14
-next_implementation_subticket = 14C
+next_implementation_subticket = 14D
 ```
 
 Ticket 14 remains the sole current parent implementation frontier after Ticket 12 closure. Ticket 10 remains optional and may execute after parent Ticket 14 + 09 + 07 without blocking the core release path.
@@ -123,7 +121,7 @@ The mapping passes only when:
 - older spec names appear only under explicit historical/superseded/migration labels;
 - implemented prerequisites through 12 are not reported as current ready work;
 - parent Ticket 14 is recognized as the sole current parent implementation frontier;
-- 14A and 14B are recognized as implemented and 14C as the current implementation stage;
+- 14A through 14C are recognized as implemented and 14D as the current implementation stage;
 - `next_implementation_ticket = 14` remains the compatibility field;
 - no active closure criterion relies on superseded v1.2 architecture;
 - provider requests carry resolvable authoritative RGB;

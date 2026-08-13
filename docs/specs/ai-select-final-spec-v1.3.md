@@ -3,7 +3,7 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.20 / parent Ticket 14 decomposed; 14A and 14B implemented, 14C current implementation stage
+**规划版本：** Ticket Graph v2.21 / parent Ticket 14 decomposed; 14A through 14C implemented, 14D current implementation stage
 **日期：** 2026-08-13
 **适用分支：** `ai-select-v1`  
 **决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017
@@ -726,8 +726,8 @@ Required validation：
 14   reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain   in progress / parent frontier
 14A  Evidence Contract & Working Set                                        implemented
 14B  Reference Per-View P/N/V Evidence                                      implemented
-14C  Multi-view Aggregation & Classification                                ready / current stage
-14D  Atomic Candidate Publication & Reference Validation                    after 14C
+14C  Multi-view Aggregation & Classification                                implemented
+14D  Atomic Candidate Publication & Reference Validation                    ready / current stage
 13   sole Lift Readiness / visibility authority                             after parent 14 + 11 + 12
 10   optional cross-view Evidence-conflict diagnostics                      nonblocking
 ```
@@ -736,16 +736,16 @@ Current ready implementation frontier：
 
 ```text
 parent: 14  Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain
-stage:  14C Multi-view Aggregation & Classification
+stage:  14D Atomic Candidate Publication & Reference Validation
 
-14A (implemented) → 14B (implemented) → 14C → 14D → 13
+14A (implemented) → 14B (implemented) → 14C (implemented) → 14D → 13
 ```
 
 Compatibility fields：
 
 ```text
 next_implementation_ticket = 14
-next_implementation_subticket = 14C
+next_implementation_subticket = 14D
 ```
 
 After parent Ticket 14：

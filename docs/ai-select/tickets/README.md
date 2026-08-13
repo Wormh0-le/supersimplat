@@ -12,6 +12,6 @@ Current execution order:
 14A → 14B → 14C → 14D → 13
 ```
 
-14A and 14B are implemented; 14C is the current execution stage.
+14A through 14C are implemented; 14D is the current execution stage.
 
 Do not add active Ticket contracts under `.scratch/ai-select-v1/issues/`.

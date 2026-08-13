@@ -1,5 +1,5 @@
 {
-  "version": "v2.20",
+  "version": "v2.21",
   "feature": "ai-select-v1",
   "spec_version": "ai-select-final-spec-v1.3",
   "ticket_spec_mapping": "CURRENT-TICKET-SPEC-MAPPING.md",
@@ -75,7 +75,7 @@
       "future_sequence_tracker_requires_new_measured_adr": true
     }
   },
-  "status": "active-v2.20-final-spec-v1.3-ticket-14C",
+  "status": "active-v2.21-final-spec-v1.3-ticket-14D",
   "branch": "ai-select-v1",
   "baseline": "2b5ae623995963730bbeb9c06329b95e7726f4a7",
   "ticket_count": 31,
@@ -92,9 +92,9 @@
   ],
   "structural_initial_frontier": ["01"],
   "current_ready_frontier": ["14"],
-  "current_ready_subfrontier": ["14C"],
+  "current_ready_subfrontier": ["14D"],
   "next_implementation_ticket": "14",
-  "next_implementation_subticket": "14C",
+  "next_implementation_subticket": "14D",
   "next_critical_gate": "14",
   "ticket_14_stages": ["14A", "14B", "14C", "14D"],
   "optional_nonblocking_tickets": ["10"],
@@ -223,7 +223,7 @@
     "ArtisanGS provenance does not reserve or implement a current video-tracker interface",
     "04C, 07, 02C, 07A, 07B, 08, 08A, 08B and 08C are implemented prerequisites",
     "09, 11 and 12 are implemented prerequisites",
-    "14 is the sole current parent implementation frontier; 14A and 14B are implemented and 14C is the current implementation stage",
+    "14 is the sole current parent implementation frontier; 14A through 14C are implemented and 14D is the current implementation stage",
     "08B and 08C locked-GPU browser E2E completed 2026-08-07 with no blocking issue reported",
     "provider requests include resolvable authoritative RGB",
     "actual previous logits remain Companion-local behind opaque same-Instance refs",

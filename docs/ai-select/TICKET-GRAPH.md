@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.20
+# AI Select v1 — Implementation Ticket Graph v2.21
 
-Status: **active implementation graph — Final Spec v1.3 synchronized; 14A and 14B are implemented and 14C is the current implementation stage**
+Status: **active implementation graph — Final Spec v1.3 synchronized; 14A through 14C are implemented and 14D is the current implementation stage**
 
 Branch: `ai-select-v1`
 
@@ -120,22 +120,23 @@ implemented prerequisites:
 - 12 — Explicit Mask Refresh + Evidence Dirty / Candidate Stale
 - 14A — Evidence Contract & Working Set
 - 14B — Reference Per-View P/N/V Evidence
+- 14C — Multi-view Aggregation & Classification
 
 current parent frontier:
 - 14 — Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain
 
 current implementation stage:
-- 14C — Multi-view Aggregation & Classification
+- 14D — Atomic Candidate Publication & Reference Validation
 
 then:
-- 14D → 13
+- 13 after 14D closes parent Ticket 14
 ```
 
 Compatibility fields:
 
 ```text
 next_implementation_ticket = 14
-next_implementation_subticket = 14C
+next_implementation_subticket = 14D
 ```
 
 Ticket 14 remains the sole current parent implementation frontier. Ticket 13 requires parent Ticket 14 plus implemented Tickets 11 and 12. Ticket 10 remains optional and off the core release path.

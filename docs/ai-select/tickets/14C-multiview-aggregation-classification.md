@@ -1,6 +1,6 @@
 # 14C — Multi-view Aggregation & Classification
 
-Status: ready-for-agent — execution stage of parent Ticket 14
+Status: implemented — execution stage of parent Ticket 14
 
 Blocked by: none (14B implemented)
 
@@ -35,18 +35,32 @@ Aggregate valid per-view reference Evidence without destroying per-view provenan
 
 ## Acceptance criteria
 
-- [ ] Aggregation consumes only current valid per-view Evidence artifacts from Included Views.
-- [ ] Per-view raw P/N/V remains available after aggregation; aggregation does not collapse source identity irreversibly.
-- [ ] Aggregation policy is versioned and binds effective Evidence, Visible Mass, supporting/conflicting Views and declared normalization/capping behavior.
-- [ ] Benchmark raw-mass summation against per-view cap/normalization so a close/high-resolution View cannot dominate silently.
-- [ ] Selected, Rejected, Uncertain and Out of Scope remain distinct internal classes.
-- [ ] Candidate input set contains Selected only.
-- [ ] Unobserved or insufficient Visible Mass is Uncertain, never default Rejected.
-- [ ] Material positive+negative or materially conflicting support is Uncertain.
-- [ ] Absence from Anchor-visible TargetGeometryHint alone cannot classify a Gaussian as Rejected or Out of Scope.
-- [ ] Excluding/reincluding a View deterministically changes only aggregation inputs and makes downstream Candidate stale.
-- [ ] Stable Mask replacement invalidates dependent per-view Evidence before aggregation can consume it.
-- [ ] Aggregation/classification result binds policy, Evidence artifact set, target/dependency identity and reference backend identities.
+- [x] Aggregation consumes only current valid per-view Evidence artifacts from Included Views.
+- [x] Per-view raw P/N/V remains available after aggregation; aggregation does not collapse source identity irreversibly.
+- [x] Aggregation policy is versioned and binds effective Evidence, Visible Mass, supporting/conflicting Views and declared normalization/capping behavior.
+- [x] Benchmark raw-mass summation against per-view cap/normalization so a close/high-resolution View cannot dominate silently.
+- [x] Selected, Rejected, Uncertain and Out of Scope remain distinct internal classes.
+- [x] Candidate input set contains Selected only.
+- [x] Unobserved or insufficient Visible Mass is Uncertain, never default Rejected.
+- [x] Material positive+negative or materially conflicting support is Uncertain.
+- [x] Absence from Anchor-visible TargetGeometryHint alone cannot classify a Gaussian as Rejected or Out of Scope.
+- [x] Excluding/reincluding a View deterministically changes only aggregation inputs and makes downstream Candidate stale.
+- [x] Stable Mask replacement invalidates dependent per-view Evidence before aggregation can consume it.
+- [x] Aggregation/classification result binds policy, Evidence artifact set, target/dependency identity and reference backend identities.
+
+## Implementation evidence
+
+- Versioned raw-sum and per-view-visible-mass-capped policies, deterministic
+  aggregation, four-state classification and strict result validation:
+  `selection-service-companion/src/selection_service_companion/reference_gaussian_evidence_aggregation.py`.
+- Single/multi-view, dominance, mixed/conflicting, insufficient-V,
+  exclude/reinclude, Stable Mask replacement, TargetGeometryHint
+  non-ownership and identity fixtures:
+  `selection-service-companion/tests/test_reference_gaussian_evidence_aggregation.py`.
+
+This is reference CPU aggregation/classification over 14B artifacts. It does
+not publish a Candidate, mutate Native Selection, claim Lift Readiness, or
+constitute Ticket 20 production same-decision GPU Evidence.
 
 ## Failure / recovery
 

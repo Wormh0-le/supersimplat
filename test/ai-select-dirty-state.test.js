@@ -80,6 +80,25 @@ test('unconfirmed Editing Mask changes do not dirty Evidence or Candidate state'
     });
 });
 
+test('an atomic Candidate publication clears only Evidence/Lift/Candidate dirtiness', () => {
+    const tracker = new AISelectDirtyStateTracker();
+    tracker.markAnchorStableChanged(['view-b']);
+    tracker.markStableMaskPublished('view-a');
+    tracker.markParticipationChanged('view-b');
+
+    tracker.markCandidatePublished();
+
+    assert.deepEqual(state(tracker), {
+        targetGeometryDirty: true,
+        localKeyViewPlanDirty: true,
+        promptDirtyViewIds: ['view-b'],
+        maskInferenceDirtyViewIds: ['view-b'],
+        evidenceDirtyViewIds: [],
+        liftDirty: false,
+        candidateStale: false
+    });
+});
+
 test('a Prompt replacement failure leaves only Prompt and Mask work dirty', () => {
     const tracker = new AISelectDirtyStateTracker();
     tracker.markPromptDirty('view-a');

@@ -57,4 +57,6 @@ Execution order is:
 14A → 14B → 14C → 14D → 13
 ```
 
-14A through 14C are implemented. Compatibility remains `next_implementation_ticket = 14`; the stage-level frontier is `next_implementation_subticket = 14D`.
+14A through 14D and parent Ticket 14 are implemented. The current frontier is
+Ticket 13 (`next_implementation_ticket = 13`); there is no active Ticket 14
+substage.

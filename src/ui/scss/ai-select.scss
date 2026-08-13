@@ -198,6 +198,13 @@
         word-break: break-word;
         flex-shrink: 0;
     }
+
+    #ai-select-anchor-dock-candidate-status {
+        color: $text-primary;
+        white-space: normal;
+        word-break: break-word;
+        flex-shrink: 0;
+    }
 }
 
 #ai-select-anchor-dock-primary-actions {

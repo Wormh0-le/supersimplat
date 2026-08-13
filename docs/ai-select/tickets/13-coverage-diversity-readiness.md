@@ -1,6 +1,6 @@
 # 13 — Visible Evidence Coverage + View Diversity + Lift Readiness
 
-Status: planned — v1.3 visibility/readiness authority
+Status: ready-for-agent — parent Ticket 14 and other prerequisites implemented
 
 Blocked by: 14, 11, 12, 08
 

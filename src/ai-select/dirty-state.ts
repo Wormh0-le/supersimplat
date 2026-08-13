@@ -163,6 +163,18 @@ export class AISelectDirtyStateTracker {
     }
 
     /**
+     * A complete, exact-current Re-Lift atomically replaced Candidate and
+     * Uncertain. Upstream Prompt/Mask work remains independently dirty.
+     */
+    markCandidatePublished(replace: (() => void) | null = null): void {
+        this.evidenceDirtyViewIds.clear();
+        this.liftDirty = false;
+        this.candidateStale = false;
+        replace?.();
+        this.publish();
+    }
+
+    /**
      * Editing Mask mutations are intentionally not represented here. Until
      * Confirm Mask atomically publishes a new Stable Mask, Evidence and a
      * previous Candidate remain valid and inspectable.
@@ -185,6 +197,15 @@ export class AISelectDirtyStateTracker {
 
     private publish(): void {
         const state = this.state;
-        this.listeners.forEach((listener) => listener(state));
+        this.listeners.forEach((listener) => {
+            try {
+                listener(state);
+            } catch (error) {
+                // Observers do not own lifecycle commits. One broken UI
+                // listener must not roll back or hide a valid atomic state
+                // transition from other observers.
+                console.error(error);
+            }
+        });
     }
 }

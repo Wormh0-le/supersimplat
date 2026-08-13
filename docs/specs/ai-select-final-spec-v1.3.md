@@ -3,7 +3,7 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.21 / parent Ticket 14 decomposed; 14A through 14C implemented, 14D current implementation stage
+**规划版本：** Ticket Graph v2.22 / parent Ticket 14 and stages 14A through 14D implemented; Ticket 13 current
 **日期：** 2026-08-13
 **适用分支：** `ai-select-v1`  
 **决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017
@@ -723,35 +723,33 @@ Required validation：
 09   simplified Gallery states                                              implemented
 11   user-added Views through current image path                            implemented
 12   simplified dirty/refresh lifecycle                                     implemented
-14   reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain   in progress / parent frontier
+14   reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain   implemented
 14A  Evidence Contract & Working Set                                        implemented
 14B  Reference Per-View P/N/V Evidence                                      implemented
 14C  Multi-view Aggregation & Classification                                implemented
-14D  Atomic Candidate Publication & Reference Validation                    ready / current stage
-13   sole Lift Readiness / visibility authority                             after parent 14 + 11 + 12
+14D  Atomic Candidate Publication & Reference Validation                    implemented
+13   sole Lift Readiness / visibility authority                             ready / current frontier
 10   optional cross-view Evidence-conflict diagnostics                      nonblocking
 ```
 
 Current ready implementation frontier：
 
 ```text
-parent: 14  Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain
-stage:  14D Atomic Candidate Publication & Reference Validation
+parent: 13  Visible Evidence Coverage + View Diversity + Lift Readiness
+stage:  no active Ticket 14 substage
 
-14A (implemented) → 14B (implemented) → 14C (implemented) → 14D → 13
+14A (implemented) → 14B (implemented) → 14C (implemented) → 14D (implemented) → 13
 ```
 
 Compatibility fields：
 
 ```text
-next_implementation_ticket = 14
-next_implementation_subticket = 14D
+next_implementation_ticket = 13
+next_implementation_subticket = null
 ```
 
-After parent Ticket 14：
-
-- 13 proceeds after Ticket 14 closes；
-- Ticket 10 remains optional and off the core release path。
+Parent Ticket 14 is closed. Ticket 13 is current, while Ticket 10 remains
+optional and off the core release path。
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported。
 

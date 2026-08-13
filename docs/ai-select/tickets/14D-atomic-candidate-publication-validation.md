@@ -1,6 +1,6 @@
 # 14D — Atomic Candidate Publication & Reference Validation
 
-Status: ready-for-agent — execution stage of parent Ticket 14
+Status: implemented — parent Ticket 14 reference stage complete
 
 Blocked by: none (14C implemented)
 
@@ -35,17 +35,36 @@ Atomically publish the reference Candidate/Uncertain result with exact stale/cur
 
 ## Acceptance criteria
 
-- [ ] Candidate publication is atomic; a failed replacement never destroys the previous inspectable Candidate.
-- [ ] Candidate contains Selected only and keeps Uncertain separate.
-- [ ] Candidate binds target/context/dependency, Stable input set, Evidence/aggregation policy, raster implementation, reference backend and runtime identity.
-- [ ] Publishing a new Stable upstream input or changing Participation makes Candidate stale and requires explicit Re-Lift.
-- [ ] Stale Candidate remains inspectable but cannot be treated as current/applicable.
-- [ ] Candidate publication never mutates Native Selection or Native EditHistory.
-- [ ] Reference Candidate is explicitly marked pre-production until Tickets 20/21 close.
-- [ ] Minimal Candidate/Uncertain visualization reuses existing overlay/product seams and does not create a Candidate provenance browser or Gaussian Evidence inspector.
-- [ ] Parent Ticket 14 fixtures report Gaussian precision/recall, novel-view rendered-mask IoU, background contamination, mixed ratio, user Add/Remove burden proxy, single-vs-multi-view effect and View-exclusion correctness where fixtures support those metrics.
-- [ ] Reference backend discrepancies and threshold-near classification differences are recorded rather than hidden.
-- [ ] Successful 14D closure makes parent Ticket 14 complete and makes Ticket 13 eligible subject to its other implemented prerequisites.
+- [x] Candidate publication is atomic; a failed replacement never destroys the previous inspectable Candidate.
+- [x] Candidate contains Selected only and keeps Uncertain separate.
+- [x] Candidate binds target/context/dependency, Stable input set, Evidence/aggregation policy, raster implementation, reference backend and runtime identity.
+- [x] Publishing a new Stable upstream input or changing Participation makes Candidate stale and requires explicit Re-Lift.
+- [x] Stale Candidate remains inspectable but cannot be treated as current/applicable.
+- [x] Candidate publication never mutates Native Selection or Native EditHistory.
+- [x] Reference Candidate is explicitly marked pre-production until Tickets 20/21 close.
+- [x] Minimal Candidate/Uncertain visualization reuses existing overlay/product seams and does not create a Candidate provenance browser or Gaussian Evidence inspector.
+- [x] Parent Ticket 14 fixtures report Gaussian precision/recall, novel-view rendered-mask IoU, background contamination, mixed ratio, user Add/Remove burden proxy, single-vs-multi-view effect and View-exclusion correctness where fixtures support those metrics.
+- [x] Reference backend discrepancies and threshold-near classification differences are recorded rather than hidden.
+- [x] Successful 14D closure makes parent Ticket 14 complete and makes Ticket 13 eligible subject to its other implemented prerequisites.
+
+## Implementation evidence
+
+- Companion-side exact-current revalidation and complete reference Candidate
+  construction: `reference_candidate_publication.py`.
+- Browser-side atomic publication store, stale/current projection and minimal
+  Selected/Uncertain status visualization wired into the AI View Dock:
+  `candidate-publication.ts`, `main.ts` and `ai-select-anchor-dock.ts`.
+- Cross-runtime Unicode golden vector and failure-preservation tests:
+  `test/fixtures/ai-select-reference-candidate-contract-vector.json`.
+- Reproducible locked-GPU Contributor quality record, including actual P/N/V,
+  a novel-View Candidate render comparison, supported metrics, and explicit
+  reference-backend availability/discrepancy state:
+  `docs/ai-select/benchmarks/14d-reference-candidate-quality.json`.
+
+The recorded quality values come from the verified locked GPU reference
+Contributor path on a deterministic synthetic scene. They are not real-scene
+calibration or production same-decision Evidence. Tickets 20/21 still own that
+production path and release calibration/hardening.
 
 ## Failure / recovery
 

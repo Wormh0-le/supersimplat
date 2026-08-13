@@ -1,4 +1,4 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.21
+# Eight-Pass Bidirectional Traceability Audit — v2.22
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
@@ -150,6 +150,35 @@ from tracker state and P/N/V ownership.
   execution stage, with `next_implementation_ticket = 14` and
   `next_implementation_subticket = 14D`.
 
+## v2.22 Ticket 14D and parent Ticket 14 implementation closure
+
+- 14D implements complete reference Candidate construction plus a
+  browser-owned atomic publication store. Selected IDs are the Candidate;
+  Uncertain IDs remain a separate diagnostic overlay.
+- Candidate identity binds the target request/dependency, Stable Mask and
+  Participation input set, Evidence/aggregation policies, Working Set,
+  source artifacts, raster implementation, trusted reference backend and
+  runtime.
+- Exact-current validation and defensive copying finish before replacement;
+  malformed, incompatible or stale replacements preserve the previous
+  inspectable Candidate. Stable Mask/Participation changes make it stale until
+  explicit Re-Lift succeeds.
+- The cross-runtime Unicode golden vector, atomic failure tests and locked-GPU
+  Contributor quality fixture passed. The quality record uses actual
+  Contributor P/N/V plus a third-camera Candidate render, exposes every
+  supported parent metric, and records the missing independent autograd
+  producer instead of fabricating a comparison artifact.
+- The browser composition now owns the Candidate store and the AI View Dock
+  shows current/stale status plus Selected and Uncertain counts. Reference
+  application remains blocked and Native Selection stays untouched.
+- This remains reference/debug work. It makes no production same-decision GPU
+  claim, adds no Native Selection operation, Candidate provenance browser or
+  Gaussian Evidence inspector, and leaves Tickets 20/21 responsible for
+  production/calibration closure.
+- Parent Ticket 14 and stages 14A through 14D are implemented. Ticket 13 is the
+  sole current parent frontier, with `next_implementation_ticket = 13` and no
+  active substage.
+
 ## Pass 1 — Ticket graph and current frontier
 
 - Parent Ticket count: 31 total.
@@ -157,12 +186,12 @@ from tracker state and P/N/V ownership.
 - Missing blocker references: 0.
 - Parent Ticket cycle: false.
 - Parent topological order length: 31/31.
-- Implemented prerequisite chain is closed through 12 and 14C.
-- Current parent implementation frontier: `[14]`.
-- Current execution-stage frontier: `[14D]`.
-- Next implementation Ticket / current parent critical gate: `14`.
-- Next implementation subticket: `14D`.
-- Ticket 13 requires parent Ticket 14 to close after 14D.
+- Implemented prerequisite chain is closed through 12 and parent Ticket 14 / 14D.
+- Current parent implementation frontier: `[13]`.
+- Current Ticket 14 execution-stage frontier: `[]`.
+- Next implementation Ticket / current parent critical gate: `13`.
+- Next implementation subticket: none.
+- Ticket 13 prerequisites are implemented.
 - Ticket 10 is optional and does not block Ticket 13 or Ticket 21.
 
 Result: **PASS**
@@ -334,8 +363,8 @@ Active planning MUST NOT require:
 
 - Final Spec v1.1, an Amendment, or Final Spec v1.2 as a current closure source;
 - implemented Tickets 04C, 07, 08C or 09 as current ready work;
-- a `next_implementation_ticket` other than 14 while parent Ticket 14 remains current;
-- a `next_implementation_subticket` other than 14D while 14D is current;
+- a `next_implementation_ticket` other than 13 while Ticket 13 is current;
+- a non-null `next_implementation_subticket` after all Ticket 14 stages close;
 - Candidate provenance/source inspection, Gaussian Evidence inspection or direct Candidate editing as a 14D requirement;
 - ArtisanGS dense turnaround views, Cutie tracking, tracker reference frames or one-channel Gaussian Mask-feature optimization as current v1 requirements;
 - a current video-tracker/sequence interface merely because ArtisanGS is cited as inspiration;

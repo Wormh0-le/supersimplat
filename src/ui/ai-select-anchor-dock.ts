@@ -25,6 +25,10 @@ import {
     pointerActionForTool
 } from '../ai-select/authoring-interaction';
 import {
+    type CandidatePublicationState,
+    type CandidatePublicationStore
+} from '../ai-select/candidate-publication';
+import {
     PALETTE_TOOLS,
     paletteToolForShortcutKey,
     type PaletteTool
@@ -70,6 +74,7 @@ export interface AISelectAnchorDockOptions {
     readonly onConfirmAnchor: () => Promise<void>;
     readonly onAdjustAnchor: () => void;
     readonly generatedViews: AISelectGeneratedViewController;
+    readonly candidatePublications: CandidatePublicationStore;
     readonly maskRegistry: MaskAnnotationRegistry;
     readonly userViewMasks: AISelectUserViewMaskController;
     readonly onInspectCamera: (viewId: string) => void;
@@ -214,6 +219,7 @@ export class AISelectAnchorDock extends Container {
     private availabilityStatus: SelectionServiceReadinessStatus;
     private readonly maskStatus: Label;
     private readonly promptStatus: Label;
+    private readonly candidateStatus: Label;
     private readonly imageViewport: HTMLDivElement;
     private readonly imageSurface: HTMLDivElement;
     private readonly image: HTMLImageElement;
@@ -255,6 +261,7 @@ export class AISelectAnchorDock extends Container {
     private maskState: AISelectMaskState;
     private confirmationState: AISelectAnchorConfirmationState;
     private generatedState: AISelectGeneratedViewState;
+    private candidateState: CandidatePublicationState;
     private dragStart: { x: number; y: number } | null = null;
     private gestureStartPixel: ImagePixel | null = null;
     private lastStrokePixel: ImagePixel | null = null;
@@ -282,6 +289,7 @@ export class AISelectAnchorDock extends Container {
         this.maskState = mask.state;
         this.confirmationState = confirmation.state;
         this.generatedState = options.generatedViews.state;
+        this.candidateState = options.candidatePublications.presentationState;
         this.dom.addEventListener('pointerdown', (event) =>
             event.stopPropagation()
         );
@@ -365,6 +373,10 @@ export class AISelectAnchorDock extends Container {
         this.maskStatus.hidden = true;
         this.promptStatus = new Label({
             id: 'ai-select-anchor-dock-prompt-status',
+            hidden: true
+        });
+        this.candidateStatus = new Label({
+            id: 'ai-select-anchor-dock-candidate-status',
             hidden: true
         });
         this.technicalDetails = document.createElement('details');
@@ -681,6 +693,7 @@ export class AISelectAnchorDock extends Container {
         information.append(this.status);
         information.append(this.promptStatus);
         information.append(this.maskStatus);
+        information.append(this.candidateStatus);
         information.dom.appendChild(this.technicalDetails);
         information.dom.appendChild(this.proposalSelect);
         information.append(this.validationStatus);
@@ -735,6 +748,10 @@ export class AISelectAnchorDock extends Container {
             this.render();
         });
         options.userViewMasks.subscribe(() => this.render());
+        options.candidatePublications.subscribe((candidateState) => {
+            this.candidateState = candidateState;
+            this.renderCandidateStatus();
+        });
         i18n.onChange(() => this.render(), this);
     }
 
@@ -760,6 +777,7 @@ export class AISelectAnchorDock extends Container {
 
     private render(): void {
         this.renderAvailability();
+        this.renderCandidateStatus();
         const presentation = getAnchorDockPresentation(
             this.state,
             this.maskState
@@ -809,6 +827,31 @@ export class AISelectAnchorDock extends Container {
         this.renderAnchorActions(presentation);
         this.renderCurrentMaskOverlay();
         this.renderGallery(presentation);
+    }
+
+    private renderCandidateStatus(): void {
+        const { candidateState } = this;
+        if (candidateState.status === 'empty') {
+            this.candidateStatus.hidden = true;
+            return;
+        }
+        const status = i18n.t(
+            candidateState.status === 'current'
+                ? 'ai-select.candidate.current'
+                : 'ai-select.candidate.stale'
+        );
+        const selected = i18n.formatInteger(
+            candidateState.candidate.selectedStableGaussianIds.length
+        );
+        const uncertain = i18n.formatInteger(
+            candidateState.uncertain.stableGaussianIds.length
+        );
+        this.candidateStatus.text = `${status} · ${i18n.t(
+            'ai-select.candidate.selected'
+        )} ${selected} · ${i18n.t(
+            'ai-select.candidate.uncertain'
+        )} ${uncertain} · ${i18n.t('ai-select.candidate.reference-only')}`;
+        this.candidateStatus.hidden = false;
     }
 
     /**

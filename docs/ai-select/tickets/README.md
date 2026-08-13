@@ -12,6 +12,7 @@ Current execution order:
 14A → 14B → 14C → 14D → 13
 ```
 
-14A through 14C are implemented; 14D is the current execution stage.
+14A through 14D are implemented; parent Ticket 14 is complete and Ticket 13 is
+the current execution frontier.
 
 Do not add active Ticket contracts under `.scratch/ai-select-v1/issues/`.

@@ -1,6 +1,6 @@
 # 14 — Reference P/N/V Evidence + Gaussian Lifting → Candidate / Uncertain
 
-Status: in-progress — 14A through 14C implemented; 14D is the current execution stage
+Status: implemented — reference stages 14A through 14D complete
 
 Blocked by: 11, 12
 
@@ -46,62 +46,62 @@ Final Spec v1.3 preserves the ownership boundary: target geometry, Prompt, SAM o
 
 ### Exact Evidence semantics
 
-- [ ] Formal input is exactly current AIViews with Render Ready + Stable Mask + Participation Included, plus target/dependency/policy/working-set identities.
-- [ ] Excluded Views and Views without Stable Mask do not contribute.
-- [ ] Key/User-added role alone never contributes Evidence.
-- [ ] For View `v`, pixel `p`, Gaussian `g`, reference contribution is `w(v,p,g) = alpha(v,p,g) × incomingTransmittance(v,p,g)`.
-- [ ] `P(v,g) = Σ positiveWeight(v,p) × w(v,p,g)`.
-- [ ] `N(v,g) = Σ negativeWeight(v,p) × w(v,p,g)`.
-- [ ] `V(v,g) = Σ roiOrVisibleWeight(v,p) × w(v,p,g)`.
-- [ ] Positive, negative, and visible weights are independently versioned and need not sum to one.
-- [ ] Do not assume `P + N = V` or apply Contributor mass-conservation admission.
-- [ ] Define/version Strong Positive Interior, Boundary/Ignore Band, Local Negative Context Ring, Far Neutral Region, and optional soft weights.
-- [ ] Far image exterior is not automatically strong negative.
-- [ ] TargetGeometryHint points/extent, Prompt geometry, raw SAM score, previous logits, MaskReview reason, inference diagnostics and View role are not formal ownership Evidence.
+- [x] Formal input is exactly current AIViews with Render Ready + Stable Mask + Participation Included, plus target/dependency/policy/working-set identities.
+- [x] Excluded Views and Views without Stable Mask do not contribute.
+- [x] Key/User-added role alone never contributes Evidence.
+- [x] For View `v`, pixel `p`, Gaussian `g`, reference contribution is `w(v,p,g) = alpha(v,p,g) × incomingTransmittance(v,p,g)`.
+- [x] `P(v,g) = Σ positiveWeight(v,p) × w(v,p,g)`.
+- [x] `N(v,g) = Σ negativeWeight(v,p) × w(v,p,g)`.
+- [x] `V(v,g) = Σ roiOrVisibleWeight(v,p) × w(v,p,g)`.
+- [x] Positive, negative, and visible weights are independently versioned and need not sum to one.
+- [x] Do not assume `P + N = V` or apply Contributor mass-conservation admission.
+- [x] Define/version Strong Positive Interior, Boundary/Ignore Band, Local Negative Context Ring, Far Neutral Region, and optional soft weights.
+- [x] Far image exterior is not automatically strong negative.
+- [x] TargetGeometryHint points/extent, Prompt geometry, raw SAM score, previous logits, MaskReview reason, inference diagnostics and View role are not formal ownership Evidence.
 
 ### Scene and Working Set semantics
 
-- [ ] Define Core Target Set, Context Set, and Evidence Working Set.
-- [ ] Full conservative Render Working Set preserves all required occluders/transmittance contributors.
-- [ ] Gaussians outside Evidence Working Set still participate in compositing but receive no P/N/V writes.
-- [ ] A target hidden by an out-of-scope occluder proves target-only rasterization is incorrect.
-- [ ] `TargetGeometryHintArtifact` may seed an initial conservative Evidence Working Set but cannot classify ownership.
-- [ ] TargetGeometryHint is not a hard Evidence Working Set upper bound.
-- [ ] Later Included Stable View support can expand the Evidence Working Set.
-- [ ] Evidence touching a Working Set boundary triggers declared expansion/fail-closed diagnostics rather than silent truncation.
-- [ ] Absence from Anchor-visible geometry alone cannot classify a Gaussian as Rejected or Out of Scope.
+- [x] Define Core Target Set, Context Set, and Evidence Working Set.
+- [x] Full conservative Render Working Set preserves all required occluders/transmittance contributors.
+- [x] Gaussians outside Evidence Working Set still participate in compositing but receive no P/N/V writes.
+- [x] A target hidden by an out-of-scope occluder proves target-only rasterization is incorrect.
+- [x] `TargetGeometryHintArtifact` may seed an initial conservative Evidence Working Set but cannot classify ownership.
+- [x] TargetGeometryHint is not a hard Evidence Working Set upper bound.
+- [x] Later Included Stable View support can expand the Evidence Working Set.
+- [x] Evidence touching a Working Set boundary triggers declared expansion/fail-closed diagnostics rather than silent truncation.
+- [x] Absence from Anchor-visible geometry alone cannot classify a Gaussian as Rejected or Out of Scope.
 
 ### Artifact and policy semantics
 
-- [ ] Per-view artifact binds Camera, RGB, Stable Mask, policy, Render/Evidence Working Sets, Stable IDs, raster implementation, reference backend, and runtime.
-- [ ] Prompt/inference/review identities may be retained as Stable Mask provenance but cannot replace Stable Mask digest or Evidence backend identity.
-- [ ] Reference artifact cannot be mistaken for Ticket 20 production Evidence.
-- [ ] Incompatible renderer/runtime/backend changes invalidate artifacts.
-- [ ] Artifact supports exclude/reinclude, Stable Mask replacement, incremental Re-Lift, and exact invalidation.
-- [ ] Preserve per-view raw P/N/V before aggregation.
-- [ ] Define/version aggregation using effective Evidence, Visible Mass, supporting/conflicting Views, and optional boundary/footprint/diversity diagnostics.
-- [ ] Benchmark raw-mass summation and per-view confidence cap/normalization so one close/high-resolution View cannot dominate silently.
-- [ ] Selected, Rejected, Uncertain, and Out of Scope remain distinct.
-- [ ] Unobserved/insufficient V is Uncertain, never default Rejected.
-- [ ] Material positive+negative/mixed support is Uncertain.
-- [ ] Candidate contains Selected only; Uncertain is diagnostic.
+- [x] Per-view artifact binds Camera, RGB, Stable Mask, policy, Render/Evidence Working Sets, Stable IDs, raster implementation, reference backend, and runtime.
+- [x] Prompt/inference/review identities may be retained as Stable Mask provenance but cannot replace Stable Mask digest or Evidence backend identity.
+- [x] Reference artifact cannot be mistaken for Ticket 20 production Evidence.
+- [x] Incompatible renderer/runtime/backend changes invalidate artifacts.
+- [x] Artifact supports exclude/reinclude, Stable Mask replacement, incremental Re-Lift, and exact invalidation.
+- [x] Preserve per-view raw P/N/V before aggregation.
+- [x] Define/version aggregation using effective Evidence, Visible Mass, supporting/conflicting Views, and optional boundary/footprint/diversity diagnostics.
+- [x] Benchmark raw-mass summation and per-view confidence cap/normalization so one close/high-resolution View cannot dominate silently.
+- [x] Selected, Rejected, Uncertain, and Out of Scope remain distinct.
+- [x] Unobserved/insufficient V is Uncertain, never default Rejected.
+- [x] Material positive+negative/mixed support is Uncertain.
+- [x] Candidate contains Selected only; Uncertain is diagnostic.
 
 ### Reference comparison and quality gate
 
-- [ ] At least one trusted reference method is mandatory; use Contributor and stock-gsplat autograd together when both are available.
-- [ ] Discrepancies are characterized rather than hidden by threshold tuning.
-- [ ] Compare max/p95/p99 error, relative error, support differences, threshold-near count, and classification differences.
-- [ ] Fixtures cover strong positive, local background, boundary mixed, unobserved, occlusion, multiple Views, large cross-boundary Gaussian, thin structures, and high occlusion.
-- [ ] Include bounded local Key Views, Generate More, semantic Mask unavailable, Auto Review Excluded, User Confirmed correction and TargetGeometryHint-seed expansion fixtures.
-- [ ] Report Gaussian precision/recall, novel-view rendered-mask IoU, background contamination, mixed ratio, user Add/Remove burden proxy, single-vs-multi-view effect, and View-exclusion correctness.
+- [x] At least one trusted reference method is mandatory; use Contributor and stock-gsplat autograd together when both are available.
+- [x] Discrepancies are characterized rather than hidden by threshold tuning.
+- [x] Compare max/p95/p99 error, relative error, support differences, threshold-near count, and classification differences.
+- [x] Fixtures cover strong positive, local background, boundary mixed, unobserved, occlusion, multiple Views, large cross-boundary Gaussian, thin structures, and high occlusion.
+- [x] Include bounded local Key Views, Generate More, semantic Mask unavailable, Auto Review Excluded, User Confirmed correction and TargetGeometryHint-seed expansion fixtures.
+- [x] Report Gaussian precision/recall, novel-view rendered-mask IoU, background contamination, mixed ratio, user Add/Remove burden proxy, single-vs-multi-view effect, and View-exclusion correctness.
 
 ### Candidate publication
 
-- [ ] Reference Lift publication is atomic and never mutates Native Selection/EditHistory.
-- [ ] Candidate records enough bound identity to determine current/stale state.
-- [ ] Candidate retains raster implementation, Evidence backend, runtime, and policy identity.
-- [ ] Stable input or incompatible renderer/runtime/backend change makes Candidate stale; explicit Re-Lift is required.
-- [ ] Reference Candidate is clearly pre-production until Tickets 20/21 close.
+- [x] Reference Lift publication is atomic and never mutates Native Selection/EditHistory.
+- [x] Candidate records enough bound identity to determine current/stale state.
+- [x] Candidate retains raster implementation, Evidence backend, runtime, and policy identity.
+- [x] Stable input or incompatible renderer/runtime/backend change makes Candidate stale; explicit Re-Lift is required.
+- [x] Reference Candidate is clearly pre-production until Tickets 20/21 close.
 
 ## Failure / recovery criteria
 

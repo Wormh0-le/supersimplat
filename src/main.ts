@@ -9,6 +9,7 @@ import {
     isAnchorInspectionTarget
 } from './ai-select/camera-inspection';
 import { AnchorFrustumManipulator } from './ai-select/camera-inspection-manipulator';
+import { CandidatePublicationStore } from './ai-select/candidate-publication';
 import { pickGeneratedViewFrustum } from './ai-select/generated-frustum-picking';
 import { AISelectGeneratedViewController } from './ai-select/generated-view-controller';
 import { AISelectMaskController } from './ai-select/mask-controller';
@@ -453,6 +454,17 @@ const main = async () => {
         getPromptAdapterCapabilities: getAISelectPromptAdapterCapabilities,
         isAnchorLocked: isAISelectAnchorLocked
     });
+    const aiSelectCandidatePublications = new CandidatePublicationStore(
+        aiSelectMaskController.dirtyState
+    );
+    let aiSelectCandidateContextId: string | null = null;
+    aiSelectController.subscribe((state) => {
+        const contextId = state.context?.targetContextId ?? null;
+        if (contextId !== aiSelectCandidateContextId) {
+            aiSelectCandidatePublications.reset();
+            aiSelectCandidateContextId = contextId;
+        }
+    });
     // Companion Instance replacement invalidates the prior Instance's
     // Companion-local RGB/logits references (02C); editor-owned Prompt and
     // Mask artifacts keep their own identity and are not touched.
@@ -779,6 +791,7 @@ const main = async () => {
         aiSelectConfirmation,
         {
             generatedViews: aiSelectGeneratedViews,
+            candidatePublications: aiSelectCandidatePublications,
             maskRegistry: aiSelectMaskController.maskRegistry,
             userViewMasks: aiSelectUserViewMasks,
             onInspectCamera: (viewId) => {

@@ -88,7 +88,7 @@
                         <li>精确 dirty / stale 传播</li>
                         <li>Evidence 缓存与复用计划</li>
                         <li>异步身份与竞态丢弃</li>
-                        <li>Candidate / Readiness 原子发布</li>
+                        <li>Evidence 状态 / Candidate 校验后发布</li>
                     </ul>
                 </div>
                 <div class="bridge">⇄</div>
@@ -99,11 +99,11 @@
                         <li>只消费 Included Stable Views</li>
                         <li>精确校验或重算 P/N/V</li>
                         <li>多视图聚合与分类</li>
-                        <li>Candidate + Lift Readiness 整体返回</li>
+                        <li>完整 Candidate 事务返回</li>
                     </ul>
                 </div>
             </div>
-            <div class="note">协议绑定 <code>targetContextId + contextRevision + dependencyToken</code>，并继续绑定 Camera、RGB、Stable Mask、Policy 与 Working Set。任何输入竞态都在发布前失败关闭。</div>
+            <div class="note">协议绑定 <code>targetContextId + contextRevision + dependencyToken</code>，并继续绑定 Camera、RGB、Stable Mask、Policy、Working Set、后端和锁定运行时。任何输入竞态都在发布前失败关闭。正式 Lift Readiness 暂不展示，等待真实 Core Target Working Set。</div>
         </section>
 
         <section class="rules">

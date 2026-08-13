@@ -3,34 +3,16 @@ import { Color, Vec3, createGraphicsDevice } from 'playcanvas';
 
 import { AISelectAnchorConfirmationController } from './ai-select/anchor-confirmation';
 import { AISelectAnchorController } from './ai-select/anchor-controller';
-import {
-    cameraBindingDigest,
-    captureEditorCameraBinding
-} from './ai-select/camera-binding';
+import { captureEditorCameraBinding } from './ai-select/camera-binding';
 import {
     CameraInspectionController,
     isAnchorInspectionTarget
 } from './ai-select/camera-inspection';
 import { AnchorFrustumManipulator } from './ai-select/camera-inspection-manipulator';
 import { CandidatePublicationStore } from './ai-select/candidate-publication';
-import {
-    AISelectCandidateCorrectionController,
-    type CandidateCorrectionView
-} from './ai-select/candidate-correction';
-import {
-    referenceContributorEvidenceBackendId,
-    referenceEvidencePolicyDigest,
-    referenceEvidenceRasterImplementationId,
-    referenceEvidenceRuntimeBuildId,
-    type CandidateReLiftViewInput
-} from './ai-select/candidate-re-lift';
+import { createAISelectCandidateCorrectionController } from './ai-select/candidate-correction-composition';
 import { pickGeneratedViewFrustum } from './ai-select/generated-frustum-picking';
 import { AISelectGeneratedViewController } from './ai-select/generated-view-controller';
-import { createEvidenceWorkingSet } from './ai-select/gaussian-evidence-contract';
-import {
-    liftReadinessBindingFromArtifact,
-    LiftReadinessStore
-} from './ai-select/lift-readiness';
 import { AISelectMaskController } from './ai-select/mask-controller';
 import { createPromptAdapterCapabilities } from './ai-select/prompt-state';
 import { AISelectUserViewMaskController } from './ai-select/user-view-mask-controller';
@@ -431,8 +413,9 @@ const main = async () => {
     // just below, so the lock reads through a lazy reference.
     let aiSelectConfirmation: AISelectAnchorConfirmationController | null =
         null;
-    let aiSelectCandidateCorrection: AISelectCandidateCorrectionController | null =
-        null;
+    let aiSelectCandidateCorrection: ReturnType<
+        typeof createAISelectCandidateCorrectionController
+    > | null = null;
     // Declared ahead of the readiness/Instance event registrations; assigned
     // once the Generated View controller exists below.
     let aiSelectUserViewMasks: AISelectUserViewMaskController | null = null;
@@ -481,15 +464,11 @@ const main = async () => {
     const aiSelectCandidatePublications = new CandidatePublicationStore(
         aiSelectMaskController.dirtyState
     );
-    const aiSelectLiftReadiness = new LiftReadinessStore(
-        aiSelectMaskController.dirtyState
-    );
     let aiSelectCandidateContextId: string | null = null;
     aiSelectController.subscribe((state) => {
         const contextId = state.context?.targetContextId ?? null;
         if (contextId !== aiSelectCandidateContextId) {
             aiSelectCandidatePublications.reset();
-            aiSelectLiftReadiness.reset();
             aiSelectCandidateContextId = contextId;
         }
     });
@@ -578,268 +557,12 @@ const main = async () => {
         getModelManifestDigest: getAISelectModelManifestDigest,
         getPromptAdapterCapabilities: getAISelectPromptAdapterCapabilities
     });
-    const resolveCandidateCorrectionViews =
-        (): readonly CandidateCorrectionView[] => {
-            const anchorState = aiSelectController.state;
-            const context = anchorState.context;
-            const anchor = anchorState.anchor;
-            const snapshot = aiSelectController.getAnchorSnapshot();
-            if (
-                context === null ||
-                context.lifecycle !== 'active' ||
-                anchor === null ||
-                snapshot === null
-            ) {
-                return [];
-            }
-            const stableGaussianIds = [...snapshot.stableIds].sort(
-                (left, right) => left - right
-            );
-            const evidenceWorkingSet = createEvidenceWorkingSet({
-                targetSplatId: context.target.splatId,
-                // Ticket 15 is wired to the Ticket 14 reference backend. Until
-                // the production scope builder lands, use the complete Active
-                // Splat conservatively; geometry remains non-ownership context.
-                coreTargetStableIds: stableGaussianIds,
-                contextStableGaussianIds: []
-            });
-            const requestBinding = Object.freeze({
-                targetContextId: context.targetContextId,
-                contextRevision: context.revision,
-                dependencyToken: context.dependencyToken
-            });
-            const createView = (input: {
-                readonly viewId: string;
-                readonly cameraBinding: CandidateReLiftViewInput['cameraBinding'];
-                readonly rgbDigest: string;
-                readonly participation: 'included' | 'excluded';
-                readonly stableMask: CandidateReLiftViewInput['stableMask'];
-            }): CandidateCorrectionView => {
-                const bindingDigest = cameraBindingDigest(input.cameraBinding);
-                const currentInput = Object.freeze({
-                    requestBinding,
-                    targetSplatId: context.target.splatId,
-                    view: Object.freeze({
-                        viewId: input.viewId,
-                        renderStatus: 'ready' as const,
-                        participation: input.participation,
-                        cameraBindingDigest: bindingDigest,
-                        rgbDigest: input.rgbDigest,
-                        stableMaskDigest: input.stableMask.digest
-                    }),
-                    evidencePolicyDigest: referenceEvidencePolicyDigest,
-                    renderWorkingSet: Object.freeze({
-                        targetSplatId: context.target.splatId,
-                        dependencyToken: context.dependencyToken,
-                        cameraBindingDigest: bindingDigest,
-                        renderWorkingSetToken: snapshot.contentDigest,
-                        stableGaussianIds,
-                        completeness: 'complete' as const
-                    }),
-                    evidenceWorkingSet,
-                    rasterImplementationId:
-                        referenceEvidenceRasterImplementationId,
-                    evidenceBackendKind: 'reference-contributor' as const,
-                    evidenceBackendId: referenceContributorEvidenceBackendId,
-                    runtimeBuildId: referenceEvidenceRuntimeBuildId
-                });
-                return Object.freeze({
-                    viewId: input.viewId,
-                    participation: input.participation,
-                    stableMaskDigest: input.stableMask.digest,
-                    evidenceIdentity: Object.freeze({
-                        viewId: input.viewId,
-                        rgbDigest: input.rgbDigest,
-                        stableMaskDigest: input.stableMask.digest,
-                        evidencePolicyDigest: referenceEvidencePolicyDigest
-                    }),
-                    payload: Object.freeze({
-                        currentInput,
-                        cameraBinding: input.cameraBinding,
-                        stableMask: input.stableMask
-                    })
-                });
-            };
-            const views: CandidateCorrectionView[] = [];
-            const anchorMask = aiSelectMaskController.state.stableMask;
-            if (
-                anchor.renderStatus === 'ready' &&
-                anchor.rgb !== undefined &&
-                anchorMask !== null
-            ) {
-                views.push(
-                    createView({
-                        viewId: anchor.viewId,
-                        cameraBinding: anchor.cameraBinding,
-                        rgbDigest: anchor.rgb.digest,
-                        participation: 'included',
-                        stableMask: anchorMask.artifact
-                    })
-                );
-            }
-            for (const view of aiSelectGeneratedViews.state.views) {
-                if (
-                    view.renderStatus !== 'ready' ||
-                    view.rgb === undefined ||
-                    view.stableMaskDigest === undefined
-                ) {
-                    continue;
-                }
-                const stableMask = aiSelectMaskController.maskRegistry.viewState(
-                    view.viewId,
-                    view.rgb.digest
-                ).stableMask;
-                if (stableMask === null) {
-                    continue;
-                }
-                views.push(
-                    createView({
-                        viewId: view.viewId,
-                        cameraBinding: view.cameraBinding,
-                        rgbDigest: view.rgb.digest,
-                        participation: view.participation,
-                        stableMask: stableMask.artifact
-                    })
-                );
-            }
-            return Object.freeze(
-                views.sort((left, right) =>
-                    left.viewId.localeCompare(right.viewId)
-                )
-            );
-        };
-    let nextCandidateReLiftAttempt = 0;
-    aiSelectCandidateCorrection = new AISelectCandidateCorrectionController({
-        dirtyState: aiSelectMaskController.dirtyState,
+    aiSelectCandidateCorrection = createAISelectCandidateCorrectionController({
+        anchor: aiSelectController,
+        masks: aiSelectMaskController,
+        generatedViews: aiSelectGeneratedViews,
         candidatePublications: aiSelectCandidatePublications,
-        resolveCurrentViews: resolveCandidateCorrectionViews,
-        produceCandidate: async (input) => {
-                const views = input.views.map((view) => {
-                    const payload = view.payload as CandidateReLiftViewInput;
-                    const cachedArtifact = input.cachedEvidence.get(
-                        view.viewId
-                    )?.artifact;
-                    return Object.freeze({
-                        ...payload,
-                        ...(cachedArtifact === undefined
-                            ? {}
-                            : { cachedArtifact })
-                    });
-                });
-                const first = views[0];
-                const snapshot = aiSelectController.getAnchorSnapshot();
-                if (first === undefined || snapshot === null) {
-                    throw new Error(
-                        'AI Select requires an active Scene Snapshot before Candidate Re-Lift.'
-                    );
-                }
-                nextCandidateReLiftAttempt += 1;
-                for (const viewId of input.recomputeViewIds) {
-                    const identity = input.views.find(
-                        (view) => view.viewId === viewId
-                    )?.evidenceIdentity;
-                    if (identity !== null && identity !== undefined) {
-                        aiSelectMaskController.evidenceRegistry.markPending(
-                            identity
-                        );
-                    }
-                }
-                let response;
-                try {
-                    response = await selectionServiceAdapter.produceCandidateReLift({
-                        liftAttemptId: `candidate-re-lift-${nextCandidateReLiftAttempt}`,
-                        snapshot,
-                        requestBinding: first.currentInput.requestBinding,
-                        targetSplatId: first.currentInput.targetSplatId,
-                        classificationUniverseStableGaussianIds: Object.freeze(
-                            [...snapshot.stableIds].sort(
-                                (left, right) => left - right
-                            )
-                        ),
-                        classificationScopeStableGaussianIds:
-                            first.currentInput.evidenceWorkingSet
-                                .stableGaussianIds,
-                        evidenceWorkingSet:
-                            first.currentInput.evidenceWorkingSet,
-                        generationState:
-                            aiSelectGeneratedViews.state.plannerStatus ===
-                            'failed'
-                                ? 'unavailable'
-                                : aiSelectGeneratedViews.state
-                                        .generationStopped
-                                  ? 'stopped'
-                                  : 'active',
-                        views: Object.freeze(views)
-                    });
-                } catch (error) {
-                    for (const viewId of input.recomputeViewIds) {
-                        const identity = input.views.find(
-                            (view) => view.viewId === viewId
-                        )?.evidenceIdentity;
-                        if (identity !== null && identity !== undefined) {
-                            aiSelectMaskController.evidenceRegistry.markFailed(
-                                identity,
-                                error instanceof Error
-                                    ? error.message
-                                    : 'AI Select Evidence production failed.'
-                            );
-                        }
-                    }
-                    throw error;
-                }
-                if (
-                    !aiSelectController.acceptsTargetBinding(
-                        response.requestBinding
-                    )
-                ) {
-                    throw new Error(
-                        'AI Select discarded a stale Candidate Re-Lift result.'
-                    );
-                }
-                for (const entry of response.evidence) {
-                    aiSelectMaskController.evidenceRegistry.markReady({
-                        viewId: entry.viewId,
-                        rgbDigest: entry.artifact.rgbDigest,
-                        stableMaskDigest: entry.artifact.stableMaskDigest,
-                        evidencePolicyDigest:
-                            entry.artifact.evidencePolicyDigest
-                    });
-                }
-                aiSelectLiftReadiness.publish(
-                    response.readiness,
-                    liftReadinessBindingFromArtifact(response.readiness)
-                );
-                return {
-                    candidate: response.candidate,
-                    publicationBinding:
-                        response.candidate.publicationBinding,
-                    evidence: Object.fromEntries(
-                        response.evidence.map((entry) => [
-                            entry.viewId,
-                            {
-                                identity: {
-                                    viewId: entry.viewId,
-                                    rgbDigest: entry.artifact.rgbDigest,
-                                    stableMaskDigest:
-                                        entry.artifact.stableMaskDigest,
-                                    evidencePolicyDigest:
-                                        entry.artifact.evidencePolicyDigest
-                                },
-                                artifactDigest: entry.artifact.artifactDigest,
-                                artifact: entry.artifact
-                            }
-                        ])
-                    )
-                };
-        }
-    });
-    let aiSelectCorrectionContextId: string | null = null;
-    aiSelectController.subscribe((state) => {
-        const contextId = state.context?.targetContextId ?? null;
-        if (contextId !== aiSelectCorrectionContextId) {
-            aiSelectCorrectionContextId = contextId;
-            aiSelectCandidateCorrection?.reset();
-        }
+        provider: selectionServiceAdapter
     });
     const cameraInspection = new CameraInspectionController({
         anchor: aiSelectController,
@@ -1084,7 +807,6 @@ const main = async () => {
             generatedViews: aiSelectGeneratedViews,
             candidatePublications: aiSelectCandidatePublications,
             candidateCorrection: aiSelectCandidateCorrection,
-            liftReadiness: aiSelectLiftReadiness,
             maskRegistry: aiSelectMaskController.maskRegistry,
             userViewMasks: aiSelectUserViewMasks,
             onInspectCamera: (viewId) => {

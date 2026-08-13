@@ -9,24 +9,39 @@ import {
     areEvidenceIdentitiesEqual,
     type EvidenceDependencyIdentity
 } from './evidence-state';
-import type { GaussianEvidenceArtifact } from './gaussian-evidence-contract';
+import {
+    copyGaussianEvidenceArtifact,
+    type EvidenceBackendKind,
+    type GaussianEvidenceArtifact
+} from './gaussian-evidence-contract';
 
-export interface CandidateCorrectionView {
+export interface CandidateEvidenceIdentity
+    extends EvidenceDependencyIdentity {
+    readonly cameraBindingDigest: string;
+    readonly renderWorkingSetToken: string;
+    readonly evidenceWorkingSetToken: string;
+    readonly rasterImplementationId: string;
+    readonly evidenceBackendKind: EvidenceBackendKind;
+    readonly evidenceBackendId: string;
+    readonly runtimeBuildId: string;
+}
+
+export interface CandidateCorrectionView<TPayload = unknown> {
     readonly viewId: string;
     readonly participation: 'included' | 'excluded';
     readonly stableMaskDigest: string | null;
-    readonly evidenceIdentity: EvidenceDependencyIdentity | null;
-    readonly payload?: unknown;
+    readonly evidenceIdentity: CandidateEvidenceIdentity | null;
+    readonly payload: TPayload;
 }
 
 export interface CachedCandidateEvidence {
-    readonly identity: EvidenceDependencyIdentity;
+    readonly identity: CandidateEvidenceIdentity;
     readonly artifactDigest: string;
     readonly artifact?: GaussianEvidenceArtifact;
 }
 
-export interface CandidateCorrectionProductionInput {
-    readonly views: readonly CandidateCorrectionView[];
+export interface CandidateCorrectionProductionInput<TPayload = unknown> {
+    readonly views: readonly CandidateCorrectionView<TPayload>[];
     readonly includedViewIds: readonly string[];
     readonly reuseViewIds: readonly string[];
     readonly recomputeViewIds: readonly string[];
@@ -39,6 +54,8 @@ export interface CandidateCorrectionProductionResult {
     readonly evidence: Readonly<
         Record<string, CachedCandidateEvidence>
     >;
+    /** Publishes independently atomic per-View products after the race check. */
+    readonly publishRelatedProducts?: () => void;
 }
 
 export interface CandidateCorrectionState {
@@ -52,12 +69,14 @@ export type CandidateCorrectionListener = (
     state: CandidateCorrectionState
 ) => void;
 
-export interface AISelectCandidateCorrectionControllerOptions {
+export interface AISelectCandidateCorrectionControllerOptions<
+    TPayload = unknown
+> {
     readonly dirtyState: AISelectDirtyStateTracker;
     readonly candidatePublications: CandidatePublicationStore;
-    readonly resolveCurrentViews: () => readonly CandidateCorrectionView[];
+    readonly resolveCurrentViews: () => readonly CandidateCorrectionView<TPayload>[];
     readonly produceCandidate: (
-        input: CandidateCorrectionProductionInput
+        input: CandidateCorrectionProductionInput<TPayload>
     ) => Promise<CandidateCorrectionProductionResult>;
 }
 
@@ -67,13 +86,71 @@ const copyEvidence = (
     Object.freeze({
         identity: Object.freeze({ ...value.identity }),
         artifactDigest: value.artifactDigest,
-        ...(value.artifact === undefined ? {} : { artifact: value.artifact })
+        ...(value.artifact === undefined
+            ? {}
+            : { artifact: copyGaussianEvidenceArtifact(value.artifact) })
     });
+
+const candidateEvidenceIdentitiesEqual = (
+    left: CandidateEvidenceIdentity | null,
+    right: CandidateEvidenceIdentity | null
+): boolean =>
+    areEvidenceIdentitiesEqual(left, right) &&
+    (left === null ||
+        (right !== null &&
+            left.cameraBindingDigest === right.cameraBindingDigest &&
+            left.renderWorkingSetToken === right.renderWorkingSetToken &&
+            left.evidenceWorkingSetToken === right.evidenceWorkingSetToken &&
+            left.rasterImplementationId === right.rasterImplementationId &&
+            left.evidenceBackendKind === right.evidenceBackendKind &&
+            left.evidenceBackendId === right.evidenceBackendId &&
+            left.runtimeBuildId === right.runtimeBuildId));
+
+const stableViewInputsEqual = <TPayload>(
+    left: readonly CandidateCorrectionView<TPayload>[],
+    right: readonly CandidateCorrectionView<TPayload>[]
+): boolean =>
+    left.length === right.length &&
+    left.every(
+        (view, index) =>
+            view.viewId === right[index].viewId &&
+            view.participation === right[index].participation &&
+            view.stableMaskDigest === right[index].stableMaskDigest &&
+            candidateEvidenceIdentitiesEqual(
+                view.evidenceIdentity,
+                right[index].evidenceIdentity
+            )
+    );
 
 const messageFor = (error: unknown): string =>
     error instanceof Error && error.message.length > 0
         ? error.message
         : 'AI Select could not update the 3D Candidate.';
+
+const validateProductionResult = (
+    result: CandidateCorrectionProductionResult,
+    includedViewIds: readonly string[]
+): void => {
+    const evidenceViewIds = Object.keys(result.evidence).sort();
+    if (
+        evidenceViewIds.length !== includedViewIds.length ||
+        evidenceViewIds.some(
+            (viewId, index) => viewId !== includedViewIds[index]
+        )
+    ) {
+        throw new Error(
+            'AI Select Candidate Re-Lift returned an incomplete Evidence set.'
+        );
+    }
+    for (const viewId of evidenceViewIds) {
+        const value = result.evidence[viewId];
+        if (value.identity.viewId !== viewId) {
+            throw new Error(
+                'AI Select Candidate Re-Lift returned mismatched Evidence identity.'
+            );
+        }
+    }
+};
 
 /**
  * Owns the Ticket 15 pre-apply correction and explicit Re-Lift lifecycle.
@@ -81,12 +158,12 @@ const messageFor = (error: unknown): string =>
  * publishes only the complete returned Candidate transaction. Correction is
  * presentation state: entering it never changes Stable inputs or Candidate.
  */
-export class AISelectCandidateCorrectionController {
+export class AISelectCandidateCorrectionController<TPayload = unknown> {
     private readonly dirtyState: AISelectDirtyStateTracker;
     private readonly candidatePublications: CandidatePublicationStore;
-    private readonly resolveCurrentViews: () => readonly CandidateCorrectionView[];
+    private readonly resolveCurrentViews: () => readonly CandidateCorrectionView<TPayload>[];
     private readonly produceCandidate: (
-        input: CandidateCorrectionProductionInput
+        input: CandidateCorrectionProductionInput<TPayload>
     ) => Promise<CandidateCorrectionProductionResult>;
     private readonly cachedEvidence = new Map<
         string,
@@ -98,7 +175,9 @@ export class AISelectCandidateCorrectionController {
     private errorMessage: string | undefined;
     private updateOrdinal = 0;
 
-    constructor(options: AISelectCandidateCorrectionControllerOptions) {
+    constructor(
+        options: AISelectCandidateCorrectionControllerOptions<TPayload>
+    ) {
         this.dirtyState = options.dirtyState;
         this.candidatePublications = options.candidatePublications;
         this.resolveCurrentViews = options.resolveCurrentViews;
@@ -155,7 +234,9 @@ export class AISelectCandidateCorrectionController {
         if (this.status === 'updating') {
             throw new Error('AI Select is already updating the 3D Candidate.');
         }
-        const views = this.resolveCurrentViews();
+        const views = [...this.resolveCurrentViews()].sort((left, right) =>
+            left.viewId.localeCompare(right.viewId)
+        );
         const included = views
             .filter(
                 (view) =>
@@ -175,7 +256,7 @@ export class AISelectCandidateCorrectionController {
             const cached = this.cachedEvidence.get(view.viewId);
             if (
                 cached !== undefined &&
-                areEvidenceIdentitiesEqual(
+                candidateEvidenceIdentitiesEqual(
                     cached.identity,
                     view.evidenceIdentity
                 )
@@ -202,36 +283,30 @@ export class AISelectCandidateCorrectionController {
             if (ordinal !== this.updateOrdinal) {
                 return;
             }
-            const currentIncluded = this.resolveCurrentViews()
-                .filter(
-                    (view) =>
-                        view.participation === 'included' &&
-                        view.stableMaskDigest !== null &&
-                        view.evidenceIdentity !== null
-                )
-                .sort((left, right) =>
-                    left.viewId.localeCompare(right.viewId)
-                );
-            if (
-                currentIncluded.length !== included.length ||
-                currentIncluded.some(
-                    (view, index) =>
-                        view.viewId !== included[index].viewId ||
-                        !areEvidenceIdentitiesEqual(
-                            view.evidenceIdentity,
-                            included[index].evidenceIdentity
-                        )
-                )
-            ) {
+            const currentViews = [...this.resolveCurrentViews()].sort(
+                (left, right) => left.viewId.localeCompare(right.viewId)
+            );
+            if (!stableViewInputsEqual(currentViews, views)) {
                 throw new Error(
                     'AI Select inputs changed while the 3D Candidate was updating.'
                 );
             }
+            validateProductionResult(
+                result,
+                included.map((view) => view.viewId)
+            );
+            const evidence = Object.fromEntries(
+                Object.entries(result.evidence).map(([viewId, value]) => [
+                    viewId,
+                    copyEvidence(value)
+                ])
+            );
             this.candidatePublications.publish(
                 result.candidate,
                 result.publicationBinding
             );
-            this.rememberPublishedEvidence(result.evidence);
+            this.rememberPublishedEvidence(evidence);
+            result.publishRelatedProducts?.();
             this.mode = 'candidate';
             this.status = 'idle';
             this.errorMessage = undefined;

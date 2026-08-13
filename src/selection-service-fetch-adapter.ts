@@ -444,7 +444,6 @@ class FetchSelectionServiceAdapter
             classificationScopeStableGaussianIds:
                 request.classificationScopeStableGaussianIds,
             evidenceWorkingSet: request.evidenceWorkingSet,
-            generationState: request.generationState,
             views: request.views.map((view) => ({
                 currentInput: view.currentInput,
                 cameraBinding: view.cameraBinding,

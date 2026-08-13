@@ -29,10 +29,18 @@ const view = (viewId, overrides = {}) => ({
     stableMaskDigest: digest(viewId === 'view-1' ? '1' : '2'),
     evidenceIdentity: {
         viewId,
+        cameraBindingDigest: digest('a'),
         rgbDigest: digest(viewId === 'view-1' ? '3' : '4'),
         stableMaskDigest: digest(viewId === 'view-1' ? '1' : '2'),
-        evidencePolicyDigest: digest('5')
+        evidencePolicyDigest: digest('5'),
+        renderWorkingSetToken: digest('b'),
+        evidenceWorkingSetToken: digest('9'),
+        rasterImplementationId: 'gsplat-reference-rgb/v1',
+        evidenceBackendKind: 'reference-contributor',
+        evidenceBackendId: 'complete-contributor/reference-v1',
+        runtimeBuildId: 'locked-runtime-build-1'
     },
+    payload: null,
     ...overrides
 });
 
@@ -219,4 +227,59 @@ test('a Stable input race discards the completed replacement before publication'
         [5]
     );
     assert.deepEqual(h.dirty.state.evidenceDirtyViewIds, ['view-1']);
+});
+
+test('an Excluded Stable-input race discards every related publication', async () => {
+    let finish;
+    let relatedPublicationCount = 0;
+    const h = harness(
+        (_input, views) =>
+            new Promise((resolve) => {
+                finish = () =>
+                    resolve({
+                        ...result(views, [11], [9]),
+                        publishRelatedProducts: () => {
+                            relatedPublicationCount += 1;
+                        }
+                    });
+            })
+    );
+    h.currentViews[1] = view('view-2', { participation: 'excluded' });
+    h.dirty.markParticipationChanged('view-2');
+    const updating = h.controller.updateCandidate();
+    h.currentViews[1] = view('view-2', {
+        participation: 'excluded',
+        stableMaskDigest: digest('e'),
+        evidenceIdentity: {
+            ...h.currentViews[1].evidenceIdentity,
+            stableMaskDigest: digest('e')
+        }
+    });
+    h.dirty.markStableMaskPublished('view-2');
+    finish();
+
+    await assert.rejects(updating, /inputs changed/i);
+
+    assert.equal(relatedPublicationCount, 0);
+    assert.deepEqual(
+        h.publications.inspectableCandidate.candidate.selectedStableGaussianIds,
+        [5]
+    );
+});
+
+test('Working Set and backend identity changes force exact Evidence recompute', async () => {
+    const h = harness(async (_input, views) => result(views, [5, 11], [9]));
+    h.currentViews[0] = view('view-1', {
+        evidenceIdentity: {
+            ...h.currentViews[0].evidenceIdentity,
+            evidenceWorkingSetToken: digest('f'),
+            runtimeBuildId: 'locked-runtime-build-2'
+        }
+    });
+    h.dirty.markEvidencePolicyOrWorkingSetChanged(['view-1']);
+
+    await h.controller.updateCandidate();
+
+    assert.deepEqual(h.calls[0].recomputeViewIds, ['view-1']);
+    assert.deepEqual(h.calls[0].reuseViewIds, ['view-2']);
 });

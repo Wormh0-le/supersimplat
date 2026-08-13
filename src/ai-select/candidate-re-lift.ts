@@ -24,11 +24,6 @@ import {
 } from './gaussian-evidence-contract';
 import { isMaskArtifact, type MaskArtifact } from './mask-annotation';
 import {
-    isLiftReadinessArtifact,
-    type LiftReadinessArtifact,
-    type LiftReadinessGenerationState
-} from './lift-readiness';
-import {
     isPackedSceneSnapshot,
     sha256Digest,
     type PackedSceneSnapshot
@@ -60,7 +55,6 @@ export interface CandidateReLiftRequest {
     readonly classificationUniverseStableGaussianIds: readonly number[];
     readonly classificationScopeStableGaussianIds: readonly number[];
     readonly evidenceWorkingSet: EvidenceWorkingSet;
-    readonly generationState: LiftReadinessGenerationState;
     readonly views: readonly CandidateReLiftViewInput[];
 }
 
@@ -76,7 +70,6 @@ export interface CandidateReLiftResponse {
     readonly requestBinding: AIRequestBinding;
     readonly targetSplatId: string;
     readonly evidence: readonly CandidateReLiftEvidenceResult[];
-    readonly readiness: LiftReadinessArtifact;
     readonly candidate: ReferenceCandidateArtifact;
 }
 
@@ -87,6 +80,7 @@ export interface AISelectCandidateReLiftProvider {
 }
 
 type UnknownRecord = Record<string, unknown>;
+const encoder = new TextEncoder();
 
 const isRecord = (value: unknown): value is UnknownRecord =>
     typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -102,6 +96,44 @@ const bindingMatches = (
         right.dependencyToken
     );
 
+const compareUtf8 = (left: string, right: string): number => {
+    const leftBytes = encoder.encode(left);
+    const rightBytes = encoder.encode(right);
+    const length = Math.min(leftBytes.length, rightBytes.length);
+    for (let index = 0; index < length; index += 1) {
+        if (leftBytes[index] !== rightBytes[index]) {
+            return leftBytes[index] - rightBytes[index];
+        }
+    }
+    return leftBytes.length - rightBytes.length;
+};
+
+const stableIdsEqual = (
+    left: readonly number[],
+    right: readonly number[]
+): boolean =>
+    left.length === right.length &&
+    left.every((stableId, index) => stableId === right[index]);
+
+const stableIdsAreSubsetOf = (
+    subset: readonly number[],
+    superset: readonly number[]
+): boolean => {
+    let subsetIndex = 0;
+    let supersetIndex = 0;
+    while (subsetIndex < subset.length && supersetIndex < superset.length) {
+        if (subset[subsetIndex] === superset[supersetIndex]) {
+            subsetIndex += 1;
+            supersetIndex += 1;
+        } else if (subset[subsetIndex] > superset[supersetIndex]) {
+            supersetIndex += 1;
+        } else {
+            return false;
+        }
+    }
+    return subsetIndex === subset.length;
+};
+
 export const isCandidateReLiftRequest = (
     value: unknown
 ): value is CandidateReLiftRequest => {
@@ -115,9 +147,6 @@ export const isCandidateReLiftRequest = (
         !Array.isArray(value.classificationUniverseStableGaussianIds) ||
         !Array.isArray(value.classificationScopeStableGaussianIds) ||
         !isEvidenceWorkingSet(value.evidenceWorkingSet) ||
-        !['active', 'stopped', 'complete', 'unavailable'].includes(
-            value.generationState as string
-        ) ||
         !Array.isArray(value.views) ||
         value.views.length === 0
     ) {
@@ -127,9 +156,18 @@ export const isCandidateReLiftRequest = (
     const requestBinding = value.requestBinding;
     const targetSplatId = value.targetSplatId;
     const evidenceWorkingSet = value.evidenceWorkingSet;
+    const snapshotStableIds = [...snapshot.stableIds].sort(
+        (left, right) => left - right
+    );
+    const universe = value.classificationUniverseStableGaussianIds;
+    const scope = value.classificationScopeStableGaussianIds;
     return (
         requestBinding.dependencyToken.splatId === targetSplatId &&
+        snapshot.sceneId === targetSplatId &&
         evidenceWorkingSet.targetSplatId === targetSplatId &&
+        stableIdsEqual(universe, snapshotStableIds) &&
+        stableIdsAreSubsetOf(scope, universe) &&
+        stableIdsAreSubsetOf(evidenceWorkingSet.stableGaussianIds, universe) &&
         value.views.every((entry) => {
             if (
                 !isRecord(entry) ||
@@ -159,13 +197,27 @@ export const isCandidateReLiftRequest = (
                     referenceEvidenceRuntimeBuildId &&
                 currentInput.renderWorkingSet.renderWorkingSetToken ===
                     snapshot.contentDigest &&
+                currentInput.renderWorkingSet.targetSplatId ===
+                    targetSplatId &&
+                currentInput.renderWorkingSet.completeness === 'complete' &&
+                areTargetDependencyTokensEqual(
+                    currentInput.renderWorkingSet.dependencyToken,
+                    requestBinding.dependencyToken
+                ) &&
+                stableIdsEqual(
+                    currentInput.renderWorkingSet.stableGaussianIds,
+                    snapshotStableIds
+                ) &&
                 currentInput.view.cameraBindingDigest ===
                     cameraBindingDigest(entry.cameraBinding) &&
                 currentInput.view.rgbDigest !== undefined &&
                 currentInput.view.stableMaskDigest ===
                     entry.stableMask.digest
             );
-        })
+        }) &&
+        new Set(
+            value.views.map((entry) => entry.currentInput.view.viewId)
+        ).size === value.views.length
     );
 };
 
@@ -184,7 +236,6 @@ export const isCandidateReLiftResponseForRequest = (
             request.requestBinding
         ) ||
         !Array.isArray(value.evidence) ||
-        !isLiftReadinessArtifact(value.readiness) ||
         !isReferenceCandidateArtifact(value.candidate)
     ) {
         return false;
@@ -194,7 +245,8 @@ export const isCandidateReLiftResponseForRequest = (
             (entry) => entry.currentInput.view.participation === 'included'
         )
         .sort((left, right) =>
-            left.currentInput.view.viewId.localeCompare(
+            compareUtf8(
+                left.currentInput.view.viewId,
                 right.currentInput.view.viewId
             )
         );
@@ -202,7 +254,7 @@ export const isCandidateReLiftResponseForRequest = (
         if (!isRecord(left) || !isRecord(right)) {
             return 0;
         }
-        return String(left.viewId).localeCompare(String(right.viewId));
+        return compareUtf8(String(left.viewId), String(right.viewId));
     });
     if (
         evidence.length !== included.length ||
@@ -223,7 +275,6 @@ export const isCandidateReLiftResponseForRequest = (
         return false;
     }
     const candidate = value.candidate;
-    const readiness = value.readiness;
     const publicationBinding = candidate.publicationBinding;
     const evidenceByView = new Map(
         evidence.map((entry) => [
@@ -268,7 +319,7 @@ export const isCandidateReLiftResponseForRequest = (
                         viewId
                     }))
                     .sort((left, right) =>
-                        left.viewId.localeCompare(right.viewId)
+                        compareUtf8(left.viewId, right.viewId)
                     )
             })
         )
@@ -288,21 +339,15 @@ export const isCandidateReLiftResponseForRequest = (
         publicationBinding.evidenceWorkingSetToken ===
             expectedBinding.evidenceWorkingSetToken &&
         publicationBinding.evidenceArtifactSetDigest ===
-            readiness.evidenceArtifactSetDigest &&
-        publicationBinding.evidenceArtifactSetDigest ===
             artifactSetDigest &&
-        readiness.requestBinding.targetContextId ===
-            request.requestBinding.targetContextId &&
-        readiness.requestBinding.contextRevision ===
-            request.requestBinding.contextRevision &&
-        readiness.targetSplatId === request.targetSplatId &&
-        readiness.evidenceWorkingSetToken ===
-            request.evidenceWorkingSet.evidenceWorkingSetToken &&
-        readiness.evidenceArtifactSetDigest ===
-            publicationBinding.evidenceArtifactSetDigest &&
-        readiness.aggregationResultDigest ===
-            candidate.sourceAggregationResultDigest &&
-        readiness.generationState === request.generationState &&
+        stableIdsAreSubsetOf(
+            candidate.candidate.selectedStableGaussianIds,
+            request.classificationScopeStableGaussianIds
+        ) &&
+        stableIdsAreSubsetOf(
+            candidate.uncertain.stableGaussianIds,
+            request.classificationScopeStableGaussianIds
+        ) &&
         JSON.stringify(publicationBinding.referenceBackendIdentity) ===
             JSON.stringify(expectedBinding.referenceBackendIdentity)
     );

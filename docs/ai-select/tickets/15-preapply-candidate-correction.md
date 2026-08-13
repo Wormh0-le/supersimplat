@@ -62,9 +62,17 @@ Implement structural correction before Candidate application. Users change obser
 - Companion orchestration ignores Excluded Views for production/aggregation,
   recomputes stale or missing artifacts, and constructs the Candidate only
   after all Included Views succeed.
+- The route validates the registered full-scene Render Working Set and locked
+  reference backend/runtime identity before either cache reuse or recompute,
+  and occupies the Companion's single global AI operation slot throughout the
+  transaction.
 - The Dock exposes `Fix AI Result` and `Update 3D Candidate`. Ticket 16 remains
   the owner of native Set/Add/Remove/Intersect; reference Candidates remain
   application-blocked.
+- Formal Lift Readiness stays withheld from this live reference slice because
+  no target-local Core Target Working Set builder exists yet. Whole-scene IDs
+  remain a conservative reference Evidence/classification scope but are not
+  presented as target Observation Coverage.
 - This is reference/debug Contributor work. It does not implement or validate
   Ticket 20's production same-decision Direct Evidence kernel.
 

@@ -3,10 +3,15 @@ import type {
     AnchorRenderRequest,
     AnchorRenderResponse
 } from './ai-select/anchor-render-service';
-import type {
-    AISelectCandidateReLiftProvider,
-    CandidateReLiftRequest,
-    CandidateReLiftResponse
+import {
+    referenceAggregationPolicyDigest,
+    referenceContributorEvidenceBackendId,
+    referenceEvidencePolicyDigest,
+    referenceEvidenceRasterImplementationId,
+    referenceEvidenceRuntimeBuildId,
+    type AISelectCandidateReLiftProvider,
+    type CandidateReLiftRequest,
+    type CandidateReLiftResponse
 } from './ai-select/candidate-re-lift';
 import type {
     AIViewRenderRequest,
@@ -170,9 +175,19 @@ interface SelectionServiceCapabilities {
     runtimeProfileId: string;
     renderer: SelectionServiceRendererCapability;
     imageInstanceProvider: SelectionServiceImageInstanceProviderCapability;
+    referenceCandidateReLift: SelectionServiceReferenceCandidateReLiftCapability;
     supportedOperations: readonly string[];
     activeModelManifest: SelectionServiceModelManifest;
     allowedEditorOrigins: readonly string[];
+}
+
+interface SelectionServiceReferenceCandidateReLiftCapability {
+    readonly evidencePolicyDigest: string;
+    readonly aggregationPolicyDigest: string;
+    readonly rasterImplementationId: string;
+    readonly evidenceBackendKind: 'reference-contributor';
+    readonly evidenceBackendId: string;
+    readonly runtimeBuildId: string;
 }
 
 interface SelectionServiceReadinessProbe {
@@ -375,6 +390,9 @@ const copyCapabilities = (
             capabilities.imageInstanceProvider.adapterCapabilityDigest,
         message: capabilities.imageInstanceProvider.message
     },
+    referenceCandidateReLift: {
+        ...capabilities.referenceCandidateReLift
+    },
     supportedOperations: [...capabilities.supportedOperations],
     activeModelManifest: {
         digest: capabilities.activeModelManifest.digest,
@@ -545,6 +563,7 @@ const validateCapabilities = (
     }
     if (
         !isRecord(value.imageInstanceProvider) ||
+        !isRecord(value.referenceCandidateReLift) ||
         (value.imageInstanceProvider.status !== 'ready' &&
             value.imageInstanceProvider.status !== 'unavailable') ||
         !isNonEmptyString(value.imageInstanceProvider.adapterId) ||
@@ -554,6 +573,23 @@ const validateCapabilities = (
         typeof value.imageInstanceProvider.authoritativeRgb
             .companionReference !== 'boolean' ||
         !isRecord(value.imageInstanceProvider.promptCapabilities)
+    ) {
+        return false;
+    }
+    const candidateReLift = value.referenceCandidateReLift;
+    if (
+        typeof candidateReLift.evidencePolicyDigest !== 'string' ||
+        !/^sha256:[a-f0-9]{64}$/i.test(
+            candidateReLift.evidencePolicyDigest
+        ) ||
+        typeof candidateReLift.aggregationPolicyDigest !== 'string' ||
+        !/^sha256:[a-f0-9]{64}$/i.test(
+            candidateReLift.aggregationPolicyDigest
+        ) ||
+        !isNonEmptyString(candidateReLift.rasterImplementationId) ||
+        candidateReLift.evidenceBackendKind !== 'reference-contributor' ||
+        !isNonEmptyString(candidateReLift.evidenceBackendId) ||
+        !isNonEmptyString(candidateReLift.runtimeBuildId)
     ) {
         return false;
     }
@@ -1138,6 +1174,20 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             !capabilities.supportedOperations.includes(
                 this.requirements.candidateReLiftOperation
             )
+            || capabilities.referenceCandidateReLift.evidencePolicyDigest !==
+                referenceEvidencePolicyDigest
+            || capabilities.referenceCandidateReLift
+                    .aggregationPolicyDigest !==
+                referenceAggregationPolicyDigest
+            || capabilities.referenceCandidateReLift
+                    .rasterImplementationId !==
+                referenceEvidenceRasterImplementationId
+            || capabilities.referenceCandidateReLift.evidenceBackendKind !==
+                'reference-contributor'
+            || capabilities.referenceCandidateReLift.evidenceBackendId !==
+                referenceContributorEvidenceBackendId
+            || capabilities.referenceCandidateReLift.runtimeBuildId !==
+                referenceEvidenceRuntimeBuildId
         ) {
             return diagnostic(
                 'candidateReLiftUnsupported',

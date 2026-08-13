@@ -61,8 +61,20 @@ const capabilities = (overrides = {}) => ({
         compilerPolicyVersion: 'sam3-image-instance-compiler/v1',
         adapterCapabilityDigest: `sha256:${'c'.repeat(64)}`
     },
+    referenceCandidateReLift: {
+        evidencePolicyDigest:
+            'sha256:debcee99d261f28ab373b16016447f056872476a960a1af23599cc6ea1f20efd',
+        aggregationPolicyDigest:
+            'sha256:082dd2a030a21448c16571ce28f741fa50023a831990cae3dd3e7bcc16c02454',
+        rasterImplementationId: 'gsplat-reference-rgb/v1',
+        evidenceBackendKind: 'reference-contributor',
+        evidenceBackendId: 'complete-contributor/reference-v1',
+        runtimeBuildId:
+            'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40'
+    },
     supportedOperations: [
         'aiSelectAnchorRender',
+        'aiSelectReferenceCandidateReLift',
         'aiSelectMaskProposals',
         'autoMaskProposalSetSchemaV3',
         'binarySceneSnapshotRegistrationV1'
@@ -333,6 +345,30 @@ test('accepts only the current SAM 3 Image instance Runtime Profile', async () =
 
     assert.equal(readiness.state.status, 'available');
     assert.equal(readiness.state.diagnostic.code, 'available');
+});
+
+test('rejects a Candidate Re-Lift policy, backend, or runtime identity mismatch', async () => {
+    const current = capabilities().referenceCandidateReLift;
+    const readiness = new SelectionServiceReadiness({
+        probe: new DeterministicReadinessProbe({
+            capabilitiesResult: capabilities({
+                referenceCandidateReLift: {
+                    ...current,
+                    runtimeBuildId: `sha256:${'0'.repeat(64)}`
+                }
+            })
+        }),
+        configuration: configuration(),
+        logTransition: () => {}
+    });
+
+    await readiness.refresh();
+
+    assert.equal(readiness.state.status, 'unavailable');
+    assert.equal(
+        readiness.state.diagnostic.code,
+        'candidateReLiftUnsupported'
+    );
 });
 
 test('rejects the historical Multiplex static manifest', async () => {

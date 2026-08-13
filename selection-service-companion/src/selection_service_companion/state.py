@@ -37,6 +37,7 @@ from .camera_binding import (
 from .candidate_re_lift import (
     CandidateReLiftError,
     produce_reference_candidate_re_lift,
+    validate_candidate_re_lift_snapshot_binding,
 )
 from .evidence import ContributorRenderer, build_evidence_snapshot
 from .generated_views import (
@@ -54,6 +55,9 @@ from .gsplat_renderer import (
     validate_supported_snapshot,
 )
 from .reference_gaussian_evidence import default_reference_evidence_policy
+from .reference_gaussian_evidence_aggregation import (
+    default_reference_aggregation_policy,
+)
 from .masking import (
     CompiledImagePromptProgram,
     MaskProduction,
@@ -1015,6 +1019,11 @@ class CompanionState:
         init=False,
         repr=False,
     )
+    _active_candidate_re_lift: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
     _image_instance_mask_admissions: dict[str, ImageInstanceMaskAdmission] = field(
         default_factory=dict,
         init=False,
@@ -1370,6 +1379,7 @@ class CompanionState:
             "runtimeProfileId": AI_SELECT_RUNTIME_PROFILE_ID,
             "renderer": self._renderer_capability(release),
             "imageInstanceProvider": provider,
+            "referenceCandidateReLift": self._reference_candidate_re_lift_capability(),
             "supportedOperations": [
                 "aiSelectAnchorRender",
                 "aiSelectAnchorReferenceContributor",
@@ -1785,30 +1795,50 @@ class CompanionState:
                 'candidateReLiftFailure',
                 'Candidate Re-Lift requires a packed binary Scene Snapshot.',
             )
-        renderer = self._require_contributor_renderer()
-        if not isinstance(renderer, GsplatContributorRenderer):
-            raise MaskSessionError(
-                'rendererUnavailable',
-                'Candidate Re-Lift requires the locked gsplat Contributor renderer.',
-            )
-
-        def produce(
-            current_input: Mapping[str, object],
-            stable_mask: Mapping[str, object],
-            camera_binding: Mapping[str, object],
-        ) -> dict[str, object]:
-            return renderer.compute_reference_evidence(
-                admission_input=current_input,
-                stable_mask_artifact=stable_mask,
-                policy=default_reference_evidence_policy(),
-                scene_snapshot=snapshot.scene,
-                camera_binding=camera_binding,
-            )
+        snapshot_stable_ids = sorted(int(value) for value in snapshot.stable_ids)
+        validate_candidate_re_lift_snapshot_binding(
+            request,
+            scene_content_digest=snapshot.scene.content_digest,
+            scene_stable_ids=snapshot_stable_ids,
+        )
+        operation_id = str(request.get('liftAttemptId', ''))
+        with self._session_lock:
+            if self._operation_slot_in_use_locked():
+                raise MaskSessionError(
+                    'capacityFull',
+                    'The Companion is already serving another AI or Object Selection operation.',
+                )
+            self._active_candidate_re_lift = operation_id
 
         try:
-            return produce_reference_candidate_re_lift(request, produce)
-        except CandidateReLiftError as error:
-            raise MaskSessionError(error.code, str(error)) from error
+            renderer = self._require_contributor_renderer()
+            if not isinstance(renderer, GsplatContributorRenderer):
+                raise MaskSessionError(
+                    'rendererUnavailable',
+                    'Candidate Re-Lift requires the locked gsplat Contributor renderer.',
+                )
+
+            def produce(
+                current_input: Mapping[str, object],
+                stable_mask: Mapping[str, object],
+                camera_binding: Mapping[str, object],
+            ) -> dict[str, object]:
+                return renderer.compute_reference_evidence(
+                    admission_input=current_input,
+                    stable_mask_artifact=stable_mask,
+                    policy=default_reference_evidence_policy(),
+                    scene_snapshot=snapshot.scene,
+                    camera_binding=camera_binding,
+                )
+
+            try:
+                return produce_reference_candidate_re_lift(request, produce)
+            except CandidateReLiftError as error:
+                raise MaskSessionError(error.code, str(error)) from error
+        finally:
+            with self._session_lock:
+                if self._active_candidate_re_lift == operation_id:
+                    self._active_candidate_re_lift = None
 
     def _render_ai_select_view(
         self,
@@ -7209,6 +7239,7 @@ class CompanionState:
             or self._active_local_key_view_plan is not None
             or self._active_generated_view_mask is not None
             or self._active_image_instance_mask is not None
+            or self._active_candidate_re_lift is not None
         )
 
     def _capacity(self) -> dict[str, int]:
@@ -7248,6 +7279,7 @@ class CompanionState:
             "protocolVersion": PROTOCOL_VERSION,
             "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}+{release['release']}",
             "renderer": renderer_capability,
+            "referenceCandidateReLift": self._reference_candidate_re_lift_capability(),
             "supportedPromptKinds": ["point", "box"],
             "supportedOperations": [
                 "aiSelectAnchorRender",
@@ -7267,6 +7299,21 @@ class CompanionState:
             "modelManifests": manifests,
             "capacity": self._capacity(),
             "allowedEditorOrigins": allowed_editor_origins,
+        }
+
+    @staticmethod
+    def _reference_candidate_re_lift_capability() -> dict[str, str]:
+        return {
+            'evidencePolicyDigest': str(
+                default_reference_evidence_policy()['evidencePolicyDigest']
+            ),
+            'aggregationPolicyDigest': str(
+                default_reference_aggregation_policy()['aggregationPolicyDigest']
+            ),
+            'rasterImplementationId': 'gsplat-reference-rgb/v1',
+            'evidenceBackendKind': 'reference-contributor',
+            'evidenceBackendId': 'complete-contributor/reference-v1',
+            'runtimeBuildId': EXPECTED_RENDERER_LOCK_DIGEST,
         }
 
     def _renderer_capability(self, release: dict[str, str]) -> dict[str, Any]:

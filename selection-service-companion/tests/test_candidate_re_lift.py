@@ -7,6 +7,7 @@ import unittest
 from selection_service_companion.candidate_re_lift import (
     CandidateReLiftError,
     produce_reference_candidate_re_lift,
+    validate_candidate_re_lift_snapshot_binding,
 )
 from selection_service_companion.gaussian_evidence_contract import (
     admit_gaussian_evidence,
@@ -16,6 +17,9 @@ from selection_service_companion.gaussian_evidence_contract import (
 from selection_service_companion.camera_binding import camera_binding_digest
 from selection_service_companion.reference_gaussian_evidence import (
     default_reference_evidence_policy,
+)
+from selection_service_companion.renderer_runtime import (
+    EXPECTED_RENDERER_LOCK_DIGEST,
 )
 
 
@@ -73,7 +77,7 @@ def current_input(view_id: str, participation: str = "included") -> dict[str, ob
         "rasterImplementationId": "gsplat-reference-rgb/v1",
         "evidenceBackendKind": "reference-contributor",
         "evidenceBackendId": "complete-contributor/reference-v1",
-        "runtimeBuildId": "locked-runtime-build-1",
+        "runtimeBuildId": EXPECTED_RENDERER_LOCK_DIGEST,
     }
 
 
@@ -145,7 +149,6 @@ def request(views: list[dict[str, object]]) -> dict[str, object]:
         "classificationUniverseStableGaussianIds": [5, 9, 11, 13, 42],
         "classificationScopeStableGaussianIds": [5, 9, 11, 13],
         "evidenceWorkingSet": deepcopy(first["evidenceWorkingSet"]),
-        "generationState": "complete",
         "views": views,
     }
 
@@ -181,7 +184,7 @@ class CandidateReLiftTests(unittest.TestCase):
             response["candidate"]["uncertain"]["stableGaussianIds"],
             [11, 13],
         )
-        self.assertEqual(response["readiness"]["source"], "formal-evidence")
+        self.assertNotIn("readiness", response)
 
     def test_excluded_view_never_produces_or_contributes_evidence(self) -> None:
         produced: list[str] = []
@@ -205,6 +208,7 @@ class CandidateReLiftTests(unittest.TestCase):
         stale_artifact = artifact(stale_input)
         changed = view_record("view-1", cached=stale_artifact)
         changed["currentInput"]["view"]["stableMaskDigest"] = digest("9")
+        changed["stableMask"]["digest"] = digest("9")
         produced: list[str] = []
 
         response = produce_reference_candidate_re_lift(
@@ -226,6 +230,47 @@ class CandidateReLiftTests(unittest.TestCase):
                     if current["view"]["viewId"] == "view-1"
                     else (_ for _ in ()).throw(RuntimeError("GPU failed"))
                 ),
+            )
+
+    def test_rejects_an_unlocked_reference_runtime_before_reuse(self) -> None:
+        record = view_record("view-1")
+        record["currentInput"]["runtimeBuildId"] = "unlocked-runtime"
+
+        with self.assertRaisesRegex(CandidateReLiftError, "unsupported"):
+            produce_reference_candidate_re_lift(
+                request([record]),
+                lambda current, _mask, _camera: artifact(current),
+            )
+
+    def test_snapshot_binding_is_required_even_when_all_evidence_is_reused(
+        self,
+    ) -> None:
+        current = current_input("view-1")
+        cached = artifact(current)
+        value = request([view_record("view-1", cached=cached)])
+
+        with self.assertRaisesRegex(CandidateReLiftError, "Scene Snapshot"):
+            validate_candidate_re_lift_snapshot_binding(
+                value,
+                scene_content_digest=digest("9"),
+                scene_stable_ids=[5, 9, 11, 13, 42],
+            )
+
+    def test_rejects_duplicate_view_ids(self) -> None:
+        with self.assertRaisesRegex(CandidateReLiftError, "incompatible"):
+            produce_reference_candidate_re_lift(
+                request([view_record("view-1"), view_record("view-1")]),
+                lambda current, _mask, _camera: artifact(current),
+            )
+
+    def test_rejects_camera_or_stable_mask_binding_mismatch(self) -> None:
+        record = view_record("view-1")
+        record["stableMask"]["digest"] = digest("9")
+
+        with self.assertRaisesRegex(CandidateReLiftError, "Camera/Mask"):
+            produce_reference_candidate_re_lift(
+                request([record]),
+                lambda current, _mask, _camera: artifact(current),
             )
 
 

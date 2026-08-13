@@ -1135,6 +1135,41 @@ export const isGaussianEvidenceArtifact = (
     );
 };
 
+/** Defensive copy for an artifact that crossed an untrusted transport seam. */
+export const copyGaussianEvidenceArtifact = (
+    value: GaussianEvidenceArtifact
+): GaussianEvidenceArtifact => {
+    if (!isGaussianEvidenceArtifact(value)) {
+        throw new Error('AI Select Gaussian Evidence artifact is invalid.');
+    }
+    return createGaussianEvidenceArtifact(
+        {
+            requestBinding: value.requestBinding,
+            targetSplatId: value.targetSplatId,
+            viewId: value.viewId,
+            cameraBindingDigest: value.cameraBindingDigest,
+            rgbDigest: value.rgbDigest,
+            stableMaskDigest: value.stableMaskDigest,
+            evidencePolicyDigest: value.evidencePolicyDigest,
+            renderWorkingSetToken: value.renderWorkingSetToken,
+            evidenceWorkingSetToken: value.evidenceWorkingSetToken,
+            stableGaussianIds: value.stableGaussianIds,
+            rasterImplementationId: value.rasterImplementationId,
+            evidenceBackendKind: value.evidenceBackendKind,
+            evidenceBackendId: value.evidenceBackendId,
+            runtimeBuildId: value.runtimeBuildId
+        },
+        {
+            positiveMass: value.positiveMass,
+            negativeMass: value.negativeMass,
+            visibleMass: value.visibleMass,
+            ...(value.boundaryMass === undefined
+                ? {}
+                : { boundaryMass: value.boundaryMass })
+        }
+    );
+};
+
 const areRequestBindingsEqual = (
     left: AIRequestBinding,
     right: AIRequestBinding

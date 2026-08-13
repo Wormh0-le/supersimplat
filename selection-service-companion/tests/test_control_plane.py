@@ -99,6 +99,10 @@ class CompanionControlPlaneTests(unittest.TestCase):
             "autoMaskProposalSetSchemaV3",
             capabilities["supportedOperations"],
         )
+        self.assertEqual(
+            capabilities["referenceCandidateReLift"]["runtimeBuildId"],
+            "sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40",
+        )
         self.assertEqual(capabilities["renderer"]["status"], "unavailable")
 
     def test_keeps_the_reference_point_adapter_out_of_production_capabilities(self) -> None:
@@ -108,6 +112,18 @@ class CompanionControlPlaneTests(unittest.TestCase):
             self.state.capabilities([EDITOR_ORIGIN])["modelManifests"],
             [],
         )
+
+    def test_candidate_re_lift_occupies_the_single_global_operation_slot(self) -> None:
+        with self.state._session_lock:
+            self.state._active_candidate_re_lift = "re-lift-1"
+        try:
+            self.assertEqual(
+                self.state.capabilities([EDITOR_ORIGIN])["capacity"],
+                {"maximumActiveSessions": 1, "activeSessions": 1},
+            )
+        finally:
+            with self.state._session_lock:
+                self.state._active_candidate_re_lift = None
 
     def test_rejects_a_sam31_manifest_with_an_unpinned_runtime_configuration(self) -> None:
         with self.assertRaisesRegex(ValueError, "runtimeConfigDigest"):

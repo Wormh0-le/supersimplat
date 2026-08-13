@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.23
+# AI Select v1 — Implementation Ticket Graph v2.24
 
-Status: **active implementation graph — Final Spec v1.3 synchronized; Ticket 13 is implemented and Ticket 15 is current**
+Status: **active implementation graph — Final Spec v1.3 synchronized; Ticket 15 is implemented and Ticket 16 is current**
 
 Branch: `ai-select-v1`
 
@@ -126,7 +126,7 @@ implemented prerequisites:
 - 13 — Visible Evidence Coverage + View Diversity + Lift Readiness
 
 current parent frontier:
-- 15 — Pre-apply Candidate correction + explicit Evidence-aware Re-Lift
+- 16 — Candidate → Native Set / Add / Remove / Intersect
 
 current implementation stage:
 - no active Ticket 14 substage
@@ -135,11 +135,11 @@ current implementation stage:
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 15
+next_implementation_ticket = 16
 next_implementation_subticket = null
 ```
 
-Ticket 15 is the sole current parent implementation frontier. Ticket 13 and its parent Ticket 14 prerequisites are implemented. Ticket 10 remains optional and off the core release path.
+Ticket 16 is the sole current parent implementation frontier. Ticket 15 and its Ticket 13 / parent Ticket 14 prerequisites are implemented. Ticket 10 remains optional and off the core release path.
 
 ## One valid topological order
 

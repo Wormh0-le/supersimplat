@@ -133,10 +133,14 @@ export class AISelectMaskController implements AISelectMaskAuthoring {
                       getPromptAdapterCapabilities:
                           options.getPromptAdapterCapabilities
                   }),
-            onStableMaskPublished: () =>
-                // The generated controller binds any existing dependent View
-                // identities when it starts the next confirmed run.
-                this.dirtyState.markAnchorStableChanged([])
+            onStableMaskPublished: () => {
+                // Anchor is also an Included Stable View for formal P/N/V.
+                // Its Confirm atomically dirties Anchor Evidence/Candidate;
+                // the generated controller separately dirties geometry/plan
+                // dependencies when a confirmed Anchor run begins.
+                this.dirtyState.markAnchorStableChanged([]);
+                this.dirtyState.markStableMaskPublished(ANCHOR_VIEW_ID);
+            }
         });
         this.anchor.subscribe((state) => {
             const targetContextId = state.context?.targetContextId ?? null;

@@ -10,6 +10,13 @@ import {
     type AnchorRenderResponse
 } from './ai-select/anchor-render-service';
 import {
+    isCandidateReLiftRequest,
+    isCandidateReLiftResponseForRequest,
+    type AISelectCandidateReLiftProvider,
+    type CandidateReLiftRequest,
+    type CandidateReLiftResponse
+} from './ai-select/candidate-re-lift';
+import {
     areCameraBindingsEqual,
     isCameraBinding
 } from './ai-select/camera-binding';
@@ -293,7 +300,8 @@ class FetchSelectionServiceAdapter
         AISelectViewRenderer,
         AISelectGeneratedViewPromptSynthesizer,
         ImageInstanceMaskProvider,
-        AISelectImageInstanceMaskReviewProvider
+        AISelectImageInstanceMaskReviewProvider,
+        AISelectCandidateReLiftProvider
 {
     private getConfiguration: () => SelectionServiceTransportConfiguration;
     private supportsCameraAwareSpatialWorkingSet: () => boolean;
@@ -412,6 +420,52 @@ class FetchSelectionServiceAdapter
             );
         }
         return retry.response;
+    }
+
+    async produceCandidateReLift(
+        request: CandidateReLiftRequest
+    ): Promise<CandidateReLiftResponse> {
+        if (!isCandidateReLiftRequest(request)) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select requires a complete bound Candidate Re-Lift request.'
+            );
+        }
+        await this.registerPackedSnapshot(request.snapshot);
+        const payload = {
+            liftAttemptId: request.liftAttemptId,
+            sceneId: request.snapshot.sceneId,
+            sceneVersion: request.snapshot.sceneVersion,
+            renderConfigVersion: request.snapshot.renderConfiguration.version,
+            requestBinding: request.requestBinding,
+            targetSplatId: request.targetSplatId,
+            classificationUniverseStableGaussianIds:
+                request.classificationUniverseStableGaussianIds,
+            classificationScopeStableGaussianIds:
+                request.classificationScopeStableGaussianIds,
+            evidenceWorkingSet: request.evidenceWorkingSet,
+            generationState: request.generationState,
+            views: request.views.map((view) => ({
+                currentInput: view.currentInput,
+                cameraBinding: view.cameraBinding,
+                stableMask: view.stableMask,
+                ...(view.cachedArtifact === undefined
+                    ? {}
+                    : { cachedArtifact: view.cachedArtifact })
+            }))
+        };
+        const result = await this.requestJson(
+            '/ai-select/candidate-re-lifts',
+            'POST',
+            payload
+        );
+        if (!isCandidateReLiftResponseForRequest(result, request)) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an incomplete or stale Candidate Re-Lift result.'
+            );
+        }
+        return result;
     }
 
     private async renderSpatialAnchor(

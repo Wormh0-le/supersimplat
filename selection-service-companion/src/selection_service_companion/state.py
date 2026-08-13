@@ -34,6 +34,10 @@ from .camera_binding import (
     camera_binding_digest as _route_b_camera_binding_digest,
     parse_camera_binding,
 )
+from .candidate_re_lift import (
+    CandidateReLiftError,
+    produce_reference_candidate_re_lift,
+)
 from .evidence import ContributorRenderer, build_evidence_snapshot
 from .generated_views import (
     GENERATED_VIEW_RESOLUTIONS,
@@ -49,6 +53,7 @@ from .gsplat_renderer import (
     production_gsplat_renderer,
     validate_supported_snapshot,
 )
+from .reference_gaussian_evidence import default_reference_evidence_policy
 from .masking import (
     CompiledImagePromptProgram,
     MaskProduction,
@@ -1376,6 +1381,7 @@ class CompanionState:
                 "aiSelectGeneratedViewPromptSynthesis",
                 "aiSelectImageInstanceMasks",
                 "aiSelectImageInstanceMaskReview",
+                "aiSelectReferenceCandidateReLift",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",
             ],
@@ -1744,6 +1750,65 @@ class CompanionState:
         return self._render_ai_select_view(
             request, expected_view_id=None, timing=timing
         )
+
+    def produce_ai_select_candidate_re_lift(
+        self,
+        request: Mapping[str, object],
+    ) -> dict[str, object]:
+        """Run the packed-scene Ticket 15 reference Re-Lift transaction."""
+
+        scene_id = request.get('sceneId')
+        scene_version = request.get('sceneVersion')
+        render_config_version = request.get('renderConfigVersion')
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (scene_id, scene_version, render_config_version)
+        ):
+            raise CandidateReLiftError(
+                'AI Select Candidate Re-Lift Scene binding is invalid.'
+            )
+        assert isinstance(scene_id, str)
+        assert isinstance(scene_version, str)
+        assert isinstance(render_config_version, str)
+        snapshot = self.scene_snapshot(scene_id, scene_version)
+        if snapshot is None:
+            raise MaskSessionError(
+                'sceneCacheMiss',
+                'The Scene Snapshot is unavailable for Candidate Re-Lift.',
+            )
+        if snapshot.render_config_version != render_config_version:
+            raise CandidateReLiftError(
+                'AI Select Candidate Re-Lift render configuration is stale.'
+            )
+        if not isinstance(snapshot.scene, PackedBinarySceneSnapshot):
+            raise MaskSessionError(
+                'candidateReLiftFailure',
+                'Candidate Re-Lift requires a packed binary Scene Snapshot.',
+            )
+        renderer = self._require_contributor_renderer()
+        if not isinstance(renderer, GsplatContributorRenderer):
+            raise MaskSessionError(
+                'rendererUnavailable',
+                'Candidate Re-Lift requires the locked gsplat Contributor renderer.',
+            )
+
+        def produce(
+            current_input: Mapping[str, object],
+            stable_mask: Mapping[str, object],
+            camera_binding: Mapping[str, object],
+        ) -> dict[str, object]:
+            return renderer.compute_reference_evidence(
+                admission_input=current_input,
+                stable_mask_artifact=stable_mask,
+                policy=default_reference_evidence_policy(),
+                scene_snapshot=snapshot.scene,
+                camera_binding=camera_binding,
+            )
+
+        try:
+            return produce_reference_candidate_re_lift(request, produce)
+        except CandidateReLiftError as error:
+            raise MaskSessionError(error.code, str(error)) from error
 
     def _render_ai_select_view(
         self,
@@ -7195,6 +7260,7 @@ class CompanionState:
                 "aiSelectGeneratedViewPromptSynthesis",
                 "aiSelectImageInstanceMasks",
                 "aiSelectImageInstanceMaskReview",
+                "aiSelectReferenceCandidateReLift",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",
             ],

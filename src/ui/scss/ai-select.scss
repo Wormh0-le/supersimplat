@@ -199,7 +199,8 @@
         flex-shrink: 0;
     }
 
-    #ai-select-anchor-dock-candidate-status {
+    #ai-select-anchor-dock-candidate-status,
+    #ai-select-lift-readiness-status {
         color: $text-primary;
         white-space: normal;
         word-break: break-word;
@@ -216,6 +217,14 @@
     border-top: 1px solid $bcg-lighter;
     background-color: $bcg-primary;
     overflow-y: auto;
+
+    &:not(.pcui-hidden) {
+        display: flex;
+    }
+}
+
+#ai-select-candidate-actions {
+    gap: 6px;
 
     &:not(.pcui-hidden) {
         display: flex;

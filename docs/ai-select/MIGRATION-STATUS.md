@@ -35,7 +35,7 @@ Old scratch compatibility pointers may be removed in a future cleanup only after
 ## Current execution frontier
 
 ```text
-next_implementation_ticket = 15
+next_implementation_ticket = 16
 next_implementation_subticket = null
 
 14A Evidence Contract & Working Set (implemented)
@@ -43,5 +43,6 @@ next_implementation_subticket = null
 → 14C Multi-view Aggregation & Classification (implemented)
 → 14D Atomic Candidate Publication & Reference Validation (implemented)
 → 13 Lift Readiness (implemented)
-→ 15 Candidate correction / Re-Lift (current)
+→ 15 Candidate correction / Re-Lift (implemented)
+→ 16 Native Candidate operations (current)
 ```

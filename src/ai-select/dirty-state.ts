@@ -156,7 +156,14 @@ export class AISelectDirtyStateTracker {
     /** Participation affects aggregation, even though the Mask is unchanged. */
     markParticipationChanged(viewId: string): void {
         assertViewId(viewId);
-        this.evidenceDirtyViewIds.add(viewId);
+        this.liftDirty = true;
+        this.candidateStale = true;
+        this.publish();
+    }
+
+    /** Policy/Working-Set identity changes invalidate exactly their Views. */
+    markEvidencePolicyOrWorkingSetChanged(viewIds: readonly string[]): void {
+        addViewIds(this.evidenceDirtyViewIds, viewIds);
         this.liftDirty = true;
         this.candidateStale = true;
         this.publish();

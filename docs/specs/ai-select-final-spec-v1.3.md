@@ -3,7 +3,7 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.23 / Ticket 13 implemented; Ticket 15 current
+**规划版本：** Ticket Graph v2.24 / Ticket 15 implemented; Ticket 16 current
 **日期：** 2026-08-13
 **适用分支：** `ai-select-v1`  
 **决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017
@@ -729,7 +729,8 @@ Required validation：
 14C  Multi-view Aggregation & Classification                                implemented
 14D  Atomic Candidate Publication & Reference Validation                    implemented
 13   sole Lift Readiness / visibility authority                             implemented
-15   Candidate correction + explicit Re-Lift                                ready / current frontier
+15   Candidate correction + explicit Re-Lift                                implemented
+16   Native Candidate operations                                            ready / current frontier
 10   optional cross-view Evidence-conflict diagnostics                      nonblocking
 ```
 
@@ -745,11 +746,11 @@ stage:  no active Ticket 14 substage
 Compatibility fields：
 
 ```text
-next_implementation_ticket = 15
+next_implementation_ticket = 16
 next_implementation_subticket = null
 ```
 
-Parent Ticket 14 and Ticket 13 are closed. Ticket 15 is current, while Ticket 10 remains
+Parent Ticket 14, Ticket 13 and Ticket 15 are closed. Ticket 16 is current, while Ticket 10 remains
 optional and off the core release path。
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported。

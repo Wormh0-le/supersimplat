@@ -15,7 +15,8 @@ export type EvidenceStatus =
  * policy identity without a later contract change. It is a version identity,
  * not a calibrated policy digest.
  */
-export const aiSelectEvidencePolicyVersion = 'evidence-policy/pnv-v0';
+export const aiSelectEvidencePolicyVersion =
+    'sha256:debcee99d261f28ab373b16016447f056872476a960a1af23599cc6ea1f20efd';
 
 /**
  * The exact dependency identity one per-view Evidence artifact binds. RGB

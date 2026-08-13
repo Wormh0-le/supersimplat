@@ -80,6 +80,26 @@ test('unconfirmed Editing Mask changes do not dirty Evidence or Candidate state'
     });
 });
 
+test('Participation stales Lift without invalidating reusable per-view Evidence', () => {
+    const tracker = new AISelectDirtyStateTracker();
+
+    tracker.markParticipationChanged('view-a');
+
+    assert.deepEqual(state(tracker).evidenceDirtyViewIds, []);
+    assert.equal(tracker.state.liftDirty, true);
+    assert.equal(tracker.state.candidateStale, true);
+});
+
+test('Evidence Policy or Working Set changes invalidate exact View artifacts', () => {
+    const tracker = new AISelectDirtyStateTracker();
+
+    tracker.markEvidencePolicyOrWorkingSetChanged(['view-b', 'view-a']);
+
+    assert.deepEqual(state(tracker).evidenceDirtyViewIds, ['view-a', 'view-b']);
+    assert.equal(tracker.state.liftDirty, true);
+    assert.equal(tracker.state.candidateStale, true);
+});
+
 test('an atomic Candidate publication clears only Evidence/Lift/Candidate dirtiness', () => {
     const tracker = new AISelectDirtyStateTracker();
     tracker.markAnchorStableChanged(['view-b']);

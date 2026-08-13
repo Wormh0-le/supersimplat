@@ -623,7 +623,7 @@ test('Confirm Mask atomically publishes the Editing Mask as a new Stable revisio
     assert.equal(mask.state.editingMask.maskId, editing.maskId);
 });
 
-test('Anchor Stable publication starts only geometry and local-plan recompute', async () => {
+test('Anchor Stable publication dirties geometry, Evidence, Lift, and Candidate', async () => {
     const { mask } = await setup();
     assert.deepEqual(mask.dirtyState.state, {
         targetGeometryDirty: false,
@@ -653,9 +653,9 @@ test('Anchor Stable publication starts only geometry and local-plan recompute', 
         localKeyViewPlanDirty: true,
         promptDirtyViewIds: [],
         maskInferenceDirtyViewIds: [],
-        evidenceDirtyViewIds: [],
-        liftDirty: false,
-        candidateStale: false
+        evidenceDirtyViewIds: ['anchor-view'],
+        liftDirty: true,
+        candidateStale: true
     });
 });
 

@@ -131,6 +131,7 @@ export interface GeneratedAIView {
     readonly maskStatus: GeneratedViewMaskStatus;
     readonly maskErrorMessage?: string;
     readonly stableMaskId?: string;
+    readonly stableMaskDigest?: string;
     readonly maskQuality: GeneratedViewMaskQuality;
     readonly assessment?: ViewAssessmentResult;
     readonly evidenceStatus: EvidenceStatus;
@@ -2198,7 +2199,12 @@ export class AISelectGeneratedViewController {
             ...(view.maskErrorMessage === undefined
                 ? {}
                 : { maskErrorMessage: view.maskErrorMessage }),
-            ...(stableMask === null ? {} : { stableMaskId: stableMask.maskId }),
+            ...(stableMask === null
+                ? {}
+                : {
+                      stableMaskId: stableMask.maskId,
+                      stableMaskDigest: stableMask.artifact.digest
+                  }),
             maskQuality,
             ...(assessment === undefined
                 ? {}

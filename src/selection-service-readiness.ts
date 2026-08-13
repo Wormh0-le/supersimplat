@@ -4,6 +4,11 @@ import type {
     AnchorRenderResponse
 } from './ai-select/anchor-render-service';
 import type {
+    AISelectCandidateReLiftProvider,
+    CandidateReLiftRequest,
+    CandidateReLiftResponse
+} from './ai-select/candidate-re-lift';
+import type {
     AIViewRenderRequest,
     AIViewRenderResponse,
     AISelectGeneratedViewPromptSynthesizer,
@@ -81,6 +86,7 @@ type SelectionServiceReadinessDiagnosticCode =
     | 'imageInstanceProviderUnavailable'
     | 'imageInstanceCapabilityMismatch'
     | 'aiSelectAnchorUnsupported'
+    | 'candidateReLiftUnsupported'
     | 'maskProposalUnsupported'
     | 'binarySceneSnapshotRegistrationUnsupported'
     | 'modelUnavailable'
@@ -185,6 +191,7 @@ interface SelectionServiceReadinessRequirements {
     rgbRendererVersion: string;
     modelAdapterId: string;
     aiSelectAnchorOperation: string;
+    candidateReLiftOperation: string;
     maskProposalOperation: string;
     maskProposalSetSchemaOperation: string;
     binarySceneSnapshotRegistrationOperation: string;
@@ -301,6 +308,7 @@ const defaultRequirements: SelectionServiceReadinessRequirements = {
     rgbRendererVersion: 'gsplat-rgb/v1',
     modelAdapterId: currentImageInstanceAdapterId,
     aiSelectAnchorOperation: 'aiSelectAnchorRender',
+    candidateReLiftOperation: 'aiSelectReferenceCandidateReLift',
     maskProposalOperation: 'aiSelectMaskProposals',
     maskProposalSetSchemaOperation: 'autoMaskProposalSetSchemaV3',
     binarySceneSnapshotRegistrationOperation:
@@ -1128,6 +1136,17 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
         }
         if (
             !capabilities.supportedOperations.includes(
+                this.requirements.candidateReLiftOperation
+            )
+        ) {
+            return diagnostic(
+                'candidateReLiftUnsupported',
+                'Evidence-aware Candidate Re-Lift is unavailable.',
+                'Use the compatible locked Companion release.'
+            );
+        }
+        if (
+            !capabilities.supportedOperations.includes(
                 this.requirements.maskProposalOperation
             ) ||
             !capabilities.supportedOperations.includes(
@@ -1298,7 +1317,8 @@ class ReadinessGatedSelectionServiceAdapter
         AISelectViewRenderer,
         AISelectGeneratedViewPromptSynthesizer,
         ImageInstanceMaskProvider,
-        AISelectImageInstanceMaskReviewProvider
+        AISelectImageInstanceMaskReviewProvider,
+        AISelectCandidateReLiftProvider
 {
     private readiness: SelectionServiceReadinessInterface;
     private adapter: SelectionServiceAdapter | null;
@@ -1414,6 +1434,15 @@ class ReadinessGatedSelectionServiceAdapter
         );
     }
 
+    async produceCandidateReLift(
+        request: CandidateReLiftRequest
+    ): Promise<CandidateReLiftResponse> {
+        this.readiness.requireReady();
+        return await this.requireCandidateReLiftProvider().produceCandidateReLift(
+            request
+        );
+    }
+
     private requireAdapter() {
         if (this.adapter === null) {
             throw new SelectionServiceAdapterNotConfiguredError();
@@ -1522,6 +1551,18 @@ class ReadinessGatedSelectionServiceAdapter
         }
         return adapter as SelectionServiceAdapter &
             AISelectImageInstanceMaskReviewProvider;
+    }
+
+    private requireCandidateReLiftProvider(): AISelectCandidateReLiftProvider {
+        const adapter = this.requireAdapter();
+        if (
+            typeof (adapter as Partial<AISelectCandidateReLiftProvider>)
+                .produceCandidateReLift !== 'function'
+        ) {
+            throw new SelectionServiceAdapterNotConfiguredError();
+        }
+        return adapter as SelectionServiceAdapter &
+            AISelectCandidateReLiftProvider;
     }
 }
 

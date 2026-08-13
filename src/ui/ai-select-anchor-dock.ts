@@ -29,6 +29,10 @@ import {
     type CandidatePublicationStore
 } from '../ai-select/candidate-publication';
 import {
+    type AISelectCandidateCorrectionController,
+    type CandidateCorrectionState
+} from '../ai-select/candidate-correction';
+import {
     PALETTE_TOOLS,
     paletteToolForShortcutKey,
     type PaletteTool
@@ -65,6 +69,10 @@ import type {
     SelectionServiceReadinessInterface,
     SelectionServiceReadinessStatus
 } from '../selection-service-readiness';
+import type {
+    LiftReadinessState,
+    LiftReadinessStore
+} from '../ai-select/lift-readiness';
 
 export interface AISelectAnchorDockOptions {
     readonly onRetry: () => Promise<void>;
@@ -75,6 +83,8 @@ export interface AISelectAnchorDockOptions {
     readonly onAdjustAnchor: () => void;
     readonly generatedViews: AISelectGeneratedViewController;
     readonly candidatePublications: CandidatePublicationStore;
+    readonly candidateCorrection: AISelectCandidateCorrectionController;
+    readonly liftReadiness: LiftReadinessStore;
     readonly maskRegistry: MaskAnnotationRegistry;
     readonly userViewMasks: AISelectUserViewMaskController;
     readonly onInspectCamera: (viewId: string) => void;
@@ -220,6 +230,10 @@ export class AISelectAnchorDock extends Container {
     private readonly maskStatus: Label;
     private readonly promptStatus: Label;
     private readonly candidateStatus: Label;
+    private readonly liftReadinessStatus: Label;
+    private readonly candidateActions: Container;
+    private readonly fixCandidateButton: Button;
+    private readonly updateCandidateButton: Button;
     private readonly imageViewport: HTMLDivElement;
     private readonly imageSurface: HTMLDivElement;
     private readonly image: HTMLImageElement;
@@ -262,6 +276,8 @@ export class AISelectAnchorDock extends Container {
     private confirmationState: AISelectAnchorConfirmationState;
     private generatedState: AISelectGeneratedViewState;
     private candidateState: CandidatePublicationState;
+    private candidateCorrectionState: CandidateCorrectionState;
+    private liftReadinessState: LiftReadinessState;
     private dragStart: { x: number; y: number } | null = null;
     private gestureStartPixel: ImagePixel | null = null;
     private lastStrokePixel: ImagePixel | null = null;
@@ -283,6 +299,8 @@ export class AISelectAnchorDock extends Container {
         this.mask = mask;
         this.confirmation = confirmation;
         this.generatedViews = options.generatedViews;
+        this.candidateCorrectionState = options.candidateCorrection.state;
+        this.liftReadinessState = options.liftReadiness.presentationState;
         this.maskRegistry = options.maskRegistry;
         this.userViewMasks = options.userViewMasks;
         this.onInspectCamera = options.onInspectCamera;
@@ -379,6 +397,42 @@ export class AISelectAnchorDock extends Container {
             id: 'ai-select-anchor-dock-candidate-status',
             hidden: true
         });
+        this.liftReadinessStatus = new Label({
+            id: 'ai-select-lift-readiness-status',
+            hidden: true
+        });
+        this.candidateActions = new Container({
+            id: 'ai-select-candidate-actions',
+            hidden: true
+        });
+        this.fixCandidateButton = new Button({
+            id: 'ai-select-fix-candidate'
+        });
+        this.updateCandidateButton = new Button({
+            id: 'ai-select-update-candidate'
+        });
+        i18n.bindText(
+            this.fixCandidateButton,
+            'ai-select.candidate.fix-result'
+        );
+        i18n.bindText(
+            this.updateCandidateButton,
+            'ai-select.candidate.update'
+        );
+        this.fixCandidateButton.on('click', () => {
+            try {
+                options.candidateCorrection.beginCorrection();
+            } catch (error) {
+                console.error(error);
+            }
+        });
+        this.updateCandidateButton.on('click', () => {
+            options.candidateCorrection
+                .updateCandidate()
+                .catch((error) => console.error(error));
+        });
+        this.candidateActions.append(this.fixCandidateButton);
+        this.candidateActions.append(this.updateCandidateButton);
         this.technicalDetails = document.createElement('details');
         this.technicalDetails.id = 'ai-select-anchor-technical-details';
         const technicalSummary = document.createElement('summary');
@@ -694,6 +748,7 @@ export class AISelectAnchorDock extends Container {
         information.append(this.promptStatus);
         information.append(this.maskStatus);
         information.append(this.candidateStatus);
+        information.append(this.liftReadinessStatus);
         information.dom.appendChild(this.technicalDetails);
         information.dom.appendChild(this.proposalSelect);
         information.append(this.validationStatus);
@@ -707,6 +762,7 @@ export class AISelectAnchorDock extends Container {
         primaryActions.append(this.anchorActions);
         primaryActions.append(this.acceptProposalButton);
         primaryActions.append(this.maskActions);
+        primaryActions.append(this.candidateActions);
         primaryActions.append(this.failureActions);
         sidePanel.append(information);
         sidePanel.append(primaryActions);
@@ -750,6 +806,14 @@ export class AISelectAnchorDock extends Container {
         options.userViewMasks.subscribe(() => this.render());
         options.candidatePublications.subscribe((candidateState) => {
             this.candidateState = candidateState;
+            this.renderCandidateStatus();
+        });
+        options.candidateCorrection.subscribe((correctionState) => {
+            this.candidateCorrectionState = correctionState;
+            this.render();
+        });
+        options.liftReadiness.subscribe((readinessState) => {
+            this.liftReadinessState = readinessState;
             this.renderCandidateStatus();
         });
         i18n.onChange(() => this.render(), this);
@@ -833,6 +897,19 @@ export class AISelectAnchorDock extends Container {
         const { candidateState } = this;
         if (candidateState.status === 'empty') {
             this.candidateStatus.hidden = true;
+            this.renderLiftReadiness();
+            const hasIncludedStableView =
+                this.maskState.stableMask !== null ||
+                this.generatedState.views.some(
+                    (view) =>
+                        view.participation === 'included' &&
+                        view.stableMaskDigest !== undefined
+                );
+            this.candidateActions.hidden = !hasIncludedStableView;
+            this.fixCandidateButton.hidden = true;
+            this.updateCandidateButton.hidden = !hasIncludedStableView;
+            this.updateCandidateButton.enabled =
+                this.candidateCorrectionState.status !== 'updating';
             return;
         }
         const status = i18n.t(
@@ -852,6 +929,33 @@ export class AISelectAnchorDock extends Container {
             'ai-select.candidate.uncertain'
         )} ${uncertain} · ${i18n.t('ai-select.candidate.reference-only')}`;
         this.candidateStatus.hidden = false;
+        this.renderLiftReadiness();
+        const showFix =
+            candidateState.status === 'current' &&
+            this.candidateCorrectionState.mode === 'candidate';
+        const showUpdate =
+            candidateState.status === 'stale' ||
+            this.candidateCorrectionState.mode === 'correcting';
+        this.candidateActions.hidden = !showFix && !showUpdate;
+        this.fixCandidateButton.hidden = !showFix;
+        this.updateCandidateButton.hidden = !showUpdate;
+        this.updateCandidateButton.enabled =
+            this.candidateCorrectionState.status !== 'updating';
+        if (this.candidateCorrectionState.status === 'failed') {
+            this.candidateStatus.text += ` · ${this.candidateCorrectionState.errorMessage ?? i18n.t('ai-select.candidate.update-failed')}`;
+        }
+    }
+
+    private renderLiftReadiness(): void {
+        const state = this.liftReadinessState;
+        if (state.status === 'empty') {
+            this.liftReadinessStatus.hidden = true;
+            return;
+        }
+        this.liftReadinessStatus.text = `${i18n.t(
+            `ai-select.readiness.${state.readiness}`
+        )} · ${i18n.t(`ai-select.readiness.action.${state.recommendation}`)}`;
+        this.liftReadinessStatus.hidden = false;
     }
 
     /**
@@ -960,7 +1064,9 @@ export class AISelectAnchorDock extends Container {
         return {
             ops: this.mask,
             maskState: this.maskState,
-            locked: this.confirmation.locked,
+            locked:
+                this.confirmation.locked &&
+                this.candidateCorrectionState.mode !== 'correcting',
             ready: presentation.status === 'ready',
             ...(presentation.rgb === undefined ? {} : { rgb: presentation.rgb })
         };

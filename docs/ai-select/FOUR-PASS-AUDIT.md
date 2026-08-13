@@ -202,8 +202,9 @@ from tracker state and P/N/V ownership.
 - No live transport/publisher or production Dock row is claimed by this
   reference closure; the later Evidence/Re-Lift vertical slice owns that
   product integration.
-- Ticket 15 is the sole current parent frontier, with
-  `next_implementation_ticket = 15` and no active substage.
+- Ticket 16 is the sole current parent frontier, with
+  `next_implementation_ticket = 16` and no active substage. Ticket 15's
+  reference/debug Re-Lift vertical slice is implemented.
 
 ## Pass 1 — Ticket graph and current frontier
 
@@ -212,12 +213,12 @@ from tracker state and P/N/V ownership.
 - Missing blocker references: 0.
 - Parent Ticket cycle: false.
 - Parent topological order length: 31/31.
-- Implemented prerequisite chain is closed through 12, parent Ticket 14 / 14D and Ticket 13.
-- Current parent implementation frontier: `[15]`.
+- Implemented prerequisite chain is closed through 12, parent Ticket 14 / 14D, Ticket 13 and Ticket 15.
+- Current parent implementation frontier: `[16]`.
 - Current Ticket 14 execution-stage frontier: `[]`.
-- Next implementation Ticket / current parent critical gate: `15`.
+- Next implementation Ticket / current parent critical gate: `16`.
 - Next implementation subticket: none.
-- Ticket 15 prerequisites are implemented.
+- Ticket 16 prerequisites are implemented.
 - Ticket 10 is optional and does not block Ticket 13 or Ticket 21.
 
 Result: **PASS**
@@ -389,7 +390,7 @@ Active planning MUST NOT require:
 
 - Final Spec v1.1, an Amendment, or Final Spec v1.2 as a current closure source;
 - implemented Tickets 04C, 07, 08C or 09 as current ready work;
-- a `next_implementation_ticket` other than 15 while Ticket 15 is current;
+- a `next_implementation_ticket` other than 16 while Ticket 16 is current;
 - a non-null `next_implementation_subticket` after all Ticket 14 stages close;
 - Candidate provenance/source inspection, Gaussian Evidence inspection or direct Candidate editing as a 14D requirement;
 - ArtisanGS dense turnaround views, Cutie tracking, tracker reference frames or one-channel Gaussian Mask-feature optimization as current v1 requirements;

@@ -43,7 +43,7 @@ A requirement counts as covered only when a mapped parent Ticket contains explic
 | R037 | local Views validate projection, clipping and nonblank RGB                                                      | 08, 21                                     |
 | R038 | adaptive/free-space/room-scale planner is deferred                                                              | 08, 21                                     |
 | R039 | 07B and 08 run in parallel after 07A                                                                            | 07A, 07B, 08                               |
-| R040 | Tickets through 14D and Ticket 13 are implemented prerequisites; Ticket 15 is the current parent frontier       | 09, 11, 12, 13, 14, 14A, 14B, 14C, 14D, 15 |
+| R040 | Tickets through 14D, Ticket 13 and Ticket 15 are implemented prerequisites; Ticket 16 is the current parent frontier | 09, 11, 12, 13, 14, 14A, 14B, 14C, 14D, 15, 16 |
 | R041 | 02C may proceed after 04C; 07A requires both 04C and 07                                                         | 02C, 07A                                   |
 | R042 | 08A defines compact RGB-bound Image Instance Prompt/Mask contracts                                              | 08A                                        |
 | R043 | current contracts require no backend registry, route bundle or sequence extension                               | 08A, 08B, 12, 21                           |
@@ -81,11 +81,11 @@ Parent Ticket 14 requirements are partitioned without changing requirement owner
 - Ticket 14 execution-stage files mapped through parent 14 + Final Spec v1.3: 4/4;
 - Ticket files with v1.1/v1.2 as current mapping authority: 0;
 - older-spec references outside explicit historical/superseded/migration sections: 0;
-- implemented prerequisite chain: through 12, parent Ticket 14 / 14D and Ticket 13;
+- implemented prerequisite chain: through 12, parent Ticket 14 / 14D, Ticket 13 and Ticket 15;
 - Ticket 09 locked-GPU large-Gallery browser walkthrough: passed 2026-08-07;
-- current parent implementation frontier: 15;
+- current parent implementation frontier: 16;
 - current Ticket 14 execution stage: none (all implemented);
-- next implementation Ticket: 15;
+- next implementation Ticket: 16;
 - next implementation subticket: none;
 - optional nonblocking Ticket: 10;
 - current normative spec: Final Spec v1.3.

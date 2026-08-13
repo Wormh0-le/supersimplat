@@ -271,6 +271,9 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/ai-select/image-instance-mask-reviews":
             self._review_ai_select_image_instance_mask()
             return
+        if self.path == "/ai-select/candidate-re-lifts":
+            self._produce_ai_select_candidate_re_lift()
+            return
         if self.path == "/object-selection-sessions":
             self._open_object_selection_session()
             return
@@ -315,6 +318,35 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             )
             return
         self._send_json(HTTPStatus.OK, response, server_timing=timing)
+
+    def _produce_ai_select_candidate_re_lift(self) -> None:
+        """Resolve Included Stable View Evidence and publish one Candidate."""
+
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            request = self._read_json_body()
+            response = self._state.produce_ai_select_candidate_re_lift(request)
+        except MaskSessionError as error:
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {
+                    "status": "candidateReLiftError",
+                    "code": error.code,
+                    "message": str(error),
+                },
+            )
+            return
+        except ValueError as error:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"status": "invalidRequest", "message": str(error)},
+            )
+            return
+        self._send_json(HTTPStatus.OK, response)
 
     def _probe_ai_select_anchor_support(self) -> None:
         """Route the versioned mask-conditioned Gaussian support gate."""

@@ -1,6 +1,6 @@
 # 15 — Pre-apply Candidate correction + explicit Evidence-aware Re-Lift
 
-Status: ready-for-agent — Ticket 13 and other prerequisites implemented
+Status: implemented (2026-08-13) — reference/debug Re-Lift vertical slice
 
 Blocked by: 14, 13, 12, 09
 
@@ -32,23 +32,41 @@ Implement structural correction before Candidate application. Users change obser
 
 ## Acceptance criteria
 
-- [ ] Candidate Ready exposes `Fix AI Result`.
-- [ ] Correction preserves current Candidate as reference while returning to View/Mask/Participation controls.
-- [ ] Browsing or editing an unconfirmed Editing Mask does not stale Candidate or Evidence.
-- [ ] Confirmed Stable Mask, Camera/RGB revision, Evidence Policy/Working Set change, or Participation change updates exact dirty/stale state.
-- [ ] Stale Candidate cannot execute Set/Add/Remove/Intersect.
-- [ ] Candidate Stale toolbar exposes `Update 3D Candidate`.
-- [ ] Update resolves exact Included Stable View set, reuses matching per-view Evidence, recomputes stale/missing P/N/V, aggregates, classifies, and publishes atomically.
-- [ ] Excluded View artifacts may remain cached but do not contribute.
-- [ ] Failed Re-Lift does not promote a partial artifact or stale Candidate.
-- [ ] Guidance may suggest Fix Mask / Exclude / Generate More / Add View but never invents DG-14 provenance.
-- [ ] Candidate cannot be directly 3D painted/patched/merged.
-- [ ] Small final edits remain native-selection work after application.
+- [x] Candidate Ready exposes `Fix AI Result`.
+- [x] Correction preserves current Candidate as reference while returning to View/Mask/Participation controls.
+- [x] Browsing or editing an unconfirmed Editing Mask does not stale Candidate or Evidence.
+- [x] Confirmed Stable Mask, Camera/RGB revision, Evidence Policy/Working Set change, or Participation change updates exact dirty/stale state.
+- [x] Stale Candidate cannot execute Set/Add/Remove/Intersect.
+- [x] Candidate Stale toolbar exposes `Update 3D Candidate`.
+- [x] Update resolves exact Included Stable View set, reuses matching per-view Evidence, recomputes stale/missing P/N/V, aggregates, classifies, and publishes atomically.
+- [x] Excluded View artifacts may remain cached but do not contribute.
+- [x] Failed Re-Lift does not promote a partial artifact or stale Candidate.
+- [x] Guidance may suggest Fix Mask / Exclude / Generate More / Add View but never invents DG-14 provenance.
+- [x] Candidate cannot be directly 3D painted/patched/merged.
+- [x] Small final edits remain native-selection work after application.
 
 ## Failure / recovery criteria
 
-- [ ] Failed Evidence recomputation or aggregation leaves previous Candidate stale/reference only.
-- [ ] Correction exit preserves Stable inputs unless explicit Restart occurs.
+- [x] Failed Evidence recomputation or aggregation leaves previous Candidate stale/reference only.
+- [x] Correction exit preserves Stable inputs unless explicit Restart occurs.
+
+## Implementation evidence
+
+- Browser-owned `AISelectCandidateCorrectionController` retains the inspectable
+  Candidate, plans exact per-View reuse/recompute, rejects an input race before
+  publication, and publishes only a complete replacement.
+- `POST /ai-select/candidate-re-lifts` is a strict cross-runtime boundary. It
+  accepts the packed full-scene Render Working Set, exact Included Stable View
+  inputs, optional current Evidence, and returns per-View P/N/V plus one bound
+  reference Candidate.
+- Companion orchestration ignores Excluded Views for production/aggregation,
+  recomputes stale or missing artifacts, and constructs the Candidate only
+  after all Included Views succeed.
+- The Dock exposes `Fix AI Result` and `Update 3D Candidate`. Ticket 16 remains
+  the owner of native Set/Add/Remove/Intersect; reference Candidates remain
+  application-blocked.
+- This is reference/debug Contributor work. It does not implement or validate
+  Ticket 20's production same-decision Direct Evidence kernel.
 
 ## Validation
 

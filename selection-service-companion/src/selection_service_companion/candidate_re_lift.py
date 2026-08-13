@@ -1,0 +1,257 @@
+"""Atomic reference Re-Lift orchestration for AI Select Ticket 15.
+
+The module resolves the exact Included Stable View set, reuses only current
+per-view Evidence, computes missing Evidence through an injected producer, and
+constructs one Candidate only after every upstream artifact is complete.
+"""
+
+from __future__ import annotations
+
+from copy import deepcopy
+from typing import Callable, Mapping
+
+from .gaussian_evidence_contract import (
+    is_current_gaussian_evidence_artifact,
+    is_evidence_working_set,
+    is_gaussian_evidence_admission_input,
+    is_gaussian_evidence_artifact,
+)
+from .reference_candidate_publication import create_reference_candidate_artifact
+from .reference_gaussian_evidence import default_reference_evidence_policy
+from .lift_readiness import (
+    default_lift_readiness_policy,
+    evaluate_lift_readiness,
+)
+from .reference_gaussian_evidence_aggregation import (
+    aggregate_reference_gaussian_evidence,
+    default_reference_aggregation_policy,
+)
+
+
+class CandidateReLiftError(ValueError):
+    """The bound Re-Lift failed before an atomic Candidate publication."""
+
+    def __init__(self, message: str, *, code: str = "candidateReLiftFailure") -> None:
+        super().__init__(message)
+        self.code = code
+
+
+EvidenceProducer = Callable[
+    [Mapping[str, object], Mapping[str, object], Mapping[str, object]],
+    dict[str, object],
+]
+
+
+def _is_sorted_ids(value: object, *, allow_empty: bool = False) -> bool:
+    return (
+        isinstance(value, list)
+        and (allow_empty or bool(value))
+        and all(
+            isinstance(stable_id, int)
+            and not isinstance(stable_id, bool)
+            and 0 <= stable_id <= 0xFFFFFFFF
+            and (index == 0 or value[index - 1] < stable_id)
+            for index, stable_id in enumerate(value)
+        )
+    )
+
+
+def _validated_request(value: object) -> dict[str, object]:
+    required = {
+        "liftAttemptId",
+        "sceneId",
+        "sceneVersion",
+        "renderConfigVersion",
+        "requestBinding",
+        "targetSplatId",
+        "classificationUniverseStableGaussianIds",
+        "classificationScopeStableGaussianIds",
+        "evidenceWorkingSet",
+        "generationState",
+        "views",
+    }
+    if (
+        not isinstance(value, dict)
+        or set(value) != required
+        or any(
+            not isinstance(value.get(key), str) or not str(value[key]).strip()
+            for key in (
+                "liftAttemptId",
+                "sceneId",
+                "sceneVersion",
+                "renderConfigVersion",
+                "targetSplatId",
+            )
+        )
+        or not isinstance(value.get("requestBinding"), dict)
+        or not _is_sorted_ids(value.get("classificationUniverseStableGaussianIds"))
+        or not _is_sorted_ids(value.get("classificationScopeStableGaussianIds"))
+        or not is_evidence_working_set(value.get("evidenceWorkingSet"))
+        or not isinstance(value.get("views"), list)
+        or not value["views"]
+        or value.get("generationState")
+        not in {"active", "stopped", "complete", "unavailable"}
+    ):
+        raise CandidateReLiftError("AI Select Candidate Re-Lift request is invalid.")
+    universe = set(value["classificationUniverseStableGaussianIds"])
+    scope = set(value["classificationScopeStableGaussianIds"])
+    if not scope.issubset(universe):
+        raise CandidateReLiftError(
+            "AI Select Candidate Re-Lift classification scope is incompatible."
+        )
+    return deepcopy(value)
+
+
+def produce_reference_candidate_re_lift(
+    request: object,
+    produce_evidence: EvidenceProducer,
+) -> dict[str, object]:
+    """Resolve current per-view Evidence and return one all-or-nothing result."""
+
+    value = _validated_request(request)
+    views = value["views"]
+    assert isinstance(views, list)
+    seen: set[str] = set()
+    aggregation_views: list[dict[str, object]] = []
+    published_evidence: list[dict[str, object]] = []
+    observation_views: list[dict[str, object]] = []
+    for raw_record in views:
+        if (
+            not isinstance(raw_record, dict)
+            or set(raw_record) - {
+                "currentInput",
+                "cameraBinding",
+                "stableMask",
+                "cachedArtifact",
+            }
+            or set(raw_record) < {"currentInput", "cameraBinding", "stableMask"}
+            or not is_gaussian_evidence_admission_input(
+                raw_record.get("currentInput")
+            )
+            or not isinstance(raw_record.get("cameraBinding"), dict)
+            or not isinstance(raw_record.get("stableMask"), dict)
+        ):
+            raise CandidateReLiftError(
+                "AI Select Candidate Re-Lift contains an invalid View input."
+            )
+        current_input = raw_record["currentInput"]
+        assert isinstance(current_input, dict)
+        current_view = current_input["view"]
+        assert isinstance(current_view, dict)
+        view_id = current_view["viewId"]
+        assert isinstance(view_id, str)
+        if (
+            view_id in seen
+            or current_input["requestBinding"] != value["requestBinding"]
+            or current_input["targetSplatId"] != value["targetSplatId"]
+            or current_input["evidenceWorkingSet"] != value["evidenceWorkingSet"]
+        ):
+            raise CandidateReLiftError(
+                f"AI Select Candidate Re-Lift View {view_id} has incompatible identity."
+            )
+        policy = default_reference_evidence_policy()
+        if (
+            current_input["evidencePolicyDigest"]
+            != policy["evidencePolicyDigest"]
+            or current_input["rasterImplementationId"]
+            != "gsplat-reference-rgb/v1"
+            or current_input["evidenceBackendKind"]
+            != "reference-contributor"
+            or current_input["evidenceBackendId"]
+            != "complete-contributor/reference-v1"
+        ):
+            raise CandidateReLiftError(
+                f"AI Select Candidate Re-Lift View {view_id} has an unsupported reference Evidence identity."
+            )
+        seen.add(view_id)
+        if current_view["participation"] == "excluded":
+            aggregation_views.append({"currentInput": current_input})
+            continue
+
+        cached = raw_record.get("cachedArtifact")
+        reused = is_current_gaussian_evidence_artifact(cached, current_input)
+        if reused:
+            artifact = cached
+        else:
+            try:
+                artifact = produce_evidence(
+                    current_input,
+                    raw_record["stableMask"],
+                    raw_record["cameraBinding"],
+                )
+            except Exception as error:
+                raise CandidateReLiftError(
+                    f"AI Select Candidate Re-Lift Evidence failed for View {view_id}."
+                ) from error
+        if (
+            not is_gaussian_evidence_artifact(artifact)
+            or not is_current_gaussian_evidence_artifact(artifact, current_input)
+        ):
+            raise CandidateReLiftError(
+                f"AI Select Candidate Re-Lift Evidence for View {view_id} is incomplete or stale."
+            )
+        assert isinstance(artifact, dict)
+        aggregation_views.append(
+            {"currentInput": current_input, "artifact": artifact}
+        )
+        observation_views.append(
+            {"viewId": view_id, "cameraBinding": raw_record["cameraBinding"]}
+        )
+        published_evidence.append(
+            {"viewId": view_id, "reused": reused, "artifact": artifact}
+        )
+
+    aggregation_views.sort(
+        key=lambda item: str(item["currentInput"]["view"]["viewId"]).encode("utf-8")
+    )
+    published_evidence.sort(key=lambda item: str(item["viewId"]).encode("utf-8"))
+    if not published_evidence:
+        raise CandidateReLiftError(
+            "AI Select Candidate Re-Lift requires at least one Included Stable View."
+        )
+    aggregation_input = {
+        "requestBinding": value["requestBinding"],
+        "targetSplatId": value["targetSplatId"],
+        "classificationUniverseStableGaussianIds": value[
+            "classificationUniverseStableGaussianIds"
+        ],
+        "classificationScopeStableGaussianIds": value[
+            "classificationScopeStableGaussianIds"
+        ],
+        "evidenceWorkingSet": value["evidenceWorkingSet"],
+        "views": aggregation_views,
+    }
+    try:
+        aggregation_result = aggregate_reference_gaussian_evidence(
+            aggregation_input,
+            default_reference_aggregation_policy(),
+        )
+        candidate = create_reference_candidate_artifact(
+            aggregation_input,
+            aggregation_result,
+        )
+        readiness = evaluate_lift_readiness(
+            {
+                "requestBinding": value["requestBinding"],
+                "targetSplatId": value["targetSplatId"],
+                "evidenceWorkingSet": value["evidenceWorkingSet"],
+                "aggregationResult": aggregation_result,
+                "observationViews": observation_views,
+                "generationState": value["generationState"],
+                "lowCostSupportDiagnostic": None,
+            },
+            default_lift_readiness_policy(),
+        )
+    except Exception as error:
+        raise CandidateReLiftError(
+            "AI Select Candidate Re-Lift aggregation failed closed."
+        ) from error
+    return {
+        "status": "complete",
+        "liftAttemptId": value["liftAttemptId"],
+        "requestBinding": value["requestBinding"],
+        "targetSplatId": value["targetSplatId"],
+        "evidence": published_evidence,
+        "readiness": readiness,
+        "candidate": candidate,
+    }

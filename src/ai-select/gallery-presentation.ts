@@ -38,7 +38,8 @@ export interface GalleryCardActions {
     readonly regeneratePrompt: boolean;
     /**
      * Start one explicit Auto Mask inference attempt from the current Prompt.
-     * It is a Retry for failed/unavailable inference and a Refresh otherwise.
+     * Ordinary successful correction stays on the selected image surface;
+     * this card action is reserved for failed/unavailable inference recovery.
      */
     readonly refreshMask: boolean;
     readonly confirmAsIs: boolean;
@@ -170,18 +171,18 @@ export const galleryCardPresentation = (
     const generatedAutoView =
         galleryViewRole(view.source) === 'generated' &&
         view.maskQuality !== 'user-confirmed';
-    // These are deliberately independent user actions. Rebuilding a Prompt
-    // never starts SAM; refresh uses the current immutable Prompt artifact.
+    // Successful Views are corrected on their selected image surface through
+    // Point/Box/Paint/Erase. Cards expose these independent operations only
+    // as failure recovery, avoiding duplicate no-op-looking routine actions.
     const regeneratePrompt =
         generatedAutoView &&
         view.renderStatus === 'ready' &&
-        view.promptStatus !== 'none' &&
-        view.promptStatus !== 'synthesizing';
+        view.promptStatus === 'failed';
     const refreshMask =
         generatedAutoView &&
         view.renderStatus === 'ready' &&
         view.promptStatus === 'ready' &&
-        view.maskStatus !== 'generating';
+        (view.maskStatus === 'failed' || view.maskStatus === 'unavailable');
     const canToggleParticipation =
         view.participation === 'included' ||
         view.maskQuality === 'auto-good' ||

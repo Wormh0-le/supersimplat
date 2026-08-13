@@ -61,6 +61,7 @@ import {
     type AISelectMaskController,
     type AISelectMaskState
 } from '../ai-select/mask-controller';
+import { selectInspectedMaskOverlaySource } from '../ai-select/mask-overlay-source';
 import type { MaskAnnotationRegistry } from '../ai-select/mask-registry';
 import { promptToolCapabilityReason } from '../ai-select/prompt-state';
 import { createThumbnailCache } from '../ai-select/thumbnail-cache';
@@ -403,10 +404,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.fixCandidateButton,
             'ai-select.candidate.fix-result'
         );
-        i18n.bindText(
-            this.updateCandidateButton,
-            'ai-select.candidate.update'
-        );
+        i18n.bindText(this.updateCandidateButton, 'ai-select.candidate.update');
         this.fixCandidateButton.on('click', () => {
             try {
                 options.candidateCorrection.beginCorrection();
@@ -1666,7 +1664,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         });
         const proposalIds =
             maskState.proposalDecision?.alternativeProposalIds ?? [];
-        const previousSelection = this.proposalSelect.value;
         this.proposalSelect.replaceChildren(
             ...proposalIds.map((proposalId, index) => {
                 const proposal = maskState.proposalSet?.proposals.find(
@@ -1678,8 +1675,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 return option;
             })
         );
-        const preferredProposalId = proposalIds.includes(previousSelection)
-            ? previousSelection
+        const preferredProposalId = proposalIds.includes(
+            maskState.previewedProposalId ?? ''
+        )
+            ? (maskState.previewedProposalId ?? '')
             : (maskState.acceptedProposalId ??
               maskState.proposalDecision?.selectedProposalId ??
               proposalIds[0] ??
@@ -1715,13 +1714,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         // (the simplified 07A decision carries no ranking reason codes). The
         // candidate choice control is authoritative for which candidate the
         // user is previewing; fall back to the decision's default preview.
-        const chosenProposalId = maskState.proposalSet?.proposals.some(
-            (candidate) => candidate.proposalId === this.proposalSelect.value
-        )
-            ? this.proposalSelect.value
-            : undefined;
         const previewedProposalId =
-            chosenProposalId ??
+            maskState.previewedProposalId ??
             maskState.acceptedProposalId ??
             maskState.proposalDecision?.selectedProposalId ??
             maskState.proposalDecision?.alternativeProposalIds[0];
@@ -1920,7 +1914,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         ready: boolean
     ): void {
         const selectedProposal = maskState.proposalSet?.proposals.find(
-            (candidate) => candidate.proposalId === this.proposalSelect.value
+            (candidate) =>
+                candidate.proposalId === maskState.previewedProposalId
         );
         const proposal =
             selectedProposal?.proposalId !== maskState.acceptedProposalId
@@ -2264,18 +2259,18 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private renderCurrentMaskOverlay(): void {
         const inspected = this.inspectedGeneratedView();
         if (inspected !== null) {
-            const authoring =
-                galleryViewRole(inspected.source) === 'user-added'
-                    ? this.authoring()
-                    : null;
-            if (authoring === null) {
+            const source = selectInspectedMaskOverlaySource(
+                inspected.source,
+                this.authoring()
+            );
+            if (source.kind === 'registry') {
                 this.renderInspectedMaskOverlay(inspected);
                 return;
             }
             this.renderMaskOverlay(
-                authoring.maskState,
+                source.authoring.maskState,
                 inspected.rgb,
-                authoring.ready
+                source.authoring.ready
             );
             return;
         }

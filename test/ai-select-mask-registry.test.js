@@ -4,6 +4,7 @@ const test = require('node:test');
 const {
     createEmptyMaskArtifact,
     applyBrushStroke,
+    decodeMaskArtifact,
     maskBitsetEncoding
 } = require('../.test-dist/src/ai-select/mask-annotation.js');
 const {
@@ -406,6 +407,31 @@ test('publishAutoStable publishes an auto-review Stable Mask without an Editing 
     const view = registry.viewState('generated-00', rgbDigest('g'));
     assert.equal(view.stableMask?.maskId, stable.maskId);
     assert.equal(view.editingMask, null);
+});
+
+test('the first Erase gesture edits the current Stable Mask instead of an empty draft', () => {
+    const registry = new MaskAnnotationRegistry();
+    const stable = registry.publishAutoStable({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('g'),
+        artifact: samArtifact(8, 8, 0xff),
+        source: 'single-frame-sam',
+        status: 'auto-good'
+    });
+
+    const editing = registry.applyBrush({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('g'),
+        stroke: { xPx: 0, yPx: 0, radiusPx: 1, mode: 'erase' },
+        width: 8,
+        height: 8
+    });
+
+    assert.equal(editing.source, 'hybrid');
+    assert.equal(editing.parentMaskId, stable.maskId);
+    // Erasing one corner may clear nearby pixels, but the rest of the
+    // auto-published Stable Mask must survive in the Editing revision.
+    assert.notEqual(decodeMaskArtifact(editing.artifact)[0], 0);
 });
 
 test('publishAutoStable atomically replaces the previous Stable revision', () => {

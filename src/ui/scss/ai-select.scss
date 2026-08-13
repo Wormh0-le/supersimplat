@@ -209,10 +209,13 @@
 }
 
 #ai-select-anchor-dock-primary-actions {
+    box-sizing: border-box;
     flex-direction: column;
     gap: 6px;
-    flex: 0 0 auto;
-    max-height: 42%;
+    flex: 0 0 96px;
+    height: 96px;
+    max-height: 96px;
+    justify-content: flex-start;
     padding: 8px 4px 0 6px;
     border-top: 1px solid $bcg-lighter;
     background-color: $bcg-primary;

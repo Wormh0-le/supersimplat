@@ -814,6 +814,25 @@ test('one Point auto-generates up to three candidates with exact RGB on first sh
     assert.equal(state.requestStatus, 'idle');
     assert.equal(state.proposalStatus, 'ambiguous');
     assert.equal(state.proposalSet.proposals.length, 3);
+    assert.equal(
+        state.previewedProposalId,
+        state.proposalDecision.selectedProposalId
+    );
+    let previewPublicationCount = 0;
+    const unsubscribe = session.subscribe(() => {
+        previewPublicationCount += 1;
+    });
+    session.previewProposal(state.proposalSet.proposals[1].proposalId);
+    assert.equal(
+        session.state.previewedProposalId,
+        state.proposalSet.proposals[1].proposalId
+    );
+    assert.equal(previewPublicationCount, 2);
+    // Restore the suggested candidate, which is the one carrying the opaque
+    // logits ref in this fixture, before exercising refinement below.
+    session.previewProposal(state.proposalDecision.selectedProposalId);
+    assert.equal(previewPublicationCount, 3);
+    unsubscribe();
     // The suggested candidate's opaque ref is the refinement lineage.
     const followUp = session.addPrompt({
         xPx: 8,
@@ -834,6 +853,15 @@ test('one Point auto-generates up to three candidates with exact RGB on first sh
     );
     harness.proposalProvider.deferreds[1].resolve(maskResponseFor(refinement));
     await followUp;
+    assert.ok(session.state.previewedProposalId);
+    session.applyBrushStroke({
+        xPx: 12,
+        yPx: 12,
+        radiusPx: 1,
+        mode: 'add'
+    });
+    assert.equal(session.state.previewedProposalId, null);
+    assert.ok(session.state.editingMask);
 });
 
 test('Box/multiple-Point prompts return exactly one candidate (multimask policy)', async () => {

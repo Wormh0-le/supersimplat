@@ -88,6 +88,8 @@ export interface AISelectMaskState {
     readonly promptCapabilities: PromptAdapterCapabilities | null;
     readonly proposalSet: AutoMaskProposalSet | null;
     readonly proposalDecision: ProposalDecision | null;
+    /** The proposal currently shown on the image surface. */
+    readonly previewedProposalId: string | null;
     readonly acceptedProposalId: string | null;
     readonly proposalStatus: MaskProposalStatus;
     readonly requestStatus: MaskRequestStatus;
@@ -266,6 +268,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
     private promptState: PromptState | null = null;
     private proposalSet: AutoMaskProposalSet | null = null;
     private proposalDecision: ProposalDecision | null = null;
+    private previewedProposalId: string | null = null;
     private acceptedProposalId: string | null = null;
     private readonly acceptedProposalMaskIdsByPromptDigest = new Map<
         string,
@@ -355,6 +358,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
             promptCapabilities,
             proposalSet: this.proposalSet,
             proposalDecision: this.proposalDecision,
+            previewedProposalId: this.previewedProposalId,
             acceptedProposalId: this.acceptedProposalId,
             proposalStatus:
                 this.requestStatus === 'pending'
@@ -526,7 +530,12 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
                 'AI Select cannot preview an unknown Mask proposal.'
             );
         }
+        this.previewedProposalId = proposalId;
         this.refinementLogitsRef = proposal.logitsRef ?? null;
+        // Proposal choice is visible UI state. Publishing it keeps the image,
+        // dropdown, status, and Accept action synchronized without relying on
+        // a later View switch to trigger a render.
+        this.publish();
     }
 
     clearPrompts(): void {
@@ -615,6 +624,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
             editing.maskId
         );
         this.acceptedProposalId = proposalId;
+        this.previewedProposalId = proposalId;
         // Accept leaves Prompt mode: refinement lineage is dropped and any
         // later return to Prompt mode mints a fresh inference attempt.
         this.refinementLogitsRef = null;
@@ -887,6 +897,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
                     candidate.proposalId ===
                     this.proposalDecision?.selectedProposalId
             );
+            this.previewedProposalId = suggested?.proposalId ?? null;
             this.refinementLogitsRef = suggested?.logitsRef ?? null;
         } catch (error) {
             this.failMaskRequest(errorMessage(error));
@@ -955,6 +966,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
                 : createEmptyPromptState(this.host.viewId, rgbDigest);
         this.proposalSet = null;
         this.proposalDecision = null;
+        this.previewedProposalId = null;
         this.acceptedProposalId = null;
         this.refinementLogitsRef = null;
         this.shippedRgbDigests.clear();
@@ -1069,6 +1081,10 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
      */
     private supersedeLocalEditing(): void {
         this.editingRevision += 1;
+        // A local Paint/Erase/Clear result becomes the image authority. Keep
+        // an accepted proposal selected only as lineage metadata; an
+        // unaccepted proposal must no longer cover the new Editing Mask.
+        this.previewedProposalId = this.acceptedProposalId;
         if (this.activeMaskRequest !== null) {
             this.requestStatus = 'idle';
         }
@@ -1184,6 +1200,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         this.promptRedoStack = [];
         this.proposalSet = null;
         this.proposalDecision = null;
+        this.previewedProposalId = null;
         this.acceptedProposalId = null;
         this.editingRevision += 1;
         this.failureKind = undefined;
@@ -1205,6 +1222,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         this.promptState = target;
         this.proposalSet = null;
         this.proposalDecision = null;
+        this.previewedProposalId = null;
         this.acceptedProposalId = null;
         this.resubmitMaskRequested = false;
         this.requestStatus = 'idle';

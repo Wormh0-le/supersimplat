@@ -386,6 +386,12 @@ test('card actions carry no obsolete backend, tracker or prompt-family surface',
 });
 
 test('action visibility follows Render / Prompt / Mask / Review state', () => {
+    const ready = galleryCardPresentation(view(), 1);
+    // Successful Views are corrected on the selected image surface. Routine
+    // Prompt/Mask reruns are not duplicated on every Gallery card.
+    assert.equal(ready.actions.regeneratePrompt, false);
+    assert.equal(ready.actions.refreshMask, false);
+
     const renderFailed = galleryCardPresentation(
         view({ renderStatus: 'failed', renderErrorMessage: 'oom' }),
         1
@@ -417,8 +423,20 @@ test('action visibility follows Render / Prompt / Mask / Review state', () => {
         }),
         1
     );
-    assert.equal(maskFailed.actions.regeneratePrompt, true);
+    assert.equal(maskFailed.actions.regeneratePrompt, false);
     assert.equal(maskFailed.actions.refreshMask, true);
+
+    const maskUnavailable = galleryCardPresentation(
+        view({
+            maskStatus: 'unavailable',
+            maskQuality: 'none',
+            assessment: undefined,
+            participation: 'excluded'
+        }),
+        1
+    );
+    assert.equal(maskUnavailable.actions.regeneratePrompt, false);
+    assert.equal(maskUnavailable.actions.refreshMask, true);
 
     const reviewPending = galleryCardPresentation(
         view({

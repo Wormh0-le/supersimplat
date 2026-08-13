@@ -191,23 +191,33 @@ export class MaskAnnotationRegistry {
             view.editingMaskId,
             input.rgbDigest
         );
+        const currentStable = this.currentAnnotation(
+            view,
+            view.stableMaskId,
+            input.rgbDigest
+        );
+        // Automatic Generated-View Masks publish directly as Stable. The
+        // first local gesture must branch from that visible annotation;
+        // starting from an empty artifact would turn a tiny Erase into a
+        // full-mask deletion.
+        const baseAnnotation = currentEditing ?? currentStable;
         const baseArtifact =
-            currentEditing === null
+            baseAnnotation === null
                 ? createEmptyMaskArtifact(input.width, input.height)
-                : currentEditing.artifact;
+                : baseAnnotation.artifact;
         const artifact = applyBrushStrokes(baseArtifact, input.strokes);
         const editing = copyAnnotation({
             maskId: this.mintMaskId(),
             viewId: input.viewId,
             source:
-                currentEditing === null || currentEditing.source === 'manual'
+                baseAnnotation === null || baseAnnotation.source === 'manual'
                     ? 'manual'
                     : 'hybrid',
             status: 'draft',
             artifact,
-            ...(currentEditing === null
+            ...(baseAnnotation === null
                 ? {}
-                : { parentMaskId: currentEditing.maskId }),
+                : { parentMaskId: baseAnnotation.maskId }),
             createdFromRgbDigest: input.rgbDigest
         });
         view.versions.set(editing.maskId, editing);

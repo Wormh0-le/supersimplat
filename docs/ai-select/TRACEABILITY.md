@@ -1,4 +1,4 @@
-# Final Spec v1.3 → Ticket Traceability Matrix — v2.23
+# Final Spec v1.3 → Ticket Traceability Matrix — v2.24
 
 A requirement counts as covered only when a mapped parent Ticket contains explicit acceptance, failure, validation or migration criteria. Every parent Ticket-local current mapping points directly to Final Spec v1.3; older specs are historical provenance only. Ticket 14A–14D are execution stages under parent Ticket 14 and preserve the parent requirement mapping.
 

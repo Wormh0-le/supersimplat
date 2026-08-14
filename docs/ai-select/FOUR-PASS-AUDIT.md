@@ -1,4 +1,4 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.23
+# Eight-Pass Bidirectional Traceability Audit — v2.24
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
@@ -202,9 +202,32 @@ from tracker state and P/N/V ownership.
 - No live transport/publisher or production Dock row is claimed by this
   reference closure; the later Evidence/Re-Lift vertical slice owns that
   product integration.
+- Ticket 15 is the sole current parent frontier, with
+  `next_implementation_ticket = 15` and no active substage. Parent Ticket 14
+  and Ticket 13 prerequisites are implemented.
+
+## v2.24 Ticket 15 implementation closure / Ticket 16 ready
+
+- Ticket 15 implements the reference/debug pre-apply Candidate correction and
+  explicit Re-Lift vertical slice. The browser keeps the previous Candidate
+  inspectable while users correct Views, Stable Masks or Participation and
+  publishes a replacement only after an exact-current race check succeeds.
+- `POST /ai-select/candidate-re-lifts` is the strict live cross-runtime seam:
+  matching per-View Evidence is reused, stale or missing Included Evidence is
+  recomputed, Excluded Views do not aggregate, and Candidate publication stays
+  all-or-nothing.
+- Live reference Re-Lift remains deliberately pre-production: no target-local
+  Core Target Working Set builder is claimed, formal production Lift Readiness
+  is withheld from this live slice, and Ticket 20 still owns same-decision GPU
+  Direct Evidence.
+- The Dock exposes `Fix AI Result` and `Update 3D Candidate`; Ticket 16 remains
+  the sole owner of Native Set/Add/Remove/Intersect and reference Candidate
+  application stays explicitly gated.
+- The repository CI definition now runs on `ai-select-v1` pushes and includes
+  the integrated `npm test` path in addition to build/lint/locales. Locked-GPU
+  renderer/SAM/Evidence validation remains a separate environment-specific gate.
 - Ticket 16 is the sole current parent frontier, with
-  `next_implementation_ticket = 16` and no active substage. Ticket 15's
-  reference/debug Re-Lift vertical slice is implemented.
+  `next_implementation_ticket = 16` and no active substage.
 
 ## Pass 1 — Ticket graph and current frontier
 

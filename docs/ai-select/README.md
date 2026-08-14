@@ -57,6 +57,6 @@ Execution order is:
 14A → 14B → 14C → 14D → 13 → 15
 ```
 
-14A through 14D, parent Ticket 14, Ticket 13 and Ticket 15 are implemented. The current
-frontier is Ticket 16 (`next_implementation_ticket = 16`); there is no active Ticket 14
+14A through 14D, parent Ticket 14 and Tickets 13 through 16 are implemented. The current
+frontier is Ticket 17 (`next_implementation_ticket = 17`); there is no active Ticket 14
 substage.

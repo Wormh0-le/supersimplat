@@ -121,6 +121,7 @@ test('a complete reference Candidate publishes Selected-only with separate Uncer
         uncertainStableGaussianIds: [11]
     });
     assert.equal(state.applicationStatus, 'blocked-reference-pre-production');
+    assert.equal(candidate.productionReadiness, 'reference-only');
     assert.equal(dirty.state.liftDirty, false);
     assert.equal(dirty.state.candidateStale, false);
     assert.ok(isReferenceCandidateArtifact(candidate));

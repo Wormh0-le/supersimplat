@@ -79,6 +79,6 @@ Ticket 10 remains optional and nonblocking.
 Compatibility fields remain:
 
 ```text
-next_implementation_ticket = 16
+next_implementation_ticket = 17
 next_implementation_subticket = null
 ```

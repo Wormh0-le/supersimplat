@@ -6,7 +6,7 @@ import {
 } from './current-target-context';
 import { type AISelectDirtyStateTracker } from './dirty-state';
 
-export const referenceCandidateSchemaVersion = 1;
+export const referenceCandidateSchemaVersion = 2;
 export const referenceCandidatePublicationKind =
     'reference-pre-production' as const;
 
@@ -60,6 +60,7 @@ export interface CreateReferenceCandidateArtifactInput {
 export interface ReferenceCandidateArtifact {
     readonly schemaVersion: typeof referenceCandidateSchemaVersion;
     readonly publicationKind: typeof referenceCandidatePublicationKind;
+    readonly productionReadiness: 'reference-only';
     readonly publicationBinding: CandidatePublicationBinding;
     readonly sourceAggregationResultDigest: string;
     readonly candidate: Readonly<{
@@ -402,8 +403,9 @@ export const createReferenceCandidateArtifact = (
         );
     }
     const payload = {
-        schemaVersion: referenceCandidateSchemaVersion as 1,
+        schemaVersion: referenceCandidateSchemaVersion as 2,
         publicationKind: referenceCandidatePublicationKind,
+        productionReadiness: 'reference-only' as const,
         publicationBinding: copyPublicationBinding(input.publicationBinding),
         sourceAggregationResultDigest: input.sourceAggregationResultDigest,
         candidate: Object.freeze({ selectedStableGaussianIds }),
@@ -425,6 +427,7 @@ export const isReferenceCandidateArtifact = (
         !hasExactKeys(value, [
             'schemaVersion',
             'publicationKind',
+            'productionReadiness',
             'publicationBinding',
             'sourceAggregationResultDigest',
             'candidate',
@@ -433,6 +436,7 @@ export const isReferenceCandidateArtifact = (
         ]) ||
         value.schemaVersion !== referenceCandidateSchemaVersion ||
         value.publicationKind !== referenceCandidatePublicationKind ||
+        value.productionReadiness !== 'reference-only' ||
         !isCandidatePublicationBinding(value.publicationBinding) ||
         !isDigest(value.sourceAggregationResultDigest) ||
         !isDigest(value.candidateDigest) ||

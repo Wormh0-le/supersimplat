@@ -34,21 +34,15 @@ export class AISelectEditorTargetFactory {
         cameraRevision = 0
     ): AISelectEditorTargetInput {
         if (!targetSplat.visible) {
-            throw new Error('Select one visible Target Splat before starting AI Select.');
+            throw new Error(
+                'Select one visible Target Splat before starting AI Select.'
+            );
         }
-        const splatId = `editor-splat:${targetSplat.uid}`;
+        const splatId = this.splatId(targetSplat);
         const binding = this.bindingFor(targetSplat, splatId);
         const snapshot = binding.getPackedSnapshot();
-        const getCurrentDependencyToken = () => {
-            const revision = binding.getSemanticRevision();
-            return Object.freeze({
-                splatId,
-                renderStateToken: revision.renderStateToken,
-                geometryToken: revision.geometryToken,
-                gaussianIdentityToken: revision.gaussianIdentityToken,
-                worldTransformToken: revision.worldTransformToken
-            });
-        };
+        const getCurrentDependencyToken = () =>
+            this.currentDependencyTokenFor(targetSplat);
         const dependencyToken = getCurrentDependencyToken();
 
         return Object.freeze({
@@ -61,12 +55,39 @@ export class AISelectEditorTargetFactory {
                 // asynchronous Companion result is being checked.
                 getCurrentDependencyToken,
                 snapshot,
-                cameraBinding: captureEditorCameraBinding(camera, cameraRevision)
+                cameraBinding: captureEditorCameraBinding(
+                    camera,
+                    cameraRevision
+                )
             })
         });
     }
 
-    private bindingFor(splat: Splat, sceneId: string): SplatSceneSnapshotBinding {
+    bindingForTarget(targetSplat: Splat): SplatSceneSnapshotBinding {
+        return this.bindingFor(targetSplat, this.splatId(targetSplat));
+    }
+
+    currentDependencyTokenFor(targetSplat: Splat) {
+        const splatId = this.splatId(targetSplat);
+        const revision =
+            this.bindingForTarget(targetSplat).getSemanticRevision();
+        return Object.freeze({
+            splatId,
+            renderStateToken: revision.renderStateToken,
+            geometryToken: revision.geometryToken,
+            gaussianIdentityToken: revision.gaussianIdentityToken,
+            worldTransformToken: revision.worldTransformToken
+        });
+    }
+
+    private splatId(targetSplat: Splat): string {
+        return `editor-splat:${targetSplat.uid}`;
+    }
+
+    private bindingFor(
+        splat: Splat,
+        sceneId: string
+    ): SplatSceneSnapshotBinding {
         const existing = this.bindings.get(splat);
         if (existing) {
             return existing;

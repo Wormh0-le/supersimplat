@@ -25,6 +25,12 @@ import {
     pointerActionForTool
 } from '../ai-select/authoring-interaction';
 import {
+    type CandidateApplicationBlockReason,
+    type CandidateApplicationController,
+    type CandidateApplicationOperation,
+    type CandidateApplicationState
+} from '../ai-select/candidate-application';
+import {
     type AISelectCandidateCorrectionController,
     type CandidateCorrectionState
 } from '../ai-select/candidate-correction';
@@ -81,6 +87,7 @@ export interface AISelectAnchorDockOptions<TCandidatePayload = unknown> {
     readonly generatedViews: AISelectGeneratedViewController;
     readonly candidatePublications: CandidatePublicationStore;
     readonly candidateCorrection: AISelectCandidateCorrectionController<TCandidatePayload>;
+    readonly candidateApplication: CandidateApplicationController;
     readonly maskRegistry: MaskAnnotationRegistry;
     readonly userViewMasks: AISelectUserViewMaskController;
     readonly onInspectCamera: (viewId: string) => void;
@@ -229,6 +236,11 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly candidateActions: Container;
     private readonly fixCandidateButton: Button;
     private readonly updateCandidateButton: Button;
+    private readonly candidateOperationButtons: ReadonlyMap<
+        CandidateApplicationOperation,
+        Button
+    >;
+    private readonly showAIResultButton: Button;
     private readonly imageViewport: HTMLDivElement;
     private readonly imageSurface: HTMLDivElement;
     private readonly image: HTMLImageElement;
@@ -272,6 +284,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private generatedState: AISelectGeneratedViewState;
     private candidateState: CandidatePublicationState;
     private candidateCorrectionState: CandidateCorrectionState;
+    private candidateApplicationState: CandidateApplicationState;
     private dragStart: { x: number; y: number } | null = null;
     private gestureStartPixel: ImagePixel | null = null;
     private lastStrokePixel: ImagePixel | null = null;
@@ -294,6 +307,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.confirmation = confirmation;
         this.generatedViews = options.generatedViews;
         this.candidateCorrectionState = options.candidateCorrection.state;
+        this.candidateApplicationState = options.candidateApplication.state;
         this.maskRegistry = options.maskRegistry;
         this.userViewMasks = options.userViewMasks;
         this.onInspectCamera = options.onInspectCamera;
@@ -400,11 +414,43 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.updateCandidateButton = new Button({
             id: 'ai-select-update-candidate'
         });
+        const candidateOperations: readonly CandidateApplicationOperation[] = [
+            'set',
+            'add',
+            'remove',
+            'intersect'
+        ];
+        const candidateOperationButtons = new Map<
+            CandidateApplicationOperation,
+            Button
+        >();
+        for (const operation of candidateOperations) {
+            const button = new Button({
+                id: `ai-select-apply-candidate-${operation}`,
+                hidden: true
+            });
+            i18n.bindText(button, `select-toolbar.${operation}`);
+            button.on('click', () => {
+                options.candidateApplication
+                    .apply(operation)
+                    .catch((error) => console.error(error));
+            });
+            candidateOperationButtons.set(operation, button);
+        }
+        this.candidateOperationButtons = candidateOperationButtons;
+        this.showAIResultButton = new Button({
+            id: 'ai-select-show-candidate-result',
+            hidden: true
+        });
         i18n.bindText(
             this.fixCandidateButton,
             'ai-select.candidate.fix-result'
         );
         i18n.bindText(this.updateCandidateButton, 'ai-select.candidate.update');
+        i18n.bindText(
+            this.showAIResultButton,
+            'ai-select.candidate.show-result'
+        );
         this.fixCandidateButton.on('click', () => {
             try {
                 options.candidateCorrection.beginCorrection();
@@ -417,8 +463,21 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 .updateCandidate()
                 .catch((error) => console.error(error));
         });
+        this.showAIResultButton.on('click', () => {
+            try {
+                options.candidateApplication.showAIResult();
+            } catch (error) {
+                console.error(error);
+            }
+        });
         this.candidateActions.append(this.fixCandidateButton);
+        candidateOperations.forEach((operation) =>
+            this.candidateActions.append(
+                this.candidateOperationButtons.get(operation)
+            )
+        );
         this.candidateActions.append(this.updateCandidateButton);
+        this.candidateActions.append(this.showAIResultButton);
         this.technicalDetails = document.createElement('details');
         this.technicalDetails.id = 'ai-select-anchor-technical-details';
         const technicalSummary = document.createElement('summary');
@@ -797,6 +856,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.candidateCorrectionState = correctionState;
             this.render();
         });
+        options.candidateApplication.subscribe((applicationState) => {
+            this.candidateApplicationState = applicationState;
+            this.renderCandidateStatus();
+        });
         i18n.onChange(() => this.render(), this);
     }
 
@@ -877,6 +940,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private renderCandidateStatus(): void {
         const { candidateState } = this;
         if (candidateState.status === 'empty') {
+            this.dom.dataset.aiSelectCandidateOverlayEmphasis = 'emphasized';
             this.candidateStatus.hidden =
                 this.candidateCorrectionState.status === 'idle';
             if (this.candidateCorrectionState.status === 'updating') {
@@ -898,6 +962,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.candidateActions.hidden = !hasIncludedStableView;
             this.fixCandidateButton.hidden = true;
             this.updateCandidateButton.hidden = !hasIncludedStableView;
+            this.candidateOperationButtons.forEach((button) => {
+                button.hidden = true;
+            });
+            this.showAIResultButton.hidden = true;
             this.updateCandidateButton.enabled =
                 this.candidateCorrectionState.status !== 'updating';
             return;
@@ -918,6 +986,22 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         )} ${selected} · ${i18n.t(
             'ai-select.candidate.uncertain'
         )} ${uncertain} · ${i18n.t('ai-select.candidate.reference-only')}`;
+        const applicationState = this.candidateApplicationState;
+        if (applicationState.status === 'applying') {
+            this.candidateStatus.text += ` · ${i18n.t('ai-select.candidate.applying')}`;
+        } else if (applicationState.status === 'applied') {
+            this.candidateStatus.text += ` · ${i18n.t('ai-select.candidate.applied')} ${i18n.t(
+                `select-toolbar.${applicationState.applicationRecord.operation}`
+            )}`;
+        } else if (applicationState.status === 'blocked') {
+            this.candidateStatus.text += ` · ${i18n.t(
+                this.candidateApplicationBlockText(applicationState.blockReason)
+            )}`;
+        } else if (applicationState.status === 'ready') {
+            this.candidateStatus.text += ` · ${i18n.t(
+                'ai-select.candidate.development-reference-enabled'
+            )}`;
+        }
         this.candidateStatus.hidden = false;
         const showFix =
             candidateState.status === 'current' &&
@@ -925,7 +1009,21 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         const showUpdate =
             candidateState.status === 'stale' ||
             this.candidateCorrectionState.mode === 'correcting';
-        this.candidateActions.hidden = !showFix && !showUpdate;
+        const showOperations = true;
+        const operationsEnabled =
+            candidateState.status === 'current' &&
+            (applicationState.status === 'ready' ||
+                applicationState.status === 'applied');
+        this.candidateOperationButtons.forEach((button) => {
+            button.hidden = !showOperations;
+            button.enabled = operationsEnabled;
+        });
+        const showAIResult =
+            applicationState.status === 'applied' &&
+            applicationState.overlayEmphasis === 'deemphasized';
+        this.showAIResultButton.hidden = !showAIResult;
+        this.candidateActions.hidden =
+            !showFix && !showUpdate && !showOperations && !showAIResult;
         this.fixCandidateButton.hidden = !showFix;
         this.updateCandidateButton.hidden = !showUpdate;
         this.updateCandidateButton.enabled =
@@ -935,6 +1033,30 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         } else if (this.candidateCorrectionState.status === 'failed') {
             this.candidateStatus.text += ` · ${i18n.t('ai-select.candidate.update-failed')}`;
         }
+        this.dom.dataset.aiSelectCandidateOverlayEmphasis =
+            applicationState.overlayEmphasis;
+    }
+
+    private candidateApplicationBlockText(
+        reason: CandidateApplicationBlockReason
+    ): string {
+        if (reason === 'candidate-stale') {
+            return 'ai-select.candidate.application-blocked-stale';
+        }
+        if (reason === 'reference-disallowed') {
+            return 'ai-select.candidate.application-blocked-reference';
+        }
+        if (reason === 'runtime-unverified') {
+            return 'ai-select.candidate.application-blocked-runtime';
+        }
+        if (
+            reason === 'context-unavailable' ||
+            reason === 'context-suspended' ||
+            reason === 'target-mismatch'
+        ) {
+            return 'ai-select.candidate.application-blocked-context';
+        }
+        return 'ai-select.candidate.application-blocked-identity';
     }
 
     /**

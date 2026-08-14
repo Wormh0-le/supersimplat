@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.24
+# AI Select v1 — Implementation Ticket Graph v2.25
 
-Status: **active implementation graph — Final Spec v1.3 synchronized; Ticket 15 is implemented and Ticket 16 is current**
+Status: **active implementation graph — Final Spec v1.3 synchronized; Ticket 16 is implemented and Ticket 17 is current**
 
 Branch: `ai-select-v1`
 
@@ -38,6 +38,8 @@ All 31 parent Ticket files contain a current mapping to Final Spec v1.3. Ticket 
 - Tickets 04C, 07, 02C, 07A, 07B, 08, 08A, 08B, 08C, 09, 11 and 12 are implemented prerequisites.
 - Parent Ticket 14 is complete through 14A Evidence Contract & Working Set, 14B Reference Per-View P/N/V Evidence, 14C Multi-view Aggregation & Classification, and 14D Atomic Candidate Publication & Reference Validation.
 - Ticket 13 is complete as the versioned reference/calibration Visible Evidence Coverage, View Diversity and Lift Readiness path.
+- Ticket 15 is complete as the pre-apply Candidate correction and explicit Re-Lift path.
+- Ticket 16 is complete as the fail-closed native Candidate application path.
 
 ## Dependency graph
 
@@ -124,9 +126,11 @@ implemented prerequisites:
 - 14C — Multi-view Aggregation & Classification
 - 14D — Atomic Candidate Publication & Reference Validation
 - 13 — Visible Evidence Coverage + View Diversity + Lift Readiness
+- 15 — Candidate correction + explicit Evidence-aware Re-Lift
+- 16 — Candidate → Native Set / Add / Remove / Intersect
 
 current parent frontier:
-- 16 — Candidate → Native Set / Add / Remove / Intersect
+- 17 — Applied Undo-and-Fix + complete Restart + multi-object/tool-switch lifecycle
 
 current implementation stage:
 - no active Ticket 14 substage
@@ -135,11 +139,11 @@ current implementation stage:
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 16
+next_implementation_ticket = 17
 next_implementation_subticket = null
 ```
 
-Ticket 16 is the sole current parent implementation frontier. Ticket 15 and its Ticket 13 / parent Ticket 14 prerequisites are implemented. Ticket 10 remains optional and off the core release path.
+Ticket 17 is the sole current parent implementation frontier. Tickets 15 and 16 and their Ticket 13 / parent Ticket 14 prerequisites are implemented. Ticket 10 remains optional and off the core release path.
 
 ## One valid topological order
 

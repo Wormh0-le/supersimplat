@@ -253,6 +253,11 @@
     }
 }
 
+#ai-select-anchor-dock[data-ai-select-candidate-overlay-emphasis='deemphasized']
+    #ai-select-anchor-dock-candidate-status {
+    opacity: 0.65;
+}
+
 #ai-select-anchor-dock-image-viewport {
     position: relative;
     flex: 1 1 auto;

@@ -9,6 +9,7 @@ import {
     isAnchorInspectionTarget
 } from './ai-select/camera-inspection';
 import { AnchorFrustumManipulator } from './ai-select/camera-inspection-manipulator';
+import { CandidateApplicationController } from './ai-select/candidate-application';
 import { createAISelectCandidateCorrectionController } from './ai-select/candidate-correction-composition';
 import { CandidatePublicationStore } from './ai-select/candidate-publication';
 import { pickGeneratedViewFrustum } from './ai-select/generated-frustum-picking';
@@ -17,6 +18,7 @@ import { AISelectMaskController } from './ai-select/mask-controller';
 import { createPromptAdapterCapabilities } from './ai-select/prompt-state';
 import { AISelectUserViewMaskController } from './ai-select/user-view-mask-controller';
 import { AnchorFrustum } from './ai-select-anchor-frustum';
+import { SelectOpCandidateNativeSelection } from './ai-select-candidate-application';
 import { AISelectEditorTargetFactory } from './ai-select-editor-target';
 import { GeneratedViewFrustums } from './ai-select-generated-frustums';
 import { registerCameraPosesEvents } from './camera-poses';
@@ -416,6 +418,7 @@ const main = async () => {
     let aiSelectCandidateCorrection: ReturnType<
         typeof createAISelectCandidateCorrectionController
     > | null = null;
+    let aiSelectTargetSplat: Splat | null = null;
     // Declared ahead of the readiness/Instance event registrations; assigned
     // once the Generated View controller exists below.
     let aiSelectUserViewMasks: AISelectUserViewMaskController | null = null;
@@ -564,6 +567,63 @@ const main = async () => {
         candidatePublications: aiSelectCandidatePublications,
         provider: selectionServiceAdapter
     });
+    const referenceCandidateApplicationEnabled =
+        (
+            urlArgs as {
+                aiSelect?: { referenceCandidateApplication?: string };
+            }
+        ).aiSelect?.referenceCandidateApplication === 'development';
+    const aiSelectCandidateApplication = new CandidateApplicationController({
+        candidates: aiSelectCandidatePublications,
+        nativeSelection: new SelectOpCandidateNativeSelection({
+            editHistory,
+            getTarget: () =>
+                aiSelectTargetSplat === null
+                    ? null
+                    : {
+                          targetSplat: aiSelectTargetSplat,
+                          stableIds:
+                              aiSelectTargetFactory.bindingForTarget(
+                                  aiSelectTargetSplat
+                              )
+                      }
+        }),
+        applicationMode: referenceCandidateApplicationEnabled
+            ? 'development-reference'
+            : 'production',
+        getAcceptedRuntime: () => {
+            if (!referenceCandidateApplicationEnabled) {
+                return null;
+            }
+            const readiness = selectionServiceReadiness.state;
+            const capability = readiness.capabilities?.referenceCandidateReLift;
+            if (readiness.status !== 'available' || capability === undefined) {
+                return null;
+            }
+            return {
+                rasterImplementationId: capability.rasterImplementationId,
+                evidenceBackendKind: capability.evidenceBackendKind,
+                evidenceBackendId: capability.evidenceBackendId,
+                runtimeBuildId: capability.runtimeBuildId,
+                sourceEvidencePolicyDigest: capability.evidencePolicyDigest,
+                aggregationPolicyDigest: capability.aggregationPolicyDigest
+            };
+        },
+        getTarget: () =>
+            aiSelectTargetSplat === null
+                ? null
+                : {
+                      context: aiSelectController.state.context,
+                      effectiveDependencyToken:
+                          aiSelectTargetFactory.currentDependencyTokenFor(
+                              aiSelectTargetSplat
+                          )
+                  }
+    });
+    aiSelectController.subscribe(() => aiSelectCandidateApplication.refresh());
+    events.on('selectionService.readinessChanged', () =>
+        aiSelectCandidateApplication.refresh()
+    );
     const cameraInspection = new CameraInspectionController({
         anchor: aiSelectController,
         editor: {
@@ -693,7 +753,6 @@ const main = async () => {
         }
     });
 
-    let aiSelectTargetSplat: Splat | null = null;
     let nextCameraBindingRevision = 0;
     const reportAISelectError = (error: unknown) => {
         console.error(error);
@@ -807,6 +866,7 @@ const main = async () => {
             generatedViews: aiSelectGeneratedViews,
             candidatePublications: aiSelectCandidatePublications,
             candidateCorrection: aiSelectCandidateCorrection,
+            candidateApplication: aiSelectCandidateApplication,
             maskRegistry: aiSelectMaskController.maskRegistry,
             userViewMasks: aiSelectUserViewMasks,
             onInspectCamera: (viewId) => {

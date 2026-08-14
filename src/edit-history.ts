@@ -7,7 +7,7 @@ import { Splat } from './splat';
 const opReferencesSplat = (op: EditOp, splat: Splat): boolean => {
     // Handle MultiOp by checking nested operations
     if (op instanceof MultiOp) {
-        return op.ops.some(nestedOp => opReferencesSplat(nestedOp, splat));
+        return op.ops.some((nestedOp) => opReferencesSplat(nestedOp, splat));
     }
     // Check for splat property on the operation
     return (op as any).splat === splat;
@@ -29,7 +29,9 @@ class EditHistory {
 
         events.on('edit.undo', () => this.undo());
         events.on('edit.redo', () => this.redo());
-        events.on('edit.add', (editOp: EditOp, suppressOp = false) => this.add(editOp, suppressOp));
+        events.on('edit.add', (editOp: EditOp, suppressOp = false) =>
+            this.add(editOp, suppressOp)
+        );
     }
 
     private queue<T>(fn: () => T | Promise<T>): Promise<T> {
@@ -38,6 +40,11 @@ class EditHistory {
 
     add(editOp: EditOp, suppressOp = false) {
         return this.queue(() => this._add(editOp, suppressOp));
+    }
+
+    /** Construct a state-dependent command only after it reaches the queue. */
+    addFromFactory<T extends EditOp>(factory: () => T): Promise<T> {
+        return this.queue(() => this._add(factory(), false));
     }
 
     canUndo() {
@@ -64,12 +71,26 @@ class EditHistory {
         });
     }
 
-    private async _add(editOp: EditOp, suppressOp = false) {
+    private async _add<T extends EditOp>(editOp: T, suppressOp = false) {
+        // A failed command never enters history and never destroys the redo
+        // branch. State-dependent factories can therefore validate and build
+        // their command at the exact mutation boundary.
+        if (!suppressOp) {
+            await editOp.do();
+        }
         while (this.cursor < this.history.length) {
-            this.history.pop().destroy?.();
+            const discarded = this.history.pop();
+            try {
+                discarded?.destroy?.();
+            } catch (error) {
+                console.error(error);
+            }
         }
         this.history.push(editOp);
-        await this._redo(suppressOp);
+        this.cursor++;
+        this.safeFire('edit.apply', editOp);
+        this.fireEvents();
+        return editOp;
     }
 
     private async _undo() {
@@ -78,7 +99,7 @@ class EditHistory {
         const editOp = this.history[this.cursor - 1];
         await editOp.undo();
         this.cursor--;
-        this.events.fire('edit.apply', editOp);
+        this.safeFire('edit.apply', editOp);
         this.fireEvents();
     }
 
@@ -90,13 +111,24 @@ class EditHistory {
             await editOp.do();
         }
         this.cursor++;
-        this.events.fire('edit.apply', editOp);
+        this.safeFire('edit.apply', editOp);
         this.fireEvents();
     }
 
     fireEvents() {
-        this.events.fire('edit.canUndo', this.canUndo());
-        this.events.fire('edit.canRedo', this.canRedo());
+        this.safeFire('edit.canUndo', this.canUndo());
+        this.safeFire('edit.canRedo', this.canRedo());
+    }
+
+    private safeFire(name: string, ...args: any[]): void {
+        try {
+            this.events.fire(name, ...args);
+        } catch (error) {
+            // History mutation has already committed. Observer failures are
+            // reported without turning a successful native edit into a
+            // rejected command.
+            console.error(error);
+        }
     }
 
     clear() {

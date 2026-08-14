@@ -1,6 +1,6 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.24
+# Current Final Spec v1.3 → Ticket Mapping — v2.25
 
-Status: **current normative ticket mapping — Ticket 15 implemented; Ticket 16 ready**
+Status: **current normative ticket mapping — Ticket 16 implemented; Ticket 17 ready**
 
 This file maps every active AI Select parent Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
@@ -71,19 +71,21 @@ implemented prerequisites:
 - 14C — Multi-view Aggregation & Classification
 - 14D — Atomic Candidate Publication & Reference Validation
 - 13 — Visible Evidence Coverage + View Diversity + Lift Readiness
+- 15 — Candidate correction + explicit Evidence-aware Re-Lift
+- 16 — Native Set/Add/Remove/Intersect
 
 ready now:
-- 16
+- 17
 ```
 
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 16
+next_implementation_ticket = 17
 next_implementation_subticket = null
 ```
 
-Ticket 16 is the sole current parent implementation frontier after Ticket 15 closure. Ticket 10 remains optional and may execute after parent Ticket 14 + 09 + 07 without blocking the core release path.
+Ticket 17 is the sole current parent implementation frontier after Ticket 16 closure. Ticket 10 remains optional and may execute after parent Ticket 14 + 09 + 07 without blocking the core release path.
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported. The locked-GPU large-Gallery browser walkthrough for Ticket 09 passed on 2026-08-07. Ticket 11 shipped with repository test/lint/locales/build green; its locked-GPU browser walkthrough is still pending.
 
@@ -120,8 +122,8 @@ The mapping passes only when:
 - older spec names appear only under explicit historical/superseded/migration labels;
 - implemented prerequisites through 12 are not reported as current ready work;
 - parent Ticket 14 and stages 14A through 14D are recognized as implemented;
-- Tickets 13 and 15 are recognized as implemented and Ticket 16 as the sole current parent implementation frontier;
-- `next_implementation_ticket = 16` and a null substage are current;
+- Tickets 13 through 16 are recognized as implemented and Ticket 17 as the sole current parent implementation frontier;
+- `next_implementation_ticket = 17` and a null substage are current;
 - no active closure criterion relies on superseded v1.2 architecture;
 - provider requests carry resolvable authoritative RGB;
 - previous logits remain Companion-local behind opaque refs;

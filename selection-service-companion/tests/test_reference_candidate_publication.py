@@ -191,6 +191,7 @@ class ReferenceCandidatePublicationTests(unittest.TestCase):
         self.assertEqual(candidate["candidate"], {"selectedStableGaussianIds": [5]})
         self.assertEqual(candidate["uncertain"], {"stableGaussianIds": [11, 13]})
         self.assertEqual(candidate["publicationKind"], "reference-pre-production")
+        self.assertEqual(candidate["productionReadiness"], "reference-only")
         self.assertEqual(
             candidate["publicationBinding"]["requestBinding"], request_binding()
         )

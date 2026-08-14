@@ -18,7 +18,7 @@ from .reference_gaussian_evidence_aggregation import (
 )
 
 
-REFERENCE_CANDIDATE_SCHEMA_VERSION: Final = 1
+REFERENCE_CANDIDATE_SCHEMA_VERSION: Final = 2
 REFERENCE_CANDIDATE_PUBLICATION_KIND: Final = "reference-pre-production"
 _DIGEST_PREFIX: Final = "sha256:"
 _DIGEST_LENGTH: Final = len(_DIGEST_PREFIX) + 64
@@ -291,6 +291,7 @@ def create_reference_candidate_artifact(
     payload: dict[str, object] = {
         "schemaVersion": REFERENCE_CANDIDATE_SCHEMA_VERSION,
         "publicationKind": REFERENCE_CANDIDATE_PUBLICATION_KIND,
+        "productionReadiness": "reference-only",
         "publicationBinding": binding,
         "sourceAggregationResultDigest": aggregation_result["resultDigest"],
         "candidate": {
@@ -324,6 +325,7 @@ def is_reference_candidate_artifact(value: object) -> bool:
         != {
             "schemaVersion",
             "publicationKind",
+            "productionReadiness",
             "publicationBinding",
             "sourceAggregationResultDigest",
             "candidate",
@@ -333,6 +335,7 @@ def is_reference_candidate_artifact(value: object) -> bool:
         or value.get("schemaVersion") != REFERENCE_CANDIDATE_SCHEMA_VERSION
         or value.get("publicationKind")
         != REFERENCE_CANDIDATE_PUBLICATION_KIND
+        or value.get("productionReadiness") != "reference-only"
         or not _is_publication_binding(value.get("publicationBinding"))
         or not _is_digest(value.get("sourceAggregationResultDigest"))
         or not _is_digest(value.get("candidateDigest"))

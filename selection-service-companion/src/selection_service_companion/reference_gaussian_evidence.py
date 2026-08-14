@@ -186,7 +186,7 @@ def _validated_policy(value: object) -> dict[str, object]:
     return dict(value)
 
 
-def _decoded_mask(value: object) -> tuple[int, int, tuple[bool, ...]]:
+def _decoded_mask_bits(value: object) -> tuple[int, int, bytes]:
     if not isinstance(value, dict) or set(value) != {
         "encoding",
         "width",
@@ -235,13 +235,19 @@ def _decoded_mask(value: object) -> tuple[int, int, tuple[bool, ...]]:
         raise ReferenceGaussianEvidenceError(
             "AI Select reference Evidence Stable Mask digest does not match its bytes."
         )
-    foreground = tuple(
-        bool(bits[index // 8] & (1 << (index % 8))) for index in range(pixel_count)
-    )
-    if not any(foreground):
+    if not any(bits):
         raise ReferenceGaussianEvidenceError(
             "AI Select reference Evidence requires a non-empty Stable Mask."
         )
+    return width, height, bits
+
+
+def _decoded_mask(value: object) -> tuple[int, int, tuple[bool, ...]]:
+    width, height, bits = _decoded_mask_bits(value)
+    pixel_count = width * height
+    foreground = tuple(
+        bool(bits[index // 8] & (1 << (index % 8))) for index in range(pixel_count)
+    )
     return width, height, foreground
 
 
@@ -367,6 +373,70 @@ def derive_pixel_evidence_weights(
                 )
             )
     return PixelEvidenceWeights(width=width, height=height, values=tuple(values))
+
+
+def _typed_pixel_evidence_weights(
+    mask_artifact: object,
+    policy: dict[str, object],
+    torch: object,
+) -> tuple[int, int, tuple[object, object, object, object]]:
+    """Derive the exact Chebyshev policy as compact row-major tensors."""
+
+    import torch.nn.functional as functional
+
+    width, height, bits = _decoded_mask_bits(mask_artifact)
+    byte_values = torch.frombuffer(bytearray(bits), dtype=torch.uint8)
+    bit_offsets = torch.arange(8, dtype=torch.uint8)
+    foreground = (
+        ((byte_values[:, None] >> bit_offsets) & 1)
+        .reshape(-1)[: width * height]
+        .to(dtype=torch.bool)
+        .reshape(1, 1, height, width)
+    )
+
+    def dilate(mask: object, radius: int, *, outside: float = 0.0) -> object:
+        if radius == 0:
+            return mask
+        padded = functional.pad(
+            mask.to(dtype=torch.float32),
+            (radius, radius, radius, radius),
+            value=outside,
+        )
+        return functional.max_pool2d(
+            padded,
+            kernel_size=2 * radius + 1,
+            stride=1,
+        ).to(dtype=torch.bool)
+
+    erosion_radius = int(policy["positiveInteriorErosionRadiusPx"])
+    boundary_radius = int(policy["boundaryBandRadiusPx"])
+    negative_outer_radius = int(policy["localNegativeOuterRadiusPx"])
+    background_nearby = dilate(~foreground, erosion_radius, outside=1.0)
+    strong_positive = foreground & ~background_nearby
+    boundary_region = dilate(foreground, boundary_radius) & ~strong_positive
+    local_negative = (
+        dilate(foreground, negative_outer_radius)
+        & ~strong_positive
+        & ~boundary_region
+    )
+    flattened_foreground = foreground.reshape(-1)
+    flattened_strong = strong_positive.reshape(-1)
+    flattened_boundary = boundary_region.reshape(-1)
+    flattened_negative = local_negative.reshape(-1)
+    positive = torch.zeros(width * height, dtype=torch.float64)
+    positive[flattened_strong] = float(policy["strongPositiveWeight"])
+    positive[flattened_boundary & flattened_foreground] = float(
+        policy["boundaryPositiveWeight"]
+    )
+    negative = torch.zeros(width * height, dtype=torch.float64)
+    negative[flattened_negative] = float(policy["localNegativeWeight"])
+    visible = torch.zeros(width * height, dtype=torch.float64)
+    visible[flattened_strong] = float(policy["positiveVisibleWeight"])
+    visible[flattened_boundary] = float(policy["boundaryVisibleWeight"])
+    visible[flattened_negative] = float(policy["localNegativeVisibleWeight"])
+    boundary = torch.zeros(width * height, dtype=torch.float64)
+    boundary[flattened_boundary] = float(policy["boundaryDiagnosticWeight"])
+    return width, height, (positive, negative, visible, boundary)
 
 
 def _validated_stable_id_mapping(value: object) -> list[int]:
@@ -637,6 +707,257 @@ def compute_reference_contributor_evidence(
     except GaussianEvidenceContractError as error:
         raise ReferenceGaussianEvidenceError(
             "AI Select reference Evidence produced incomplete or non-finite P/N/V."
+        ) from error
+
+
+def compute_typed_reference_contributor_evidence(
+    admission_input: object,
+    mask_artifact: object,
+    contributor_raster: object,
+    policy: object,
+) -> dict[str, object]:
+    """Compute reference P/N/V without a per-contribution Python object graph.
+
+    This consumes the same complete ``alpha * incoming T`` Contributor stream
+    as the list reference path. Tensor validation stays fail-closed, while
+    bounded CPU chunks prevent a large View from turning every contribution
+    into an individual Python ``int``/``float`` object.
+    """
+
+    try:
+        import torch
+    except ImportError as error:
+        raise ReferenceGaussianEvidenceError(
+            "AI Select typed reference Evidence requires the locked renderer runtime."
+        ) from error
+    if not isinstance(admission_input, dict):
+        raise ReferenceGaussianEvidenceError(
+            "AI Select reference Evidence admission input is invalid."
+        )
+    admission_result = admit_gaussian_evidence(admission_input)
+    if admission_result["status"] != "admitted":
+        raise ReferenceGaussianEvidenceError(
+            "AI Select reference Evidence admission failed closed: "
+            f"{admission_result['reason']}."
+        )
+    admission = admission_result["admission"]
+    assert isinstance(admission, dict)
+    validated_policy = _validated_policy(policy)
+    if admission["evidencePolicyDigest"] != validated_policy["evidencePolicyDigest"]:
+        raise ReferenceGaussianEvidenceError(
+            "AI Select reference Evidence Policy does not match the admitted identity."
+        )
+    width, height, channel_weights = _typed_pixel_evidence_weights(
+        mask_artifact,
+        validated_policy,
+        torch,
+    )
+    if (
+        not isinstance(mask_artifact, dict)
+        or mask_artifact.get("digest") != admission["stableMaskDigest"]
+    ):
+        raise ReferenceGaussianEvidenceError(
+            "AI Select reference Evidence Stable Mask does not match the admitted identity."
+        )
+    required = {
+        "width",
+        "height",
+        "rgbDigest",
+        "stableGaussianIdsByTensorRow",
+        "alpha",
+        "contributorIds",
+        "contributorWeights",
+        "rasterImplementationId",
+        "evidenceBackendKind",
+        "evidenceBackendId",
+        "runtimeBuildId",
+    }
+    if not isinstance(contributor_raster, dict) or set(contributor_raster) != required:
+        raise ReferenceGaussianEvidenceError(
+            "AI Select typed reference Contributor raster is incomplete."
+        )
+    raster_width = contributor_raster["width"]
+    raster_height = contributor_raster["height"]
+    if (
+        isinstance(raster_width, bool)
+        or not isinstance(raster_width, int)
+        or raster_width != width
+        or isinstance(raster_height, bool)
+        or not isinstance(raster_height, int)
+        or raster_height != height
+        or not _raster_identity_matches_admission(contributor_raster, admission)
+    ):
+        raise ReferenceGaussianEvidenceError(
+            "AI Select typed reference Contributor identity or dimensions are invalid."
+        )
+    stable_id_tensor = contributor_raster["stableGaussianIdsByTensorRow"]
+    alpha = contributor_raster["alpha"]
+    contributor_ids = contributor_raster["contributorIds"]
+    contributor_weights = contributor_raster["contributorWeights"]
+    if (
+        not isinstance(stable_id_tensor, torch.Tensor)
+        or stable_id_tensor.ndim != 1
+        or stable_id_tensor.numel() == 0
+        or stable_id_tensor.dtype not in (torch.int32, torch.int64)
+        or not isinstance(alpha, torch.Tensor)
+        or tuple(alpha.shape) != (height, width)
+        or not isinstance(contributor_ids, torch.Tensor)
+        or contributor_ids.ndim != 3
+        or tuple(contributor_ids.shape[:2]) != (height, width)
+        or contributor_ids.dtype not in (torch.int32, torch.int64)
+        or not isinstance(contributor_weights, torch.Tensor)
+        or contributor_weights.shape != contributor_ids.shape
+        or not contributor_weights.dtype.is_floating_point
+    ):
+        raise ReferenceGaussianEvidenceError(
+            "AI Select typed reference Contributor tensor shapes are incomplete."
+        )
+    stable_ids_by_row = [
+        int(value) & ((1 << 32) - 1)
+        for value in stable_id_tensor.detach().cpu().tolist()
+    ]
+    if len(set(stable_ids_by_row)) != len(stable_ids_by_row):
+        raise ReferenceGaussianEvidenceError(
+            "AI Select typed reference Contributor Stable ID mapping is invalid."
+        )
+    render_working_set = admission_input.get("renderWorkingSet")
+    if not isinstance(render_working_set, dict) or set(stable_ids_by_row) != set(
+        render_working_set["stableGaussianIds"]
+    ):
+        raise ReferenceGaussianEvidenceError(
+            "AI Select typed reference Contributor Stable ID mapping does not match the Render Working Set."
+        )
+    row_count = len(stable_ids_by_row)
+    if (
+        not bool(torch.isfinite(alpha).all().item())
+        or not bool(torch.isfinite(contributor_weights).all().item())
+        or bool((alpha < 0.0).any().item())
+        or bool((alpha > 1.0 + _CONTRIBUTOR_MASS_ATOL).any().item())
+        or bool((contributor_ids < -1).any().item())
+        or bool((contributor_ids >= row_count).any().item())
+        or bool((contributor_weights < 0.0).any().item())
+        or bool((contributor_weights > 1.0).any().item())
+        or bool(((contributor_ids < 0) & (contributor_weights != 0.0)).any().item())
+        or bool(((contributor_ids >= 0) & (contributor_weights <= 0.0)).any().item())
+        or not bool((contributor_ids >= 0).any().item())
+    ):
+        raise ReferenceGaussianEvidenceError(
+            "AI Select typed reference Contributor raster contains invalid alpha, IDs, or weights."
+        )
+    pixel_mass = contributor_weights.sum(dim=-1)
+    tolerance = _CONTRIBUTOR_MASS_ATOL + _CONTRIBUTOR_MASS_RTOL * alpha.abs()
+    if bool((torch.abs(pixel_mass - alpha) > tolerance).any().item()):
+        raise ReferenceGaussianEvidenceError(
+            "AI Select typed reference Contributor mass does not match raster alpha."
+        )
+
+    stable_ids = list(admission["stableGaussianIds"])
+    evidence_index = {stable_id: index for index, stable_id in enumerate(stable_ids)}
+    row_to_output = torch.tensor(
+        [evidence_index.get(stable_id, -1) for stable_id in stable_ids_by_row],
+        dtype=torch.int64,
+    )
+    masses = tuple(
+        torch.zeros(len(stable_ids), dtype=torch.float64) for _ in range(4)
+    )
+    contributor_capacity = int(contributor_ids.shape[-1])
+    if contributor_capacity <= 0:
+        raise ReferenceGaussianEvidenceError(
+            "AI Select typed reference Contributor has no complete support."
+        )
+    # Far-neutral pixels have P=N=V=boundary=0, so they cannot write Evidence.
+    # The locked backend already reconciled the complete Contributor pass with
+    # RGB alpha; transferring only support-bearing pixel chains bounds CPU
+    # work without truncating any chain that can affect the artifact.
+    active_pixels = torch.nonzero(
+        sum(channel_weights) > 0.0,
+        as_tuple=False,
+    ).reshape(-1)
+    max_samples_per_chunk = 1_048_576
+    pixels_per_chunk = max(1, max_samples_per_chunk // contributor_capacity)
+    flat_ids = contributor_ids.reshape(-1, contributor_capacity)
+    flat_weights = contributor_weights.reshape(-1, contributor_capacity)
+    flat_alpha = alpha.reshape(-1)
+    for start in range(0, int(active_pixels.numel()), pixels_per_chunk):
+        end = min(int(active_pixels.numel()), start + pixels_per_chunk)
+        pixel_indices = active_pixels[start:end]
+        device_indices = pixel_indices.to(device=flat_ids.device)
+        ids_chunk = (
+            flat_ids.index_select(0, device_indices)
+            .detach()
+            .cpu()
+            .to(dtype=torch.int64)
+        )
+        weights_chunk = (
+            flat_weights.index_select(0, device_indices)
+            .detach()
+            .cpu()
+            .to(dtype=torch.float64)
+        )
+        alpha_chunk = (
+            flat_alpha.index_select(0, device_indices)
+            .detach()
+            .cpu()
+            .to(dtype=torch.float64)
+        )
+        if (
+            not bool(torch.isfinite(weights_chunk).all().item())
+            or bool((ids_chunk < -1).any().item())
+            or bool((ids_chunk >= row_count).any().item())
+            or bool((weights_chunk < 0.0).any().item())
+            or bool((weights_chunk > 1.0).any().item())
+            or bool(((ids_chunk < 0) & (weights_chunk != 0.0)).any().item())
+            or bool(((ids_chunk >= 0) & (weights_chunk <= 0.0)).any().item())
+        ):
+            raise ReferenceGaussianEvidenceError(
+                "AI Select typed reference Contributor contains invalid IDs or weights."
+            )
+        sorted_ids = ids_chunk.sort(dim=1).values
+        if bool(
+            (
+                (sorted_ids[:, 1:] == sorted_ids[:, :-1])
+                & (sorted_ids[:, 1:] >= 0)
+            )
+            .any()
+            .item()
+        ):
+            raise ReferenceGaussianEvidenceError(
+                "AI Select typed reference Contributor repeats a tensor row in one pixel."
+            )
+        pixel_mass = weights_chunk.sum(dim=-1)
+        tolerance = _CONTRIBUTOR_MASS_ATOL + (
+            _CONTRIBUTOR_MASS_RTOL * alpha_chunk.abs()
+        )
+        if bool((torch.abs(pixel_mass - alpha_chunk) > tolerance).any().item()):
+            raise ReferenceGaussianEvidenceError(
+                "AI Select typed reference Contributor mass does not match raster alpha."
+            )
+        valid = ids_chunk >= 0
+        if not bool(valid.any().item()):
+            continue
+        output_indices = row_to_output[ids_chunk.clamp_min(0)][valid]
+        in_evidence_set = output_indices >= 0
+        if not bool(in_evidence_set.any().item()):
+            continue
+        output_indices = output_indices[in_evidence_set]
+        for mass, pixel_weights in zip(masses, channel_weights, strict=True):
+            contributions = (
+                weights_chunk * pixel_weights[pixel_indices, None]
+            )[valid][in_evidence_set]
+            mass.index_add_(0, output_indices, contributions)
+    try:
+        return create_gaussian_evidence_artifact(
+            admission,
+            {
+                "positiveMass": masses[0].tolist(),
+                "negativeMass": masses[1].tolist(),
+                "visibleMass": masses[2].tolist(),
+                "boundaryMass": masses[3].tolist(),
+            },
+        )
+    except GaussianEvidenceContractError as error:
+        raise ReferenceGaussianEvidenceError(
+            "AI Select typed reference Evidence produced incomplete or non-finite P/N/V."
         ) from error
 
 

@@ -25,13 +25,13 @@ import {
     pointerActionForTool
 } from '../ai-select/authoring-interaction';
 import {
-    type CandidatePublicationState,
-    type CandidatePublicationStore
-} from '../ai-select/candidate-publication';
-import {
     type AISelectCandidateCorrectionController,
     type CandidateCorrectionState
 } from '../ai-select/candidate-correction';
+import {
+    type CandidatePublicationState,
+    type CandidatePublicationStore
+} from '../ai-select/candidate-publication';
 import {
     PALETTE_TOOLS,
     paletteToolForShortcutKey,
@@ -741,9 +741,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         const primaryActions = new Container({
             id: 'ai-select-anchor-dock-primary-actions'
         });
-        // Anchor confirmation stays first in the fixed action area so a
-        // wrapped Mask action never pushes the next lifecycle step below the
-        // dock's clipped edge.
+        // Lifecycle actions stay in a bounded bottom well. Responsive groups
+        // grow into rows before the well scrolls, so labels remain readable
+        // without moving the image or hiding the next lifecycle step.
         primaryActions.append(this.anchorActions);
         primaryActions.append(this.acceptProposalButton);
         primaryActions.append(this.maskActions);
@@ -877,7 +877,17 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private renderCandidateStatus(): void {
         const { candidateState } = this;
         if (candidateState.status === 'empty') {
-            this.candidateStatus.hidden = true;
+            this.candidateStatus.hidden =
+                this.candidateCorrectionState.status === 'idle';
+            if (this.candidateCorrectionState.status === 'updating') {
+                this.candidateStatus.text = i18n.t(
+                    'ai-select.candidate.updating'
+                );
+            } else if (this.candidateCorrectionState.status === 'failed') {
+                this.candidateStatus.text = i18n.t(
+                    'ai-select.candidate.update-failed'
+                );
+            }
             const hasIncludedStableView =
                 this.maskState.stableMask !== null ||
                 this.generatedState.views.some(
@@ -920,7 +930,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.updateCandidateButton.hidden = !showUpdate;
         this.updateCandidateButton.enabled =
             this.candidateCorrectionState.status !== 'updating';
-        if (this.candidateCorrectionState.status === 'failed') {
+        if (this.candidateCorrectionState.status === 'updating') {
+            this.candidateStatus.text += ` · ${i18n.t('ai-select.candidate.updating')}`;
+        } else if (this.candidateCorrectionState.status === 'failed') {
             this.candidateStatus.text += ` · ${i18n.t('ai-select.candidate.update-failed')}`;
         }
     }
@@ -957,7 +969,11 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                           : i18n.t(`ai-select.mask.${mask.status}`);
         }
         const technicalMessage =
-            mask.status === 'failed' ? mask.errorMessage : undefined;
+            this.candidateCorrectionState.status === 'failed'
+                ? this.candidateCorrectionState.errorMessage
+                : mask.status === 'failed'
+                  ? mask.errorMessage
+                  : undefined;
         this.technicalDetails.hidden =
             technicalMessage === undefined || technicalMessage.length === 0;
         this.technicalDetailsBody.textContent = technicalMessage ?? '';

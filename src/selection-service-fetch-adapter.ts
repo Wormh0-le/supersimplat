@@ -10,16 +10,16 @@ import {
     type AnchorRenderResponse
 } from './ai-select/anchor-render-service';
 import {
+    areCameraBindingsEqual,
+    isCameraBinding
+} from './ai-select/camera-binding';
+import {
     isCandidateReLiftRequest,
     isCandidateReLiftResponseForRequest,
     type AISelectCandidateReLiftProvider,
     type CandidateReLiftRequest,
     type CandidateReLiftResponse
 } from './ai-select/candidate-re-lift';
-import {
-    areCameraBindingsEqual,
-    isCameraBinding
-} from './ai-select/camera-binding';
 import {
     areTargetDependencyTokensEqual,
     isAIRequestBinding
@@ -155,6 +155,7 @@ interface FetchSelectionServiceAdapterOptions {
     getConfiguration: () => SelectionServiceTransportConfiguration;
     supportsCameraAwareSpatialWorkingSet?: () => boolean;
     fetch?: SelectionServiceFetch;
+    candidateReLiftTimeoutMs?: number;
 }
 
 interface SceneCacheMissResponse extends ObjectSelectionPreviewBindings {
@@ -310,12 +311,15 @@ class FetchSelectionServiceAdapter
     private spatialSnapshots = new Map<string, SpatialSceneSnapshot>();
     private spatialManifestRegistrationIds = new Map<string, string>();
     private nextOpenRequestSequence = 0;
+    private candidateReLiftTimeoutMs: number;
 
     constructor(options: FetchSelectionServiceAdapterOptions) {
         this.getConfiguration = options.getConfiguration;
         this.supportsCameraAwareSpatialWorkingSet =
             options.supportsCameraAwareSpatialWorkingSet ?? (() => false);
         this.fetch = options.fetch ?? browserFetch;
+        this.candidateReLiftTimeoutMs =
+            options.candidateReLiftTimeoutMs ?? 120_000;
     }
 
     async openSession(start: ObjectSelectionServiceSessionStart) {
@@ -2460,7 +2464,11 @@ class FetchSelectionServiceAdapter
         method: 'POST' | 'PUT',
         body: unknown
     ) {
-        const response = await this.request(path, method, JSON.stringify(body));
+        const request = this.request(path, method, JSON.stringify(body));
+        const response =
+            path === '/ai-select/candidate-re-lifts'
+                ? await this.withCandidateReLiftTimeout(request)
+                : await request;
         if (!response.ok) {
             throw await this.httpError(response);
         }
@@ -2471,6 +2479,27 @@ class FetchSelectionServiceAdapter
                 'invalidResponse',
                 'The Selection Service Companion returned invalid JSON.'
             );
+        }
+    }
+
+    private async withCandidateReLiftTimeout(
+        request: Promise<FetchResponse>
+    ): Promise<FetchResponse> {
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_resolve, reject) => {
+            timeoutId = setTimeout(() => {
+                reject(
+                    transportError(
+                        'browserTransport',
+                        'AI Select Candidate Re-Lift timed out. The previous Candidate remains available; retry after the Companion becomes responsive.'
+                    )
+                );
+            }, this.candidateReLiftTimeoutMs);
+        });
+        try {
+            return await Promise.race([request, timeout]);
+        } finally {
+            clearTimeout(timeoutId);
         }
     }
 

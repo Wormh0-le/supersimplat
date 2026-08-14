@@ -335,6 +335,7 @@
   "ai-select.candidate.reference-only": "Nur Referenzvorschau",
   "ai-select.candidate.fix-result": "KI-Ergebnis korrigieren",
   "ai-select.candidate.update": "3D-Kandidat aktualisieren",
+  "ai-select.candidate.updating": "Evidenz pro Ansicht wird berechnet und der 3D-Kandidat aktualisiert…",
   "ai-select.candidate.update-failed": "Kandidatenaktualisierung fehlgeschlagen. Korrigieren Sie eine Maske, schließen Sie die Ansicht aus, erzeugen Sie weitere Ansichten oder fügen Sie eine Ansicht hinzu und versuchen Sie es erneut.",
   "ai-select.readiness.not-ready": "Lift nicht bereit",
   "ai-select.readiness.limited": "Lift-Bereitschaft eingeschränkt",

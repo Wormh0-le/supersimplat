@@ -335,6 +335,7 @@
   "ai-select.candidate.reference-only": "Только эталонный предпросмотр",
   "ai-select.candidate.fix-result": "Исправить результат ИИ",
   "ai-select.candidate.update": "Обновить 3D-кандидат",
+  "ai-select.candidate.updating": "Вычисляются данные Evidence для каждого вида и обновляется 3D-кандидат…",
   "ai-select.candidate.update-failed": "Не удалось обновить кандидат. Исправьте маску, исключите вид, создайте дополнительные виды или добавьте вид и повторите попытку.",
   "ai-select.readiness.not-ready": "Подъём не готов",
   "ai-select.readiness.limited": "Готовность к подъёму ограничена",

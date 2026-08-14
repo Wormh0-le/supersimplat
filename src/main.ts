@@ -9,8 +9,8 @@ import {
     isAnchorInspectionTarget
 } from './ai-select/camera-inspection';
 import { AnchorFrustumManipulator } from './ai-select/camera-inspection-manipulator';
-import { CandidatePublicationStore } from './ai-select/candidate-publication';
 import { createAISelectCandidateCorrectionController } from './ai-select/candidate-correction-composition';
+import { CandidatePublicationStore } from './ai-select/candidate-publication';
 import { pickGeneratedViewFrustum } from './ai-select/generated-frustum-picking';
 import { AISelectGeneratedViewController } from './ai-select/generated-view-controller';
 import { AISelectMaskController } from './ai-select/mask-controller';

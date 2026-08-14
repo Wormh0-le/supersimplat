@@ -335,6 +335,7 @@
   "ai-select.candidate.reference-only": "Reference preview only",
   "ai-select.candidate.fix-result": "Fix AI Result",
   "ai-select.candidate.update": "Update 3D Candidate",
+  "ai-select.candidate.updating": "Computing per-View Evidence and updating the 3D Candidate…",
   "ai-select.candidate.update-failed": "Candidate update failed. Fix a Mask, exclude the View, generate more Views, or add a View, then retry.",
   "ai-select.readiness.not-ready": "Lift not ready",
   "ai-select.readiness.limited": "Lift readiness limited",

@@ -170,6 +170,25 @@ class TypedAnchorRasterization:
 
 
 @dataclass(frozen=True)
+class TypedReferenceRasterization:
+    """GPU-resident complete Contributor data for reference Evidence only.
+
+    Unlike ``GsplatRasterization``, this representation never expands the
+    dense Contributor tensors into nested Python lists. The reference
+    accumulator consumes bounded tensor chunks and publishes only the compact
+    per-Gaussian P/N/V arrays.
+    """
+
+    service_rgb_digest: str
+    service_rgb_bytes: bytes
+    alpha: Any
+    contributor_ids: Any
+    contributor_weights: Any
+    stable_ids: Any
+    peak_vram_bytes: int | None = None
+
+
+@dataclass(frozen=True)
 class _LockedTensorRasterization:
     """GPU-resident common rasterization state shared by Anchor and legacy APIs.
 
@@ -453,6 +472,43 @@ class LockedGsplatBackend:
             contributor_error=rasterized.contributor_error,
         )
 
+    def rasterize_reference_evidence_typed(
+        self,
+        *,
+        snapshot: SceneSnapshotInput,
+        camera: Mapping[str, Any],
+        width: int,
+        height: int,
+        stable_ids: StableGaussianIds,
+    ) -> TypedReferenceRasterization:
+        """Keep the complete reference Contributor stream tensor-backed."""
+
+        import torch
+
+        rasterized = self._rasterize_tensors(
+            snapshot=snapshot,
+            camera=camera,
+            width=width,
+            height=height,
+        )
+        if (
+            rasterized.contributor_ids is None
+            or rasterized.contributor_weights is None
+        ):
+            raise MaskSessionError(
+                "rendererFailure",
+                "gsplat did not return the contributor tensors this evidence path requires.",
+            )
+        return TypedReferenceRasterization(
+            service_rgb_digest=rasterized.service_rgb_digest,
+            service_rgb_bytes=rasterized.service_rgb_bytes,
+            alpha=rasterized.alpha[0, ..., 0],
+            contributor_ids=rasterized.contributor_ids[0],
+            contributor_weights=rasterized.contributor_weights[0],
+            stable_ids=_stable_id_tensor(torch, stable_ids, rasterized.alpha.device),
+            peak_vram_bytes=rasterized.peak_vram_bytes,
+        )
+
     def _rasterize_tensors(
         self,
         *,
@@ -521,7 +577,7 @@ class LockedGsplatBackend:
                 if not capture_contributor_error:
                     raise
                 contributor_error = error
-            except Exception as error:
+            except Exception:
                 if not capture_contributor_error:
                     raise
                 contributor_error = MaskSessionError(
@@ -1410,7 +1466,7 @@ class GsplatContributorRenderer:
         from .gaussian_evidence_contract import admit_gaussian_evidence
         from .reference_gaussian_evidence import (
             ReferenceGaussianEvidenceError,
-            compute_reference_contributor_evidence,
+            compute_typed_reference_contributor_evidence,
         )
 
         admission_result = admit_gaussian_evidence(admission_input)
@@ -1469,18 +1525,18 @@ class GsplatContributorRenderer:
             )
         try:
             stable_ids = validate_supported_snapshot(scene_snapshot)
-            canonical_stable_ids = _stable_ids_as_uint32_list(stable_ids)
         except (KeyError, MaskSessionError, TypeError, ValueError) as error:
             raise ReferenceGaussianEvidenceError(
                 'AI Select reference Evidence Render Working Set is invalid.',
                 code='referenceRenderWorkingSetMismatch',
             ) from error
         try:
-            rasterized = self.backend.rasterize(
+            rasterized = self.backend.rasterize_reference_evidence_typed(
                 snapshot=scene_snapshot,
                 camera=immutable_camera,
                 width=width,
                 height=height,
+                stable_ids=stable_ids,
             )
         except Exception as error:
             failure_code = getattr(error, 'code', type(error).__name__)
@@ -1491,7 +1547,7 @@ class GsplatContributorRenderer:
                 cause_code=str(failure_code),
             ) from error
         if (
-            not isinstance(rasterized, GsplatRasterization)
+            not isinstance(rasterized, TypedReferenceRasterization)
             or not isinstance(rasterized.service_rgb_bytes, bytes)
             or len(rasterized.service_rgb_bytes) != width * height * 3
             or rasterized.contributor_ids is None
@@ -1519,14 +1575,14 @@ class GsplatContributorRenderer:
         # The P/N/V computation below owns the proof-producing validation of
         # complete shape, finiteness, Stable-ID mapping and alpha mass. Avoid
         # constructing the legacy per-contribution object graph a second time.
-        return compute_reference_contributor_evidence(
+        return compute_typed_reference_contributor_evidence(
             dict(admission_input),
             dict(stable_mask_artifact),
             {
                 'width': width,
                 'height': height,
                 'rgbDigest': rgb_digest,
-                'stableGaussianIdsByTensorRow': canonical_stable_ids,
+                'stableGaussianIdsByTensorRow': rasterized.stable_ids,
                 'alpha': rasterized.alpha,
                 'contributorIds': rasterized.contributor_ids,
                 'contributorWeights': rasterized.contributor_weights,

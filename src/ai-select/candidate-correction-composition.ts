@@ -1,11 +1,11 @@
-import { cameraBindingDigest } from './camera-binding';
 import type { AISelectAnchorController } from './anchor-controller';
-import type { CandidatePublicationStore } from './candidate-publication';
+import { cameraBindingDigest } from './camera-binding';
 import {
     AISelectCandidateCorrectionController,
     type CandidateCorrectionProductionInput,
     type CandidateCorrectionView
 } from './candidate-correction';
+import type { CandidatePublicationStore } from './candidate-publication';
 import {
     referenceContributorEvidenceBackendId,
     referenceEvidencePolicyDigest,
@@ -14,8 +14,8 @@ import {
     type AISelectCandidateReLiftProvider,
     type CandidateReLiftViewInput
 } from './candidate-re-lift';
-import type { AISelectGeneratedViewController } from './generated-view-controller';
 import { createEvidenceWorkingSet } from './gaussian-evidence-contract';
+import type { AISelectGeneratedViewController } from './generated-view-controller';
 import type { AISelectMaskController } from './mask-controller';
 
 export interface AISelectCandidateCorrectionCompositionOptions {
@@ -122,7 +122,8 @@ export const createAISelectCandidateCorrectionController = (
                     })
                 });
             };
-            const views: CandidateCorrectionView<CandidateReLiftViewInput>[] = [];
+            const views: CandidateCorrectionView<CandidateReLiftViewInput>[] =
+                [];
             const anchorMask = options.masks.state.stableMask;
             if (
                 anchor.renderStatus === 'ready' &&
@@ -184,9 +185,7 @@ export const createAISelectCandidateCorrectionController = (
                 )?.artifact;
                 return Object.freeze({
                     ...view.payload,
-                    ...(cachedArtifact === undefined
-                        ? {}
-                        : { cachedArtifact })
+                    ...(cachedArtifact === undefined ? {} : { cachedArtifact })
                 });
             });
             const first = views[0];
@@ -219,8 +218,7 @@ export const createAISelectCandidateCorrectionController = (
                     ),
                     classificationScopeStableGaussianIds:
                         first.currentInput.evidenceWorkingSet.stableGaussianIds,
-                    evidenceWorkingSet:
-                        first.currentInput.evidenceWorkingSet,
+                    evidenceWorkingSet: first.currentInput.evidenceWorkingSet,
                     views: Object.freeze(views)
                 });
             } catch (error) {
@@ -282,8 +280,7 @@ export const createAISelectCandidateCorrectionController = (
                         options.masks.evidenceRegistry.markReady({
                             viewId: entry.viewId,
                             rgbDigest: entry.artifact.rgbDigest,
-                            stableMaskDigest:
-                                entry.artifact.stableMaskDigest,
+                            stableMaskDigest: entry.artifact.stableMaskDigest,
                             evidencePolicyDigest:
                                 entry.artifact.evidencePolicyDigest
                         });

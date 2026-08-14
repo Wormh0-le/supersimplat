@@ -335,6 +335,7 @@
   "ai-select.candidate.reference-only": "참조 미리보기 전용",
   "ai-select.candidate.fix-result": "AI 결과 수정",
   "ai-select.candidate.update": "3D 후보 업데이트",
+  "ai-select.candidate.updating": "뷰별 Evidence를 계산하고 3D 후보를 업데이트하는 중…",
   "ai-select.candidate.update-failed": "후보를 업데이트하지 못했습니다. 마스크를 수정하거나 뷰를 제외하거나 뷰를 더 생성 또는 추가한 뒤 다시 시도하세요.",
   "ai-select.readiness.not-ready": "리프트 준비 안 됨",
   "ai-select.readiness.limited": "리프트 준비 제한됨",

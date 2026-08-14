@@ -75,6 +75,15 @@ Implement structural correction before Candidate application. Users change obser
   presented as target Observation Coverage.
 - This is reference/debug Contributor work. It does not implement or validate
   Ticket 20's production same-decision Direct Evidence kernel.
+- The live reference path keeps complete Contributor tensors typed through
+  validation and performs bounded, vectorized CPU accumulation only for
+  non-neutral Mask regions. It does not truncate contributors or change the
+  reference Evidence policy. Browser transport bounds a non-responsive
+  Re-Lift at 120 seconds, publishes the failure on every pending Evidence
+  record, and preserves the previous inspectable Candidate.
+- The Dock's bottom action well is height-bounded rather than fixed-height;
+  action groups use responsive button grids and scroll only after reaching the
+  bound, so wrapped labels do not squeeze or clip lifecycle controls.
 
 ## Validation
 

@@ -335,6 +335,7 @@
   "ai-select.candidate.reference-only": "Aperçu de référence uniquement",
   "ai-select.candidate.fix-result": "Corriger le résultat IA",
   "ai-select.candidate.update": "Mettre à jour le candidat 3D",
+  "ai-select.candidate.updating": "Calcul des preuves par vue et mise à jour du candidat 3D…",
   "ai-select.candidate.update-failed": "Échec de la mise à jour du candidat. Corrigez un masque, excluez la vue, générez d’autres vues ou ajoutez une vue, puis réessayez.",
   "ai-select.readiness.not-ready": "Lifting non prêt",
   "ai-select.readiness.limited": "Préparation au lifting limitée",

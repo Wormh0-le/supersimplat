@@ -17,6 +17,12 @@ const {
     revisePromptState
 } = require('../.test-dist/src/ai-select/prompt-state.js');
 const {
+    createEvidenceWorkingSet
+} = require('../.test-dist/src/ai-select/gaussian-evidence-contract.js');
+const {
+    cameraBindingDigest
+} = require('../.test-dist/src/ai-select/camera-binding.js');
+const {
     anchorMaskRankingPolicyVersion,
     autoMaskProposalSetDigest
 } = require('../.test-dist/src/ai-select/mask-proposal.js');
@@ -1661,4 +1667,79 @@ test('rejects a Mask request that is not bound to the configured Model Manifest'
         }
     });
     await assert.rejects(adapter.produceMaskProposals(maskRequest));
+});
+
+test('bounds a Candidate Re-Lift transport that never completes', async () => {
+    const replies = stagedBinaryRegistrationReplies(anchorSnapshot);
+    const calls = [];
+    const adapter = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:model-v1'
+        }),
+        candidateReLiftTimeoutMs: 5,
+        fetch: async (url, init) => {
+            calls.push({ url, init });
+            const reply = replies.shift();
+            if (reply !== undefined) {
+                return new Response(JSON.stringify(reply), { status: 200 });
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            throw new Error('late transport failure');
+        }
+    });
+    const evidenceWorkingSet = createEvidenceWorkingSet({
+        targetSplatId: 'scene-1',
+        coreTargetStableIds: [3],
+        contextStableGaussianIds: []
+    });
+    const stableMask = maskBitset(64, 48, [[0, 0]]);
+    const bindingDigest = cameraBindingDigest(anchorCameraBinding);
+    const request = {
+        liftAttemptId: 'candidate-re-lift-timeout-1',
+        snapshot: anchorSnapshot,
+        requestBinding: anchorRequest.requestBinding,
+        targetSplatId: 'scene-1',
+        classificationUniverseStableGaussianIds: [3],
+        classificationScopeStableGaussianIds: [3],
+        evidenceWorkingSet,
+        views: [
+            {
+                currentInput: {
+                    requestBinding: anchorRequest.requestBinding,
+                    targetSplatId: 'scene-1',
+                    view: {
+                        viewId: 'view-1',
+                        renderStatus: 'ready',
+                        participation: 'included',
+                        cameraBindingDigest: bindingDigest,
+                        rgbDigest: `sha256:${'b'.repeat(64)}`,
+                        stableMaskDigest: stableMask.digest
+                    },
+                    evidencePolicyDigest:
+                        'sha256:debcee99d261f28ab373b16016447f056872476a960a1af23599cc6ea1f20efd',
+                    renderWorkingSet: {
+                        targetSplatId: 'scene-1',
+                        dependencyToken:
+                            anchorRequest.requestBinding.dependencyToken,
+                        cameraBindingDigest: bindingDigest,
+                        renderWorkingSetToken: anchorSnapshot.contentDigest,
+                        stableGaussianIds: [3],
+                        completeness: 'complete'
+                    },
+                    evidenceWorkingSet,
+                    rasterImplementationId: 'gsplat-reference-rgb/v1',
+                    evidenceBackendKind: 'reference-contributor',
+                    evidenceBackendId: 'complete-contributor/reference-v1',
+                    runtimeBuildId:
+                        'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40'
+                },
+                cameraBinding: anchorCameraBinding,
+                stableMask
+            }
+        ]
+    };
+
+    await assert.rejects(adapter.produceCandidateReLift(request), /timed out/);
+    assert.match(calls.at(-1).url, /\/ai-select\/candidate-re-lifts$/);
 });

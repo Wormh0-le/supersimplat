@@ -212,25 +212,44 @@
     box-sizing: border-box;
     flex-direction: column;
     gap: 6px;
-    flex: 0 0 96px;
-    height: 96px;
-    max-height: 96px;
+    flex: 0 1 auto;
+    min-height: 46px;
+    max-height: min(40%, 176px);
     justify-content: flex-start;
     padding: 8px 4px 0 6px;
     border-top: 1px solid $bcg-lighter;
     background-color: $bcg-primary;
     overflow-y: auto;
+    overscroll-behavior: contain;
 
     &:not(.pcui-hidden) {
         display: flex;
     }
+
+    > .pcui-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 6px;
+        flex-shrink: 0;
+
+        > .pcui-button {
+            box-sizing: border-box;
+            width: 100%;
+            min-width: 0;
+        }
+    }
+
+    > .pcui-button {
+        box-sizing: border-box;
+        width: 100%;
+        min-width: 0;
+        flex-shrink: 0;
+    }
 }
 
 #ai-select-candidate-actions {
-    gap: 6px;
-
     &:not(.pcui-hidden) {
-        display: flex;
+        display: grid;
     }
 }
 

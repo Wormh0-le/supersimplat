@@ -335,6 +335,7 @@
   "ai-select.candidate.reference-only": "Apenas prévia de referência",
   "ai-select.candidate.fix-result": "Corrigir resultado de IA",
   "ai-select.candidate.update": "Atualizar candidato 3D",
+  "ai-select.candidate.updating": "Calculando a evidência por visualização e atualizando o candidato 3D…",
   "ai-select.candidate.update-failed": "Falha ao atualizar o candidato. Corrija uma máscara, exclua a vista, gere mais vistas ou adicione uma vista e tente novamente.",
   "ai-select.readiness.not-ready": "Elevação não pronta",
   "ai-select.readiness.limited": "Preparação para elevação limitada",

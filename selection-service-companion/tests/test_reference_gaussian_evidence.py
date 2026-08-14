@@ -17,6 +17,7 @@ from selection_service_companion.reference_gaussian_evidence import (
     default_reference_evidence_policy,
     derive_pixel_evidence_weights,
 )
+from selection_service_companion import reference_gaussian_evidence
 from selection_service_companion.gaussian_evidence_contract import (
     admit_gaussian_evidence,
     create_evidence_working_set,
@@ -307,6 +308,116 @@ class StaticReferenceBackend:
 
 
 class ReferenceGaussianEvidenceTests(unittest.TestCase):
+    def test_typed_mask_regions_match_the_scalar_reference_at_edges_and_holes(
+        self,
+    ) -> None:
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("torch is unavailable")
+        policy = default_reference_evidence_policy()
+        cases = (
+            (5, 5, {(0, 0)}),
+            (7, 6, {(6, 5), (3, 2)}),
+            (
+                9,
+                9,
+                {
+                    (x_px, y_px)
+                    for y_px in range(1, 8)
+                    for x_px in range(1, 8)
+                    if (x_px, y_px) != (4, 4)
+                },
+            ),
+        )
+        for width, height, foreground in cases:
+            with self.subTest(width=width, height=height, foreground=foreground):
+                mask = mask_artifact(width, height, foreground)
+                scalar = derive_pixel_evidence_weights(mask, policy)
+                typed_width, typed_height, channels = (
+                    reference_gaussian_evidence._typed_pixel_evidence_weights(
+                        mask,
+                        policy,
+                        torch,
+                    )
+                )
+                self.assertEqual((typed_width, typed_height), (width, height))
+                for channel, attribute in zip(
+                    channels,
+                    ("positive", "negative", "visible", "boundary"),
+                    strict=True,
+                ):
+                    self.assertEqual(
+                        channel.tolist(),
+                        [getattr(value, attribute) for value in scalar.values],
+                    )
+
+    def test_typed_contributor_accumulation_matches_the_reference_lists(self) -> None:
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("torch is unavailable")
+        policy = default_reference_evidence_policy()
+        mask = mask_artifact(
+            9,
+            9,
+            {(x_px, y_px) for y_px in range(3, 6) for x_px in range(3, 6)},
+        )
+        admission = admission_input(mask, policy)
+        samples = {
+            (4, 4): [(2, 0.4), (0, 0.4), (3, 0.2)],
+            (1, 4): [(1, 0.5), (3, 0.3)],
+            (3, 3): [(3, 0.2)],
+        }
+        list_artifact = compute_reference_contributor_evidence(
+            admission,
+            mask,
+            contributor_raster(9, 9, samples),
+            policy,
+        )
+        ids = torch.full((9, 9, 3), -1, dtype=torch.int32)
+        contributions = torch.zeros((9, 9, 3), dtype=torch.float32)
+        alpha = torch.zeros((9, 9), dtype=torch.float32)
+        for (x_px, y_px), pixel_samples in samples.items():
+            for index, (row_id, weight) in enumerate(pixel_samples):
+                ids[y_px, x_px, index] = row_id
+                contributions[y_px, x_px, index] = weight
+                alpha[y_px, x_px] += weight
+
+        typed_artifact = (
+            reference_gaussian_evidence.compute_typed_reference_contributor_evidence(
+                admission,
+                mask,
+                {
+                    "width": 9,
+                    "height": 9,
+                    "rgbDigest": digest("b"),
+                    "stableGaussianIdsByTensorRow": torch.tensor(
+                        [42, 9, 5, 11, 13], dtype=torch.int64
+                    ),
+                    "alpha": alpha,
+                    "contributorIds": ids,
+                    "contributorWeights": contributions,
+                    "rasterImplementationId": "gsplat-reference-rgb/v1",
+                    "evidenceBackendKind": "reference-contributor",
+                    "evidenceBackendId": "complete-contributor/reference-v1",
+                    "runtimeBuildId": "locked-runtime-build-1",
+                },
+                policy,
+            )
+        )
+
+        for channel in (
+            "positiveMass",
+            "negativeMass",
+            "visibleMass",
+            "boundaryMass",
+        ):
+            for typed, listed in zip(
+                typed_artifact[channel], list_artifact[channel], strict=True
+            ):
+                self.assertAlmostEqual(typed, listed, places=7)
+
     def test_policy_explicitly_separates_positive_boundary_local_negative_and_far_neutral(
         self,
     ) -> None:
@@ -637,7 +748,7 @@ class ReferenceGaussianEvidenceTests(unittest.TestCase):
             ),
             patch.object(
                 LockedGsplatBackend,
-                "rasterize",
+                "rasterize_reference_evidence_typed",
                 side_effect=MaskSessionError(
                     "rendererMassMismatch", "reference contributor failed"
                 ),

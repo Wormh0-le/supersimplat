@@ -14,6 +14,7 @@ Status: **substantive migration complete; historical scratch paths are compatibi
 - Executable cross-check/repro, benchmark and browser/GPU harnesses moved to `.scratch/experiments/ai-select-v1/`.
 - `AGENTS.md` source routing updated to stable docs/Ticket locations.
 - Historical `.scratch/ai-select-v1` planning paths reduced to compatibility pointers/readmes rather than duplicate normative content.
+- CI is configured for `ai-select-v1` pushes with integrated `npm test`, build, lint and locale-lint jobs; locked-GPU validation remains a separate environment-specific gate.
 
 ## Directory ownership
 

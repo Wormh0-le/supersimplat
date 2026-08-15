@@ -398,7 +398,7 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(decision['proposalSetDigest'], proposal_set['digest'])
         self.assertNotIn('reasons', decision)
 
-        # The single positive point takes the multimask instance path.
+        # Interactive inference always takes the single-result path.
         self.assertEqual(self.runtime.set_image_calls, [IMAGE_PNG])
         self.assertEqual(len(self.runtime.predict_calls), 1)
         predict = self.runtime.predict_calls[0]
@@ -406,7 +406,7 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(np.asarray(predict['point_labels']).tolist(), [1])
         self.assertIsNone(predict['box'])
         self.assertIsNone(predict['mask_input'])
-        self.assertIs(predict['multimask_output'], True)
+        self.assertIs(predict['multimask_output'], False)
 
         # The retained candidate carries one opaque digest-bound logits ref.
         ref = proposal['logitsRef']
@@ -690,16 +690,14 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(retried['proposalDecision']['status'], 'unavailable')
         self.assertEqual(len(self.runtime.predict_calls), 2)
 
-    def test_ambiguous_candidates_preview_the_highest_raw_model_score(self) -> None:
-        # Both candidates contain the positive point. The first is a local
-        # part; the second strictly contains it and adds neighbouring area.
+    def test_extra_runtime_candidates_are_not_exposed_for_selection(self) -> None:
+        # Defensive fake runtimes may still return multiple arrays even when
+        # single-result mode is requested; only the first source result is
+        # retained and no ambiguity enters the product state.
         self.runtime.masks = [
             _mask_grid(*ACCEPTED_PIXELS),
             _mask_grid(*[(x, y) for y in range(5) for x in range(1, 6)]),
         ]
-        # The oversized candidate deliberately has the much higher raw model
-        # score. The default preview is the highest raw score in source order,
-        # never a v1 geometric verdict — the ambiguity stays user-resolved.
         self.runtime.scores = [0.1, 0.99]
 
         response = self.state.produce_ai_select_mask(self.request_body())
@@ -707,35 +705,31 @@ class AISelectMaskTests(unittest.TestCase):
         proposals = response['proposalSet']['proposals']
         self.assertEqual(
             [proposal['sourceIndex'] for proposal in proposals],
-            [0, 1],
+            [0],
         )
         self.assertEqual(
             [proposal['modelScore'] for proposal in proposals],
-            [0.1, 0.99],
+            [0.1],
         )
         # Candidate cardinality of masks, scores, and refs matches.
         self.assertEqual(
             [proposal['logitsRef']['sourceCandidateId'] for proposal in proposals],
-            ['proposal-0', 'proposal-1'],
+            ['proposal-0'],
         )
         for proposal in proposals:
             self.assertTrue(proposal['rankingFeatures']['eligible'])
             self.assertEqual(proposal['review']['status'], 'good')
         decision = response['proposalDecision']
         self.assertEqual(decision['schemaVersion'], 2)
-        self.assertEqual(decision['status'], 'ambiguous')
-        # Alternatives are exactly the eligible candidates ordered by raw
-        # model score descending; the default preview never auto-confirms.
+        self.assertEqual(decision['status'], 'selected')
         self.assertEqual(
             decision['alternativeProposalIds'],
-            ['proposal-1', 'proposal-0'],
+            ['proposal-0'],
         )
-        self.assertEqual(decision['selectedProposalId'], 'proposal-1')
+        self.assertEqual(decision['selectedProposalId'], 'proposal-0')
         self.assertNotIn('reasons', decision)
 
-    def test_one_positive_point_retains_up_to_three_reviewed_candidates(self) -> None:
-        # The multimask path keeps at most three candidates; every retained
-        # candidate carries its own bound Mask Review record.
+    def test_one_positive_point_retains_one_reviewed_result(self) -> None:
         self.runtime.masks = [
             _mask_grid(*ACCEPTED_PIXELS),
             _mask_grid(*[(x, y) for y in range(5) for x in range(1, 6)]),
@@ -746,13 +740,13 @@ class AISelectMaskTests(unittest.TestCase):
 
         response = self.state.produce_ai_select_mask(self.request_body())
 
-        self.assertIs(self.runtime.predict_calls[0]['multimask_output'], True)
+        self.assertIs(self.runtime.predict_calls[0]['multimask_output'], False)
         proposal_set = response['proposalSet']
         proposals = proposal_set['proposals']
-        self.assertEqual(len(proposals), 3)
+        self.assertEqual(len(proposals), 1)
         self.assertEqual(
             [proposal['proposalId'] for proposal in proposals],
-            ['proposal-0', 'proposal-1', 'proposal-2'],
+            ['proposal-0'],
         )
         for proposal in proposals:
             self.assertEqual(
@@ -765,10 +759,10 @@ class AISelectMaskTests(unittest.TestCase):
             )
             self.assertIn('eligible', proposal['rankingFeatures'])
         decision = response['proposalDecision']
-        self.assertEqual(decision['status'], 'ambiguous')
+        self.assertEqual(decision['status'], 'selected')
         self.assertEqual(
             decision['alternativeProposalIds'],
-            ['proposal-0', 'proposal-1', 'proposal-2'],
+            ['proposal-0'],
         )
 
     def test_multiple_points_force_a_single_retained_candidate(self) -> None:

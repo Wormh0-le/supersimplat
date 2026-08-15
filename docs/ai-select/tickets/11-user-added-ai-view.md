@@ -30,9 +30,8 @@ Create user-owned Views through the same authoritative RGB, SAM 3 Image instance
 - No-Mask UI offers Auto Generate Mask, Manual Draw or Exclude;
 - Auto Generate Mask uses Positive/Negative Points and optional Positive Instance Box through the 04C provider;
 - every provider request includes exact authoritative RGB bytes or current Companion RGB ref, not only a digest;
-- one-point-only Prompt may show up to three candidates on the editing surface;
-- Box/multiple-Point/refinement returns one candidate;
-- previous-logits refinement uses only an opaque same-View/current-Companion ref before Accept;
+- every Point/Box/refinement Prompt returns at most one candidate and the sole result becomes Editing Mask;
+- previous-logits refinement uses only an opaque same-View/current-Companion ref;
 - Paint/Erase use the 07B palette and never enter inference;
 - automatic Mask Review/publication follows Ticket 07 semantics;
 - Stable Mask publication dirties per-View Evidence but does not auto-Lift;

@@ -27,25 +27,17 @@ export const autoMaskProposalPolicyVersion =
 export const anchorMaskRankingPolicyVersion = 'anchor-mask-ranking/v3';
 export const proposalDecisionSchemaVersion = 2;
 
-/** The wire-level retention bound; the policy function may tighten it. */
-export const maximumRetainedAutoMaskProposalCount = 3;
+/** AI Select exposes one automatic Mask result for every Prompt revision. */
+export const maximumRetainedAutoMaskProposalCount = 1;
 
 /**
- * Multimask policy (04C contract §6, retained by 07A): exactly one include
- * Point, no Box, and no previous-logits refinement retains at most 3
- * candidates; every other program retains at most 1.
+ * The browser fails closed on any response containing more than the single
+ * automatic Mask result exposed by the current authoring flow.
  */
 export const maximumAutoMaskProposalCount = (
-    promptState: PromptState,
-    hasRefinement: boolean
-): number => {
-    return !hasRefinement &&
-        promptState.boxes.length === 0 &&
-        promptState.points.length === 1 &&
-        promptState.points[0].polarity === 'include'
-        ? 3
-        : 1;
-};
+    _promptState: PromptState,
+    _hasRefinement: boolean
+): number => 1;
 
 export interface PromptConsistencyFacts {
     readonly positivePointsSatisfied: boolean;
@@ -116,12 +108,11 @@ export interface AutoMaskProposal {
 export type ProposalDecisionStatus = 'selected' | 'ambiguous' | 'unavailable';
 
 /**
- * The simplified 07A pre-Stable decision. One-point multimask ambiguity is
- * resolved by explicit user choice, not by margin calibration or clustering:
- * the decision only enumerates the eligible candidates and names the default
- * preview, which is the highest raw model score (never auto-confirmed, never
- * a correctness probability). Structured ranking reason codes are removed;
- * Mask-quality claims live on the per-candidate `review` record instead.
+ * The simplified 07A pre-Stable decision retained on the wire. Current
+ * single-result responses enumerate zero or one eligible result; `ambiguous`
+ * remains parseable only so stale/foreign responses can fail at the stricter
+ * request cardinality boundary. Mask-quality claims live on the candidate's
+ * `review` record.
  */
 export interface ProposalDecision {
     readonly schemaVersion: typeof proposalDecisionSchemaVersion;

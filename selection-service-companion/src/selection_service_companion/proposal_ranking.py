@@ -1,4 +1,4 @@
-"""Simplified Ticket 07A candidate assessment and default-preview ordering.
+"""Simplified Ticket 07A single-result assessment.
 
 The v1 ranking machinery is removed: no pairwise containment/IoU, no
 material-distinctness clustering, no Top-1 margin calibration, no compactness
@@ -9,10 +9,9 @@ Ticket 13 Lift Readiness, never to Anchor candidate selection). What remains:
   local Mask Review (Ticket 07 policy ``local-view-assessment/v2``, reused
   unchanged — severe fragmentation, material boundary clipping, and gross Box
   spill enter Review; empty/degenerate/full-frame candidates are ineligible);
-- a deterministic default preview: the highest raw model score, ties broken
-  by source order. The raw score only orders the preview; it is not a
-  correctness probability and never auto-confirms a candidate;
-- explicit user choice resolves one-point multimask ambiguity.
+- deterministic source ordering for protocol compatibility. Raw score remains
+  diagnostic only; it is not a correctness probability and never publishes
+  Stable authority.
 """
 
 from __future__ import annotations

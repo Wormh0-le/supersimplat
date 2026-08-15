@@ -322,9 +322,8 @@ export const maskResponseMatchesRequest = (
         response.proposalSet.proposalAttemptId === request.proposalAttemptId &&
         response.proposalDecision.rankingPolicyVersion ===
             request.rankingPolicyVersion &&
-        // The editor enforces the 07A candidate bound fail-closed rather than
-        // trusting the wire: one include Point without Box/refinement keeps at
-        // most three candidates; every other program keeps at most one.
+        // The editor enforces the single-result Mask contract fail-closed
+        // rather than trusting the wire.
         response.proposalSet.proposals.length <=
             maximumAutoMaskProposalCount(
                 request.promptState,

@@ -84,38 +84,24 @@ Prompt-conditioned instance prediction
 → direct candidate choice where single-click ambiguity exists
 → optional Point refinement while still in Prompt mode
 → basic Prompt/Mask validity and Review
-→ Accept
-→ Editing Mask
+→ sole eligible result becomes Editing Mask
 → Confirm
 → Anchor Stable Mask
 ```
 
 ## Prompt modes
 
-### One Positive Point only
-
-```text
-multimask_output=true
-→ 1–3 bounded candidates
-→ exact duplicate removal allowed
-→ highest model score may be default preview
-→ user chooses or refines before Accept
-```
-
-The model score is not correctness probability and never auto-confirms.
-
-### Box, multiple Points, or previous-logits refinement
+### Point, Box, multiple Points, or previous-logits refinement
 
 ```text
 multimask_output=false
 → at most one candidate
 → basic validity/Review
-→ Accept or continue Prompt/manual recovery
+→ sole eligible result becomes Editing Mask
 ```
 
-A previous-logits refinement uses only the opaque Companion-owned ref associated with the currently chosen preview candidate. Candidate choice and Point refinement occur before `Accept` while the surface remains in Prompt mode.
-
-After `Accept`, the Mask enters Editing mode. Paint/Erase never become SAM Prompts. Returning from Editing to Prompt mode is explicit, preserves the prior Stable Mask, and creates a new inference attempt.
+The model score is not correctness probability and never auto-confirms.
+A previous-logits refinement uses only the opaque Companion-owned ref associated with the sole automatic result. Paint/Erase never become SAM Prompts. Retry explicitly drops the refinement lineage; prior Stable Mask state remains preserved until Confirm.
 
 ## Required validity
 
@@ -161,23 +147,22 @@ Paint/Erase never rerun SAM and never enter PromptState. Confirm is the only Anc
 
 ## Recovery
 
-- one-point ambiguity: choose candidate, add Point, add Box, Retry, or Manual Draw;
+- result needs correction: add Point, add Box, Retry, Paint/Erase, or Manual Draw;
 - missing/expired logits ref: rerun current Points/Box without `mask_input`;
 - no candidate: adjust Point/Box, Retry, or Empty→Paint;
-- Review: Accept for editing, refine Prompt before Accept, or Manual Draw;
+- Review: refine Prompt, edit the automatic draft, or Manual Draw;
 - technical failure: preserve RGB and prior Stable Mask;
 - old 04B Multiplex result: reject by adapter/schema identity.
 
 ## Acceptance criteria
 
-- [x] one Positive Point retains at most three candidates.
-- [x] Box/multiple-Point/refinement requests retain at most one candidate.
-- [x] user candidate choice resolves one-point material ambiguity.
-- [x] raw model score only controls default preview ordering.
+- [x] every Point/Box/refinement request retains at most one candidate.
+- [x] the sole eligible result automatically becomes Editing Mask.
+- [x] raw model score is diagnostic only.
 - [x] Point and Positive Box consistency are enforced.
 - [x] Negative Box and Mask Constraint evaluators are absent.
 - [x] basic clipping/fragmentation/spill review works.
-- [x] candidate refinement occurs before Accept and uses an opaque same-Companion logits ref.
+- [x] result refinement uses an opaque same-Companion logits ref until Retry or a non-refining transition.
 - [x] Companion replacement or missing ref falls back to fresh no-logits inference.
 - [x] Accept, Editing Mask, Confirm and Stable Mask remain distinct.
 - [x] manual recovery exists from every state.

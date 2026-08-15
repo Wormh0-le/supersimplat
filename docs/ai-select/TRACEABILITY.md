@@ -26,13 +26,13 @@ A requirement counts as covered only when a mapped parent Ticket or explicitly m
 | R020 | previous-logits ref binds Companion Instance, same View/RGB/adapter/source candidate                                 | 02C, 04C, 07A, 08A, 12, 21                              |
 | R021 | binary Brush or Editing Mask cannot validate as previous logits                                                      | 04C, 07A, 08A, 12, 21                                   |
 | R022 | expired/refused logits ref falls back to fresh Point/Box inference without mask_input                                | 04C, 07A, 11, 12, 21                                    |
-| R023 | one Positive Point may return at most three candidates                                                               | 04C, 07A, 11, 21                                        |
-| R024 | Box, multiple Points or refinement return at most one candidate                                                      | 04C, 07A, 08A, 08B, 11, 21                              |
-| R025 | raw model score may order preview but is not correctness probability                                                 | 04C, 07A, 08A                                           |
-| R026 | Anchor single-click ambiguity is resolved directly by user choice/refinement                                         | 07A, 11                                                 |
-| R027 | candidate refinement occurs before Accept while still in Prompt mode                                                 | 04C, 07A, 11                                            |
+| R023 | every Point, Box or refinement request returns at most one candidate                                                 | 04C, 07A, 08A, 08B, 11, 21                              |
+| R024 | the sole eligible result automatically becomes Editing Mask; no Proposal choice/accept interaction exists            | 07A, 07B, 11, 16A                                       |
+| R025 | raw model score is diagnostic only and is not correctness probability                                                | 04C, 07A, 08A                                           |
+| R026 | Anchor Prompt ambiguity is resolved by adding Prompt input, manual editing or Retry, not candidate selection         | 07A, 11                                                 |
+| R027 | opaque refinement continues from the sole automatic result until Retry or a non-refining transition                  | 04C, 07A, 11, 12                                        |
 | R028 | generic near-duplicate/material-distinct clustering is not a v1 closure gate                                         | 07A, 08B, 21                                            |
-| R029 | Accept, Editing Mask, Paint/Erase, Confirm and Stable Mask remain distinct                                           | 04, 05, 07A, 07B                                        |
+| R029 | automatic result adoption, Editing Mask, Paint/Erase, Confirm and Stable Mask remain distinct                        | 04, 05, 07A, 07B                                        |
 | R030 | only Confirm publishes Anchor Stable Mask                                                                            | 04, 05, 07A                                             |
 | R031 | palette exposes only current Point/Box and Paint/Erase tools                                                         | 07B, 11, 21                                             |
 | R032 | palette drag/collapse/Space-hide leaves no stale hit region                                                          | 07B, 11, 21                                             |

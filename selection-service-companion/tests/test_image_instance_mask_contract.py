@@ -168,7 +168,7 @@ class ImageInstanceMaskContractTests(unittest.TestCase):
             'adapterCapabilityDigest': digest('c'),
             'positivePoints': [{'xPx': 0, 'yPx': 0}],
             'negativePoints': [],
-            'multimaskOutput': True,
+            'multimaskOutput': False,
         })
         request: dict[str, object] = {
             'schemaVersion': 1,

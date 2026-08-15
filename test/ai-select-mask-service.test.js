@@ -396,7 +396,7 @@ test('a Box prompt request requires per-family candidate diagnostics', () => {
     );
 });
 
-test('the 07A candidate bound is enforced fail-closed against the prompt shape', () => {
+test('the single-result candidate bound is enforced fail-closed for every prompt', () => {
     const candidateFor = (req, index, promptDiagnostics) => ({
         proposalId: `proposal-${index}`,
         sourceIndex: index,
@@ -441,14 +441,19 @@ test('the 07A candidate bound is enforced fail-closed against the prompt shape',
         });
     };
 
-    // One include Point, no Box, no refinement: up to three candidates pass.
+    // One include Point publishes one result; two fail at the wire boundary.
     const pointReq = request();
-    const threeCandidates = responseWithCandidates(
+    const oneCandidate = responseWithCandidates(pointReq, [
+        candidateFor(pointReq, 0)
+    ]);
+    assert.ok(isMaskResultResponse(oneCandidate));
+    assert.ok(maskResponseMatchesRequest(oneCandidate, pointReq));
+    const twoPointCandidates = responseWithCandidates(
         pointReq,
-        [0, 1, 2].map((index) => candidateFor(pointReq, index))
+        [0, 1].map((index) => candidateFor(pointReq, index))
     );
-    assert.ok(isMaskResultResponse(threeCandidates));
-    assert.ok(maskResponseMatchesRequest(threeCandidates, pointReq));
+    assert.ok(!isMaskResultResponse(twoPointCandidates));
+    assert.ok(!maskResponseMatchesRequest(twoPointCandidates, pointReq));
 
     // A Box prompt forces single-mask mode: two candidates fail closed even
     // though the response is otherwise structurally valid and fully bound.
@@ -484,7 +489,7 @@ test('the 07A candidate bound is enforced fail-closed against the prompt shape',
         boxReq,
         [0, 1].map((index) => candidateFor(boxReq, index, boxDiagnostics))
     );
-    assert.ok(isMaskResultResponse(twoBoxCandidates));
+    assert.ok(!isMaskResultResponse(twoBoxCandidates));
     assert.ok(!maskResponseMatchesRequest(twoBoxCandidates, boxReq));
 
     // A refinement attempt also forces single-mask mode.
@@ -493,6 +498,6 @@ test('the 07A candidate bound is enforced fail-closed against the prompt shape',
         refinedReq,
         [0, 1].map((index) => candidateFor(refinedReq, index))
     );
-    assert.ok(isMaskResultResponse(twoRefinedCandidates));
+    assert.ok(!isMaskResultResponse(twoRefinedCandidates));
     assert.ok(!maskResponseMatchesRequest(twoRefinedCandidates, refinedReq));
 });

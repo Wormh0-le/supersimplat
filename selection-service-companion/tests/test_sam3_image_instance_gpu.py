@@ -115,10 +115,9 @@ class Sam3ImageInstanceGpuTests(unittest.TestCase):
                 refinement=None,
                 cancelled=lambda: False,
             )
-            # One positive point takes the multimask path: up to three
-            # candidates, each with Companion-local low-resolution logits.
-            self.assertGreaterEqual(len(point_batch.candidates), 1)
-            self.assertLessEqual(len(point_batch.candidates), 3)
+            # One positive point returns one result with Companion-local
+            # low-resolution logits for refinement.
+            self.assertEqual(len(point_batch.candidates), 1)
             for candidate in point_batch.candidates:
                 self.assertEqual(candidate.low_res_logits.shape, (1, 288, 288))
                 self.assertEqual(str(candidate.low_res_logits.dtype), 'float32')

@@ -28,7 +28,7 @@ All 31 parent Ticket files contain a current mapping to Final Spec v1.3. Ticket 
 - Every provider request carries resolvable authoritative RGB, not only a digest.
 - Actual previous logits remain Companion-local; browser state carries only an opaque same-Instance reference.
 - Candidate refinement occurs before Accept while still in Prompt mode.
-- Single Positive Point may return up to three candidates; Box/multiple Points/refinement return one.
+- Point, Box and refinement requests return at most one result, which enters Editing Mask automatically.
 - Target geometry is one compact `TargetGeometryHintArtifact`.
 - Key Views are 2–4 bounded local observations, not a general adaptive/free-space planner.
 - Generated Views synthesize Box/Points and use SAM 3 Image single-mask mode.

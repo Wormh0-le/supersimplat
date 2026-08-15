@@ -269,8 +269,8 @@ const localPlanContainsBoundView = (
 /**
  * Generated View Route B has one Positive Instance Box, one to three positive
  * pixel points, at most two negative pixel points, and never transports a
- * previous-logits refinement reference. The box prevents the static SAM
- * request from accidentally falling into the single-point multimask policy.
+ * previous-logits refinement reference. Like interactive Anchor requests,
+ * Route B is pinned to single-result inference.
  */
 const isRouteBGeneratedPrompt = (
     value: unknown

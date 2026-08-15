@@ -4,7 +4,6 @@ const test = require('node:test');
 const {
     clampAIViewDockHeight,
     resolveAIViewDockColumns,
-    resolveAIViewToolLayout,
     resolveAIViewWorkAreaWidth
 } = require('../.test-dist/src/ai-select/ai-view-dock-layout.js');
 
@@ -67,29 +66,6 @@ test('Work Area ideal width comes from authoritative RGB aspect and usable heigh
             imageHeight: 1600
         }),
         203
-    );
-});
-
-test('Tool Rail layout responds to both Dock width and usable image height', () => {
-    assert.equal(
-        resolveAIViewToolLayout({ width: 2032, canvasHeight: 310 }),
-        'short-vertical'
-    );
-    assert.equal(
-        resolveAIViewToolLayout({ width: 2032, canvasHeight: 309 }),
-        'horizontal'
-    );
-    assert.equal(
-        resolveAIViewToolLayout({ width: 1264, canvasHeight: 310 }),
-        'horizontal'
-    );
-    assert.equal(
-        resolveAIViewToolLayout({ width: 2032, canvasHeight: 500 }),
-        'vertical'
-    );
-    assert.equal(
-        resolveAIViewToolLayout({ width: 1024, canvasHeight: 500 }),
-        'horizontal'
     );
 });
 

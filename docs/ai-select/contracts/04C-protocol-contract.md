@@ -47,8 +47,8 @@ SAM3_IMAGE_RUNTIME_CONFIG = {
     "enable_inst_interactivity": True,
     "processor_resolution": 1008,
     "confidence_threshold": 0.5,
-    "multimask_policy": "single-positive-point-multimask/v1",
-    "max_multimask_candidates": 3,
+    "multimask_policy": "single-result/v1",
+    "max_multimask_candidates": 1,
     "low_res_logits_size": 288,
     "reject_full_frame_masks": True,
     "autocast_dtype": "bfloat16",
@@ -171,22 +171,22 @@ Rules:
   (§7); unresolvable ⇒ fresh no-`mask_input` inference (never an error, never
   brush conversion). Refinement forces single-mask mode.
 
-## 6. Multimask policy
+## 6. Single-result policy
 
 ```text
-multimask_output = true  IFF  exactly 1 point AND that point is 'include'
-                              AND no box AND no resolved previousLogitsRef
-                   → retain at most 3 candidates
-else               → multimask_output = false → retain at most 1 candidate
+every interactive Point/Box/refinement request
+→ multimask_output = false
+→ retain at most 1 candidate
+→ browser adopts the sole eligible result as Editing Mask
 ```
 
 - Python: pure helper `resolve_multimask_output(program, has_refinement)` in
-  `masking.py`; adapter enforces cap after filtering empty/full-frame masks and
-  removing exact duplicate masks (byte-identical `bitset-lsb-v1` payloads).
-- TS: `maximumAutoMaskProposalCount(promptState, hasRefinement)` replaces the
-  flat `maximumAutoMaskProposalCount = 4`.
-- Model score orders preview only; never auto-confirms. Candidate cardinality
-  of masks/scores/refs must match (ref per retained candidate).
+  `masking.py` is pinned to `false`; adapter enforces the one-result cap after
+  filtering empty/full-frame masks.
+- TS: `maximumAutoMaskProposalCount(promptState, hasRefinement)` returns one
+  for every prompt shape and fails closed on larger wire results.
+- Model score remains diagnostic only. Candidate cardinality of
+  masks/scores/refs must match; the sole result may carry one refinement ref.
 
 ## 7. PreviousPredictionLogitsRef (wire shape, per ticket)
 
@@ -330,8 +330,8 @@ Legacy isolation in `masking.py`:
 Python (`selection-service-companion/tests/`):
 
 - compiler v2: schema/digest/box rules, removed-field rejection.
-- adapter multimask policy via fake builder (3 vs 1 candidates, dedupe,
-  empty/full-frame filtering).
+- adapter single-result policy via fake builder, including defensive extra
+  runtime arrays and empty/full-frame filtering.
 - logits ref lifecycle: mint, refine-with-ref (single mask, attempt linkage),
   fallback on companion restart / adapter change / RGB change / unknown
   stateId, binary-brush bytes rejected as ref, no ref on cancellation/failure.
@@ -342,7 +342,7 @@ Python (`selection-service-companion/tests/`):
   digest fields; keep the sam3.1-unavailable test.
 - rewrite `test_sam31_visual_prompt_gpu.py` → `test_sam3_image_instance_gpu.py`
   (env-gated `SUPERSPLAT_SAM3_IMAGE_GPU_CHECKPOINT`): official image path,
-  multimask 3, box single, refinement single; static audit asserting no
+  Point/Box/refinement single-result behavior; static audit asserting no
   multiplex/private-tracker use in the current static path.
 - migrate `test_ai_select_masks.py` route tests to the new adapter/capability
   identity; keep `test_mask_sessions.py` legacy flow green.

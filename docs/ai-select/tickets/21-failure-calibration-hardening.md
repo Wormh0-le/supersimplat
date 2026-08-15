@@ -41,8 +41,7 @@ Close production failure, calibration and release behavior for the simplified SA
 - no current static path instantiates Multiplex video predictor or private tracker-head session;
 - every inference request resolves exact authoritative RGB bytes or current Companion RGB ref;
 - digest-only RGB input fails before inference;
-- one-point multimask returns at most three candidates;
-- Box/multiple-Point/refinement returns at most one candidate;
+- every Point/Box/refinement request returns at most one candidate;
 - actual previous logits remain Companion-local and refs bind exact same-image/Companion/candidate lineage;
 - Companion replacement/expired ref falls back to fresh no-logits inference;
 - binary Brush cannot validate as a logits ref;
@@ -114,7 +113,7 @@ Existing User Confirmed Stable Masks survive when their own exact RGB/Mask ident
 - static Multiplex absence audit;
 - authoritative RGB payload/ref resolution;
 - Prompt schema/migration fixtures;
-- one-point multimask and single-mask refinement repeatability;
+- Point/Box/refinement single-result repeatability;
 - opaque logits ref and Companion-replacement invalidation;
 - TargetGeometryHint/local View stress;
 - Mask Review/Lift Readiness calibration matrix;

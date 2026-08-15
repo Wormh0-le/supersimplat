@@ -65,7 +65,7 @@ Status: current reusable interface guidance
 - Work Area 的理想宽度由可用高度、权威图像宽高比和侧栏约束共同决定，不无条件吞掉剩余空间。
 - 图像使用完整、居中、等比的 contain 语义；不为消除空白而 crop 或 stretch。
 - Dock 使用完整容器宽度，不在最大化窗口中保留固定舞台外边距。
-- 多余横向空间优先提升 Navigator 和 Inspector 的有效信息承载；约 `1600px` 以上可将卡片和信息分组排成多列，不扩大无信息字母箱。
+- 多余横向空间优先提升 Navigator 和 Inspector 的有效信息承载；约 `1600px` 以上使用 `20% Navigator / 55% Work Area / 25% Inspector` 的职责比例，并将卡片和信息分组排成多列，不扩大无信息字母箱。
 - 约 `1280×720` 提供完整三栏；约 `1024×720` 保留 Navigator 和 Work Area，Inspector 可折叠；更窄时 Work Area 常驻，两侧栏均可折叠。
 - 展开的侧栏推挤 Work Area，不覆盖图像。
 - Dock 默认高度 `420px`，最小 `300px`，最大为主编辑区域高度减 `160px`。
@@ -101,15 +101,17 @@ Status: current reusable interface guidance
 
 ### Selected Work Area
 
-- 结构：约 `28px` 的轻量标题行、非覆盖式 Tool Rail、主内容、唯一 Action Bar。
+- 结构：约 `28px` 的轻量标题行、主图像、图像内可拖动并自动吸附的浮动工具栏，以及仅承载上下文恢复动作的 Action Bar。
 - 一次只显示一个主操作；无关操作隐藏，暂时不可用的操作保留并紧邻解释原因。
 - 没有主操作时，Action Bar 整体隐藏并把高度还给图像。
-- 多 Proposal 切换使用图像上的相册式前后控件，仅在 hover/focus 时显示；单 Proposal 不显示切换器，零 Proposal 不显示计数。接受动作仍保留 Proposal → Editing Mask 的明确边界，但作为图像内紧凑控件显示，不单独占据 Action Bar。
+- 每次 Prompt 推理只暴露一个结果，并直接进入 Editing Mask；不提供 Proposal 轮播、计数或接受步骤。
+- 浮动工具栏把 `确认 Mask` 放在清除操作之前，并提供 `重置为自动 Mask`。确认 Anchor 的 Editing Mask 同时继续 Anchor 确认和 Generated View 规划。
 
 ### Inspector
 
 - 只负责解释、只读状态、次级操作和恢复操作。
 - 技术细节默认折叠。
+- 高频 Mask 恢复（重置为自动 Mask）属于图像内浮动工具栏，不在 Inspector 重复。
 - 不复制主 Action Bar 或 Navigator 的可变控件。
 
 ### Overlay Split Control

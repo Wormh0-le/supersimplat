@@ -589,6 +589,13 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
     acceptProposal(proposalId: string): void {
         this.requireUnlocked();
         const rgb = this.requireReadyRgb();
+        if (
+            this.acceptedProposalId === proposalId &&
+            this.maskRegistry.viewState(this.host.viewId, rgb.digest)
+                .editingMask !== null
+        ) {
+            return;
+        }
         const proposal = this.proposalSet?.proposals.find(
             (candidate) => candidate.proposalId === proposalId
         );
@@ -899,6 +906,15 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
             );
             this.previewedProposalId = suggested?.proposalId ?? null;
             this.refinementLogitsRef = suggested?.logitsRef ?? null;
+            this.activeMaskRequest = null;
+            this.requestStatus = 'idle';
+            if (suggested !== undefined) {
+                const refinementLogitsRef = suggested.logitsRef ?? null;
+                this.acceptProposal(suggested.proposalId);
+                // Automatic adoption keeps the sole result's opaque logits
+                // lineage so the next Prompt revision can refine it.
+                this.refinementLogitsRef = refinementLogitsRef;
+            }
         } catch (error) {
             this.failMaskRequest(errorMessage(error));
             this.resubmitLatestPromptSet();

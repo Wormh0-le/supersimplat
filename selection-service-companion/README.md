@@ -189,11 +189,11 @@ does not copy the checkpoint into the package or send a path to the editor.
 
 For `adapterId: "sam3-image-instance/v1"` (the current static instance
 adapter), `runtimeConfigDigest` must be
-`sha256:736e6c4eb608e5f5f707f3a8006e665cba454e5d6f7c536fa3126edfa35f0b05`.
+`sha256:7105a575a8c72d6fafc8117917ad30edb9364f336851e6e86dd3ee357428857f`.
 It binds the Companion's fixed SAM 3 Image baseline: the official
 `build_sam3_image_model(enable_inst_interactivity=True)` builder, the
-`sam3-image-instance-compiler/v1` Prompt contract, single-positive-point
-multimask with at most three retained candidates, 288×288 low-resolution
+`sam3-image-instance-compiler/v1` Prompt contract, fixed single-result
+inference for every Prompt shape, 288×288 low-resolution
 previous-prediction logits behind opaque references, rejection of degenerate
 full-frame candidates, and bf16 autocast without Hugging Face downloads or
 compilation. A changed runtime configuration needs a new adapter baseline and
@@ -338,9 +338,9 @@ AI Select actions. The v1 Prompt surface is exactly positive/negative
 Point and at most one Positive Instance Box in authoritative-image pixel
 XYXY; Negative Box, Prompt Brush, Mask Constraints, and Text are removed from
 the schema, capability record, and compiler, and old artifacts carrying them
-fail closed by version/capability identity. Exactly one Positive Point with no
-Box and no refinement runs multimask and retains at most three candidates;
-Box, multiple Points, or previous-logits refinement retain at most one.
+fail closed by version/capability identity. Every Point, Box, or
+previous-logits request fixes `multimaskOutput: false` and retains at most one
+result, which the browser automatically adopts as the Editing Mask.
 Paint/Erase remain Editing Mask operations and never enter a model request.
 
 Every inference request carries either the exact authoritative RGB artifact or

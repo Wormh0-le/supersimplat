@@ -415,7 +415,7 @@
   "ai-select.mask.confirm": "Confirm Mask",
   "ai-select.mask.retry": "Retry Mask",
   "ai-select.mask.clear": "Clear",
-  "ai-select.mask.restore-auto": "Restore Auto",
+  "ai-select.mask.restore-auto": "Reset to Auto Mask",
   "ai-select.mask.undo": "Undo Mask Stroke",
   "ai-select.mask.redo": "Redo Mask Stroke",
   "ai-select.anchor.validate": "Validate Anchor",

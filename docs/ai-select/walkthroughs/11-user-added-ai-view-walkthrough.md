@@ -66,10 +66,10 @@ point on.
    **Manual Draw**, and **Exclude**.
 2. **Auto Mask**: the Dock switches to the View's own RGB as the authoring
    surface (status line `User View — Mask authoring`) with the 07B palette
-   (Positive/Negative Point, Positive Box, Paint/Erase). One Positive Point
-   shows up to three candidates on the surface; Box or multiple Points return
-   one candidate. Refinement uses only the opaque same-View logits ref.
-   Accept, then **Confirm Mask**: the Stable Mask publishes atomically, the
+   (Positive/Negative Point, Positive Box, Paint/Erase). Every Prompt returns
+   at most one result, which becomes Editing Mask automatically. Refinement
+   uses only the opaque same-View logits ref. **Confirm Mask** then publishes
+   the Stable Mask atomically, the
    card flips to Mask Ready, and Participation becomes Included — matching
    generated-View semantics. No automatic Re-Lift follows.
 3. **Manual Draw**: the authoring surface opens with Paint active. Paint and

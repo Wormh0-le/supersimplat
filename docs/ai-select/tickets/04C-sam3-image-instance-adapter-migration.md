@@ -130,17 +130,11 @@ Migration rules:
 - Instance Box uses authoritative-image pixel XYXY only;
 - unsupported old tools are removed from ordinary UI rather than retained as permanent disabled placeholders.
 
-## Multimask policy
+## Single-result policy
 
 ```text
-exactly one Positive Point
-+ no Box
-+ no previous logits
-→ multimask_output=true
-→ retain at most 3 candidates
-
-Positive Box
-or multiple Points
+Positive/Negative Points
+or Positive Box
 or previous-logits refinement
 → multimask_output=false
 → retain at most 1 candidate
@@ -148,7 +142,6 @@ or previous-logits refinement
 
 Rules:
 
-- model score may define default preview ordering only;
 - model score is not a correctness probability;
 - no result becomes Stable automatically;
 - exact duplicate Masks may be removed without introducing a general clustering framework;
@@ -243,8 +236,7 @@ The old Multiplex implementation may remain as a non-current benchmark fixture o
 
 ### Candidate and refinement behavior
 
-- [x] one positive point returns at most three candidates.
-- [x] Box, multiple Points and refinement return at most one candidate.
+- [x] Point, Box and refinement requests return at most one candidate.
 - [x] candidate Masks, scores and references have matching cardinality.
 - [x] raw logits tensors remain Companion-local; only opaque refs cross the protocol.
 - [x] valid refs refine the same image under exact Companion/candidate lineage.
@@ -264,7 +256,7 @@ The old Multiplex implementation may remain as a non-current benchmark fixture o
 - repository tests, Companion tests, lint, locales and build;
 - locked SAM 3 Image GPU fixture;
 - authoritative RGB payload/reference resolution fixture;
-- single-point multimask fixture;
+- single-result Point fixture;
 - Box/multi-point single-mask fixtures;
 - previous-logits-ref refinement and Companion-restart invalidation fixtures;
 - old Prompt/manifest/cache rejection fixtures;

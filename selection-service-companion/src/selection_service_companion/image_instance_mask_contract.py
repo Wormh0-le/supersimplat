@@ -569,13 +569,7 @@ def _points_and_box_fit_rgb(
 
 
 def _prompt_matches_multimask_policy(prompt: Mapping[str, object]) -> bool:
-    may_use_multimask = (
-        len(prompt['positivePoints']) == 1
-        and len(prompt['negativePoints']) == 0
-        and 'positiveBox' not in prompt
-        and 'previousLogitsRefDigest' not in prompt
-    )
-    return prompt['multimaskOutput'] == may_use_multimask
+    return prompt['multimaskOutput'] is False
 
 
 def _prompt_has_positive_seed(prompt: Mapping[str, object]) -> bool:
@@ -766,7 +760,7 @@ def _is_image_instance_mask_result_input(value: object) -> bool:
         value['schemaVersion'] != IMAGE_INSTANCE_MASK_RESULT_SCHEMA_VERSION
         or not _is_image_instance_mask_request_identity(value['requestIdentity'])
         or not isinstance(value['masks'], list)
-        or len(value['masks']) > 3
+        or len(value['masks']) > 1
         or not all(_is_mask_artifact(mask) for mask in value['masks'])
         or not isinstance(value['modelScores'], list)
         or len(value['modelScores']) != len(value['masks'])
@@ -990,7 +984,7 @@ def image_instance_mask_result_matches_request(result: object, request: object) 
         for mask in result['masks']
     ):
         return False
-    if len(result['masks']) > (3 if request['prompt']['multimaskOutput'] else 1):
+    if len(result['masks']) > 1:
         return False
     return all(
         _ref_matches_identity(reference, request['identity'])

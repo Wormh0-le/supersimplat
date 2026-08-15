@@ -415,7 +415,7 @@
   "ai-select.mask.confirm": "确认 Mask",
   "ai-select.mask.retry": "重试 Mask",
   "ai-select.mask.clear": "清除",
-  "ai-select.mask.restore-auto": "恢复自动 Mask",
+  "ai-select.mask.restore-auto": "重置为自动 Mask",
   "ai-select.mask.undo": "撤销 Mask 笔画",
   "ai-select.mask.redo": "重做 Mask 笔画",
   "ai-select.anchor.validate": "验证锚点",

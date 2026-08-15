@@ -61,7 +61,7 @@ Gallery 是 Navigator，不是独立工作阶段。Anchor View、Generated View 
 | -------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------- |
 | 紧凑顶栏                   | AI Select Availability、Candidate 生产状态、Included View 摘要、一个上下文动作 | Native Candidate Operations                 |
 | AI View Navigator          | View 选择、过滤、Assessment 摘要、Participation、View 集合状态                 | 当前 View 的 Prompt/Mask 编辑和低频恢复操作 |
-| Selected AI View Work Area | 权威 RGB、Prompt、Proposal 预览、Editing Mask、View 主操作                     | View 集合管理和 Native Selection            |
+| Selected AI View Work Area | 权威 RGB、Prompt、Editing Mask、浮动工具栏和 View 主操作                       | View 集合管理和 Native Selection            |
 | 当前 View Inspector        | 当前 View 的 Review 原因、状态解释、只读 Participation、次级和恢复操作         | 主操作、重复的 Participation 开关           |
 | AI Select Toolbar          | 主 3D 视口交互和 Native Candidate Operations                                   | View Review 和 2D Prompt/Mask 编辑          |
 
@@ -74,7 +74,7 @@ Gallery 是 Navigator，不是独立工作阶段。Anchor View、Generated View 
 ├──────────────┬──────────────────────────┬─────────────────┤
 │ View         │ Selected AI View         │ Current View    │
 │ Navigator    │ Work Area                │ Inspector       │
-│              │ Tool Rail + RGB/Mask     │                 │
+│              │ RGB/Mask + 浮动工具栏    │                 │
 └──────────────┴──────────────────────────┴─────────────────┘
 ```
 
@@ -84,6 +84,7 @@ Gallery 是 Navigator，不是独立工作阶段。Anchor View、Generated View 
 - 图像继续使用 contain 语义：完整显示、等比缩放、居中，不使用 crop 或 stretch 消除空白。
 - Dock 使用完整容器宽度，不在最大化窗口中居中保留固定舞台外边距。
 - 多余横向空间优先分配给 Navigator 和 Inspector 的有效内容；宽于约 `1600px` 时，Navigator 卡片和 Inspector 分组可使用多列，而不扩大无信息的图像字母箱区域。
+- 宽于约 `1600px` 时采用 `20% Navigator / 55% Work Area / 25% Inspector` 的职责比例；Work Area 保持最大份额，Navigator 小于 Inspector。
 - 精确阈值由容器尺寸和浏览器走查校准，不以浏览器窗口宽度代替 Dock 实际宽度。
 
 ### 响应式退化
@@ -192,39 +193,35 @@ Anchor 和已完成 View 不因 Planning、Failed 或 plan exhausted 状态被�
 Work Area 包含：
 
 1. 约 `28px` 高的轻量 View 标题行，显示名称、来源和 Assessment；
-2. 图像左侧的竖向 Tool Rail；
-3. 权威 RGB、Prompt、Mask overlay 和 Box preview；
-4. 图像下方唯一的 View Action Bar；Proposal 接受动作例外，紧贴图像显示。
+2. 权威 RGB、Prompt、Mask overlay 和 Box preview；
+3. 图像内可拖动、自动吸附、可折叠的浮动工具栏；
+4. 图像下方只在存在上下文恢复动作时显示的 View Action Bar。
 
-Tool Rail 暴露 Positive Point、Negative Point、Positive Instance Box、Paint 和 Erase。它不覆盖图像；约 `1024px` 宽时可改为横向工具栏。
+浮动工具栏暴露 Positive Point、Negative Point、Positive Instance Box、Paint、Erase、Mask 历史、确认 Mask 和重置为自动 Mask。拖动和吸附只改变呈现状态，不进入 Prompt、Mask 或项目数据。
 
-### Mask Proposal
+### 单结果 Mask
 
-一点 Prompt 返回多个 Mask Proposal 时，图像使用相册式前后切换器：
+每次 Prompt 推理最多返回一个可用 Mask 结果：
 
 ```text
-‹              Mask proposal 1 / 3              ›
-                              [Accept Proposal]
+Prompt → 单个自动结果 → Editing Mask → Confirm Mask → Stable Mask
 ```
 
-- 中间图像预览当前 Proposal。
-- 左右切换按钮只在图像 hover 或键盘 focus 时显示。
-- 只有一个 Proposal 时不显示切换器；没有 Proposal 时不显示序号或 Proposal 操作。
-- 不使用 Inspector 中的下拉框。
-- 不显示未经校准的 raw model score。
-- `Accept Proposal` 仍是把临时 Proposal 变为 Editing Mask 的明确边界，但作为图像内的紧凑控件显示，不单独占据 Action Bar；接受后图像切换器和接受控件一起隐藏。
+- Companion 固定 `multimask_output=false`，浏览器拒绝超过一个结果的响应。
+- 唯一可用结果自动成为 Editing Mask，不显示 Proposal 轮播、计数、下拉框、模型分数或接受按钮。
+- 继续添加 Prompt 时，唯一结果的 opaque logits ref 可作为 refinement lineage；Retry 仍显式丢弃该 lineage。
+- `Confirm Mask` 在浮动工具栏内发布 Stable Mask；若当前 View 是未确认 Anchor，同一动作继续 Anchor 确认并启动 Generated View 规划。
 
 ### 主操作
 
 每个状态只显示一个主操作：
 
-| 当前状态         | 主操作            |
-| ---------------- | ----------------- |
-| Proposal 待接受  | `Accept Proposal` |
-| Editing Mask     | `Confirm Mask`    |
-| Auto Review      | `Confirm As Is`   |
-| Mask 失败        | `Retry Mask`      |
-| 当前 View 已完成 | `Next Review`     |
+| 当前状态         | 主操作或恢复动作          |
+| ---------------- | ------------------------- |
+| Editing Mask     | 浮动工具栏 `Confirm Mask` |
+| Auto Review      | `Confirm As Is`           |
+| Mask 失败        | `Retry Mask`              |
+| 当前 View 已完成 | `Next Review`             |
 
 无关操作隐藏。只有操作存在但暂时被阻止时才禁用，并紧邻显示原因。
 没有任何主操作时，View Action Bar 整体隐藏并把高度还给图像。
@@ -238,7 +235,7 @@ Inspector 只承载当前 View 的解释和次级操作：
 - Assessment 和 Review reason；
 - 只读 Participation 和不可 Include 的原因；
 - Prompt、Stable Mask 和 Editing Mask 状态；
-- Retry、Refresh、Inspect Camera 等低频或恢复操作；
+- Retry、Refresh、Inspect Camera 等低频或恢复操作；重置为自动 Mask 留在浮动工具栏；
 - 默认折叠的 technical details。
 
 Inspector 不重复 View Action Bar 的主操作，也不提供第二个 Participation 开关。
@@ -260,7 +257,7 @@ Inspector 不重复 View Action Bar 的主操作，也不提供第二个 Partici
 - Navigator 使用 roving focus；方向键移动焦点，`Enter` 选择 View。
 - Participation 是独立按钮，不借用卡片的选择操作。
 - View 切换后焦点保持在 Navigator，不自动跳进图像区。
-- Tool Rail、View Action Bar、Inspector 和侧栏触发按钮均可键盘操作。
+- 浮动工具栏、View Action Bar、Inspector 和侧栏触发按钮均可键盘操作。
 - `Esc` 收起 Inspector，并把焦点还给触发按钮。
 - Dock resize handle 保留方向键调整能力。
 - 快捷键在文本或数值输入获得焦点时不触发。

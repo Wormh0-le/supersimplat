@@ -42,7 +42,7 @@ test('Navigator and View Action Bar expose the accepted keyboard and ownership s
     assert.match(dock, /setAttribute\('role', 'option'\)/);
     assert.match(dock, /event\.key === 'ArrowDown'/);
     assert.match(dock, /event\.key === 'Enter'/);
-    assert.match(dock, /ai-select-proposal-stepper/);
+    assert.doesNotMatch(dock, /ai-select-proposal-stepper/);
     assert.match(dock, /selectedViewPrimaryAction/);
 });
 
@@ -57,7 +57,7 @@ test('Candidate shader state is independent and explicitly released', () => {
     assert.match(shader, /candidateStateValue == 2u/);
 });
 
-test('AI View Dock uses the full Dock width and gives ultrawide space to useful sidebars', () => {
+test('AI View Dock uses the full width with an image-first 20/25 sidebar split', () => {
     const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
     const header = styles.match(
         /#ai-select-anchor-dock-header\s*\{(?<body>[\s\S]*?)\n\}/
@@ -79,7 +79,7 @@ test('AI View Dock uses the full Dock width and gives ultrawide space to useful 
     assert.doesNotMatch(workspace, /margin-inline:\s*auto;/);
     assert.match(
         styles,
-        /#ai-select-anchor-dock-main\[data-spacious='true'\][\s\S]*?#ai-select-view-navigator[\s\S]*?width:\s*28%;[\s\S]*?#ai-select-view-inspector[\s\S]*?width:\s*34%;/
+        /#ai-select-anchor-dock-main\[data-spacious='true'\][\s\S]*?#ai-select-view-navigator[\s\S]*?width:\s*20%;[\s\S]*?#ai-select-view-inspector[\s\S]*?width:\s*25%;/
     );
     assert.match(
         styles,
@@ -87,61 +87,57 @@ test('AI View Dock uses the full Dock width and gives ultrawide space to useful 
     );
 });
 
-test('Proposal navigation overlays the image only for a real multi-proposal choice', () => {
-    const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
+test('single-result Mask authoring has no Proposal choice or acceptance UI', () => {
     const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
-    const stepper = styles.match(
-        /#ai-select-proposal-stepper\s*\{(?<body>[\s\S]*?)\n\}/
-    )?.groups?.body;
-    assert.ok(stepper, 'missing proposal stepper styles');
-    assert.match(stepper, /position:\s*absolute;/);
-    assert.match(stepper, /inset:\s*0;/);
-    assert.match(stepper, /opacity:\s*0;/);
-    assert.match(
-        dock,
-        /this\.imageSurface\.appendChild\(this\.proposalStepper\.dom\)/
-    );
-    assert.match(
-        dock,
-        /this\.imageSurface\.appendChild\(this\.acceptProposalButton\.dom\)/
-    );
-    assert.doesNotMatch(
-        dock,
-        /primaryActions\.append\(this\.proposalStepper\)/
-    );
-    assert.doesNotMatch(
-        dock,
-        /primaryActions\.append\(this\.acceptProposalButton\)/
-    );
-    assert.match(
-        dock,
-        /this\.proposalStepper\.hidden\s*=\s*proposalIds\.length\s*<=\s*1/
-    );
+    assert.doesNotMatch(dock, /proposalSelect/);
+    assert.doesNotMatch(dock, /proposalStepper/);
+    assert.doesNotMatch(dock, /acceptProposalButton/);
+    assert.doesNotMatch(dock, /\.ops\.acceptProposal\(/);
 });
 
 test('the View Action Bar releases image height when there is no primary action', () => {
     const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
     assert.match(dock, /private readonly primaryActions:\s*Container;/);
     assert.match(dock, /this\.primaryActions\.hidden\s*=/);
-    assert.match(
-        dock,
-        /this\.maskActions\.hidden\s*=\s*!mask\.showConfirm\s*&&\s*!mask\.showRetry;/
-    );
+    assert.match(dock, /this\.maskActions\.hidden\s*=\s*!mask\.showRetry;/);
 });
 
-test('a short ultrawide Dock uses the compact two-dimensional Tool Rail', () => {
+test('the draggable snap palette stays inside the image instead of a Tool Rail', () => {
     const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
+    const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
     assert.match(
         styles,
-        /#ai-select-anchor-dock-main\[data-compact-tools='true'\][\s\S]*?#ai-select-view-work-canvas-row[\s\S]*?align-items:\s*center;/
+        /#ai-select-floating-palette\s*\{[\s\S]*?position:\s*absolute;/
     );
-    assert.match(
-        styles,
-        /#ai-select-anchor-dock-main\[data-short-tools='true'\][\s\S]*?\.palette-history-group[\s\S]*?flex-direction:\s*row;/
+    assert.doesNotMatch(dock, /toolRail/);
+    assert.match(dock, /this\.imageSurface\.appendChild\(this\.palette\.dom\)/);
+});
+
+test('Mask confirmation and auto reset are compact palette actions', () => {
+    const palette = readFileSync(
+        'src/ui/ai-select-floating-palette.ts',
+        'utf8'
     );
+    const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
+    assert.match(palette, /readonly canConfirmMask:\s*boolean;/);
+    assert.match(palette, /readonly canRestoreAutoMask:\s*boolean;/);
+    assert.match(palette, /readonly onConfirmMask:\s*\(\) => void;/);
+    assert.match(palette, /readonly onRestoreAutoMask:\s*\(\) => void;/);
     assert.match(
-        styles,
-        /#ai-select-anchor-dock-main\[data-short-tools='true'\][\s\S]*?\.palette-tool[\s\S]*?width:\s*38px;[\s\S]*?height:\s*38px;/
+        palette,
+        /historyGroup\.appendChild\(this\.confirmMaskButton\);[\s\S]*?historyGroup\.appendChild\(this\.clearButton\);/
+    );
+    assert.doesNotMatch(dock, /confirmMaskButton/);
+    assert.doesNotMatch(dock, /restoreAutoButton/);
+    assert.match(dock, /onConfirmMask:[\s\S]{0,120}this\.confirmCurrentMask\(/);
+    assert.match(dock, /onRestoreAutoMask:/);
+});
+
+test('confirming the Anchor Mask continues through Anchor confirmation', () => {
+    const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
+    assert.match(
+        dock,
+        /private async confirmCurrentMask[\s\S]*?authoring\.ops\.confirmEditingMask\(\);[\s\S]*?await onConfirmAnchor\(\);/
     );
 });
 
@@ -159,4 +155,8 @@ test('Inspector restores the accepted assessment, participation, and Mask hierar
     assert.match(dock, /ai-select-inspector-assessment-group/);
     assert.match(dock, /ai-select-inspector-mask-group/);
     assert.match(dock, /ai-select-inspector-recovery-group/);
+    assert.doesNotMatch(
+        dock,
+        /recoveryGroup\.append\(this\.restoreAutoButton\)/
+    );
 });

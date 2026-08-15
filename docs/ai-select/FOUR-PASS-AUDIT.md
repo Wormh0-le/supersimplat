@@ -324,8 +324,8 @@ Checks:
 - actual previous logits remain Companion-local;
 - browser/protocol state carries only an opaque ref bound to Companion Instance, source attempt and candidate;
 - stale/expired ref falls back to fresh no-logits inference;
-- candidate refinement occurs before Accept in Prompt mode;
-- single-Point multimask and Box/multi-Point/refinement single-mask rules are consistent.
+- the sole accepted result retains its opaque refinement lineage;
+- all Point, Box and refinement requests use the same single-result policy.
 
 Result: **PASS**
 

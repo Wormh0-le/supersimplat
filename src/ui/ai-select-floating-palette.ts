@@ -21,11 +21,13 @@ import {
 } from '../ai-select/floating-palette';
 import boxPositiveSvg from './svg/ai-select-box-positive.svg';
 import chevronSvg from './svg/ai-select-chevron.svg';
+import confirmSvg from './svg/ai-select-confirm.svg';
 import eraseSvg from './svg/ai-select-erase.svg';
 import gripSvg from './svg/ai-select-grip.svg';
 import paintSvg from './svg/ai-select-paint.svg';
 import pointNegativeSvg from './svg/ai-select-point-negative.svg';
 import pointPositiveSvg from './svg/ai-select-point-positive.svg';
+import restoreAutoSvg from './svg/ai-select-restore-auto.svg';
 import deleteSvg from './svg/delete.svg';
 import redoSvg from './svg/edit-redo.svg';
 import undoSvg from './svg/edit-undo.svg';
@@ -48,6 +50,8 @@ export interface FloatingPaletteView {
     readonly canUndoHistory: boolean;
     readonly canRedoHistory: boolean;
     readonly canClearHistory: boolean;
+    readonly canConfirmMask: boolean;
+    readonly canRestoreAutoMask: boolean;
 }
 
 export interface AISelectFloatingPaletteOptions {
@@ -55,6 +59,8 @@ export interface AISelectFloatingPaletteOptions {
     readonly onHistoryUndo: (kind: PaletteHistoryKind) => void;
     readonly onHistoryRedo: (kind: PaletteHistoryKind) => void;
     readonly onHistoryClear: (kind: PaletteHistoryKind) => void;
+    readonly onConfirmMask: () => void;
+    readonly onRestoreAutoMask: () => void;
     readonly onBrushSizeChange: (sizePx: number) => void;
 }
 
@@ -112,6 +118,8 @@ export class AISelectFloatingPalette {
     private readonly toolButtons = new Map<PaletteTool, HTMLButtonElement>();
     private readonly undoButton: HTMLButtonElement;
     private readonly redoButton: HTMLButtonElement;
+    private readonly confirmMaskButton: HTMLButtonElement;
+    private readonly restoreAutoMaskButton: HTMLButtonElement;
     private readonly clearButton: HTMLButtonElement;
     private readonly popover: HTMLDivElement;
     private readonly sizeInput: HTMLInputElement;
@@ -177,6 +185,14 @@ export class AISelectFloatingPalette {
         }
         this.undoButton = createIconButton('palette-action', undoSvg);
         this.redoButton = createIconButton('palette-action', redoSvg);
+        this.confirmMaskButton = createIconButton(
+            'palette-action palette-confirm-mask',
+            confirmSvg
+        );
+        this.restoreAutoMaskButton = createIconButton(
+            'palette-action palette-restore-auto-mask',
+            restoreAutoSvg
+        );
         this.clearButton = createIconButton('palette-action', deleteSvg);
         this.undoButton.addEventListener('click', () => {
             if (this.view !== null) {
@@ -188,6 +204,12 @@ export class AISelectFloatingPalette {
                 this.options.onHistoryRedo(this.view.historyKind);
             }
         });
+        this.confirmMaskButton.addEventListener('click', () =>
+            this.options.onConfirmMask()
+        );
+        this.restoreAutoMaskButton.addEventListener('click', () =>
+            this.options.onRestoreAutoMask()
+        );
         this.clearButton.addEventListener('click', () => {
             if (this.view !== null) {
                 this.options.onHistoryClear(this.view.historyKind);
@@ -195,6 +217,8 @@ export class AISelectFloatingPalette {
         });
         historyGroup.appendChild(this.undoButton);
         historyGroup.appendChild(this.redoButton);
+        historyGroup.appendChild(this.confirmMaskButton);
+        historyGroup.appendChild(this.restoreAutoMaskButton);
         historyGroup.appendChild(this.clearButton);
         this.collapseButton = createIconButton(
             'palette-action palette-collapse',
@@ -463,11 +487,18 @@ export class AISelectFloatingPalette {
         }
         this.undoButton.disabled = !view.canUndoHistory;
         this.redoButton.disabled = !view.canRedoHistory;
+        this.confirmMaskButton.disabled = !view.canConfirmMask;
+        this.restoreAutoMaskButton.disabled = !view.canRestoreAutoMask;
         this.clearButton.disabled = !view.canClearHistory;
         const historyPrefix =
             view.historyKind === 'mask' ? 'ai-select.mask' : 'ai-select.prompt';
         this.setActionLabel(this.undoButton, `${historyPrefix}.undo`);
         this.setActionLabel(this.redoButton, `${historyPrefix}.redo`);
+        this.setActionLabel(this.confirmMaskButton, 'ai-select.mask.confirm');
+        this.setActionLabel(
+            this.restoreAutoMaskButton,
+            'ai-select.mask.restore-auto'
+        );
         this.setActionLabel(this.clearButton, `${historyPrefix}.clear`);
 
         const collapseKey =

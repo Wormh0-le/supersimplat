@@ -431,16 +431,15 @@ test('per-candidate logits references are opaque and digest-bound', () => {
     );
 });
 
-test('the multimask policy bounds candidates by prompt shape and refinement', () => {
+test('the single-result policy bounds every prompt shape and refinement', () => {
     const singlePoint = revisePromptState(
         createEmptyPromptState('anchor-view', digest('a')),
         {
             points: [{ promptId: 'p-1', polarity: 'include', xPx: 1, yPx: 1 }]
         }
     );
-    // Exactly one include Point, no Box, no refinement: at most 3 candidates.
-    assert.equal(maximumAutoMaskProposalCount(singlePoint, false), 3);
-    // Any refinement forces single-mask mode.
+    // Point, Box, mixed, and refinement programs all expose one result.
+    assert.equal(maximumAutoMaskProposalCount(singlePoint, false), 1);
     assert.equal(maximumAutoMaskProposalCount(singlePoint, true), 1);
     // A negative Point or multiple Points force single-mask mode.
     const mixed = revisePromptState(singlePoint, {
@@ -732,18 +731,16 @@ test('proposal sets reject shrunk or contradictory prompt consistency facts', ()
     );
 });
 
-test('deterministic truncation records preserve at most three source-ordered proposals', () => {
+test('deterministic truncation records preserve one source-ordered proposal', () => {
     const base = proposalSet();
-    const proposals = Array.from({ length: 3 }, (_, sourceIndex) =>
-        proposalFor(sourceIndex)
-    );
+    const proposals = [proposalFor(0)];
     const payload = {
         ...base,
         proposals,
         truncation: {
             originalCount: 5,
-            retainedCount: 3,
-            policy: 'source-order-first-3'
+            retainedCount: 1,
+            policy: 'source-order-first-1'
         }
     };
     delete payload.digest;
@@ -754,11 +751,11 @@ test('deterministic truncation records preserve at most three source-ordered pro
     assert.equal(isAutoMaskProposalSet(bounded), true);
     const tooManyPayload = {
         ...payload,
-        proposals: [...proposals, proposalFor(3)],
+        proposals: [...proposals, proposalFor(1)],
         truncation: {
             originalCount: 5,
-            retainedCount: 4,
-            policy: 'source-order-first-4'
+            retainedCount: 2,
+            policy: 'source-order-first-2'
         }
     };
     assert.equal(

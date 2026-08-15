@@ -343,8 +343,8 @@ class MultimaskPolicyTests(unittest.TestCase):
             capabilities=sam3_image_instance_capabilities(),
         )
 
-    def test_exactly_one_positive_point_enables_multimask(self) -> None:
-        self.assertTrue(resolve_multimask_output(self.program(), False))
+    def test_exactly_one_positive_point_keeps_single_result_mode(self) -> None:
+        self.assertFalse(resolve_multimask_output(self.program(), False))
 
     def test_refinement_box_multi_point_and_negative_point_force_single(self) -> None:
         self.assertFalse(resolve_multimask_output(self.program(), True))
@@ -457,7 +457,7 @@ class Sam3ImageInstanceAdapterTests(unittest.TestCase):
             cancelled=lambda: False,
         )
 
-    def test_single_positive_point_runs_multimask_and_retains_three(self) -> None:
+    def test_single_positive_point_runs_single_mask_and_retains_one(self) -> None:
         self.runtime.masks = [
             [[False, True, False, False]] * 4,
             [[False, True, True, False]] * 4,
@@ -470,7 +470,7 @@ class Sam3ImageInstanceAdapterTests(unittest.TestCase):
         self.assertEqual(self.runtime.set_image_calls, [self.rgb_png])
         self.assertEqual(len(self.runtime.predict_calls), 1)
         predict = self.runtime.predict_calls[0]
-        self.assertIs(predict['multimask_output'], True)
+        self.assertIs(predict['multimask_output'], False)
         self.assertIsNone(predict['box'])
         self.assertIsNone(predict['mask_input'])
         self.assertIs(predict['normalize_coords'], True)
@@ -480,10 +480,10 @@ class Sam3ImageInstanceAdapterTests(unittest.TestCase):
         self.assertEqual(
             np.asarray(predict['point_labels']).tolist(), [1]
         )
-        self.assertEqual(len(batch.candidates), 3)
+        self.assertEqual(len(batch.candidates), 1)
         self.assertEqual(
             [candidate.source_index for candidate in batch.candidates],
-            [0, 1, 2],
+            [0],
         )
         for candidate in batch.candidates:
             self.assertEqual(candidate.low_res_logits.shape, (1, 288, 288))
@@ -497,7 +497,7 @@ class Sam3ImageInstanceAdapterTests(unittest.TestCase):
                 },
             )
 
-    def test_multimask_retains_at_most_three_candidates(self) -> None:
+    def test_extra_runtime_candidates_are_ignored_in_single_result_mode(self) -> None:
         self.runtime.masks = [
             [[index == 0, True, False, False]] * 4 for index in range(4)
         ]
@@ -514,10 +514,10 @@ class Sam3ImageInstanceAdapterTests(unittest.TestCase):
 
         self.assertEqual(
             [candidate.source_index for candidate in batch.candidates],
-            [0, 1, 2],
+            [0],
         )
 
-    def test_exact_duplicate_masks_are_removed(self) -> None:
+    def test_single_result_mode_stops_before_later_duplicates(self) -> None:
         self.runtime.masks = [
             [[False, True, False, False]] * 4,
             [[False, True, False, False]] * 4,
@@ -529,7 +529,7 @@ class Sam3ImageInstanceAdapterTests(unittest.TestCase):
 
         self.assertEqual(
             [candidate.source_index for candidate in batch.candidates],
-            [0, 2],
+            [0],
         )
 
     def test_empty_and_full_frame_masks_are_filtered(self) -> None:

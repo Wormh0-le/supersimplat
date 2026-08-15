@@ -24,7 +24,7 @@ SAM3_IMAGE_INSTANCE_ADAPTER_ID = 'sam3-image-instance/v1'
 
 
 # The SAM 3 Image adapter intentionally pins every material model, processor,
-# and multimask option rather than inheriting upstream defaults.  The digest is
+# and result-cardinality option rather than inheriting upstream defaults. The digest is
 # the manifest identity for this executable configuration, not an
 # operator-chosen label: changing one of these values requires a new adapter
 # baseline.
@@ -35,8 +35,8 @@ SAM3_IMAGE_RUNTIME_CONFIG: dict[str, Any] = {
     "enable_inst_interactivity": True,
     "processor_resolution": 1008,
     "confidence_threshold": 0.5,
-    "multimask_policy": "single-positive-point-multimask/v1",
-    "max_multimask_candidates": 3,
+    "multimask_policy": "single-result/v1",
+    "max_multimask_candidates": 1,
     # The pinned upstream returns low-resolution prediction logits at its
     # backbone feature size (288x288), not SAM 2's 256x256; this guard fails
     # closed if a future model build changes that contract.
@@ -101,7 +101,7 @@ def sam3_image_instance_capabilities() -> dict[str, object]:
 
     The current static adapter supports Positive/Negative Points, one Positive
     Instance Box in authoritative pixel XYXY, Companion-local previous-logits
-    refinement, and single-positive-point multimask output. Negative Box,
+    refinement, with every Prompt pinned to single-result output. Negative Box,
     Prompt Brush, Mask constraints, and Text are not tools in this contract;
     removed families have no placeholder reasons because old artifacts fail
     closed on schema and capability-digest identity instead.
@@ -513,16 +513,10 @@ def compile_point_mask_prompt_program(
 def resolve_multimask_output(
     program: CompiledImagePromptProgram, has_refinement: bool
 ) -> bool:
-    """Pin the single-positive-point multimask policy for one program.
+    """Keep every interactive Prompt on the single-result inference path."""
 
-    Multimask output is allowed only for exactly one positive Point with no
-    Instance Box and no resolved previous-logits refinement; every other
-    composition forces single-mask mode.
-    """
-
-    if has_refinement or program.boxes or len(program.points) != 1:
-        return False
-    return program.points[0].polarity == 'include'
+    del program, has_refinement
+    return False
 
 
 class MaskSessionError(ValueError):
@@ -1844,10 +1838,8 @@ class Sam3ImageInstanceAdapter:
         """Run unranked instance inference through the locked image API.
 
         This method owns only adapter execution, candidate-local prompt facts,
-        and the pinned multimask/exact-duplicate/area candidate policy. It
-        never ranks candidates or chooses a proposal; those remain downstream
-        policy concerns. Route B passes ``force_single_mask=True`` so a
-        generated View cannot enter the single-positive-point multimask mode.
+        and the pinned single-result/area candidate policy. It never publishes
+        Stable authority; that remains downstream policy.
         """
 
         if model.get('adapterId') != SAM3_IMAGE_INSTANCE_ADAPTER_ID:
@@ -1960,11 +1952,7 @@ class Sam3ImageInstanceAdapter:
                 'SAM 3 Image returned low-resolution logits that do not match its candidates.',
             )
 
-        candidate_cap = (
-            int(SAM3_IMAGE_RUNTIME_CONFIG['max_multimask_candidates'])
-            if multimask_output
-            else 1
-        )
+        candidate_cap = 1
         retained: list[Sam3ImageCandidate] = []
         seen_payloads: set[bytes] = set()
         for source_index, (mask, score) in enumerate(

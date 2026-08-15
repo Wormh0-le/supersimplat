@@ -161,7 +161,7 @@ const request = (overrides = {}) => {
         adapterCapabilityDigest: digest('c'),
         positivePoints: [{ xPx: 0, yPx: 0 }],
         negativePoints: [],
-        multimaskOutput: true
+        multimaskOutput: false
     });
     return {
         schemaVersion: 1,
@@ -462,39 +462,37 @@ test('the contracts reject removed prompt fields and preserve exact opaque logit
     );
 });
 
-test('result candidate cardinality follows the prompt multimask policy', () => {
-    const multimaskRequest = request();
-    const threeCandidates = createImageInstanceMaskResult({
+test('result cardinality is single-mask for every prompt', () => {
+    const singleResultRequest = request();
+    const singleCandidate = createImageInstanceMaskResult({
         schemaVersion: 1,
-        requestIdentity: multimaskRequest.identity,
-        masks: [maskArtifact(), maskArtifact(), maskArtifact()],
-        modelScores: [0.9, 0.8, 0.7],
+        requestIdentity: singleResultRequest.identity,
+        masks: [maskArtifact()],
+        modelScores: [0.9],
         diagnostics: { outcome: 'available' }
     });
     assert.ok(
-        imageInstanceMaskResultMatchesRequest(threeCandidates, multimaskRequest)
+        imageInstanceMaskResultMatchesRequest(
+            singleCandidate,
+            singleResultRequest
+        )
     );
     assert.throws(() =>
         createImageInstanceMaskResult({
             schemaVersion: 1,
-            requestIdentity: multimaskRequest.identity,
-            masks: [
-                maskArtifact(),
-                maskArtifact(),
-                maskArtifact(),
-                maskArtifact()
-            ],
-            modelScores: [0.9, 0.8, 0.7, 0.6],
+            requestIdentity: singleResultRequest.identity,
+            masks: [maskArtifact(), maskArtifact()],
+            modelScores: [0.9, 0.8],
             diagnostics: { outcome: 'available' }
         })
     );
 
     const singleMaskPrompt = createImageInstancePromptArtifact({
         schemaVersion: 1,
-        targetContextId: multimaskRequest.identity.targetContextId,
-        contextRevision: multimaskRequest.identity.contextRevision,
-        viewId: multimaskRequest.identity.viewId,
-        rgbDigest: multimaskRequest.identity.rgbDigest,
+        targetContextId: singleResultRequest.identity.targetContextId,
+        contextRevision: singleResultRequest.identity.contextRevision,
+        viewId: singleResultRequest.identity.viewId,
+        rgbDigest: singleResultRequest.identity.rgbDigest,
         cameraBindingDigest: digest('b'),
         adapterCapabilityDigest: digest('c'),
         positivePoints: [{ xPx: 0, yPx: 0 }],
@@ -502,18 +500,7 @@ test('result candidate cardinality follows the prompt multimask policy', () => {
         multimaskOutput: false
     });
     const singleMaskRequest = requestWithPrompt(singleMaskPrompt);
-    const twoCandidates = createImageInstanceMaskResult({
-        schemaVersion: 1,
-        requestIdentity: singleMaskRequest.identity,
-        masks: [maskArtifact(), maskArtifact()],
-        modelScores: [0.9, 0.8],
-        diagnostics: { outcome: 'available' }
-    });
-
-    assert.ok(isImageInstanceMaskResult(twoCandidates));
-    assert.ok(
-        !imageInstanceMaskResultMatchesRequest(twoCandidates, singleMaskRequest)
-    );
+    assert.ok(isImageInstanceMaskRequest(singleMaskRequest));
 });
 
 test('a publication command binds the chosen Mask and Review without putting either in provider output', () => {

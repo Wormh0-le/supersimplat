@@ -1,6 +1,6 @@
 # 16A — AI View Dock + Candidate viewport presentation
 
-Status: ready-for-agent — Final Spec v1.3 mapped
+Status: implemented — 2026-08-16 — automated gates complete; operator visual walkthrough pending
 
 Blocked by: 16, 15
 
@@ -25,7 +25,7 @@ Candidate, Native Selection, Evidence or EditHistory semantics.
 - Native Selection, `SelectOp` and `EditHistory`
 - Existing fixed AI Select Toolbar, AI View Dock and Status Bar
 - Existing splat sorting, transform and overlay rendering infrastructure
-- Per-View Prompt, Proposal, Editing/Stable Mask, Review and Participation
+- Per-View Prompt, Editing/Stable Mask, Review and Participation
   presentation state
 
 ## Outputs / handoff artifacts
@@ -58,10 +58,12 @@ supported application entry points or a Candidate that cannot be applied.
 
 - [ ] Wide Dock renders View Navigator, Selected AI View Work Area and Current
       View Inspector as three columns under one compact top bar.
-- [ ] Initial Navigator width remains within `190–238px` and Inspector width
-      within `280–350px`. The Work Area uses authoritative RGB aspect ratio,
-      available height and sidebar constraints to determine an ideal width;
-      excess width is not converted into larger empty image letterboxing.
+- [ ] Below the spacious breakpoint, Navigator remains within `190–238px` and
+      Inspector within `280–350px`. At approximately `1600px` and above, the
+      layout uses `20% Navigator / 55% Work Area / 25% Inspector`; the Work
+      Area retains the largest share while useful sidebar content can form
+      multiple columns. Authoritative RGB aspect and available height still
+      determine the image width.
 - [ ] RGB/Mask uses complete, centered, aspect-preserving contain semantics;
       it is never cropped or stretched merely to fill the Work Area.
 - [ ] At approximately `1280×720`, all three columns are available. At
@@ -82,21 +84,23 @@ supported application entry points or a Candidate that cannot be applied.
 - [ ] Navigator fixes the current View above filtered results without
       duplication, provides `All Views` and the one resident `Review N` filter,
       and keeps Participation control only on View cards.
-- [ ] View switching preserves per-View Prompt, Proposal, Editing Mask and
+- [ ] View switching preserves per-View Prompt, Editing Mask and
       Prompt/Mask undo history; it cancels only an uncommitted pointer gesture
       and does not show a confirmation dialog for ordinary navigation.
-- [ ] The Work Area contains a lightweight View header, non-overlapping Tool
-      Rail, authoritative RGB/Prompt/Mask canvas and one View Action Bar. Around
-      `1024px`, the Tool Rail may become horizontal.
-- [ ] Proposal choice uses previous/next controls over the image, revealed on
-      hover or keyboard focus only when more than one Proposal exists. One
-      Proposal has no switcher; zero Proposals expose no counter or action; no
-      uncalibrated raw model score is shown. Accept Proposal is a compact image
-      overlay instead of a dedicated action row. Each View state exposes exactly
-      one primary action: Accept Proposal, Confirm Mask, Confirm As Is, Retry
-      Mask or explicit Next Review. An empty View Action Bar is hidden.
+- [ ] The Work Area contains a lightweight View header, authoritative
+      RGB/Prompt/Mask canvas, and one draggable/collapsible palette clamped and
+      auto-snapped inside the fitted image. It does not allocate a permanent
+      Tool Rail or change orientation after Mask adoption.
+- [ ] Interactive inference exposes at most one result and automatically adopts
+      it as Editing Mask. No Proposal switcher, counter, score, dropdown or
+      Accept Proposal action is rendered. The palette places Confirm Mask
+      before Clear and contains Reset to Auto Mask. Confirming the initial
+      Anchor Mask also confirms the Anchor and starts Generated View planning.
+      Confirm As Is, Retry Mask and explicit Next Review remain contextual; an
+      empty View Action Bar is hidden.
 - [ ] Inspector owns current-View explanations and low-frequency/recovery
-      actions. It does not duplicate the primary action or Participation toggle.
+      actions. It does not duplicate the primary action, Participation toggle,
+      Confirm Mask or Reset to Auto Mask.
 - [ ] Planner Planning/Failed/exhausted status never replaces Anchor or
       completed Views. Generate More, Stop and Regenerate remain progressive,
       contextual capabilities rather than permanent buttons.
@@ -152,7 +156,7 @@ supported application entry points or a Candidate that cannot be applied.
       restart the Target. Technical blocker identity remains in tooltip/details.
 - [ ] `More` contains low-frequency View actions, Restart and Exit. Candidate
       Overlay and the four native operations never enter overflow; `Undo and
-  Fix` may enter `More` on narrow layouts.
+Fix` may enter `More` on narrow layouts.
 - [ ] Narrow layouts remain one row and fall back to native operation icons with
       accessible tooltips before allowing overflow or wrapping.
 
@@ -226,7 +230,7 @@ supported application entry points or a Candidate that cannot be applied.
       Selection remain distinguishable when shown together
 - [ ] Dock pure-layout tests cover column mode, ideal image width and height
       clamping at the accepted size matrix
-- [ ] View A draft → View B → View A preserves Prompt, Proposal, Editing
+- [ ] View A draft → View B → View A preserves Prompt, Editing
       Mask and history; filtering keeps the current View fixed and visible
 - [ ] Browser screenshots or walkthrough evidence cover the accepted Dock size
       and lifecycle matrices

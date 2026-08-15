@@ -420,9 +420,8 @@ test('a prompt change automatically requests single-frame SAM feedback', async (
         'schemaVersion',
         'viewId'
     ]);
-    assert.equal(mask.state.proposalStatus, 'selected');
-    assert.equal(mask.state.editingMask, null);
-    acceptSuggestedProposal(mask);
+    assert.equal(mask.state.proposalStatus, 'editing');
+    assert.equal(mask.state.acceptedProposalId, 'proposal-0');
     assert.equal(mask.state.editingMask.source, 'single-frame-sam');
     assert.equal(mask.state.editingMask.status, 'draft');
     assert.equal(mask.state.stableMask, null);
@@ -1015,7 +1014,7 @@ test('unsupported prompt tools are rejected before transport', async () => {
     assert.equal(mask.state.promptState.boxes.length, 0);
 });
 
-test('a Box prompt revises PromptState without editing pixels', async () => {
+test('a Box prompt revises PromptState and adopts its sole Mask result', async () => {
     const { mask, maskRequests } = await setup({
         promptCapabilities: richPromptCapabilities
     });
@@ -1036,7 +1035,7 @@ test('a Box prompt revises PromptState without editing pixels', async () => {
         ],
         [4, 5, 20, 20]
     );
-    assert.equal(mask.state.editingMask, null);
+    assert.equal(mask.state.editingMask.source, 'single-frame-sam');
     assert.equal(maskRequests.length, 1);
 
     // A second Box replaces the first: at most one Positive Instance Box.
@@ -1163,7 +1162,7 @@ test('an explicit Retry mints a new attempt and omits the logits reference', asy
     );
 });
 
-test('accepting a proposal clears the refinement lineage', async () => {
+test('automatic single-result adoption preserves the refinement lineage', async () => {
     const maskRequests = [];
     const { mask } = await setup({
         promptCapabilities: richPromptCapabilities,
@@ -1175,11 +1174,14 @@ test('accepting a proposal clears the refinement lineage', async () => {
         }
     });
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
-    acceptSuggestedProposal(mask);
 
-    // Returning to Prompt mode after Accept mints a fresh no-logits attempt.
+    // The next Prompt revision refines from the only returned Mask.
     await mask.addPrompt({ xPx: 20, yPx: 22, polarity: 'exclude' });
-    assert.equal(maskRequests[1].previousLogitsRef, undefined);
+    assert.ok(maskRequests[1].previousLogitsRef);
+    assert.equal(
+        maskRequests[1].previousLogitsRef.sourceCandidateId,
+        'proposal-0'
+    );
 });
 
 test('an adapter without refinement support never sends a logits reference', async () => {
@@ -1306,11 +1308,11 @@ test('Prompt Undo and Mask Undo are independent histories', async () => {
     assert.equal(mask.state.editingMask.maskId, editingId);
 
     mask.undoMaskEdit();
-    assert.equal(mask.state.editingMask, null);
+    assert.equal(mask.state.editingMask.source, 'single-frame-sam');
     assert.equal(mask.state.promptState.boxes.length, 0);
     mask.redoPromptEdit();
     assert.equal(mask.state.promptState.digest, promptDigest);
-    assert.equal(mask.state.editingMask, null);
+    assert.ok(mask.state.editingMask);
 });
 
 test('Clear Prompts preserves the Stable Mask and current Evidence', async () => {
@@ -1395,7 +1397,7 @@ test('published proposal state is isolated from later transport-object mutation'
     );
 });
 
-test('explicit acceptance rejects proposals excluded by the bound decision', async () => {
+test('a multi-result response fails closed before publishing an Editing Mask', async () => {
     const { mask } = await setup({
         produceMask: (request) => {
             const base = maskResponseFor(request);
@@ -1438,12 +1440,12 @@ test('explicit acceptance rejects proposals excluded by the bound decision', asy
 
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
 
-    assert.throws(() => mask.acceptProposal('proposal-1'), /ineligible/);
-    mask.acceptProposal('proposal-0');
-    assert.equal(mask.state.acceptedProposalId, 'proposal-0');
+    assert.equal(mask.state.requestStatus, 'failed');
+    assert.equal(mask.state.failureKind, 'maskArtifactInvalid');
+    assert.equal(mask.state.editingMask, null);
 });
 
-test('an ambiguous proposal set preserves alternatives until explicit acceptance', async () => {
+test('an ambiguous multi-result response cannot enter interactive selection', async () => {
     const firstMask = bitsetArtifact(64, 48, [[10, 12]]);
     const secondMask = bitsetArtifact(64, 48, [
         [10, 12],
@@ -1510,21 +1512,7 @@ test('an ambiguous proposal set preserves alternatives until explicit acceptance
 
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
 
-    assert.equal(mask.state.proposalStatus, 'ambiguous');
+    assert.equal(mask.state.proposalStatus, 'failed');
     assert.equal(mask.state.editingMask, null);
-    // The v2 decision carries no ranking reason codes; Mask-quality claims
-    // live on the per-candidate Review record.
-    assert.equal('reasons' in mask.state.proposalDecision, false);
-    assert.deepEqual(
-        mask.state.proposalSet.proposals.find(
-            (candidate) => candidate.proposalId === 'proposal-0'
-        ).review.reasons,
-        ['target-materially-clipped']
-    );
-
-    mask.acceptProposal('proposal-1');
-
-    assert.equal(mask.state.acceptedProposalId, 'proposal-1');
-    assert.equal(mask.state.editingMask.artifact.digest, secondMask.digest);
     assert.equal(mask.state.stableMask, null);
 });

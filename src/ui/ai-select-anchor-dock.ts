@@ -7,7 +7,6 @@ import {
 import { i18n } from './localization';
 import {
     resolveAIViewDockColumns,
-    resolveAIViewToolLayout,
     resolveAIViewWorkAreaWidth
 } from '../ai-select/ai-view-dock-layout';
 import {
@@ -234,7 +233,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly backToCandidateButton: Button;
     private readonly imageViewport: HTMLDivElement;
     private readonly workCanvasRow: Container;
-    private readonly toolRail: Container;
     private readonly imageSurface: HTMLDivElement;
     private readonly image: HTMLImageElement;
     private readonly overlay: HTMLCanvasElement;
@@ -243,16 +241,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly primaryActions: Container;
     private readonly maskActions: Container;
     private readonly palette: AISelectFloatingPalette;
-    private readonly acceptProposalButton: Button;
-    private readonly proposalSelect: HTMLSelectElement;
-    private readonly proposalStepper: Container;
-    private readonly previousProposalButton: Button;
-    private readonly nextProposalButton: Button;
-    private readonly proposalStepperLabel: Label;
     private readonly boxPreview: HTMLDivElement;
-    private readonly confirmMaskButton: Button;
     private readonly retryMaskButton: Button;
-    private readonly restoreAutoButton: Button;
     private readonly anchorActions: Container;
     private readonly validateButton: Button;
     private readonly confirmAnchorButton: Button;
@@ -516,134 +506,30 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                     console.error(error);
                 }
             },
+            onConfirmMask: () => {
+                this.confirmCurrentMask(options.onConfirmAnchor).catch(
+                    (error) => console.error(error)
+                );
+            },
+            onRestoreAutoMask: () => {
+                try {
+                    this.authoring()?.ops.restoreAutoMask();
+                } catch (error) {
+                    console.error(error);
+                }
+            },
             onBrushSizeChange: () => this.renderCurrentMaskOverlay()
         });
         this.imageSurface.appendChild(this.palette.dom);
-        this.acceptProposalButton = new Button({
-            id: 'ai-select-anchor-proposal-accept'
-        });
-        this.proposalSelect = document.createElement('select');
-        this.proposalSelect.id = 'ai-select-anchor-proposal-select';
-        this.proposalSelect.setAttribute(
-            'aria-label',
-            i18n.t('ai-select.proposal.choose')
-        );
-        this.proposalSelect.addEventListener('change', () => {
-            // The previewed candidate owns the refinement lineage: a later
-            // Prompt revision refines from this candidate's logits reference.
-            try {
-                this.authoring()?.ops.previewProposal(
-                    this.proposalSelect.value
-                );
-            } catch (error) {
-                console.error(error);
-            }
-            this.renderCurrentMaskOverlay();
-        });
-        this.proposalSelect.hidden = true;
-        this.proposalStepper = new Container({
-            id: 'ai-select-proposal-stepper',
-            hidden: true
-        });
-        this.previousProposalButton = new Button({
-            id: 'ai-select-proposal-previous',
-            text: '‹'
-        });
-        this.nextProposalButton = new Button({
-            id: 'ai-select-proposal-next',
-            text: '›'
-        });
-        this.proposalStepperLabel = new Label({
-            id: 'ai-select-proposal-position'
-        });
-        const renderProposalNavigationLabels = (): void => {
-            this.previousProposalButton.dom.setAttribute(
-                'aria-label',
-                i18n.t('ai-select.proposal.previous')
-            );
-            this.nextProposalButton.dom.setAttribute(
-                'aria-label',
-                i18n.t('ai-select.proposal.next')
-            );
-        };
-        i18n.onChange(renderProposalNavigationLabels, this);
-        renderProposalNavigationLabels();
-        const stepProposal = (delta: number): void => {
-            const proposalCount = this.proposalSelect.options.length;
-            if (proposalCount === 0) {
-                return;
-            }
-            this.proposalSelect.selectedIndex = Math.max(
-                0,
-                Math.min(
-                    proposalCount - 1,
-                    this.proposalSelect.selectedIndex + delta
-                )
-            );
-            this.proposalSelect.dispatchEvent(new Event('change'));
-            this.renderAuthoringTools();
-        };
-        this.previousProposalButton.on('click', () => stepProposal(-1));
-        this.nextProposalButton.on('click', () => stepProposal(1));
-        this.proposalStepper.append(this.previousProposalButton);
-        this.proposalStepper.append(this.proposalStepperLabel);
-        this.proposalStepper.append(this.nextProposalButton);
-        this.proposalStepper.dom.addEventListener('pointerdown', (event) =>
-            event.stopPropagation()
-        );
-        this.imageSurface.appendChild(this.proposalStepper.dom);
-        this.acceptProposalButton.dom.addEventListener('pointerdown', (event) =>
-            event.stopPropagation()
-        );
-        this.imageSurface.appendChild(this.acceptProposalButton.dom);
-        i18n.bindText(this.acceptProposalButton, 'ai-select.proposal.accept');
-        this.acceptProposalButton.on('click', () => {
-            const authoring = this.authoring();
-            const proposal = authoring?.maskState.proposalSet?.proposals.find(
-                (candidate) =>
-                    candidate.proposalId === this.proposalSelect.value
-            );
-            if (authoring === null || proposal === undefined) {
-                return;
-            }
-            try {
-                authoring.ops.acceptProposal(proposal.proposalId);
-            } catch (error) {
-                console.error(error);
-            }
-        });
-        this.confirmMaskButton = new Button({
-            id: 'ai-select-anchor-dock-confirm-mask'
-        });
         this.retryMaskButton = new Button({
             id: 'ai-select-anchor-dock-retry-mask'
         });
-        this.restoreAutoButton = new Button({
-            id: 'ai-select-anchor-dock-restore-auto'
-        });
-        i18n.bindText(this.confirmMaskButton, 'ai-select.mask.confirm');
         i18n.bindText(this.retryMaskButton, 'ai-select.mask.retry');
-        i18n.bindText(this.restoreAutoButton, 'ai-select.mask.restore-auto');
-        this.confirmMaskButton.on('click', () => {
-            try {
-                this.authoring()?.ops.confirmEditingMask();
-            } catch (error) {
-                console.error(error);
-            }
-        });
         this.retryMaskButton.on('click', () => {
             this.authoring()
                 ?.ops.retryMaskRequest()
                 .catch((error) => console.error(error));
         });
-        this.restoreAutoButton.on('click', () => {
-            try {
-                this.authoring()?.ops.restoreAutoMask();
-            } catch (error) {
-                console.error(error);
-            }
-        });
-        this.maskActions.append(this.confirmMaskButton);
         this.maskActions.append(this.retryMaskButton);
 
         this.anchorActions = new Container({
@@ -974,7 +860,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             'ai-select-inspector-recovery-group',
             'ai-select.dock.recovery'
         );
-        recoveryGroup.append(this.restoreAutoButton);
         recoveryGroup.append(this.adjustAnchorButton);
         recoveryGroup.append(this.selectedViewRecoveryActions);
         information.append(assessmentGroup);
@@ -984,7 +869,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             id: 'ai-select-anchor-dock-primary-actions',
             hidden: true
         });
-        this.primaryActions.dom.appendChild(this.proposalSelect);
         this.primaryActions.append(this.selectedViewPrimaryButton);
         this.primaryActions.append(this.anchorActions);
         this.primaryActions.append(this.maskActions);
@@ -993,9 +877,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.workCanvasRow = new Container({
             id: 'ai-select-view-work-canvas-row'
         });
-        this.toolRail = new Container({ id: 'ai-select-view-tool-rail' });
-        this.toolRail.dom.appendChild(this.palette.dom);
-        this.workCanvasRow.append(this.toolRail);
         this.workCanvasRow.dom.appendChild(this.imageViewport);
         imageResizeObserver.observe(this.workCanvasRow.dom);
         workHeader.append(this.status);
@@ -1012,17 +893,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         let inspectorPreference: boolean | undefined;
         const renderColumns = (): void => {
             const width = mainRow.dom.clientWidth;
-            const toolLayout = resolveAIViewToolLayout({
-                width,
-                canvasHeight: this.workCanvasRow.dom.clientHeight
-            });
             mainRow.dom.dataset.spacious = (width >= 1600).toString();
-            mainRow.dom.dataset.compactTools = (
-                toolLayout === 'horizontal'
-            ).toString();
-            mainRow.dom.dataset.shortTools = (
-                toolLayout === 'short-vertical'
-            ).toString();
             const columns = resolveAIViewDockColumns(width, {
                 ...(navigatorPreference === undefined
                     ? {}
@@ -1345,7 +1216,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     /**
      * The Mask surface shared by the Anchor and user-added Views: request
      * currency, draft/confirmed Mask currency, technical failure details, and
-     * the Confirm/Retry affordances.
+     * the palette Confirm affordance and retry recovery action.
      */
     private renderMaskSurface(
         mask: AnchorDockMaskPresentation,
@@ -1382,9 +1253,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.technicalDetails.hidden =
             technicalMessage === undefined || technicalMessage.length === 0;
         this.technicalDetailsBody.textContent = technicalMessage ?? '';
-        this.confirmMaskButton.hidden = !mask.showConfirm;
         this.retryMaskButton.hidden = !mask.showRetry;
-        this.confirmMaskButton.enabled = mask.showConfirm && !locked;
         this.retryMaskButton.enabled = mask.showRetry && !locked;
     }
 
@@ -1479,8 +1348,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.maskStatus.hidden = true;
         this.promptStatus.hidden = true;
         this.technicalDetails.hidden = true;
-        this.proposalSelect.hidden = true;
-        this.acceptProposalButton.hidden = true;
         this.maskActions.hidden = true;
         this.anchorActions.hidden = true;
         this.validationStatus.hidden = true;
@@ -1497,7 +1364,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             historyKind: 'prompt',
             canUndoHistory: false,
             canRedoHistory: false,
-            canClearHistory: false
+            canClearHistory: false,
+            canConfirmMask: false,
+            canRestoreAutoMask: false
         });
         this.renderInspectedMaskOverlay(view);
     }
@@ -1978,9 +1847,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.retrySelectedViewRenderButton.hidden = !card.actions.retryRender;
         this.regenerateSelectedViewPromptButton.hidden =
             !card.actions.regeneratePrompt;
+        const authoring = this.authoring();
         const authoringPrimaryVisible =
-            !this.acceptProposalButton.hidden ||
-            !this.confirmMaskButton.hidden ||
+            (authoring !== null &&
+                getViewMaskPresentation(authoring.maskState).showConfirm) ||
             !this.retryMaskButton.hidden;
         let action: AISelectAnchorDock<TCandidatePayload>['selectedViewPrimaryAction'] =
             null;
@@ -2148,19 +2018,35 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         }
     }
 
+    /**
+     * Publish the current Editing Mask. On the initial Anchor this same user
+     * intent also completes Anchor confirmation, whose observer starts
+     * Generated View planning. Gallery View confirmations remain local.
+     */
+    private async confirmCurrentMask(
+        onConfirmAnchor: () => Promise<void>
+    ): Promise<void> {
+        const authoring = this.authoring();
+        if (authoring === null) {
+            return;
+        }
+        authoring.ops.confirmEditingMask();
+        if (
+            this.inspectedGeneratedView() === null &&
+            this.confirmationState.confirmedAnchor === null
+        ) {
+            await onConfirmAnchor();
+        }
+    }
+
     private renderEditingActions(): void {
         const authoring = this.authoring();
         if (authoring === null) {
             this.maskActions.hidden = true;
             return;
         }
-        const editingReady = authoring.ready && !authoring.locked;
-        const maskState = authoring.maskState;
-        this.restoreAutoButton.hidden = !editingReady;
-        this.restoreAutoButton.enabled =
-            editingReady && maskState.canRestoreAuto;
-        const mask = getViewMaskPresentation(maskState);
-        this.maskActions.hidden = !mask.showConfirm && !mask.showRetry;
+        const mask = getViewMaskPresentation(authoring.maskState);
+        this.maskActions.hidden = !mask.showRetry;
     }
 
     /**
@@ -2198,11 +2084,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 historyKind: 'prompt',
                 canUndoHistory: false,
                 canRedoHistory: false,
-                canClearHistory: false
+                canClearHistory: false,
+                canConfirmMask: false,
+                canRestoreAutoMask: false
             });
-            this.proposalSelect.hidden = true;
-            this.proposalStepper.hidden = true;
-            this.acceptProposalButton.hidden = true;
             this.image.style.cursor = 'default';
             return;
         }
@@ -2241,54 +2126,11 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 : ready &&
                   maskState.promptState !== null &&
                   (maskState.promptState.points.length > 0 ||
-                      maskState.promptState.boxes.length > 0)
+                      maskState.promptState.boxes.length > 0),
+            canConfirmMask:
+                ready && getViewMaskPresentation(maskState).showConfirm,
+            canRestoreAutoMask: ready && maskState.canRestoreAuto
         });
-        const proposalIds =
-            maskState.proposalDecision?.alternativeProposalIds ?? [];
-        this.proposalSelect.replaceChildren(
-            ...proposalIds.map((proposalId, index) => {
-                const proposal = maskState.proposalSet?.proposals.find(
-                    (candidate) => candidate.proposalId === proposalId
-                );
-                const option = document.createElement('option');
-                option.value = proposalId;
-                option.text = `${i18n.t('ai-select.proposal.option')} ${i18n.formatInteger(index + 1)}`;
-                return option;
-            })
-        );
-        const preferredProposalId = proposalIds.includes(
-            maskState.previewedProposalId ?? ''
-        )
-            ? (maskState.previewedProposalId ?? '')
-            : (maskState.acceptedProposalId ??
-              maskState.proposalDecision?.selectedProposalId ??
-              proposalIds[0] ??
-              '');
-        this.proposalSelect.value = preferredProposalId;
-        const proposal = maskState.proposalSet?.proposals.find(
-            (candidate) => candidate.proposalId === preferredProposalId
-        );
-        this.proposalSelect.hidden = true;
-        this.proposalStepper.hidden =
-            proposalIds.length <= 1 ||
-            proposal === undefined ||
-            proposal.proposalId === maskState.acceptedProposalId;
-        const proposalIndex = Math.max(
-            0,
-            proposalIds.indexOf(preferredProposalId)
-        );
-        this.proposalStepperLabel.text =
-            proposalIds.length === 0
-                ? ''
-                : `${i18n.t('ai-select.proposal.option')} ${i18n.formatInteger(proposalIndex + 1)} / ${i18n.formatInteger(proposalIds.length)}`;
-        this.previousProposalButton.enabled = proposalIndex > 0;
-        this.nextProposalButton.enabled =
-            proposalIndex < proposalIds.length - 1;
-        this.acceptProposalButton.hidden =
-            proposal === undefined ||
-            proposal.proposalId === maskState.acceptedProposalId;
-        this.acceptProposalButton.enabled =
-            ready && !this.acceptProposalButton.hidden;
         this.image.style.cursor = cursorForTool(this.activeTool);
     }
 
@@ -2316,8 +2158,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         ].join(' · ');
         // Mask-quality claims live on the previewed candidate's Review record
         // (the simplified 07A decision carries no ranking reason codes). The
-        // candidate choice control is authoritative for which candidate the
-        // user is previewing; fall back to the decision's default preview.
+        // accepted single result owns review diagnostics; retain the
+        // defensive fallbacks for persisted pre-single-result sessions.
         const previewedProposalId =
             maskState.previewedProposalId ??
             maskState.acceptedProposalId ??
@@ -2343,8 +2185,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         const confirmed = confirmation.confirmedAnchor !== null;
         const ready = presentation.status === 'ready';
         const maskPrimaryVisible =
-            !this.acceptProposalButton.hidden ||
-            !this.confirmMaskButton.hidden ||
+            getViewMaskPresentation(this.maskState).showConfirm ||
             !this.retryMaskButton.hidden;
         const canConfirm =
             ready &&
@@ -2663,17 +2504,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         imageWidth = this.image.naturalWidth,
         imageHeight = this.image.naturalHeight
     ): void {
-        const canvasStyle = getComputedStyle(this.workCanvasRow.dom);
-        const horizontal = canvasStyle.flexDirection !== 'column';
-        const railWidth = horizontal ? this.toolRail.dom.offsetWidth + 8 : 0;
-        const railHeight = horizontal ? 0 : this.toolRail.dom.offsetHeight + 8;
-        const availableWidth = Math.max(
-            0,
-            this.workCanvasRow.dom.clientWidth - railWidth
-        );
+        const availableWidth = Math.max(0, this.workCanvasRow.dom.clientWidth);
         const availableHeight = Math.max(
             0,
-            this.workCanvasRow.dom.clientHeight - railHeight
+            this.workCanvasRow.dom.clientHeight
         );
         const idealWidth = resolveAIViewWorkAreaWidth({
             availableWidth,
@@ -2683,9 +2517,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         });
         if (idealWidth > 0) {
             this.imageViewport.style.width = `${idealWidth}px`;
-            this.imageViewport.style.flex = horizontal
-                ? `0 1 ${idealWidth}px`
-                : '1 1 auto';
+            this.imageViewport.style.flex = `0 1 ${idealWidth}px`;
         }
         const fitted = fitImageRect(
             this.imageViewport.clientWidth,

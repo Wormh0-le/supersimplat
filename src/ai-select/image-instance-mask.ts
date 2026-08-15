@@ -682,12 +682,7 @@ const boxIsInsideRgb = (
 const promptMatchesMultimaskPolicy = (
     prompt: ImageInstancePromptArtifact
 ): boolean => {
-    const mayUseMultimask =
-        prompt.positivePoints.length === 1 &&
-        prompt.negativePoints.length === 0 &&
-        prompt.positiveBox === undefined &&
-        prompt.previousLogitsRefDigest === undefined;
-    return prompt.multimaskOutput === mayUseMultimask;
+    return prompt.multimaskOutput === false;
 };
 
 const promptHasPositiveSeed = (
@@ -771,7 +766,7 @@ const isImageInstanceMaskResultInput = (
         value.schemaVersion !== imageInstanceMaskResultSchemaVersion ||
         !isImageInstanceMaskRequestIdentity(value.requestIdentity) ||
         !Array.isArray(value.masks) ||
-        value.masks.length > 3 ||
+        value.masks.length > 1 ||
         !value.masks.every(
             (mask) =>
                 isMaskArtifact(mask) && maskArtifactDigestMatchesBytes(mask)
@@ -1110,7 +1105,7 @@ export const imageInstanceMaskResultMatchesRequest = (
                 mask.width !== request.rgb.width ||
                 mask.height !== request.rgb.height
         ) ||
-        result.masks.length > (request.prompt.multimaskOutput ? 3 : 1)
+        result.masks.length > 1
     ) {
         return false;
     }

@@ -135,8 +135,9 @@ Invariants:
 - result exactly echoes accepted request identity;
 - resolved RGB bytes match request digest and dimensions;
 - Mask, score and optional ref cardinality match;
-- `multimaskOutput=false` produces at most one usable Mask;
-- `multimaskOutput=true` produces at most three;
+- the current 04C product policy requires `multimaskOutput=false` and produces
+  at most one usable Mask; `true` is retained only as a legacy schema field and
+  fails current request validation;
 - empty result is representable as semantic unavailable;
 - transport/runtime/OOM/cancellation failure produces no partial result;
 - model score is adapter-local preview ordering only;
@@ -171,7 +172,7 @@ Future video tracking requires a new ADR and separate contract.
 
 - exact View/RGB;
 - exact Prompt artifact and inference result;
-- chosen Mask when Anchor multimask is used;
+- the automatically adopted single Anchor Mask;
 - exact MaskReviewResult;
 - current Stable authority;
 - publication policy and attempt identity.

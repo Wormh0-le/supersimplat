@@ -783,7 +783,7 @@ test('an automatic Generated View can be corrected through the same Mask session
     );
 });
 
-test('one Point auto-generates up to three candidates with exact RGB on first ship', async () => {
+test('one Point auto-generates one editable Mask with exact RGB on first ship', async () => {
     const harness = createHarness();
     await driveToActive(harness);
     const viewId = await addReadyUserView(harness);
@@ -802,38 +802,20 @@ test('one Point auto-generates up to three candidates with exact RGB on first sh
 
     harness.proposalProvider.deferreds[0].resolve(
         maskResponseFor(request, {
-            proposals: [0, 1, 2].map((index) =>
-                proposalFor(request, index, {
-                    withLogitsRef: index === 0
-                })
-            )
+            proposals: [proposalFor(request, 0, { withLogitsRef: true })]
         })
     );
     await pending;
     const state = session.state;
     assert.equal(state.requestStatus, 'idle');
-    assert.equal(state.proposalStatus, 'ambiguous');
-    assert.equal(state.proposalSet.proposals.length, 3);
+    assert.equal(state.proposalStatus, 'editing');
+    assert.equal(state.proposalSet.proposals.length, 1);
     assert.equal(
-        state.previewedProposalId,
-        state.proposalDecision.selectedProposalId
+        state.acceptedProposalId,
+        state.proposalSet.proposals[0].proposalId
     );
-    let previewPublicationCount = 0;
-    const unsubscribe = session.subscribe(() => {
-        previewPublicationCount += 1;
-    });
-    session.previewProposal(state.proposalSet.proposals[1].proposalId);
-    assert.equal(
-        session.state.previewedProposalId,
-        state.proposalSet.proposals[1].proposalId
-    );
-    assert.equal(previewPublicationCount, 2);
-    // Restore the suggested candidate, which is the one carrying the opaque
-    // logits ref in this fixture, before exercising refinement below.
-    session.previewProposal(state.proposalDecision.selectedProposalId);
-    assert.equal(previewPublicationCount, 3);
-    unsubscribe();
-    // The suggested candidate's opaque ref is the refinement lineage.
+    assert.ok(state.editingMask);
+    // The sole result's opaque ref is the refinement lineage.
     const followUp = session.addPrompt({
         xPx: 8,
         yPx: 8,
@@ -853,14 +835,13 @@ test('one Point auto-generates up to three candidates with exact RGB on first sh
     );
     harness.proposalProvider.deferreds[1].resolve(maskResponseFor(refinement));
     await followUp;
-    assert.ok(session.state.previewedProposalId);
+    assert.ok(session.state.editingMask);
     session.applyBrushStroke({
         xPx: 12,
         yPx: 12,
         radiusPx: 1,
         mode: 'add'
     });
-    assert.equal(session.state.previewedProposalId, null);
     assert.ok(session.state.editingMask);
 });
 
@@ -898,7 +879,8 @@ test('Box/multiple-Point prompts return exactly one candidate (multimask policy)
     await retry;
     assert.equal(session.state.requestStatus, 'idle');
     assert.equal(session.state.proposalSet.proposals.length, 1);
-    assert.equal(session.state.proposalStatus, 'selected');
+    assert.equal(session.state.proposalStatus, 'editing');
+    assert.ok(session.state.editingMask);
 });
 
 test('an explicit Retry omits the previous-logits refinement ref', async () => {

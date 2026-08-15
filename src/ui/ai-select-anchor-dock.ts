@@ -7,6 +7,7 @@ import {
 import { i18n } from './localization';
 import {
     resolveAIViewDockColumns,
+    resolveAIViewToolLayout,
     resolveAIViewWorkAreaWidth
 } from '../ai-select/ai-view-dock-layout';
 import {
@@ -239,6 +240,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly overlay: HTMLCanvasElement;
     private readonly technicalDetails: HTMLDetailsElement;
     private readonly technicalDetailsBody: HTMLPreElement;
+    private readonly primaryActions: Container;
     private readonly maskActions: Container;
     private readonly palette: AISelectFloatingPalette;
     private readonly acceptProposalButton: Button;
@@ -543,9 +545,17 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             id: 'ai-select-proposal-stepper',
             hidden: true
         });
-        this.previousProposalButton = new Button({ text: '‹' });
-        this.nextProposalButton = new Button({ text: '›' });
-        this.proposalStepperLabel = new Label();
+        this.previousProposalButton = new Button({
+            id: 'ai-select-proposal-previous',
+            text: '‹'
+        });
+        this.nextProposalButton = new Button({
+            id: 'ai-select-proposal-next',
+            text: '›'
+        });
+        this.proposalStepperLabel = new Label({
+            id: 'ai-select-proposal-position'
+        });
         const renderProposalNavigationLabels = (): void => {
             this.previousProposalButton.dom.setAttribute(
                 'aria-label',
@@ -578,6 +588,14 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.proposalStepper.append(this.previousProposalButton);
         this.proposalStepper.append(this.proposalStepperLabel);
         this.proposalStepper.append(this.nextProposalButton);
+        this.proposalStepper.dom.addEventListener('pointerdown', (event) =>
+            event.stopPropagation()
+        );
+        this.imageSurface.appendChild(this.proposalStepper.dom);
+        this.acceptProposalButton.dom.addEventListener('pointerdown', (event) =>
+            event.stopPropagation()
+        );
+        this.imageSurface.appendChild(this.acceptProposalButton.dom);
         i18n.bindText(this.acceptProposalButton, 'ai-select.proposal.accept');
         this.acceptProposalButton.on('click', () => {
             const authoring = this.authoring();
@@ -962,15 +980,14 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         information.append(assessmentGroup);
         information.append(maskGroup);
         information.append(recoveryGroup);
-        const primaryActions = new Container({
-            id: 'ai-select-anchor-dock-primary-actions'
+        this.primaryActions = new Container({
+            id: 'ai-select-anchor-dock-primary-actions',
+            hidden: true
         });
-        primaryActions.dom.appendChild(this.proposalSelect);
-        primaryActions.append(this.proposalStepper);
-        primaryActions.append(this.selectedViewPrimaryButton);
-        primaryActions.append(this.anchorActions);
-        primaryActions.append(this.acceptProposalButton);
-        primaryActions.append(this.maskActions);
+        this.primaryActions.dom.appendChild(this.proposalSelect);
+        this.primaryActions.append(this.selectedViewPrimaryButton);
+        this.primaryActions.append(this.anchorActions);
+        this.primaryActions.append(this.maskActions);
         navigator.append(navigatorHeader);
         navigator.append(this.gallery);
         this.workCanvasRow = new Container({
@@ -984,7 +1001,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         workHeader.append(this.status);
         workArea.append(workHeader);
         workArea.append(this.workCanvasRow);
-        workArea.append(primaryActions);
+        workArea.append(this.primaryActions);
         inspector.append(information);
         mainRow.append(navigator);
         mainRow.append(workArea);
@@ -994,10 +1011,19 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         let navigatorPreference: boolean | undefined;
         let inspectorPreference: boolean | undefined;
         const renderColumns = (): void => {
+            const width = mainRow.dom.clientWidth;
+            const toolLayout = resolveAIViewToolLayout({
+                width,
+                canvasHeight: this.workCanvasRow.dom.clientHeight
+            });
+            mainRow.dom.dataset.spacious = (width >= 1600).toString();
             mainRow.dom.dataset.compactTools = (
-                mainRow.dom.clientWidth <= 1180
+                toolLayout === 'horizontal'
             ).toString();
-            const columns = resolveAIViewDockColumns(mainRow.dom.clientWidth, {
+            mainRow.dom.dataset.shortTools = (
+                toolLayout === 'short-vertical'
+            ).toString();
+            const columns = resolveAIViewDockColumns(width, {
                 ...(navigatorPreference === undefined
                     ? {}
                     : { navigator: navigatorPreference }),
@@ -1065,7 +1091,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             },
             true
         );
-        new ResizeObserver(renderColumns).observe(mainRow.dom);
+        const dockLayoutObserver = new ResizeObserver(renderColumns);
+        dockLayoutObserver.observe(mainRow.dom);
+        dockLayoutObserver.observe(this.workCanvasRow.dom);
         renderColumns();
 
         controller.subscribe((state) => {
@@ -1221,6 +1249,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             }
             this.renderSelectedViewMetadata(inspected);
             this.renderGallery(presentation);
+            this.renderPrimaryActionsVisibility();
             return;
         }
         if (presentation.rgb) {
@@ -1255,6 +1284,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.renderAnchorActions(presentation);
         this.renderCurrentMaskOverlay();
         this.renderGallery(presentation);
+        this.renderPrimaryActionsVisibility();
     }
 
     private renderCandidateStatus(): void {
@@ -2130,8 +2160,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.restoreAutoButton.enabled =
             editingReady && maskState.canRestoreAuto;
         const mask = getViewMaskPresentation(maskState);
-        this.maskActions.hidden =
-            !mask.showConfirm && !mask.showRetry && !editingReady;
+        this.maskActions.hidden = !mask.showConfirm && !mask.showRetry;
     }
 
     /**
@@ -2240,16 +2269,18 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             (candidate) => candidate.proposalId === preferredProposalId
         );
         this.proposalSelect.hidden = true;
-        this.proposalStepper.hidden = proposalIds.length === 0;
+        this.proposalStepper.hidden =
+            proposalIds.length <= 1 ||
+            proposal === undefined ||
+            proposal.proposalId === maskState.acceptedProposalId;
         const proposalIndex = Math.max(
             0,
             proposalIds.indexOf(preferredProposalId)
         );
-        this.proposalStepperLabel.text = `${i18n.t(
-            'ai-select.proposal.option'
-        )} ${i18n.formatInteger(proposalIndex + 1)} / ${i18n.formatInteger(
-            proposalIds.length
-        )}`;
+        this.proposalStepperLabel.text =
+            proposalIds.length === 0
+                ? ''
+                : `${i18n.t('ai-select.proposal.option')} ${i18n.formatInteger(proposalIndex + 1)} / ${i18n.formatInteger(proposalIds.length)}`;
         this.previousProposalButton.enabled = proposalIndex > 0;
         this.nextProposalButton.enabled =
             proposalIndex < proposalIds.length - 1;
@@ -2259,6 +2290,14 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.acceptProposalButton.enabled =
             ready && !this.acceptProposalButton.hidden;
         this.image.style.cursor = cursorForTool(this.activeTool);
+    }
+
+    private renderPrimaryActionsVisibility(): void {
+        this.primaryActions.hidden = [
+            this.selectedViewPrimaryButton,
+            this.anchorActions,
+            this.maskActions
+        ].every((action) => action.hidden);
     }
 
     private renderPromptStatus(

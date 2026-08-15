@@ -64,7 +64,8 @@ Status: current reusable interface guidance
 - Inspector 初始宽度范围：`280–350px`。
 - Work Area 的理想宽度由可用高度、权威图像宽高比和侧栏约束共同决定，不无条件吞掉剩余空间。
 - 图像使用完整、居中、等比的 contain 语义；不为消除空白而 crop 或 stretch。
-- 多余横向空间优先提升 Navigator 和 Inspector 的有效信息承载，不扩大无信息字母箱。
+- Dock 使用完整容器宽度，不在最大化窗口中保留固定舞台外边距。
+- 多余横向空间优先提升 Navigator 和 Inspector 的有效信息承载；约 `1600px` 以上可将卡片和信息分组排成多列，不扩大无信息字母箱。
 - 约 `1280×720` 提供完整三栏；约 `1024×720` 保留 Navigator 和 Work Area，Inspector 可折叠；更窄时 Work Area 常驻，两侧栏均可折叠。
 - 展开的侧栏推挤 Work Area，不覆盖图像。
 - Dock 默认高度 `420px`，最小 `300px`，最大为主编辑区域高度减 `160px`。
@@ -102,7 +103,8 @@ Status: current reusable interface guidance
 
 - 结构：约 `28px` 的轻量标题行、非覆盖式 Tool Rail、主内容、唯一 Action Bar。
 - 一次只显示一个主操作；无关操作隐藏，暂时不可用的操作保留并紧邻解释原因。
-- 提案切换使用前后 stepper，不在侧栏复制下拉选择，也不展示未经校准的模型分数。
+- 没有主操作时，Action Bar 整体隐藏并把高度还给图像。
+- 多 Proposal 切换使用图像上的相册式前后控件，仅在 hover/focus 时显示；单 Proposal 不显示切换器，零 Proposal 不显示计数。接受动作仍保留 Proposal → Editing Mask 的明确边界，但作为图像内紧凑控件显示，不单独占据 Action Bar。
 
 ### Inspector
 

@@ -82,7 +82,8 @@ Gallery 是 Navigator，不是独立工作阶段。Anchor View、Generated View 
 - Inspector 的实现起始范围为 `280–350px`。
 - Work Area 不无条件占用全部剩余宽度。图像高度、权威 RGB 宽高比和侧栏约束共同决定理想宽度。
 - 图像继续使用 contain 语义：完整显示、等比缩放、居中，不使用 crop 或 stretch 消除空白。
-- 多余横向空间优先分配给 Navigator 和 Inspector 的有效内容，不扩大无信息的图像字母箱区域。
+- Dock 使用完整容器宽度，不在最大化窗口中居中保留固定舞台外边距。
+- 多余横向空间优先分配给 Navigator 和 Inspector 的有效内容；宽于约 `1600px` 时，Navigator 卡片和 Inspector 分组可使用多列，而不扩大无信息的图像字母箱区域。
 - 精确阈值由容器尺寸和浏览器走查校准，不以浏览器窗口宽度代替 Dock 实际宽度。
 
 ### 响应式退化
@@ -193,22 +194,25 @@ Work Area 包含：
 1. 约 `28px` 高的轻量 View 标题行，显示名称、来源和 Assessment；
 2. 图像左侧的竖向 Tool Rail；
 3. 权威 RGB、Prompt、Mask overlay 和 Box preview；
-4. 图像下方唯一的 View Action Bar。
+4. 图像下方唯一的 View Action Bar；Proposal 接受动作例外，紧贴图像显示。
 
 Tool Rail 暴露 Positive Point、Negative Point、Positive Instance Box、Paint 和 Erase。它不覆盖图像；约 `1024px` 宽时可改为横向工具栏。
 
 ### Mask Proposal
 
-一点 Prompt 返回多个 Mask Proposal 时，View Action Bar 使用前后切换器：
+一点 Prompt 返回多个 Mask Proposal 时，图像使用相册式前后切换器：
 
 ```text
-‹  Mask proposal 1 / 3  ›                 Accept Proposal
+‹              Mask proposal 1 / 3              ›
+                              [Accept Proposal]
 ```
 
 - 中间图像预览当前 Proposal。
+- 左右切换按钮只在图像 hover 或键盘 focus 时显示。
+- 只有一个 Proposal 时不显示切换器；没有 Proposal 时不显示序号或 Proposal 操作。
 - 不使用 Inspector 中的下拉框。
 - 不显示未经校准的 raw model score。
-- 接受 Proposal 后进入 Editing Mask；View Action Bar 切换到 Mask 编辑操作。
+- `Accept Proposal` 仍是把临时 Proposal 变为 Editing Mask 的明确边界，但作为图像内的紧凑控件显示，不单独占据 Action Bar；接受后图像切换器和接受控件一起隐藏。
 
 ### 主操作
 
@@ -223,6 +227,7 @@ Tool Rail 暴露 Positive Point、Negative Point、Positive Instance Box、Paint
 | 当前 View 已完成 | `Next Review`     |
 
 无关操作隐藏。只有操作存在但暂时被阻止时才禁用，并紧邻显示原因。
+没有任何主操作时，View Action Bar 整体隐藏并把高度还给图像。
 
 `Next Review` 不自动执行。按钮和键盘快捷键显式前往下一张 Needs Review View；具体按键需要在实现时完成现有快捷键冲突审计，并显示在 tooltip 中。
 
@@ -287,6 +292,7 @@ UI 实现至少需要：
 - 增加 View A 草稿 → View B → View A 的显式保留测试；
 - 验证当前 View 在过滤后仍固定可见；
 - 验证 Proposal stepper、单一主操作和 Candidate 顶栏状态投影；
+- 验证 0/1/多个 Proposal 分别隐藏、仅显示接受动作、显示相册式切换；
 - 在尺寸矩阵和状态矩阵下保存浏览器截图或走查记录；
 - 运行 `rtk npm test`、`rtk npm run lint`、`rtk npm run lint:locales` 和 `rtk npm run build`。
 

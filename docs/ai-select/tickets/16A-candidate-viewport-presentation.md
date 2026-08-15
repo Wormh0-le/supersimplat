@@ -88,10 +88,13 @@ supported application entry points or a Candidate that cannot be applied.
 - [ ] The Work Area contains a lightweight View header, non-overlapping Tool
       Rail, authoritative RGB/Prompt/Mask canvas and one View Action Bar. Around
       `1024px`, the Tool Rail may become horizontal.
-- [ ] Proposal choice uses a previous/next stepper in the View Action Bar and
-      shows no uncalibrated raw model score. Each View state exposes exactly one
-      primary action: Accept Proposal, Confirm Mask, Confirm As Is, Retry Mask
-      or explicit Next Review.
+- [ ] Proposal choice uses previous/next controls over the image, revealed on
+      hover or keyboard focus only when more than one Proposal exists. One
+      Proposal has no switcher; zero Proposals expose no counter or action; no
+      uncalibrated raw model score is shown. Accept Proposal is a compact image
+      overlay instead of a dedicated action row. Each View state exposes exactly
+      one primary action: Accept Proposal, Confirm Mask, Confirm As Is, Retry
+      Mask or explicit Next Review. An empty View Action Bar is hidden.
 - [ ] Inspector owns current-View explanations and low-frequency/recovery
       actions. It does not duplicate the primary action or Participation toggle.
 - [ ] Planner Planning/Failed/exhausted status never replaces Anchor or
@@ -149,7 +152,7 @@ supported application entry points or a Candidate that cannot be applied.
       restart the Target. Technical blocker identity remains in tooltip/details.
 - [ ] `More` contains low-frequency View actions, Restart and Exit. Candidate
       Overlay and the four native operations never enter overflow; `Undo and
-    Fix` may enter `More` on narrow layouts.
+  Fix` may enter `More` on narrow layouts.
 - [ ] Narrow layouts remain one row and fall back to native operation icons with
       accessible tooltips before allowing overflow or wrapping.
 

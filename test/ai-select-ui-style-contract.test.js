@@ -57,7 +57,7 @@ test('Candidate shader state is independent and explicitly released', () => {
     assert.match(shader, /candidateStateValue == 2u/);
 });
 
-test('AI View Dock keeps its compact bar and workspace on the accepted 1440px stage', () => {
+test('AI View Dock uses the full Dock width and gives ultrawide space to useful sidebars', () => {
     const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
     const header = styles.match(
         /#ai-select-anchor-dock-header\s*\{(?<body>[\s\S]*?)\n\}/
@@ -69,29 +69,80 @@ test('AI View Dock keeps its compact bar and workspace on the accepted 1440px st
     assert.ok(workspace, 'missing Dock workspace styles');
     assert.match(header, /display:\s*flex;/);
     assert.match(header, /height:\s*48px;/);
-    assert.match(header, /max-width:\s*1440px;/);
-    assert.match(header, /margin-inline:\s*auto;/);
+    assert.doesNotMatch(header, /max-width:\s*1440px;/);
+    assert.doesNotMatch(header, /margin-inline:\s*auto;/);
     assert.match(
         header,
         /#ai-select-candidate-actions\.pcui-hidden[\s\S]*?#ai-select-navigator-toggle[\s\S]*?margin-left:\s*auto;/
     );
-    assert.match(workspace, /max-width:\s*1440px;/);
-    assert.match(workspace, /margin-inline:\s*auto;/);
+    assert.doesNotMatch(workspace, /max-width:\s*1440px;/);
+    assert.doesNotMatch(workspace, /margin-inline:\s*auto;/);
+    assert.match(
+        styles,
+        /#ai-select-anchor-dock-main\[data-spacious='true'\][\s\S]*?#ai-select-view-navigator[\s\S]*?width:\s*28%;[\s\S]*?#ai-select-view-inspector[\s\S]*?width:\s*34%;/
+    );
     assert.match(
         styles,
         /#ai-select-anchor-dock-availability\s*\{[\s\S]*?display:\s*flex;/
     );
 });
 
-test('Proposal navigation is one compact row inside the View Action Bar', () => {
+test('Proposal navigation overlays the image only for a real multi-proposal choice', () => {
     const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
+    const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
     const stepper = styles.match(
         /#ai-select-proposal-stepper\s*\{(?<body>[\s\S]*?)\n\}/
     )?.groups?.body;
     assert.ok(stepper, 'missing proposal stepper styles');
-    assert.match(stepper, /display:\s*flex;/);
-    assert.match(stepper, /flex-direction:\s*row;/);
-    assert.match(stepper, /white-space:\s*nowrap;/);
+    assert.match(stepper, /position:\s*absolute;/);
+    assert.match(stepper, /inset:\s*0;/);
+    assert.match(stepper, /opacity:\s*0;/);
+    assert.match(
+        dock,
+        /this\.imageSurface\.appendChild\(this\.proposalStepper\.dom\)/
+    );
+    assert.match(
+        dock,
+        /this\.imageSurface\.appendChild\(this\.acceptProposalButton\.dom\)/
+    );
+    assert.doesNotMatch(
+        dock,
+        /primaryActions\.append\(this\.proposalStepper\)/
+    );
+    assert.doesNotMatch(
+        dock,
+        /primaryActions\.append\(this\.acceptProposalButton\)/
+    );
+    assert.match(
+        dock,
+        /this\.proposalStepper\.hidden\s*=\s*proposalIds\.length\s*<=\s*1/
+    );
+});
+
+test('the View Action Bar releases image height when there is no primary action', () => {
+    const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
+    assert.match(dock, /private readonly primaryActions:\s*Container;/);
+    assert.match(dock, /this\.primaryActions\.hidden\s*=/);
+    assert.match(
+        dock,
+        /this\.maskActions\.hidden\s*=\s*!mask\.showConfirm\s*&&\s*!mask\.showRetry;/
+    );
+});
+
+test('a short ultrawide Dock uses the compact two-dimensional Tool Rail', () => {
+    const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
+    assert.match(
+        styles,
+        /#ai-select-anchor-dock-main\[data-compact-tools='true'\][\s\S]*?#ai-select-view-work-canvas-row[\s\S]*?align-items:\s*center;/
+    );
+    assert.match(
+        styles,
+        /#ai-select-anchor-dock-main\[data-short-tools='true'\][\s\S]*?\.palette-history-group[\s\S]*?flex-direction:\s*row;/
+    );
+    assert.match(
+        styles,
+        /#ai-select-anchor-dock-main\[data-short-tools='true'\][\s\S]*?\.palette-tool[\s\S]*?width:\s*38px;[\s\S]*?height:\s*38px;/
+    );
 });
 
 test('Navigator remains useful with an Anchor before generated Views exist', () => {

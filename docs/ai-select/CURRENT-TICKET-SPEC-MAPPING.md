@@ -1,12 +1,12 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.25
+# Current Final Spec v1.3 → Ticket Mapping — v2.26
 
-Status: **current normative ticket mapping — Ticket 16 implemented; Ticket 17 ready**
+Status: **current normative ticket mapping — Ticket 16 core implemented; Ticket 16A ready**
 
 This file maps every active AI Select parent Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
 Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical. ADR 0016 supersedes conflicting route/backend/planner details in ADR 0014 and DG-24 through DG-26. ADR 0017 is current where TargetGeometryHint Geometry Quality and Prompt Support semantics are involved.
 
-All 31 parent Ticket files carry a direct current mapping to Final Spec v1.3. Ticket 14A–14D are implementation stages under parent Ticket 14; they refine execution scope without creating a competing specification authority.
+All 31 parent Ticket files carry a direct current mapping to Final Spec v1.3. Ticket 14A–14D and post-closure Ticket 16A are implementation stages under their respective parent Tickets; they refine execution scope without creating a competing specification authority.
 
 | Ticket | Final Spec v1.3 mapping    | Current responsibility                                                         |
 | ------ | -------------------------- | ------------------------------------------------------------------------------ |
@@ -34,8 +34,8 @@ All 31 parent Ticket files carry a direct current mapping to Final Spec v1.3. Ti
 | 13     | §§14, 20–21, 24–26         | sole coverage, visibility and Lift Readiness authority                         |
 | 14     | §§20–22, 24–25             | reference P/N/V, aggregation, Gaussian lifting and Candidate                   |
 | 15     | §§19–22, 24                | Candidate correction and explicit Re-Lift                                      |
-| 16     | §§22, 24                   | Native Set/Add/Remove/Intersect                                                |
-| 17     | §§4, 19, 22, 24            | Undo-and-Fix, Restart and target lifecycle                                     |
+| 16     | §§22, 24                   | Native application core: gate, algebra, SelectOp/EditHistory and record        |
+| 17     | §§4, 19, 22, 24            | Undo-and-Fix, Restart and target lifecycle after 16A                           |
 | 18     | §§4, 19, 22, 24            | Suspended state and exact Undo recovery                                        |
 | 19     | §§3–5, 20–21, 24–25        | SceneSnapshot, authoritative RGB and Render Working Set                        |
 | 20     | §§4–5, 20–22, 24–25        | production same-decision P/N/V Evidence                                        |
@@ -59,6 +59,18 @@ Dependency:
 
 Stage contracts live under `docs/ai-select/tickets/14A-*` through `14D-*`. `docs/ai-select/TICKET-14-SPLIT.md` is the decomposition overview.
 
+## Ticket 16 post-closure presentation stage
+
+| Stage | Parent mapping                 | Responsibility                                                                     |
+| ----- | ------------------------------ | ---------------------------------------------------------------------------------- |
+| 16A   | Ticket 16 / §§4, 17–19, 22, 24 | AI View Dock, Candidate Overlay, fixed Toolbar, Status Bar and shared presentation |
+
+Ticket 16 remains implemented for native application semantics and adapters.
+Ticket 16A is a post-closure UI integration stage rather than a reopened or
+competing parent requirement source. It also implements the `Back to Candidate`
+transition required by the accepted cross-surface design while Ticket 15
+remains the owner of Correction/Re-Lift semantics.
+
 ## Current implementation frontier
 
 ```text
@@ -72,20 +84,26 @@ implemented prerequisites:
 - 14D — Atomic Candidate Publication & Reference Validation
 - 13 — Visible Evidence Coverage + View Diversity + Lift Readiness
 - 15 — Candidate correction + explicit Evidence-aware Re-Lift
-- 16 — Native Set/Add/Remove/Intersect
+- 16 — Native application core
 
-ready now:
-- 17
+current execution stage:
+- 16A — AI View Dock + Candidate viewport presentation
+
+follows 16A:
+- 17 — Applied Undo-and-Fix + Restart + multi-target lifecycle
 ```
 
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 17
-next_implementation_subticket = null
+next_implementation_ticket = 16
+next_implementation_subticket = 16A
 ```
 
-Ticket 17 is the sole current parent implementation frontier after Ticket 16 closure. Ticket 10 remains optional and may execute after parent Ticket 14 + 09 + 07 without blocking the core release path.
+Ticket 16 is the current parent compatibility frontier with 16A as its sole
+active post-closure execution stage. Ticket 17 follows 16A. Ticket 10 remains
+optional and may execute after parent Ticket 14 + 09 + 07 without blocking the
+core release path.
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported. The locked-GPU large-Gallery browser walkthrough for Ticket 09 passed on 2026-08-07. Ticket 11 shipped with repository test/lint/locales/build green; its locked-GPU browser walkthrough is still pending.
 
@@ -118,12 +136,13 @@ The mapping passes only when:
 - every parent Ticket resolves here;
 - every Ticket-local current mapping block points directly to Final Spec v1.3;
 - Ticket 14A–14D point to parent Ticket 14 and Final Spec v1.3 rather than creating a separate authority;
+- Ticket 16A points to parent Ticket 16 and Final Spec v1.3 rather than reopening Ticket 16's implemented application core;
 - no Ticket-local current mapping block names Final Spec v1.1, an Amendment, or Final Spec v1.2 as authority;
 - older spec names appear only under explicit historical/superseded/migration labels;
 - implemented prerequisites through 12 are not reported as current ready work;
 - parent Ticket 14 and stages 14A through 14D are recognized as implemented;
-- Tickets 13 through 16 are recognized as implemented and Ticket 17 as the sole current parent implementation frontier;
-- `next_implementation_ticket = 17` and a null substage are current;
+- Tickets 13 through 15 and Ticket 16's application core are recognized as implemented, with 16A as the current execution stage and Ticket 17 following it;
+- `next_implementation_ticket = 16` and `next_implementation_subticket = 16A` are current;
 - no active closure criterion relies on superseded v1.2 architecture;
 - provider requests carry resolvable authoritative RGB;
 - previous logits remain Companion-local behind opaque refs;

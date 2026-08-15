@@ -1,8 +1,8 @@
 # 17 — Applied Undo-and-Fix + complete Restart + multi-object/tool-switch lifecycle
 
-Status: ready-for-agent — Final Spec v1.3 mapped
+Status: planned — blocked by Ticket 16A
 
-Blocked by: 16, 05, 03
+Blocked by: 16A, 16, 05, 03
 
 ## Current Final Spec mapping
 
@@ -19,6 +19,7 @@ Final Spec v1.3 is the only current closure source.
 - Early Restart primitive
 - Native EditHistory
 - Per-view Evidence/Candidate target-local state
+- Ticket 16A Candidate Overlay, fixed Toolbar and shared presentation mapper
 
 ## Outputs / handoff artifacts
 
@@ -34,6 +35,9 @@ Complete lifecycle after application. Native Selection/EditHistory are durable c
 ## Acceptance criteria
 
 - [ ] Undo and Fix is available only when the associated native command is safely top-of-stack/undoable.
+- [ ] Undo and Fix occupies the accepted slot after Intersect and before More
+      in the fixed AI Select Toolbar; it is not rendered before its native
+      history behavior exists.
 - [ ] It performs Native Undo, keeps AI context alive, and enters Candidate correction.
 - [ ] Later native edits disable Undo and Fix; no hidden history traversal.
 - [ ] Restart is available across Generated Views, Review, Mask/Evidence/Lift dirty, Candidate Stale/Ready/Applied.
@@ -66,3 +70,5 @@ Complete lifecycle after application. Native Selection/EditHistory are durable c
 
 - No previous-target AI history browser
 - No Candidate clipboard
+- No reimplementation of Ticket 16 application algebra or Ticket 16A Candidate
+  Overlay/Toolbar/Status Bar ownership

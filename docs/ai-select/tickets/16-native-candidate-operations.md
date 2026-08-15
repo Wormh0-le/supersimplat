@@ -10,6 +10,7 @@ Blocked by: 15
 - ADR 0013 implementation staging where not superseded
 - DG-07 and Final Spec v1.1 Amendment 001 as historical native-application/readiness rationale only
 - MVP Phase 6 as historical implementation provenance
+- Ticket 16A as the post-closure AI View Dock and Candidate viewport-presentation stage
 
 Final Spec v1.3 is the only current closure source.
 
@@ -46,7 +47,9 @@ Ticket 14 may produce a reference/PoC Candidate before Ticket 20 provides produc
 - [x] Applying Candidate does not rerun Evidence/Lift.
 - [x] AI Select and CurrentTargetContext remain active after application.
 - [x] CandidateApplicationRecord binds Candidate revision, raster implementation, Evidence backend, runtime build, operation, and native history command.
-- [x] Candidate Applied shows operation and `Show AI Result`.
+- [x] The implemented closure surface showed Candidate Applied operation and
+      `Show AI Result`; Ticket 16A supersedes that Dock presentation without
+      changing this Ticket's application semantics.
 - [x] Candidate overlay is de-emphasized after application while Native Selection retains native style.
 - [x] Native Undo/Redo changes Native Selection without rerunning AI.
 - [x] Native Selection-only changes do not stale Evidence or Candidate.
@@ -72,9 +75,19 @@ status while native selection retains its editor styling; `Show AI Result`
 restores the status emphasis. This Ticket does not introduce a new spatial 3D
 Candidate renderer.
 
+## Post-closure presentation follow-up
+
+Ticket 16 remains implemented as the owner of applicability, exact set algebra,
+the Native `SelectOp`/`EditHistory` adapter and `CandidateApplicationRecord`.
+Ticket 16A replaces the closure-time Dock presentation with a real,
+non-destructive main-viewport Candidate Overlay, moves the four operations to
+the fixed AI Select Toolbar, adds the Status Bar Candidate projection and
+removes the old `Show AI Result`. Ticket 16A must reuse rather than reimplement
+this Ticket's application core.
+
 ## Validation
 
-- [x] `npm test` — 542 Node tests and 442 Companion tests passed; 1 Companion test skipped.
+- [x] `npm test` — 544 Node tests and 445 Companion tests passed; 1 Companion test skipped.
 - [x] `npm run lint`
 - [x] `npm run lint:locales` — all 8 non-English locales match the 513-key English catalog.
 - [x] `npm run build`

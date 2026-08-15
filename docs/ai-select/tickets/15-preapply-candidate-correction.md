@@ -85,6 +85,16 @@ Implement structural correction before Candidate application. Users change obser
   action groups use responsive button grids and scroll only after reaching the
   bound, so wrapped labels do not squeeze or clip lifecycle controls.
 
+## Post-closure presentation follow-up
+
+Ticket 15 remains implemented as the owner of pre-apply Correction and explicit
+Evidence-aware Re-Lift semantics. Ticket 16A owns the later cross-surface
+`Back to Candidate` integration required by the accepted Toolbar/Dock design:
+it exits Correction without publishing the retained editing draft, restores
+application when Stable inputs are unchanged, and otherwise keeps Candidate
+stale until explicit update. This follow-up does not reopen or replace Ticket
+15's implemented Re-Lift core.
+
 ## Validation
 
 - npm test

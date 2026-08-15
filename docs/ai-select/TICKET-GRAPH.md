@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.25
+# AI Select v1 — Implementation Ticket Graph v2.26
 
-Status: **active implementation graph — Final Spec v1.3 synchronized; Ticket 16 is implemented and Ticket 17 is current**
+Status: **active implementation graph — Final Spec v1.3 synchronized; Ticket 16 core is implemented and Ticket 16A is current**
 
 Branch: `ai-select-v1`
 
@@ -16,7 +16,7 @@ Branch: `ai-select-v1`
 
 Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical only. ADR 0014 and DG-24 through DG-26 are historical where they conflict with ADR 0016 / Final Spec v1.3.
 
-All 31 parent Ticket files contain a current mapping to Final Spec v1.3. Ticket 14A–14D are execution stages under parent Ticket 14 and do not create a second normative graph.
+All 31 parent Ticket files contain a current mapping to Final Spec v1.3. Ticket 14A–14D and Ticket 16A are execution stages under their respective parent Tickets and do not create a second normative graph.
 
 ## Current review closures
 
@@ -39,7 +39,9 @@ All 31 parent Ticket files contain a current mapping to Final Spec v1.3. Ticket 
 - Parent Ticket 14 is complete through 14A Evidence Contract & Working Set, 14B Reference Per-View P/N/V Evidence, 14C Multi-view Aggregation & Classification, and 14D Atomic Candidate Publication & Reference Validation.
 - Ticket 13 is complete as the versioned reference/calibration Visible Evidence Coverage, View Diversity and Lift Readiness path.
 - Ticket 15 is complete as the pre-apply Candidate correction and explicit Re-Lift path.
-- Ticket 16 is complete as the fail-closed native Candidate application path.
+- Ticket 16's fail-closed native Candidate application core is complete.
+- Ticket 16A is the current post-closure presentation stage for the real
+  Candidate Overlay, fixed Toolbar, Status Bar and Dock cutover.
 
 ## Dependency graph
 
@@ -105,7 +107,7 @@ Paint/Erase palette                + local Key Views
                        10 optional      13 Lift Readiness
                        diagnostics       │
                                          ▼
-                      15 → 16 → 17 → 18 → 19 → 20 → 21 → 22
+                      15 → 16 → 16A → 17 → 18 → 19 → 20 → 21 → 22
 ```
 
 Ticket 10 does not block Ticket 13, Ticket 21 or native application.
@@ -127,23 +129,32 @@ implemented prerequisites:
 - 14D — Atomic Candidate Publication & Reference Validation
 - 13 — Visible Evidence Coverage + View Diversity + Lift Readiness
 - 15 — Candidate correction + explicit Evidence-aware Re-Lift
-- 16 — Candidate → Native Set / Add / Remove / Intersect
+- 16 — Candidate → Native Set / Add / Remove / Intersect core
 
-current parent frontier:
+current parent compatibility frontier:
+- 16 — Native Candidate operations
+
+current execution stage:
+- 16A — AI View Dock + Candidate viewport presentation
+
+follows 16A:
 - 17 — Applied Undo-and-Fix + complete Restart + multi-object/tool-switch lifecycle
 
 current implementation stage:
-- no active Ticket 14 substage
+- 16A — post-closure Ticket 16 presentation integration
 ```
 
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 17
-next_implementation_subticket = null
+next_implementation_ticket = 16
+next_implementation_subticket = 16A
 ```
 
-Ticket 17 is the sole current parent implementation frontier. Tickets 15 and 16 and their Ticket 13 / parent Ticket 14 prerequisites are implemented. Ticket 10 remains optional and off the core release path.
+Ticket 16 is the current parent compatibility frontier with 16A as its sole
+active execution stage. Ticket 16's application core, Ticket 15 and their
+Ticket 13 / parent Ticket 14 prerequisites remain implemented. Ticket 17
+follows 16A. Ticket 10 remains optional and off the core release path.
 
 ## One valid topological order
 
@@ -152,7 +163,7 @@ Ticket 17 is the sole current parent implementation frontier. Tickets 15 and 16 
 → 04A → 04B → 06 → 07 → 04C
 → 02C → 07A → 07B / 08 → 08A → 08B → 08C / 09
 → 11 → 12 → 14A → 14B → 14C → 14D → 13
-→ 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22
+→ 15 → 16 → 16A → 17 → 18 → 19 → 20 → 21 → 22
 
 10 may execute any time after parent Ticket 14 + 09 + 07 and is not on the core release path.
 ```
@@ -171,6 +182,8 @@ Ticket 17 is the sole current parent implementation frontier. Tickets 15 and 16 
 - no visibility-readiness claims outside Ticket 13;
 - no ownership before Included Stable Masks → P/N/V;
 - no Candidate provenance browser or Gaussian Evidence inspector in Ticket 14D;
+- no Candidate Overlay membership stored in Native SplatState or EditHistory;
+- no duplicate Native Candidate Operations in both Dock and Toolbar after Ticket 16A closure;
 - Complete Contributor remains reference/debug only.
 
 See `docs/ai-select/TICKET-14-SPLIT.md` and the `docs/ai-select/tickets/14A-*` through `14D-*` stage contracts.

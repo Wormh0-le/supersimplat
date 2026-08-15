@@ -115,12 +115,16 @@ A target-local authoritative observation record containing CameraBinding, gsplat
 _Avoid_: inseparable Camera+RGB+Mask+Evidence tuple
 
 **AI View Dock**  
-The bottom editing surface for authoritative RGB, Gallery navigation, Mask prompting/brush editing, Mask version state, View assessment, Participation, and Candidate-production context. It does not own Native Candidate Operations that act on the main 3D viewport.  
+The responsive bottom editing surface with a View Navigator, selected-View RGB/Mask Work Area, and current-View Inspector. It owns Gallery navigation, Mask prompting/brush editing, Mask version state, View assessment, Participation, and Candidate-production context. It does not own Native Candidate Operations that act on the main 3D viewport.  
 _Avoid_: separate AI workspace
 
 **AI Select Toolbar**  
-The main-viewport subtoolbar active for AI Select. It owns 3D viewport interactions and Native Candidate Operations, while the AI View Dock owns View review and 2D Prompt/Mask authoring.  
-_Avoid_: Candidate application controls inside the AI View Dock
+The fixed, non-draggable, context-sensitive main-viewport subtoolbar active for AI Select. It owns 3D viewport interactions, Candidate Overlay control, and Native Candidate Operations, while the AI View Dock owns View review and 2D Prompt/Mask authoring.  
+_Avoid_: movable or separate Candidate toolbar; Candidate application controls inside the AI View Dock
+
+**Candidate Operation Group**  
+The control group inside the AI Select Toolbar that presents Candidate Overlay controls and applies Set, Add, Remove, or Intersect to Native Selection. Candidate count and lifecycle status remain in the Status Bar. It is not a separate control surface or toolbar.  
+_Avoid_: Candidate Bridge; draggable Candidate panel
 
 **Camera Inspection**  
 An explicit mode that saves the Scene View Camera, moves the Editor Camera to an observer pose, and exposes the Anchor/selected View Frustum. Inspection has an explicit target: the Anchor remains the only manipulable target (a final authoritative RGB is requested when Anchor manipulation ends), while a Generated View camera is planner-owned and observed read-only. The observer pose is never silently adopted as the Anchor.  
@@ -337,6 +341,10 @@ _Avoid_: exit AI Select, clear native selection
 **Native Candidate Operation**  
 One of Set, Add, Remove, or Intersect, applying the current valid Candidate through existing Native Selection/EditHistory semantics.  
 _Avoid_: inference mode, Prompt operation
+
+**Candidate Overlay**  
+A non-destructive main-viewport visualization of an inspectable Candidate, with an optional Uncertain layer. Its membership is transient presentation state distinct from native SplatState; it never mutates Native Selection or Native EditHistory.  
+_Avoid_: AI Result; Native Selection preview; temporary Native Selection mutation
 
 **Set** — `S' = C`  
 **Add** — `S' = S ∪ C`  

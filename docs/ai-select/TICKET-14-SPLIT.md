@@ -72,6 +72,12 @@ This stage does **not** add a Candidate provenance browser, Gaussian-level Evide
    |
    v
   16 Native Candidate operations
+   |
+   v
+  16A AI View Dock + Candidate viewport presentation
+   |
+   v
+  17 Applied lifecycle
 ```
 
 Ticket 10 remains optional and nonblocking.
@@ -79,6 +85,6 @@ Ticket 10 remains optional and nonblocking.
 Compatibility fields remain:
 
 ```text
-next_implementation_ticket = 17
-next_implementation_subticket = null
+next_implementation_ticket = 16
+next_implementation_subticket = 16A
 ```

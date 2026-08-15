@@ -1,4 +1,4 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.24
+# Eight-Pass Bidirectional Traceability Audit — v2.26
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
@@ -229,19 +229,44 @@ from tracker state and P/N/V ownership.
 - Ticket 16 is the sole current parent frontier, with
   `next_implementation_ticket = 16` and no active substage.
 
+## v2.25 Ticket 16 implementation closure / Ticket 17 ready
+
+- Ticket 16 implemented fail-closed applicability, exact Set/Add/Remove/
+  Intersect algebra, the Native `SelectOp`/`EditHistory` adapter and immutable
+  `CandidateApplicationRecord`.
+- Its closure-time UI used Dock operations and minimal Candidate status
+  emphasis; it explicitly did not claim a spatial 3D Candidate renderer.
+- Ticket 17 became ready after the Ticket 16 application core closed.
+
+## v2.26 AI View Dock + Candidate viewport presentation stage
+
+- The accepted Toolbar design adds a real, non-destructive Candidate Overlay,
+  fixed Candidate Operation Group, separate Status Bar Candidate projection,
+  shared cross-surface presentation mapper and atomic removal of Dock native
+  operations.
+- Ticket 16 remains implemented for its application core. Ticket 16A is a
+  post-closure execution stage rather than a reopened parent Ticket.
+- Ticket 16A also owns the new `Back to Candidate` integration; Ticket 15 keeps
+  Correction/Re-Lift semantics and Ticket 17 keeps `Undo and Fix`, native
+  history lifecycle, Restart and multi-target lifecycle.
+- `next_implementation_ticket = 16` remains the parent compatibility field and
+  `next_implementation_subticket = 16A` records the active stage.
+
 ## Pass 1 — Ticket graph and current frontier
 
 - Parent Ticket count: 31 total.
 - Ticket 14 execution-stage count: 4.
+- Ticket 16 post-closure execution-stage count: 1.
 - Missing blocker references: 0.
 - Parent Ticket cycle: false.
 - Parent topological order length: 31/31.
-- Implemented prerequisite chain is closed through 12, parent Ticket 14 / 14D, Ticket 13 and Ticket 15.
-- Current parent implementation frontier: `[16]`.
+- Implemented prerequisite chain is closed through 12, parent Ticket 14 / 14D, Ticket 13, Ticket 15 and Ticket 16's application core.
+- Current parent compatibility frontier: `[16]`.
 - Current Ticket 14 execution-stage frontier: `[]`.
+- Current Ticket 16 execution-stage frontier: `[16A]`.
 - Next implementation Ticket / current parent critical gate: `16`.
-- Next implementation subticket: none.
-- Ticket 16 prerequisites are implemented.
+- Next implementation subticket: `16A`.
+- Ticket 16A prerequisites are implemented; Ticket 17 follows 16A.
 - Ticket 10 is optional and does not block Ticket 13 or Ticket 21.
 
 Result: **PASS**
@@ -252,7 +277,7 @@ One valid execution order:
 01 → 02 → 03 → 04 → 05
 → 04A → 04B → 06 → 07 → 04C
 → 02C → 07A → 07B → 08 → 08A → 08B → 08C / 09
-→ 11 → 12 → 14A → 14B → 14C → 14D → 13 → 15 → 16 → 17 → 18
+→ 11 → 12 → 14A → 14B → 14C → 14D → 13 → 15 → 16 → 16A → 17 → 18
 → 19 → 20 → 21 → 22 → 10
 ```
 
@@ -273,6 +298,7 @@ Checks:
 - CURRENT-TICKET-SPEC-MAPPING maps all 31 parent Tickets to v1.3;
 - every one of the 31 parent Ticket files contains a direct current mapping to Final Spec v1.3;
 - 14A–14D explicitly inherit parent Ticket 14 + Final Spec v1.3 authority;
+- 16A explicitly inherits parent Ticket 16 + Final Spec v1.3 authority;
 - zero Ticket-local current mapping/status blocks name Final Spec v1.1, an Amendment, or Final Spec v1.2 as current authority;
 - older spec names appear only inside explicitly historical-provenance, historical-implementation, superseded-surface or migration-input sections;
 - ADR 0014 / DG-24–26 are historical where conflicting;
@@ -391,11 +417,12 @@ Result: **PASS**
 
 ## Pass 8 — Traceability and walkthrough coverage
 
-- Requirements: 56.
+- Requirements: 62.
 - Unmapped requirements: 0.
 - Orphan active parent Tickets: 0.
 - Parent Ticket-local direct v1.3 mappings: 31/31.
 - Ticket 14 execution-stage mappings: 4/4.
+- Ticket 16 post-closure stage mappings: 1/1.
 - Ticket-local legacy current mappings: 0.
 - Typical walkthroughs: 16.
 - Error walkthroughs: 16.
@@ -413,8 +440,8 @@ Active planning MUST NOT require:
 
 - Final Spec v1.1, an Amendment, or Final Spec v1.2 as a current closure source;
 - implemented Tickets 04C, 07, 08C or 09 as current ready work;
-- a `next_implementation_ticket` other than 16 while Ticket 16 is current;
-- a non-null `next_implementation_subticket` after all Ticket 14 stages close;
+- a `next_implementation_ticket` other than parent compatibility Ticket 16 while Ticket 16A is current;
+- a `next_implementation_subticket` other than 16A while the post-closure presentation stage is current;
 - Candidate provenance/source inspection, Gaussian Evidence inspection or direct Candidate editing as a 14D requirement;
 - ArtisanGS dense turnaround views, Cutie tracking, tracker reference frames or one-channel Gaussian Mask-feature optimization as current v1 requirements;
 - a current video-tracker/sequence interface merely because ArtisanGS is cited as inspiration;

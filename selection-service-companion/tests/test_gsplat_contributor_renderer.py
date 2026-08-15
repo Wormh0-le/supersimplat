@@ -1046,6 +1046,50 @@ class BoundaryContributorReconciliationTests(unittest.TestCase):
 
         self.assertIsNone(repaired)
 
+    def test_restores_rgb_inclusion_just_above_the_termination_cut(self) -> None:
+        # The RGB translation unit can retain the boundary Gaussian with a
+        # remaining transmittance a few float32 ulps above the cut while the
+        # contributor kernel rounds the same update just below it. The next
+        # valid Gaussian proves the RGB chain must stop immediately afterward.
+        front = [
+            self.gaussian(index + 1, sigma=self.sigma_for_alpha(0.89))
+            for index in range(4)
+        ]
+        incoming_transmittance = 0.11**4
+        scalar_next_transmittance = 1e-4 - 2e-10
+        boundary_alpha = 1.0 - (
+            scalar_next_transmittance / incoming_transmittance
+        )
+        boundary = self.gaussian(
+            5, sigma=self.sigma_for_alpha(boundary_alpha)
+        )
+        tail = self.gaussian(6, sigma=self.sigma_for_alpha(0.1))
+        gaussians = [*front, boundary, tail]
+        kernel_ids, kernel_weights, kernel_alpha = (
+            self.replay_contributor_chain(gaussians)
+        )
+        raster_alpha = 1.0 - (1e-4 + 1.6e-8)
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_alpha=kernel_alpha,
+            kernel_ids=kernel_ids,
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNotNone(repaired)
+        ids, weights, alpha = repaired
+        self.assertEqual(ids, (1, 2, 3, 4, 5))
+        self.assertAlmostEqual(alpha, raster_alpha, delta=1e-8)
+        self.assertLessEqual(
+            abs(sum(weights) - raster_alpha),
+            MASS_CONSERVATION_ATOL
+            + MASS_CONSERVATION_RTOL * abs(raster_alpha),
+        )
+
     def test_rejects_unexplained_missing_contributor(self) -> None:
         gaussians = self.front_gaussians()
         _, _, raster_alpha = self.replay_contributor_chain(gaussians)
@@ -1261,6 +1305,42 @@ class BoundaryContributorReconciliationTests(unittest.TestCase):
         self.assertIsNotNone(repaired)
         ids, _, _ = repaired
         self.assertEqual(ids, (1, 2, 3))
+
+    def test_tolerates_bounded_float32_noise_accumulated_through_a_prefix(self) -> None:
+        # A contributor weight includes the product of every preceding
+        # transmittance update. The locked CUDA kernel can therefore differ
+        # from the scalar replay by more than the single-operation ULP budget
+        # while still remaining inside the cumulative float32 error bound.
+        front = [
+            self.gaussian(index + 1, sigma=self.sigma_for_alpha(0.5))
+            for index in range(7)
+        ]
+        borderline = self.gaussian(8, sigma=5.50044204404077)
+        gaussians = [*front, borderline]
+        _, accepted_weights, _ = self.replay_contributor_chain(gaussians)
+        borderline_weight = (
+            borderline.opacity * math.exp(-5.50044204404077) * (0.5**7)
+        )
+        kernel_weights = [*accepted_weights, borderline_weight]
+        accumulated_noise = 3.5e-8
+        kernel_weights[6] += accumulated_noise
+        _, _, raster_alpha = self.replay_contributor_chain(
+            gaussians, force_exclude={8}
+        )
+
+        repaired = reconcile_boundary_contributors(
+            ordered_gaussians=gaussians,
+            pixel_x=8,
+            pixel_y=8,
+            raster_alpha=raster_alpha,
+            kernel_alpha=raster_alpha + borderline_weight + accumulated_noise,
+            kernel_ids=[*range(1, 9)],
+            kernel_weights=kernel_weights,
+        )
+
+        self.assertIsNotNone(repaired)
+        ids, _, _ = repaired
+        self.assertEqual(ids, tuple(range(1, 8)))
 
     def test_rejects_multiple_matching_variants(self) -> None:
         # Two identical borderline Gaussians deep in the chain: excluding

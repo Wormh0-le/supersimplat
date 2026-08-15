@@ -115,8 +115,12 @@ A target-local authoritative observation record containing CameraBinding, gsplat
 _Avoid_: inseparable Camera+RGB+Mask+Evidence tuple
 
 **AI View Dock**  
-The bottom editing surface for authoritative RGB, Gallery navigation, Mask prompting/brush editing, Mask version state, View assessment, Participation, and next-step actions.  
+The bottom editing surface for authoritative RGB, Gallery navigation, Mask prompting/brush editing, Mask version state, View assessment, Participation, and Candidate-production context. It does not own Native Candidate Operations that act on the main 3D viewport.  
 _Avoid_: separate AI workspace
+
+**AI Select Toolbar**  
+The main-viewport subtoolbar active for AI Select. It owns 3D viewport interactions and Native Candidate Operations, while the AI View Dock owns View review and 2D Prompt/Mask authoring.  
+_Avoid_: Candidate application controls inside the AI View Dock
 
 **Camera Inspection**  
 An explicit mode that saves the Scene View Camera, moves the Editor Camera to an observer pose, and exposes the Anchor/selected View Frustum. Inspection has an explicit target: the Anchor remains the only manipulable target (a final authoritative RGB is requested when Anchor manipulation ends), while a Generated View camera is planner-owned and observed read-only. The observer pose is never silently adopted as the Anchor.  

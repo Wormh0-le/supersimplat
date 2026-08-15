@@ -44,7 +44,6 @@ export interface AnchorDockMaskPresentation {
 export interface AnchorDockPresentation {
     readonly status: AnchorDockStatus;
     readonly rgb?: AnchorRgbArtifact;
-    readonly showFailureActions: boolean;
     readonly mask: AnchorDockMaskPresentation;
 }
 
@@ -56,7 +55,6 @@ const presentation = (
     return Object.freeze({
         status,
         ...(rgb === undefined ? {} : { rgb }),
-        showFailureActions: status === 'failed',
         mask
     });
 };

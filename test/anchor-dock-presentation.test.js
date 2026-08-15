@@ -85,10 +85,9 @@ test('AI View Dock displays the newest ready interactive RGB instead of a retain
 
     assert.equal(result.status, 'previewing');
     assert.equal(result.rgb.digest, interactiveRgb.digest);
-    assert.equal(result.showFailureActions, false);
 });
 
-test('AI View Dock exposes Retry when an interactive preview fails while retaining a valid RGB', () => {
+test('AI View Dock keeps an interactive preview failure status-only while retaining a valid RGB', () => {
     const formalRgb = rgb('sha256:formal');
 
     const result = getAnchorDockPresentation(
@@ -108,7 +107,7 @@ test('AI View Dock exposes Retry when an interactive preview fails while retaini
 
     assert.equal(result.status, 'failed');
     assert.equal(result.rgb.digest, formalRgb.digest);
-    assert.equal(result.showFailureActions, true);
+    assert.equal(Object.hasOwn(result, 'showFailureActions'), false);
 });
 
 const maskState = (overrides = {}) => ({
@@ -179,7 +178,6 @@ test('AI View Dock Mask surface keeps Mask failure distinct from render state', 
         })
     );
     assert.equal(result.status, 'ready');
-    assert.equal(result.showFailureActions, false);
     assert.equal(result.mask.status, 'failed');
     assert.equal(result.mask.errorMessage, 'SAM failed.');
     assert.equal(result.mask.showRetry, true);

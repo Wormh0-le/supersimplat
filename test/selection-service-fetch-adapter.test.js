@@ -1354,6 +1354,60 @@ const maskBitset = (width, height, foreground = [[10, 12]]) => {
     };
 };
 
+const candidateReLiftRequest = () => {
+    const evidenceWorkingSet = createEvidenceWorkingSet({
+        targetSplatId: 'scene-1',
+        coreTargetStableIds: [3],
+        contextStableGaussianIds: []
+    });
+    const stableMask = maskBitset(64, 48, [[0, 0]]);
+    const bindingDigest = cameraBindingDigest(anchorCameraBinding);
+    return {
+        liftAttemptId: 'candidate-re-lift-1',
+        snapshot: anchorSnapshot,
+        requestBinding: anchorRequest.requestBinding,
+        targetSplatId: 'scene-1',
+        classificationUniverseStableGaussianIds: [3],
+        classificationScopeStableGaussianIds: [3],
+        evidenceWorkingSet,
+        views: [
+            {
+                currentInput: {
+                    requestBinding: anchorRequest.requestBinding,
+                    targetSplatId: 'scene-1',
+                    view: {
+                        viewId: 'view-1',
+                        renderStatus: 'ready',
+                        participation: 'included',
+                        cameraBindingDigest: bindingDigest,
+                        rgbDigest: `sha256:${'b'.repeat(64)}`,
+                        stableMaskDigest: stableMask.digest
+                    },
+                    evidencePolicyDigest:
+                        'sha256:debcee99d261f28ab373b16016447f056872476a960a1af23599cc6ea1f20efd',
+                    renderWorkingSet: {
+                        targetSplatId: 'scene-1',
+                        dependencyToken:
+                            anchorRequest.requestBinding.dependencyToken,
+                        cameraBindingDigest: bindingDigest,
+                        renderWorkingSetToken: anchorSnapshot.contentDigest,
+                        stableGaussianIds: [3],
+                        completeness: 'complete'
+                    },
+                    evidenceWorkingSet,
+                    rasterImplementationId: 'gsplat-reference-rgb/v1',
+                    evidenceBackendKind: 'reference-contributor',
+                    evidenceBackendId: 'complete-contributor/reference-v1',
+                    runtimeBuildId:
+                        'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40'
+                },
+                cameraBinding: anchorCameraBinding,
+                stableMask
+            }
+        ]
+    };
+};
+
 const maskReply = (request, overrides = {}) => {
     const promptConsistency = {
         positivePointsSatisfied: true,
@@ -1688,58 +1742,70 @@ test('bounds a Candidate Re-Lift transport that never completes', async () => {
             throw new Error('late transport failure');
         }
     });
-    const evidenceWorkingSet = createEvidenceWorkingSet({
-        targetSplatId: 'scene-1',
-        coreTargetStableIds: [3],
-        contextStableGaussianIds: []
-    });
-    const stableMask = maskBitset(64, 48, [[0, 0]]);
-    const bindingDigest = cameraBindingDigest(anchorCameraBinding);
-    const request = {
-        liftAttemptId: 'candidate-re-lift-timeout-1',
-        snapshot: anchorSnapshot,
-        requestBinding: anchorRequest.requestBinding,
-        targetSplatId: 'scene-1',
-        classificationUniverseStableGaussianIds: [3],
-        classificationScopeStableGaussianIds: [3],
-        evidenceWorkingSet,
-        views: [
-            {
-                currentInput: {
-                    requestBinding: anchorRequest.requestBinding,
-                    targetSplatId: 'scene-1',
-                    view: {
-                        viewId: 'view-1',
-                        renderStatus: 'ready',
-                        participation: 'included',
-                        cameraBindingDigest: bindingDigest,
-                        rgbDigest: `sha256:${'b'.repeat(64)}`,
-                        stableMaskDigest: stableMask.digest
-                    },
-                    evidencePolicyDigest:
-                        'sha256:debcee99d261f28ab373b16016447f056872476a960a1af23599cc6ea1f20efd',
-                    renderWorkingSet: {
-                        targetSplatId: 'scene-1',
-                        dependencyToken:
-                            anchorRequest.requestBinding.dependencyToken,
-                        cameraBindingDigest: bindingDigest,
-                        renderWorkingSetToken: anchorSnapshot.contentDigest,
-                        stableGaussianIds: [3],
-                        completeness: 'complete'
-                    },
-                    evidenceWorkingSet,
-                    rasterImplementationId: 'gsplat-reference-rgb/v1',
-                    evidenceBackendKind: 'reference-contributor',
-                    evidenceBackendId: 'complete-contributor/reference-v1',
-                    runtimeBuildId:
-                        'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40'
-                },
-                cameraBinding: anchorCameraBinding,
-                stableMask
-            }
-        ]
-    };
+    const request = candidateReLiftRequest();
+    request.liftAttemptId = 'candidate-re-lift-timeout-1';
 
     await assert.rejects(adapter.produceCandidateReLift(request), /timed out/);
     assert.match(calls.at(-1).url, /\/ai-select\/candidate-re-lifts$/);
+});
+
+test('re-registers the Candidate Scene Snapshot once after a Companion cache-loss 409', async () => {
+    const calls = [];
+    const replies = [
+        ...stagedBinaryRegistrationReplies(anchorSnapshot, 'upload-1'),
+        {
+            statusCode: 409,
+            body: {
+                status: 'candidateReLiftError',
+                code: 'sceneCacheMiss',
+                message:
+                    'The Scene Snapshot is unavailable for Candidate Re-Lift.'
+            }
+        },
+        ...stagedBinaryRegistrationReplies(anchorSnapshot, 'upload-2'),
+        {
+            statusCode: 409,
+            body: {
+                status: 'candidateReLiftError',
+                code: 'candidateReLiftFailure',
+                message: 'second request reached Candidate Re-Lift'
+            }
+        }
+    ];
+    const adapter = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:model-v1'
+        }),
+        fetch: async (url, init) => {
+            calls.push({ url, init });
+            const reply = replies.shift();
+            if (reply.statusCode !== undefined) {
+                return new Response(JSON.stringify(reply.body), {
+                    status: reply.statusCode
+                });
+            }
+            return new Response(JSON.stringify(reply), { status: 200 });
+        }
+    });
+
+    await assert.rejects(
+        adapter.produceCandidateReLift(candidateReLiftRequest()),
+        (error) =>
+            error.serviceCode === 'candidateReLiftFailure' &&
+            error.message.includes(
+                'candidateReLiftFailure: second request reached Candidate Re-Lift'
+            )
+    );
+    assert.equal(
+        calls.filter((call) =>
+            call.url.endsWith('/ai-select/candidate-re-lifts')
+        ).length,
+        2
+    );
+    assert.equal(
+        calls.filter((call) => call.url.endsWith('/scene-snapshot-uploads/v1'))
+            .length,
+        2
+    );
 });

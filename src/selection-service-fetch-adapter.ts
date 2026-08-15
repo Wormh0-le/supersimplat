@@ -457,11 +457,30 @@ class FetchSelectionServiceAdapter
                     : { cachedArtifact: view.cachedArtifact })
             }))
         };
-        const result = await this.requestJson(
-            '/ai-select/candidate-re-lifts',
-            'POST',
-            payload
-        );
+        let result;
+        try {
+            result = await this.requestJson(
+                '/ai-select/candidate-re-lifts',
+                'POST',
+                payload
+            );
+        } catch (error) {
+            if (
+                !(error instanceof SelectionServiceTransportError) ||
+                error.serviceCode !== 'sceneCacheMiss'
+            ) {
+                throw error;
+            }
+            // Companion Scene Snapshots are disposable runtime cache. Mirror
+            // Anchor recovery: restore the exact immutable snapshot once,
+            // then replay the same bound Re-Lift transaction.
+            await this.registerPackedSnapshot(request.snapshot, true);
+            result = await this.requestJson(
+                '/ai-select/candidate-re-lifts',
+                'POST',
+                payload
+            );
+        }
         if (!isCandidateReLiftResponseForRequest(result, request)) {
             throw transportError(
                 'invalidResponse',
@@ -2570,9 +2589,13 @@ class FetchSelectionServiceAdapter
         } catch (error) {
             // A non-JSON response still has a useful HTTP status diagnostic.
         }
+        const serviceDiagnostic =
+            serviceCode === undefined && serviceMessage === undefined
+                ? ''
+                : ` ${serviceCode === undefined ? '' : `${serviceCode}: `}${serviceMessage ?? ''}`;
         return transportError(
             'http',
-            `The Selection Service Companion returned HTTP ${response.status}.`,
+            `The Selection Service Companion returned HTTP ${response.status}.${serviceDiagnostic}`,
             { status: response.status, serviceMessage, serviceCode }
         );
     }

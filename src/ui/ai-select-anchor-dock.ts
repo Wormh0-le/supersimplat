@@ -78,9 +78,6 @@ import type {
 } from '../selection-service-readiness';
 
 export interface AISelectAnchorDockOptions<TCandidatePayload = unknown> {
-    readonly onRetry: () => Promise<void>;
-    readonly onReconnect: () => Promise<void>;
-    readonly onOpenSettings: () => void;
     readonly onValidate: () => Promise<void>;
     readonly onConfirmAnchor: () => Promise<void>;
     readonly onAdjustAnchor: () => void;
@@ -247,7 +244,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly overlay: HTMLCanvasElement;
     private readonly technicalDetails: HTMLDetailsElement;
     private readonly technicalDetailsBody: HTMLPreElement;
-    private readonly failureActions: Container;
     private readonly maskActions: Container;
     private readonly palette: AISelectFloatingPalette;
     private readonly acceptProposalButton: Button;
@@ -648,27 +644,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             hidden: true
         });
 
-        this.failureActions = new Container({
-            id: 'ai-select-anchor-dock-failure-actions',
-            hidden: true
-        });
-        const retry = new Button({ id: 'ai-select-anchor-dock-retry' });
-        const reconnect = new Button({ id: 'ai-select-anchor-dock-reconnect' });
-        const settings = new Button({ id: 'ai-select-anchor-dock-settings' });
-        i18n.bindText(retry, 'ai-select.retry');
-        i18n.bindText(reconnect, 'ai-select.reconnect');
-        i18n.bindText(settings, 'ai-select.open-settings');
-        retry.on('click', () => {
-            options.onRetry().catch((error) => console.error(error));
-        });
-        reconnect.on('click', () => {
-            options.onReconnect().catch((error) => console.error(error));
-        });
-        settings.on('click', () => options.onOpenSettings());
-        this.failureActions.append(retry);
-        this.failureActions.append(reconnect);
-        this.failureActions.append(settings);
-
         // The AI View Gallery: progressive Generated View cards with their
         // independent Render/Mask/Evidence states, plus the Anchor card.
         this.gallery = new Container({
@@ -807,7 +782,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         primaryActions.append(this.acceptProposalButton);
         primaryActions.append(this.maskActions);
         primaryActions.append(this.candidateActions);
-        primaryActions.append(this.failureActions);
         sidePanel.append(information);
         sidePanel.append(primaryActions);
         mainRow.append(sidePanel);
@@ -921,8 +895,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             failed: 'ai-select.anchor.failed'
         }[presentation.status];
         this.status.text = i18n.t(textKey);
-        this.failureActions.hidden = !presentation.showFailureActions;
-
         this.renderMaskSurface(
             presentation.mask,
             this.maskState,
@@ -1126,7 +1098,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.overlay.hidden = true;
         }
         this.status.text = i18n.t('ai-select.views.inspecting-editing');
-        this.failureActions.hidden = true;
         this.anchorActions.hidden = true;
         this.validationStatus.hidden = true;
         const mask = getViewMaskPresentation(authoring.maskState);
@@ -1194,7 +1165,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 ? 'ai-select.views.role.user-added'
                 : 'ai-select.views.generated';
         this.status.text = `${i18n.t(roleKey)} — ${i18n.t('ai-select.views.inspecting')}`;
-        this.failureActions.hidden = true;
         this.maskStatus.hidden = true;
         this.promptStatus.hidden = true;
         this.technicalDetails.hidden = true;

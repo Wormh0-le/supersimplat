@@ -194,8 +194,23 @@ def produce_reference_candidate_re_lift(
                     raw_record["cameraBinding"],
                 )
             except Exception as error:
+                error_code = getattr(error, "code", None)
+                cause_code = getattr(error, "cause_code", None)
+                detail = str(error).strip()
+                if (
+                    isinstance(cause_code, str)
+                    and cause_code
+                    and cause_code not in detail
+                ):
+                    detail = f"{detail} ({cause_code})".strip()
                 raise CandidateReLiftError(
                     f"AI Select Candidate Re-Lift Evidence failed for View {view_id}."
+                    + (f" {detail}" if detail else ""),
+                    code=(
+                        error_code
+                        if isinstance(error_code, str) and error_code
+                        else "candidateReLiftFailure"
+                    ),
                 ) from error
         if (
             not is_gaussian_evidence_artifact(artifact)

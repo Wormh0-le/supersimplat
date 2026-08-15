@@ -888,18 +888,6 @@ const main = async () => {
                 });
             },
             readiness: selectionServiceReadiness,
-            onRetry: () => aiSelectController.retryAnchorPreview(),
-            onReconnect: async () => {
-                await selectionServiceReadiness.refresh();
-                if (selectionServiceReadiness.state.status !== 'available') {
-                    const { diagnostic } = selectionServiceReadiness.state;
-                    throw new Error(
-                        `${diagnostic.message} ${diagnostic.action}`.trim()
-                    );
-                }
-                await startAISelect(true);
-            },
-            onOpenSettings: () => events.fire('settingsPanel.setVisible', true),
             onValidate: async () => {
                 await aiSelectConfirmation.validate();
             },

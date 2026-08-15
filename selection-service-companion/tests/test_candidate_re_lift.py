@@ -16,6 +16,7 @@ from selection_service_companion.gaussian_evidence_contract import (
 )
 from selection_service_companion.camera_binding import camera_binding_digest
 from selection_service_companion.reference_gaussian_evidence import (
+    ReferenceGaussianEvidenceError,
     default_reference_evidence_policy,
 )
 from selection_service_companion.renderer_runtime import (
@@ -231,6 +232,23 @@ class CandidateReLiftTests(unittest.TestCase):
                     else (_ for _ in ()).throw(RuntimeError("GPU failed"))
                 ),
             )
+
+    def test_evidence_failure_preserves_the_actionable_service_code(self) -> None:
+        def fail_evidence(*_args: object) -> dict[str, object]:
+            raise ReferenceGaussianEvidenceError(
+                "Contributor rendering failed (rendererMassMismatch).",
+                code="referenceRenderFailed",
+                cause_code="rendererMassMismatch",
+            )
+
+        with self.assertRaises(CandidateReLiftError) as raised:
+            produce_reference_candidate_re_lift(
+                request([view_record("view-1")]),
+                fail_evidence,
+            )
+
+        self.assertEqual(raised.exception.code, "referenceRenderFailed")
+        self.assertIn("rendererMassMismatch", str(raised.exception))
 
     def test_rejects_an_unlocked_reference_runtime_before_reuse(self) -> None:
         record = view_record("view-1")

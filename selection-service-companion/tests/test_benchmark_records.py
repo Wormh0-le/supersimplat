@@ -730,7 +730,7 @@ class PocRunRecordTests(unittest.TestCase):
         self.assertEqual(policy["generatedViewResolutionBaseline"], 1008)
         self.assertEqual(
             policy["contributorReconciliationPolicy"],
-            "gsplat-boundary-contributor-reconciliation/v2",
+            "gsplat-boundary-contributor-reconciliation/v3",
         )
         evidence_policy = policy["evidencePolicy"]
         self.assertIsInstance(evidence_policy, dict)

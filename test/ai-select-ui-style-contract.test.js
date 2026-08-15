@@ -15,6 +15,7 @@ test('the bottom action well grows within a bounded scrollable footprint', () =>
     assert.doesNotMatch(block, /height:\s*96px;/);
     assert.match(block, /justify-content:\s*flex-start;/);
     assert.match(block, /overflow-y:\s*auto;/);
+    assert.match(block, /overflow-x:\s*hidden;/);
 });
 
 test('bottom action groups use responsive button grids', () => {

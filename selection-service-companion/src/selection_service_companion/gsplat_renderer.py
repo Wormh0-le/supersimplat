@@ -71,13 +71,19 @@ _MAX_BOUNDARY_CANDIDATES = 4
 _BOUNDARY_MATCH_ATOL = 1e-6
 # Per-contributor validation is a proof of an unchanged kernel decision chain,
 # not a second mass-conservation check. The locked-build validity budget is
-# eight __expf ulps plus float32 arithmetic noise, so 16 float32 ulps leaves a
-# deterministic margin without accepting a material contributor rewrite.
+# eight __expf ulps plus float32 arithmetic noise per chain step. A weight also
+# contains every preceding transmittance update, so its proof budget grows
+# linearly with its one-based position in the chain. This remains a bounded
+# float32-error proof rather than accepting a material contributor rewrite.
 _KERNEL_WEIGHT_PROOF_ULPS = 16
 _KERNEL_WEIGHT_PROOF_ATOL = 1e-8
+# RGB alpha is itself float32. Close to the termination cut, subtracting it
+# from one can therefore move the reconstructed transmittance by roughly one
+# alpha ULP. Two ULPs bound that subtraction plus the boundary weight check.
+_TERMINATION_RGB_PROOF_ULPS = 2
 _MAX_RECONCILED_PIXELS = 4096
 CONTRIBUTOR_RECONCILIATION_POLICY_ID = (
-    "gsplat-boundary-contributor-reconciliation/v2"
+    "gsplat-boundary-contributor-reconciliation/v3"
 )
 SUPPORTED_COORDINATE_CONVENTION = (
     "right-handed world coordinates; quaternion xyzw"
@@ -119,13 +125,38 @@ def _f32_ulp(value: float) -> float:
     return next_value - value32
 
 
-def _kernel_weight_proof_tolerance(reference: float) -> float:
-    """Bound ordinary float32 evaluation noise for one contributor weight."""
+def _kernel_weight_proof_tolerance(
+    reference: float, *, chain_position: int
+) -> float:
+    """Bound cumulative float32 noise through one contributor chain prefix."""
 
     return max(
         _KERNEL_WEIGHT_PROOF_ATOL,
-        _KERNEL_WEIGHT_PROOF_ULPS * _f32_ulp(reference),
+        _KERNEL_WEIGHT_PROOF_ULPS
+        * max(1, chain_position)
+        * _f32_ulp(reference),
     )
+
+
+def _kernel_chain_weights_match(
+    kernel_weights: Sequence[float],
+    replayed_weights: Sequence[float],
+) -> bool:
+    """Prove one kernel weight chain against its cumulative scalar replay."""
+
+    if len(kernel_weights) != len(replayed_weights):
+        return False
+    for chain_position, (kernel_weight, replayed_weight) in enumerate(
+        zip(kernel_weights, replayed_weights, strict=True),
+        start=1,
+    ):
+        proof_reference = max(abs(kernel_weight), abs(replayed_weight))
+        if abs(kernel_weight - replayed_weight) > _kernel_weight_proof_tolerance(
+            proof_reference,
+            chain_position=chain_position,
+        ):
+            return False
+    return True
 
 
 class _BoundaryAmbiguity(Enum):
@@ -1204,16 +1235,31 @@ def reconcile_boundary_contributors(
         for chain in replayed_chains
         if abs(chain.alpha - raster_alpha) <= _BOUNDARY_MATCH_ATOL
     ]
-    if len(rgb_matches) != 1:
-        return None
-    rgb_chain = rgb_matches[0]
-
     kernel_matches = [
         chain for chain in replayed_chains if list(chain.ids) == kernel_id_list
     ]
     if len(kernel_matches) != 1:
         return None
     kernel_chain = kernel_matches[0]
+    if not _kernel_chain_weights_match(
+        kernel_weight_list,
+        kernel_chain.weights,
+    ):
+        return None
+    if not rgb_matches:
+        return _restore_rgb_termination_inclusion(
+            evaluations=evaluations,
+            ambiguous=ambiguous,
+            kernel_chain=kernel_chain,
+            kernel_ids=kernel_id_list,
+            kernel_weights=kernel_weight_list,
+            kernel_alpha=kernel_alpha,
+            raster_alpha=raster_alpha,
+            termination32=termination32,
+        )
+    if len(rgb_matches) != 1:
+        return None
+    rgb_chain = rgb_matches[0]
     if (
         rgb_chain.decisions == kernel_chain.decisions
         or rgb_chain.ids == kernel_chain.ids
@@ -1222,17 +1268,6 @@ def reconcile_boundary_contributors(
         # boundary flip is proven, so the mass mismatch is unexplained and
         # fails closed rather than having its weights silently rewritten.
         return None
-    # Verify the entire kernel-decision chain before applying the distinct
-    # RGB-matching chain. This permits the legitimate tail shift caused by a
-    # boundary decision while rejecting an independent contributor defect.
-    for kernel_weight, replayed_weight in zip(
-        kernel_weight_list, kernel_chain.weights, strict=True
-    ):
-        proof_reference = max(abs(kernel_weight), abs(replayed_weight))
-        if abs(kernel_weight - replayed_weight) > _kernel_weight_proof_tolerance(
-            proof_reference
-        ):
-            return None
     return rgb_chain.ids, rgb_chain.weights, rgb_chain.alpha
 
 
@@ -1276,6 +1311,88 @@ def _replay_boundary_chain(
         weights.append(_f32_mul(evaluation.alpha32, transmittance))
         transmittance = next_transmittance
     return tuple(ids), tuple(weights), _f32(1.0 - transmittance)
+
+
+def _restore_rgb_termination_inclusion(
+    *,
+    evaluations: Sequence[_EvaluatedGaussian],
+    ambiguous: Mapping[int, _BoundaryAmbiguity],
+    kernel_chain: _ReplayedContributorChain,
+    kernel_ids: Sequence[int],
+    kernel_weights: Sequence[float],
+    kernel_alpha: float,
+    raster_alpha: float,
+    termination32: float,
+) -> tuple[tuple[int, ...], tuple[float, ...], float] | None:
+    """Restore one RGB-only contributor at the termination boundary.
+
+    The scalar replay cannot invent an above-cut transmittance when its own
+    float32 update rounds just below the cut. The RGB alpha can nevertheless
+    prove the opposite locked-kernel decision: require exactly one termination
+    ambiguity, a sound excluded kernel prefix, a remaining RGB transmittance
+    only a bounded alpha-ULP distance above the cut, and an immediately
+    terminating next valid Gaussian. Under those conditions the missing RGB
+    alpha mass belongs uniquely to the boundary Gaussian.
+    """
+
+    if len(ambiguous) != 1:
+        return None
+    [(position, kind)] = ambiguous.items()
+    if kind is not _BoundaryAmbiguity.TERMINATION:
+        return None
+    boundary = evaluations[position]
+    if (
+        kernel_chain.decisions != (False,)
+        or boundary.tensor_id in kernel_ids
+        or raster_alpha <= kernel_alpha
+    ):
+        return None
+
+    alpha_ulp_tolerance = _TERMINATION_RGB_PROOF_ULPS * max(
+        _f32_ulp(kernel_alpha),
+        _f32_ulp(raster_alpha),
+    )
+    proof_tolerance = max(_KERNEL_WEIGHT_PROOF_ATOL, alpha_ulp_tolerance)
+    # Preserve the authoritative float32 alpha's exact Python value here.
+    # Rounding the subtraction back to float32 could move a truly below-cut
+    # synthetic value to the accepted side of the boundary.
+    raster_transmittance = 1.0 - raster_alpha
+    if (
+        raster_transmittance <= termination32
+        or raster_transmittance - termination32 > proof_tolerance
+    ):
+        return None
+    kernel_transmittance = _f32_sub(1.0, kernel_alpha)
+    expected_boundary_weight = _f32_mul(
+        boundary.alpha32,
+        kernel_transmittance,
+    )
+    missing_mass = _f32_sub(raster_alpha, kernel_alpha)
+    if (
+        missing_mass <= 0.0
+        or abs(missing_mass - expected_boundary_weight) > proof_tolerance
+    ):
+        return None
+
+    # If another valid Gaussian would remain above the cut, the RGB stream
+    # could contain an unknowable tail and the single missing mass would not
+    # prove unique attribution. The first valid successor must terminate.
+    for successor in evaluations[position + 1 :]:
+        if successor.invalid32:
+            continue
+        successor_transmittance = _f32_mul(
+            raster_transmittance,
+            _f32_sub(1.0, successor.alpha32),
+        )
+        if successor_transmittance > termination32:
+            return None
+        break
+
+    return (
+        (*map(int, kernel_ids), boundary.tensor_id),
+        (*map(float, kernel_weights), missing_mass),
+        raster_alpha,
+    )
 
 
 def _reconcile_boundary_flips(

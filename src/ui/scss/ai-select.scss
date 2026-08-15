@@ -219,6 +219,7 @@
     padding: 8px 4px 0 6px;
     border-top: 1px solid $bcg-lighter;
     background-color: $bcg-primary;
+    overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
 

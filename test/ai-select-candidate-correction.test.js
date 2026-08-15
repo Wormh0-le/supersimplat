@@ -141,6 +141,21 @@ test('browsing and unpublished Editing Mask changes do not stale Candidate or Ev
     assert.deepEqual(h.dirty.state.evidenceDirtyViewIds, []);
 });
 
+test('Back to Candidate retains the editing draft and restores applicability when Stable inputs did not change', () => {
+    const h = harness(async () => result(h.currentViews));
+    const before = h.publications.inspectableCandidate.candidateDigest;
+
+    h.controller.beginCorrection();
+    h.controller.noteEditingMaskChanged('anchor-view');
+    h.controller.backToCandidate();
+
+    assert.equal(h.controller.state.mode, 'candidate');
+    assert.equal(h.controller.state.status, 'idle');
+    assert.equal(h.controller.state.candidate.status, 'current');
+    assert.equal(h.publications.inspectableCandidate.candidateDigest, before);
+    assert.equal(h.dirty.state.candidateStale, false);
+});
+
 test('Update 3D Candidate reuses exact Evidence and recomputes only stale Included Views', async () => {
     const h = harness(async (_input, views) => result(views, [5, 11], [9]));
     h.currentViews[0] = view('view-1', {

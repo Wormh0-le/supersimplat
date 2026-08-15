@@ -13,8 +13,15 @@ import {
 } from './bottom-panel-controller';
 import { i18n } from './localization';
 import { Tooltips } from './tooltips';
+import type {
+    CandidatePresentation,
+    CandidatePresentationCoordinator
+} from '../ai-select/candidate-presentation';
 
 class StatusBar extends Container {
+    private readonly candidateStat: Container;
+    private readonly candidateValue: Label;
+
     constructor(
         events: Events,
         tooltips: Tooltips,
@@ -123,13 +130,17 @@ class StatusBar extends Container {
             container.append(label);
             container.append(value);
             statsContainer.append(container);
-            return value;
+            return { container, value };
         };
 
-        const splatsValue = createStat('status-bar.splats');
-        const selectedValue = createStat('status-bar.selected');
-        const lockedValue = createStat('status-bar.locked');
-        const deletedValue = createStat('status-bar.deleted');
+        const splatsValue = createStat('status-bar.splats').value;
+        const selectedValue = createStat('status-bar.selected').value;
+        const lockedValue = createStat('status-bar.locked').value;
+        const deletedValue = createStat('status-bar.deleted').value;
+        const candidate = createStat('status-bar.ai-candidate');
+        this.candidateStat = candidate.container;
+        this.candidateValue = candidate.value;
+        this.candidateStat.hidden = true;
 
         this.append(timelineButton);
         this.append(splatDataButton);
@@ -206,6 +217,32 @@ class StatusBar extends Container {
                 updateStats();
             }
         });
+    }
+
+    bindCandidatePresentation(
+        presentation: CandidatePresentationCoordinator
+    ): void {
+        const render = (state: CandidatePresentation): void => {
+            this.candidateStat.hidden = !state.statusBar.visible;
+            if (
+                !state.statusBar.visible ||
+                state.statusBar.lifecycle === null
+            ) {
+                return;
+            }
+            const count = state.inspectable
+                ? i18n.formatInteger(state.counts.selected)
+                : '—';
+            const lifecycle = state.statusBar.lifecycle;
+            const lifecycleText = lifecycle.startsWith('applied-')
+                ? `${i18n.t('ai-select.candidate.lifecycle.applied')} ${i18n.t(
+                      `select-toolbar.${lifecycle.slice('applied-'.length)}`
+                  )}`
+                : i18n.t(`ai-select.candidate.lifecycle.${lifecycle}`);
+            this.candidateValue.text = `${count} · ${lifecycleText.toUpperCase()}`;
+        };
+        presentation.subscribe(render);
+        i18n.onChange(() => render(presentation.state), this);
     }
 }
 

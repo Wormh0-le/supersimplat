@@ -1,4 +1,4 @@
-const vertexShader = /* glsl*/`
+const vertexShader = /* glsl*/ `
 #include "gsplatCommonVS"
 
 uniform sampler2D splatState;
@@ -11,6 +11,11 @@ uniform vec4 clrScale;
 
 varying mediump vec4 texCoord_flags;            // xy: texCoord, z: selected, w: locked
 varying mediump vec4 color;
+
+#if AI_CANDIDATE_OVERLAY
+    uniform sampler2D candidateState;
+    varying mediump vec2 candidate_flags;        // x: Candidate, y: Uncertain
+#endif
 
 #if PICK_PASS
     uniform uint pickOp;                        // 0: add, 1: remove, 2: set
@@ -91,6 +96,16 @@ void main(void) {
         (vertexState & 2u) != 0u ? 1.0 : 0.0        // locked
     );
 
+    #if AI_CANDIDATE_OVERLAY
+        uint candidateStateValue = uint(
+            texelFetch(candidateState, splat.uv, 0).r * 255.0 + 0.5
+        );
+        candidate_flags = vec2(
+            candidateStateValue == 1u ? 1.0 : 0.0,
+            candidateStateValue == 2u ? 1.0 : 0.0
+        );
+    #endif
+
     #if PICK_PASS
         if (pickMode == 1) {
             // depth estimation mode: compute normalized depth in vertex shader
@@ -146,12 +161,21 @@ void main(void) {
 }
 `;
 
-const fragmentShader = /* glsl*/`
+const fragmentShader = /* glsl*/ `
 varying mediump vec4 texCoord_flags;
 varying mediump vec4 color;
 
 uniform bool outlineMode;
 uniform float ringSize;
+
+#if AI_CANDIDATE_OVERLAY
+    varying mediump vec2 candidate_flags;
+    uniform float candidateSelectedVisible;
+    uniform float candidateUncertainVisible;
+    uniform float candidateStale;
+    uniform vec4 candidateSelectedClr;
+    uniform vec4 candidateUncertainClr;
+#endif
 
 #if PICK_PASS
     uniform int pickMode;           // 0: id, 1: depth estimation
@@ -189,6 +213,49 @@ void main(void) {
         mediump float norm = normExp(A);
         mediump float alpha = norm * color.a;
 
+        #if AI_CANDIDATE_OVERLAY
+            // Candidate never replaces native fill: it occupies only the
+            // outer Gaussian shell. Stale is static and sparse; Uncertain is
+            // a lower-opacity dotted diagnostic layer.
+            float staticPattern = mod(
+                floor(gl_FragCoord.x * 0.5) + floor(gl_FragCoord.y * 0.5),
+                4.0
+            );
+            bool candidateEdge =
+                candidateSelectedVisible > 0.5 &&
+                candidate_flags.x > 0.5 &&
+                A > 0.68 &&
+                (candidateStale < 0.5 || staticPattern < 2.0);
+            bool uncertainEdge =
+                candidateUncertainVisible > 0.5 &&
+                candidate_flags.y > 0.5 &&
+                A > 0.78 &&
+                staticPattern < 1.0;
+            if (candidateEdge || uncertainEdge) {
+                vec4 overlayClr = candidateEdge
+                    ? candidateSelectedClr
+                    : candidateUncertainClr;
+                if (candidateEdge && candidateStale > 0.5) {
+                    float luminance = dot(
+                        overlayClr.rgb,
+                        vec3(0.299, 0.587, 0.114)
+                    );
+                    overlayClr.rgb = mix(
+                        vec3(luminance),
+                        overlayClr.rgb,
+                        0.28
+                    );
+                    overlayClr.a *= 0.62;
+                }
+                pcFragColor0 = vec4(
+                    overlayClr.rgb * overlayClr.a,
+                    overlayClr.a
+                );
+                pcFragColor1 = vec4(0.0);
+                return;
+            }
+        #endif
+
         if (texCoord_flags.w == 0.0 && ringSize > 0.0) {
             // rings mode
             if (A < 1.0 - ringSize) {
@@ -216,7 +283,7 @@ void main(void) {
 }
 `;
 
-const gsplatCenter = /* glsl*/`
+const gsplatCenter = /* glsl*/ `
 uniform highp usampler2D splatTransform;        // per-splat index into transform palette
 uniform sampler2D transformPalette;             // palette of transform matrices
 

@@ -11,6 +11,8 @@ import {
 import { AnchorFrustumManipulator } from './ai-select/camera-inspection-manipulator';
 import { CandidateApplicationController } from './ai-select/candidate-application';
 import { createAISelectCandidateCorrectionController } from './ai-select/candidate-correction-composition';
+import { CandidateOverlayController } from './ai-select/candidate-overlay';
+import { CandidatePresentationCoordinator } from './ai-select/candidate-presentation';
 import { CandidatePublicationStore } from './ai-select/candidate-publication';
 import { pickGeneratedViewFrustum } from './ai-select/generated-frustum-picking';
 import { AISelectGeneratedViewController } from './ai-select/generated-view-controller';
@@ -19,6 +21,7 @@ import { createPromptAdapterCapabilities } from './ai-select/prompt-state';
 import { AISelectUserViewMaskController } from './ai-select/user-view-mask-controller';
 import { AnchorFrustum } from './ai-select-anchor-frustum';
 import { SelectOpCandidateNativeSelection } from './ai-select-candidate-application';
+import { CandidateViewportOverlay } from './ai-select-candidate-viewport-overlay';
 import { AISelectEditorTargetFactory } from './ai-select-editor-target';
 import { GeneratedViewFrustums } from './ai-select-generated-frustums';
 import { registerCameraPosesEvents } from './camera-poses';
@@ -624,6 +627,47 @@ const main = async () => {
     events.on('selectionService.readinessChanged', () =>
         aiSelectCandidateApplication.refresh()
     );
+    const aiSelectCandidatePresentation = new CandidatePresentationCoordinator({
+        candidates: aiSelectCandidatePublications,
+        correction: aiSelectCandidateCorrection,
+        application: aiSelectCandidateApplication
+    });
+    const aiSelectCandidateOverlay = new CandidateOverlayController({
+        presentation: aiSelectCandidatePresentation,
+        getCandidateRevision: () =>
+            aiSelectCandidatePublications.inspectableCandidate
+                ?.candidateDigest ?? null
+    });
+    const aiSelectCandidateViewportOverlay = new CandidateViewportOverlay(
+        aiSelectCandidateOverlay,
+        {
+            getTarget: () =>
+                aiSelectTargetSplat === null
+                    ? null
+                    : {
+                          splat: aiSelectTargetSplat,
+                          stableIds:
+                              aiSelectTargetFactory.bindingForTarget(
+                                  aiSelectTargetSplat
+                              )
+                      },
+            onFailure: (error) => {
+                console.error(error);
+                aiSelectCandidatePresentation.setOverlayAvailable(false);
+            },
+            onRecovered: () =>
+                aiSelectCandidatePresentation.setOverlayAvailable(true)
+        }
+    );
+    let aiSelectOverlayContextId: string | null = null;
+    aiSelectController.subscribe((state) => {
+        const contextId = state.context?.targetContextId ?? null;
+        if (contextId !== aiSelectOverlayContextId) {
+            aiSelectCandidateOverlay.reset();
+            aiSelectOverlayContextId = contextId;
+        }
+    });
+    editorUI.statusBar.bindCandidatePresentation(aiSelectCandidatePresentation);
     const cameraInspection = new CameraInspectionController({
         anchor: aiSelectController,
         editor: {
@@ -856,6 +900,7 @@ const main = async () => {
         cameraInspection.returnToSceneView();
         aiSelectController.exit();
         aiSelectTargetSplat = null;
+        aiSelectCandidateViewportOverlay.destroy();
         events.fire('tool.deactivate');
     };
     const aiSelectDock = new AISelectAnchorDock(
@@ -864,9 +909,8 @@ const main = async () => {
         aiSelectConfirmation,
         {
             generatedViews: aiSelectGeneratedViews,
-            candidatePublications: aiSelectCandidatePublications,
             candidateCorrection: aiSelectCandidateCorrection,
-            candidateApplication: aiSelectCandidateApplication,
+            candidatePresentation: aiSelectCandidatePresentation,
             maskRegistry: aiSelectMaskController.maskRegistry,
             userViewMasks: aiSelectUserViewMasks,
             onInspectCamera: (viewId) => {
@@ -932,6 +976,10 @@ const main = async () => {
         cameraInspection,
         aiSelectConfirmation,
         {
+            candidatePresentation: aiSelectCandidatePresentation,
+            candidateOverlay: aiSelectCandidateOverlay,
+            candidateApplication: aiSelectCandidateApplication,
+            onCandidateApplicationFailure: (error) => console.error(error),
             onRestart: restartAISelect,
             onExit: exitAISelect,
             onEnterInspection: () => {
@@ -1002,6 +1050,7 @@ const main = async () => {
             cameraInspection.returnToSceneView();
             aiSelectController.exit();
             aiSelectTargetSplat = null;
+            aiSelectCandidateViewportOverlay.destroy();
         }
     });
 

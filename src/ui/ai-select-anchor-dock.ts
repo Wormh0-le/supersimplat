@@ -6,6 +6,10 @@ import {
 } from './ai-select-floating-palette';
 import { i18n } from './localization';
 import {
+    resolveAIViewDockColumns,
+    resolveAIViewWorkAreaWidth
+} from '../ai-select/ai-view-dock-layout';
+import {
     type AISelectAnchorConfirmationController,
     type AISelectAnchorConfirmationState
 } from '../ai-select/anchor-confirmation';
@@ -25,19 +29,13 @@ import {
     pointerActionForTool
 } from '../ai-select/authoring-interaction';
 import {
-    type CandidateApplicationBlockReason,
-    type CandidateApplicationController,
-    type CandidateApplicationOperation,
-    type CandidateApplicationState
-} from '../ai-select/candidate-application';
-import {
     type AISelectCandidateCorrectionController,
     type CandidateCorrectionState
 } from '../ai-select/candidate-correction';
-import {
-    type CandidatePublicationState,
-    type CandidatePublicationStore
-} from '../ai-select/candidate-publication';
+import type {
+    CandidatePresentation,
+    CandidatePresentationCoordinator
+} from '../ai-select/candidate-presentation';
 import {
     PALETTE_TOOLS,
     paletteToolForShortcutKey,
@@ -76,15 +74,13 @@ import type {
     SelectionServiceReadinessInterface,
     SelectionServiceReadinessStatus
 } from '../selection-service-readiness';
-
 export interface AISelectAnchorDockOptions<TCandidatePayload = unknown> {
     readonly onValidate: () => Promise<void>;
     readonly onConfirmAnchor: () => Promise<void>;
     readonly onAdjustAnchor: () => void;
     readonly generatedViews: AISelectGeneratedViewController;
-    readonly candidatePublications: CandidatePublicationStore;
     readonly candidateCorrection: AISelectCandidateCorrectionController<TCandidatePayload>;
-    readonly candidateApplication: CandidateApplicationController;
+    readonly candidatePresentation: CandidatePresentationCoordinator;
     readonly maskRegistry: MaskAnnotationRegistry;
     readonly userViewMasks: AISelectUserViewMaskController;
     readonly onInspectCamera: (viewId: string) => void;
@@ -224,6 +220,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly userViewMasks: AISelectUserViewMaskController;
     private readonly onInspectCamera: (viewId: string) => void;
     private readonly status: Label;
+    private readonly includedViewCount: Label;
     private readonly availabilityDot: HTMLSpanElement;
     private readonly availabilityLabel: Label;
     private availabilityStatus: SelectionServiceReadinessStatus;
@@ -233,12 +230,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly candidateActions: Container;
     private readonly fixCandidateButton: Button;
     private readonly updateCandidateButton: Button;
-    private readonly candidateOperationButtons: ReadonlyMap<
-        CandidateApplicationOperation,
-        Button
-    >;
-    private readonly showAIResultButton: Button;
+    private readonly backToCandidateButton: Button;
     private readonly imageViewport: HTMLDivElement;
+    private readonly workCanvasRow: Container;
+    private readonly toolRail: Container;
     private readonly imageSurface: HTMLDivElement;
     private readonly image: HTMLImageElement;
     private readonly overlay: HTMLCanvasElement;
@@ -248,6 +243,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly palette: AISelectFloatingPalette;
     private readonly acceptProposalButton: Button;
     private readonly proposalSelect: HTMLSelectElement;
+    private readonly proposalStepper: Container;
+    private readonly previousProposalButton: Button;
+    private readonly nextProposalButton: Button;
+    private readonly proposalStepperLabel: Label;
     private readonly boxPreview: HTMLDivElement;
     private readonly confirmMaskButton: Button;
     private readonly retryMaskButton: Button;
@@ -257,18 +256,29 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly confirmAnchorButton: Button;
     private readonly adjustAnchorButton: Button;
     private readonly validationStatus: Label;
+    private readonly selectedViewPrimaryButton: Button;
+    private selectedViewPrimaryAction:
+        'retry-mask' | 'confirm-as-is' | 'next-review' | null = null;
+    private readonly selectedViewRecoveryActions: Container;
+    private readonly inspectSelectedViewButton: Button;
+    private readonly retrySelectedViewRenderButton: Button;
+    private readonly regenerateSelectedViewPromptButton: Button;
     private readonly gallery: Container;
     private readonly plannerLine: Container;
     private readonly plannerStatus: Label;
     private readonly plannerRetryButton: Button;
     private readonly plannerStopButton: Button;
     private readonly plannerMoreButton: Button;
+    private readonly plannerOverflowButton: Button;
+    private readonly plannerOverflowMenu: Container;
     private readonly plannerRegenerateButton: Button;
     private readonly filterLine: Container;
     private readonly filterButtons: ReadonlyMap<GalleryFilter, Button>;
     private galleryFilter: GalleryFilter = 'all';
     private readonly galleryCards: Container;
     private readonly anchorCard: GeneratedCardElements;
+    private readonly selectedViewAssessment: Label;
+    private readonly selectedViewParticipation: Label;
     private readonly generatedCards = new Map<string, GeneratedCardElements>();
     private readonly thumbnails = createThumbnailCache({
         capacity: THUMBNAIL_CACHE_CAPACITY
@@ -278,9 +288,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private maskState: AISelectMaskState;
     private confirmationState: AISelectAnchorConfirmationState;
     private generatedState: AISelectGeneratedViewState;
-    private candidateState: CandidatePublicationState;
     private candidateCorrectionState: CandidateCorrectionState;
-    private candidateApplicationState: CandidateApplicationState;
+    private candidatePresentation: CandidatePresentation;
     private dragStart: { x: number; y: number } | null = null;
     private gestureStartPixel: ImagePixel | null = null;
     private lastStrokePixel: ImagePixel | null = null;
@@ -303,14 +312,13 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.confirmation = confirmation;
         this.generatedViews = options.generatedViews;
         this.candidateCorrectionState = options.candidateCorrection.state;
-        this.candidateApplicationState = options.candidateApplication.state;
+        this.candidatePresentation = options.candidatePresentation.state;
         this.maskRegistry = options.maskRegistry;
         this.userViewMasks = options.userViewMasks;
         this.onInspectCamera = options.onInspectCamera;
         this.maskState = mask.state;
         this.confirmationState = confirmation.state;
         this.generatedState = options.generatedViews.state;
-        this.candidateState = options.candidatePublications.presentationState;
         this.dom.addEventListener('pointerdown', (event) =>
             event.stopPropagation()
         );
@@ -333,6 +341,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         const title = new Label({ id: 'ai-select-anchor-dock-title' });
         i18n.bindText(title, 'ai-select.panel.title');
         this.status = new Label({ id: 'ai-select-anchor-dock-status' });
+        this.includedViewCount = new Label({
+            id: 'ai-select-anchor-dock-included-count'
+        });
 
         // The panel mirrors the 02C three-state Availability projection so
         // the user can see why Prompt tools are gated without opening
@@ -385,7 +396,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.cancelPointerGesture()
         );
         const resizeImageSurface = () => this.updateImageSurfaceRect();
-        new ResizeObserver(resizeImageSurface).observe(this.imageViewport);
+        const imageResizeObserver = new ResizeObserver(resizeImageSurface);
+        imageResizeObserver.observe(this.imageViewport);
         this.image.addEventListener('load', resizeImageSurface);
 
         this.maskStatus = new Label({
@@ -410,32 +422,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.updateCandidateButton = new Button({
             id: 'ai-select-update-candidate'
         });
-        const candidateOperations: readonly CandidateApplicationOperation[] = [
-            'set',
-            'add',
-            'remove',
-            'intersect'
-        ];
-        const candidateOperationButtons = new Map<
-            CandidateApplicationOperation,
-            Button
-        >();
-        for (const operation of candidateOperations) {
-            const button = new Button({
-                id: `ai-select-apply-candidate-${operation}`,
-                hidden: true
-            });
-            i18n.bindText(button, `select-toolbar.${operation}`);
-            button.on('click', () => {
-                options.candidateApplication
-                    .apply(operation)
-                    .catch((error) => console.error(error));
-            });
-            candidateOperationButtons.set(operation, button);
-        }
-        this.candidateOperationButtons = candidateOperationButtons;
-        this.showAIResultButton = new Button({
-            id: 'ai-select-show-candidate-result',
+        this.backToCandidateButton = new Button({
+            id: 'ai-select-back-to-candidate',
             hidden: true
         });
         i18n.bindText(
@@ -444,8 +432,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         );
         i18n.bindText(this.updateCandidateButton, 'ai-select.candidate.update');
         i18n.bindText(
-            this.showAIResultButton,
-            'ai-select.candidate.show-result'
+            this.backToCandidateButton,
+            'ai-select.candidate.back-to-candidate'
         );
         this.fixCandidateButton.on('click', () => {
             try {
@@ -459,21 +447,12 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 .updateCandidate()
                 .catch((error) => console.error(error));
         });
-        this.showAIResultButton.on('click', () => {
-            try {
-                options.candidateApplication.showAIResult();
-            } catch (error) {
-                console.error(error);
-            }
+        this.backToCandidateButton.on('click', () => {
+            options.candidateCorrection.backToCandidate();
         });
         this.candidateActions.append(this.fixCandidateButton);
-        candidateOperations.forEach((operation) =>
-            this.candidateActions.append(
-                this.candidateOperationButtons.get(operation)
-            )
-        );
         this.candidateActions.append(this.updateCandidateButton);
-        this.candidateActions.append(this.showAIResultButton);
+        this.candidateActions.append(this.backToCandidateButton);
         this.technicalDetails = document.createElement('details');
         this.technicalDetails.id = 'ai-select-anchor-technical-details';
         const technicalSummary = document.createElement('summary');
@@ -559,6 +538,46 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             }
             this.renderCurrentMaskOverlay();
         });
+        this.proposalSelect.hidden = true;
+        this.proposalStepper = new Container({
+            id: 'ai-select-proposal-stepper',
+            hidden: true
+        });
+        this.previousProposalButton = new Button({ text: '‹' });
+        this.nextProposalButton = new Button({ text: '›' });
+        this.proposalStepperLabel = new Label();
+        const renderProposalNavigationLabels = (): void => {
+            this.previousProposalButton.dom.setAttribute(
+                'aria-label',
+                i18n.t('ai-select.proposal.previous')
+            );
+            this.nextProposalButton.dom.setAttribute(
+                'aria-label',
+                i18n.t('ai-select.proposal.next')
+            );
+        };
+        i18n.onChange(renderProposalNavigationLabels, this);
+        renderProposalNavigationLabels();
+        const stepProposal = (delta: number): void => {
+            const proposalCount = this.proposalSelect.options.length;
+            if (proposalCount === 0) {
+                return;
+            }
+            this.proposalSelect.selectedIndex = Math.max(
+                0,
+                Math.min(
+                    proposalCount - 1,
+                    this.proposalSelect.selectedIndex + delta
+                )
+            );
+            this.proposalSelect.dispatchEvent(new Event('change'));
+            this.renderAuthoringTools();
+        };
+        this.previousProposalButton.on('click', () => stepProposal(-1));
+        this.nextProposalButton.on('click', () => stepProposal(1));
+        this.proposalStepper.append(this.previousProposalButton);
+        this.proposalStepper.append(this.proposalStepperLabel);
+        this.proposalStepper.append(this.nextProposalButton);
         i18n.bindText(this.acceptProposalButton, 'ai-select.proposal.accept');
         this.acceptProposalButton.on('click', () => {
             const authoring = this.authoring();
@@ -608,7 +627,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         });
         this.maskActions.append(this.confirmMaskButton);
         this.maskActions.append(this.retryMaskButton);
-        this.maskActions.append(this.restoreAutoButton);
 
         this.anchorActions = new Container({
             id: 'ai-select-anchor-dock-anchor-actions',
@@ -638,11 +656,69 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         });
         this.anchorActions.append(this.validateButton);
         this.anchorActions.append(this.confirmAnchorButton);
-        this.anchorActions.append(this.adjustAnchorButton);
         this.validationStatus = new Label({
             id: 'ai-select-anchor-dock-validation-status',
             hidden: true
         });
+        this.selectedViewPrimaryButton = new Button({
+            id: 'ai-select-selected-view-primary',
+            hidden: true
+        });
+        this.selectedViewPrimaryButton.on('click', () =>
+            this.runSelectedViewPrimaryAction()
+        );
+        this.selectedViewRecoveryActions = new Container({
+            id: 'ai-select-selected-view-recovery-actions',
+            hidden: true
+        });
+        this.inspectSelectedViewButton = new Button({
+            id: 'ai-select-selected-view-inspect-camera'
+        });
+        i18n.bindText(
+            this.inspectSelectedViewButton,
+            'ai-select.views.inspect-camera'
+        );
+        this.inspectSelectedViewButton.on('click', () => {
+            const selected = this.inspectedGeneratedView();
+            if (selected !== null) {
+                this.onInspectCamera(selected.viewId);
+            }
+        });
+        this.retrySelectedViewRenderButton = new Button({
+            id: 'ai-select-selected-view-retry-render',
+            hidden: true
+        });
+        i18n.bindText(
+            this.retrySelectedViewRenderButton,
+            'ai-select.views.retry-render'
+        );
+        this.retrySelectedViewRenderButton.on('click', () => {
+            const selected = this.inspectedGeneratedView();
+            if (selected !== null) {
+                this.retryGeneratedViewRender(selected.viewId);
+            }
+        });
+        this.regenerateSelectedViewPromptButton = new Button({
+            id: 'ai-select-selected-view-regenerate-prompt',
+            hidden: true
+        });
+        i18n.bindText(
+            this.regenerateSelectedViewPromptButton,
+            'ai-select.views.retry-prompt'
+        );
+        this.regenerateSelectedViewPromptButton.on('click', () => {
+            const selected = this.inspectedGeneratedView();
+            if (selected !== null) {
+                this.regenerateGeneratedViewPrompt(selected.viewId);
+            }
+        });
+        this.selectedViewRecoveryActions.append(this.inspectSelectedViewButton);
+        this.selectedViewRecoveryActions.append(
+            this.retrySelectedViewRenderButton
+        );
+        this.selectedViewRecoveryActions.append(
+            this.regenerateSelectedViewPromptButton
+        );
 
         // The AI View Gallery: progressive Generated View cards with their
         // independent Render/Mask/Evidence states, plus the Anchor card.
@@ -690,6 +766,17 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 console.error(error);
             }
         });
+        this.plannerOverflowButton = new Button({
+            id: 'ai-select-view-gallery-planner-overflow'
+        });
+        i18n.bindText(this.plannerOverflowButton, 'ai-select.more');
+        this.plannerOverflowButton.dom.setAttribute('aria-haspopup', 'menu');
+        this.plannerOverflowButton.dom.setAttribute('aria-expanded', 'false');
+        this.plannerOverflowMenu = new Container({
+            id: 'ai-select-view-gallery-planner-menu',
+            hidden: true
+        });
+        this.plannerOverflowMenu.dom.setAttribute('role', 'menu');
         this.plannerRegenerateButton = new Button({
             id: 'ai-select-view-gallery-planner-regenerate'
         });
@@ -697,18 +784,61 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.plannerRegenerateButton,
             'ai-select.views.planner.regenerate'
         );
+        this.plannerRegenerateButton.dom.setAttribute('role', 'menuitem');
+        const confirmPlannerRegeneration = window.confirm.bind(window);
+        this.plannerOverflowButton.on('click', () => {
+            this.plannerOverflowMenu.hidden = !this.plannerOverflowMenu.hidden;
+            this.plannerOverflowButton.dom.setAttribute(
+                'aria-expanded',
+                (!this.plannerOverflowMenu.hidden).toString()
+            );
+        });
         this.plannerRegenerateButton.on('click', () => {
+            this.plannerOverflowMenu.hidden = true;
+            this.plannerOverflowButton.dom.setAttribute(
+                'aria-expanded',
+                'false'
+            );
+            if (
+                !confirmPlannerRegeneration(
+                    i18n.t('ai-select.views.planner.regenerate-confirm')
+                )
+            ) {
+                this.plannerOverflowButton.dom.focus();
+                return;
+            }
             try {
                 this.generatedViews.regenerateViews();
             } catch (error) {
                 console.error(error);
             }
         });
+        this.plannerOverflowMenu.append(this.plannerRegenerateButton);
         this.plannerLine.append(this.plannerStatus);
         this.plannerLine.append(this.plannerRetryButton);
         this.plannerLine.append(this.plannerStopButton);
         this.plannerLine.append(this.plannerMoreButton);
-        this.plannerLine.append(this.plannerRegenerateButton);
+        this.plannerLine.append(this.plannerOverflowButton);
+        this.plannerLine.append(this.plannerOverflowMenu);
+        window.addEventListener(
+            'keydown',
+            (event) => {
+                if (
+                    event.key === 'Escape' &&
+                    !this.plannerOverflowMenu.hidden
+                ) {
+                    this.plannerOverflowMenu.hidden = true;
+                    this.plannerOverflowButton.dom.setAttribute(
+                        'aria-expanded',
+                        'false'
+                    );
+                    this.plannerOverflowButton.dom.focus();
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+            },
+            true
+        );
         // Gallery filters are presentation-only: they choose which cards are
         // visible and never call into Prompt, Mask, Participation, Evidence,
         // or Candidate state.
@@ -716,18 +846,12 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             id: 'ai-select-view-gallery-filters',
             hidden: true
         });
-        const filterEntries: readonly GalleryFilter[] = [
-            'all',
-            'included',
-            'excluded',
-            'needs-review'
-        ];
+        const filterEntries: readonly GalleryFilter[] = ['all', 'needs-review'];
         const filterButtons = new Map<GalleryFilter, Button>();
         for (const filter of filterEntries) {
             const button = new Button({
                 class: 'ai-select-view-gallery-filter'
             });
-            i18n.bindText(button, `ai-select.views.filter.${filter}`);
             button.on('click', () => {
                 this.galleryFilter = filter;
                 this.renderGallery(
@@ -741,6 +865,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.galleryCards = new Container({
             id: 'ai-select-view-gallery-cards'
         });
+        this.galleryCards.dom.setAttribute('role', 'listbox');
         this.gallery.append(this.plannerLine);
         this.gallery.append(this.filterLine);
         this.gallery.append(this.galleryCards);
@@ -751,41 +876,158 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.galleryCards.append(this.anchorCard.root);
 
         const header = new Container({ id: 'ai-select-anchor-dock-header' });
+        const navigatorToggle = new Button({
+            id: 'ai-select-navigator-toggle'
+        });
+        const inspectorToggle = new Button({
+            id: 'ai-select-inspector-toggle'
+        });
+        i18n.bindText(navigatorToggle, 'ai-select.dock.navigator');
+        i18n.bindText(inspectorToggle, 'ai-select.dock.inspector');
         header.append(title);
         header.append(availability);
+        header.append(this.includedViewCount);
+        header.append(this.candidateStatus);
+        header.append(this.candidateActions);
+        header.append(navigatorToggle);
+        header.append(inspectorToggle);
         this.append(header);
-        // Image, information, and primary actions have separate ownership.
-        // Only the exact fitted image surface accepts pointer authoring.
+
         const mainRow = new Container({ id: 'ai-select-anchor-dock-main' });
-        mainRow.dom.appendChild(this.imageViewport);
-        const sidePanel = new Container({
-            id: 'ai-select-anchor-dock-side-panel'
+        const navigator = new Container({
+            id: 'ai-select-view-navigator'
+        });
+        const workArea = new Container({
+            id: 'ai-select-view-work-area'
+        });
+        const workHeader = new Container({
+            id: 'ai-select-view-work-header'
+        });
+        const inspector = new Container({
+            id: 'ai-select-view-inspector'
         });
         const information = new Container({
             id: 'ai-select-anchor-dock-information'
         });
-        information.append(this.status);
+        this.selectedViewAssessment = new Label({
+            id: 'ai-select-selected-view-assessment'
+        });
+        this.selectedViewParticipation = new Label({
+            id: 'ai-select-selected-view-participation'
+        });
+        information.append(this.selectedViewAssessment);
+        information.append(this.selectedViewParticipation);
         information.append(this.promptStatus);
         information.append(this.maskStatus);
-        information.append(this.candidateStatus);
         information.dom.appendChild(this.technicalDetails);
-        information.dom.appendChild(this.proposalSelect);
         information.append(this.validationStatus);
-        information.append(this.gallery);
+        information.append(this.restoreAutoButton);
+        information.append(this.adjustAnchorButton);
+        information.append(this.selectedViewRecoveryActions);
         const primaryActions = new Container({
             id: 'ai-select-anchor-dock-primary-actions'
         });
-        // Lifecycle actions stay in a bounded bottom well. Responsive groups
-        // grow into rows before the well scrolls, so labels remain readable
-        // without moving the image or hiding the next lifecycle step.
+        primaryActions.dom.appendChild(this.proposalSelect);
+        primaryActions.append(this.proposalStepper);
+        primaryActions.append(this.selectedViewPrimaryButton);
         primaryActions.append(this.anchorActions);
         primaryActions.append(this.acceptProposalButton);
         primaryActions.append(this.maskActions);
-        primaryActions.append(this.candidateActions);
-        sidePanel.append(information);
-        sidePanel.append(primaryActions);
-        mainRow.append(sidePanel);
+        navigator.append(this.gallery);
+        this.workCanvasRow = new Container({
+            id: 'ai-select-view-work-canvas-row'
+        });
+        this.toolRail = new Container({ id: 'ai-select-view-tool-rail' });
+        this.toolRail.dom.appendChild(this.palette.dom);
+        this.workCanvasRow.append(this.toolRail);
+        this.workCanvasRow.dom.appendChild(this.imageViewport);
+        imageResizeObserver.observe(this.workCanvasRow.dom);
+        workHeader.append(this.status);
+        workArea.append(workHeader);
+        workArea.append(this.workCanvasRow);
+        workArea.append(primaryActions);
+        inspector.append(information);
+        mainRow.append(navigator);
+        mainRow.append(workArea);
+        mainRow.append(inspector);
         this.append(mainRow);
+
+        let navigatorPreference: boolean | undefined;
+        let inspectorPreference: boolean | undefined;
+        const renderColumns = (): void => {
+            mainRow.dom.dataset.compactTools = (
+                mainRow.dom.clientWidth <= 1180
+            ).toString();
+            const columns = resolveAIViewDockColumns(mainRow.dom.clientWidth, {
+                ...(navigatorPreference === undefined
+                    ? {}
+                    : { navigator: navigatorPreference }),
+                ...(inspectorPreference === undefined
+                    ? {}
+                    : { inspector: inspectorPreference })
+            });
+            navigator.hidden = !columns.navigator;
+            inspector.hidden = !columns.inspector;
+            navigatorToggle.dom.setAttribute(
+                'aria-pressed',
+                columns.navigator.toString()
+            );
+            inspectorToggle.dom.setAttribute(
+                'aria-pressed',
+                columns.inspector.toString()
+            );
+        };
+        navigatorToggle.on('click', () => {
+            navigatorPreference = navigator.hidden;
+            if (navigatorPreference && mainRow.dom.clientWidth < 900) {
+                inspectorPreference = false;
+            }
+            renderColumns();
+            if (navigator.hidden) {
+                navigatorToggle.dom.focus();
+            }
+        });
+        inspectorToggle.on('click', () => {
+            inspectorPreference = inspector.hidden;
+            if (inspectorPreference && mainRow.dom.clientWidth < 900) {
+                navigatorPreference = false;
+            }
+            renderColumns();
+            if (inspector.hidden) {
+                inspectorToggle.dom.focus();
+            }
+        });
+        window.addEventListener(
+            'keydown',
+            (event) => {
+                if (
+                    event.key !== 'Escape' ||
+                    this.dom.getClientRects().length === 0 ||
+                    this.palette.popoverOpen ||
+                    document.querySelector(
+                        '[role="menu"]:not(.pcui-hidden)'
+                    ) !== null ||
+                    (event.target instanceof HTMLElement &&
+                        event.target.closest('[role="dialog"]') !== null)
+                ) {
+                    return;
+                }
+                if (!inspector.hidden) {
+                    inspectorPreference = false;
+                    renderColumns();
+                    inspectorToggle.dom.focus();
+                    event.preventDefault();
+                } else if (!navigator.hidden) {
+                    navigatorPreference = false;
+                    renderColumns();
+                    navigatorToggle.dom.focus();
+                    event.preventDefault();
+                }
+            },
+            true
+        );
+        new ResizeObserver(renderColumns).observe(mainRow.dom);
+        renderColumns();
 
         controller.subscribe((state) => {
             if (
@@ -822,17 +1064,13 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.render();
         });
         options.userViewMasks.subscribe(() => this.render());
-        options.candidatePublications.subscribe((candidateState) => {
-            this.candidateState = candidateState;
+        options.candidatePresentation.subscribe((candidatePresentation) => {
+            this.candidatePresentation = candidatePresentation;
             this.renderCandidateStatus();
         });
         options.candidateCorrection.subscribe((correctionState) => {
             this.candidateCorrectionState = correctionState;
             this.render();
-        });
-        options.candidateApplication.subscribe((applicationState) => {
-            this.candidateApplicationState = applicationState;
-            this.renderCandidateStatus();
         });
         i18n.onChange(() => this.render(), this);
     }
@@ -857,9 +1095,79 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         );
     }
 
+    private renderSelectedViewMetadata(view: GeneratedAIView): void {
+        const role = galleryViewRole(view.source);
+        const sameRoleViews = orderGalleryViews(
+            this.generatedState.views
+        ).filter((entry) => galleryViewRole(entry.source) === role);
+        const ordinal = Math.max(1, sameRoleViews.indexOf(view) + 1);
+        const roleKey =
+            role === 'user-added'
+                ? 'ai-select.views.role.user-added'
+                : 'ai-select.views.generated';
+        const name = `${i18n.t(roleKey)} ${i18n.formatInteger(ordinal)}`;
+        const assessment = i18n.t(
+            `ai-select.review.quality.${view.maskQuality}`
+        );
+        this.status.text = `${name} · ${i18n.t(roleKey)} · ${assessment}`;
+        const reviewReasons =
+            view.assessment?.status === 'review'
+                ? view.assessment.actionableReasons.map((reason) =>
+                      i18n.t(`ai-select.review.reason.${reason}`)
+                  )
+                : [];
+        this.selectedViewAssessment.text = [assessment, ...reviewReasons].join(
+            '\n'
+        );
+        const card = galleryCardPresentation(view, ordinal);
+        const participation = [
+            i18n.t(`ai-select.participation.${view.participation}`)
+        ];
+        if (
+            view.participation === 'excluded' &&
+            card.actions.participationToggle === null
+        ) {
+            participation.push(
+                i18n.t('ai-select.participation.include-unavailable')
+            );
+        }
+        this.selectedViewParticipation.text = participation.join('\n');
+    }
+
+    private renderAnchorMetadata(
+        presentation: AnchorDockPresentation,
+        statusKey: string
+    ): void {
+        const hasStableMask = this.maskState.stableMask !== null;
+        const assessment = i18n.t(
+            hasStableMask
+                ? 'ai-select.review.quality.user-confirmed'
+                : 'ai-select.review.quality.none'
+        );
+        this.status.text = `${i18n.t('ai-select.anchor.current-view')} · ${assessment} · ${i18n.t(statusKey)}`;
+        this.selectedViewAssessment.text = assessment;
+        this.selectedViewParticipation.text = [
+            i18n.t(
+                hasStableMask
+                    ? 'ai-select.participation.included'
+                    : 'ai-select.participation.excluded'
+            ),
+            ...(hasStableMask
+                ? []
+                : [i18n.t('ai-select.participation.include-unavailable')])
+        ].join('\n');
+    }
+
     private render(): void {
         this.renderAvailability();
         this.renderCandidateStatus();
+        const includedViews =
+            this.generatedState.views.filter(
+                (view) => view.participation === 'included'
+            ).length + (this.maskState.stableMask === null ? 0 : 1);
+        this.includedViewCount.text = `${i18n.formatInteger(
+            includedViews
+        )} ${i18n.t('ai-select.views.included-count')}`;
         const presentation = getAnchorDockPresentation(
             this.state,
             this.maskState
@@ -872,6 +1180,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             } else {
                 this.renderInspection(inspected);
             }
+            this.renderSelectedViewMetadata(inspected);
             this.renderGallery(presentation);
             return;
         }
@@ -894,7 +1203,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             rendering: 'ai-select.anchor.rendering',
             failed: 'ai-select.anchor.failed'
         }[presentation.status];
-        this.status.text = i18n.t(textKey);
+        this.renderAnchorMetadata(presentation, textKey);
         this.renderMaskSurface(
             presentation.mask,
             this.maskState,
@@ -910,9 +1219,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     }
 
     private renderCandidateStatus(): void {
-        const { candidateState } = this;
-        if (candidateState.status === 'empty') {
-            this.dom.dataset.aiSelectCandidateOverlayEmphasis = 'emphasized';
+        const presentation = this.candidatePresentation;
+        if (!presentation.inspectable) {
             this.candidateStatus.hidden =
                 this.candidateCorrectionState.status === 'idle';
             if (this.candidateCorrectionState.status === 'updating') {
@@ -934,101 +1242,35 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.candidateActions.hidden = !hasIncludedStableView;
             this.fixCandidateButton.hidden = true;
             this.updateCandidateButton.hidden = !hasIncludedStableView;
-            this.candidateOperationButtons.forEach((button) => {
-                button.hidden = true;
-            });
-            this.showAIResultButton.hidden = true;
+            this.backToCandidateButton.hidden = true;
             this.updateCandidateButton.enabled =
                 this.candidateCorrectionState.status !== 'updating';
             return;
         }
-        const status = i18n.t(
-            candidateState.status === 'current'
-                ? 'ai-select.candidate.current'
-                : 'ai-select.candidate.stale'
-        );
-        const selected = i18n.formatInteger(
-            candidateState.candidate.selectedStableGaussianIds.length
-        );
-        const uncertain = i18n.formatInteger(
-            candidateState.uncertain.stableGaussianIds.length
-        );
-        this.candidateStatus.text = `${status} · ${i18n.t(
+        const lifecycle = presentation.statusBar.lifecycle;
+        const lifecycleText =
+            lifecycle?.startsWith('applied-') &&
+            presentation.dock.applicationOutcome !== null
+                ? `${i18n.t('ai-select.candidate.applied')} ${i18n.t(
+                      `select-toolbar.${presentation.dock.applicationOutcome}`
+                  )}`
+                : i18n.t(`ai-select.candidate.lifecycle.${lifecycle}`);
+        this.candidateStatus.text = `${lifecycleText} · ${i18n.t(
             'ai-select.candidate.selected'
-        )} ${selected} · ${i18n.t(
-            'ai-select.candidate.uncertain'
-        )} ${uncertain} · ${i18n.t('ai-select.candidate.reference-only')}`;
-        const applicationState = this.candidateApplicationState;
-        if (applicationState.status === 'applying') {
-            this.candidateStatus.text += ` · ${i18n.t('ai-select.candidate.applying')}`;
-        } else if (applicationState.status === 'applied') {
-            this.candidateStatus.text += ` · ${i18n.t('ai-select.candidate.applied')} ${i18n.t(
-                `select-toolbar.${applicationState.applicationRecord.operation}`
-            )}`;
-        } else if (applicationState.status === 'blocked') {
-            this.candidateStatus.text += ` · ${i18n.t(
-                this.candidateApplicationBlockText(applicationState.blockReason)
-            )}`;
-        } else if (applicationState.status === 'ready') {
-            this.candidateStatus.text += ` · ${i18n.t(
-                'ai-select.candidate.development-reference-enabled'
-            )}`;
-        }
+        )} ${i18n.formatInteger(presentation.counts.selected)}`;
         this.candidateStatus.hidden = false;
-        const showFix =
-            candidateState.status === 'current' &&
-            this.candidateCorrectionState.mode === 'candidate';
-        const showUpdate =
-            candidateState.status === 'stale' ||
-            this.candidateCorrectionState.mode === 'correcting';
-        const showOperations = true;
-        const operationsEnabled =
-            candidateState.status === 'current' &&
-            (applicationState.status === 'ready' ||
-                applicationState.status === 'applied');
-        this.candidateOperationButtons.forEach((button) => {
-            button.hidden = !showOperations;
-            button.enabled = operationsEnabled;
-        });
-        const showAIResult =
-            applicationState.status === 'applied' &&
-            applicationState.overlayEmphasis === 'deemphasized';
-        this.showAIResultButton.hidden = !showAIResult;
-        this.candidateActions.hidden =
-            !showFix && !showUpdate && !showOperations && !showAIResult;
+        const showFix = presentation.dock.showFixCandidate;
+        const showUpdate = presentation.dock.showUpdateCandidate;
+        const showBack =
+            presentation.dock.showBackToCandidate &&
+            presentation.overlay.treatment === 'current' &&
+            this.candidateCorrectionState.status !== 'failed';
+        this.candidateActions.hidden = !showFix && !showUpdate && !showBack;
         this.fixCandidateButton.hidden = !showFix;
-        this.updateCandidateButton.hidden = !showUpdate;
+        this.updateCandidateButton.hidden = !showUpdate || showBack;
+        this.backToCandidateButton.hidden = !showBack;
         this.updateCandidateButton.enabled =
             this.candidateCorrectionState.status !== 'updating';
-        if (this.candidateCorrectionState.status === 'updating') {
-            this.candidateStatus.text += ` · ${i18n.t('ai-select.candidate.updating')}`;
-        } else if (this.candidateCorrectionState.status === 'failed') {
-            this.candidateStatus.text += ` · ${i18n.t('ai-select.candidate.update-failed')}`;
-        }
-        this.dom.dataset.aiSelectCandidateOverlayEmphasis =
-            applicationState.overlayEmphasis;
-    }
-
-    private candidateApplicationBlockText(
-        reason: CandidateApplicationBlockReason
-    ): string {
-        if (reason === 'candidate-stale') {
-            return 'ai-select.candidate.application-blocked-stale';
-        }
-        if (reason === 'reference-disallowed') {
-            return 'ai-select.candidate.application-blocked-reference';
-        }
-        if (reason === 'runtime-unverified') {
-            return 'ai-select.candidate.application-blocked-runtime';
-        }
-        if (
-            reason === 'context-unavailable' ||
-            reason === 'context-suspended' ||
-            reason === 'target-mismatch'
-        ) {
-            return 'ai-select.candidate.application-blocked-context';
-        }
-        return 'ai-select.candidate.application-blocked-identity';
     }
 
     /**
@@ -1237,6 +1479,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         onRetry: (() => void) | null
     ): GeneratedCardElements {
         const root = new Container({ class: 'ai-select-view-card' });
+        root.dom.setAttribute('role', 'option');
+        root.dom.tabIndex = -1;
         const image = document.createElement('img');
         image.className = 'ai-select-view-card-image';
         image.alt = '';
@@ -1354,7 +1598,27 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         root.dom.addEventListener('pointerdown', (event) =>
             event.stopPropagation()
         );
-        root.dom.addEventListener('click', () => onClick());
+        root.dom.addEventListener('click', () => {
+            root.dom.focus();
+            onClick();
+        });
+        root.dom.addEventListener('keydown', (event) => {
+            if (event.target !== root.dom) {
+                return;
+            }
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onClick();
+                return;
+            }
+            if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+                event.preventDefault();
+                this.moveGalleryFocus(root.dom, 1);
+            } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+                event.preventDefault();
+                this.moveGalleryFocus(root.dom, -1);
+            }
+        });
         return {
             root,
             image,
@@ -1378,6 +1642,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             (generated.plannerStatus !== 'idle' || generated.views.length > 0);
         this.gallery.hidden = !showGallery;
         if (!showGallery) {
+            this.selectedViewPrimaryAction = null;
+            this.selectedViewPrimaryButton.hidden = true;
+            this.selectedViewRecoveryActions.hidden = true;
             return;
         }
 
@@ -1389,6 +1656,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.plannerRetryButton.hidden = true;
             this.plannerStopButton.hidden = true;
             this.plannerMoreButton.hidden = true;
+            this.plannerOverflowButton.hidden = true;
             this.plannerRegenerateButton.hidden = true;
         } else if (generated.plannerStatus === 'failed') {
             this.plannerLine.hidden = false;
@@ -1398,8 +1666,16 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.plannerRetryButton.hidden = false;
             this.plannerStopButton.hidden = true;
             this.plannerMoreButton.hidden = true;
+            this.plannerOverflowButton.hidden = true;
             this.plannerRegenerateButton.hidden = true;
         } else if (generated.plannerStatus === 'active') {
+            const generationInProgress = generated.views.some(
+                (view) =>
+                    view.renderStatus === 'pending' ||
+                    view.renderStatus === 'rendering' ||
+                    view.promptStatus === 'synthesizing' ||
+                    view.maskStatus === 'generating'
+            );
             this.plannerLine.hidden = false;
             this.plannerStatus.text =
                 generated.plannerErrorMessage ??
@@ -1407,12 +1683,24 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                     ? i18n.t('ai-select.views.planner.stopped')
                     : i18n.t('ai-select.views.planner.active'));
             this.plannerRetryButton.hidden = true;
-            this.plannerStopButton.hidden = false;
-            this.plannerStopButton.enabled = !generated.generationStopped;
-            this.plannerMoreButton.hidden = false;
+            this.plannerStopButton.hidden =
+                !generationInProgress || generated.generationStopped;
+            this.plannerStopButton.enabled = generationInProgress;
+            this.plannerMoreButton.hidden =
+                generationInProgress && !generated.generationStopped;
+            this.plannerOverflowButton.hidden = false;
             this.plannerRegenerateButton.hidden = false;
         } else {
             this.plannerLine.hidden = true;
+            this.plannerOverflowButton.hidden = true;
+            this.plannerRegenerateButton.hidden = true;
+        }
+        if (this.plannerOverflowButton.hidden) {
+            this.plannerOverflowMenu.hidden = true;
+            this.plannerOverflowButton.dom.setAttribute(
+                'aria-expanded',
+                'false'
+            );
         }
 
         // The Anchor card mirrors the Anchor's own render surface.
@@ -1447,11 +1735,26 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             'selected',
             this.generatedState.selectedViewId === null
         );
+        this.anchorCard.root.dom.tabIndex =
+            this.generatedState.selectedViewId === null ? 0 : -1;
+        this.anchorCard.root.dom.setAttribute(
+            'aria-selected',
+            (this.generatedState.selectedViewId === null).toString()
+        );
+        this.anchorCard.root.dom.setAttribute(
+            'aria-label',
+            this.anchorCard.title.text
+        );
+        this.anchorCard.root.dom.setAttribute(
+            'aria-current',
+            this.generatedState.selectedViewId === null ? 'true' : 'false'
+        );
 
         // Stable order (Anchor, generated local Views in creation order, then
         // user-added Views) with per-role title ordinals; the filter only
         // changes card visibility.
         const ordered = orderGalleryViews(generated.views);
+        const reviewCount = filterGalleryViews(ordered, 'needs-review').length;
         const visible = new Set(
             filterGalleryViews(ordered, this.galleryFilter).map(
                 (view) => view.viewId
@@ -1459,6 +1762,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         );
         this.filterLine.hidden = ordered.length === 0;
         for (const [filter, button] of this.filterButtons) {
+            button.text =
+                filter === 'needs-review'
+                    ? `${i18n.t('ai-select.views.filter.review')} ${i18n.formatInteger(reviewCount)}`
+                    : i18n.t('ai-select.views.filter.all-views');
             button.dom.classList.toggle(
                 'active',
                 filter === this.galleryFilter
@@ -1491,7 +1798,16 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 galleryCardPresentation(view, ordinals.get(view.viewId) ?? 0),
                 view
             );
-            card.root.hidden = !visible.has(view.viewId);
+            card.root.hidden = !view.selected && !visible.has(view.viewId);
+            card.root.dom.setAttribute(
+                'aria-current',
+                view.selected ? 'true' : 'false'
+            );
+            card.root.dom.setAttribute(
+                'aria-selected',
+                view.selected.toString()
+            );
+            card.root.dom.tabIndex = view.selected ? 0 : -1;
         }
         for (const [viewId, card] of this.generatedCards) {
             if (!seen.has(viewId)) {
@@ -1499,6 +1815,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 this.generatedCards.delete(viewId);
             }
         }
+        this.renderSelectedViewActions(ordered, ordinals);
     }
 
     private updateGeneratedCard(
@@ -1511,6 +1828,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 ? 'ai-select.views.role.user-added'
                 : 'ai-select.views.generated';
         card.title.text = `${i18n.t(titleKey)} ${i18n.formatInteger(presentation.titleOrdinal)}`;
+        card.root.dom.setAttribute('aria-label', card.title.text);
         card.root.dom.dataset.viewId = presentation.viewId;
         const statusLines: string[] = [];
         const detailLines: string[] = [];
@@ -1529,19 +1847,12 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         card.detail.text = detailLines.join('\n');
         card.detail.hidden = detailLines.length === 0;
 
-        card.retryButton.hidden = !presentation.actions.retryRender;
-        card.regeneratePromptButton.hidden =
-            !presentation.actions.regeneratePrompt;
-        card.refreshMaskButton.hidden = !presentation.actions.refreshMask;
-        if (presentation.actions.refreshMask) {
-            card.refreshMaskButton.text = i18n.t(
-                view.maskStatus === 'failed' ||
-                    view.maskStatus === 'unavailable'
-                    ? 'ai-select.views.retry-mask'
-                    : 'ai-select.views.refresh-mask'
-            );
-        }
-        card.confirmReviewButton.hidden = !presentation.actions.confirmAsIs;
+        // Cards keep only the Participation control. Current-View primary,
+        // recovery and camera actions belong to Work Area or Inspector.
+        card.retryButton.hidden = true;
+        card.regeneratePromptButton.hidden = true;
+        card.refreshMaskButton.hidden = true;
+        card.confirmReviewButton.hidden = true;
         card.participationButton.hidden =
             presentation.actions.participationToggle === null;
         if (presentation.actions.participationToggle !== null) {
@@ -1549,8 +1860,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 `ai-select.participation.${presentation.actions.participationToggle}`
             );
         }
-        card.inspectCameraButton.hidden = !presentation.actions.inspectCamera;
-        card.excludeViewButton.hidden = !presentation.actions.excludeView;
+        card.inspectCameraButton.hidden = true;
+        card.excludeViewButton.hidden = true;
         if (view.rgb !== undefined) {
             this.applyCardThumbnail(card, view.rgb.digest, view.rgb.pngBase64);
         } else {
@@ -1558,6 +1869,101 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             card.image.hidden = true;
         }
         card.root.dom.classList.toggle('selected', presentation.selected);
+    }
+
+    private moveGalleryFocus(from: HTMLElement, delta: -1 | 1): void {
+        const visibleCards = this.allCards().filter(
+            (card) => !card.root.hidden
+        );
+        const currentIndex = visibleCards.findIndex(
+            (card) => card.root.dom === from
+        );
+        if (currentIndex < 0 || visibleCards.length === 0) {
+            return;
+        }
+        const nextIndex =
+            (currentIndex + delta + visibleCards.length) % visibleCards.length;
+        for (const card of visibleCards) {
+            card.root.dom.tabIndex = -1;
+        }
+        visibleCards[nextIndex].root.dom.tabIndex = 0;
+        visibleCards[nextIndex].root.dom.focus();
+    }
+
+    private renderSelectedViewActions(
+        ordered: readonly GeneratedAIView[],
+        ordinals: ReadonlyMap<string, number>
+    ): void {
+        const selected = this.inspectedGeneratedView();
+        this.selectedViewRecoveryActions.hidden = selected === null;
+        if (selected === null) {
+            this.selectedViewPrimaryAction = null;
+            this.selectedViewPrimaryButton.hidden = true;
+            this.retrySelectedViewRenderButton.hidden = true;
+            this.regenerateSelectedViewPromptButton.hidden = true;
+            return;
+        }
+        this.inspectSelectedViewButton.enabled = true;
+        const card = galleryCardPresentation(
+            selected,
+            ordinals.get(selected.viewId) ?? 0
+        );
+        this.retrySelectedViewRenderButton.hidden = !card.actions.retryRender;
+        this.regenerateSelectedViewPromptButton.hidden =
+            !card.actions.regeneratePrompt;
+        const authoringPrimaryVisible =
+            !this.acceptProposalButton.hidden ||
+            !this.confirmMaskButton.hidden ||
+            !this.retryMaskButton.hidden;
+        let action: AISelectAnchorDock<TCandidatePayload>['selectedViewPrimaryAction'] =
+            null;
+        if (!authoringPrimaryVisible) {
+            if (card.actions.refreshMask) {
+                action = 'retry-mask';
+            } else if (card.actions.confirmAsIs) {
+                action = 'confirm-as-is';
+            } else if (
+                filterGalleryViews(ordered, 'needs-review').some(
+                    (view) => view.viewId !== selected.viewId
+                )
+            ) {
+                action = 'next-review';
+            }
+        }
+        this.selectedViewPrimaryAction = action;
+        this.selectedViewPrimaryButton.hidden = action === null;
+        if (action !== null) {
+            const labelKey = {
+                'retry-mask': 'ai-select.views.retry-mask',
+                'confirm-as-is': 'ai-select.review.confirm-as-is',
+                'next-review': 'ai-select.views.next-review'
+            }[action];
+            this.selectedViewPrimaryButton.text = i18n.t(labelKey);
+        }
+    }
+
+    private runSelectedViewPrimaryAction(): void {
+        const selected = this.inspectedGeneratedView();
+        if (selected === null || this.selectedViewPrimaryAction === null) {
+            return;
+        }
+        switch (this.selectedViewPrimaryAction) {
+            case 'retry-mask':
+                this.refreshGeneratedViewMask(selected.viewId);
+                return;
+            case 'confirm-as-is':
+                this.confirmGeneratedReview(selected.viewId);
+                return;
+            case 'next-review': {
+                const next = filterGalleryViews(
+                    orderGalleryViews(this.generatedState.views),
+                    'needs-review'
+                ).find((view) => view.viewId !== selected.viewId);
+                if (next !== undefined) {
+                    this.selectGeneratedView(next.viewId);
+                }
+            }
+        }
     }
 
     /**
@@ -1729,6 +2135,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 canClearHistory: false
             });
             this.proposalSelect.hidden = true;
+            this.proposalStepper.hidden = true;
             this.acceptProposalButton.hidden = true;
             this.image.style.cursor = 'default';
             return;
@@ -1779,7 +2186,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 );
                 const option = document.createElement('option');
                 option.value = proposalId;
-                option.text = `${i18n.t('ai-select.proposal.option')} ${i18n.formatInteger(index + 1)} · ${i18n.formatInteger(Math.round((proposal?.rankingFeatures.areaFraction ?? 0) * 100))}% · ${i18n.formatInteger(proposal?.rankingFeatures.connectedComponentCount ?? 0)} ${i18n.t('ai-select.proposal.components')}`;
+                option.text = `${i18n.t('ai-select.proposal.option')} ${i18n.formatInteger(index + 1)}`;
                 return option;
             })
         );
@@ -1795,7 +2202,20 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         const proposal = maskState.proposalSet?.proposals.find(
             (candidate) => candidate.proposalId === preferredProposalId
         );
-        this.proposalSelect.hidden = proposalIds.length === 0;
+        this.proposalSelect.hidden = true;
+        this.proposalStepper.hidden = proposalIds.length === 0;
+        const proposalIndex = Math.max(
+            0,
+            proposalIds.indexOf(preferredProposalId)
+        );
+        this.proposalStepperLabel.text = `${i18n.t(
+            'ai-select.proposal.option'
+        )} ${i18n.formatInteger(proposalIndex + 1)} / ${i18n.formatInteger(
+            proposalIds.length
+        )}`;
+        this.previousProposalButton.enabled = proposalIndex > 0;
+        this.nextProposalButton.enabled =
+            proposalIndex < proposalIds.length - 1;
         this.acceptProposalButton.hidden =
             proposal === undefined ||
             proposal.proposalId === maskState.acceptedProposalId;
@@ -1846,18 +2266,30 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         const confirmation = this.confirmationState;
         const confirmed = confirmation.confirmedAnchor !== null;
         const ready = presentation.status === 'ready';
-        this.anchorActions.hidden = !ready && !confirmed;
-        this.validateButton.hidden = confirmed;
-        this.validateButton.enabled =
-            ready &&
-            confirmation.validationStatus !== 'validating' &&
-            this.maskState.stableMask !== null;
-        this.confirmAnchorButton.hidden = confirmed;
-        this.confirmAnchorButton.enabled =
+        const maskPrimaryVisible =
+            !this.acceptProposalButton.hidden ||
+            !this.confirmMaskButton.hidden ||
+            !this.retryMaskButton.hidden;
+        const canConfirm =
             ready &&
             confirmation.validationStatus !== 'validating' &&
             confirmation.validation !== null &&
             confirmation.validation.canConfirm;
+        const showValidate =
+            !confirmed &&
+            ready &&
+            this.maskState.stableMask !== null &&
+            !canConfirm &&
+            !maskPrimaryVisible;
+        const showConfirm = !confirmed && canConfirm && !maskPrimaryVisible;
+        this.anchorActions.hidden = !showValidate && !showConfirm;
+        this.validateButton.hidden = !showValidate;
+        this.validateButton.enabled =
+            ready &&
+            confirmation.validationStatus !== 'validating' &&
+            this.maskState.stableMask !== null;
+        this.confirmAnchorButton.hidden = !showConfirm;
+        this.confirmAnchorButton.enabled = showConfirm;
         this.adjustAnchorButton.hidden = !confirmed;
 
         const lines: string[] = [];
@@ -2155,6 +2587,30 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         imageWidth = this.image.naturalWidth,
         imageHeight = this.image.naturalHeight
     ): void {
+        const canvasStyle = getComputedStyle(this.workCanvasRow.dom);
+        const horizontal = canvasStyle.flexDirection !== 'column';
+        const railWidth = horizontal ? this.toolRail.dom.offsetWidth + 8 : 0;
+        const railHeight = horizontal ? 0 : this.toolRail.dom.offsetHeight + 8;
+        const availableWidth = Math.max(
+            0,
+            this.workCanvasRow.dom.clientWidth - railWidth
+        );
+        const availableHeight = Math.max(
+            0,
+            this.workCanvasRow.dom.clientHeight - railHeight
+        );
+        const idealWidth = resolveAIViewWorkAreaWidth({
+            availableWidth,
+            availableHeight,
+            imageWidth,
+            imageHeight
+        });
+        if (idealWidth > 0) {
+            this.imageViewport.style.width = `${idealWidth}px`;
+            this.imageViewport.style.flex = horizontal
+                ? `0 1 ${idealWidth}px`
+                : '1 1 auto';
+        }
         const fitted = fitImageRect(
             this.imageViewport.clientWidth,
             this.imageViewport.clientHeight,

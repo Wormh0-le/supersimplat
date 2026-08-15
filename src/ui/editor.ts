@@ -2,6 +2,12 @@ import { Container, Label } from '@playcanvas/pcui';
 import { Mat4 } from 'playcanvas';
 
 import { DataPanel } from './data-panel';
+import {
+    AI_VIEW_DOCK_DEFAULT_HEIGHT_PX,
+    AI_VIEW_DOCK_EDITOR_CLEARANCE_PX,
+    AI_VIEW_DOCK_MINIMUM_HEIGHT_PX,
+    clampAIViewDockHeight
+} from '../ai-select/ai-view-dock-layout';
 import { Events } from '../events';
 import type { SelectionServiceReadinessInterface } from '../selection-service-readiness';
 import { AboutPopup } from './about-popup';
@@ -37,6 +43,7 @@ class EditorUI {
     topContainer: Container;
     canvasContainer: Container;
     aiSelectPanel: Container;
+    statusBar: StatusBar;
     toolsContainer: Container;
     canvas: HTMLCanvasElement;
     popup: Popup;
@@ -144,21 +151,48 @@ class EditorUI {
         aiSelectResizeHandle.id = 'ai-select-panel-resize-handle';
         aiSelectResizeHandle.setAttribute('role', 'separator');
         aiSelectResizeHandle.setAttribute('aria-orientation', 'horizontal');
-        aiSelectResizeHandle.setAttribute('aria-valuemin', '280');
+        aiSelectResizeHandle.setAttribute(
+            'aria-valuemin',
+            AI_VIEW_DOCK_MINIMUM_HEIGHT_PX.toString()
+        );
         aiSelectResizeHandle.tabIndex = 0;
         aiSelectPanel.dom.appendChild(aiSelectResizeHandle);
+        const aiSelectHeightPreferenceKey =
+            'supersplat.ai-select.view-dock-height';
+        const readAISelectHeightPreference = (): number => {
+            try {
+                return Number.parseInt(
+                    localStorage.getItem(aiSelectHeightPreferenceKey) ?? '',
+                    10
+                );
+            } catch {
+                return Number.NaN;
+            }
+        };
+        const writeAISelectHeightPreference = (height: number): void => {
+            try {
+                localStorage.setItem(
+                    aiSelectHeightPreferenceKey,
+                    Math.round(height).toString()
+                );
+            } catch {
+                // A blocked device preference must not block the Dock.
+            }
+        };
+        const savedAISelectHeight = readAISelectHeightPreference();
+        const initialAISelectHeight = Number.isFinite(savedAISelectHeight)
+            ? savedAISelectHeight
+            : AI_VIEW_DOCK_DEFAULT_HEIGHT_PX;
+        let preferredAISelectHeight = initialAISelectHeight;
+        aiSelectPanel.dom.style.height = `${initialAISelectHeight}px`;
         let resizingAISelectPanel = false;
         let aiSelectResizeStartY = 0;
         let aiSelectResizeStartHeight = 0;
         const resizeAISelectPanel = (clientY: number): void => {
             const availableHeight = mainContainer.dom.clientHeight;
-            const maximumHeight = Math.max(280, availableHeight - 160);
-            const height = Math.max(
-                280,
-                Math.min(
-                    maximumHeight,
-                    aiSelectResizeStartHeight + aiSelectResizeStartY - clientY
-                )
+            const height = clampAIViewDockHeight(
+                aiSelectResizeStartHeight + aiSelectResizeStartY - clientY,
+                availableHeight
             );
             aiSelectPanel.dom.style.height = `${height}px`;
             aiSelectResizeHandle.setAttribute(
@@ -198,6 +232,8 @@ class EditorUI {
         );
         aiSelectResizeHandle.addEventListener('lostpointercapture', () => {
             resizingAISelectPanel = false;
+            preferredAISelectHeight = aiSelectPanel.dom.offsetHeight;
+            writeAISelectHeightPreference(preferredAISelectHeight);
         });
         aiSelectResizeHandle.addEventListener(
             'keydown',
@@ -208,6 +244,8 @@ class EditorUI {
                 aiSelectResizeStartY = 0;
                 aiSelectResizeStartHeight = aiSelectPanel.dom.offsetHeight;
                 resizeAISelectPanel(event.key === 'ArrowUp' ? -24 : 24);
+                preferredAISelectHeight = aiSelectPanel.dom.offsetHeight;
+                writeAISelectHeightPreference(preferredAISelectHeight);
                 event.preventDefault();
                 event.stopPropagation();
             }
@@ -220,6 +258,32 @@ class EditorUI {
         mainContainer.append(timelinePanel);
         mainContainer.append(dataPanel);
         mainContainer.append(statusBar);
+
+        const clampAISelectPanelToEditor = (): void => {
+            const editorHeight = mainContainer.dom.clientHeight;
+            if (editorHeight <= 0) {
+                return;
+            }
+            const height = clampAIViewDockHeight(
+                preferredAISelectHeight,
+                editorHeight
+            );
+            aiSelectPanel.dom.style.height = `${height}px`;
+            aiSelectResizeHandle.setAttribute(
+                'aria-valuenow',
+                height.toString()
+            );
+            aiSelectResizeHandle.setAttribute(
+                'aria-valuemax',
+                Math.max(
+                    AI_VIEW_DOCK_MINIMUM_HEIGHT_PX,
+                    editorHeight - AI_VIEW_DOCK_EDITOR_CLEARANCE_PX
+                ).toString()
+            );
+        };
+        new ResizeObserver(clampAISelectPanelToEditor).observe(
+            mainContainer.dom
+        );
 
         // Wire up status bar panel toggles
         events.on('statusBar.panelChanged', (panel: string | null) => {
@@ -267,6 +331,7 @@ class EditorUI {
         this.topContainer = topContainer;
         this.canvasContainer = canvasContainer;
         this.aiSelectPanel = aiSelectPanel;
+        this.statusBar = statusBar;
         this.toolsContainer = toolsContainer;
         this.canvas = canvas;
         this.popup = popup;

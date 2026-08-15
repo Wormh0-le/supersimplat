@@ -15,8 +15,7 @@ import {
     type GaussianEvidenceArtifact
 } from './gaussian-evidence-contract';
 
-export interface CandidateEvidenceIdentity
-    extends EvidenceDependencyIdentity {
+export interface CandidateEvidenceIdentity extends EvidenceDependencyIdentity {
     readonly cameraBindingDigest: string;
     readonly renderWorkingSetToken: string;
     readonly evidenceWorkingSetToken: string;
@@ -51,9 +50,7 @@ export interface CandidateCorrectionProductionInput<TPayload = unknown> {
 export interface CandidateCorrectionProductionResult {
     readonly candidate: ReferenceCandidateArtifact;
     readonly publicationBinding: CandidatePublicationBinding;
-    readonly evidence: Readonly<
-        Record<string, CachedCandidateEvidence>
-    >;
+    readonly evidence: Readonly<Record<string, CachedCandidateEvidence>>;
     /** Publishes independently atomic per-View products after the race check. */
     readonly publishRelatedProducts?: () => void;
 }
@@ -216,9 +213,7 @@ export class AISelectCandidateCorrectionController<TPayload = unknown> {
 
     beginCorrection(): void {
         if (this.candidatePublications.presentationState.status !== 'current') {
-            throw new Error(
-                'AI Select can fix only a current 3D Candidate.'
-            );
+            throw new Error('AI Select can fix only a current 3D Candidate.');
         }
         this.mode = 'correcting';
         this.status = 'idle';
@@ -228,6 +223,17 @@ export class AISelectCandidateCorrectionController<TPayload = unknown> {
 
     noteEditingMaskChanged(_viewId: string): void {
         this.dirtyState.markEditingMaskChanged();
+    }
+
+    /** Exit Correction without publishing or discarding the retained draft. */
+    backToCandidate(): void {
+        if (this.mode !== 'correcting' || this.status === 'updating') {
+            return;
+        }
+        this.mode = 'candidate';
+        this.status = 'idle';
+        this.errorMessage = undefined;
+        this.publish();
     }
 
     async updateCandidate(): Promise<void> {

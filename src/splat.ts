@@ -17,7 +17,11 @@ import {
 
 import { Element, ElementType } from './element';
 import { Serializer } from './serializer';
-import { vertexShader, fragmentShader, gsplatCenter } from './shaders/splat-shader';
+import {
+    vertexShader,
+    fragmentShader,
+    gsplatCenter
+} from './shaders/splat-shader';
 import { State, SplatState } from './splat-state';
 import { Transform } from './transform';
 import { TransformPalette } from './transform-palette';
@@ -26,18 +30,22 @@ const vec = new Vec3();
 const veca = new Vec3();
 const vecb = new Vec3();
 
-const boundingPoints =
-    [-1, 1].map((x) => {
+const boundingPoints = [-1, 1]
+    .map((x) => {
         return [-1, 1].map((y) => {
             return [-1, 1].map((z) => {
                 return [
-                    new Vec3(x, y, z), new Vec3(x * 0.75, y, z),
-                    new Vec3(x, y, z), new Vec3(x, y * 0.75, z),
-                    new Vec3(x, y, z), new Vec3(x, y, z * 0.75)
+                    new Vec3(x, y, z),
+                    new Vec3(x * 0.75, y, z),
+                    new Vec3(x, y, z),
+                    new Vec3(x, y * 0.75, z),
+                    new Vec3(x, y, z),
+                    new Vec3(x, y, z * 0.75)
                 ];
             });
         });
-    }).flat(3);
+    })
+    .flat(3);
 
 class Splat extends Element {
     asset: Asset;
@@ -67,6 +75,44 @@ class Splat extends Element {
     transformPalette: TransformPalette;
 
     selectionAlpha = 1;
+
+    /** Bind the transient, non-native AI Candidate membership texture. */
+    setCandidateOverlay(
+        texture: Texture,
+        options: {
+            readonly selectedVisible: boolean;
+            readonly uncertainVisible: boolean;
+            readonly stale: boolean;
+        }
+    ) {
+        const material = this.entity.gsplat.instance.material;
+        material.setDefine('AI_CANDIDATE_OVERLAY', true);
+        material.setParameter('candidateState', texture);
+        material.setParameter(
+            'candidateSelectedVisible',
+            options.selectedVisible ? 1 : 0
+        );
+        material.setParameter(
+            'candidateUncertainVisible',
+            options.uncertainVisible ? 1 : 0
+        );
+        material.setParameter('candidateStale', options.stale ? 1 : 0);
+        material.setParameter('candidateSelectedClr', [0.17, 0.82, 0.92, 0.92]);
+        material.setParameter('candidateUncertainClr', [1, 0.68, 0.2, 0.3]);
+        material.update();
+        this.scene.forceRender = true;
+    }
+
+    /** Remove every shader reference before the transient texture is freed. */
+    clearCandidateOverlay() {
+        const material = this.entity.gsplat.instance.material;
+        material.setDefine('AI_CANDIDATE_OVERLAY', undefined);
+        material.deleteParameter('candidateState');
+        material.setParameter('candidateSelectedVisible', 0);
+        material.setParameter('candidateUncertainVisible', 0);
+        material.update();
+        this.scene.forceRender = true;
+    }
 
     _name = '';
     _tintClr = new Color(1, 1, 1);
@@ -108,7 +154,10 @@ class Splat extends Element {
             glsl.set('gsplatPS', fragmentShader);
             glsl.set('gsplatCenterVS', gsplatCenter);
 
-            material.setDefine('SH_BANDS', `${Math.min(bands, (instance.resource as GSplatResource).shBands)}`);
+            material.setDefine(
+                'SH_BANDS',
+                `${Math.min(bands, (instance.resource as GSplatResource).shBands)}`
+            );
             material.setParameter('splatState', this.stateTexture);
             material.setParameter('splatTransform', this.transformTexture);
             material.update();
@@ -167,7 +216,8 @@ class Splat extends Element {
             byteSize: 2
         });
 
-        const { x: width, y: height } = (splatResource as any).textureDimensions;
+        const { x: width, y: height } = (splatResource as any)
+            .textureDimensions;
 
         // pack spherical harmonic data
         const createTexture = (name: string, format: number) => {
@@ -188,8 +238,14 @@ class Splat extends Element {
         // splatData.getProp('state') aliases state.data so existing read-only
         // consumers (serialize, status-bar, etc) keep working unchanged.
         this.stateTexture = createTexture('splatState', PIXELFORMAT_R8);
-        this.state = new SplatState(splatData.getProp('state') as Uint8Array, this.stateTexture);
-        this.transformTexture = createTexture('splatTransform', PIXELFORMAT_R16U);
+        this.state = new SplatState(
+            splatData.getProp('state') as Uint8Array,
+            this.stateTexture
+        );
+        this.transformTexture = createTexture(
+            'splatTransform',
+            PIXELFORMAT_R16U
+        );
 
         this.localBoundStorage = instance.resource.aabb;
         // @ts-ignore
@@ -212,7 +268,10 @@ class Splat extends Element {
         return new Promise((resolve) => {
             // single finish() removes the listener and clears the timeout, so the
             // common case (postrender fires first) doesn't leave a pending timer.
-            const handles: { off?: { off: () => void }, timer?: ReturnType<typeof setTimeout> } = {};
+            const handles: {
+                off?: { off: () => void };
+                timer?: ReturnType<typeof setTimeout>;
+            } = {};
             let settled = false;
             const finish = () => {
                 if (settled) return;
@@ -431,19 +490,34 @@ class Splat extends Element {
         serializer.pack(this.changedCounter);
         serializer.pack(this.visible);
         serializer.pack(this.tintClr.r, this.tintClr.g, this.tintClr.b);
-        serializer.pack(this.temperature, this.saturation, this.brightness, this.blackPoint, this.whitePoint, this.transparency);
+        serializer.pack(
+            this.temperature,
+            this.saturation,
+            this.brightness,
+            this.blackPoint,
+            this.whitePoint,
+            this.transparency
+        );
     }
 
     onPreRender() {
         const events = this.scene.events;
-        const selected = this.scene.camera.renderOverlays && events.invoke('selection') === this;
+        const selected =
+            this.scene.camera.renderOverlays &&
+            events.invoke('selection') === this;
         const cameraMode = events.invoke('camera.mode');
         const cameraOverlay = events.invoke('camera.overlay');
 
         // configure rings rendering
         const material = this.entity.gsplat.instance.material;
-        material.setParameter('outlineMode', events.invoke('view.outlineSelection') ? 1 : 0);
-        material.setParameter('ringSize', (selected && cameraOverlay && cameraMode === 'rings') ? 0.04 : 0);
+        material.setParameter(
+            'outlineMode',
+            events.invoke('view.outlineSelection') ? 1 : 0
+        );
+        material.setParameter(
+            'ringSize',
+            selected && cameraOverlay && cameraMode === 'rings' ? 0.04 : 0
+        );
 
         // configure colors
         const selectedClr = events.invoke('selectedClr');
@@ -455,10 +529,25 @@ class Splat extends Element {
         } else if (events.invoke('view.outlineSelection')) {
             material.setParameter('selectedClr', [0, 0, 0, 0]);
         } else {
-            material.setParameter('selectedClr', [selectedClr.r, selectedClr.g, selectedClr.b, selectedClr.a * this.selectionAlpha]);
+            material.setParameter('selectedClr', [
+                selectedClr.r,
+                selectedClr.g,
+                selectedClr.b,
+                selectedClr.a * this.selectionAlpha
+            ]);
         }
-        material.setParameter('unselectedClr', [unselectedClr.r, unselectedClr.g, unselectedClr.b, unselectedClr.a]);
-        material.setParameter('lockedClr', [lockedClr.r, lockedClr.g, lockedClr.b, lockedClr.a]);
+        material.setParameter('unselectedClr', [
+            unselectedClr.r,
+            unselectedClr.g,
+            unselectedClr.b,
+            unselectedClr.a
+        ]);
+        material.setParameter('lockedClr', [
+            lockedClr.r,
+            lockedClr.g,
+            lockedClr.b,
+            lockedClr.a
+        ]);
 
         // combine black pointer, white point and brightness
         const offset = -this.blackPoint + this.brightness;
@@ -473,13 +562,20 @@ class Splat extends Element {
         ]);
 
         material.setParameter('saturation', this.saturation);
-        material.setParameter('transformPalette', this.transformPalette.texture);
+        material.setParameter(
+            'transformPalette',
+            this.transformPalette.texture
+        );
 
         if (this.visible && selected) {
             // render bounding box
             if (events.invoke('camera.bound')) {
                 const bound = this.localBound;
-                const scale = new Mat4().setTRS(bound.center, Quat.IDENTITY, bound.halfExtents);
+                const scale = new Mat4().setTRS(
+                    bound.center,
+                    Quat.IDENTITY,
+                    bound.halfExtents
+                );
                 scale.mul2(this.entity.getWorldTransform(), scale);
 
                 for (let i = 0; i < boundingPoints.length / 2; i++) {
@@ -488,7 +584,13 @@ class Splat extends Element {
                     scale.transformPoint(a, veca);
                     scale.transformPoint(b, vecb);
 
-                    this.scene.app.drawLine(veca, vecb, Color.WHITE, true, this.scene.worldLayer);
+                    this.scene.app.drawLine(
+                        veca,
+                        vecb,
+                        Color.WHITE,
+                        true,
+                        this.scene.worldLayer
+                    );
                 }
             }
         }
@@ -527,13 +629,20 @@ class Splat extends Element {
 
     // calculate both selection and local bounds (async, callers must await)
     async updateLocalBounds(): Promise<void> {
-        await this.scene.dataProcessor.calcBound(this, this.selectionBoundStorage, this.localBoundStorage);
+        await this.scene.dataProcessor.calcBound(
+            this,
+            this.selectionBoundStorage,
+            this.localBoundStorage
+        );
         this.updateWorldBound();
     }
 
     // update world bound from local bound (synchronous)
     private updateWorldBound() {
-        this.worldBoundStorage.setFromTransformedAabb(this.localBoundStorage, this.entity.getWorldTransform());
+        this.worldBoundStorage.setFromTransformedAabb(
+            this.localBoundStorage,
+            this.entity.getWorldTransform()
+        );
         this.scene.boundDirty = true;
     }
 
@@ -648,16 +757,28 @@ class Splat extends Element {
     }
 
     // get pivot position/rotation/scale (caller should have awaited operation that changed data)
-    getPivot(mode: 'center' | 'boundCenter', selection: boolean, result: Transform) {
+    getPivot(
+        mode: 'center' | 'boundCenter',
+        selection: boolean,
+        result: Transform
+    ) {
         const { entity } = this;
         switch (mode) {
             case 'center':
-                result.set(entity.getLocalPosition(), entity.getLocalRotation(), entity.getLocalScale());
+                result.set(
+                    entity.getLocalPosition(),
+                    entity.getLocalRotation(),
+                    entity.getLocalScale()
+                );
                 break;
             case 'boundCenter': {
                 const bound = selection ? this.selectionBound : this.localBound;
                 entity.getLocalTransform().transformPoint(bound.center, vec);
-                result.set(vec, entity.getLocalRotation(), entity.getLocalScale());
+                result.set(
+                    vec,
+                    entity.getLocalRotation(),
+                    entity.getLocalScale()
+                );
                 break;
             }
         }
@@ -684,12 +805,30 @@ class Splat extends Element {
     }
 
     docDeserialize(doc: any) {
-        const { name, position, rotation, scale, visible, tintClr, temperature, saturation, brightness, blackPoint, whitePoint, transparency } = doc;
+        const {
+            name,
+            position,
+            rotation,
+            scale,
+            visible,
+            tintClr,
+            temperature,
+            saturation,
+            brightness,
+            blackPoint,
+            whitePoint,
+            transparency
+        } = doc;
 
         this.name = name;
         this.move(new Vec3(position), new Quat(rotation), new Vec3(scale));
         this.visible = visible;
-        this.tintClr = new Color(tintClr[0], tintClr[1], tintClr[2], tintClr[3]);
+        this.tintClr = new Color(
+            tintClr[0],
+            tintClr[1],
+            tintClr[2],
+            tintClr[3]
+        );
         this.temperature = temperature ?? 0;
         this.saturation = saturation ?? 1;
         this.brightness = brightness;

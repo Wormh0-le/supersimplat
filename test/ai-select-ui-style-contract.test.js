@@ -56,3 +56,56 @@ test('Candidate shader state is independent and explicitly released', () => {
     assert.match(shader, /candidateStateValue == 1u/);
     assert.match(shader, /candidateStateValue == 2u/);
 });
+
+test('AI View Dock keeps its compact bar and workspace on the accepted 1440px stage', () => {
+    const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
+    const header = styles.match(
+        /#ai-select-anchor-dock-header\s*\{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body;
+    const workspace = styles.match(
+        /#ai-select-anchor-dock-main\s*\{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body;
+    assert.ok(header, 'missing compact Dock header styles');
+    assert.ok(workspace, 'missing Dock workspace styles');
+    assert.match(header, /display:\s*flex;/);
+    assert.match(header, /height:\s*48px;/);
+    assert.match(header, /max-width:\s*1440px;/);
+    assert.match(header, /margin-inline:\s*auto;/);
+    assert.match(
+        header,
+        /#ai-select-candidate-actions\.pcui-hidden[\s\S]*?#ai-select-navigator-toggle[\s\S]*?margin-left:\s*auto;/
+    );
+    assert.match(workspace, /max-width:\s*1440px;/);
+    assert.match(workspace, /margin-inline:\s*auto;/);
+    assert.match(
+        styles,
+        /#ai-select-anchor-dock-availability\s*\{[\s\S]*?display:\s*flex;/
+    );
+});
+
+test('Proposal navigation is one compact row inside the View Action Bar', () => {
+    const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
+    const stepper = styles.match(
+        /#ai-select-proposal-stepper\s*\{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body;
+    assert.ok(stepper, 'missing proposal stepper styles');
+    assert.match(stepper, /display:\s*flex;/);
+    assert.match(stepper, /flex-direction:\s*row;/);
+    assert.match(stepper, /white-space:\s*nowrap;/);
+});
+
+test('Navigator remains useful with an Anchor before generated Views exist', () => {
+    const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
+    assert.match(dock, /const showGallery = this\.state\.context !== null;/);
+    assert.doesNotMatch(
+        dock,
+        /const showGallery =[\s\S]{0,180}generated\.plannerStatus !== 'idle'/
+    );
+});
+
+test('Inspector restores the accepted assessment, participation, and Mask hierarchy', () => {
+    const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
+    assert.match(dock, /ai-select-inspector-assessment-group/);
+    assert.match(dock, /ai-select-inspector-mask-group/);
+    assert.match(dock, /ai-select-inspector-recovery-group/);
+});

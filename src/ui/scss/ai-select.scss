@@ -192,11 +192,20 @@
 }
 
 #ai-select-anchor-dock-header {
+    box-sizing: border-box;
+    display: flex;
     flex-direction: row;
     align-items: center;
     justify-content: flex-start;
     gap: 8px;
+    width: 100%;
+    max-width: 1440px;
+    height: 48px;
+    min-height: 42px;
+    margin-inline: auto;
+    padding: 0 4px 6px;
     flex-shrink: 0;
+    border-bottom: 1px solid $bcg-lighter;
 
     #ai-select-anchor-dock-candidate-status {
         min-width: 0;
@@ -227,6 +236,10 @@
         }
     }
 
+    #ai-select-candidate-actions.pcui-hidden + #ai-select-navigator-toggle {
+        margin-left: auto;
+    }
+
     > .pcui-button {
         min-width: 40px;
         min-height: 40px;
@@ -234,6 +247,7 @@
 }
 
 #ai-select-anchor-dock-availability {
+    display: flex;
     flex-direction: row;
     align-items: center;
     gap: 6px;
@@ -265,8 +279,12 @@
 }
 
 #ai-select-anchor-dock-main {
+    box-sizing: border-box;
     flex-direction: row;
     gap: 8px;
+    width: 100%;
+    max-width: 1440px;
+    margin-inline: auto;
     flex: 1 1 auto;
     min-height: 0;
 
@@ -285,6 +303,26 @@
 
     &:not(.pcui-hidden) {
         display: flex;
+    }
+}
+
+#ai-select-view-navigator-header {
+    box-sizing: border-box;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 8px;
+    flex: 0 0 auto;
+
+    &:not(.pcui-hidden) {
+        display: flex;
+    }
+
+    #ai-select-view-navigator-title {
+        color: $text-primary;
+        font-size: 11px;
+        font-weight: bold;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
     }
 }
 
@@ -411,6 +449,31 @@
     }
 }
 
+.ai-select-inspector-group {
+    box-sizing: border-box;
+    flex-direction: column;
+    gap: 6px;
+    padding: 2px 0 10px;
+    flex: 0 0 auto;
+    border-bottom: 1px solid $bcg-lighter;
+
+    &:not(.pcui-hidden) {
+        display: flex;
+    }
+
+    &:last-child {
+        border-bottom: 0;
+    }
+
+    .ai-select-inspector-heading {
+        color: $text-dark;
+        font-size: 10px;
+        font-weight: bold;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+}
+
 #ai-select-anchor-dock-primary-actions {
     box-sizing: border-box;
     flex-direction: row;
@@ -435,7 +498,7 @@
         display: flex;
     }
 
-    > .pcui-container:not(.pcui-hidden) {
+    > .pcui-container:not(.pcui-hidden):not(#ai-select-proposal-stepper) {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
         gap: 6px;
@@ -454,9 +517,32 @@
     }
 }
 
+#ai-select-proposal-stepper {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+
+    > .pcui-button {
+        width: 32px;
+        min-width: 32px;
+        min-height: 32px;
+        padding: 0;
+    }
+
+    > .pcui-label {
+        min-width: 84px;
+        color: $text-secondary;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+    }
+}
+
 #ai-select-candidate-actions {
     &:not(.pcui-hidden) {
-        display: grid;
+        display: flex;
     }
 }
 
@@ -793,8 +879,7 @@
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
-    border-top: 1px solid $bcg-lighter;
-    padding-top: 6px;
+    padding: 0 6px 6px 0;
 
     &:not(.pcui-hidden) {
         display: flex;
@@ -882,7 +967,6 @@
 
 .ai-select-view-card {
     box-sizing: border-box;
-    flex-direction: column;
     gap: 4px;
     width: 100%;
     min-width: 0;
@@ -904,12 +988,15 @@
     }
 
     &:not(.pcui-hidden) {
-        display: flex;
+        display: grid;
+        grid-template-columns: 64px minmax(0, 1fr);
+        grid-template-rows: auto auto auto;
     }
 
     .ai-select-view-card-image {
-        width: 100%;
+        width: 64px;
         height: 64px;
+        grid-row: 1 / span 3;
         object-fit: contain;
         background-color: black;
         user-select: none;
@@ -937,6 +1024,7 @@
     }
 
     .ai-select-view-card-actions {
+        grid-column: 1 / -1;
         flex-direction: row;
         gap: 4px;
         flex-wrap: wrap;

@@ -897,6 +897,14 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         const navigator = new Container({
             id: 'ai-select-view-navigator'
         });
+        const navigatorHeader = new Container({
+            id: 'ai-select-view-navigator-header'
+        });
+        const navigatorTitle = new Label({
+            id: 'ai-select-view-navigator-title'
+        });
+        i18n.bindText(navigatorTitle, 'ai-select.dock.views');
+        navigatorHeader.append(navigatorTitle);
         const workArea = new Container({
             id: 'ai-select-view-work-area'
         });
@@ -915,15 +923,45 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.selectedViewParticipation = new Label({
             id: 'ai-select-selected-view-participation'
         });
-        information.append(this.selectedViewAssessment);
-        information.append(this.selectedViewParticipation);
-        information.append(this.promptStatus);
-        information.append(this.maskStatus);
-        information.dom.appendChild(this.technicalDetails);
-        information.append(this.validationStatus);
-        information.append(this.restoreAutoButton);
-        information.append(this.adjustAnchorButton);
-        information.append(this.selectedViewRecoveryActions);
+        const createInspectorGroup = (
+            id: string,
+            titleKey: string
+        ): Container => {
+            const group = new Container({
+                id,
+                class: 'ai-select-inspector-group'
+            });
+            const heading = new Label({
+                class: 'ai-select-inspector-heading'
+            });
+            i18n.bindText(heading, titleKey);
+            group.append(heading);
+            return group;
+        };
+        const assessmentGroup = createInspectorGroup(
+            'ai-select-inspector-assessment-group',
+            'ai-select.dock.assessment'
+        );
+        assessmentGroup.append(this.selectedViewAssessment);
+        assessmentGroup.append(this.selectedViewParticipation);
+        const maskGroup = createInspectorGroup(
+            'ai-select-inspector-mask-group',
+            'ai-select.dock.prompt-mask'
+        );
+        maskGroup.append(this.promptStatus);
+        maskGroup.append(this.maskStatus);
+        maskGroup.dom.appendChild(this.technicalDetails);
+        maskGroup.append(this.validationStatus);
+        const recoveryGroup = createInspectorGroup(
+            'ai-select-inspector-recovery-group',
+            'ai-select.dock.recovery'
+        );
+        recoveryGroup.append(this.restoreAutoButton);
+        recoveryGroup.append(this.adjustAnchorButton);
+        recoveryGroup.append(this.selectedViewRecoveryActions);
+        information.append(assessmentGroup);
+        information.append(maskGroup);
+        information.append(recoveryGroup);
         const primaryActions = new Container({
             id: 'ai-select-anchor-dock-primary-actions'
         });
@@ -933,6 +971,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         primaryActions.append(this.anchorActions);
         primaryActions.append(this.acceptProposalButton);
         primaryActions.append(this.maskActions);
+        navigator.append(navigatorHeader);
         navigator.append(this.gallery);
         this.workCanvasRow = new Container({
             id: 'ai-select-view-work-canvas-row'
@@ -1637,9 +1676,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
 
     private renderGallery(presentation: AnchorDockPresentation): void {
         const generated = this.generatedState;
-        const showGallery =
-            this.state.context !== null &&
-            (generated.plannerStatus !== 'idle' || generated.views.length > 0);
+        const showGallery = this.state.context !== null;
         this.gallery.hidden = !showGallery;
         if (!showGallery) {
             this.selectedViewPrimaryAction = null;

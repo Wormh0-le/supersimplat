@@ -70,14 +70,14 @@ Status: current reusable interface guidance
 - 展开的侧栏推挤 Work Area，不覆盖图像。
 - 展开状态的折叠入口位于对应侧栏标题行；收起后仅在 Work Area 相邻边缘显示恢复入口。顶栏不放置脱离上下文的侧栏开关。
 - Dock 默认高度 `420px`，最小 `300px`，最大为主编辑区域高度减 `160px`。
-- 顶栏、图像和主 Action Bar 固定；Navigator 与 Inspector 独立滚动，图像不进入滚动容器。
+- 主图像和浮动编辑工具保持稳定；Navigator 与 Inspector 独立滚动，图像不进入滚动容器。
 
 ### 固定主视口子工具栏
 
 - 主视口上下文操作使用固定、不可拖动、单行子工具栏。
 - 工具栏不按业务流程分页；它只投影当前视口交互对象需要的控制。
-- 高优先级操作始终可见；低频 View/Target 操作进入 `More`。
-- 响应式顺序：先移动低频操作，再缩短文案，再把高频集合操作改为带 tooltip 的图标；不得换行。
+- 高优先级空间操作始终可见；目标重建、工具退出等生命周期操作不进入该子工具栏。
+- 子工具栏和浮动工具栏默认使用带 tooltip 的图标按钮。响应式退化优先移动低频操作，不把图标还原成长文字，也不得换行。
 - 不为快速、可撤销的本地操作增加确认框、Apply 中间步骤或持久 spinner。
 
 ### 状态栏
@@ -87,6 +87,14 @@ Status: current reusable interface guidance
 - Status Bar 状态不是隐藏导航入口。打开编辑表面必须使用明确、既有的面板触发器。
 
 ## 可复用组件模式
+
+### Icon Action Button
+
+- Toolbar、浮动 palette、Dock chrome 和紧凑控制组中的动作按钮，默认只显示可辨识的自定义 SVG 图标，尽量不使用常驻文字按钮。
+- 每个图标按钮必须同时提供项目 tooltip 和可访问名称；tooltip 说明动作结果，不能只重复含糊的图标名。
+- 图标约 `18–20px`，交互命中区域至少 `40×40px`。同一动作在不同表面复用同一图标，不使用 Unicode 字符充当图标。
+- pressed、selected、disabled、warning 和 focus 状态不能只靠 tooltip 或颜色表达；禁用原因必须可由键盘和辅助技术读取。
+- 当动作概念陌生、多个图标难以区分、菜单需要快速扫读，或破坏性后果必须持续可见时，可以使用“图标 + 短文字”。这属于有理由的例外，不是默认按钮样式。
 
 ### Compact Context Bar
 
@@ -103,10 +111,10 @@ Status: current reusable interface guidance
 
 ### Selected Work Area
 
-- 结构：约 `28px` 的轻量标题行、主图像、图像内可拖动并自动吸附的浮动工具栏，以及仅承载上下文恢复动作的 Action Bar。
-- 一次只显示一个主操作；无关操作隐藏，暂时不可用的操作保留并紧邻解释原因。
-- 没有主操作时，Action Bar 整体隐藏并把高度还给图像。
-- 每次 Prompt 推理只暴露一个结果，并直接进入 Editing Mask；不提供 Proposal 轮播、计数或接受步骤。
+- 结构：主图像、图像内可拖动并自动吸附的浮动工具栏，以及图像外上方的少量目标级 chrome；不保留永久标题行或底部 Action Bar。
+- 一次只强调一个主操作；无关操作隐藏，暂时不可用的操作保留并紧邻解释原因。
+- 操作者发起的每次 Prompt 推理只暴露一个结果，并直接进入 Editing Mask；不提供 Proposal 轮播、计数或接受步骤。
+- 规划器自动 Generated View 的已审阅结果可以直接发布 Stable Mask。该状态可以没有 Editing Mask；以后进入修正时才建立独立 Editing 草稿。
 - 浮动工具栏把 `确认 Mask` 放在清除操作之前，并提供 `重置为自动 Mask`。确认 Anchor 的 Editing Mask 同时继续 Anchor 确认和 Generated View 规划。
 
 ### Inspector
@@ -125,7 +133,7 @@ Status: current reusable interface guidance
 
 ### Candidate Operation Group
 
-- 固定顺序：`Overlay 👁 ▾ | Set | Add | Remove | Intersect | Undo and Fix* | More`。
+- 固定顺序：`Overlay | Set | Add | Remove | Intersect | Undo and Fix*`；均使用统一图标语法。
 - Overlay 和四个集合操作不进入 overflow。
 - 生命周期状态改变样式、enablement 和禁用原因，不重排整条工具栏。
 - 四个集合操作共享一个按恢复动作归类的禁用原因。
@@ -159,5 +167,7 @@ Status: current reusable interface guidance
 - [AI View Dock 布局设计](../docs/ai-select/ai-view-dock-layout.md)
 - [AI Select Toolbar 布局与交互设计](../docs/ai-select/ai-select-toolbar-layout.md)
 - [Ticket 16A 实现合同](../docs/ai-select/tickets/16A-candidate-viewport-presentation.md)
+- [Tickets 16B–16G 视觉走查修正](../docs/ai-select/tickets/README.md)
+- [Ticket 17 目标生命周期合同](../docs/ai-select/tickets/17-applied-undo-fix-restart-multitarget.md)
 
 当功能设计与本文存在表达差异时，以当前 Final Spec、`CONTEXT.md` 和对应功能设计/验收合同为准，再回写本文中可复用的新规则。

@@ -5,7 +5,9 @@ Status: Ticket 16A 已实现的历史合同 — 16F/16G 正在修正人工视觉
 > Ticket 16A 完成后的人工视觉走查不接受本文的最终 Toolbar 呈现。
 > Candidate Overlay 和 Native Candidate Operations 的职责仍然有效；与
 > `docs/ai-select/tickets/16F-*`、`16G-*` 冲突的文字标签、More、Restart、
-> Exit 和布局要求已由后续 Ticket 取代。
+> Exit 和布局要求已由后续 Ticket 取代。当前 3D 子工具栏不含 More、
+> Restart 或 Exit；Ticket 17 将 `选择另一个对象` 放在全局 AI Select
+> 生命周期菜单中。
 
 本文记录 Ticket 16A 的 AI Select Toolbar Candidate 展示、Native Candidate Operations 和 Correction 跳转设计。AI View Dock 的对应历史基线见 [AI View Dock 布局设计](ai-view-dock-layout.md)。
 

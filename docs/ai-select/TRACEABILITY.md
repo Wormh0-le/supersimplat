@@ -1,4 +1,4 @@
-# Final Spec v1.3 → Ticket Traceability Matrix — v2.27
+# Final Spec v1.3 → Ticket Traceability Matrix — v2.28
 
 A requirement counts as covered only when a mapped parent Ticket or explicitly
 mapped execution stage contains acceptance, failure, validation or migration
@@ -45,7 +45,7 @@ correction before dependent stages close.
 | R033 | Anchor Stable Mask produces one compact TargetGeometryHintArtifact                                                   | 08                                                          |
 | R034 | TargetGeometryHint visible Points are bounded, finite and deterministic                                              | 08, 21                                                      |
 | R035 | TargetGeometryHint is localization context, not Gaussian ownership                                                   | 08, 13, 14, 20                                              |
-| R036 | default generated plan contains 2–4 bounded local Views                                                              | 08, 21                                                      |
+| R036 | initial planning schedules 4–8 bounded automatic Generated Views, excluding Anchor and User-added Views              | 08, 16B, 16D, 21                                            |
 | R037 | local Views validate projection, clipping and nonblank RGB                                                           | 08, 21                                                      |
 | R038 | adaptive/free-space/room-scale planner is deferred                                                                   | 08, 21                                                      |
 | R039 | 07B and 08 run in parallel after 07A                                                                                 | 07A, 07B, 08                                                |
@@ -80,18 +80,20 @@ accepted implementation requirements but are not counted as amendments to the
 62 current Final Spec v1.3 rows above until Ticket 16B publishes the
 superseding ADR and current-spec update.
 
-| Delta  | Accepted change                                                                                                 | Ticket(s)     |
-| ------ | --------------------------------------------------------------------------------------------------------------- | ------------- |
-| D16-01 | Formalize one usable Mask or unavailable; remove product Proposal choice while retaining the compatibility wire | 16B           |
-| D16-02 | Retire persistent planning controls but retain initial bounded planning and failure-only retry                  | 16B, 16D, 16G |
-| D16-03 | Retire explicit Render/Prompt/Mask retry commands while retaining attempt/replay correctness                    | 16B, 16F, 16G |
-| D16-04 | Present identical Editing/Stable Mask as confirmed and first real edit as unconfirmed                           | 16C, 16E      |
-| D16-05 | Make Inspector the sole owner of current-View assessment, Participation and authoring summaries                 | 16C           |
-| D16-06 | Prioritize the 2D canvas with compact persistent sidebars and a stable thumbnail Navigator                      | 16D           |
-| D16-07 | Remove permanent Dock headers/action bar and place explicit Re-Lift in 2D Work Area chrome                      | 16E           |
-| D16-08 | Consolidate confirmation and Correction switching into the existing floating palette                            | 16E           |
-| D16-09 | Simplify the 3D viewport toolbar and defer run disposal until a changed Anchor is confirmed                     | 16F           |
-| D16-10 | Remove obsolete commands/locales/tests and close responsive, accessible operator validation                     | 16G           |
+| Delta  | Accepted change                                                                                                                                                   | Ticket(s)         |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| D16-01 | Formalize one usable operator-authored Mask or unavailable while retaining reviewed automatic Generated-View direct Stable publication and the compatibility wire | 16B, 16C, 16E     |
+| D16-02 | Retire persistent planning controls; schedule 4–8 initial automatic Generated Views and retain failure-only retry                                                 | 16B, 16D, 16G, 21 |
+| D16-03 | Retire explicit Render/Prompt/Mask retry commands while retaining attempt/replay correctness                                                                      | 16B, 16F, 16G     |
+| D16-04 | Treat Stable-without-Editing and identical Editing/Stable as confirmed; later correction preserves Stable until explicit Confirm                                  | 16B, 16C, 16E     |
+| D16-05 | Make Inspector the sole owner of current-View assessment, Participation and authoring summaries                                                                   | 16C               |
+| D16-06 | Prioritize the 2D canvas with compact persistent sidebars and a stable thumbnail Navigator                                                                        | 16D               |
+| D16-07 | Remove permanent Dock headers/action bar; place Re-Lift in 2D Work Area chrome and gate Not Ready/Limited/Ready explicitly                                        | 16E, 13           |
+| D16-08 | Consolidate confirmation and Correction switching into the existing floating palette                                                                              | 16E               |
+| D16-09 | Simplify the 3D viewport toolbar; stage changed-Anchor Camera/RGB/Mask and defer run disposal to atomic confirmation                                              | 16E, 16F          |
+| D16-10 | Remove obsolete commands/locales/tests and close responsive, accessible operator validation                                                                       | 16G               |
+| D16-11 | Prefer compact icon action buttons with tooltip and accessible name; reserve visible text for justified exceptions                                                | 16E, 16F, 16G, 17 |
+| D17-01 | Put `选择另一个对象` in the global AI Select lifecycle menu, never the contextual 3D Toolbar                                                                      | 17, 18            |
 
 ## Ticket 14 stage coverage
 

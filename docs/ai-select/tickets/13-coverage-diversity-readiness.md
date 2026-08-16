@@ -117,3 +117,13 @@ threshold calibration. It also does not claim a live editor workflow: the
 production Evidence/Re-Lift vertical slice must invoke the evaluator and
 publish its exact binding before a user-facing readiness row is shipped.
 Ticket 20/21 retain those responsibilities.
+
+## Post-16A product gate
+
+The checked `Generate More` item above records the implemented evaluator-era
+integration and is superseded as a current product control by Tickets 16B and
+16G. Readiness remains diagnostic and may recommend a user-chosen replacement
+or additional View, but it does not expose or invoke Generate More. Ticket 16E
+maps the current exact-bound state to Re-Lift: Not Ready disables, Limited
+permits with a warning, and Ready permits normally. This mapping does not
+change the evaluator or fabricate readiness.

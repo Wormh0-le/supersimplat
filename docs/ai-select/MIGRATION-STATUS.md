@@ -6,7 +6,9 @@ Status: **substantive migration complete; historical scratch paths are compatibi
 
 - Stable AI Select planning root established at `docs/ai-select/`.
 - Full 31-parent-ticket Final Spec v1.3 mapping restored and promoted.
-- Ticket graph promoted and synchronized to v2.27.
+- Ticket graph and control plane promoted to v2.28. The v2.27 eight-pass audit
+  remains historical; rerun is pending for the accepted `4–8` initial
+  automatic Generated-View range.
 - Parent Ticket 14 decomposed into executable 14A–14D stage contracts without changing normative product scope.
 - Active Ticket control plane promoted to `docs/ai-select/tickets/`.
 - Planning manifest promoted to `docs/ai-select/manifest.json` and updated with parent/stage frontier fields.

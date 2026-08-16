@@ -1,6 +1,8 @@
 # 08 — TargetGeometryHint + Bounded Local Key Views
 
-Status: implemented — `target-geometry/v2` + `local-key-view-planner/v1` + plan lifecycle (Stop / Generate More / Regenerate)
+Status: implemented historical baseline — `target-geometry/v2` +
+`local-key-view-planner/v1`; the `2–4` range and Stop/Generate More/Regenerate
+product controls are superseded by Tickets 16B/16G
 
 Blocked by: 07A
 
@@ -196,6 +198,15 @@ v1 does not require:
 - [x] Generate More appends a bounded batch without dirtying completed Views.
 - [x] Stop/Regenerate preserve correct user-owned and completed state.
 - [x] Ticket 08 runs no SAM inference.
+
+## Post-16A product supersession
+
+The checked `2–4` range and planner-control criteria above are historical
+implementation evidence. The accepted Ticket 16B product delta schedules
+`4–8` initial automatic Generated Views, excluding the Anchor and User-added
+Views, and removes persistent Stop/Generate More/Regenerate controls. Ticket 21
+owns calibration of the expanded resource envelope. This supersession does not
+retroactively claim that Ticket 08 implemented or validated the new range.
 
 ## Validation
 

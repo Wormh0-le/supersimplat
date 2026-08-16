@@ -71,7 +71,7 @@ _Avoid_: best-effort partial render
 ## Target and View Lifecycle Vocabulary
 
 **Current Target Context**  
-The single user-visible AI Select context for the object currently being worked on. It owns Anchor, AI Views, Mask versions, Participation, Evidence dependencies, Coverage/Readiness, Candidate, and Uncertain state. Restart Current Target disposes it while preserving Native Selection/EditHistory and reusable runtime caches.  
+The single user-visible AI Select context for the object currently being worked on. It owns Anchor, AI Views, Mask versions, Participation, Evidence dependencies, Coverage/Readiness, Candidate, and Uncertain state. The user-facing `选择另一个对象` action (`Restart Current Target` internally) disposes it while preserving Native Selection/EditHistory and reusable runtime caches.<br>
 _Avoid_: persistent multi-object session stack
 
 **Runtime Context**  
@@ -103,7 +103,7 @@ The independent eligibility state for turning a TargetGeometryHint's retained vi
 _Avoid_: geometry quality, model confidence, Participation
 
 **Local Key View**  
-A planner-owned Generated View from the bounded local Key-View policy: left/right azimuth and modest elevation offsets around the TargetGeometryHint center with framing from its extent, validated for projection size, clipping, visibility, and nonblank authoritative RGB. The default batch is 2–4 Views; Generate More appends another bounded batch; Stop preserves completed Views; Regenerate replaces planner-owned Views but preserves user-owned Views and exact-identity artifacts.  
+A planner-owned Generated View from the bounded local Key-View policy: left/right azimuth and modest elevation offsets around the TargetGeometryHint center with framing from its extent, validated for projection size, clipping, visibility, and nonblank authoritative RGB. Initial planning schedules `4–8` automatic Generated Views, excluding the Anchor and User-added Views, and preserves every completed valid View. Candidate validity failures may leave fewer usable Views. Current product surfaces expose no persistent Stop, Generate More or Regenerate command; initial planning failure has one failure-only retry, and users may add or replace observations through user-chosen Views.<br>
 _Avoid_: room-scale orbit, adaptive marginal-gain schedule
 
 **User-added View**  
@@ -139,7 +139,7 @@ The AI View has valid authoritative gsplat RGB bound to its exact CameraBinding 
 _Avoid_: complete lifting input
 
 **Render Attempt ID**  
-The identity of one actual render execution attempt. Replaying the same attempt may be idempotent; explicit Retry creates a new attempt for the same semantic CameraBinding rather than replaying a cached failure.  
+The identity of one actual render execution attempt. Replaying the same attempt may be idempotent; a normal new user intent creates a distinct attempt for the same semantic CameraBinding. Current product surfaces do not expose identical-input Render retry.<br>
 _Avoid_: changing CameraBinding to bypass cache
 
 **RGB Renderer Version**  
@@ -173,7 +173,7 @@ An opaque, digest-bound browser-held reference to Companion-local low-resolution
 _Avoid_: binary brush as mask input, cross-session logits cache
 
 **Generated View Image Instance Prompt**
-A deterministic Route B `ImageInstancePromptArtifact` synthesized from the exact TargetGeometryHint's retained visible points, accepted Local Key View plan, authoritative View RGB, View CameraBinding, and locked SAM 3 Image runtime identity. It contains one positive instance Box, 1–3 positive points, at most two local negative points, and `multimaskOutput: false`; `Prompt Support: limited` yields no inference request even when geometry quality is limited for a separately disclosed reason. Regenerate Prompt publishes only a new Prompt artifact; explicit Auto Mask Refresh/Retry separately consumes that current Prompt and authoritative RGB.
+A deterministic Route B `ImageInstancePromptArtifact` synthesized from the exact TargetGeometryHint's retained visible points, accepted Local Key View plan, authoritative View RGB, View CameraBinding, and locked SAM 3 Image runtime identity. It contains one positive instance Box, 1–3 positive points, at most two local negative points, and `multimaskOutput: false`; `Prompt Support: limited` yields no inference request even when geometry quality is limited for a separately disclosed reason. Changed Prompt input publishes a new Prompt artifact and creates a normal inference intent; current product surfaces expose no Regenerate Prompt or identical-input Auto Mask Retry command.
 _Avoid_: propagation/tracker state, Negative Box, text/brush/mask-constraint prompt, previous logits
 
 **AutoMaskProposalSet**
@@ -209,7 +209,7 @@ The atomic publication that promotes the current Editing Mask to the new Stable 
 _Avoid_: Selection Commit
 
 **Automatic Mask Publication**  
-The browser-owned atomic publication of one reviewed, single-frame SAM Image Mask directly as a Stable Mask for a Generated View, without an Editing Mask or user confirmation. The Companion returns inference and Review separately; the browser publishes only Good or Review results. Auto Good defaults Included, Auto Review defaults Excluded, Failed/semantic-unavailable publish no new automatic Stable Mask, and technical failure preserves RGB plus any prior Stable revision. User Confirmed authority is never silently replaced.
+The browser-owned atomic publication of one reviewed, single-frame SAM Image Mask directly as a Stable Mask for a Generated View, without an Editing Mask or user confirmation. The Companion returns inference and Review separately; the browser publishes only Good or Review results. Auto Good defaults Included, Auto Review defaults Excluded, Failed/semantic-unavailable publish no new automatic Stable Mask, and technical failure preserves RGB plus any prior Stable revision. Stable-without-Editing is a valid confirmed state. Later correction creates an independent Editing draft and preserves the published Stable revision until explicit Confirm Mask. User Confirmed authority is never silently replaced.
 _Avoid_: auto-confirm, hidden Lift participation
 
 **Mask Quality / View Assessment**  
@@ -334,8 +334,8 @@ _Avoid_: monotonic global scene counter only
 The minimum async identity carried by AI requests/results: targetContextId, contextRevision, and dependencyToken. Non-matching results are stale and discarded regardless of cancellation success.  
 _Avoid_: request ID alone
 
-**Restart Current Target / 重新选择对象**  
-The action that disposes all target-local Anchor/View/Mask/Evidence/Candidate state, retains Native Selection/EditHistory and reusable runtime caches, and starts a new target from the current saved Scene View.  
+**Restart Current Target / 选择另一个对象**<br>
+The internal lifecycle action, presented to users as `选择另一个对象`, that disposes all target-local Anchor/View/Mask/Evidence/Candidate state, retains Native Selection/EditHistory and reusable runtime caches, and starts a new target from the current saved Scene View. Its product entry belongs to the global AI Select lifecycle surface rather than the contextual 3D toolbar.<br>
 _Avoid_: exit AI Select, clear native selection
 
 **Native Candidate Operation**  
@@ -441,10 +441,10 @@ The old top-level include/exclude mask orchestration and complete publication un
 Old AI workflow modes. Add and Remove now mean native Candidate application operations together with Set and Intersect.
 
 **Correction Round (legacy)**  
-The old bounded inference-preview refresh count. Current workflows use Mask confirmation, Prompt regeneration, Re-Lift, Generate More, and explicit correction.
+The old bounded inference-preview refresh count. Current workflows use changed Prompt input, manual Paint/Erase, Mask confirmation, explicit correction, user-chosen Views, and Re-Lift.
 
 **Selection Commit / Cancel (legacy session semantics)**  
-Old one-shot session actions. Current semantics use native Candidate operations, Restart Current Target, Exit AI Select, and Native Undo.
+Old one-shot session actions. Current semantics use native Candidate operations, `选择另一个对象`, Exit AI Select, and Native Undo.
 
 ## Benchmark Vocabulary
 

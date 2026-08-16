@@ -1,4 +1,4 @@
-# 21 — Retry / Cancellation / OOM / Atomic Publication + Calibration Hardening
+# 21 — Attempt / Cancellation / OOM / Atomic Publication + Calibration Hardening
 
 Status: blocked — waits for complete core v1.3 flow
 
@@ -12,10 +12,11 @@ Optional input, not blocker: 10
 - ADR 0013
 - ADR 0015
 - ADR 0016
+- Tickets 16B and 16G for current product recovery/planning-control retirement
 
 ## Purpose
 
-Close production failure, calibration and release behavior for the simplified SAM 3 Image + local multi-view flow. Introduce no new Prompt family, backend registry, tracker or automatic fallback. Optional Ticket 10 cross-view diagnostics do not block core release closure.
+Close production failure, calibration and release behavior for the simplified SAM 3 Image + local multi-view flow. Introduce no new Prompt family, backend registry, tracker, automatic fallback or product retry/planner control. Optional Ticket 10 cross-view diagnostics do not block core release closure.
 
 ## Required hardening
 
@@ -28,13 +29,17 @@ Close production failure, calibration and release behavior for the simplified SA
 - Busy and task-local failures do not change service Availability;
 - Companion Instance replacement invalidates Companion-local RGB/logits refs without invalidating independent User Confirmed Stable Masks.
 
-### Retry, cancellation and atomicity
+### Attempt identity, replay, cancellation and atomicity
 
-- explicit Retry creates a new render, geometry, plan, Prompt, Mask, Evidence or Lift attempt as applicable;
+- every normal new user intent creates a distinct render, geometry, plan,
+  Prompt, Mask, Evidence or Lift attempt as applicable;
 - same-attempt replay is idempotent where supported;
 - cancellation correctness relies on stale identity rejection;
 - OOM/model/kernel failure publishes no partial Mask, refinement ref, geometry, Evidence or Candidate;
-- User Confirmed Stable Mask cannot be overwritten automatically.
+- User Confirmed Stable Mask cannot be overwritten automatically;
+- product surfaces expose no identical-input Render, Prompt, Mask, Evidence or
+  Lift retry command; initial planning failure retains the single accepted
+  failure-only retry exception and creates a fresh bounded planning attempt.
 
 ### SAM 3 Image behavior
 
@@ -54,7 +59,12 @@ Close production failure, calibration and release behavior for the simplified SA
 - TargetGeometryHint is bounded, deterministic and non-ownership;
 - local View count, offsets and framing are calibrated for useful target projection;
 - invalid/blank/clipped Views fail conservatively;
-- Generate More appends a bounded local batch and preserves completed artifacts;
+- initial planning schedules the accepted `4–8` automatic Generated Views,
+  excluding the Anchor and User-added Views; its
+  failure-only retry preserves valid completed artifacts and starts a distinct
+  planning attempt;
+- Generate More and Regenerate Plan/Auto Views are absent from the current
+  product surface;
 - no room-scale free-space/adaptive planner is introduced.
 
 ### Mask Review and Lift Readiness
@@ -86,24 +96,32 @@ Existing User Confirmed Stable Masks survive when their own exact RGB/Mask ident
 - 07B palette exposes Positive Point, Negative Point, Positive Instance Box, Paint and Erase only;
 - drag/collapse/Space-hide leaves no stale hit region;
 - Gallery exposes Render, Prompt, Mask inference, Mask Review, Participation and Evidence separately;
+- no identical-input Render/Prompt/Mask retry or persistent planner action is
+  present; initial planning failure recovery is the only product retry icon;
 - no obsolete backend/fallback/tracker controls or Prompt Brush/Negative Box actions appear.
 
 ## Acceptance criteria
 
 - [ ] full current Runtime Profile admits only the 04C static adapter.
-- [ ] all async artifact families pass Retry/stale/cancellation/OOM atomicity tests.
+- [ ] all async artifact families pass distinct-attempt, idempotent replay,
+      stale-result, cancellation and OOM atomicity tests.
 - [ ] static Multiplex/private-head call audit is clean.
 - [ ] provider request always contains resolvable authoritative RGB.
 - [ ] opaque logits refs never expose raw tensors and invalidate on Companion replacement.
 - [ ] multimask/single-mask/refinement policies are repeatable.
 - [ ] removed Prompt schemas and old cache/manifests fail closed.
 - [ ] TargetGeometryHint/local View resource envelope is calibrated.
+- [ ] The `4–8` initial automatic Generated-View range passes latency, memory,
+      failure and partial-usable-output calibration without fabricating Ready
+      Views.
 - [ ] Mask Review and Lift Readiness reasons are correctly separated.
 - [ ] core release passes with Ticket 10 absent.
 - [ ] semantic unavailable and technical failure are separately presented.
 - [ ] User Confirmed authority survives refresh/migration.
 - [ ] Evidence/Lift failure preserves Views and Stable Masks.
 - [ ] current Gallery/palette interaction release checks pass.
+- [ ] obsolete product retry/planning commands remain absent and initial
+      planning failure recovery is the only retry exception.
 - [ ] production identity record binds renderer, SAM image adapter, Prompt, geometry, review and Evidence policies.
 
 ## Validation
@@ -118,7 +136,7 @@ Existing User Confirmed Stable Masks survive when their own exact RGB/Mask ident
 - TargetGeometryHint/local View stress;
 - Mask Review/Lift Readiness calibration matrix;
 - release walkthrough without Ticket 10;
-- stale async stress and User Confirmed preservation;
+- distinct-attempt/replay/stale async stress and User Confirmed preservation;
 - Ticket 07B browser interaction walkthrough;
 - Ticket 02C readiness/Instance replacement walkthrough;
 - RGB/Evidence parity and Candidate atomicity.

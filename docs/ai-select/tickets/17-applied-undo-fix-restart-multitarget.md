@@ -26,6 +26,7 @@ Final Spec v1.3 is the only current closure source.
 
 - Undo and Fix
 - Restart at all stages
+- Global AI Select target-lifecycle menu
 - Continuous multi-object flow
 - Tool-switch disposal
 
@@ -43,8 +44,17 @@ Complete lifecycle after application. Native Selection/EditHistory are durable c
 - [ ] Later native edits disable Undo and Fix; no hidden history traversal.
 - [ ] Restart is available across Generated Views, Review, Mask/Evidence/Lift dirty, Candidate Stale/Ready/Applied.
 - [ ] Restart is not reintroduced through the removed 3D Toolbar More menu or
-      as a persistent AI Select viewport control. Its user-facing surface must
-      be re-specified against the 16B contract before implementation.
+      as a persistent AI Select viewport control.
+- [ ] The internal `Restart Current Target` semantic is presented to users as
+      `选择另一个对象` in the global AI Select tool's lifecycle menu, alongside
+      tool exit rather than inside the contextual 3D sub-toolbar.
+- [ ] The lifecycle-menu trigger follows the reusable button rule: compact
+      icon-only presentation, project tooltip, accessible name, visible focus
+      and at least `40×40px` hit area. Menu entries may retain icon plus text
+      where scanability and destructive consequence require it.
+- [ ] `选择另一个对象` explains that it clears the current AI target context but
+      preserves Native Selection/EditHistory, and requests confirmation when
+      needed by the existing destructive-action policy.
 - [ ] Restart clears target-local Anchor/Views/Masks/Evidence artifacts/status/Review/Coverage/Readiness/Lift/Candidate/Uncertain/Gallery.
 - [ ] Restart preserves Native Selection/EditHistory, AI Select activation, Scene View, policies, and valid shared runtime caches.
 - [ ] Candidate Applied needs no confirmation solely to protect already committed Native Selection.
@@ -62,13 +72,15 @@ Complete lifecycle after application. Native Selection/EditHistory are durable c
 
 ## Validation
 
-- npm test
-- npm run lint
-- npm run lint:locales
-- npm run build
+- `rtk npm test`
+- `rtk npm run lint`
+- `rtk npm run lint:locales`
+- `rtk npm run build`
 - A/B/C multi-target workflow
 - Restart with pending Evidence/Lift
 - Safe/unsafe Undo and Fix tests
+- Global lifecycle-menu ownership, tooltip, focus restoration and accessible-
+  name tests
 
 ## Non-goals
 

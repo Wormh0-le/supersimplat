@@ -4,7 +4,10 @@
 
 > Ticket 16A 完成后的人工视觉走查不接受本文的最终呈现效果。本文保留
 > 16A 的实现依据和历史验收边界；与 `docs/ai-select/tickets/16B-*` 至
-> `16G-*` 冲突的布局、控件和信息归属要求已被后续 Ticket 取代。
+> `16G-*` 冲突的布局、控件和信息归属要求已被后续 Ticket 取代。当前
+> 合同不保留永久标题/Action Bar、Proposal 交互、显式 Mask/Render Retry
+> 或持久 planner 控件；操作者发起的 Mask 结果进入 Editing，而已审阅的
+> 自动 Generated-View Mask 可直接发布 Stable。
 
 本文记录 Ticket 16A 的目标布局、信息归属、响应式行为和验收条件。它不改变 AI Select Final Spec v1.3 的 Prompt、Mask、View、Evidence、Candidate 或 Native Selection 语义。
 

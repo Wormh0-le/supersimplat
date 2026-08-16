@@ -2,6 +2,11 @@
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
+Post-audit note: the accepted Ticket 16B delta changes the initial automatic
+Generated-View range from the audited `2–4` baseline to `4–8`. The Pass 4 text
+below is retained as v2.27 audit evidence and does not validate the expanded
+range; Ticket 21 owns its calibration.
+
 ## Independent review findings corrected in v2.12
 
 1. Ticket 04A still presented removed Prompt families as current outputs.

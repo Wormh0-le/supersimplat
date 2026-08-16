@@ -42,7 +42,13 @@ not from the mere presence of a retained Editing Mask.
 
 ### Mask and Prompt truth
 
-- [ ] A Stable Mask and identical retained Editing Mask present as confirmed.
+- [ ] A Stable Mask with no Editing Mask presents as confirmed; this is the
+      normal state after eligible automatic Generated-View publication.
+- [ ] A Stable Mask and identical retained Editing Mask also present as
+      confirmed.
+- [ ] Starting correction from an automatically published Stable Mask creates
+      an independent Editing draft and keeps the previous Stable revision
+      available to Evidence/Candidate until Confirm Mask.
 - [ ] `hasUnconfirmedChanges` becomes true on the first real Mask or Prompt edit
       after confirmation.
 - [ ] Browsing, mode switching or retaining an identical Editing artifact does
@@ -81,8 +87,10 @@ not from the mere presence of a retained Editing Mask.
 
 ## Failure / recovery criteria
 
-- [ ] Missing or inconsistent Editing/Stable identity fails closed as
-      unconfirmed and exposes an actionable explanation.
+- [ ] A non-null Editing identity that is dangling, incompatible with the
+      current View/RGB, or inconsistent with its Stable base fails closed as
+      unconfirmed and exposes an actionable explanation. The intentional
+      absence of Editing when Stable exists is not an error.
 - [ ] A failed Participation mutation leaves the previous participation and
       Candidate state unchanged.
 - [ ] Inspector rendering failure cannot mutate Prompt, Mask, Review,
@@ -93,7 +101,8 @@ not from the mere presence of a retained Editing Mask.
 - `rtk npm test`
 - `rtk npm run lint`
 - `rtk npm run lint:locales`
-- Identical Editing/Stable versus first-real-edit presentation tests
+- Stable-without-Editing, identical Editing/Stable and first-real-edit
+  presentation tests
 - Participation and Candidate-staleness integration tests
 - Inspector conditional-row, wrapping, disclosure and accessibility tests
 - View A draft → View B → View A state-preservation regression

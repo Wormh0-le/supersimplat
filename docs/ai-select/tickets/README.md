@@ -9,6 +9,12 @@ This directory is the durable Ticket control plane for AI Select v1.
   create a separate normative product graph or increase the parent Ticket
   count.
 - Final Spec v1.3 remains the top authority.
+- Completed Tickets retain historical implementation evidence. Their
+  user-facing Retry/Generate More/Regenerate/Stop/3D Restart controls and the
+  universal "automatic result becomes Editing" wording are superseded where
+  Tickets 16B–16G and 17 state the accepted current product contract; retained
+  attempt/replay, planner protocol and automatic Generated-View publication
+  infrastructure is not removed by that supersession.
 
 Current implemented chain and frontier:
 

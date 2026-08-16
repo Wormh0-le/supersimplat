@@ -34,7 +34,9 @@ Suspend on actual render/geometry/identity dependency mutation. Preserve artifac
 - [ ] Only actual current AI render/geometry/Gaussian identity/target transform dependency mutations suspend.
 - [ ] Suspended transition preserves Anchor/Views/Masks/Evidence/Candidate/Gallery read-only.
 - [ ] Suspended context cannot edit Masks, add Views, refresh Mask inference, recompute Evidence, Re-Lift, or apply Candidate.
-- [ ] Toolbar offers Undo Scene Change / Restart Current Target.
+- [ ] The Suspended surface offers Undo Scene Change; the global AI Select
+      lifecycle menu retains `选择另一个对象`. Restart is not reintroduced into
+      the contextual 3D Toolbar.
 - [ ] Native Undo resumes only when effective TargetDependencyToken exactly matches the compatible pre-mutation state.
 - [ ] Recovery is semantic equality, not merely last-action-is-Undo.
 - [ ] Delete/Separate/Transform suspend when in dependency scope; unrelated edits do not globally invalidate.

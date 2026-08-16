@@ -1,4 +1,4 @@
-# AI Select v1 — Implementation Ticket Graph v2.27
+# AI Select v1 — Implementation Ticket Graph v2.28
 
 Status: **active implementation graph — Ticket 16A implemented; post-visual-review Ticket 16B is current**
 
@@ -34,7 +34,9 @@ close.
 - Candidate refinement occurs before Accept while still in Prompt mode.
 - Point, Box and refinement requests return at most one result, which enters Editing Mask automatically.
 - Target geometry is one compact `TargetGeometryHintArtifact`.
-- Key Views are 2–4 bounded local observations, not a general adaptive/free-space planner.
+- Initial planning schedules `4–8` bounded automatic Generated Views,
+  excluding the Anchor and User-added Views; it is not a general
+  adaptive/free-space planner.
 - Generated Views synthesize Box/Points and use SAM 3 Image single-mask mode.
 - Mask Review and Lift Readiness are separate; Ticket 13 is the sole visibility/readiness authority.
 - Ticket 10 is an optional Evidence-conflict enhancement and does not block core release.

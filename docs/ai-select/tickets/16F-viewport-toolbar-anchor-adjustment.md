@@ -25,7 +25,8 @@ Blocked by: 16B, 16A, 16, 11, 08, 05, 03
 - Compact icon-only AI Select viewport toolbar
 - Combined Anchor-state/Adjust control
 - Add View split control
-- Deferred Anchor-run disposal until confirmed identity change
+- Staged changed-Anchor Camera/RGB/Mask draft
+- Deferred Anchor-run disposal until atomic changed-Anchor confirmation
 - Stable icon family and accessible toolbar state
 
 ## What to build
@@ -65,17 +66,25 @@ menus are removed.
 - [ ] Canceling adjustment preserves Anchor, Views, Masks, Evidence, Candidate,
       Native Selection and scroll state.
 - [ ] Confirming an unchanged Anchor is a no-op and preserves the same state.
-- [ ] Only confirming an actually changed Anchor rotates the relevant identity,
-      clears dependent generated and user-added Views and begins the retained
-      initial planning path.
-- [ ] A changed Anchor requires its Mask to be confirmed again and may require
-      modified or additional Prompt input.
+- [ ] Confirming an actually changed adjustment pose stages a draft Anchor
+      CameraBinding and authoritative RGB without rotating the current target
+      identity or clearing the current run.
+- [ ] The changed-Anchor draft has its own Prompt and Editing Mask state. It
+      requires fresh Mask confirmation and may require modified or additional
+      Prompt input.
+- [ ] Only Ticket 16E's combined Confirm Mask, fresh validation and atomic
+      Confirm Anchor cutover rotates the relevant identity, clears dependent
+      generated and user-added Views, and begins the retained initial planning
+      path.
 - [ ] Old asynchronous render, Mask, Evidence and Candidate work cannot publish
-      into the changed Anchor context.
+      across the successful changed-Anchor cutover.
 
 ## Failure / recovery criteria
 
 - [ ] Failed or canceled Anchor adjustment leaves the original run usable.
+- [ ] Failed draft render, Mask inference or validation cannot partially replace
+      the original Anchor or its dependent artifacts; cancellation discards
+      only the staged draft.
 - [ ] A failed changed-Anchor render can be escaped by changing/resetting pose
       and starting a new normal render; no explicit Retry Preview action is
       exposed.
@@ -92,7 +101,8 @@ menus are removed.
 - `rtk npm run build`
 - Normal, adjustment, Candidate current/stale/updating/failed and applied
   toolbar-state tests
-- Anchor enter/cancel/no-op/change lifecycle and stale-publication tests
+- Anchor enter/cancel/no-op/stage-draft/atomic-cutover lifecycle and stale-
+  publication tests
 - Add Current View / Add From New Pose split-control tests
 - Ticket 16 native-operation regression through the real applicability gate
 - Toolbar keyboard, tooltip, pressed-state and disabled-reason tests

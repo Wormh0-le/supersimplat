@@ -2,24 +2,24 @@
 
 ## Typical flows
 
-| ID    | Flow                              | Ticket path                                 | Required result                                                                                  |
-| ----- | --------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| WF-01 | SAM 3 Image migration             | `04B → 04C`                                 | Current static path uses official SAM 3 Image and rejects Multiplex manifest/artifacts           |
-| WF-02 | Parallel current frontier         | `04C ∥ 07`                                  | Model migration and MaskReview correction proceed independently and converge at 07A/08B          |
-| WF-03 | Automatic availability            | `04C + 02 → 02C`                            | Only Connecting/Available/Unavailable appears; current SAM 3 Image profile validates             |
-| WF-04 | Authoritative RGB inference       | `04C/08A`                                   | Provider resolves exact RGB bytes/ref and rejects digest-only input                              |
-| WF-05 | One-click Anchor                  | `04C + 07 → 07A`                            | One result becomes Editing Mask; user refines/confirms; no automatic correctness claim           |
-| WF-06 | Box/multi-point Anchor            | `04C + 07 → 07A`                            | One result becomes Editing Mask, then Edit/Confirm                                               |
-| WF-07 | Opaque previous-logits refinement | `04C → 07A`                                 | Companion-local logits ref refines the sole automatic result and returns one Mask                |
-| WF-08 | Floating palette                  | `07A → 07B`                                 | Positive/Negative Point, Positive Box, Paint/Erase only; no stale hit region                     |
-| WF-09 | Geometry hint                     | `07A → 08`                                  | Anchor produces deterministic compact TargetGeometryHint without ownership                       |
-| WF-10 | Local Views                       | `08`                                        | 2–4 framed local Views render nonblank authoritative RGB                                         |
-| WF-11 | Per-View contracts                | `08 + 04C → 08A`                            | RGB-bound Prompt/request/result/ref identities validate without backend registry                 |
-| WF-12 | 3D-guided per-View Mask           | `08A + 07 → 08B`                            | Projected Box/Points run SAM 3 Image single-mask inference and Mask Review                       |
-| WF-13 | Gallery inspection                | `08B → 09`                                  | Render, Prompt, inference, Review, Participation and Evidence remain separate                    |
-| WF-14 | User-added View                   | `07B + 09 → 11`                             | Same RGB/image instance path and manual correction behavior apply                                |
-| WF-15 | Refresh lifecycle                 | `09 → 12`                                   | Prompt regeneration and Mask Retry are explicit; refs invalidate correctly; no automatic Re-Lift |
-| WF-16 | Lift and optional diagnostics     | `11/12 → 14/13 → 15/16`, optional `14 → 10` | Ticket 13 owns readiness; Ticket 10 may enrich conflict diagnostics but does not block release   |
+| ID    | Flow                              | Ticket path                                 | Required result                                                                                                          |
+| ----- | --------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| WF-01 | SAM 3 Image migration             | `04B → 04C`                                 | Current static path uses official SAM 3 Image and rejects Multiplex manifest/artifacts                                   |
+| WF-02 | Parallel current frontier         | `04C ∥ 07`                                  | Model migration and MaskReview correction proceed independently and converge at 07A/08B                                  |
+| WF-03 | Automatic availability            | `04C + 02 → 02C`                            | Only Connecting/Available/Unavailable appears; current SAM 3 Image profile validates                                     |
+| WF-04 | Authoritative RGB inference       | `04C/08A`                                   | Provider resolves exact RGB bytes/ref and rejects digest-only input                                                      |
+| WF-05 | One-click Anchor                  | `04C + 07 → 07A`                            | One result becomes Editing Mask; user refines/confirms; no automatic correctness claim                                   |
+| WF-06 | Box/multi-point Anchor            | `04C + 07 → 07A`                            | One result becomes Editing Mask, then Edit/Confirm                                                                       |
+| WF-07 | Opaque previous-logits refinement | `04C → 07A`                                 | Companion-local logits ref refines the sole automatic result and returns one Mask                                        |
+| WF-08 | Floating palette                  | `07A → 07B`                                 | Positive/Negative Point, Positive Box, Paint/Erase only; no stale hit region                                             |
+| WF-09 | Geometry hint                     | `07A → 08`                                  | Anchor produces deterministic compact TargetGeometryHint without ownership                                               |
+| WF-10 | Local Views                       | `08 → 16B/21`                               | Schedule 4–8 framed automatic Generated Views; retain failures and calibrate the expanded envelope                       |
+| WF-11 | Per-View contracts                | `08 + 04C → 08A`                            | RGB-bound Prompt/request/result/ref identities validate without backend registry                                         |
+| WF-12 | 3D-guided per-View Mask           | `08A + 07 → 08B`                            | Projected Box/Points run SAM 3 Image single-mask inference and Mask Review                                               |
+| WF-13 | Gallery inspection                | `08B → 09`                                  | Render, Prompt, inference, Review, Participation and Evidence remain separate                                            |
+| WF-14 | User-added View                   | `07B + 09 → 11`                             | Same RGB/image instance path and manual correction behavior apply                                                        |
+| WF-15 | Refresh lifecycle                 | `09 → 12 → 16G`                             | Changed Prompt/manual edits create normal intents; refs invalidate correctly; no product Mask Retry or automatic Re-Lift |
+| WF-16 | Lift and optional diagnostics     | `11/12 → 14/13 → 15/16`, optional `14 → 10` | Ticket 13 owns readiness; Ticket 10 may enrich conflict diagnostics but does not block release                           |
 
 ## Error and recovery flows
 

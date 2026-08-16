@@ -28,7 +28,7 @@ Read this file for target lifecycle, Mask or Candidate state, identity, retries,
 - Stable Mask is required before formal per-view Evidence production.
 - Evidence failure preserves valid RGB, the View, its Stable Mask, and the previous inspectable Candidate.
 
-## CameraBinding and retries
+## CameraBinding and execution attempts
 
 - `CameraBinding` is the shared truth for AI rasterization and the corresponding 3D Frustum; it determines pose, intrinsics, resolution, clipping, and convention.
 - AI Select activation copies the Current Editor Camera into the Anchor CameraBinding without moving the Editor Camera.
@@ -36,8 +36,12 @@ Read this file for target lifecycle, Mask or Candidate state, identity, retries,
 - Camera Inspection observer pose never becomes the Anchor implicitly.
 - Semantic render identity and execution-attempt identity are distinct.
 - A lost-response replay may reuse the same attempt idempotently.
-- Explicit user Retry creates a new attempt for the same CameraBinding and reruns the render path.
-- Retry does not jitter or mutate CameraBinding to bypass a cached failure.
+- A normal new user intent creates a distinct attempt. Product surfaces do not
+  expose identical-input Render, Prompt, Mask or Evidence retry commands.
+- The only product retry exception is initial planning failure recovery; it
+  creates a fresh bounded planning attempt.
+- Replay or a new attempt does not jitter or mutate CameraBinding to bypass a
+  cached failure.
 
 ## AI Views and Mask publication
 
@@ -48,6 +52,9 @@ Read this file for target lifecycle, Mask or Candidate state, identity, retries,
 - A reviewed automatic Generated-View Mask may publish directly as a Stable Mask without an Editing Mask or user confirmation.
 - Automatic publication validates the exact RGB, Prompt/result, review policy, current target identity, and Stable authority.
 - Automatic publication never silently replaces a User Confirmed Stable Mask.
+- Stable-without-Editing is a valid confirmed state. Entering later correction
+  creates an independent Editing draft and retains the Stable revision until
+  explicit Confirm Mask.
 
 ## Quality and Participation
 

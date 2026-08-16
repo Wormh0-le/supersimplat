@@ -4,6 +4,12 @@ Status: accepted
 
 Date: 2026-07-30
 
+Post-16A supersession notice: Decision item 9 and the `Generate More`
+consequence below remain historical rationale. The accepted Ticket 16B product
+delta changes initial planning to `4–8` automatic Generated Views and removes
+persistent planning controls; pending ADR 0018 will record that supersession
+without rewriting this accepted historical decision.
+
 ## Context
 
 The current static Anchor and visual-Prompt implementation loads the SAM 3.1 Multiplex video predictor, extracts detector/tracker internals, constructs a private single-image session, and invokes private tracker-head methods. SAM 3.1 Multiplex is designed for high-throughput multi-object video tracking, while AI Select v1 performs one-object static-image instance segmentation on an Anchor and a few independently rendered Key Views.

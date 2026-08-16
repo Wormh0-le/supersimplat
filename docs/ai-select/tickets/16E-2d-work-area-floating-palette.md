@@ -20,6 +20,8 @@ Blocked by: 16C, 16D, 16B, 16A, 15, 11, 07B, 05
 - Candidate initial/current/stale/updating/failed/correcting state
 - Existing floating authoring palette and Anchor validation gate
 - Existing Ticket 15 explicit Evidence-aware Re-Lift controller
+- Current exact-bound Lift Readiness projection from Ticket 13
+- Ticket 16F staged changed-Anchor Camera/RGB/Mask draft
 
 ## Outputs / handoff artifacts
 
@@ -59,6 +61,13 @@ target-level 2D-to-3D action in compact Work Area chrome outside the image.
 - [ ] Re-Lift is the only emphasized target-level action in the Dock.
 - [ ] It is available when usable Included Stable inputs exist and no Candidate
       exists, when Candidate is stale, or when the last replacement failed.
+- [ ] Current exact-bound Lift Readiness gates the otherwise available action:
+      Not Ready disables Re-Lift with an actionable reason; Limited permits
+      Re-Lift with warning styling, tooltip and accessible description; Ready
+      permits the normal path without a readiness warning. Limited does not add
+      a second confirmation step by itself.
+- [ ] Missing, stale or identity-mismatched Lift Readiness cannot be presented
+      as Ready and disables Re-Lift until the current state is resolved.
 - [ ] It shows updating progress and is disabled during an active update.
 - [ ] It is hidden when Candidate is current.
 - [ ] It is blocked when any Included View has unconfirmed Mask changes.
@@ -74,8 +83,18 @@ target-level 2D-to-3D action in compact Work Area chrome outside the image.
       as-is, and Confirm Anchor.
 - [ ] Initial Anchor Mask confirmation composes Confirm Mask, fresh Anchor
       validation and atomic Confirm Anchor as one user intent.
+- [ ] Changed-Anchor confirmation uses the same combined intent against the
+      staged draft Camera/RGB/Mask. Only its successful atomic Confirm Anchor
+      rotates identity, clears old dependent Views, and starts initial
+      planning.
+- [ ] While a changed-Anchor draft is rendered, reviewed or edited, the
+      original Anchor run remains current and usable. Draft confirmation never
+      publishes an intermediate Stable Mask into the original run.
 - [ ] If Stable Mask already exists but Anchor is unconfirmed, the same slot
       validates and confirms the Anchor.
+- [ ] An automatically published Stable Mask may enter correction from this
+      palette; doing so creates Editing and retains the Stable revision until
+      Confirm Mask.
 - [ ] Standalone Validate Anchor and Confirm Anchor controls are removed;
       validation remains an internal correctness gate and its blocker is shown
       in Inspector.
@@ -91,7 +110,9 @@ target-level 2D-to-3D action in compact Work Area chrome outside the image.
 - [ ] Failed Re-Lift preserves the previous stale Candidate atomically and
       reports the failure without partial publication.
 - [ ] Failed Anchor validation preserves the current Stable Mask and exposes a
-      retryable confirmation state in the same palette slot.
+      retryable confirmation state in the same palette slot. For a changed-
+      Anchor draft, failure also preserves the entire original run and retains
+      the draft for correction or cancellation.
 - [ ] Switching to Candidate preview during Correction cannot silently publish
       or discard an Editing draft.
 - [ ] A missing target or unavailable service cannot leave an enabled action
@@ -103,9 +124,10 @@ target-level 2D-to-3D action in compact Work Area chrome outside the image.
 - `rtk npm run lint`
 - `rtk npm run lint:locales`
 - `rtk npm run build`
-- Re-Lift absent-input, ready, current, stale, updating, failed and
-  unconfirmed-input-blocked tests
-- Confirm Mask, Review as-is and initial/retry Anchor confirmation tests
+- Re-Lift absent-input, Not Ready, Limited-warning, Ready, current, stale,
+  updating, failed and unconfirmed-input-blocked tests
+- Confirm Mask, Review as-is, automatic-Stable correction and initial/changed-
+  Anchor atomic confirmation tests
 - Correction entry and return-to-Candidate-with-retained-draft tests
 - Style/behavior contracts proving removed headers/action bar and stable palette
   slots
@@ -116,6 +138,7 @@ target-level 2D-to-3D action in compact Work Area chrome outside the image.
 
 - No Candidate operation in the 2D Work Area
 - No second Mask sub-toolbar
-- No change to P/N/V Evidence, Lift Readiness or Candidate classification
+- No change to P/N/V Evidence, Lift Readiness evaluation or Candidate
+  classification; this stage only maps readiness to Re-Lift enablement
 - No new planning or retry control
 - No 3D viewport toolbar redesign; Ticket 16F owns it

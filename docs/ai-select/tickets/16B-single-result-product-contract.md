@@ -35,15 +35,19 @@ Ticket evidence.
   controls
 - Truthful editor/Companion capability handshake
 - Removal of unreachable Proposal-choice presentation and public authoring APIs
+- Versioned initial-plan range of `4–8` automatic Generated Views
 - Updated Final Spec, glossary, lifecycle guidance, mapping and traceability
 - Stable compatibility seam for the retained internal Proposal wire envelope
 
 ## What to build
 
-Make the product contract match the behavior already exposed to operators: a
-Prompt request produces one usable Mask or unavailable, and a usable result
-automatically becomes the Editing Mask. There is no user Proposal selection or
-Accept step.
+Make the product contract match the behavior already exposed to operators: an
+operator-authored Prompt request produces one usable Mask or unavailable, and
+a usable result automatically becomes the Editing Mask. There is no user
+Proposal selection or Accept step. The planner-owned automatic Generated-View
+path remains a separate publication authority: after browser Review, an
+eligible result may publish directly as Stable without first creating Editing
+or requiring user confirmation.
 
 This stage also establishes the normative product decision that persistent
 planning controls and explicit Render/Prompt/Mask retry commands are being
@@ -55,7 +59,15 @@ transport recovery or Companion correctness infrastructure.
 ### Single-result authoring
 
 - [ ] Current product terminology describes one usable Mask or unavailable.
-- [ ] A valid provider result automatically becomes the Editing Mask.
+- [ ] A valid result from operator-authored Prompt/refinement input
+      automatically becomes the Editing Mask.
+- [ ] A reviewed planner-owned automatic Generated-View result may publish
+      directly as Stable: Auto Good defaults Included, Auto Review defaults
+      Excluded, and Failed/semantic-unavailable publishes no Stable Mask.
+- [ ] Direct automatic publication may not replace User Confirmed authority.
+- [ ] An automatically published Stable Mask with no Editing Mask is a valid,
+      confirmed state; later correction creates an independent Editing draft
+      and preserves that Stable revision until explicit Confirm Mask.
 - [ ] No current UI state requires Proposal selection, preview or acceptance.
 - [ ] User-facing `Proposal`, ambiguous-choice and
       selected-awaiting-accept terminology is removed from presentation state,
@@ -85,8 +97,12 @@ transport recovery or Companion correctness infrastructure.
       and explicit Generate More consequences in ADR 0016 without rewriting it.
 - [ ] The ADR distinguishes removed product retry commands from retained
       execution-attempt and replay infrastructure.
-- [ ] The current fixed-offset initial planner remains limited to its accepted
-      `1–3` automatic Views; no adaptive quality claim is introduced.
+- [ ] The fixed-offset initial planner schedules `4–8` automatic Generated
+      Views, excluding the Anchor and User-added Views. Candidate validity
+      failures may leave fewer usable Views and remain inspectable.
+- [ ] The planner policy/configuration identity and tests reflect the new range;
+      existing offset, framing and validity semantics remain unchanged, and no
+      adaptive quality claim is introduced.
 - [ ] Final Spec, domain glossary, lifecycle/protocol guidance, current mapping,
       traceability and reusable interface guidance agree on the new contract.
 - [ ] Completed Tickets and historical ADRs retain their implementation record
@@ -112,8 +128,12 @@ transport recovery or Companion correctness infrastructure.
 - `rtk npm run lint:locales`
 - Editor/Companion capability-handshake tests with
   `singlePointMultimask: false`
-- Single usable result, unavailable result, automatic Editing Mask adoption,
-  malformed/multiple-result rejection, Review and refinement-fallback tests
+- Single usable result, unavailable result, operator-authored automatic Editing
+  Mask adoption, automatic Generated-View direct Stable publication,
+  Stable-without-Editing correction, malformed/multiple-result rejection,
+  Review and refinement-fallback tests
+- Initial planner schedules `4–8` automatic Generated Views, excludes Anchor
+  and User-added Views from the count, and preserves failed/partial records
 - Documentation/traceability consistency checks
 
 ## Non-goals

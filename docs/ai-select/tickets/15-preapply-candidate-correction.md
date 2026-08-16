@@ -100,6 +100,11 @@ the 2D Work Area and consolidates Correction switching into the floating
 palette under Ticket 16E. Ticket 15 continues to own the same underlying
 Correction/Re-Lift semantics.
 
+The checked `Generate More` guidance item is historical implementation
+evidence. Under the accepted 16B/16G product contract, current guidance may
+suggest Fix Mask, Exclude, Add View or replace a failed View, but it does not
+offer Generate More or another persistent planner command.
+
 ## Validation
 
 - npm test

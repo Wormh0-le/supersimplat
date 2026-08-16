@@ -44,8 +44,9 @@ and validate the final workspace across representative states and sizes.
       absent from Navigator, Work Area, Inspector, toolbar and hidden menus.
 - [ ] Their editor-side commands, presentation flags, public methods, locale
       strings, recovery-only styles and behavior tests are removed.
-- [ ] Initial bounded planning remains intact and still produces the retained
-      fixed local-offset automatic Views.
+- [ ] Initial bounded planning remains intact and schedules `4–8` fixed local-
+      offset automatic Generated Views, excluding the Anchor and User-added
+      Views; validity failures may leave fewer usable Views.
 - [ ] Initial planning failure retains exactly one failure-only retry icon in
       the Navigator empty/error state.
 - [ ] Companion batch/ordinal planning protocol remains available for future
@@ -86,6 +87,9 @@ and validate the final workspace across representative states and sizes.
       UI/locales.
 - [ ] Icon controls use existing PCUI/editor controls, semantic tokens, tooltip
       service, focus behavior and custom SVG conventions.
+- [ ] Compact action buttons prefer icon-only presentation with a mandatory
+      tooltip and accessible name; persistent text buttons remain only where an
+      icon would not provide a safely recognizable action.
 - [ ] The final surface preserves the restrained dark technical-workbench
       language; no new UI framework, icon library or theme is introduced.
 - [ ] Final Spec, ADR index, domain/lifecycle guidance, reusable interface
@@ -94,6 +98,8 @@ and validate the final workspace across representative states and sizes.
 - [ ] Ticket 17 consumes the final 16G toolbar/presentation seam and remains the
       owner of Undo and Fix, complete Restart and multi-target/tool-switch
       lifecycle.
+- [ ] The 3D viewport does not regain Restart/Exit/More. Ticket 17 receives a
+      global AI Select lifecycle-menu seam for target disposal and tool exit.
 
 ### Accessibility and responsive closure
 
@@ -125,6 +131,7 @@ and validate the final workspace across representative states and sizes.
 - `rtk npm run build`
 - Style/locale contracts prohibiting obsolete Proposal, recovery and planning
   text/actions
+- Initial planner `4–8` schedule and partial usable-output regression tests
 - External failure-state tests proving supported replacement recovery paths
 - Retained attempt/replay/cache/stale-response regression tests
 - Full Dock/Toolbar ownership and lifecycle matrix

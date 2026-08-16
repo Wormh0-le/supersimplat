@@ -18,12 +18,15 @@
 - v1 Prompt tools are Positive Point, Negative Point and one Positive Instance Box.
 - Negative Box, Prompt Brush, Mask Constraints and Text Prompt are removed.
 - Paint/Erase remain Editing Mask operations.
+- Initial planning schedules `4–8` automatic Generated Views, excluding the
+  Anchor and User-added Views; validity failures may leave fewer usable Views.
 - A SAM provider request contains resolvable authoritative RGB, not only a digest.
 - Actual previous-prediction logits remain Companion-local; the browser receives only an opaque same-Instance reference.
 - One Positive Point may return up to three candidates; Box, multiple Points or refinement return one.
 - Anchor ambiguity is resolved directly by user choice/refinement before Accept.
 - Anchor-visible geometry is one compact `TargetGeometryHintArtifact`.
-- v1 uses 2–4 bounded local Key Views, not a general adaptive/free-space planner.
+- v1 schedules `4–8` bounded automatic Generated Views, not a general
+  adaptive/free-space planner.
 - Generated Views use projected Box/Points and SAM 3 Image single-mask inference.
 - Mask Review is separate from Lift Readiness.
 - Ticket 13 is the sole visibility/readiness authority; Ticket 10 cross-view conflict diagnostics are optional and do not block release.

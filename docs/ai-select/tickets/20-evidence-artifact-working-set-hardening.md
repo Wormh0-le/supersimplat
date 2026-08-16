@@ -80,7 +80,10 @@ This is a single decision-source requirement, not merely reuse of the same formu
 - [ ] Reference and production artifacts cannot collide in cache or Candidate readiness.
 - [ ] Views may be processed sequentially; all per-view GPU P/N/V buffers need not be resident simultaneously.
 - [ ] GPU buffer scale is O(|Evidence Working Set| × channels) per processed View, excluding renderer state.
-- [ ] Restart Target and Regenerate Auto Views release unreferenced target-local artifacts without invalidating exact shared caches.
+- [ ] `选择另一个对象`, successful changed-Anchor atomic cutover, and explicit
+      View replacement/disposal release unreferenced target-local artifacts
+      without invalidating exact shared caches. No Regenerate Auto Views
+      product command is required.
 
 ### Numerical and reference validation
 

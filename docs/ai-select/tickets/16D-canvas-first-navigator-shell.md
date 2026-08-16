@@ -85,8 +85,10 @@ selection must never reorder the Gallery.
       rendered.
 - [ ] Initial planning failure exposes one recovery icon only in the Navigator
       empty/error state.
-- [ ] The retained fixed-offset initial planner may produce `1–3` automatic
-      Views; this stage changes only its presentation, not its camera choices.
+- [ ] The retained fixed-offset initial planner schedules `4–8` automatic
+      Generated Views, excluding the Anchor and User-added Views. This stage
+      changes only their presentation, not their camera choices or validity
+      policy; failures may leave fewer usable Views.
 - [ ] No-Target, initial planning, loading, failure and filter-empty states are
       compact and do not replace an existing Anchor or completed View list.
 
@@ -114,6 +116,8 @@ selection must never reorder the Gallery.
 - `rtk npm run build`
 - Gallery order, explicit sort, filter, first-match selection and empty-state
   behavior tests
+- Initial `4–8` automatic Generated-View planning, partial usable output and
+  failure-only retry presentation tests
 - Sidebar resize persistence, collapse/restore and invalid-preference tests
 - Pure-layout checks at wide desktop, approximately `1280×720` and
   approximately `1024×720`

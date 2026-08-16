@@ -1,4 +1,4 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.27
+# Current Final Spec v1.3 → Ticket Mapping — v2.28
 
 Status: **current normative ticket mapping — Ticket 16A implemented; Ticket 16B ready**
 
@@ -65,20 +65,22 @@ Stage contracts live under `docs/ai-select/tickets/14A-*` through `14D-*`. `docs
 
 ## Ticket 16 post-closure presentation and visual-review stages
 
-| Stage | Parent mapping                   | Responsibility                                                                 |
-| ----- | -------------------------------- | ------------------------------------------------------------------------------ |
-| 16A   | Ticket 16 / §§4, 17–19, 22, 24   | Implemented AI View Dock, Candidate Overlay, Toolbar and presentation baseline |
-| 16B   | Ticket 16 / §§4, 6–8, 16–26      | Single-result product contract, capability truth and normative supersession    |
-| 16C   | Ticket 16 / §§4, 7–8, 17–19, 24  | Mask state truth and compact current-View Inspector                            |
-| 16D   | Ticket 16 / §§4, 9–10, 17–19, 24 | Canvas-first three-pane shell and stable Navigator                             |
-| 16E   | Ticket 16 / §§4–8, 17–22, 24–26  | 2D Work Area, floating-palette actions and explicit Re-Lift                    |
-| 16F   | Ticket 16 / §§4–5, 9–10, 17–24   | Compact 3D toolbar and non-destructive Anchor adjustment                       |
-| 16G   | Ticket 16 / §§3–8, 16–26         | Obsolete-control removal, integration and final operator visual closure        |
+| Stage | Parent mapping                   | Responsibility                                                                   |
+| ----- | -------------------------------- | -------------------------------------------------------------------------------- |
+| 16A   | Ticket 16 / §§4, 17–19, 22, 24   | Implemented AI View Dock, Candidate Overlay, Toolbar and presentation baseline   |
+| 16B   | Ticket 16 / §§4, 6–8, 16–26      | Single-result contract, `4–8` initial automatic Views and normative supersession |
+| 16C   | Ticket 16 / §§4, 7–8, 17–19, 24  | Mask state truth and compact current-View Inspector                              |
+| 16D   | Ticket 16 / §§4, 9–10, 17–19, 24 | Canvas-first three-pane shell and stable Navigator                               |
+| 16E   | Ticket 16 / §§4–8, 17–22, 24–26  | 2D Work Area, floating-palette actions and explicit Re-Lift                      |
+| 16F   | Ticket 16 / §§4–5, 9–10, 17–24   | Compact 3D toolbar and non-destructive Anchor adjustment                         |
+| 16G   | Ticket 16 / §§3–8, 16–26         | Obsolete-control removal, integration and final operator visual closure          |
 
 Ticket 16 remains implemented for native application semantics and adapters.
 Ticket 16A remains the implemented functional presentation baseline. Its
 completed operator visual walkthrough found the release-presentation issues
-owned by 16B–16G. Those stages do not reopen Ticket 16's application algebra;
+owned by 16B–16G. The accepted initial planner range is `4–8` automatic
+Generated Views, excluding the Anchor and User-added Views. Those stages do not
+reopen Ticket 16's application algebra;
 Ticket 15 remains the owner of Correction/Re-Lift semantics. Ticket 17 follows
 16G and must not reintroduce the 3D Toolbar More/Restart surface removed by the
 follow-up contract.

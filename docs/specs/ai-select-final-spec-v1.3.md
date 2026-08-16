@@ -3,8 +3,8 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.26 / Ticket 16 core implemented; Ticket 16A current
-**日期：** 2026-08-15
+**规划版本：** Ticket Graph v2.28 / Ticket 16B current
+**日期：** 2026-08-16
 **适用分支：** `ai-select-v1`  
 **决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017
 
@@ -352,7 +352,9 @@ Requirements：
 
 # 10. Bounded local Key Views
 
-v1 generates a small fixed-policy set of local Views, normally 2–4：
+v1 的初始规划会调度 `4–8` 个自动 Generated View，不计 Anchor 与 User-added
+View。候选 View 未通过有效性检查时，可用 View 可以少于 4 个；失败记录必须
+保持可见，不能计入成功结果：
 
 - left/right local azimuth offsets around the target；
 - optional modest elevation offset；
@@ -369,7 +371,10 @@ Each candidate performs minimal validity checks：
 
 Adaptive marginal-gain optimization、general free-space reconstruction、room/outside-room inference、Bridge Views、dense trajectories and append-only multi-segment planner frameworks are deferred。
 
-`Generate More` may append another bounded local batch without invalidating completed Views。
+`4–8` 范围是 Ticket 16B 已接受的产品变更，取代 ADR 0016 第 9 项，并须写入
+待发布的 ADR 0018。当前产品界面不提供常驻的 Stop、Generate More 或
+Regenerate 控件。只有初始规划失败时才显示一个失败恢复入口；该入口创建新的
+有界规划 attempt，且不使已完成的有效 View 失效。
 
 ---
 

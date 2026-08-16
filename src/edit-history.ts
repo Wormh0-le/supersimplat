@@ -55,6 +55,32 @@ class EditHistory {
         return this.cursor < this.history.length;
     }
 
+    /** Describe one exact command without moving the native history cursor. */
+    historyState(editOp: EditOp): 'undoable' | 'applied' | 'unapplied' {
+        const index = this.history.indexOf(editOp);
+        if (index === -1 || index >= this.cursor) {
+            return 'unapplied';
+        }
+        return index === this.cursor - 1 ? 'undoable' : 'applied';
+    }
+
+    /** Undo only when the expected command is still the exact history tip. */
+    undoIfTop(
+        editOp: EditOp,
+        validateCurrent: () => void,
+        afterUndo: () => void
+    ): Promise<boolean> {
+        return this.queue(async () => {
+            if (this.history[this.cursor - 1] !== editOp) {
+                return false;
+            }
+            validateCurrent();
+            await this._undo();
+            afterUndo();
+            return true;
+        });
+    }
+
     undo() {
         return this.queue(async () => {
             if (this.canUndo()) {

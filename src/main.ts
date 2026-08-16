@@ -25,6 +25,7 @@ import { AISelectGeneratedViewController } from './ai-select/generated-view-cont
 import { LiftReadinessStore } from './ai-select/lift-readiness';
 import { AISelectMaskController } from './ai-select/mask-controller';
 import { createPromptAdapterCapabilities } from './ai-select/prompt-state';
+import { AISelectTargetLifecycleController } from './ai-select/target-lifecycle';
 import { AISelectUserViewMaskController } from './ai-select/user-view-mask-controller';
 import { AnchorFrustum } from './ai-select-anchor-frustum';
 import { SelectOpCandidateNativeSelection } from './ai-select-candidate-application';
@@ -625,6 +626,7 @@ const main = async () => {
                               )
                       }
         }),
+        beginCorrection: () => aiSelectCandidateCorrection.beginCorrection(),
         applicationMode: referenceCandidateApplicationEnabled
             ? 'development-reference'
             : 'production',
@@ -661,6 +663,7 @@ const main = async () => {
     events.on('selectionService.readinessChanged', () =>
         aiSelectCandidateApplication.refresh()
     );
+    events.on('edit.apply', () => aiSelectCandidateApplication.refresh());
     const aiSelectCandidatePresentation = new CandidatePresentationCoordinator({
         candidates: aiSelectCandidatePublications,
         correction: aiSelectCandidateCorrection,
@@ -925,13 +928,56 @@ const main = async () => {
             scene.camera,
             nextCameraBindingRevision++
         );
-        aiSelectTargetSplat = selectedSplat;
-        if (restart || aiSelectController.state.context !== null) {
-            await aiSelectController.restart(input.start);
-        } else {
-            await aiSelectController.start(input.start);
-        }
+        const queued = await commandQueue.enqueue(() => {
+            // Keep the durable Splat owner and context transition atomic with a
+            // queued tool exit. A rapid deactivate/reactivate must not let the
+            // old exit clear the owner of the newly started context.
+            aiSelectTargetSplat = selectedSplat;
+            return {
+                completion:
+                    restart || aiSelectController.state.context !== null
+                        ? aiSelectController.restart(input.start)
+                        : aiSelectController.start(input.start)
+            };
+        });
+        await queued.completion;
     };
+    const aiSelectTargetLifecycle = new AISelectTargetLifecycleController({
+        getSnapshot: () => ({
+            hasContext: aiSelectController.state.context !== null,
+            hasUnconfirmedChanges:
+                aiSelectMaskController.state.hasUnconfirmedChanges ||
+                aiSelectAnchorAdjustment.state.status === 'changed' ||
+                aiSelectAnchorAdjustment.mask.state.hasUnconfirmedChanges ||
+                cameraInspection.state.target?.kind === 'user-view-draft' ||
+                aiSelectGeneratedViews.state.views.some(
+                    (view) =>
+                        aiSelectUserViewMasks.stateFor(view.viewId)
+                            ?.hasUnconfirmedChanges ?? false
+                ),
+            hasConfirmedTargetState:
+                aiSelectConfirmation.state.confirmedAnchor !== null ||
+                aiSelectGeneratedViews.state.views.length > 0 ||
+                aiSelectCandidatePublications.presentationState.status !==
+                    'empty',
+            candidateApplied:
+                aiSelectCandidateApplication.state.status === 'applied'
+        }),
+        confirmRestart: async () => {
+            const result = await events.invoke('showPopup', {
+                type: 'yesno',
+                header: i18n.t('ai-select.restart-current-target'),
+                message: i18n.t('ai-select.restart-confirm-message')
+            });
+            return result.action === 'yes';
+        },
+        restartCurrentTarget: () => startAISelect(true)
+    });
+    events.on('aiSelect.chooseAnotherObject', () => {
+        aiSelectTargetLifecycle
+            .chooseAnotherObject()
+            .catch((error) => reportAISelectError(error));
+    });
     const beginAnchorAdjustment = (): void => {
         cameraInspection.returnToSceneView();
         aiSelectAnchorAdjustment.beginAdjustment();
@@ -1124,9 +1170,14 @@ const main = async () => {
         },
         deactivate: () => {
             cameraInspection.returnToSceneView();
-            aiSelectController.exit();
-            aiSelectTargetSplat = null;
-            aiSelectCandidateViewportOverlay.destroy();
+            commandQueue
+                .enqueue(() => {
+                    aiSelectController.exit();
+                    aiSelectTargetSplat = null;
+                    aiSelectCandidateViewportOverlay.destroy();
+                })
+                .catch((error) => console.error(error));
+            events.fire('statusBar.closePanel', 'aiSelect');
         }
     });
 

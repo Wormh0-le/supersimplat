@@ -1,9 +1,9 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.32
+# Eight-Pass Bidirectional Traceability Audit — v2.33
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
 The v2.12–v2.27 sections and detailed pass text below are retained as historical
-audit evidence. The controlling v2.32 result is the post-Ticket-16G closure at
+audit evidence. The controlling v2.33 result is the post-Ticket-17 closure at
 the end of this document; Ticket 21 still owns calibration of the accepted
 `4–8` initial automatic-View range.
 
@@ -521,3 +521,28 @@ publication and Companion batch/ordinal protocol are correctness
 infrastructure rather than product controls.
 
 Overall result: **PASS_V2_32**.
+
+## v2.33 Ticket 17 controlling audit result
+
+Ticket 17 is implemented and Ticket 18 is the sole current execution frontier.
+The current pass supersedes the v2.32 frontier values while preserving its
+historical Ticket 16G evidence.
+
+| Pass | Current v2.33 check                                                                                                                    | Result |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 1    | All 31 parent Tickets and the 14A–14D / 16A–16G stage graph resolve; Ticket 18 is the only current frontier                            | PASS   |
+| 2    | Final Spec v1.3 remains the sole current specification and all 31 parent Ticket mappings resolve directly to it                        | PASS   |
+| 3    | Ticket 17 changes no SAM, Prompt, RGB, Companion model or renderer contract                                                            | PASS   |
+| 4    | Restart rotates target identity and existing exact-bound async acceptance rejects obsolete Anchor/Mask/Evidence/Lift results           | PASS   |
+| 5    | Exact-command Undo-and-Fix performs one safe Native Undo, keeps AI context, enters Correction and never traverses later native history | PASS   |
+| 6    | Native Selection/EditHistory remain the only durable cross-target results; Ticket 10 and Lift Readiness ownership are unchanged        | PASS   |
+| 7    | Target lifecycle stays in the global AI Select menu; 3D More/Restart remains absent; button/icon/tooltip/ARIA rules remain scoped      | PASS   |
+| 8    | Requirements remain 62/62 mapped; walkthroughs and error flows are 18/18; deterministic Ticket 17 validation is recorded               | PASS   |
+
+Current critical scan: no active document turns “选择另一个对象” into a new
+global icon mode. The global trigger continues to represent AI Select itself;
+the lifecycle commands are scanable menu entries with real icons and text.
+Restart confirmation preserves Native Selection/EditHistory, Candidate Applied
+alone does not force confirmation, and Ticket 18 inherits the global menu seam.
+
+Overall result: **PASS_V2_33**.

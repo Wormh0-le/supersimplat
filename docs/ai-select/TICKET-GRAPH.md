@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.32
+# AI Select v1 — Implementation Ticket Graph v2.33
 
-Status: **active implementation graph — Tickets 16A–16G implemented; Ticket 17 current**
+Status: **active implementation graph — Ticket 17 implemented; Ticket 18 current**
 
 Branch: `ai-select-v1`
 
@@ -54,6 +54,8 @@ obsolete-control closure.
   and `4–8` initial automatic-View contract baseline.
 - Tickets 16C–16G implemented the post-16A Inspector, canvas-first shell, Work
   Area, compact Toolbar and obsolete-control integration closure.
+- Ticket 17 implemented exact-command Undo-and-Fix, complete target Restart,
+  the global lifecycle menu, multi-object continuity and tool-switch disposal.
 
 ## Dependency graph
 
@@ -148,9 +150,10 @@ implemented prerequisites:
 - 16E — 2D Work Area + floating palette + explicit Re-Lift
 - 16F — compact viewport Toolbar + non-destructive Anchor adjustment
 - 16G — obsolete-control retirement + integrated visual closure
+- 17 — exact Undo-and-Fix + Restart + multi-target/tool-switch lifecycle
 
 current parent compatibility frontier:
-- 17 — Applied Undo-and-Fix + complete Restart + multi-object/tool-switch lifecycle
+- 18 — Scene mutation Suspended state + exact Undo recovery
 
 current execution stage:
 - none
@@ -159,14 +162,14 @@ current execution stage:
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 17
+next_implementation_ticket = 18
 next_implementation_subticket = none
 ```
 
-Ticket 17 consumes the implemented Ticket 16G Toolbar/presentation seam. It
-must not reintroduce retired 3D More/Restart or identical-input product
-Retry/planning controls. Ticket 10 remains optional and off the core release
-path.
+Ticket 17 closes the implemented Ticket 16G Toolbar/presentation seam without
+reintroducing retired 3D More/Restart or identical-input product Retry/planning
+controls. Ticket 18 consumes its global lifecycle menu and exact native-history
+seams. Ticket 10 remains optional and off the core release path.
 
 ## One valid topological order
 

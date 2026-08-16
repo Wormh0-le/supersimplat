@@ -1,6 +1,6 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.32
+# Current Final Spec v1.3 → Ticket Mapping — v2.33
 
-Status: **current normative ticket mapping — Tickets 16A–16G implemented; Ticket 17 current**
+Status: **current normative ticket mapping — Ticket 17 implemented; Ticket 18 current**
 
 This file maps every active AI Select parent Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
@@ -84,9 +84,10 @@ completed operator visual walkthrough found the release-presentation issues
 closed by 16B–16G. Tickets 16B through 16G are implemented. The accepted initial planner range is `4–8` automatic
 Generated Views, excluding the Anchor and User-added Views. Those stages do not
 reopen Ticket 16's application algebra;
-Ticket 15 remains the owner of Correction/Re-Lift semantics. Ticket 17 is the
-current frontier and must not reintroduce the 3D Toolbar More/Restart surface removed by the
-follow-up contract.
+Ticket 15 remains the owner of Correction/Re-Lift semantics. Ticket 17
+implemented exact-command Undo-and-Fix and global target lifecycle without
+reintroducing the 3D Toolbar More/Restart surface removed by the follow-up
+contract.
 
 ## Current implementation frontier
 
@@ -106,23 +107,25 @@ implemented prerequisites:
 - 16E — header-free Work Area + palette actions + Re-Lift
 - 16F — compact 3D Toolbar + non-destructive Anchor adjustment
 - 16G — obsolete-control retirement + integrated visual closure
+- 17 — exact-command Undo-and-Fix + global Restart/tool-switch lifecycle
 
 current execution frontier:
-- 17 — Applied Undo-and-Fix + complete Restart + multi-target lifecycle
+- 18 — Scene mutation Suspended state + exact Undo recovery
 ```
 
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 17
+next_implementation_ticket = 18
 next_implementation_subticket = none
 ```
 
-Ticket 17 consumes the final Ticket 16G Toolbar, presentation and lifecycle
-seam. It must keep Restart/tool exit in the global AI Select lifecycle menu and
-must not reintroduce 3D Toolbar More/Restart or retired product Retry/planning
-commands. Ticket 10 remains optional and may execute after parent Ticket 14 +
-09 + 07 without blocking the core release path.
+Ticket 17 closes the final Ticket 16G Toolbar, presentation and lifecycle seam.
+Restart/tool exit remain in the global AI Select lifecycle menu, and the
+contextual 3D Toolbar retains no More/Restart or retired product Retry/planning
+commands. Ticket 18 consumes that lifecycle menu and exact history seam. Ticket
+10 remains optional and may execute after parent Ticket 14 + 09 + 07 without
+blocking the core release path.
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no
 blocking issue reported. The locked-GPU large-Gallery browser walkthrough for
@@ -164,8 +167,8 @@ The mapping passes only when:
 - older spec names appear only under explicit historical/superseded/migration labels;
 - implemented prerequisites through 12 are not reported as current ready work;
 - parent Ticket 14 and stages 14A through 14D are recognized as implemented;
-- Tickets 13 through 15, Ticket 16's application core and Tickets 16A–16G are recognized as implemented, with Ticket 17 as the current execution frontier;
-- `next_implementation_ticket = 17` and `next_implementation_subticket = none` are current;
+- Tickets 13 through 17 and Tickets 16A–16G are recognized as implemented, with Ticket 18 as the current execution frontier;
+- `next_implementation_ticket = 18` and `next_implementation_subticket = none` are current;
 - Ticket 16B published ADR 0018 and the current Final Spec correction before
   dependent stages;
 - no active closure criterion relies on superseded v1.2 architecture;

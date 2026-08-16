@@ -1,5 +1,6 @@
 import type {
     CandidateApplicationOperation,
+    CandidateNativeHistoryState,
     CandidateNativeHistoryCommand,
     CandidateNativeSelection
 } from './ai-select/candidate-application';
@@ -67,5 +68,23 @@ export class SelectOpCandidateNativeSelection implements CandidateNativeSelectio
                 splatIndices
             );
         });
+    }
+
+    historyState(
+        command: CandidateNativeHistoryCommand
+    ): CandidateNativeHistoryState {
+        return this.options.editHistory.historyState(command as SelectOp);
+    }
+
+    undoIfTop(
+        command: CandidateNativeHistoryCommand,
+        validateCurrent: () => void,
+        afterUndo: () => void
+    ): Promise<boolean> {
+        return this.options.editHistory.undoIfTop(
+            command as SelectOp,
+            validateCurrent,
+            afterUndo
+        );
     }
 }

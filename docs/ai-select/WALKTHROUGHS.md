@@ -1,4 +1,4 @@
-# Final Spec v1.3 Walkthrough Coverage — v2.32
+# Final Spec v1.3 Walkthrough Coverage — v2.33
 
 ## Typical flows
 
@@ -21,28 +21,40 @@
 | WF-15 | Lift and optional diagnostics     | `11/12 → 14/13 → 15/16`, optional `14 → 10` | Ticket 13 owns readiness; Ticket 10 may enrich conflict diagnostics but does not block release                     |
 | WF-16 | Native application                | `14/15 → 16`                                | Candidate stays non-destructive until an explicit Set/Add/Remove/Intersect operation                               |
 | WF-17 | Integrated canvas-first surface   | `16A–16G → 17`                              | One Navigator/Work Area/Inspector ownership model, no Dock header/action bar, and a Ticket 17-ready lifecycle seam |
+| WF-18 | Multi-object target lifecycle     | `16G → 17 → 18`                             | Exact Undo-and-Fix, explicit A/B/C Add operations, rotated target identity and durable Native Selection/history    |
 
 ## Error and recovery flows
 
-| ID    | Failure                                  | Ticket path     | Required retained state / supported recovery                                                                                  |
-| ----- | ---------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| EF-01 | old Multiplex manifest active            | `04C → 02C`     | Availability Unavailable; native editor usable; operator installs current manifest                                            |
-| EF-02 | historical 04A Prompt artifact supplied  | `04A → 04C/08A` | Fail current schema validation; no removed Prompt-family conversion                                                           |
-| EF-03 | Ticket 06 legacy fallback invoked        | `06 → 08B/21`   | Reject as current production route; preserve RGB/manual recovery                                                              |
-| EF-04 | RGB digest has no resolvable bytes/ref   | `04C/08A/08B`   | Reject before inference; preserve Prompt/RGB-ready record                                                                     |
-| EF-05 | RGB ref digest/dimensions mismatch       | `08A/08B`       | Fail closed; no partial Mask/ref result                                                                                       |
-| EF-06 | binary Brush supplied as logits          | `04C/08A`       | Reject artifact; keep Prompt/Editing state; no inference                                                                      |
-| EF-07 | Companion Instance replaces logits owner | `02C/04C/12`    | Invalidate ref; a changed Point/Box starts a normal fresh inference                                                           |
-| EF-08 | stale candidate/logits lineage           | `04C/07A/12`    | Reject cross-RGB/adapter/candidate ref; preserve prior Stable Mask                                                            |
-| EF-09 | Anchor result needs correction           | `07A/16G`       | Change Point/Box input or use Paint/Erase; identical-input explicit recovery is absent                                        |
-| EF-10 | no Anchor result                         | `07A/16G`       | Preserve RGB and Stable history; change Prompt or use manual editing                                                          |
-| EF-11 | geometry extraction unavailable          | `08`            | Preserve Anchor; offer the bounded local/user-added View path                                                                 |
-| EF-12 | local View blank or invalid              | `08/16G`        | Keep the failed View inspectable/excluded; user may add a replacement View                                                    |
-| EF-13 | per-View SAM technical failure           | `08B/09/16G`    | Preserve RGB/prior Stable Mask; change Prompt, edit manually, exclude, or add a replacement View                              |
-| EF-14 | semantic per-View unavailable or Review  | `07/08B/09`     | No arbitrary Stable Mask; adjust Prompt/View/manual state or keep Review Excluded                                             |
-| EF-15 | weak Gaussian support / Ticket 10 absent | `13/21`         | Lift Readiness Limited/Not Ready; release/readiness still work without optional Ticket 10                                     |
-| EF-16 | Evidence/Lift failure                    | `14/20/21`      | Preserve Views and Stable Masks; previous Candidate remains prior/stale and normal correction/Re-Lift may produce replacement |
-| EF-17 | render or Candidate replacement failure  | `03/14D/16G`    | Changed/reset Anchor pose or corrected input creates a normal attempt; prior valid Candidate remains atomically inspectable   |
+| ID    | Failure                                    | Ticket path     | Required retained state / supported recovery                                                                                  |
+| ----- | ------------------------------------------ | --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| EF-01 | old Multiplex manifest active              | `04C → 02C`     | Availability Unavailable; native editor usable; operator installs current manifest                                            |
+| EF-02 | historical 04A Prompt artifact supplied    | `04A → 04C/08A` | Fail current schema validation; no removed Prompt-family conversion                                                           |
+| EF-03 | Ticket 06 legacy fallback invoked          | `06 → 08B/21`   | Reject as current production route; preserve RGB/manual recovery                                                              |
+| EF-04 | RGB digest has no resolvable bytes/ref     | `04C/08A/08B`   | Reject before inference; preserve Prompt/RGB-ready record                                                                     |
+| EF-05 | RGB ref digest/dimensions mismatch         | `08A/08B`       | Fail closed; no partial Mask/ref result                                                                                       |
+| EF-06 | binary Brush supplied as logits            | `04C/08A`       | Reject artifact; keep Prompt/Editing state; no inference                                                                      |
+| EF-07 | Companion Instance replaces logits owner   | `02C/04C/12`    | Invalidate ref; a changed Point/Box starts a normal fresh inference                                                           |
+| EF-08 | stale candidate/logits lineage             | `04C/07A/12`    | Reject cross-RGB/adapter/candidate ref; preserve prior Stable Mask                                                            |
+| EF-09 | Anchor result needs correction             | `07A/16G`       | Change Point/Box input or use Paint/Erase; identical-input explicit recovery is absent                                        |
+| EF-10 | no Anchor result                           | `07A/16G`       | Preserve RGB and Stable history; change Prompt or use manual editing                                                          |
+| EF-11 | geometry extraction unavailable            | `08`            | Preserve Anchor; offer the bounded local/user-added View path                                                                 |
+| EF-12 | local View blank or invalid                | `08/16G`        | Keep the failed View inspectable/excluded; user may add a replacement View                                                    |
+| EF-13 | per-View SAM technical failure             | `08B/09/16G`    | Preserve RGB/prior Stable Mask; change Prompt, edit manually, exclude, or add a replacement View                              |
+| EF-14 | semantic per-View unavailable or Review    | `07/08B/09`     | No arbitrary Stable Mask; adjust Prompt/View/manual state or keep Review Excluded                                             |
+| EF-15 | weak Gaussian support / Ticket 10 absent   | `13/21`         | Lift Readiness Limited/Not Ready; release/readiness still work without optional Ticket 10                                     |
+| EF-16 | Evidence/Lift failure                      | `14/20/21`      | Preserve Views and Stable Masks; previous Candidate remains prior/stale and normal correction/Re-Lift may produce replacement |
+| EF-17 | render or Candidate replacement failure    | `03/14D/16G`    | Changed/reset Anchor pose or corrected input creates a normal attempt; prior valid Candidate remains atomically inspectable   |
+| EF-18 | unsafe Undo-and-Fix or late restarted work | `01/12/17`      | Disable exact-command Undo-and-Fix without traversal; rotated target identity rejects late Mask/Evidence/Lift publication     |
+
+## Ticket 17 lifecycle evidence
+
+Deterministic domain, native-history and UI contract tests cover exact
+top-of-stack Undo-and-Fix, a later native edit, Native Undo/Redo refresh,
+pending Lift reset, target-context rotation, confirmation policy, A/B/C
+explicit Add continuity, lifecycle-menu ownership and tool-switch disposal.
+Existing Anchor, Mask and Generated-View restart suites continue to prove that
+late work cannot republish and target-local Mask/View/Evidence state is
+released. Ticket 17 adds no locked-GPU validation requirement or claim.
 
 ## Ticket 16G operator evidence
 
@@ -64,9 +76,9 @@ production GPU, Companion model-capability or camera-planner quality claim.
 
 ## Coverage result
 
-- typical walkthroughs: 17;
-- error walkthroughs: 17;
-- current ready frontier: Ticket 17;
+- typical walkthroughs: 18;
+- error walkthroughs: 18;
+- current ready frontier: Ticket 18;
 - current product recovery contract: changed intent, manual editing, exclusion,
   replacement View, or normal Re-Lift as applicable;
 - obsolete product planning/recovery controls present: no;

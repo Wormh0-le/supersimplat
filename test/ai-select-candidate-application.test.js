@@ -38,6 +38,7 @@ Module._load = function (request, parent, isMain) {
 
 const {
     CandidateApplicationBlockedError,
+    CandidateUndoAndFixBlockedError,
     CandidateApplicationController
 } = require('../.test-dist/src/ai-select/candidate-application.js');
 const {
@@ -152,6 +153,7 @@ const createHarness = ({
     contextLifecycle = 'active',
     effectiveDependencyToken = dependency(),
     beforeNativeValidation = () => {},
+    beforeUndoValidation = () => {},
     nativeFailure = null
 } = {}) => {
     const dirtyState = new AISelectDirtyStateTracker();
@@ -201,6 +203,24 @@ const createHarness = ({
             setSelected(after);
             return command;
         },
+        historyState: (command) => {
+            const index = nativeHistory.indexOf(command);
+            if (index === -1 || index >= nativeHistoryCursor) {
+                return 'unapplied';
+            }
+            return index === nativeHistoryCursor - 1 ? 'undoable' : 'applied';
+        },
+        undoIfTop: async (command, validateCurrent, afterUndo) => {
+            if (nativeHistory[nativeHistoryCursor - 1] !== command) {
+                return false;
+            }
+            beforeUndoValidation();
+            validateCurrent();
+            nativeHistoryCursor -= 1;
+            await command.undo();
+            afterUndo();
+            return true;
+        },
         undo: async () => {
             if (nativeHistoryCursor === 0) {
                 return;
@@ -214,6 +234,18 @@ const createHarness = ({
             }
             await nativeHistory[nativeHistoryCursor].redo();
             nativeHistoryCursor += 1;
+        },
+        addNativeEdit: async (before, after) => {
+            const command = {
+                name: 'otherOp',
+                undo: async () => setSelected(before),
+                redo: async () => setSelected(after)
+            };
+            nativeHistory.splice(nativeHistoryCursor);
+            nativeHistory.push(command);
+            nativeHistoryCursor += 1;
+            setSelected(after);
+            return command;
         }
     };
     const context = {
@@ -223,9 +255,13 @@ const createHarness = ({
         dependencyToken: dependency(),
         lifecycle: contextLifecycle
     };
+    let correctionBegins = 0;
     const controller = new CandidateApplicationController({
         candidates,
         nativeSelection,
+        beginCorrection: () => {
+            correctionBegins += 1;
+        },
         applicationMode,
         getAcceptedRuntime,
         getTarget: () => ({
@@ -239,7 +275,8 @@ const createHarness = ({
         dirtyState,
         nativeHistory,
         nativeSelection,
-        native
+        native,
+        correctionBegins: () => correctionBegins
     };
 };
 
@@ -318,8 +355,16 @@ test('the production gate accepts an exact production-ready Candidate identity',
                     native.splat.state.data[id] = 1;
                 });
                 return nativeHistory[0];
+            },
+            historyState: (command) =>
+                nativeHistory.at(-1) === command ? 'undoable' : 'unapplied',
+            undoIfTop: async (_command, validateCurrent, afterUndo) => {
+                validateCurrent();
+                afterUndo();
+                return true;
             }
         },
+        beginCorrection: () => {},
         applicationMode: 'production',
         getAcceptedRuntime: acceptedProductionRuntime,
         getTarget: () => ({
@@ -372,18 +417,97 @@ test('an explicit development capability applies Selected-only through native hi
     assert.equal(record.operation, 'set');
     assert.equal(harness.controller.state.status, 'applied');
     assert.equal(harness.controller.state.overlayEmphasis, 'deemphasized');
+    assert.equal(harness.controller.state.undoAndFixAvailable, true);
 
     harness.controller.showAIResult();
     assert.equal(harness.controller.state.status, 'applied');
     assert.equal(harness.controller.state.overlayEmphasis, 'emphasized');
 
     await harness.nativeSelection.undo();
+    harness.controller.refresh();
     assert.deepEqual(harness.native.selected(), [0, 2, 4]);
     assert.equal(harness.candidates.presentationState.status, 'current');
+    assert.equal(harness.controller.state.status, 'ready');
 
     await harness.nativeSelection.redo();
+    harness.controller.refresh();
     assert.deepEqual(harness.native.selected(), [1, 3]);
     assert.equal(harness.candidates.presentationState.status, 'current');
+    assert.equal(harness.controller.state.status, 'applied');
+});
+
+test('Undo and Fix safely undoes the exact Candidate command before entering correction', async () => {
+    const harness = createHarness({
+        initialSelected: [0, 2, 4],
+        applicationMode: 'development-reference',
+        getAcceptedRuntime: acceptedReferenceRuntime
+    });
+    publishCandidate(harness.candidates);
+    const record = await harness.controller.apply('set');
+
+    await harness.controller.undoAndFix();
+
+    assert.deepEqual(harness.native.selected(), [0, 2, 4]);
+    assert.equal(harness.nativeHistory.length, 1);
+    assert.equal(
+        harness.nativeSelection.historyState(record.nativeHistoryCommand),
+        'unapplied'
+    );
+    assert.equal(harness.controller.state.status, 'ready');
+    assert.equal(harness.correctionBegins(), 1);
+});
+
+test('Undo and Fix never traverses unrelated native history', async () => {
+    const harness = createHarness({
+        initialSelected: [0, 2, 4],
+        applicationMode: 'development-reference',
+        getAcceptedRuntime: acceptedReferenceRuntime
+    });
+    publishCandidate(harness.candidates);
+    await harness.controller.apply('set');
+    await harness.nativeSelection.addNativeEdit([1, 3], [1, 3, 4]);
+    harness.controller.refresh();
+
+    assert.equal(harness.controller.state.status, 'applied');
+    assert.equal(harness.controller.state.undoAndFixAvailable, false);
+    assert.equal(
+        harness.controller.state.undoAndFixBlockReason,
+        'native-history-changed'
+    );
+    await assert.rejects(
+        harness.controller.undoAndFix(),
+        (error) =>
+            error instanceof CandidateUndoAndFixBlockedError &&
+            error.reason === 'native-history-changed'
+    );
+    assert.deepEqual(harness.native.selected(), [1, 3, 4]);
+    assert.equal(harness.correctionBegins(), 0);
+
+    await harness.nativeSelection.undo();
+    harness.controller.refresh();
+    assert.equal(harness.controller.state.undoAndFixAvailable, true);
+});
+
+test('Undo and Fix revalidates Candidate identity at the queued history boundary', async () => {
+    let harness;
+    harness = createHarness({
+        initialSelected: [0, 2, 4],
+        applicationMode: 'development-reference',
+        getAcceptedRuntime: acceptedReferenceRuntime,
+        beforeUndoValidation: () => harness.candidates.reset()
+    });
+    publishCandidate(harness.candidates);
+    await harness.controller.apply('set');
+
+    await assert.rejects(
+        harness.controller.undoAndFix(),
+        (error) =>
+            error instanceof CandidateApplicationBlockedError &&
+            error.reason === 'candidate-unavailable'
+    );
+
+    assert.deepEqual(harness.native.selected(), [1, 3]);
+    assert.equal(harness.correctionBegins(), 0);
 });
 
 test('a failing observer cannot cancel or misreport a native application', async () => {
@@ -467,8 +591,35 @@ test('the real SelectOp/EditHistory adapter is undoable and preserves a redo bra
     assert.equal(command.name, 'selectOp');
     assert.deepEqual(native.selected(), [1, 3]);
     assert.equal(history.canUndo(), true);
+    assert.equal(adapter.historyState(command), 'undoable');
 
+    const laterCommand = await history.add({
+        name: 'otherOp',
+        do: () => {},
+        undo: () => {}
+    });
+    assert.equal(adapter.historyState(command), 'applied');
+    assert.equal(
+        await adapter.undoIfTop(
+            command,
+            () => {},
+            () => {}
+        ),
+        false
+    );
+    assert.equal(history.cursor, 2);
     await history.undo();
+    assert.equal(
+        await adapter.undoIfTop(
+            command,
+            () => {},
+            () => {}
+        ),
+        true
+    );
+    assert.equal(adapter.historyState(command), 'unapplied');
+    assert.equal(history.history.includes(laterCommand), true);
+
     assert.deepEqual(native.selected(), [0, 2, 4]);
     assert.equal(history.canRedo(), true);
 

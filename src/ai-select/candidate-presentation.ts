@@ -1,7 +1,8 @@
 import type {
     CandidateApplicationBlockReason,
     CandidateApplicationOperation,
-    CandidateApplicationState
+    CandidateApplicationState,
+    CandidateUndoAndFixBlockReason
 } from './candidate-application';
 import type { CandidateCorrectionState } from './candidate-correction';
 import type { CandidatePublicationState } from './candidate-publication';
@@ -38,6 +39,8 @@ export interface CandidatePresentation {
         operationsEnabled: boolean;
         disabledReason: CandidateOperationDisabledReason | null;
         technicalBlockReason: CandidateApplicationBlockReason | null;
+        undoAndFixEnabled: boolean;
+        undoAndFixDisabledReason: CandidateUndoAndFixBlockReason | null;
     }>;
     readonly statusBar: Readonly<{
         visible: boolean;
@@ -155,7 +158,9 @@ export const mapCandidatePresentation = (
                 visible: false,
                 operationsEnabled: false,
                 disabledReason: null,
-                technicalBlockReason: null
+                technicalBlockReason: null,
+                undoAndFixEnabled: false,
+                undoAndFixDisabledReason: 'candidate-not-applied'
             }),
             statusBar: Object.freeze({
                 visible: lifecycle !== null,
@@ -205,7 +210,9 @@ export const mapCandidatePresentation = (
             technicalBlockReason:
                 application.status === 'blocked'
                     ? application.blockReason
-                    : null
+                    : null,
+            undoAndFixEnabled: application.undoAndFixAvailable,
+            undoAndFixDisabledReason: application.undoAndFixBlockReason
         }),
         statusBar: Object.freeze({
             visible: true,

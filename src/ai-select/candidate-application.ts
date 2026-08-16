@@ -82,12 +82,25 @@ export interface CandidateNativeHistoryCommand {
     readonly name: string;
 }
 
+export type CandidateNativeHistoryState = 'undoable' | 'applied' | 'unapplied';
+
+export type CandidateUndoAndFixBlockReason =
+    'candidate-not-applied' | 'native-history-changed';
+
 export interface CandidateNativeSelection {
     apply(
         operation: CandidateApplicationOperation,
         selectedStableGaussianIds: readonly number[],
         validateCurrent: () => void
     ): Promise<CandidateNativeHistoryCommand>;
+    historyState(
+        command: CandidateNativeHistoryCommand
+    ): CandidateNativeHistoryState;
+    undoIfTop(
+        command: CandidateNativeHistoryCommand,
+        validateCurrent: () => void,
+        afterUndo: () => void
+    ): Promise<boolean>;
 }
 
 export interface CandidateApplicationTarget {
@@ -98,6 +111,7 @@ export interface CandidateApplicationTarget {
 export interface CandidateApplicationControllerOptions {
     readonly candidates: CandidateApplicationSource;
     readonly nativeSelection: CandidateNativeSelection;
+    readonly beginCorrection: () => void;
     readonly applicationMode: CandidateApplicationMode;
     readonly getAcceptedRuntime: () => CandidateApplicationRuntimeIdentity | null;
     readonly getTarget: () => CandidateApplicationTarget | null;
@@ -129,24 +143,32 @@ export type CandidateApplicationState =
           blockReason: 'candidate-unavailable';
           applicationRecord: null;
           overlayEmphasis: 'emphasized';
+          undoAndFixAvailable: false;
+          undoAndFixBlockReason: 'candidate-not-applied';
       }>
     | Readonly<{
           status: 'blocked';
           blockReason: CandidateApplicationBlockReason;
           applicationRecord: CandidateApplicationRecord | null;
           overlayEmphasis: CandidateOverlayEmphasis;
+          undoAndFixAvailable: false;
+          undoAndFixBlockReason: CandidateUndoAndFixBlockReason;
       }>
     | Readonly<{
           status: 'ready' | 'applying';
           blockReason: null;
           applicationRecord: null;
           overlayEmphasis: 'emphasized';
+          undoAndFixAvailable: false;
+          undoAndFixBlockReason: 'candidate-not-applied';
       }>
     | Readonly<{
           status: 'applied';
           blockReason: null;
           applicationRecord: CandidateApplicationRecord;
           overlayEmphasis: CandidateOverlayEmphasis;
+          undoAndFixAvailable: boolean;
+          undoAndFixBlockReason: CandidateUndoAndFixBlockReason | null;
       }>;
 
 export type CandidateApplicationListener = (
@@ -160,10 +182,18 @@ export class CandidateApplicationBlockedError extends Error {
     }
 }
 
+export class CandidateUndoAndFixBlockedError extends Error {
+    constructor(readonly reason: CandidateUndoAndFixBlockReason) {
+        super(`AI Select Undo and Fix is blocked: ${reason}.`);
+        this.name = 'CandidateUndoAndFixBlockedError';
+    }
+}
+
 /** Fail-closed bridge from one published Candidate to native selection. */
 export class CandidateApplicationController {
     private readonly candidates: CandidateApplicationSource;
     private readonly nativeSelection: CandidateNativeSelection;
+    private readonly beginCorrection: () => void;
     private readonly applicationMode: CandidateApplicationMode;
     private readonly getAcceptedRuntime: () => CandidateApplicationRuntimeIdentity | null;
     private readonly getTarget: () => CandidateApplicationTarget | null;
@@ -175,6 +205,7 @@ export class CandidateApplicationController {
     constructor(options: CandidateApplicationControllerOptions) {
         this.candidates = options.candidates;
         this.nativeSelection = options.nativeSelection;
+        this.beginCorrection = options.beginCorrection;
         this.applicationMode = options.applicationMode;
         this.getAcceptedRuntime = options.getAcceptedRuntime;
         this.getTarget = options.getTarget;
@@ -188,7 +219,9 @@ export class CandidateApplicationController {
                 status: 'unavailable',
                 blockReason: 'candidate-unavailable',
                 applicationRecord: null,
-                overlayEmphasis: 'emphasized'
+                overlayEmphasis: 'emphasized',
+                undoAndFixAvailable: false,
+                undoAndFixBlockReason: 'candidate-not-applied'
             });
         }
         const candidate = this.candidates.inspectableCandidate;
@@ -202,7 +235,9 @@ export class CandidateApplicationController {
                 overlayEmphasis:
                     currentApplicationRecord === null
                         ? 'emphasized'
-                        : this.overlayEmphasis
+                        : this.overlayEmphasis,
+                undoAndFixAvailable: false,
+                undoAndFixBlockReason: 'candidate-not-applied'
             });
         }
         if (this.applying) {
@@ -210,22 +245,34 @@ export class CandidateApplicationController {
                 status: 'applying',
                 blockReason: null,
                 applicationRecord: null,
-                overlayEmphasis: 'emphasized'
+                overlayEmphasis: 'emphasized',
+                undoAndFixAvailable: false,
+                undoAndFixBlockReason: 'candidate-not-applied'
             });
         }
         if (currentApplicationRecord !== null) {
+            const undoAndFixAvailable =
+                this.nativeSelection.historyState(
+                    currentApplicationRecord.nativeHistoryCommand
+                ) === 'undoable';
             return Object.freeze({
                 status: 'applied',
                 blockReason: null,
                 applicationRecord: currentApplicationRecord,
-                overlayEmphasis: this.overlayEmphasis
+                overlayEmphasis: this.overlayEmphasis,
+                undoAndFixAvailable,
+                undoAndFixBlockReason: undoAndFixAvailable
+                    ? null
+                    : 'native-history-changed'
             });
         }
         return Object.freeze({
             status: 'ready',
             blockReason: null,
             applicationRecord: null,
-            overlayEmphasis: 'emphasized'
+            overlayEmphasis: 'emphasized',
+            undoAndFixAvailable: false,
+            undoAndFixBlockReason: 'candidate-not-applied'
         });
     }
 
@@ -284,6 +331,49 @@ export class CandidateApplicationController {
 
     refresh(): void {
         this.notify();
+    }
+
+    async undoAndFix(): Promise<void> {
+        const state = this.state;
+        if (state.status !== 'applied' || !state.undoAndFixAvailable) {
+            throw new CandidateUndoAndFixBlockedError(
+                state.status === 'applied'
+                    ? 'native-history-changed'
+                    : 'candidate-not-applied'
+            );
+        }
+        this.applying = true;
+        this.notify();
+        try {
+            const applicationRecord = state.applicationRecord;
+            const expectedCandidateDigest =
+                applicationRecord.candidateRevision.candidateDigest;
+            const validateCurrent = (): void => {
+                this.requireApplicableCandidate(expectedCandidateDigest);
+                if (this.applicationRecord !== applicationRecord) {
+                    throw new CandidateUndoAndFixBlockedError(
+                        'candidate-not-applied'
+                    );
+                }
+            };
+            const undone = await this.nativeSelection.undoIfTop(
+                applicationRecord.nativeHistoryCommand,
+                validateCurrent,
+                () => {
+                    validateCurrent();
+                    this.overlayEmphasis = 'emphasized';
+                    this.beginCorrection();
+                }
+            );
+            if (!undone) {
+                throw new CandidateUndoAndFixBlockedError(
+                    'native-history-changed'
+                );
+            }
+        } finally {
+            this.applying = false;
+            this.notify();
+        }
     }
 
     showAIResult(): void {
@@ -386,10 +476,16 @@ export class CandidateApplicationController {
     private recordFor(
         candidate: CandidateApplicationArtifact | null
     ): CandidateApplicationRecord | null {
-        return candidate !== null &&
+        const record =
+            candidate !== null &&
             this.applicationRecord?.candidateRevision.candidateDigest ===
                 candidate.candidateDigest
-            ? this.applicationRecord
+                ? this.applicationRecord
+                : null;
+        return record !== null &&
+            this.nativeSelection.historyState(record.nativeHistoryCommand) !==
+                'unapplied'
+            ? record
             : null;
     }
 

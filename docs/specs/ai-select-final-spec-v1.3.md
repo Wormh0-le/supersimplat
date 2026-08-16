@@ -3,7 +3,7 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.32 / Ticket 16G implemented / Ticket 17 current
+**规划版本：** Ticket Graph v2.33 / Ticket 17 implemented / Ticket 18 current
 **日期：** 2026-08-17
 **适用分支：** `ai-select-v1`  
 **决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017、ADR 0018
@@ -776,29 +776,30 @@ Required validation：
 16E  2D Work Area + floating palette + explicit Re-Lift                     implemented
 16F  compact viewport toolbar + non-destructive Anchor adjustment           implemented
 16G  obsolete-control removal + integrated visual closure                   implemented
-17   Applied Undo-and-Fix + Restart + multi-target lifecycle                ready / current
+17   Applied Undo-and-Fix + Restart + multi-target lifecycle                implemented
+18   Scene mutation Suspended state + exact Undo recovery                   ready / current
 10   optional cross-view Evidence-conflict diagnostics                      nonblocking
 ```
 
 Current ready implementation frontier：
 
 ```text
-parent: 17  Applied Undo-and-Fix + Restart + multi-target lifecycle
+parent: 18  Scene mutation Suspended state + exact Undo recovery
 stage:  none
 
-14A (implemented) → 14B (implemented) → 14C (implemented) → 14D (implemented) → 13 (implemented) → 15 (implemented) → 16 (core implemented) → 16A → 16B → 16C / 16D / 16F → 16E → 16G (all implemented) → 17
+14A (implemented) → 14B (implemented) → 14C (implemented) → 14D (implemented) → 13 (implemented) → 15 (implemented) → 16 (core implemented) → 16A → 16B → 16C / 16D / 16F → 16E → 16G (all implemented) → 17 (implemented) → 18
 ```
 
 Compatibility fields：
 
 ```text
-next_implementation_ticket = 17
+next_implementation_ticket = 18
 next_implementation_subticket = none
 ```
 
 Parent Ticket 14, Tickets 13 through 15 and Ticket 16's native-application core
-are closed. Tickets 16A through 16G are implemented; Ticket 17 is the current
-ready frontier. Ticket 10 remains optional
+are closed. Tickets 16A through 16G and Ticket 17 are implemented; Ticket 18 is
+the current ready frontier. Ticket 10 remains optional
 and off the core release path。
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported。

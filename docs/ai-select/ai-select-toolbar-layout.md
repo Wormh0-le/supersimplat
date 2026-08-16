@@ -1,6 +1,6 @@
 # AI Select Toolbar 布局与交互设计
 
-状态：**当前可复用合同 — Tickets 16F、16G 已实现**
+状态：**当前可复用合同 — Tickets 16F、16G、17 已实现**
 
 本文记录主 3D 视口内 AI Select 子工具栏的最终 Ticket 16G 接口。领域状态以 Final Spec v1.3、`CONTEXT.md` 和 Ticket 合同为准。
 
@@ -17,7 +17,7 @@
 | ------------------- | ------------------------------------------------------------------ | --------------------------------------------- |
 | AI Select Toolbar   | Anchor 调整、Add View、Candidate Overlay、Set/Add/Remove/Intersect | Prompt/Mask 编辑、Re-Lift、目标重启、工具退出 |
 | AI View Dock        | View 导航、2D Prompt/Mask、Review、Participation、Re-Lift          | Native Candidate Operations                   |
-| 全局 AI Select 工具 | Ticket 17 的目标生命周期菜单和工具退出                             | 当前 Ticket 的上下文操作                      |
+| 全局 AI Select 工具 | 目标生命周期菜单和工具退出                                         | 当前视口的上下文操作                          |
 
 ## 普通模式
 
@@ -32,13 +32,20 @@
 
 存在可检查 Candidate 时，固定顺序为：
 
-`Overlay | Set | Add | Remove | Intersect`
+`Overlay | Set | Add | Remove | Intersect | Undo and Fix`
 
 - Overlay split control 的主按钮切换 Candidate Selected，菜单管理 Uncertain、图例和数量。
 - 四个 Native 操作复用 Ticket 16 的真实 applicability gate、`SelectOp` 和 `EditHistory`。
 - Candidate `Current` 时可用；`Stale`、`Updating`、`Update Failed`、`Correcting` 或全局 blocker 时保留稳定位置并给出可访问禁用原因。
 - `Applied` 后 Candidate Overlay 默认隐藏但可重新显示；Native Selection 颜色和语义不被 Candidate 覆盖。
-- Ticket 17 的 `Undo and Fix` 只在真实历史行为实现后追加到 Intersect 后方；Ticket 16G 不提供占位控件。
+- `Undo and Fix` 仅在对应 Native command 仍是可安全撤销的历史栈顶时启用；后续原生编辑只会禁用它，不会隐式遍历历史。
+
+## 全局生命周期菜单
+
+- 全局触发器继续表达 AI Select 工具本身，不把“选择另一个对象”固化为新的全局图标模式。
+- 工具激活后，触发器打开包含“选择另一个对象”和“退出 AI Select”的菜单；菜单项采用真实图标加短文字，以便快速扫描并解释破坏性后果。
+- “选择另一个对象”的 tooltip、ARIA 描述和必要时的确认框都说明：清除当前 AI 目标上下文，但保留原生选择和编辑历史。
+- 触发器和菜单项命中区域不少于 `40×40px`；支持方向键、Escape、外部点击关闭和焦点归还。
 
 ## Anchor 调整模式
 

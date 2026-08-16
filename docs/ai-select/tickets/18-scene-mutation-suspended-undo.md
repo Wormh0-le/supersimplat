@@ -1,6 +1,6 @@
 # 18 — Scene mutation Suspended state + exact Undo recovery
 
-Status: ready-for-agent — Final Spec v1.3 mapped
+Status: current — ready after implemented Ticket 17
 
 Blocked by: 17, 01
 

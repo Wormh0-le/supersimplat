@@ -69,6 +69,12 @@ test('viewport Toolbar operations have custom SVG, hit targets and accessible st
     ]) {
         assert.match(toolbar, new RegExp(`ai-select-${icon}\\.svg`));
     }
+    assert.match(toolbar, /edit-undo\.svg/);
+    assert.match(toolbar, /ai-select-toolbar-candidate-undo-and-fix/);
+    assert.match(
+        toolbar,
+        /if \(!candidatePresentation\.toolbar\.undoAndFixEnabled\)\s*\{\s*return;/
+    );
     assert.match(styles, /\.pcui-button\s*\{[\s\S]*?min-width:\s*40px;/);
     assert.match(styles, /\.pcui-button\s*\{[\s\S]*?min-height:\s*40px;/);
     assert.match(toolbar, /button\.dom\.title\s*=/);
@@ -80,6 +86,66 @@ test('viewport Toolbar operations have custom SVG, hit targets and accessible st
     assert.match(
         toolbar,
         /if \(!candidatePresentation\.toolbar\.operationsEnabled\)\s*\{\s*return;/
+    );
+});
+
+test('global AI Select lifecycle menu owns restart and exit accessibly', () => {
+    const bottomToolbar = readFileSync('src/ui/bottom-toolbar.ts', 'utf8');
+    const viewportToolbar = readFileSync('src/ui/ai-select-toolbar.ts', 'utf8');
+    const styles = readFileSync('src/ui/scss/bottom-toolbar.scss', 'utf8');
+    const zh = JSON.parse(readFileSync('static/locales/zh-CN.json', 'utf8'));
+
+    assert.match(bottomToolbar, /ai-select-tool\.svg/);
+    assert.match(bottomToolbar, /bottom-toolbar-ai-select-menu/);
+    assert.match(bottomToolbar, /setAttribute\('aria-haspopup', 'menu'\)/);
+    assert.match(
+        bottomToolbar,
+        /setAttribute\('aria-label', i18n\.t\('ai-select\.tool'\)\)/
+    );
+    assert.match(
+        bottomToolbar,
+        /tooltips\.register\(aiSelect, tooltip\('ai-select\.tool'\)\)/
+    );
+    assert.match(bottomToolbar, /event\.key === 'ArrowDown' && aiSelectActive/);
+    assert.match(bottomToolbar, /event\.key === 'Escape'/);
+    assert.match(
+        bottomToolbar,
+        /document\.addEventListener\([\s\S]*?'pointerdown'[\s\S]*?closeAISelectLifecycleMenu\(false\);[\s\S]*?true\s*\);/
+    );
+    assert.match(bottomToolbar, /closeAISelectLifecycleMenu\(true\)/);
+    assert.match(bottomToolbar, /aiSelect\.dom\.focus\(\)/);
+    assert.match(bottomToolbar, /aiSelect\.chooseAnotherObject/);
+    assert.match(bottomToolbar, /events\.fire\('tool\.deactivate'\)/);
+    assert.match(
+        styles,
+        /#bottom-toolbar-ai-select\s*\{[\s\S]*?width:\s*40px;[\s\S]*?height:\s*40px;/
+    );
+    assert.match(styles, /#bottom-toolbar-ai-select[\s\S]*?&:focus-visible/);
+    assert.match(
+        styles,
+        /\.bottom-toolbar-ai-select-menu-item\s*\{[\s\S]*?min-height:\s*40px;/
+    );
+    assert.equal(zh['ai-select.restart-current-target'], '选择另一个对象');
+    assert.match(zh['ai-select.restart-description'], /原生选择.*编辑历史/);
+    assert.doesNotMatch(viewportToolbar, /restart-current-target/);
+    assert.doesNotMatch(viewportToolbar, /ai-select\.exit/);
+});
+
+test('tool switch disposes target context and closes only the AI Select panel', () => {
+    const main = readFileSync('src/main.ts', 'utf8');
+    const statusBar = readFileSync('src/ui/status-bar.ts', 'utf8');
+
+    assert.match(
+        main,
+        /deactivate:\s*\(\) => \{[\s\S]*?aiSelectController\.exit\(\);[\s\S]*?aiSelectTargetSplat = null;[\s\S]*?statusBar\.closePanel/
+    );
+    assert.match(
+        main,
+        /commandQueue\.enqueue\(\(\) => \{[\s\S]*?aiSelectTargetSplat = selectedSplat;[\s\S]*?aiSelectController\.state\.context !== null[\s\S]*?aiSelectController\.restart\(input\.start\)[\s\S]*?aiSelectController\.start\(input\.start\)/
+    );
+    assert.match(
+        statusBar,
+        /events\.on\('statusBar\.closePanel'[\s\S]*?panelController\.activePanel === panel[\s\S]*?setActivePanel\(null\)/
     );
 });
 

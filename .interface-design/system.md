@@ -135,10 +135,12 @@ Status: current reusable interface guidance
 
 ### Candidate Operation Group
 
-- 固定顺序：`Overlay | Set | Add | Remove | Intersect | Undo and Fix*`；均使用统一图标语法。
+- 固定顺序：`Overlay | Set | Add | Remove | Intersect | Undo and Fix`；均使用统一图标语法。
 - Overlay 和四个集合操作不进入 overflow。
 - 生命周期状态改变样式、enablement 和禁用原因，不重排整条工具栏。
 - 四个集合操作共享一个按可执行恢复路径归类的禁用原因。
+- `Undo and Fix` 使用真实 Undo 图标和独立历史禁用原因；仅当对应原生命令仍是安全栈顶时启用。
+- 全局 AI Select 触发器表达工具本身。目标生命周期命令保留在其菜单内，菜单项可按扫描性和破坏性后果使用“图标 + 短文字”；不得把“选择另一个对象”抽象成新的全局图标规范。
 
 ## 状态、反馈与动效
 

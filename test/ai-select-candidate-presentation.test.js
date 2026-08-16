@@ -39,6 +39,8 @@ const application = (overrides = {}) => ({
     blockReason: 'candidate-unavailable',
     applicationRecord: null,
     overlayEmphasis: 'emphasized',
+    undoAndFixAvailable: false,
+    undoAndFixBlockReason: 'candidate-not-applied',
     ...overrides
 });
 
@@ -86,6 +88,11 @@ test('current Candidate maps counts, overlay, Dock correction and all native ope
     assert.equal(result.toolbar.visible, true);
     assert.equal(result.toolbar.operationsEnabled, true);
     assert.equal(result.toolbar.disabledReason, null);
+    assert.equal(result.toolbar.undoAndFixEnabled, false);
+    assert.equal(
+        result.toolbar.undoAndFixDisabledReason,
+        'candidate-not-applied'
+    );
     assert.equal(result.dock.showFixCandidate, true);
     assert.equal(result.dock.showUpdateCandidate, false);
     assert.equal(result.dock.showBackToCandidate, false);
@@ -160,14 +167,40 @@ test('durable native application outcome is projected without moving operations 
             status: 'applied',
             blockReason: null,
             overlayEmphasis: 'deemphasized',
-            applicationRecord: { operation: 'intersect' }
+            applicationRecord: { operation: 'intersect' },
+            undoAndFixAvailable: true,
+            undoAndFixBlockReason: null
         })
     });
 
     assert.equal(result.statusBar.lifecycle, 'applied-intersect');
     assert.equal(result.toolbar.operationsEnabled, true);
+    assert.equal(result.toolbar.undoAndFixEnabled, true);
+    assert.equal(result.toolbar.undoAndFixDisabledReason, null);
     assert.equal(result.dock.applicationOutcome, 'intersect');
     assert.equal(Object.hasOwn(result.dock, 'operationsEnabled'), false);
+});
+
+test('a buried application keeps its outcome but disables Undo and Fix with the history reason', () => {
+    const current = candidate();
+    const result = mapCandidatePresentation({
+        candidate: current,
+        correction: correction({ candidate: current }),
+        application: application({
+            status: 'applied',
+            blockReason: null,
+            applicationRecord: { operation: 'add' },
+            undoAndFixAvailable: false,
+            undoAndFixBlockReason: 'native-history-changed'
+        })
+    });
+
+    assert.equal(result.dock.applicationOutcome, 'add');
+    assert.equal(result.toolbar.undoAndFixEnabled, false);
+    assert.equal(
+        result.toolbar.undoAndFixDisabledReason,
+        'native-history-changed'
+    );
 });
 
 test('technical application blocks collapse to one restart recovery action', () => {

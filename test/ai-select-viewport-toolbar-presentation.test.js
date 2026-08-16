@@ -8,11 +8,15 @@ const {
 const candidate = (
     visible = false,
     operationsEnabled = false,
-    disabledReason = null
+    disabledReason = null,
+    undoAndFixEnabled = false,
+    undoAndFixDisabledReason = 'candidate-not-applied'
 ) => ({
     visible,
     operationsEnabled,
     disabledReason,
+    undoAndFixEnabled,
+    undoAndFixDisabledReason,
     technicalBlockReason: null
 });
 
@@ -68,10 +72,16 @@ test('Candidate current and applied states keep stable native operation order', 
         assert.deepEqual(
             names(
                 present({
-                    candidate: candidate(true, operationsEnabled, null)
+                    candidate: candidate(
+                        true,
+                        operationsEnabled,
+                        null,
+                        operationsEnabled,
+                        operationsEnabled ? null : 'native-history-changed'
+                    )
                 })
             ),
-            ['overlay', 'set', 'add', 'remove', 'intersect']
+            ['overlay', 'set', 'add', 'remove', 'intersect', 'undo-and-fix']
         );
     }
 });
@@ -83,7 +93,7 @@ test('Candidate stale, updating and failed states retain their disabled reason',
         });
         assert.equal(presentation.mode, 'candidate');
         assert.deepEqual(
-            presentation.controls.slice(1).map((entry) => ({
+            presentation.controls.slice(1, 5).map((entry) => ({
                 enabled: entry.enabled,
                 reason: entry.disabledReason
             })),
@@ -93,6 +103,17 @@ test('Candidate stale, updating and failed states retain their disabled reason',
             }))
         );
     }
+});
+
+test('Undo and Fix has its own history-sensitive disabled reason', () => {
+    const presentation = present({
+        candidate: candidate(true, true, null, false, 'native-history-changed')
+    });
+    const undoAndFix = presentation.controls.at(-1);
+
+    assert.equal(undoAndFix.control, 'undo-and-fix');
+    assert.equal(undoAndFix.enabled, false);
+    assert.equal(undoAndFix.disabledReason, 'native-history-changed');
 });
 
 test('a hidden Candidate cannot execute over an active inspection target', () => {
@@ -124,6 +145,7 @@ test('Candidate controls keep their stable position during read-only View inspec
         'set',
         'add',
         'remove',
-        'intersect'
+        'intersect',
+        'undo-and-fix'
     ]);
 });

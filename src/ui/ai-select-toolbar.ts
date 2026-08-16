@@ -7,7 +7,8 @@ import type { AISelectAnchorController } from '../ai-select/anchor-controller';
 import type { CameraInspectionController } from '../ai-select/camera-inspection';
 import type {
     CandidateApplicationController,
-    CandidateApplicationOperation
+    CandidateApplicationOperation,
+    CandidateUndoAndFixBlockReason
 } from '../ai-select/candidate-application';
 import type { CandidateOverlayController } from '../ai-select/candidate-overlay';
 import type {
@@ -33,6 +34,7 @@ import removeSvg from './svg/ai-select-remove.svg';
 import resetSvg from './svg/ai-select-reset.svg';
 import rotateSvg from './svg/ai-select-rotate.svg';
 import setSvg from './svg/ai-select-set.svg';
+import undoSvg from './svg/edit-undo.svg';
 
 export interface AISelectToolbarOptions {
     readonly candidatePresentation: CandidatePresentationCoordinator;
@@ -53,6 +55,16 @@ const disabledReasonKeys: Record<CandidateOperationDisabledReason, string> = {
         'ai-select.candidate.disabled.complete-or-exit-correction',
     'update-candidate': 'ai-select.candidate.disabled.update-candidate',
     'restart-target': 'ai-select.candidate.disabled.restart-target'
+};
+
+const undoAndFixDisabledReasonKeys: Record<
+    CandidateUndoAndFixBlockReason,
+    string
+> = {
+    'candidate-not-applied':
+        'ai-select.candidate.undo-and-fix.disabled.not-applied',
+    'native-history-changed':
+        'ai-select.candidate.undo-and-fix.disabled.history-changed'
 };
 
 const operationIcons: Readonly<Record<CandidateApplicationOperation, string>> =
@@ -259,6 +271,19 @@ export class AISelectToolbar extends Container {
             operationButtons.set(operation, button);
             candidateGroup.append(button);
         }
+        const undoAndFix = iconButton(
+            'ai-select-toolbar-candidate-undo-and-fix',
+            undoSvg
+        );
+        undoAndFix.on('click', () => {
+            if (!candidatePresentation.toolbar.undoAndFixEnabled) {
+                return;
+            }
+            options.candidateApplication
+                .undoAndFix()
+                .catch((error) => reportApplicationFailure(error));
+        });
+        candidateGroup.append(undoAndFix);
         candidateGroup.append(operationReason);
 
         const closeAddViewMenu = (restoreFocus: boolean): void => {
@@ -390,7 +415,8 @@ export class AISelectToolbar extends Container {
             set: operationButtons.get('set'),
             add: operationButtons.get('add'),
             remove: operationButtons.get('remove'),
-            intersect: operationButtons.get('intersect')
+            intersect: operationButtons.get('intersect'),
+            'undo-and-fix': undoAndFix
         });
         let anchorState = controller.state;
         let inspectionState = inspection.state;
@@ -528,6 +554,15 @@ export class AISelectToolbar extends Container {
                     );
                 }
             }
+            const undoAndFixReason =
+                candidatePresentation.toolbar.undoAndFixDisabledReason;
+            describeButton(
+                undoAndFix,
+                i18n.t('ai-select.candidate.undo-and-fix'),
+                undoAndFixReason === null
+                    ? ''
+                    : i18n.t(undoAndFixDisabledReasonKeys[undoAndFixReason])
+            );
 
             addViewMenuTrigger.enabled =
                 controls.get('add-new-pose')?.enabled ?? false;

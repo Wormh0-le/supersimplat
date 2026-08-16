@@ -189,6 +189,11 @@ class StatusBar extends Container {
         events.on('statusBar.setPanel', (panel: BottomPanelId | null) => {
             setActivePanel(panel);
         });
+        events.on('statusBar.closePanel', (panel: BottomPanelId) => {
+            if (panelController.activePanel === panel) {
+                setActivePanel(null);
+            }
+        });
 
         // Update stats from splat state
         let splat: Splat;

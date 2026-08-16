@@ -3,6 +3,7 @@ import type {
     CameraInspectionManipulation,
     CameraInspectionTarget
 } from './camera-inspection';
+import type { CandidateUndoAndFixBlockReason } from './candidate-application';
 import type {
     CandidateOperationDisabledReason,
     CandidatePresentation
@@ -28,13 +29,17 @@ export type AISelectViewportToolbarControl =
     | 'set'
     | 'add'
     | 'remove'
-    | 'intersect';
+    | 'intersect'
+    | 'undo-and-fix';
+
+export type AISelectViewportToolbarDisabledReason =
+    CandidateOperationDisabledReason | CandidateUndoAndFixBlockReason;
 
 export interface AISelectViewportToolbarControlPresentation {
     readonly control: AISelectViewportToolbarControl;
     readonly enabled: boolean;
     readonly pressed: boolean;
-    readonly disabledReason: CandidateOperationDisabledReason | null;
+    readonly disabledReason: AISelectViewportToolbarDisabledReason | null;
 }
 
 export interface AISelectViewportToolbarPresentation {
@@ -56,7 +61,7 @@ const control = (
     name: AISelectViewportToolbarControl,
     enabled = true,
     pressed = false,
-    disabledReason: CandidateOperationDisabledReason | null = null
+    disabledReason: AISelectViewportToolbarDisabledReason | null = null
 ): AISelectViewportToolbarControlPresentation => {
     return Object.freeze({ control: name, enabled, pressed, disabledReason });
 };
@@ -107,7 +112,13 @@ export const mapAISelectViewportToolbar = (
                 control('set', enabled, false, reason),
                 control('add', enabled, false, reason),
                 control('remove', enabled, false, reason),
-                control('intersect', enabled, false, reason)
+                control('intersect', enabled, false, reason),
+                control(
+                    'undo-and-fix',
+                    input.candidate.undoAndFixEnabled,
+                    false,
+                    input.candidate.undoAndFixDisabledReason
+                )
             ])
         });
     }

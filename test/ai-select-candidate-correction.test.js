@@ -244,6 +244,28 @@ test('a Stable input race discards the completed replacement before publication'
     assert.deepEqual(h.dirty.state.evidenceDirtyViewIds, ['view-1']);
 });
 
+test('restart reset discards a late pending Evidence and Lift result', async () => {
+    let finish;
+    const h = harness(
+        (_input, views) =>
+            new Promise((resolve) => {
+                finish = () => resolve(result(views, [11], [12]));
+            })
+    );
+    const updating = h.controller.updateCandidate();
+
+    h.controller.reset();
+    h.publications.reset();
+    h.dirty.reset();
+    finish();
+    await updating;
+
+    assert.equal(h.controller.state.status, 'idle');
+    assert.equal(h.controller.cachedEvidenceViewIds.length, 0);
+    assert.equal(h.publications.presentationState.status, 'empty');
+    assert.equal(h.dirty.state.candidateStale, false);
+});
+
 test('an Excluded Stable-input race discards every related publication', async () => {
     let finish;
     let relatedPublicationCount = 0;

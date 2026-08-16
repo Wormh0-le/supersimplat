@@ -627,6 +627,31 @@ test('Confirm Mask atomically publishes the Editing Mask as a new Stable revisio
     assert.equal(stable.artifact.digest, editing.artifact.digest);
     assert.equal(stable.createdFromRgbDigest, `sha256:${'a'.repeat(64)}`);
     assert.equal(mask.state.editingMask.maskId, editing.maskId);
+    assert.equal(mask.state.hasUnconfirmedChanges, false);
+});
+
+test('the first semantic Prompt edit after confirmation is unconfirmed even when Mask inference fails', async () => {
+    let attempt = 0;
+    const { mask } = await setup({
+        produceMask: (request) => {
+            attempt += 1;
+            return attempt === 1
+                ? Promise.resolve(maskResponseFor(request))
+                : Promise.reject(new Error('SAM unavailable'));
+        }
+    });
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    mask.confirmEditingMask();
+    const confirmedEditing = mask.state.editingMask;
+    assert.equal(mask.state.hasUnconfirmedChanges, false);
+
+    await mask.addPrompt({ xPx: 20, yPx: 22, polarity: 'exclude' });
+    assert.equal(mask.state.requestStatus, 'failed');
+    assert.equal(mask.state.editingMask.maskId, confirmedEditing.maskId);
+    assert.equal(mask.state.hasUnconfirmedChanges, true);
+
+    mask.undoPromptEdit();
+    assert.equal(mask.state.hasUnconfirmedChanges, false);
 });
 
 test('Anchor Stable publication dirties geometry, Evidence, Lift, and Candidate', async () => {

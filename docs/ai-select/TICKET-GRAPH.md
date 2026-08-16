@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.29
+# AI Select v1 — Implementation Ticket Graph v2.30
 
-Status: **active implementation graph — Ticket 16B implemented; post-visual-review Ticket 16C is current**
+Status: **active implementation graph — Ticket 16C implemented; post-visual-review Ticket 16D is current**
 
 Branch: `ai-select-v1`
 
@@ -20,7 +20,8 @@ Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical only. A
 All 31 parent Ticket files contain a current mapping to Final Spec v1.3. Ticket
 14A–14D and Ticket 16A–16G are execution stages under their respective parent
 Tickets and do not create a second normative graph. Ticket 16B published the
-accepted ADR 0018 and current-spec correction before its dependents.
+accepted ADR 0018 and current-spec correction before its dependents; Ticket
+16C implemented the Mask/Prompt truth and compact Inspector seam.
 
 ## Current review closures
 
@@ -148,22 +149,22 @@ implemented prerequisites:
 - 16 — Candidate → Native Set / Add / Remove / Intersect core
 - 16A — AI View Dock + Candidate viewport presentation baseline
 - 16B — Single-result Mask product contract + capability/planner correction
+- 16C — Mask state truth + compact current-View Inspector
 
 current parent compatibility frontier:
 - 16 — Native Candidate operations
 
 current execution stage:
-- 16C — Mask state truth + compact current-View Inspector
+- 16D — canvas-first three-pane shell + stable Navigator
 
 post-visual-review follow-up:
-- 16C — Mask state truth + compact current-View Inspector
 - 16D — canvas-first three-pane shell + stable Navigator
 - 16E — 2D Work Area + floating palette + explicit Re-Lift
 - 16F — compact viewport toolbar + non-destructive Anchor adjustment
 - 16G — obsolete-control removal + integration closure
 
 current implementation stage:
-- 16C — next post-visual-review Ticket 16 execution stage
+- 16D — next post-visual-review Ticket 16 execution stage
 
 follows 16G:
 - 17 — Applied Undo-and-Fix + complete Restart + multi-object/tool-switch lifecycle
@@ -173,13 +174,13 @@ Compatibility fields:
 
 ```text
 next_implementation_ticket = 16
-next_implementation_subticket = 16C
+next_implementation_subticket = 16D
 ```
 
-Ticket 16 is the current parent compatibility frontier with 16C as its active
-execution stage. Ticket 16's application core, Tickets 16A–16B, Ticket 15 and
+Ticket 16 is the current parent compatibility frontier with 16D as its active
+execution stage. Ticket 16's application core, Tickets 16A–16C, Ticket 15 and
 their Ticket 13 / parent Ticket 14 prerequisites remain implemented. Tickets
-16D and 16F follow the 16B contract baseline; 16E joins the 16C/16D surfaces;
+16F follows the 16B contract baseline; 16E joins the 16C/16D surfaces;
 16G closes the slice.
 Ticket 17 follows 16G. Ticket 10 remains optional and off the core release
 path.

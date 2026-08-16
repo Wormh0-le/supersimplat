@@ -167,10 +167,20 @@ test('Inspector restores the accepted assessment, participation, and Mask hierar
     const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
     assert.match(dock, /ai-select-inspector-assessment-group/);
     assert.match(dock, /ai-select-inspector-mask-group/);
-    assert.match(dock, /ai-select-inspector-recovery-group/);
-    assert.doesNotMatch(
+    assert.match(dock, /ai-select-inspector-technical-group/);
+    assert.doesNotMatch(dock, /ai-select-inspector-recovery-group/);
+    assert.doesNotMatch(dock, /ai-select-selected-view-retry-render/);
+    assert.match(
         dock,
-        /recoveryGroup\.append\(this\.restoreAutoButton\)/
+        /selectedViewParticipation\.dom\.setAttribute\([\s\S]{0,80}'aria-pressed'/
+    );
+    assert.match(dock, /selectedViewParticipation\.on\('click'/);
+    assert.match(dock, /participationIcon\.setAttribute\('aria-hidden'/);
+    assert.doesNotMatch(dock, /participation\.icon === 'included' \? '✓'/);
+    assert.doesNotMatch(dock, /ai-select-view-card-participation/);
+    assert.match(
+        dock,
+        /const editing =\s*maskState\.hasUnconfirmedMaskChanges &&\s*maskState\.editingMask !== null;/
     );
     assert.doesNotMatch(dock, /ai-select-anchor-dock-adjust-anchor/);
     assert.doesNotMatch(dock, /ai-select-selected-view-inspect-camera/);
@@ -196,7 +206,15 @@ test('Navigator controls do not overlap cards and Inspector status can wrap', ()
     );
     assert.match(
         styles,
-        /#ai-select-selected-view-assessment,[\s\S]*?#ai-select-selected-view-participation[\s\S]*?white-space:\s*pre-line;/
+        /#ai-select-selected-view-assessment,[\s\S]*?#ai-select-selected-view-issues[\s\S]*?white-space:\s*pre-line;/
+    );
+    assert.match(
+        styles,
+        /#ai-select-anchor-technical-details[\s\S]*?> pre[\s\S]*?overflow:\s*visible;/
+    );
+    assert.doesNotMatch(
+        styles,
+        /#ai-select-anchor-technical-details[\s\S]*?> pre[\s\S]*?max-height:/
     );
 });
 

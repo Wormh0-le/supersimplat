@@ -48,8 +48,10 @@ Repository-wide specifications and ADRs remain canonical under `docs/specs/` and
 - [Ticket 16A](tickets/16A-candidate-viewport-presentation.md) — implemented
   presentation baseline and completed operator visual-review record.
 - [Ticket 16B](tickets/16B-single-result-product-contract.md) — implemented
-  single-result product-contract stage; Ticket 16C is current and 16D–16G
-  carry the remaining follow-up.
+  single-result product-contract stage.
+- [Ticket 16C](tickets/16C-mask-inspector-state-truth.md) — implemented Mask
+  state truth and compact Inspector; Ticket 16D is current and 16E–16G carry
+  the remaining integrated follow-up.
 
 ## Scratch policy
 
@@ -82,7 +84,8 @@ Execution order is:
 ```
 
 14A through 14D, parent Ticket 14, Tickets 13 through 15, Ticket 16's native
-application core and Tickets 16A–16B are implemented. The completed 16A
+application core and Tickets 16A–16C are implemented. The completed 16A
 operator visual walkthrough created follow-up stages 16B–16G. Ticket 16C is
-current (`next_implementation_ticket = 16`, `next_implementation_subticket = 16C`);
+implemented and Ticket 16D is current (`next_implementation_ticket = 16`,
+`next_implementation_subticket = 16D`);
 Ticket 17 follows 16G.

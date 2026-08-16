@@ -1,4 +1,4 @@
-# Final Spec v1.3 → Ticket Traceability Matrix — v2.29
+# Final Spec v1.3 → Ticket Traceability Matrix — v2.30
 
 A requirement counts as covered only when a mapped parent Ticket or explicitly
 mapped execution stage contains acceptance, failure, validation or migration
@@ -6,7 +6,8 @@ criteria. Every parent Ticket-local current mapping points directly to Final
 Spec v1.3; older specs are historical provenance only. Ticket 14A–14D and
 Ticket 16A–16G are execution stages under their parent Tickets and preserve the
 parent requirement mapping. Ticket 16B owns and has completed the accepted
-current-spec and ADR correction.
+current-spec and ADR correction; Ticket 16C completed the Mask state-truth and
+compact Inspector deltas.
 
 | ID   | Requirement                                                                                                          | Ticket(s)                                                   |
 | ---- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
@@ -49,7 +50,7 @@ current-spec and ADR correction.
 | R037 | local Views validate projection, clipping and nonblank RGB                                                           | 08, 21                                                      |
 | R038 | adaptive/free-space/room-scale planner is deferred                                                                   | 08, 21                                                      |
 | R039 | 07B and 08 run in parallel after 07A                                                                                 | 07A, 07B, 08                                                |
-| R040 | Tickets through 16B are implemented; 16C–16G own the remaining visual-review follow-up and Ticket 17 follows 16G     | 09, 11, 12, 13, 14, 14A, 14B, 14C, 14D, 15, 16, 16A–16G, 17 |
+| R040 | Tickets through 16C are implemented; 16D–16G own the remaining visual-review follow-up and Ticket 17 follows 16G     | 09, 11, 12, 13, 14, 14A, 14B, 14C, 14D, 15, 16, 16A–16G, 17 |
 | R041 | 02C may proceed after 04C; 07A requires both 04C and 07                                                              | 02C, 07A                                                    |
 | R042 | 08A defines compact RGB-bound Image Instance Prompt/Mask contracts                                                   | 08A                                                         |
 | R043 | current contracts require no backend registry, route bundle or sequence extension                                    | 08A, 08B, 12, 21                                            |
@@ -107,13 +108,13 @@ Parent Ticket 14 requirements are partitioned without changing requirement owner
 
 ## Ticket 16 post-closure stage coverage
 
-Ticket 16 retains native application core ownership. Tickets 16A and 16B are
-implemented baselines. The completed operator visual review is
+Ticket 16 retains native application core ownership. Tickets 16A through 16C
+are implemented baselines. The completed operator visual review is
 partitioned as follows without changing parent ownership:
 
 - 16B — single-result authoring, capability truth, superseding ADR and current
   specification correction;
-- 16C — Mask state truth and compact Inspector;
+- 16C — implemented Mask state truth and compact Inspector;
 - 16D — canvas-first shell, stable Navigator, filtering and sorting;
 - 16E — 2D Work Area, floating-palette actions and explicit Re-Lift;
 - 16F — compact 3D viewport toolbar and non-destructive Anchor adjustment;
@@ -133,12 +134,12 @@ application core and cannot reintroduce the removed 3D More/Restart control.
 - Ticket 16 post-closure stage files mapped through parent 16 + Final Spec v1.3: 7/7;
 - Ticket files with v1.1/v1.2 as current mapping authority: 0;
 - older-spec references outside explicit historical/superseded/migration sections: 0;
-- implemented prerequisite chain: through 12, parent Ticket 14 / 14D, Tickets 13 through 16 and Tickets 16A–16B;
+- implemented prerequisite chain: through 12, parent Ticket 14 / 14D, Tickets 13 through 16 and Tickets 16A–16C;
 - Ticket 09 locked-GPU large-Gallery browser walkthrough: passed 2026-08-07;
 - current parent compatibility frontier: 16;
-- current Ticket 16 execution stage: 16C;
+- current Ticket 16 execution stage: 16D;
 - current Ticket 14 execution stage: none (all implemented);
 - next implementation Ticket: 16;
-- next implementation subticket: 16C;
+- next implementation subticket: 16D;
 - optional nonblocking Ticket: 10;
 - current normative spec: Final Spec v1.3.

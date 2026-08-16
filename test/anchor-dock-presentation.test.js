@@ -168,6 +168,29 @@ test('AI View Dock Mask surface exposes a confirmed Stable Mask', () => {
     assert.equal(result.mask.evidenceStatus, 'stale');
 });
 
+test('AI View Dock treats an identical retained Editing Mask as confirmed', () => {
+    const artifact = { digest: 'sha256:same-mask' };
+    const result = getAnchorDockPresentation(
+        state(baseAnchor()),
+        maskState({
+            editingMask: {
+                maskId: 'mask-editing',
+                status: 'draft',
+                artifact
+            },
+            stableMask: {
+                maskId: 'mask-stable',
+                status: 'user-confirmed',
+                artifact
+            },
+            hasUnconfirmedChanges: false
+        })
+    );
+
+    assert.equal(result.mask.status, 'confirmed');
+    assert.equal(result.mask.showConfirm, false);
+});
+
 test('AI View Dock Mask surface keeps Mask failure distinct from render state', () => {
     const result = getAnchorDockPresentation(
         state(baseAnchor()),

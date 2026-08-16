@@ -13,7 +13,11 @@ import {
     type MaskPrompt
 } from './mask-annotation';
 import { autoMaskProposalPolicyVersion } from './mask-proposal';
-import type { MaskAnnotationRegistry } from './mask-registry';
+import {
+    hasSemanticEditingMaskChange,
+    type EditingMaskIssue,
+    type MaskAnnotationRegistry
+} from './mask-registry';
 import {
     isMaskResultResponse,
     MaskArtifactInvalidError,
@@ -72,9 +76,12 @@ export interface AISelectMaskState {
     readonly editingMask: MaskAnnotation | null;
     /** The published Stable Mask bound to the current RGB, if any. */
     readonly stableMask: MaskAnnotation | null;
+    readonly editingMaskIssue: EditingMaskIssue | null;
     /** The current prompt set for the current RGB identity. */
     readonly prompts: readonly MaskPrompt[];
     readonly promptState: PromptState | null;
+    /** Prompt semantics published together with the current Stable Mask. */
+    readonly publishedPromptState: PromptState | null;
     readonly promptCapabilities: PromptAdapterCapabilities | null;
     /** The latest automatic authoring outcome for this Prompt revision. */
     readonly automaticMaskStatus: AutomaticMaskStatus;
@@ -99,6 +106,8 @@ export interface AISelectMaskState {
      * that diverges from the confirmed Stable Mask.
      */
     readonly hasUnconfirmedChanges: boolean;
+    readonly hasUnconfirmedPromptChanges: boolean;
+    readonly hasUnconfirmedMaskChanges: boolean;
 }
 
 export type AISelectMaskListener = (state: AISelectMaskState) => void;
@@ -254,6 +263,8 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
     private hasObservedHostIdentity = false;
     private lastRgbDigest: string | null = null;
     private promptState: PromptState | null = null;
+    /** Prompt semantics last published together with a Stable Mask. */
+    private publishedPromptState: PromptState | null = null;
     private automaticMaskStatus: AutomaticMaskStatus = 'none';
     private automaticMaskReview: ViewAssessmentShape | null = null;
     private refinementFallback = false;
@@ -329,16 +340,22 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
                       this.promptState.digest
                   ) ?? null);
         const promptCapabilities = this.getPromptAdapterCapabilities();
+        const hasUnconfirmedPromptChanges = this.promptHasChanged();
+        const hasUnconfirmedMaskChanges =
+            view.editingMaskIssue !== null ||
+            hasSemanticEditingMaskChange(view.editingMask, view.stableMask);
         return Object.freeze({
             viewId: this.host.viewId,
             editingMask: view.editingMask,
             stableMask: view.stableMask,
+            editingMaskIssue: view.editingMaskIssue,
             prompts: Object.freeze(
                 (this.promptState?.points ?? []).map((point) =>
                     Object.freeze({ ...point })
                 )
             ),
             promptState: this.promptState,
+            publishedPromptState: this.publishedPromptState,
             promptCapabilities,
             automaticMaskStatus: this.automaticMaskStatus,
             automaticMaskReview: this.automaticMaskReview,
@@ -361,7 +378,12 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
             canRestoreAuto:
                 restorableAutoMaskId !== null &&
                 restorableAutoMaskId !== view.editingMask?.maskId,
-            hasUnconfirmedChanges: this.deriveHasUnconfirmedChanges(view)
+            hasUnconfirmedChanges:
+                this.requestStatus === 'pending' ||
+                hasUnconfirmedPromptChanges ||
+                hasUnconfirmedMaskChanges,
+            hasUnconfirmedPromptChanges,
+            hasUnconfirmedMaskChanges
         });
     }
 
@@ -405,7 +427,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
             return;
         }
         if (rgbDigest !== this.lastRgbDigest) {
-            this.resetForNewRgbIdentity(rgbDigest);
+            this.resetForNewRgbIdentity(rgbDigest, true);
             return;
         }
         this.publish();
@@ -579,6 +601,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         this.requireUnlocked();
         const rgb = this.requireReadyRgb();
         this.maskRegistry.confirm(this.host.viewId, rgb.digest);
+        this.publishedPromptState = this.promptState;
         this.automaticMaskStatus = 'none';
         this.refinementLogitsRef = null;
         this.failureKind = undefined;
@@ -886,12 +909,19 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         this.publish();
     }
 
-    private resetForNewRgbIdentity(rgbDigest: string | null): void {
+    private resetForNewRgbIdentity(
+        rgbDigest: string | null,
+        detachSupersededEditing = false
+    ): void {
         this.lastRgbDigest = rgbDigest;
+        if (detachSupersededEditing) {
+            this.maskRegistry.detachEditing(this.host.viewId);
+        }
         this.promptState =
             rgbDigest === null
                 ? null
                 : createEmptyPromptState(this.host.viewId, rgbDigest);
+        this.publishedPromptState = this.promptState;
         this.automaticMaskStatus = 'none';
         this.automaticMaskReview = null;
         this.refinementFallback = false;
@@ -1019,23 +1049,28 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         this.publish();
     }
 
-    private deriveHasUnconfirmedChanges(view: {
-        readonly editingMask: MaskAnnotation | null;
-        readonly stableMask: MaskAnnotation | null;
-    }): boolean {
-        if (this.requestStatus === 'pending') {
-            return true;
+    private promptHasChanged(): boolean {
+        const current = this.promptState;
+        const published = this.publishedPromptState;
+        if (current === null || published === null) {
+            return current !== published;
         }
-        if (view.editingMask !== null) {
-            return (
-                view.editingMask.artifact.digest !==
-                view.stableMask?.artifact.digest
-            );
-        }
+        const pointKey = (point: PointPrompt): string =>
+            `${point.polarity}:${point.xPx}:${point.yPx}`;
+        const boxKey = (box: BoxPrompt): string =>
+            `${box.polarity}:${box.x0Px}:${box.y0Px}:${box.x1Px}:${box.y1Px}`;
+        const currentPoints = current.points.map(pointKey).sort();
+        const publishedPoints = published.points.map(pointKey).sort();
+        const currentBoxes = current.boxes.map(boxKey).sort();
+        const publishedBoxes = published.boxes.map(boxKey).sort();
         return (
-            view.stableMask === null &&
-            this.promptState !== null &&
-            promptStateHasConstraints(this.promptState)
+            current.rgbDigest !== published.rgbDigest ||
+            currentPoints.length !== publishedPoints.length ||
+            currentBoxes.length !== publishedBoxes.length ||
+            currentPoints.some(
+                (value, index) => value !== publishedPoints[index]
+            ) ||
+            currentBoxes.some((value, index) => value !== publishedBoxes[index])
         );
     }
 

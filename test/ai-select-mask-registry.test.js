@@ -171,6 +171,29 @@ test('Confirm Mask retains the previous Stable Mask version for inspection', () 
     assert.ok(registry.version('anchor-view', firstStable.maskId));
 });
 
+test('Mask-local Undo may restore an older draft from the confirmed Editing chain', () => {
+    const registry = new MaskAnnotationRegistry();
+    const firstEditing = registry.registerSamResult({
+        viewId: 'anchor-view',
+        rgbDigest: rgbDigest('a'),
+        artifact: samArtifact(8, 8, 0b101),
+        prompts
+    });
+    registry.applyBrush({
+        viewId: 'anchor-view',
+        rgbDigest: rgbDigest('a'),
+        stroke: { xPx: 5, yPx: 5, radiusPx: 1, mode: 'add' },
+        width: 8,
+        height: 8
+    });
+    registry.confirm('anchor-view', rgbDigest('a'));
+
+    registry.restoreEditing('anchor-view', firstEditing.maskId, rgbDigest('a'));
+    const view = registry.viewState('anchor-view', rgbDigest('a'));
+    assert.equal(view.editingMask?.maskId, firstEditing.maskId);
+    assert.equal(view.editingMaskIssue, null);
+});
+
 test('a fully manual mask uses the same publication contract as an automatic one', () => {
     const registry = new MaskAnnotationRegistry();
     registry.applyBrush({
@@ -199,9 +222,85 @@ test('masks bound to an older RGB digest are not current for a newer RGB', () =>
     const staleView = registry.viewState('anchor-view', rgbDigest('b'));
     assert.equal(staleView.editingMask, null);
     assert.equal(staleView.stableMask, null);
+    assert.equal(staleView.editingMaskIssue, 'rgb-mismatch');
     const currentView = registry.viewState('anchor-view', rgbDigest('a'));
     assert.ok(currentView.editingMask);
     assert.ok(currentView.stableMask);
+});
+
+test('an Editing Mask inconsistent with a replaced Stable base fails closed', () => {
+    const registry = new MaskAnnotationRegistry();
+    registry.registerSamResult({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('g'),
+        artifact: samArtifact(8, 8, 0b101),
+        prompts
+    });
+    registry.confirm('generated-00', rgbDigest('g'));
+    registry.publishAutoStable({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('g'),
+        artifact: samArtifact(8, 8, 0b111),
+        source: 'single-frame-sam',
+        status: 'auto-good'
+    });
+
+    const view = registry.viewState('generated-00', rgbDigest('g'));
+    assert.equal(view.editingMask, null);
+    assert.equal(view.editingMaskIssue, 'stable-base-mismatch');
+    assert.ok(view.stableMask);
+});
+
+test('the first SAM correction branches from an automatically published Stable Mask', () => {
+    const registry = new MaskAnnotationRegistry();
+    const stable = registry.publishAutoStable({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('g'),
+        artifact: samArtifact(8, 8, 0b101),
+        source: 'single-frame-sam',
+        status: 'auto-good'
+    });
+    const editing = registry.registerSamResult({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('g'),
+        artifact: samArtifact(8, 8, 0b111),
+        prompts
+    });
+
+    assert.equal(editing.parentMaskId, stable.maskId);
+    const view = registry.viewState('generated-00', rgbDigest('g'));
+    assert.equal(view.editingMask?.maskId, editing.maskId);
+    assert.equal(view.editingMaskIssue, null);
+    assert.equal(view.stableMask?.maskId, stable.maskId);
+});
+
+test('automatic Stable replacement rejects a correction draft from its sibling lineage', () => {
+    const registry = new MaskAnnotationRegistry();
+    registry.publishAutoStable({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('g'),
+        artifact: samArtifact(8, 8, 0b101),
+        source: 'single-frame-sam',
+        status: 'auto-good'
+    });
+    registry.registerSamResult({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('g'),
+        artifact: samArtifact(8, 8, 0b111),
+        prompts
+    });
+    const replacement = registry.publishAutoStable({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('g'),
+        artifact: samArtifact(8, 8, 0b1001),
+        source: 'single-frame-sam',
+        status: 'auto-good'
+    });
+
+    const view = registry.viewState('generated-00', rgbDigest('g'));
+    assert.equal(view.editingMask, null);
+    assert.equal(view.editingMaskIssue, 'stable-base-mismatch');
+    assert.equal(view.stableMask?.maskId, replacement.maskId);
 });
 
 test('Confirm Mask refuses to publish without a current Editing Mask', () => {

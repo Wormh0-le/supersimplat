@@ -57,7 +57,24 @@ export interface ViewMaskState {
     readonly viewId: string;
     readonly editingMask: MaskAnnotation | null;
     readonly stableMask: MaskAnnotation | null;
+    /** Why a non-null Editing pointer was rejected from the current surface. */
+    readonly editingMaskIssue: EditingMaskIssue | null;
 }
+
+export type EditingMaskIssue =
+    'dangling' | 'view-mismatch' | 'rgb-mismatch' | 'stable-base-mismatch';
+
+/** Semantic draft truth shared by every Mask presentation consumer. */
+export const hasSemanticEditingMaskChange = (
+    editingMask: Pick<MaskAnnotation, 'artifact'> | null,
+    stableMask: Pick<MaskAnnotation, 'artifact'> | null
+): boolean => {
+    return (
+        editingMask !== null &&
+        (stableMask === null ||
+            editingMask.artifact.digest !== stableMask.artifact.digest)
+    );
+};
 
 interface MutableViewMasks {
     versions: Map<string, MaskAnnotation>;
@@ -145,11 +162,18 @@ export class MaskAnnotationRegistry {
             }
         }
         const view = this.requireView(input.viewId);
-        const currentEditing = this.currentAnnotation(
+        const currentStable = this.currentAnnotation(
             view,
-            view.editingMaskId,
+            view.stableMaskId,
             input.rgbDigest
         );
+        const currentEditing = this.resolveEditingMask(
+            input.viewId,
+            view,
+            input.rgbDigest,
+            currentStable
+        ).annotation;
+        const baseAnnotation = currentEditing ?? currentStable;
         const editing = copyAnnotation({
             maskId: this.mintMaskId(),
             viewId: input.viewId,
@@ -157,9 +181,9 @@ export class MaskAnnotationRegistry {
             status: 'draft',
             artifact: input.artifact,
             prompts: input.prompts,
-            ...(currentEditing === null
+            ...(baseAnnotation === null
                 ? {}
-                : { parentMaskId: currentEditing.maskId }),
+                : { parentMaskId: baseAnnotation.maskId }),
             createdFromRgbDigest: input.rgbDigest
         });
         view.versions.set(editing.maskId, editing);
@@ -186,16 +210,17 @@ export class MaskAnnotationRegistry {
             );
         }
         const view = this.requireView(input.viewId);
-        const currentEditing = this.currentAnnotation(
-            view,
-            view.editingMaskId,
-            input.rgbDigest
-        );
         const currentStable = this.currentAnnotation(
             view,
             view.stableMaskId,
             input.rgbDigest
         );
+        const currentEditing = this.resolveEditingMask(
+            input.viewId,
+            view,
+            input.rgbDigest,
+            currentStable
+        ).annotation;
         // Automatic Generated-View Masks publish directly as Stable. The
         // first local gesture must branch from that visible annotation;
         // starting from an empty artifact would turn a tiny Erase into a
@@ -338,20 +363,27 @@ export class MaskAnnotationRegistry {
         height: number
     ): MaskAnnotation {
         const view = this.requireView(viewId);
-        const currentEditing = this.currentAnnotation(
+        const currentStable = this.currentAnnotation(
             view,
-            view.editingMaskId,
+            view.stableMaskId,
             rgbDigest
         );
+        const currentEditing = this.resolveEditingMask(
+            viewId,
+            view,
+            rgbDigest,
+            currentStable
+        ).annotation;
+        const baseAnnotation = currentEditing ?? currentStable;
         const editing = copyAnnotation({
             maskId: this.mintMaskId(),
             viewId,
             source: 'manual',
             status: 'draft',
             artifact: createEmptyMaskArtifact(width, height),
-            ...(currentEditing === null
+            ...(baseAnnotation === null
                 ? {}
-                : { parentMaskId: currentEditing.maskId }),
+                : { parentMaskId: baseAnnotation.maskId }),
             createdFromRgbDigest: rgbDigest
         });
         view.versions.set(editing.maskId, editing);
@@ -422,21 +454,26 @@ export class MaskAnnotationRegistry {
             return Object.freeze({
                 viewId,
                 editingMask: null,
-                stableMask: null
+                stableMask: null,
+                editingMaskIssue: null
             });
         }
+        const stableMask = this.currentAnnotation(
+            view,
+            view.stableMaskId,
+            rgbDigest
+        );
+        const editing = this.resolveEditingMask(
+            viewId,
+            view,
+            rgbDigest,
+            stableMask
+        );
         return Object.freeze({
             viewId,
-            editingMask: this.currentAnnotation(
-                view,
-                view.editingMaskId,
-                rgbDigest
-            ),
-            stableMask: this.currentAnnotation(
-                view,
-                view.stableMaskId,
-                rgbDigest
-            )
+            editingMask: editing.annotation,
+            stableMask,
+            editingMaskIssue: editing.issue
         });
     }
 
@@ -448,6 +485,18 @@ export class MaskAnnotationRegistry {
 
     disposeView(viewId: string): void {
         this.views.delete(viewId);
+    }
+
+    /**
+     * Detach a superseded-RGB Editing pointer while retaining its immutable
+     * versions for inspection. A later explicit restore still validates the
+     * requested RGB identity.
+     */
+    detachEditing(viewId: string): void {
+        const view = this.views.get(viewId);
+        if (view !== undefined) {
+            view.editingMaskId = null;
+        }
     }
 
     private currentAnnotation(
@@ -466,6 +515,95 @@ export class MaskAnnotationRegistry {
             return null;
         }
         return copyAnnotation(annotation);
+    }
+
+    private resolveEditingMask(
+        viewId: string,
+        view: MutableViewMasks,
+        rgbDigest: string,
+        stableMask: MaskAnnotation | null
+    ): {
+        readonly annotation: MaskAnnotation | null;
+        readonly issue: EditingMaskIssue | null;
+    } {
+        const editingMaskId = view.editingMaskId;
+        if (editingMaskId === null) {
+            return { annotation: null, issue: null };
+        }
+        const annotation = view.versions.get(editingMaskId);
+        if (annotation === undefined) {
+            return { annotation: null, issue: 'dangling' };
+        }
+        if (annotation.viewId !== viewId) {
+            return { annotation: null, issue: 'view-mismatch' };
+        }
+        if (annotation.createdFromRgbDigest !== rgbDigest) {
+            return { annotation: null, issue: 'rgb-mismatch' };
+        }
+        if (
+            stableMask !== null &&
+            !this.editingDescendsFromStableBase(view, annotation, stableMask)
+        ) {
+            return { annotation: null, issue: 'stable-base-mismatch' };
+        }
+        return { annotation: copyAnnotation(annotation), issue: null };
+    }
+
+    /**
+     * A correction may branch from the Stable revision itself, while a
+     * retained Editing revision after Confirm is the Stable revision's
+     * parent. Descendants of either base remain compatible.
+     */
+    private editingDescendsFromStableBase(
+        view: MutableViewMasks,
+        editing: MaskAnnotation,
+        stable: MaskAnnotation
+    ): boolean {
+        const confirmedEditing =
+            stable.parentMaskId === undefined
+                ? undefined
+                : view.versions.get(stable.parentMaskId);
+        const compatibleIds = new Set([
+            stable.maskId,
+            ...(confirmedEditing?.status === 'draft'
+                ? [confirmedEditing.maskId]
+                : [])
+        ]);
+        let cursor: MaskAnnotation | undefined = editing;
+        const visited = new Set<string>();
+        while (cursor !== undefined && !visited.has(cursor.maskId)) {
+            if (compatibleIds.has(cursor.maskId)) {
+                return true;
+            }
+            visited.add(cursor.maskId);
+            cursor =
+                cursor.parentMaskId === undefined
+                    ? undefined
+                    : view.versions.get(cursor.parentMaskId);
+        }
+        // Confirm publishes an Editing revision as Stable but intentionally
+        // retains the whole Editing history. Restoring an older revision from
+        // that same confirmed chain is a valid Mask-local Undo, even though
+        // the restored pointer is an ancestor rather than a descendant of the
+        // Stable revision's immediate parent. Do not grant this compatibility
+        // to automatic Stable replacement or Confirm-as-is chains: their
+        // immediate parent is not an Editing draft.
+        if (confirmedEditing?.status !== 'draft') {
+            return false;
+        }
+        cursor = confirmedEditing;
+        visited.clear();
+        while (cursor !== undefined && !visited.has(cursor.maskId)) {
+            if (cursor.maskId === editing.maskId) {
+                return true;
+            }
+            visited.add(cursor.maskId);
+            cursor =
+                cursor.parentMaskId === undefined
+                    ? undefined
+                    : view.versions.get(cursor.parentMaskId);
+        }
+        return false;
     }
 
     private requireView(viewId: string): MutableViewMasks {

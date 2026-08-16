@@ -442,10 +442,13 @@
     }
 
     #ai-select-anchor-dock-status {
-        overflow: hidden;
+        height: auto;
+        min-width: 0;
+        overflow: visible;
         color: $text-secondary;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        text-overflow: clip;
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
 }
 
@@ -475,29 +478,57 @@
     }
 
     #ai-select-anchor-dock-mask-status {
+        height: auto;
+        overflow: visible;
+        text-overflow: clip;
         color: $text-secondary;
         white-space: normal;
-        word-break: break-word;
+        overflow-wrap: anywhere;
         flex-shrink: 0;
     }
 
-    #ai-select-anchor-dock-prompt-status {
+    #ai-select-anchor-dock-prompt-status,
+    #ai-select-anchor-dock-validation-status {
+        height: auto;
+        overflow: visible;
+        text-overflow: clip;
         color: $text-primary;
-        white-space: normal;
-        word-break: break-word;
+        white-space: pre-line;
+        overflow-wrap: anywhere;
         flex-shrink: 0;
     }
 }
 
 #ai-select-selected-view-assessment,
-#ai-select-selected-view-participation {
+#ai-select-selected-view-issues {
     height: auto;
     min-width: 0;
     overflow: visible;
     text-overflow: clip;
     white-space: pre-line;
-    word-break: break-word;
+    overflow-wrap: anywhere;
     flex-shrink: 0;
+}
+
+#ai-select-selected-view-participation {
+    width: 40px;
+    min-width: 40px;
+    min-height: 40px;
+
+    .ai-select-participation-icon {
+        width: 18px;
+        height: 18px;
+        pointer-events: none;
+    }
+
+    &:focus-visible {
+        outline: 2px solid $clr-icon-hilight;
+        outline-offset: 2px;
+    }
+}
+
+#ai-select-selected-view-issues {
+    color: $ai-uncertain;
 }
 
 .ai-select-inspector-group {
@@ -864,15 +895,21 @@
 
     > summary {
         cursor: pointer;
+        overflow-wrap: anywhere;
+
+        &:focus-visible {
+            outline: 2px solid $clr-icon-hilight;
+            outline-offset: 2px;
+        }
     }
 
     > pre {
-        max-height: 96px;
+        height: auto;
         margin: 4px 0 0;
         padding: 6px;
-        overflow: auto;
+        overflow: visible;
         white-space: pre-wrap;
-        word-break: break-word;
+        overflow-wrap: anywhere;
         background-color: $bcg-darkest;
         font-size: 10px;
     }

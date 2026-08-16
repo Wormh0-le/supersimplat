@@ -1,6 +1,6 @@
 # 16C — Mask state truth + compact current-View Inspector
 
-Status: planned — blocked by Ticket 16B
+Status: implemented — 2026-08-16
 
 Blocked by: 16B, 16A, 15, 12, 07B, 07, 04
 
@@ -12,8 +12,8 @@ Blocked by: 16B, 16A, 15, 12, 07B, 07, 04
 - Tickets 04, 07, 12 and 15 for Mask publication, Review, staleness and
   Correction semantics
 
-Ticket 16B must make the current specification and ADR chain authoritative
-before this stage closes.
+Ticket 16B made the current specification and ADR chain authoritative before
+this stage closed.
 
 ## Inputs / preconditions
 
@@ -42,58 +42,58 @@ not from the mere presence of a retained Editing Mask.
 
 ### Mask and Prompt truth
 
-- [ ] A Stable Mask with no Editing Mask presents as confirmed; this is the
+- [x] A Stable Mask with no Editing Mask presents as confirmed; this is the
       normal state after eligible automatic Generated-View publication.
-- [ ] A Stable Mask and identical retained Editing Mask also present as
+- [x] A Stable Mask and identical retained Editing Mask also present as
       confirmed.
-- [ ] Starting correction from an automatically published Stable Mask creates
+- [x] Starting correction from an automatically published Stable Mask creates
       an independent Editing draft and keeps the previous Stable revision
       available to Evidence/Candidate until Confirm Mask.
-- [ ] `hasUnconfirmedChanges` becomes true on the first real Mask or Prompt edit
+- [x] `hasUnconfirmedChanges` becomes true on the first real Mask or Prompt edit
       after confirmation.
-- [ ] Browsing, mode switching or retaining an identical Editing artifact does
+- [x] Browsing, mode switching or retaining an identical Editing artifact does
       not create a false unconfirmed state.
-- [ ] Prompt and Mask version summaries identify the current published and
+- [x] Prompt and Mask version summaries identify the current published and
       editing revisions without exposing obsolete Proposal identities.
-- [ ] Publishing a changed Stable Mask or changing Participation marks the
+- [x] Publishing a changed Stable Mask or changing Participation marks the
       Candidate stale through existing Ticket 12/15 ownership.
-- [ ] Merely returning from Correction to Candidate preview preserves the draft
+- [x] Merely returning from Correction to Candidate preview preserves the draft
       and does not publish or discard it.
 
 ### Inspector ownership and layout
 
-- [ ] Inspector contains `Assessment and Review`, `Prompt and Mask`, and a
+- [x] Inspector contains `Assessment and Review`, `Prompt and Mask`, and a
       collapsed `Technical Details` section.
-- [ ] Assessment shows Quality and one icon-based Participation control.
-- [ ] Participation mutation is removed from Navigator cards.
-- [ ] A third assessment line appears only when actionable issue reasons exist;
+- [x] Assessment shows Quality and one icon-based Participation control.
+- [x] Participation mutation is removed from Navigator cards.
+- [x] A third assessment line appears only when actionable issue reasons exist;
       normal Views reserve no empty information row.
-- [ ] Prompt counts, Mask publication state and version summary are grouped
+- [x] Prompt counts, Mask publication state and version summary are grouped
       separately from assessment.
-- [ ] Technical identities and versions remain available but collapsed by
+- [x] Technical identities and versions remain available but collapsed by
       default.
-- [ ] Required status, blocker and error content wraps fully. It is not hidden
+- [x] Required status, blocker and error content wraps fully. It is not hidden
       by ellipsis or fixed-line truncation.
-- [ ] Inspector does not duplicate primary confirmation, Re-Lift, planning or
+- [x] Inspector does not duplicate primary confirmation, Re-Lift, planning or
       recovery actions.
 
 ### Accessibility
 
-- [ ] Participation and disclosure controls have accessible names, visible
+- [x] Participation and disclosure controls have accessible names, visible
       focus and keyboard activation.
-- [ ] Quality, Participation and issue state are not communicated by color
+- [x] Quality, Participation and issue state are not communicated by color
       alone.
-- [ ] Collapsed technical detail retains correct disclosure semantics.
+- [x] Collapsed technical detail retains correct disclosure semantics.
 
 ## Failure / recovery criteria
 
-- [ ] A non-null Editing identity that is dangling, incompatible with the
+- [x] A non-null Editing identity that is dangling, incompatible with the
       current View/RGB, or inconsistent with its Stable base fails closed as
       unconfirmed and exposes an actionable explanation. The intentional
       absence of Editing when Stable exists is not an error.
-- [ ] A failed Participation mutation leaves the previous participation and
+- [x] A failed Participation mutation leaves the previous participation and
       Candidate state unchanged.
-- [ ] Inspector rendering failure cannot mutate Prompt, Mask, Review,
+- [x] Inspector rendering failure cannot mutate Prompt, Mask, Review,
       Participation, Evidence or Candidate state.
 
 ## Validation
@@ -114,3 +114,23 @@ not from the mere presence of a retained Editing Mask.
 - No Candidate classification or Evidence-policy change
 - No recovery-action menu in Inspector
 - No Ticket 17 Restart or multi-target lifecycle
+
+## Implementation record
+
+Implemented on 2026-08-16 as one editor/domain/UI slice:
+
+- Mask state now separates semantic Prompt changes, semantic Editing/Stable
+  Mask changes and invalid Editing identity, so identical retained Editing
+  artifacts remain confirmed while the first real Prompt or Mask edit is
+  unconfirmed.
+- Registry lineage validation rejects dangling, View/RGB-incompatible and
+  Stable-base-inconsistent Editing pointers; automatic Stable correction keeps
+  the prior Stable revision until explicit Confirm.
+- The current-View Inspector consumes a reusable pure presentation projection,
+  owns Quality/Participation/issues plus Prompt/Mask summaries, and exposes
+  fully wrapping collapsed technical identities without Navigator mutation or
+  duplicated recovery actions.
+- Validation: `rtk npm test` (591 browser/TypeScript tests + 446 Companion
+  tests, 1 skipped), `rtk npm run lint`, `rtk npm run lint:locales`, and
+  `rtk npm run build`. This Ticket owns no locked-GPU path; no external
+  validation was required.

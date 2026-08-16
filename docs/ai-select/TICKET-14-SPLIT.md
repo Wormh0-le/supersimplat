@@ -89,5 +89,5 @@ Compatibility fields remain:
 
 ```text
 next_implementation_ticket = 16
-next_implementation_subticket = 16C
+next_implementation_subticket = 16D
 ```

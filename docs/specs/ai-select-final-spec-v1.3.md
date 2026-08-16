@@ -3,7 +3,7 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.29 / Ticket 16B implemented / Ticket 16C current
+**规划版本：** Ticket Graph v2.30 / Ticket 16C implemented / Ticket 16D current
 **日期：** 2026-08-16
 **适用分支：** `ai-select-v1`  
 **决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017、ADR 0018
@@ -595,10 +595,10 @@ The Work Area keeps complete aspect-preserving image contain semantics; sidebars
 collapse below their supported container widths without covering the image.
 
 Ordinary View navigation preserves each View's Prompt, Editing Mask
-and authoring history. Navigator owns View selection/filtering/Participation,
-the Work Area owns the single state-appropriate primary action, and Inspector
-owns explanations and low-frequency recovery actions without duplicating those
-controls.
+and authoring history. Navigator owns View selection and filtering, the Work
+Area owns the single state-appropriate primary or recovery action, and
+Inspector owns assessment, Participation, Prompt/Mask state and technical
+explanations without duplicating those controls.
 
 ---
 
@@ -765,7 +765,8 @@ Required validation：
 16   Native Candidate operations core                                       implemented
 16A  AI View Dock + Candidate viewport presentation                         implemented
 16B  single-result product contract + planner/capability correction         implemented
-16C  Mask state truth + compact Inspector                                   ready / current stage
+16C  Mask state truth + compact Inspector                                   implemented
+16D  canvas-first shell + stable Navigator                                  ready / current stage
 17   Applied Undo-and-Fix + Restart + multi-target lifecycle                planned / follows 16G
 10   optional cross-view Evidence-conflict diagnostics                      nonblocking
 ```
@@ -774,20 +775,20 @@ Current ready implementation frontier：
 
 ```text
 parent: 16  Native Candidate operations core
-stage:  16C Mask state truth + compact Inspector
+stage:  16D canvas-first shell + stable Navigator
 
-14A (implemented) → 14B (implemented) → 14C (implemented) → 14D (implemented) → 13 (implemented) → 15 (implemented) → 16 (core implemented) → 16A (implemented) → 16B (implemented) → 16C
+14A (implemented) → 14B (implemented) → 14C (implemented) → 14D (implemented) → 13 (implemented) → 15 (implemented) → 16 (core implemented) → 16A (implemented) → 16B (implemented) → 16C (implemented) → 16D
 ```
 
 Compatibility fields：
 
 ```text
 next_implementation_ticket = 16
-next_implementation_subticket = 16C
+next_implementation_subticket = 16D
 ```
 
 Parent Ticket 14, Tickets 13 through 15 and Ticket 16's native-application core
-are closed. Tickets 16A and 16B are implemented; Ticket 16C is the current
+are closed. Tickets 16A through 16C are implemented; Ticket 16D is the current
 post-visual-review stage and Ticket 17 follows 16G. Ticket 10 remains optional
 and off the core release path。
 

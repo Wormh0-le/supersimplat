@@ -31,6 +31,9 @@ const {
     PerViewEvidenceRegistry
 } = require('../.test-dist/src/ai-select/evidence-state.js');
 const {
+    AISelectDirtyStateTracker
+} = require('../.test-dist/src/ai-select/dirty-state.js');
+const {
     maskBitsetEncoding
 } = require('../.test-dist/src/ai-select/mask-annotation.js');
 const {
@@ -249,6 +252,7 @@ const createHarness = (options = {}) => {
     const confirmation = createConfirmationStub();
     const maskRegistry = new MaskAnnotationRegistry();
     const evidenceRegistry = new PerViewEvidenceRegistry();
+    const dirtyState = new AISelectDirtyStateTracker();
     const geometryHints = {
         calls: [],
         deferreds: [],
@@ -321,6 +325,7 @@ const createHarness = (options = {}) => {
         confirmation,
         maskRegistry,
         evidenceRegistry,
+        dirtyState,
         geometryHints,
         planner,
         renderer: viewRenderer,
@@ -335,6 +340,7 @@ const createHarness = (options = {}) => {
         confirmation,
         maskRegistry,
         evidenceRegistry,
+        dirtyState,
         geometryHints,
         planner,
         viewRenderer,
@@ -1034,6 +1040,10 @@ test('a successful automatic Mask atomically publishes an auto Stable Mask bound
     // The Image Instance request carries exact authoritative Generated View
     // RGB, while Prompt synthesis carries the geometry and local-plan binding.
     const maskRequest = harness.maskProvider.calls[0];
+    assert.equal(
+        views[0].prompt?.artifactDigest,
+        maskRequest.prompt.artifactDigest
+    );
     assert.equal(maskRequest.identity.viewId, 'key-view-0-0');
     assert.equal(maskRequest.rgb.rgbDigest, rgbDigest('b'));
     assert.ok(maskRequest.rgb.artifact);
@@ -1145,12 +1155,31 @@ test('Confirm Review as-is publishes User Confirmed authority and Included parti
     ).stableMask;
     assert.equal(stable.status, 'user-confirmed');
 
+    harness.dirtyState.reset();
     harness.controller.setViewParticipation('key-view-0-0', 'excluded');
     assert.equal(harness.controller.state.views[0].participation, 'excluded');
     assert.equal(
         harness.controller.state.views[0].maskQuality,
         'user-confirmed'
     );
+    assert.equal(harness.controller.state.dirtyState.liftDirty, true);
+    assert.equal(harness.controller.state.dirtyState.candidateStale, true);
+});
+
+test('a failed Participation mutation preserves Participation and Candidate state', async () => {
+    const harness = createHarness();
+    await startAnchor(harness);
+    await confirmAnchor(harness);
+    await driveToActive(harness);
+    harness.dirtyState.reset();
+    const before = harness.controller.state;
+    assert.equal(before.views[0].participation, 'excluded');
+    assert.throws(() =>
+        harness.controller.setViewParticipation('key-view-0-0', 'included')
+    );
+    const after = harness.controller.state;
+    assert.equal(after.views[0].participation, 'excluded');
+    assert.deepEqual(after.dirtyState, before.dirtyState);
 });
 
 test('a replacement Stable Mask hides assessment reasons bound to the previous revision', async () => {

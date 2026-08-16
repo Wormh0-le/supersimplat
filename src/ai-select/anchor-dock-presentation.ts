@@ -2,6 +2,7 @@ import type { AISelectAnchorState } from './anchor-controller';
 import type { AnchorRgbArtifact } from './anchor-render-service';
 import type { EvidenceStatus } from './evidence-state';
 import type { AISelectMaskState } from './mask-controller';
+import { hasSemanticEditingMaskChange } from './mask-registry';
 import { promptStateHasConstraints } from './prompt-state';
 
 export type AnchorDockStatus =
@@ -78,12 +79,16 @@ const emptyMaskPresentation = (
 export const getViewMaskPresentation = (
     maskState: AISelectMaskState
 ): AnchorDockMaskPresentation => {
+    const editingMaskChanged = hasSemanticEditingMaskChange(
+        maskState.editingMask,
+        maskState.stableMask
+    );
     let status: AnchorDockMaskStatus = 'none';
     if (maskState.requestStatus === 'failed') {
         status = 'failed';
     } else if (maskState.requestStatus === 'pending') {
         status = 'pending';
-    } else if (maskState.editingMask !== null) {
+    } else if (editingMaskChanged) {
         status = 'draft';
     } else if (maskState.stableMask !== null) {
         status = 'confirmed';
@@ -111,7 +116,10 @@ export const getViewMaskPresentation = (
         resultFeedback,
         evidenceStatus: maskState.evidence.status,
         automaticMaskStatus: maskState.automaticMaskStatus,
-        showConfirm: maskState.editingMask !== null,
+        showConfirm:
+            maskState.editingMask !== null &&
+            (editingMaskChanged ||
+                maskState.hasUnconfirmedPromptChanges === true),
         showRetry:
             maskState.requestStatus === 'failed' &&
             maskState.promptState != null &&

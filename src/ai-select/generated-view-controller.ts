@@ -126,6 +126,7 @@ export interface GeneratedAIView {
     readonly renderErrorMessage?: string;
     readonly participation: AIViewParticipation;
     readonly promptStatus: GeneratedViewPromptStatus;
+    readonly prompt?: ImageInstancePromptArtifact;
     readonly promptDiagnostics?: readonly string[];
     readonly promptErrorMessage?: string;
     readonly maskStatus: GeneratedViewMaskStatus;
@@ -2185,6 +2186,9 @@ export class AISelectGeneratedViewController {
                 : { renderErrorMessage: view.renderErrorMessage }),
             participation,
             promptStatus: view.promptStatus,
+            ...(view.prompt === undefined
+                ? {}
+                : { prompt: copyPrompt(view.prompt) }),
             ...(view.promptDiagnostics === undefined
                 ? {}
                 : {

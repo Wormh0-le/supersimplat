@@ -737,6 +737,31 @@ test('an RGB Ready user View exposes a No-Mask session bound to its RGB', async 
     assert.equal(state.promptState.points.length, 0);
 });
 
+test('View A draft survives browsing View B and returning to View A', async () => {
+    const harness = createHarness();
+    await driveToActive(harness);
+    const viewA = await addReadyUserView(harness);
+    const viewB = await addReadyUserView(harness);
+    const sessionA = harness.userMasks.sessionFor(viewA);
+    assert.ok(sessionA);
+    sessionA.applyBrushGesture({
+        mode: 'add',
+        radiusPx: 2,
+        samples: [{ xPx: 5, yPx: 5 }]
+    });
+    const editingMaskId = sessionA.state.editingMask?.maskId;
+    assert.ok(editingMaskId);
+    assert.equal(sessionA.state.stableMask, null);
+
+    harness.controller.selectView(viewA);
+    harness.controller.selectView(viewB);
+    harness.controller.selectView(viewA);
+
+    assert.equal(sessionA.state.editingMask?.maskId, editingMaskId);
+    assert.equal(sessionA.state.stableMask, null);
+    assert.equal(sessionA.state.hasUnconfirmedChanges, true);
+});
+
 test('an automatic Generated View can be corrected through the same Mask session', async () => {
     const harness = createHarness();
     const viewId = await addReadyGeneratedView(harness);

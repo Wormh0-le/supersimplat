@@ -5,8 +5,10 @@ import {
     type PaletteToolAvailability
 } from './ai-select-floating-palette';
 import { i18n } from './localization';
+import confirmSvg from './svg/ai-select-confirm.svg';
 import arrowSvg from './svg/arrow.svg';
 import collapseSvg from './svg/collapse.svg';
+import hiddenSvg from './svg/hidden.svg';
 import {
     resolveAIViewDockColumns,
     resolveAIViewWorkAreaWidth
@@ -68,10 +70,14 @@ import {
     type AISelectMaskState
 } from '../ai-select/mask-controller';
 import { selectInspectedMaskOverlaySource } from '../ai-select/mask-overlay-source';
-import type { MaskAnnotationRegistry } from '../ai-select/mask-registry';
+import {
+    hasSemanticEditingMaskChange,
+    type MaskAnnotationRegistry
+} from '../ai-select/mask-registry';
 import { promptToolCapabilityReason } from '../ai-select/prompt-state';
 import { createThumbnailCache } from '../ai-select/thumbnail-cache';
 import type { AISelectUserViewMaskController } from '../ai-select/user-view-mask-controller';
+import { viewInspectorPresentation } from '../ai-select/view-inspector-presentation';
 import type {
     SelectionServiceReadinessInterface,
     SelectionServiceReadinessStatus
@@ -98,8 +104,6 @@ interface GeneratedCardElements {
     readonly regeneratePromptButton: Button;
     readonly refreshMaskButton: Button;
     readonly confirmReviewButton: Button;
-    readonly participationButton: Button;
-    readonly excludeViewButton: Button;
     rgbDigest?: string;
 }
 
@@ -258,10 +262,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly selectedViewPrimaryButton: Button;
     private selectedViewPrimaryAction: 'retry-mask' | 'next-review' | null =
         null;
-    private readonly selectedViewRecoveryGroup: Container;
-    private readonly selectedViewRecoveryActions: Container;
-    private readonly retrySelectedViewRenderButton: Button;
-    private readonly regenerateSelectedViewPromptButton: Button;
     private readonly gallery: Container;
     private readonly plannerLine: Container;
     private readonly plannerStatus: Label;
@@ -277,7 +277,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly galleryCards: Container;
     private readonly anchorCard: GeneratedCardElements;
     private readonly selectedViewAssessment: Label;
-    private readonly selectedViewParticipation: Label;
+    private readonly selectedViewParticipation: Button;
+    private readonly selectedViewIssues: Label;
     private readonly generatedCards = new Map<string, GeneratedCardElements>();
     private readonly thumbnails = createThumbnailCache({
         capacity: THUMBNAIL_CACHE_CAPACITY
@@ -465,7 +466,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             technicalSummary,
             this.technicalDetailsBody
         );
-        this.technicalDetails.hidden = true;
+        this.technicalDetails.open = false;
 
         this.maskActions = new Container({
             id: 'ai-select-anchor-dock-mask-actions',
@@ -568,45 +569,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.selectedViewPrimaryButton.on('click', () =>
             this.runSelectedViewPrimaryAction()
         );
-        this.selectedViewRecoveryActions = new Container({
-            id: 'ai-select-selected-view-recovery-actions',
-            hidden: true
-        });
-        this.retrySelectedViewRenderButton = new Button({
-            id: 'ai-select-selected-view-retry-render',
-            hidden: true
-        });
-        i18n.bindText(
-            this.retrySelectedViewRenderButton,
-            'ai-select.views.retry-render'
-        );
-        this.retrySelectedViewRenderButton.on('click', () => {
-            const selected = this.inspectedGeneratedView();
-            if (selected !== null) {
-                this.retryGeneratedViewRender(selected.viewId);
-            }
-        });
-        this.regenerateSelectedViewPromptButton = new Button({
-            id: 'ai-select-selected-view-regenerate-prompt',
-            hidden: true
-        });
-        i18n.bindText(
-            this.regenerateSelectedViewPromptButton,
-            'ai-select.views.retry-prompt'
-        );
-        this.regenerateSelectedViewPromptButton.on('click', () => {
-            const selected = this.inspectedGeneratedView();
-            if (selected !== null) {
-                this.regenerateGeneratedViewPrompt(selected.viewId);
-            }
-        });
-        this.selectedViewRecoveryActions.append(
-            this.retrySelectedViewRenderButton
-        );
-        this.selectedViewRecoveryActions.append(
-            this.regenerateSelectedViewPromptButton
-        );
-
         // The AI View Gallery: progressive Generated View cards with their
         // independent Render/Mask/Evidence states, plus the Anchor card.
         this.gallery = new Container({
@@ -839,8 +801,18 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.selectedViewAssessment = new Label({
             id: 'ai-select-selected-view-assessment'
         });
-        this.selectedViewParticipation = new Label({
+        this.selectedViewParticipation = new Button({
             id: 'ai-select-selected-view-participation'
+        });
+        this.selectedViewParticipation.on('click', () => {
+            const selected = this.inspectedGeneratedView();
+            if (selected !== null) {
+                this.toggleGeneratedViewParticipation(selected.viewId);
+            }
+        });
+        this.selectedViewIssues = new Label({
+            id: 'ai-select-selected-view-issues',
+            hidden: true
         });
         const createInspectorGroup = (
             id: string,
@@ -863,22 +835,22 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         );
         assessmentGroup.append(this.selectedViewAssessment);
         assessmentGroup.append(this.selectedViewParticipation);
+        assessmentGroup.append(this.selectedViewIssues);
         const maskGroup = createInspectorGroup(
             'ai-select-inspector-mask-group',
             'ai-select.dock.prompt-mask'
         );
         maskGroup.append(this.promptStatus);
         maskGroup.append(this.maskStatus);
-        maskGroup.dom.appendChild(this.technicalDetails);
         maskGroup.append(this.validationStatus);
-        this.selectedViewRecoveryGroup = createInspectorGroup(
-            'ai-select-inspector-recovery-group',
-            'ai-select.dock.recovery'
-        );
-        this.selectedViewRecoveryGroup.append(this.selectedViewRecoveryActions);
+        const technicalGroup = new Container({
+            id: 'ai-select-inspector-technical-group',
+            class: 'ai-select-inspector-group'
+        });
+        technicalGroup.dom.appendChild(this.technicalDetails);
         information.append(assessmentGroup);
         information.append(maskGroup);
-        information.append(this.selectedViewRecoveryGroup);
+        information.append(technicalGroup);
         this.primaryActions = new Container({
             id: 'ai-select-anchor-dock-primary-actions',
             hidden: true
@@ -1108,28 +1080,56 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             `ai-select.review.quality.${view.maskQuality}`
         );
         this.status.text = `${name} · ${i18n.t(roleKey)} · ${assessment}`;
-        const reviewReasons =
-            view.assessment?.status === 'review'
-                ? view.assessment.actionableReasons.map((reason) =>
-                      i18n.t(`ai-select.review.reason.${reason}`)
-                  )
-                : [];
-        this.selectedViewAssessment.text = [assessment, ...reviewReasons].join(
-            '\n'
-        );
         const card = galleryCardPresentation(view, ordinal);
-        const participation = [
-            i18n.t(`ai-select.participation.${view.participation}`)
-        ];
-        if (
-            view.participation === 'excluded' &&
-            card.actions.participationToggle === null
-        ) {
-            participation.push(
-                i18n.t('ai-select.participation.include-unavailable')
+        const rgbDigest = view.rgb?.digest;
+        const currentMasks = this.maskRegistry.viewState(
+            view.viewId,
+            rgbDigest ?? ''
+        );
+        const authoring = this.authoring();
+        const hasMaskChanges =
+            currentMasks.editingMaskIssue !== null ||
+            hasSemanticEditingMaskChange(
+                currentMasks.editingMask,
+                currentMasks.stableMask
             );
-        }
-        this.selectedViewParticipation.text = participation.join('\n');
+        const maskState: Parameters<
+            typeof viewInspectorPresentation
+        >[0]['maskState'] = authoring?.maskState ?? {
+            editingMask: currentMasks.editingMask,
+            stableMask: currentMasks.stableMask,
+            editingMaskIssue: currentMasks.editingMaskIssue,
+            promptState: null,
+            publishedPromptState: null,
+            requestStatus:
+                view.maskStatus === 'generating'
+                    ? 'pending'
+                    : view.maskStatus === 'failed'
+                      ? 'failed'
+                      : 'idle',
+            hasUnconfirmedPromptChanges: false,
+            hasUnconfirmedMaskChanges: hasMaskChanges
+        };
+        this.renderInspectorPresentation({
+            viewId: view.viewId,
+            ...(rgbDigest === undefined ? {} : { rgbDigest }),
+            quality: view.maskQuality,
+            participation: view.participation,
+            participationToggle: card.actions.participationToggle,
+            actionableIssues: view.assessment?.actionableReasons ?? [],
+            maskState,
+            ...(view.prompt === undefined
+                ? {}
+                : { generatedPrompt: view.prompt }),
+            technicalErrors: [
+                view.renderErrorMessage,
+                view.promptErrorMessage,
+                view.maskErrorMessage,
+                this.candidateCorrectionState.status === 'failed'
+                    ? this.candidateCorrectionState.errorMessage
+                    : undefined
+            ].filter((entry): entry is string => entry !== undefined)
+        });
     }
 
     private renderAnchorMetadata(
@@ -1143,17 +1143,127 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 : 'ai-select.review.quality.none'
         );
         this.status.text = `${i18n.t('ai-select.anchor.current-view')} · ${assessment} · ${i18n.t(statusKey)}`;
-        this.selectedViewAssessment.text = assessment;
-        this.selectedViewParticipation.text = [
+        this.renderInspectorPresentation({
+            viewId: this.maskState.viewId,
+            ...(presentation.rgb === undefined
+                ? {}
+                : { rgbDigest: presentation.rgb.digest }),
+            quality: hasStableMask ? 'user-confirmed' : 'none',
+            participation: hasStableMask ? 'included' : 'excluded',
+            participationToggle: null,
+            actionableIssues: [],
+            maskState: this.maskState,
+            technicalErrors: [
+                this.maskState.errorMessage,
+                this.confirmationState.errorMessage,
+                this.candidateCorrectionState.status === 'failed'
+                    ? this.candidateCorrectionState.errorMessage
+                    : undefined
+            ].filter((entry): entry is string => entry !== undefined)
+        });
+    }
+
+    private renderInspectorPresentation(
+        input: Parameters<typeof viewInspectorPresentation>[0]
+    ): void {
+        const inspector = viewInspectorPresentation(input);
+        this.selectedViewAssessment.text = i18n.t(
+            `ai-select.review.quality.${inspector.assessment.quality}`
+        );
+        const participation = inspector.assessment.participation;
+        const participationText = i18n.t(
+            `ai-select.participation.${participation.value}`
+        );
+        this.selectedViewParticipation.text = '';
+        const participationIcon = createSvg(
+            participation.icon === 'included' ? confirmSvg : hiddenSvg
+        );
+        participationIcon.setAttribute('aria-hidden', 'true');
+        participationIcon.classList.add('ai-select-participation-icon');
+        this.selectedViewParticipation.dom.replaceChildren(participationIcon);
+        this.selectedViewParticipation.enabled = participation.toggle !== null;
+        this.selectedViewParticipation.dom.setAttribute(
+            'aria-pressed',
+            participation.pressed.toString()
+        );
+        const actionText =
+            participation.toggle === null
+                ? participation.value === 'excluded'
+                    ? i18n.t('ai-select.participation.include-unavailable')
+                    : ''
+                : i18n.t(`ai-select.participation.${participation.toggle}`);
+        const participationLabel = [participationText, actionText]
+            .filter((entry) => entry.length > 0)
+            .join('. ');
+        this.selectedViewParticipation.dom.setAttribute(
+            'aria-label',
+            participationLabel
+        );
+        this.selectedViewParticipation.dom.title = participationLabel;
+
+        const issues = inspector.assessment.issueReasons.map((reason) =>
             i18n.t(
-                hasStableMask
-                    ? 'ai-select.participation.included'
-                    : 'ai-select.participation.excluded'
-            ),
-            ...(hasStableMask
+                reason === 'editing-mask-state-invalid'
+                    ? 'ai-select.mask.editing-state-invalid'
+                    : `ai-select.review.reason.${reason}`
+            )
+        );
+        this.selectedViewIssues.hidden = issues.length === 0;
+        this.selectedViewIssues.text = issues.join('\n');
+
+        const prompt = inspector.promptAndMask.prompt;
+        const version = (identity: {
+            revision?: number;
+            digest: string;
+        }): string =>
+            identity.revision === undefined
+                ? identity.digest.slice(0, 15)
+                : `r${i18n.formatInteger(identity.revision)}`;
+        const promptVersions = [
+            ...(prompt.published === null
                 ? []
-                : [i18n.t('ai-select.participation.include-unavailable')])
-        ].join('\n');
+                : [
+                      `${i18n.t('ai-select.inspector.published')}: ${version(prompt.published)}`
+                  ]),
+            ...(prompt.editing === null
+                ? []
+                : [
+                      `${i18n.t('ai-select.inspector.editing')}: ${version(prompt.editing)}`
+                  ])
+        ];
+        this.promptStatus.text = [
+            `${i18n.t('ai-select.prompt.summary-positive-points')} ${i18n.formatInteger(prompt.positivePointCount)}`,
+            `${i18n.t('ai-select.prompt.summary-negative-points')} ${i18n.formatInteger(prompt.negativePointCount)}`,
+            `${i18n.t('ai-select.prompt.summary-boxes')} ${i18n.formatInteger(prompt.boxCount)}`,
+            ...promptVersions
+        ].join(' · ');
+        this.promptStatus.hidden = false;
+
+        const mask = inspector.promptAndMask.mask;
+        const maskText =
+            mask.status === 'invalid-editing'
+                ? i18n.t('ai-select.mask.editing-state-invalid')
+                : i18n.t(`ai-select.mask.${mask.status}`);
+        const maskVersions = [
+            ...(mask.published === null
+                ? []
+                : [
+                      `${i18n.t('ai-select.inspector.published')}: ${mask.published.maskId}`
+                  ]),
+            ...(mask.editing === null
+                ? []
+                : [
+                      `${i18n.t('ai-select.inspector.editing')}: ${mask.editing.maskId}`
+                  ])
+        ];
+        this.maskStatus.text = [maskText, ...maskVersions].join(' · ');
+        this.maskStatus.hidden = false;
+        this.technicalDetailsBody.textContent = inspector.technicalDetails.rows
+            .map(
+                (row) =>
+                    `${i18n.t(`ai-select.inspector.field.${row.label}`)}: ${row.value}`
+            )
+            .join('\n');
     }
 
     private render(): void {
@@ -1204,7 +1314,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             rendering: 'ai-select.anchor.rendering',
             failed: 'ai-select.anchor.failed'
         }[presentation.status];
-        this.renderAnchorMetadata(presentation, textKey);
         this.renderMaskSurface(
             presentation.mask,
             this.maskState,
@@ -1212,6 +1321,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.confirmation.locked
         );
         this.renderPromptStatus(presentation.mask, this.maskState);
+        this.renderAnchorMetadata(presentation, textKey);
         this.renderEditingActions();
         this.renderAuthoringTools();
         this.renderAnchorActions(presentation);
@@ -1301,15 +1411,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                       ? i18n.t('ai-select.mask.unavailable')
                       : i18n.t(`ai-select.mask.${mask.status}`);
         }
-        const technicalMessage =
-            this.candidateCorrectionState.status === 'failed'
-                ? this.candidateCorrectionState.errorMessage
-                : mask.status === 'failed'
-                  ? mask.errorMessage
-                  : undefined;
-        this.technicalDetails.hidden =
-            technicalMessage === undefined || technicalMessage.length === 0;
-        this.technicalDetailsBody.textContent = technicalMessage ?? '';
         this.retryMaskButton.hidden = !mask.showRetry;
         this.retryMaskButton.enabled = mask.showRetry && !locked;
     }
@@ -1408,7 +1509,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.status.text = `${i18n.t(roleKey)} — ${i18n.t('ai-select.views.inspecting')}`;
         this.maskStatus.hidden = true;
         this.promptStatus.hidden = true;
-        this.technicalDetails.hidden = true;
         this.maskActions.hidden = true;
         this.anchorActions.hidden = true;
         this.validationStatus.hidden = true;
@@ -1445,7 +1545,13 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             return;
         }
         const masks = this.maskRegistry.viewState(view.viewId, rgb.digest);
-        const annotation = masks.editingMask ?? masks.stableMask;
+        const editing = hasSemanticEditingMaskChange(
+            masks.editingMask,
+            masks.stableMask
+        );
+        const annotation = editing
+            ? masks.editingMask
+            : (masks.stableMask ?? masks.editingMask);
         const artifact = annotation?.artifact;
         if (
             artifact === undefined ||
@@ -1459,7 +1565,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         const pixels = maskOverlayPixels(
             decodeMaskArtifact(artifact),
             width * height,
-            masks.editingMask !== null
+            editing
         );
         this.overlay.width = width;
         this.overlay.height = height;
@@ -1510,18 +1616,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             class: 'ai-select-view-card-confirm-review',
             hidden: true
         });
-        const participationButton = new Button({
-            class: 'ai-select-view-card-participation',
-            hidden: true
-        });
-        const excludeViewButton = new Button({
-            class: 'ai-select-view-card-exclude',
-            hidden: true
-        });
         i18n.bindText(retryButton, 'ai-select.views.retry-render');
         i18n.bindText(regeneratePromptButton, 'ai-select.views.retry-prompt');
         i18n.bindText(confirmReviewButton, 'ai-select.review.confirm-as-is');
-        i18n.bindText(excludeViewButton, 'ai-select.participation.exclude');
         if (onRetry !== null) {
             retryButton.on('click', (event: Event) => {
                 event.stopPropagation();
@@ -1549,27 +1646,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 this.confirmGeneratedReview(viewId);
             }
         });
-        participationButton.on('click', (event: Event) => {
-            event.stopPropagation();
-            const viewId = root.dom.dataset.viewId;
-            if (viewId !== undefined) {
-                this.toggleGeneratedViewParticipation(viewId);
-            }
-        });
-        excludeViewButton.on('click', (event: Event) => {
-            event.stopPropagation();
-            const viewId = root.dom.dataset.viewId;
-            if (viewId !== undefined) {
-                try {
-                    this.generatedViews.setViewParticipation(
-                        viewId,
-                        'excluded'
-                    );
-                } catch (error) {
-                    console.error(error);
-                }
-            }
-        });
         root.dom.appendChild(image);
         root.append(title);
         root.append(status);
@@ -1578,11 +1654,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             class: 'ai-select-view-card-actions'
         });
         actions.append(confirmReviewButton);
-        actions.append(participationButton);
         actions.append(regeneratePromptButton);
         actions.append(refreshMaskButton);
         actions.append(retryButton);
-        actions.append(excludeViewButton);
         root.append(actions);
         root.dom.addEventListener('pointerdown', (event) =>
             event.stopPropagation()
@@ -1617,9 +1691,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             retryButton,
             regeneratePromptButton,
             refreshMaskButton,
-            confirmReviewButton,
-            participationButton,
-            excludeViewButton
+            confirmReviewButton
         };
     }
 
@@ -1630,8 +1702,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         if (!showGallery) {
             this.selectedViewPrimaryAction = null;
             this.selectedViewPrimaryButton.hidden = true;
-            this.selectedViewRecoveryActions.hidden = true;
-            this.selectedViewRecoveryGroup.hidden = true;
             return;
         }
 
@@ -1705,8 +1775,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.anchorCard.regeneratePromptButton.hidden = true;
         this.anchorCard.refreshMaskButton.hidden = true;
         this.anchorCard.confirmReviewButton.hidden = true;
-        this.anchorCard.participationButton.hidden = true;
-        this.anchorCard.excludeViewButton.hidden = true;
         if (presentation.rgb !== undefined) {
             this.applyCardThumbnail(
                 this.anchorCard,
@@ -1833,20 +1901,12 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         card.detail.text = detailLines.join('\n');
         card.detail.hidden = detailLines.length === 0;
 
-        // Cards keep only the Participation control. Selection itself owns
-        // camera navigation; current-view actions stay in Work Area/Inspector.
+        // Navigator cards are selection/status surfaces only. Current-View
+        // Participation is owned by the Inspector.
         card.retryButton.hidden = true;
         card.regeneratePromptButton.hidden = true;
         card.refreshMaskButton.hidden = true;
         card.confirmReviewButton.hidden = true;
-        card.participationButton.hidden =
-            presentation.actions.participationToggle === null;
-        if (presentation.actions.participationToggle !== null) {
-            card.participationButton.text = i18n.t(
-                `ai-select.participation.${presentation.actions.participationToggle}`
-            );
-        }
-        card.excludeViewButton.hidden = true;
         if (view.rgb !== undefined) {
             this.applyCardThumbnail(card, view.rgb.digest, view.rgb.pngBase64);
         } else {
@@ -1883,24 +1943,12 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         if (selected === null) {
             this.selectedViewPrimaryAction = null;
             this.selectedViewPrimaryButton.hidden = true;
-            this.retrySelectedViewRenderButton.hidden = true;
-            this.regenerateSelectedViewPromptButton.hidden = true;
-            this.selectedViewRecoveryActions.hidden = true;
-            this.selectedViewRecoveryGroup.hidden = true;
             return;
         }
         const card = galleryCardPresentation(
             selected,
             ordinals.get(selected.viewId) ?? 0
         );
-        this.retrySelectedViewRenderButton.hidden = !card.actions.retryRender;
-        this.regenerateSelectedViewPromptButton.hidden =
-            !card.actions.regeneratePrompt;
-        const hasRecovery =
-            !this.retrySelectedViewRenderButton.hidden ||
-            !this.regenerateSelectedViewPromptButton.hidden;
-        this.selectedViewRecoveryActions.hidden = !hasRecovery;
-        this.selectedViewRecoveryGroup.hidden = !hasRecovery;
         const authoring = this.authoring();
         const authoringPrimaryVisible =
             (authoring !== null &&
@@ -2439,7 +2487,12 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         rgb: AnchorRgbArtifact | undefined,
         ready: boolean
     ): void {
-        const annotation = maskState.editingMask ?? maskState.stableMask;
+        const editing =
+            maskState.hasUnconfirmedMaskChanges &&
+            maskState.editingMask !== null;
+        const annotation = editing
+            ? maskState.editingMask
+            : (maskState.stableMask ?? maskState.editingMask);
         const artifact = annotation?.artifact;
         if (
             !ready ||
@@ -2454,11 +2507,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         const { width, height } = rgb;
         const bits =
             artifact === undefined ? null : decodeMaskArtifact(artifact);
-        const pixels = maskOverlayPixels(
-            bits,
-            width * height,
-            maskState.editingMask !== null
-        );
+        const pixels = maskOverlayPixels(bits, width * height, editing);
         this.overlay.width = width;
         this.overlay.height = height;
         const context = this.overlay.getContext('2d');

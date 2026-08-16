@@ -61,7 +61,7 @@ test('Candidate shader state is independent and explicitly released', () => {
     assert.match(shader, /candidateStateValue == 2u/);
 });
 
-test('AI View Dock uses the full width with an image-first 20/25 sidebar split', () => {
+test('AI View Dock caps semantic sidebars and gives surplus width to the Work Area', () => {
     const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
     const header = styles.match(
         /#ai-select-anchor-dock-header\s*\{(?<body>[\s\S]*?)\n\}/
@@ -75,16 +75,17 @@ test('AI View Dock uses the full width with an image-first 20/25 sidebar split',
     assert.match(header, /height:\s*48px;/);
     assert.doesNotMatch(header, /max-width:\s*1440px;/);
     assert.doesNotMatch(header, /margin-inline:\s*auto;/);
-    assert.match(
-        header,
-        /#ai-select-candidate-actions\.pcui-hidden[\s\S]*?#ai-select-navigator-toggle[\s\S]*?margin-left:\s*auto;/
-    );
     assert.doesNotMatch(workspace, /max-width:\s*1440px;/);
     assert.doesNotMatch(workspace, /margin-inline:\s*auto;/);
     assert.match(
         styles,
-        /#ai-select-anchor-dock-main\[data-spacious='true'\][\s\S]*?#ai-select-view-navigator[\s\S]*?width:\s*20%;[\s\S]*?#ai-select-view-inspector[\s\S]*?width:\s*25%;/
+        /#ai-select-view-navigator\s*\{[\s\S]*?width:\s*clamp\(240px, 14vw, 280px\);/
     );
+    assert.match(
+        styles,
+        /#ai-select-view-inspector\s*\{[\s\S]*?width:\s*clamp\(280px, 16vw, 320px\);/
+    );
+    assert.doesNotMatch(styles, /data-spacious/);
     assert.match(
         styles,
         /#ai-select-anchor-dock-availability\s*\{[\s\S]*?display:\s*flex;/
@@ -187,17 +188,30 @@ test('Navigator controls do not overlap cards and Inspector status can wrap', ()
     );
     assert.match(
         styles,
+        /\.ai-select-view-card\s*\{[\s\S]*?min-height:\s*74px;/
+    );
+    assert.doesNotMatch(
+        styles,
+        /#ai-select-view-gallery-cards:not\(\.pcui-hidden\)[\s\S]*?grid-template-columns/
+    );
+    assert.match(
+        styles,
         /#ai-select-selected-view-assessment,[\s\S]*?#ai-select-selected-view-participation[\s\S]*?white-space:\s*pre-line;/
     );
 });
 
-test('Dock sidebars use the editor panel disclosure icons', () => {
+test('Dock sidebar controls stay adjacent to the sidebar they control', () => {
     const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
     assert.match(dock, /import arrowSvg from '\.\/svg\/arrow\.svg';/);
     assert.match(dock, /import collapseSvg from '\.\/svg\/collapse\.svg';/);
     assert.match(dock, /aria-expanded/);
-    assert.doesNotMatch(
-        dock,
-        /i18n\.bindText\(navigatorToggle, 'ai-select\.dock\.navigator'\)/
-    );
+    assert.match(dock, /navigatorHeader\.append\(navigatorCollapse\)/);
+    assert.match(dock, /inspectorHeader\.append\(inspectorCollapse\)/);
+    assert.match(dock, /workArea\.append\(navigatorReveal\)/);
+    assert.match(dock, /workArea\.append\(inspectorReveal\)/);
+    assert.doesNotMatch(dock, /header\.append\(navigator/);
+    assert.doesNotMatch(dock, /header\.append\(inspector/);
+    assert.match(dock, /icon\.setAttribute\('aria-hidden', 'true'\)/);
+    assert.match(dock, /'ai-select\.dock\.hide-navigator'/);
+    assert.match(dock, /'ai-select\.dock\.show-inspector'/);
 });

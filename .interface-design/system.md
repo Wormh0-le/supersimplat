@@ -60,14 +60,15 @@ Status: current reusable interface guidance
 ### 连续编辑 Dock
 
 - 宽屏采用 `Navigator | Work Area | Inspector` 三栏结构。
-- Navigator 初始宽度范围：`190–238px`。
-- Inspector 初始宽度范围：`280–350px`。
-- Work Area 的理想宽度由可用高度、权威图像宽高比和侧栏约束共同决定，不无条件吞掉剩余空间。
+- Navigator 宽度范围：`240–280px`，只满足单列缩略图、名称和状态的可读性；宽屏不按比例继续放大。
+- Inspector 宽度范围：`280–320px`，状态分组始终保持单列；宽屏不为稀疏内容创建第二列。
+- Work Area 获得侧栏之外的全部剩余宽度；图像的实际显示尺寸仍由可用高度和权威图像宽高比决定。
 - 图像使用完整、居中、等比的 contain 语义；不为消除空白而 crop 或 stretch。
 - Dock 使用完整容器宽度，不在最大化窗口中保留固定舞台外边距。
-- 多余横向空间优先提升 Navigator 和 Inspector 的有效信息承载；约 `1600px` 以上使用 `20% Navigator / 55% Work Area / 25% Inspector` 的职责比例，并将卡片和信息分组排成多列，不扩大无信息字母箱。
+- 多余横向空间优先归还 Work Area。Navigator 卡片和 Inspector 分组不因宽屏切换多列，避免窄语义侧栏出现压缩、重叠和无用途留白。
 - 约 `1280×720` 提供完整三栏；约 `1024×720` 保留 Navigator 和 Work Area，Inspector 可折叠；更窄时 Work Area 常驻，两侧栏均可折叠。
 - 展开的侧栏推挤 Work Area，不覆盖图像。
+- 展开状态的折叠入口位于对应侧栏标题行；收起后仅在 Work Area 相邻边缘显示恢复入口。顶栏不放置脱离上下文的侧栏开关。
 - Dock 默认高度 `420px`，最小 `300px`，最大为主编辑区域高度减 `160px`。
 - 顶栏、图像和主 Action Bar 固定；Navigator 与 Inspector 独立滚动，图像不进入滚动容器。
 
@@ -96,6 +97,7 @@ Status: current reusable interface guidance
 ### Navigator Card
 
 - 只显示支持导航和判断的缩略图、名称/来源、Assessment、Participation、草稿和阻塞错误。
+- 卡片始终使用单列列表，最小高度容纳完整缩略图；宽屏不转换为多列网格。
 - 卡片选择与卡片内开关是两个独立焦点和操作。
 - 当前条目固定可见，不在过滤结果中重复。
 
@@ -110,6 +112,7 @@ Status: current reusable interface guidance
 ### Inspector
 
 - 只负责解释、只读状态、次级操作和恢复操作。
+- 信息分组纵向排列并按内容自然收紧；侧栏不通过增宽或多列布局填充可用空间。
 - 技术细节默认折叠。
 - 高频 Mask 恢复（重置为自动 Mask）属于图像内浮动工具栏，不在 Inspector 重复。
 - 不复制主 Action Bar 或 Navigator 的可变控件。

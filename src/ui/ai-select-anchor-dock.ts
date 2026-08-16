@@ -119,8 +119,8 @@ interface DockAuthoringTarget {
 const CLICK_TOLERANCE_PX = 4;
 // DG-22 Decision 5 opacity assist proximity; unrelated to the snap threshold.
 const PALETTE_GESTURE_DIM_MARGIN_PX = 24;
-// Gallery cards are 184px wide; double for high-density displays.
-const THUMBNAIL_MAX_WIDTH_PX = 368;
+// Gallery thumbnails render at 64px; retain a 2× source for dense displays.
+const THUMBNAIL_MAX_WIDTH_PX = 128;
 // Full-resolution RGB stays authoritative in the controller; cards keep only
 // bounded downscaled thumbnails so 10–20+ Views stay resource-bounded.
 const THUMBNAIL_CACHE_CAPACITY = 24;
@@ -763,29 +763,11 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.galleryCards.append(this.anchorCard.root);
 
         const header = new Container({ id: 'ai-select-anchor-dock-header' });
-        const navigatorToggle = new Button({
-            id: 'ai-select-navigator-toggle',
-            class: 'ai-select-dock-toggle'
-        });
-        const inspectorToggle = new Button({
-            id: 'ai-select-inspector-toggle',
-            class: 'ai-select-dock-toggle'
-        });
-        navigatorToggle.dom.setAttribute(
-            'aria-controls',
-            'ai-select-view-navigator'
-        );
-        inspectorToggle.dom.setAttribute(
-            'aria-controls',
-            'ai-select-view-inspector'
-        );
         header.append(title);
         header.append(availability);
         header.append(this.includedViewCount);
         header.append(this.candidateStatus);
         header.append(this.candidateActions);
-        header.append(navigatorToggle);
-        header.append(inspectorToggle);
         this.append(header);
 
         const mainRow = new Container({ id: 'ai-select-anchor-dock-main' });
@@ -799,7 +781,24 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             id: 'ai-select-view-navigator-title'
         });
         i18n.bindText(navigatorTitle, 'ai-select.dock.views');
+        const navigatorCollapse = new Button({
+            id: 'ai-select-navigator-collapse',
+            class: 'ai-select-sidebar-collapse'
+        });
+        const navigatorReveal = new Button({
+            id: 'ai-select-navigator-reveal',
+            class: 'ai-select-sidebar-reveal'
+        });
+        navigatorCollapse.dom.setAttribute(
+            'aria-controls',
+            'ai-select-view-navigator'
+        );
+        navigatorReveal.dom.setAttribute(
+            'aria-controls',
+            'ai-select-view-navigator'
+        );
         navigatorHeader.append(navigatorTitle);
+        navigatorHeader.append(navigatorCollapse);
         const workArea = new Container({
             id: 'ai-select-view-work-area'
         });
@@ -809,6 +808,31 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         const inspector = new Container({
             id: 'ai-select-view-inspector'
         });
+        const inspectorHeader = new Container({
+            id: 'ai-select-view-inspector-header'
+        });
+        const inspectorTitle = new Label({
+            id: 'ai-select-view-inspector-title'
+        });
+        i18n.bindText(inspectorTitle, 'ai-select.dock.inspector');
+        const inspectorCollapse = new Button({
+            id: 'ai-select-inspector-collapse',
+            class: 'ai-select-sidebar-collapse'
+        });
+        const inspectorReveal = new Button({
+            id: 'ai-select-inspector-reveal',
+            class: 'ai-select-sidebar-reveal'
+        });
+        inspectorCollapse.dom.setAttribute(
+            'aria-controls',
+            'ai-select-view-inspector'
+        );
+        inspectorReveal.dom.setAttribute(
+            'aria-controls',
+            'ai-select-view-inspector'
+        );
+        inspectorHeader.append(inspectorCollapse);
+        inspectorHeader.append(inspectorTitle);
         const information = new Container({
             id: 'ai-select-anchor-dock-information'
         });
@@ -870,9 +894,12 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.workCanvasRow.dom.appendChild(this.imageViewport);
         imageResizeObserver.observe(this.workCanvasRow.dom);
         workHeader.append(this.status);
+        workArea.append(navigatorReveal);
+        workArea.append(inspectorReveal);
         workArea.append(workHeader);
         workArea.append(this.workCanvasRow);
         workArea.append(this.primaryActions);
+        inspector.append(inspectorHeader);
         inspector.append(information);
         mainRow.append(navigator);
         mainRow.append(workArea);
@@ -883,7 +910,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         let inspectorPreference: boolean | undefined;
         const renderColumns = (): void => {
             const width = mainRow.dom.clientWidth;
-            mainRow.dom.dataset.spacious = (width >= 1600).toString();
             const columns = resolveAIViewDockColumns(width, {
                 ...(navigatorPreference === undefined
                     ? {}
@@ -894,61 +920,75 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             });
             navigator.hidden = !columns.navigator;
             inspector.hidden = !columns.inspector;
-            navigatorToggle.dom.setAttribute(
-                'aria-expanded',
-                columns.navigator.toString()
-            );
-            inspectorToggle.dom.setAttribute(
-                'aria-expanded',
-                columns.inspector.toString()
-            );
-            const renderToggle = (
-                button: Button,
+            const renderSidebarControls = (
+                collapseButton: Button,
+                revealButton: Button,
                 expanded: boolean,
-                labelKey: string
+                collapseLabelKey: string,
+                revealLabelKey: string
             ): void => {
-                const icon = createSvg(expanded ? collapseSvg : arrowSvg);
-                icon.classList.add('ai-select-dock-toggle-icon');
-                button.dom.replaceChildren(icon);
-                button.dom.classList.toggle('collapsed', !expanded);
-                const label = `${i18n.t(
-                    expanded
-                        ? 'ai-select.palette.collapse'
-                        : 'ai-select.palette.expand'
-                )} ${i18n.t(labelKey)}`;
-                button.dom.title = label;
-                button.dom.setAttribute('aria-label', label);
+                const expandedValue = expanded.toString();
+                collapseButton.hidden = !expanded;
+                revealButton.hidden = expanded;
+                collapseButton.dom.setAttribute('aria-expanded', expandedValue);
+                revealButton.dom.setAttribute('aria-expanded', expandedValue);
+                const renderButton = (
+                    button: Button,
+                    svg: string,
+                    labelKey: string
+                ): void => {
+                    const icon = createSvg(svg);
+                    icon.classList.add('ai-select-sidebar-control-icon');
+                    icon.setAttribute('aria-hidden', 'true');
+                    icon.setAttribute('focusable', 'false');
+                    button.dom.replaceChildren(icon);
+                    const label = i18n.t(labelKey);
+                    button.dom.title = label;
+                    button.dom.setAttribute('aria-label', label);
+                };
+                renderButton(collapseButton, collapseSvg, collapseLabelKey);
+                renderButton(revealButton, arrowSvg, revealLabelKey);
             };
-            renderToggle(
-                navigatorToggle,
+            renderSidebarControls(
+                navigatorCollapse,
+                navigatorReveal,
                 columns.navigator,
-                'ai-select.dock.navigator'
+                'ai-select.dock.hide-navigator',
+                'ai-select.dock.show-navigator'
             );
-            renderToggle(
-                inspectorToggle,
+            renderSidebarControls(
+                inspectorCollapse,
+                inspectorReveal,
                 columns.inspector,
-                'ai-select.dock.inspector'
+                'ai-select.dock.hide-inspector',
+                'ai-select.dock.show-inspector'
             );
         };
-        navigatorToggle.on('click', () => {
-            navigatorPreference = navigator.hidden;
-            if (navigatorPreference && mainRow.dom.clientWidth < 900) {
+        navigatorCollapse.on('click', () => {
+            navigatorPreference = false;
+            renderColumns();
+            navigatorReveal.dom.focus();
+        });
+        navigatorReveal.on('click', () => {
+            navigatorPreference = true;
+            if (mainRow.dom.clientWidth < 900) {
                 inspectorPreference = false;
             }
             renderColumns();
-            if (navigator.hidden) {
-                navigatorToggle.dom.focus();
-            }
+            navigatorCollapse.dom.focus();
         });
-        inspectorToggle.on('click', () => {
-            inspectorPreference = inspector.hidden;
-            if (inspectorPreference && mainRow.dom.clientWidth < 900) {
+        inspectorCollapse.on('click', () => {
+            inspectorPreference = false;
+            renderColumns();
+            inspectorReveal.dom.focus();
+        });
+        inspectorReveal.on('click', () => {
+            inspectorPreference = true;
+            if (mainRow.dom.clientWidth < 900) {
                 navigatorPreference = false;
             }
             renderColumns();
-            if (inspector.hidden) {
-                inspectorToggle.dom.focus();
-            }
+            inspectorCollapse.dom.focus();
         });
         window.addEventListener(
             'keydown',
@@ -968,12 +1008,12 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 if (!inspector.hidden) {
                     inspectorPreference = false;
                     renderColumns();
-                    inspectorToggle.dom.focus();
+                    inspectorReveal.dom.focus();
                     event.preventDefault();
                 } else if (!navigator.hidden) {
                     navigatorPreference = false;
                     renderColumns();
-                    navigatorToggle.dom.focus();
+                    navigatorReveal.dom.focus();
                     event.preventDefault();
                 }
             },
@@ -1144,6 +1184,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             return;
         }
         if (presentation.rgb) {
+            this.image.width = presentation.rgb.width;
+            this.image.height = presentation.rgb.height;
             this.image.src = `data:image/png;base64,${presentation.rgb.pngBase64}`;
             this.image.hidden = false;
             this.imageSurface.hidden = false;
@@ -1288,6 +1330,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             return;
         }
         if (view.rgb !== undefined) {
+            this.image.width = view.rgb.width;
+            this.image.height = view.rgb.height;
             this.image.src = `data:image/png;base64,${view.rgb.pngBase64}`;
             this.image.hidden = false;
             this.imageSurface.hidden = false;
@@ -1351,6 +1395,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     /** Read-only fallback when an inspected View has no authoring session. */
     private renderInspection(view: GeneratedAIView): void {
         if (view.rgb !== undefined) {
+            this.image.width = view.rgb.width;
+            this.image.height = view.rgb.height;
             this.image.src = `data:image/png;base64,${view.rgb.pngBase64}`;
             this.image.hidden = false;
             this.imageSurface.hidden = false;
@@ -1442,6 +1488,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         const image = document.createElement('img');
         image.className = 'ai-select-view-card-image';
         image.alt = '';
+        image.width = 64;
+        image.height = 64;
+        image.loading = 'lazy';
         image.hidden = true;
         image.draggable = false;
         const title = new Label({ class: 'ai-select-view-card-title' });

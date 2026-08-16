@@ -1,6 +1,6 @@
 # AI View Dock 布局设计
 
-状态：**已确认设计，尚未实现**
+状态：**已确认并实现**
 
 本文定义 AI View Dock 的目标布局、信息归属、响应式行为和验收条件。它不改变 AI Select Final Spec v1.3 的 Prompt、Mask、View、Evidence、Candidate 或 Native Selection 语义。
 
@@ -78,13 +78,12 @@ Gallery 是 Navigator，不是独立工作阶段。Anchor View、Generated View 
 └──────────────┴──────────────────────────┴─────────────────┘
 ```
 
-- Navigator 的实现起始范围为 `190–238px`。
-- Inspector 的实现起始范围为 `280–350px`。
-- Work Area 不无条件占用全部剩余宽度。图像高度、权威 RGB 宽高比和侧栏约束共同决定理想宽度。
+- Navigator 保持在 `240–280px`，只满足单列缩略图和状态文本的可读性。
+- Inspector 保持在 `280–320px`，信息分组始终纵向排列。
+- Work Area 占用侧栏之外的全部剩余宽度；图像高度和权威 RGB 宽高比共同决定图像的实际显示宽度。
 - 图像继续使用 contain 语义：完整显示、等比缩放、居中，不使用 crop 或 stretch 消除空白。
 - Dock 使用完整容器宽度，不在最大化窗口中居中保留固定舞台外边距。
-- 多余横向空间优先分配给 Navigator 和 Inspector 的有效内容；宽于约 `1600px` 时，Navigator 卡片和 Inspector 分组可使用多列，而不扩大无信息的图像字母箱区域。
-- 宽于约 `1600px` 时采用 `20% Navigator / 55% Work Area / 25% Inspector` 的职责比例；Work Area 保持最大份额，Navigator 小于 Inspector。
+- 多余横向空间优先分配给 Work Area。宽屏不放大稀疏侧栏，也不把 Navigator 卡片或 Inspector 分组改成多列。
 - 精确阈值由容器尺寸和浏览器走查校准，不以浏览器窗口宽度代替 Dock 实际宽度。
 
 ### 响应式退化
@@ -95,7 +94,7 @@ Gallery 是 Navigator，不是独立工作阶段。Anchor View、Generated View 
 2. 中：Navigator 和 Work Area 常驻；Inspector 折叠。
 3. 窄：Work Area 常驻；Navigator 和 Inspector 均可折叠。
 
-折叠侧栏展开时推挤 Work Area，不覆盖图像。`Esc`、关闭按钮或再次点击触发按钮均可收起侧栏。收起后焦点返回触发按钮；当前 View、草稿和各区域滚动位置保持不变。
+折叠侧栏展开时推挤 Work Area，不覆盖图像。展开状态的折叠入口位于对应侧栏标题行；收起后，Work Area 相邻边缘显示恢复入口。顶栏不放置脱离侧栏上下文的开关。`Esc`、关闭按钮或再次点击触发按钮均可收起侧栏。收起后焦点返回可见的恢复入口；当前 View、草稿和各区域滚动位置保持不变。
 
 约 `1024px` 宽时 Navigator 必须常驻。Navigator 仅在低于目标支持范围的窄宽条件下折叠。
 
@@ -151,6 +150,8 @@ AI Select · Available    Candidate stale · 4 Included    Update 3D Candidate
 - Participation；
 - `Editing` 草稿标记；
 - 阻止继续工作的错误。
+
+卡片始终按单列列表排列，并保证卡片最小高度完整容纳缩略图、名称和状态。宽屏不会切换为多列卡片网格。
 
 Participation 开关只存在于 Navigator 卡片。Inspector 只显示 Participation 结果和不可 Include 的原因。
 
@@ -237,6 +238,8 @@ Inspector 只承载当前 View 的解释和次级操作：
 - Prompt、Stable Mask 和 Editing Mask 状态；
 - Retry、Refresh、Inspect Camera 等低频或恢复操作；重置为自动 Mask 留在浮动工具栏；
 - 默认折叠的 technical details。
+
+Inspector 的信息分组按内容自然收紧并保持单列；额外窗口宽度归还 Work Area，不为稀疏状态制造第二列或扩大侧栏。
 
 Inspector 不重复 View Action Bar 的主操作，也不提供第二个 Participation 开关。
 

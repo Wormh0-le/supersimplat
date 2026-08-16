@@ -58,12 +58,10 @@ supported application entry points or a Candidate that cannot be applied.
 
 - [ ] Wide Dock renders View Navigator, Selected AI View Work Area and Current
       View Inspector as three columns under one compact top bar.
-- [ ] Below the spacious breakpoint, Navigator remains within `190–238px` and
-      Inspector within `280–350px`. At approximately `1600px` and above, the
-      layout uses `20% Navigator / 55% Work Area / 25% Inspector`; the Work
-      Area retains the largest share while useful sidebar content can form
-      multiple columns. Authoritative RGB aspect and available height still
-      determine the image width.
+- [ ] Navigator remains within `240–280px` and Inspector within `280–320px`
+      at every three-column width. Navigator cards and Inspector groups remain
+      single-column; surplus width belongs to the Work Area. Authoritative RGB
+      aspect and available height still determine the rendered image width.
 - [ ] RGB/Mask uses complete, centered, aspect-preserving contain semantics;
       it is never cropped or stretched merely to fill the Work Area.
 - [ ] At approximately `1280×720`, all three columns are available. At
@@ -71,8 +69,11 @@ supported application entry points or a Candidate that cannot be applied.
       Inspector may collapse. Below the supported narrow threshold, Work Area
       remains resident and either sidebar may collapse.
 - [ ] Expanded sidebars push rather than cover the Work Area. Escape, close or
-      the trigger collapses them, returns focus to the trigger and preserves the
-      current View, drafts and per-region scroll positions.
+      the trigger collapses them, returns focus to the visible edge trigger and
+      preserves the current View, drafts and per-region scroll positions.
+      Expanded collapse controls live in their own sidebar headers; collapsed
+      reveal controls live on the adjacent Work Area edge, never in the Dock's
+      global top bar.
 - [ ] Dock defaults to `420px` high, clamps to a `300px` minimum and the main
       editor height minus `160px` maximum, and saves user-resized height only as
       a device/editor preference.

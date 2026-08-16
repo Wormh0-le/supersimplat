@@ -352,6 +352,85 @@ export class MaskAnnotationRegistry {
     }
 
     /**
+     * Import a user-confirmed staged Mask under the live View identity. The
+     * source annotation stays draft-local; only the immutable artifact and
+     * authority cross the atomic changed-Anchor cutover.
+     */
+    replaceStableFromAdjustment(
+        viewId: string,
+        rgbDigest: string,
+        source: MaskAnnotation
+    ): MaskAnnotation {
+        assertDigestBoundArtifact(source.artifact);
+        if (
+            source.status !== 'user-confirmed' ||
+            source.createdFromRgbDigest !== rgbDigest
+        ) {
+            throw new Error(
+                'AI Select requires a confirmed draft Mask bound to the staged RGB.'
+            );
+        }
+        const view = this.requireView(viewId);
+        const previousStable = view.stableMaskId;
+        const stable = copyAnnotation({
+            maskId: this.mintMaskId(),
+            viewId,
+            source: source.source,
+            status: 'user-confirmed',
+            artifact: source.artifact,
+            ...(source.prompts === undefined
+                ? {}
+                : { prompts: source.prompts }),
+            ...(previousStable === null
+                ? {}
+                : { parentMaskId: previousStable }),
+            createdFromRgbDigest: rgbDigest
+        });
+        view.versions.set(stable.maskId, stable);
+        view.stableMaskId = stable.maskId;
+        view.editingMaskId = null;
+        return stable;
+    }
+
+    /** Begin correction from Stable pixels without replacing Stable authority. */
+    beginEditingFromStable(viewId: string, rgbDigest: string): MaskAnnotation {
+        const view = this.requireView(viewId);
+        const currentEditing = this.currentAnnotation(
+            view,
+            view.editingMaskId,
+            rgbDigest
+        );
+        if (currentEditing !== null) {
+            return currentEditing;
+        }
+        const stable = this.currentAnnotation(
+            view,
+            view.stableMaskId,
+            rgbDigest
+        );
+        if (stable === null) {
+            throw new Error(
+                'AI Select requires a current Stable Mask before correction.'
+            );
+        }
+        const editing = copyAnnotation({
+            maskId: this.mintMaskId(),
+            viewId,
+            source: stable.source,
+            status: 'draft',
+            artifact: stable.artifact,
+            ...(stable.prompts === undefined
+                ? {}
+                : { prompts: stable.prompts }),
+            parentMaskId: stable.maskId,
+            createdFromRgbDigest: rgbDigest
+        });
+        view.versions.set(editing.maskId, editing);
+        view.editingMaskId = editing.maskId;
+        return editing;
+    }
+
+    /**
      * Clear replaces the Editing Mask with an empty manual draft chained from
      * the current one. It never touches the Stable Mask, and the replaced
      * draft stays retained for Undo or Restore Auto.

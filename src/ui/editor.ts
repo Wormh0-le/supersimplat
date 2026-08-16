@@ -44,6 +44,7 @@ class EditorUI {
     canvasContainer: Container;
     aiSelectPanel: Container;
     statusBar: StatusBar;
+    tooltips: Tooltips;
     toolsContainer: Container;
     canvas: HTMLCanvasElement;
     popup: Popup;
@@ -100,6 +101,7 @@ class EditorUI {
 
         // tooltips
         const tooltips = new Tooltips();
+        this.tooltips = tooltips;
         tooltipsContainer.append(tooltips);
 
         // bottom toolbar

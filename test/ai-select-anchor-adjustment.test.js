@@ -147,6 +147,33 @@ const createAnchor = () => {
         },
         acceptsAnchorAdjustmentMaskResponse() {
             return false;
+        },
+        createAnchorAdjustmentSupportProbeRequest(
+            draft,
+            stableMask,
+            supportProbeAttemptId
+        ) {
+            return Object.freeze({
+                requestBinding: draft.requestBinding,
+                target: Object.freeze({ splatId: 'editor-splat:1' }),
+                snapshot: Object.freeze({ fixture: true }),
+                sceneId: 'editor-splat:1',
+                sceneVersion: 'snapshot-v1',
+                viewId: 'anchor-adjustment-draft',
+                supportProbeAttemptId,
+                cameraBinding: draft.cameraBinding,
+                rgbDigest: draft.rgb.digest,
+                stableMask,
+                supportProbePolicyVersion: 'anchor-support-probe/v1'
+            });
+        },
+        acceptsAnchorAdjustmentSupportProbeResponse(response, request) {
+            return (
+                response.supportProbeAttemptId ===
+                    request.supportProbeAttemptId &&
+                response.rgbDigest === request.rgbDigest &&
+                response.stableMaskDigest === request.stableMask.digest
+            );
         }
     };
 };
@@ -171,6 +198,8 @@ const renderResult = (binding, suffix = 'c') =>
 const createHarness = () => {
     const anchor = createAnchor();
     const confirmation = createConfirmation();
+    const probes = [];
+    const commits = [];
     const adjustment = new AISelectAnchorAdjustmentController({
         anchor,
         confirmation,
@@ -180,10 +209,51 @@ const createHarness = () => {
                     'Mask inference is not needed by this fixture.'
                 );
             }
+        },
+        supportProbe: {
+            probeAnchorSupport: (request) => {
+                const gate = deferred();
+                probes.push({ request, gate });
+                return gate.promise;
+            }
+        },
+        commitDraft: (input) => {
+            commits.push(input);
+            const baseline = confirmation.state.confirmedAnchor;
+            const replacement = Object.freeze({
+                ...baseline,
+                contextRevision: baseline.contextRevision + 1,
+                cameraBinding: input.render.cameraBinding,
+                rgbDigest: input.render.rgb.digest,
+                stableMask: input.stableMask
+            });
+            confirmation.replace(replacement);
+            return replacement;
         }
     });
-    return { anchor, confirmation, adjustment };
+    return { anchor, confirmation, adjustment, probes, commits };
 };
+
+const supportResponse = (
+    request,
+    support = {
+        computable: true,
+        observedGaussianCount: 512
+    }
+) =>
+    Object.freeze({
+        requestBinding: request.requestBinding,
+        targetSplatId: request.target.splatId,
+        sceneId: request.sceneId,
+        sceneVersion: request.sceneVersion,
+        viewId: request.viewId,
+        supportProbeAttemptId: request.supportProbeAttemptId,
+        cameraBinding: request.cameraBinding,
+        rgbDigest: request.rgbDigest,
+        stableMaskDigest: request.stableMask.digest,
+        supportProbePolicyVersion: request.supportProbePolicyVersion,
+        support
+    });
 
 test('entering and canceling Anchor adjustment preserves the confirmed run', () => {
     const { anchor, confirmation, adjustment } = createHarness();
@@ -297,4 +367,136 @@ test('target identity rotation discards only the staged adjustment draft', async
         confirmation.state.confirmedAnchor.targetContextId,
         'target-context-1'
     );
+});
+
+test('changed-Anchor confirmation keeps the old run until fresh draft Mask validation succeeds', async () => {
+    const { anchor, confirmation, adjustment, probes, commits } =
+        createHarness();
+    const original = confirmation.state.confirmedAnchor;
+
+    adjustment.beginAdjustment();
+    adjustment.updateAdjustmentPose(cameraBinding(11).cameraToWorld);
+    const rendered = adjustment.confirmAdjustmentPose();
+    anchor.renders[0].gate.resolve(renderResult(anchor.renders[0].binding));
+    assert.equal(await rendered, 'staged');
+    adjustment.mask.clearEditingMask();
+    adjustment.mask.applyBrushStroke({
+        mode: 'add',
+        radiusPx: 12,
+        xPx: 20,
+        yPx: 20
+    });
+
+    const confirming = adjustment.confirmAdjustment();
+    assert.equal(probes.length, 1);
+    assert.equal(commits.length, 0);
+    assert.equal(confirmation.state.confirmedAnchor, original);
+    assert.equal(adjustment.mask.state.stableMask.status, 'user-confirmed');
+
+    probes[0].gate.resolve(supportResponse(probes[0].request));
+    const replacement = await confirming;
+
+    assert.equal(commits.length, 1);
+    assert.equal(replacement.rgbDigest, digest('c'));
+    assert.equal(replacement.contextRevision, 8);
+    assert.equal(confirmation.state.confirmedAnchor, replacement);
+    assert.equal(adjustment.state.draft, null);
+});
+
+test('failed changed-Anchor validation retains the old run and the complete retryable draft', async () => {
+    const { anchor, confirmation, adjustment, probes, commits } =
+        createHarness();
+    const original = confirmation.state.confirmedAnchor;
+
+    adjustment.beginAdjustment();
+    adjustment.updateAdjustmentPose(cameraBinding(12).cameraToWorld);
+    const rendered = adjustment.confirmAdjustmentPose();
+    anchor.renders[0].gate.resolve(renderResult(anchor.renders[0].binding));
+    await rendered;
+    adjustment.mask.clearEditingMask();
+    adjustment.mask.applyBrushStroke({
+        mode: 'add',
+        radiusPx: 12,
+        xPx: 20,
+        yPx: 20
+    });
+    const confirming = adjustment.confirmAdjustment();
+    probes[0].gate.resolve(
+        supportResponse(probes[0].request, {
+            computable: false,
+            observedGaussianCount: 0
+        })
+    );
+
+    await assert.rejects(confirming, /no-computable-gaussian-support/);
+    assert.equal(commits.length, 0);
+    assert.equal(confirmation.state.confirmedAnchor, original);
+    assert.equal(adjustment.state.draft.renderStatus, 'ready');
+    assert.equal(adjustment.mask.state.stableMask.status, 'user-confirmed');
+    assert.equal(adjustment.state.confirmationStatus, 'failed');
+});
+
+test('canceling a changed-Anchor confirmation makes its late validation response inert', async () => {
+    const { anchor, confirmation, adjustment, probes, commits } =
+        createHarness();
+    const original = confirmation.state.confirmedAnchor;
+
+    adjustment.beginAdjustment();
+    adjustment.updateAdjustmentPose(cameraBinding(13).cameraToWorld);
+    const rendered = adjustment.confirmAdjustmentPose();
+    anchor.renders[0].gate.resolve(renderResult(anchor.renders[0].binding));
+    await rendered;
+    adjustment.mask.clearEditingMask();
+    adjustment.mask.applyBrushStroke({
+        mode: 'add',
+        radiusPx: 12,
+        xPx: 20,
+        yPx: 20
+    });
+    const confirming = adjustment.confirmAdjustment();
+    adjustment.cancelAdjustment();
+    probes[0].gate.resolve(supportResponse(probes[0].request));
+
+    assert.equal(await confirming, null);
+    assert.equal(commits.length, 0);
+    assert.equal(confirmation.state.confirmedAnchor, original);
+    assert.equal(adjustment.state.draft, null);
+});
+
+test('editing the draft during changed-Anchor validation retires the late probe', async () => {
+    const { anchor, confirmation, adjustment, probes, commits } =
+        createHarness();
+    const original = confirmation.state.confirmedAnchor;
+
+    adjustment.beginAdjustment();
+    adjustment.updateAdjustmentPose(cameraBinding(14).cameraToWorld);
+    const rendered = adjustment.confirmAdjustmentPose();
+    anchor.renders[0].gate.resolve(renderResult(anchor.renders[0].binding));
+    await rendered;
+    adjustment.mask.clearEditingMask();
+    adjustment.mask.applyBrushStroke({
+        mode: 'add',
+        radiusPx: 12,
+        xPx: 20,
+        yPx: 20
+    });
+    const confirming = adjustment.confirmAdjustment();
+    assert.equal(probes.length, 1);
+
+    adjustment.mask.beginCorrectionFromStable();
+    adjustment.mask.applyBrushStroke({
+        mode: 'add',
+        radiusPx: 5,
+        xPx: 28,
+        yPx: 24
+    });
+    assert.equal(adjustment.state.confirmationStatus, 'failed');
+    probes[0].gate.resolve(supportResponse(probes[0].request));
+
+    assert.equal(await confirming, null);
+    assert.equal(commits.length, 0);
+    assert.equal(confirmation.state.confirmedAnchor, original);
+    assert.ok(adjustment.state.draft);
+    assert.ok(adjustment.mask.state.editingMask);
+    assert.equal(adjustment.mask.state.hasUnconfirmedChanges, true);
 });

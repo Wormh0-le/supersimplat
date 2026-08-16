@@ -6,12 +6,14 @@ import {
 } from './ai-select-floating-palette';
 import { i18n } from './localization';
 import confirmSvg from './svg/ai-select-confirm.svg';
+import reLiftSvg from './svg/ai-select-re-lift.svg';
 import arrowSvg from './svg/arrow.svg';
 import cameraResetSvg from './svg/camera-reset.svg';
 import collapseSvg from './svg/collapse.svg';
 import hiddenSvg from './svg/hidden.svg';
 import pinSvg from './svg/pin.svg';
 import redoSvg from './svg/redo.svg';
+import type { Tooltips } from './tooltips';
 import {
     AI_VIEW_DOCK_DEFAULT_PREFERENCES,
     AI_VIEW_INSPECTOR_MAXIMUM_WIDTH_PX,
@@ -28,6 +30,10 @@ import {
     setAIViewDockSidebarExpanded,
     resolveAIViewWorkAreaWidth
 } from '../ai-select/ai-view-dock-layout';
+import type {
+    AISelectAnchorAdjustmentController,
+    AISelectAnchorAdjustmentState
+} from '../ai-select/anchor-adjustment';
 import {
     type AISelectAnchorConfirmationController,
     type AISelectAnchorConfirmationState
@@ -51,10 +57,7 @@ import {
     type AISelectCandidateCorrectionController,
     type CandidateCorrectionState
 } from '../ai-select/candidate-correction';
-import type {
-    CandidatePresentation,
-    CandidatePresentationCoordinator
-} from '../ai-select/candidate-presentation';
+import type { CandidatePresentationCoordinator } from '../ai-select/candidate-presentation';
 import {
     PALETTE_TOOLS,
     paletteToolForShortcutKey,
@@ -83,6 +86,10 @@ import {
     mapClientPointToImagePixel,
     type ImagePixel
 } from '../ai-select/image-viewport';
+import type {
+    LiftReadinessState,
+    LiftReadinessStore
+} from '../ai-select/lift-readiness';
 import { decodeMaskArtifact } from '../ai-select/mask-annotation';
 import {
     type AISelectMaskAuthoring,
@@ -98,13 +105,18 @@ import { promptToolCapabilityReason } from '../ai-select/prompt-state';
 import { createThumbnailCache } from '../ai-select/thumbnail-cache';
 import type { AISelectUserViewMaskController } from '../ai-select/user-view-mask-controller';
 import { viewInspectorPresentation } from '../ai-select/view-inspector-presentation';
+import {
+    mapWorkAreaActions,
+    type WorkAreaActionPresentation
+} from '../ai-select/work-area-presentation';
 import type {
     SelectionServiceReadinessInterface,
     SelectionServiceReadinessStatus
 } from '../selection-service-readiness';
 export interface AISelectAnchorDockOptions<TCandidatePayload = unknown> {
-    readonly onValidate: () => Promise<void>;
     readonly onConfirmAnchor: () => Promise<void>;
+    readonly onConfirmAnchorAdjustment: () => Promise<void>;
+    readonly anchorAdjustment: AISelectAnchorAdjustmentController;
     readonly generatedViews: AISelectGeneratedViewController;
     readonly candidateCorrection: AISelectCandidateCorrectionController<TCandidatePayload>;
     readonly candidatePresentation: CandidatePresentationCoordinator;
@@ -112,6 +124,8 @@ export interface AISelectAnchorDockOptions<TCandidatePayload = unknown> {
     readonly userViewMasks: AISelectUserViewMaskController;
     readonly onInspectCamera: (viewId: string | null) => void;
     readonly readiness: SelectionServiceReadinessInterface;
+    readonly liftReadiness: LiftReadinessStore;
+    readonly tooltips: Tooltips;
 }
 
 interface GeneratedCardElements {
@@ -261,22 +275,18 @@ const downscaleCardThumbnail = (
 export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly mask: AISelectMaskController;
     private readonly confirmation: AISelectAnchorConfirmationController;
+    private readonly anchorAdjustment: AISelectAnchorAdjustmentController;
     private readonly generatedViews: AISelectGeneratedViewController;
     private readonly maskRegistry: MaskAnnotationRegistry;
     private readonly userViewMasks: AISelectUserViewMaskController;
     private readonly onInspectCamera: (viewId: string | null) => void;
     private readonly status: Label;
-    private readonly includedViewCount: Label;
-    private readonly availabilityDot: HTMLSpanElement;
-    private readonly availabilityLabel: Label;
     private availabilityStatus: SelectionServiceReadinessStatus;
     private readonly maskStatus: Label;
     private readonly promptStatus: Label;
-    private readonly candidateStatus: Label;
-    private readonly candidateActions: Container;
-    private readonly fixCandidateButton: Button;
-    private readonly updateCandidateButton: Button;
-    private readonly backToCandidateButton: Button;
+    private liftReadinessState: LiftReadinessState;
+    private readonly workAreaControls: Container;
+    private readonly reLiftButton: Button;
     private readonly imageViewport: HTMLDivElement;
     private readonly workCanvasRow: Container;
     private readonly imageSurface: HTMLDivElement;
@@ -284,14 +294,11 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly overlay: HTMLCanvasElement;
     private readonly technicalDetails: HTMLDetailsElement;
     private readonly technicalDetailsBody: HTMLPreElement;
-    private readonly primaryActions: Container;
+    private readonly canvasStateActions: Container;
     private readonly maskActions: Container;
     private readonly palette: AISelectFloatingPalette;
     private readonly boxPreview: HTMLDivElement;
     private readonly retryMaskButton: Button;
-    private readonly anchorActions: Container;
-    private readonly validateButton: Button;
-    private readonly confirmAnchorButton: Button;
     private readonly validationStatus: Label;
     private readonly selectedViewPrimaryButton: Button;
     private selectedViewPrimaryAction: 'retry-mask' | 'next-review' | null =
@@ -322,9 +329,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private state: AISelectAnchorState = { context: null, anchor: null };
     private maskState: AISelectMaskState;
     private confirmationState: AISelectAnchorConfirmationState;
+    private anchorAdjustmentState: AISelectAnchorAdjustmentState;
     private generatedState: AISelectGeneratedViewState;
     private candidateCorrectionState: CandidateCorrectionState;
-    private candidatePresentation: CandidatePresentation;
     private dragStart: { x: number; y: number } | null = null;
     private gestureStartPixel: ImagePixel | null = null;
     private lastStrokePixel: ImagePixel | null = null;
@@ -348,14 +355,16 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         });
         this.mask = mask;
         this.confirmation = confirmation;
+        this.anchorAdjustment = options.anchorAdjustment;
         this.generatedViews = options.generatedViews;
         this.candidateCorrectionState = options.candidateCorrection.state;
-        this.candidatePresentation = options.candidatePresentation.state;
+        this.liftReadinessState = options.liftReadiness.presentationState;
         this.maskRegistry = options.maskRegistry;
         this.userViewMasks = options.userViewMasks;
         this.onInspectCamera = options.onInspectCamera;
         this.maskState = mask.state;
         this.confirmationState = confirmation.state;
+        this.anchorAdjustmentState = options.anchorAdjustment.state;
         this.generatedState = options.generatedViews.state;
         this.dom.addEventListener('pointerdown', (event) =>
             event.stopPropagation()
@@ -376,31 +385,13 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         });
         window.addEventListener('blur', () => this.setSpaceHeld(false));
 
-        const title = new Label({ id: 'ai-select-anchor-dock-title' });
-        i18n.bindText(title, 'ai-select.panel.title');
-        this.status = new Label({ id: 'ai-select-anchor-dock-status' });
-        this.includedViewCount = new Label({
-            id: 'ai-select-anchor-dock-included-count'
-        });
-
-        // The panel mirrors the 02C three-state Availability projection so
-        // the user can see why Prompt tools are gated without opening
-        // Settings; no technical or model detail is shown.
-        const availability = new Container({
-            id: 'ai-select-anchor-dock-availability'
-        });
-        this.availabilityDot = document.createElement('span');
-        availability.dom.appendChild(this.availabilityDot);
-        this.availabilityLabel = new Label({
-            id: 'ai-select-anchor-dock-availability-label'
-        });
-        availability.append(this.availabilityLabel);
-        availability.dom.setAttribute('role', 'status');
-        availability.dom.setAttribute('aria-live', 'polite');
+        this.status = new Label({ id: 'ai-select-work-canvas-state' });
+        this.status.dom.setAttribute('role', 'status');
+        this.status.dom.setAttribute('aria-live', 'polite');
         this.availabilityStatus = options.readiness.state.status;
         options.readiness.subscribe((readinessState) => {
             this.availabilityStatus = readinessState.status;
-            this.renderAvailability();
+            this.render();
         });
 
         this.imageViewport = document.createElement('div');
@@ -467,51 +458,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             id: 'ai-select-anchor-dock-prompt-status',
             hidden: true
         });
-        this.candidateStatus = new Label({
-            id: 'ai-select-anchor-dock-candidate-status',
-            hidden: true
-        });
-        this.candidateActions = new Container({
-            id: 'ai-select-candidate-actions',
-            hidden: true
-        });
-        this.fixCandidateButton = new Button({
-            id: 'ai-select-fix-candidate'
-        });
-        this.updateCandidateButton = new Button({
-            id: 'ai-select-update-candidate'
-        });
-        this.backToCandidateButton = new Button({
-            id: 'ai-select-back-to-candidate',
-            hidden: true
-        });
-        i18n.bindText(
-            this.fixCandidateButton,
-            'ai-select.candidate.fix-result'
-        );
-        i18n.bindText(this.updateCandidateButton, 'ai-select.candidate.update');
-        i18n.bindText(
-            this.backToCandidateButton,
-            'ai-select.candidate.back-to-candidate'
-        );
-        this.fixCandidateButton.on('click', () => {
-            try {
-                options.candidateCorrection.beginCorrection();
-            } catch (error) {
-                console.error(error);
-            }
-        });
-        this.updateCandidateButton.on('click', () => {
-            options.candidateCorrection
-                .updateCandidate()
-                .catch((error) => console.error(error));
-        });
-        this.backToCandidateButton.on('click', () => {
-            options.candidateCorrection.backToCandidate();
-        });
-        this.candidateActions.append(this.fixCandidateButton);
-        this.candidateActions.append(this.updateCandidateButton);
-        this.candidateActions.append(this.backToCandidateButton);
         this.technicalDetails = document.createElement('details');
         this.technicalDetails.id = 'ai-select-anchor-technical-details';
         const technicalSummary = document.createElement('summary');
@@ -574,7 +520,29 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 }
             },
             onConfirmMask: () => {
-                this.runPaletteConfirmAction(options.onConfirmAnchor);
+                this.runPaletteConfirmAction(
+                    options.onConfirmAnchor,
+                    options.onConfirmAnchorAdjustment
+                );
+            },
+            onContextAction: () => {
+                const action = this.workAreaActions().palette.context;
+                try {
+                    if (action === 'enter-correction') {
+                        const authoring = this.authoring();
+                        options.candidateCorrection.beginCorrection();
+                        try {
+                            authoring?.ops.beginCorrectionFromStable();
+                        } catch (error) {
+                            options.candidateCorrection.backToCandidate();
+                            throw error;
+                        }
+                    } else if (action === 'back-to-candidate') {
+                        options.candidateCorrection.backToCandidate();
+                    }
+                } catch (error) {
+                    console.error(error);
+                }
             },
             onRestoreAutoMask: () => {
                 try {
@@ -597,26 +565,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         });
         this.maskActions.append(this.retryMaskButton);
 
-        this.anchorActions = new Container({
-            id: 'ai-select-anchor-dock-anchor-actions',
-            hidden: true
-        });
-        this.validateButton = new Button({
-            id: 'ai-select-anchor-dock-validate'
-        });
-        this.confirmAnchorButton = new Button({
-            id: 'ai-select-anchor-dock-confirm-anchor'
-        });
-        i18n.bindText(this.validateButton, 'ai-select.anchor.validate');
-        i18n.bindText(this.confirmAnchorButton, 'ai-select.anchor.confirm');
-        this.validateButton.on('click', () => {
-            options.onValidate().catch((error) => console.error(error));
-        });
-        this.confirmAnchorButton.on('click', () => {
-            options.onConfirmAnchor().catch((error) => console.error(error));
-        });
-        this.anchorActions.append(this.validateButton);
-        this.anchorActions.append(this.confirmAnchorButton);
         this.validationStatus = new Label({
             id: 'ai-select-anchor-dock-validation-status',
             hidden: true
@@ -810,14 +758,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.anchorCard = this.createCard(() => this.selectGeneratedView(null));
         this.galleryCards.append(this.anchorCard.root);
 
-        const header = new Container({ id: 'ai-select-anchor-dock-header' });
-        header.append(title);
-        header.append(availability);
-        header.append(this.includedViewCount);
-        header.append(this.candidateStatus);
-        header.append(this.candidateActions);
-        this.append(header);
-
         const mainRow = new Container({ id: 'ai-select-anchor-dock-main' });
         const navigator = new Container({
             id: 'ai-select-view-navigator'
@@ -861,9 +801,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         navigatorHeader.append(navigatorCollapse);
         const workArea = new Container({
             id: 'ai-select-view-work-area'
-        });
-        const workHeader = new Container({
-            id: 'ai-select-view-work-header'
         });
         const inspector = new Container({
             id: 'ai-select-view-inspector'
@@ -961,19 +898,20 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.inspectorInformation.append(assessmentGroup);
         this.inspectorInformation.append(maskGroup);
         this.inspectorInformation.append(technicalGroup);
-        this.primaryActions = new Container({
-            id: 'ai-select-anchor-dock-primary-actions',
+        this.canvasStateActions = new Container({
+            id: 'ai-select-work-canvas-actions',
             hidden: true
         });
-        this.primaryActions.append(this.selectedViewPrimaryButton);
-        this.primaryActions.append(this.anchorActions);
-        this.primaryActions.append(this.maskActions);
+        this.canvasStateActions.append(this.selectedViewPrimaryButton);
+        this.canvasStateActions.append(this.maskActions);
         navigator.append(navigatorHeader);
         navigator.append(this.gallery);
         this.workCanvasRow = new Container({
             id: 'ai-select-view-work-canvas-row'
         });
         this.workCanvasRow.dom.appendChild(this.imageViewport);
+        this.workCanvasRow.append(this.status);
+        this.workCanvasRow.append(this.canvasStateActions);
         imageResizeObserver.observe(this.workCanvasRow.dom);
         const resetFitButton = new Button({
             id: 'ai-select-view-reset-fit'
@@ -984,13 +922,34 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.imageZoom = { mode: 'auto' };
             this.updateImageSurfaceRect();
         });
-        workHeader.append(this.status);
-        workHeader.append(resetFitButton);
+        this.reLiftButton = new Button({
+            id: 'ai-select-work-area-re-lift'
+        });
+        setSvgButtonIcon(
+            this.reLiftButton,
+            reLiftSvg,
+            i18n.t('ai-select.candidate.update'),
+            'ai-select-re-lift-glyph'
+        );
+        this.reLiftButton.on('click', () => {
+            options.candidateCorrection
+                .updateCandidate()
+                .catch((error) => console.error(error));
+        });
+        options.tooltips.register(
+            this.reLiftButton,
+            () => this.reLiftDescription(),
+            'bottom'
+        );
+        this.workAreaControls = new Container({
+            id: 'ai-select-work-area-controls'
+        });
+        this.workAreaControls.append(resetFitButton);
+        this.workAreaControls.append(this.reLiftButton);
         workArea.append(navigatorReveal);
         workArea.append(inspectorReveal);
-        workArea.append(workHeader);
+        workArea.append(this.workAreaControls);
         workArea.append(this.workCanvasRow);
-        workArea.append(this.primaryActions);
         inspector.append(inspectorHeader);
         inspector.append(this.inspectorInformation);
         const navigatorResizeHandle = document.createElement('div');
@@ -1289,6 +1248,11 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.confirmationState = confirmationState;
             this.render();
         });
+        options.anchorAdjustment.subscribe((state) => {
+            this.anchorAdjustmentState = state;
+            this.cancelPointerGesture();
+            this.render();
+        });
         options.generatedViews.subscribe((generatedState) => {
             if (
                 generatedState.selectedViewId !==
@@ -1302,12 +1266,13 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.render();
         });
         options.userViewMasks.subscribe(() => this.render());
-        options.candidatePresentation.subscribe((candidatePresentation) => {
-            this.candidatePresentation = candidatePresentation;
-            this.renderCandidateStatus();
-        });
+        options.candidatePresentation.subscribe(() => this.render());
         options.candidateCorrection.subscribe((correctionState) => {
             this.candidateCorrectionState = correctionState;
+            this.render();
+        });
+        options.liftReadiness.subscribe((state) => {
+            this.liftReadinessState = state;
             this.render();
         });
         i18n.onChange(() => {
@@ -1318,6 +1283,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             setSvgButtonLabel(
                 resetFitButton,
                 i18n.t('ai-select.dock.reset-fit')
+            );
+            setSvgButtonLabel(
+                this.reLiftButton,
+                i18n.t('ai-select.candidate.update')
             );
             this.filterPopover.dom.setAttribute(
                 'aria-label',
@@ -1334,13 +1303,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             renderColumns();
             this.render();
         }, this);
-    }
-
-    private renderAvailability(): void {
-        this.availabilityDot.className = `ai-select-availability-dot availability-${this.availabilityStatus}`;
-        this.availabilityLabel.text = i18n.t(
-            `ai-select.availability.${this.availabilityStatus}`
-        );
     }
 
     /** The Gallery-selected Generated View under read-only inspection. */
@@ -1362,15 +1324,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.generatedState.views
         ).filter((entry) => galleryViewRole(entry.source) === role);
         const ordinal = Math.max(1, sameRoleViews.indexOf(view) + 1);
-        const roleKey =
-            role === 'user-added'
-                ? 'ai-select.views.role.user-added'
-                : 'ai-select.views.generated';
-        const name = `${i18n.t(roleKey)} ${i18n.formatInteger(ordinal)}`;
-        const assessment = i18n.t(
-            `ai-select.review.quality.${view.maskQuality}`
-        );
-        this.status.text = `${name} · ${i18n.t(roleKey)} · ${assessment}`;
         const card = galleryCardPresentation(view, ordinal);
         const rgbDigest = view.rgb?.digest;
         const currentMasks = this.maskRegistry.viewState(
@@ -1428,12 +1381,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         statusKey: string
     ): void {
         const hasStableMask = this.maskState.stableMask !== null;
-        const assessment = i18n.t(
-            hasStableMask
-                ? 'ai-select.review.quality.user-confirmed'
-                : 'ai-select.review.quality.none'
-        );
-        this.status.text = `${i18n.t('ai-select.anchor.current-view')} · ${assessment} · ${i18n.t(statusKey)}`;
+        this.status.text = i18n.t(statusKey);
         this.renderInspectorPresentation({
             viewId: this.maskState.viewId,
             ...(presentation.rgb === undefined
@@ -1558,15 +1506,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     }
 
     private render(): void {
-        this.renderAvailability();
-        this.renderCandidateStatus();
-        const includedViews =
-            this.generatedState.views.filter(
-                (view) => view.participation === 'included'
-            ).length + (this.maskState.stableMask === null ? 0 : 1);
-        this.includedViewCount.text = `${i18n.formatInteger(
-            includedViews
-        )} ${i18n.t('ai-select.views.included-count')}`;
+        this.renderWorkAreaActions();
         const presentation = getAnchorDockPresentation(
             this.state,
             this.maskState
@@ -1602,8 +1542,15 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.imageSurface.hidden = true;
             this.overlay.hidden = true;
             this.status.text = i18n.t('ai-select.views.filter-empty');
-            this.primaryActions.hidden = true;
+            this.status.hidden = false;
+            this.canvasStateActions.hidden = true;
             this.renderGallery(presentation);
+            return;
+        }
+        if (this.anchorAdjustmentState.draft !== null) {
+            this.renderAnchorAdjustmentDraft();
+            this.renderGallery(presentation);
+            this.renderCanvasStateActionsVisibility();
             return;
         }
         const inspected = this.inspectedGeneratedView();
@@ -1616,7 +1563,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             }
             this.renderSelectedViewMetadata(inspected);
             this.renderGallery(presentation);
-            this.renderPrimaryActionsVisibility();
+            this.renderCanvasStateActionsVisibility();
             return;
         }
         if (presentation.rgb) {
@@ -1625,6 +1572,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.image.src = `data:image/png;base64,${presentation.rgb.pngBase64}`;
             this.image.hidden = false;
             this.imageSurface.hidden = false;
+            this.status.hidden = true;
             this.updateImageSurfaceRect(
                 presentation.rgb.width,
                 presentation.rgb.height
@@ -1632,6 +1580,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         } else {
             this.image.hidden = true;
             this.imageSurface.hidden = true;
+            this.status.hidden = false;
         }
         const textKey = {
             idle: 'ai-select.panel.idle',
@@ -1650,65 +1599,139 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.renderAnchorMetadata(presentation, textKey);
         this.renderEditingActions();
         this.renderAuthoringTools();
-        this.renderAnchorActions(presentation);
+        this.renderAnchorValidationStatus();
         this.renderCurrentMaskOverlay();
         this.renderGallery(presentation);
-        this.renderPrimaryActionsVisibility();
+        this.renderCanvasStateActionsVisibility();
     }
 
-    private renderCandidateStatus(): void {
-        const presentation = this.candidatePresentation;
-        if (!presentation.inspectable) {
-            this.candidateStatus.hidden =
-                this.candidateCorrectionState.status === 'idle';
-            if (this.candidateCorrectionState.status === 'updating') {
-                this.candidateStatus.text = i18n.t(
-                    'ai-select.candidate.updating'
-                );
-            } else if (this.candidateCorrectionState.status === 'failed') {
-                this.candidateStatus.text = i18n.t(
-                    'ai-select.candidate.update-failed'
-                );
-            }
-            const hasIncludedStableView =
-                this.maskState.stableMask !== null ||
-                this.generatedState.views.some(
-                    (view) =>
-                        view.participation === 'included' &&
-                        view.stableMaskDigest !== undefined
-                );
-            this.candidateActions.hidden = !hasIncludedStableView;
-            this.fixCandidateButton.hidden = true;
-            this.updateCandidateButton.hidden = !hasIncludedStableView;
-            this.backToCandidateButton.hidden = true;
-            this.updateCandidateButton.enabled =
-                this.candidateCorrectionState.status !== 'updating';
+    private renderAnchorAdjustmentDraft(): void {
+        const draft = this.anchorAdjustmentState.draft;
+        const authoring = this.authoring();
+        if (draft === null || authoring === null) {
             return;
         }
-        const lifecycle = presentation.statusBar.lifecycle;
-        const lifecycleText =
-            lifecycle?.startsWith('applied-') &&
-            presentation.dock.applicationOutcome !== null
-                ? `${i18n.t('ai-select.candidate.applied')} ${i18n.t(
-                      `select-toolbar.${presentation.dock.applicationOutcome}`
-                  )}`
-                : i18n.t(`ai-select.candidate.lifecycle.${lifecycle}`);
-        this.candidateStatus.text = `${lifecycleText} · ${i18n.t(
-            'ai-select.candidate.selected'
-        )} ${i18n.formatInteger(presentation.counts.selected)}`;
-        this.candidateStatus.hidden = false;
-        const showFix = presentation.dock.showFixCandidate;
-        const showUpdate = presentation.dock.showUpdateCandidate;
-        const showBack =
-            presentation.dock.showBackToCandidate &&
-            presentation.overlay.treatment === 'current' &&
-            this.candidateCorrectionState.status !== 'failed';
-        this.candidateActions.hidden = !showFix && !showUpdate && !showBack;
-        this.fixCandidateButton.hidden = !showFix;
-        this.updateCandidateButton.hidden = !showUpdate || showBack;
-        this.backToCandidateButton.hidden = !showBack;
-        this.updateCandidateButton.enabled =
-            this.candidateCorrectionState.status !== 'updating';
+        if (draft.rgb !== undefined && draft.renderStatus === 'ready') {
+            this.image.width = draft.rgb.width;
+            this.image.height = draft.rgb.height;
+            this.image.src = `data:image/png;base64,${draft.rgb.pngBase64}`;
+            this.image.hidden = false;
+            this.imageSurface.hidden = false;
+            this.status.hidden = true;
+            this.updateImageSurfaceRect(draft.rgb.width, draft.rgb.height);
+        } else {
+            this.image.hidden = true;
+            this.imageSurface.hidden = true;
+            this.overlay.hidden = true;
+            this.status.hidden = false;
+            this.status.text =
+                draft.renderStatus === 'failed'
+                    ? (draft.errorMessage ?? i18n.t('ai-select.anchor.failed'))
+                    : i18n.t('ai-select.anchor.rendering');
+        }
+        const mask = getViewMaskPresentation(authoring.maskState);
+        this.renderMaskSurface(
+            mask,
+            authoring.maskState,
+            authoring.ready,
+            false
+        );
+        this.renderPromptStatus(mask, authoring.maskState);
+        this.renderEditingActions();
+        this.renderAuthoringTools();
+        this.renderCurrentMaskOverlay();
+        this.renderInspectorPresentation({
+            viewId: authoring.maskState.viewId,
+            ...(draft.rgb === undefined ? {} : { rgbDigest: draft.rgb.digest }),
+            quality:
+                authoring.maskState.stableMask === null
+                    ? 'none'
+                    : 'user-confirmed',
+            participation: 'included',
+            participationToggle: null,
+            actionableIssues: [],
+            maskState: authoring.maskState,
+            technicalErrors: [
+                authoring.maskState.errorMessage,
+                this.anchorAdjustmentState.errorMessage
+            ].filter((entry): entry is string => entry !== undefined)
+        });
+        this.validationStatus.text = [
+            ...(this.anchorAdjustmentState.confirmationStatus === 'validating'
+                ? [i18n.t('ai-select.validation.validating')]
+                : []),
+            ...(this.anchorAdjustmentState.errorMessage === undefined
+                ? []
+                : [this.anchorAdjustmentState.errorMessage])
+        ].join('\n');
+        this.validationStatus.hidden = this.validationStatus.text.length === 0;
+    }
+
+    private workAreaActions(
+        canConfirmMask = false,
+        canConfirmReview = false,
+        anchorNeedsConfirmation = false
+    ): WorkAreaActionPresentation {
+        const generatedIncluded = this.generatedState.views.filter(
+            (view) =>
+                view.participation === 'included' &&
+                view.stableMaskDigest !== undefined
+        );
+        const generatedHasDraft = generatedIncluded.some((view) => {
+            const session = this.userViewMasks.sessionFor(view.viewId);
+            return session?.state.hasUnconfirmedChanges === true;
+        });
+        return mapWorkAreaActions({
+            targetActive: this.state.context?.lifecycle === 'active',
+            serviceAvailable: this.availabilityStatus === 'available',
+            hasUsableIncludedStableInput:
+                this.maskState.stableMask !== null ||
+                generatedIncluded.length > 0,
+            hasUnconfirmedIncludedMask:
+                (this.maskState.stableMask !== null &&
+                    this.maskState.hasUnconfirmedChanges) ||
+                generatedHasDraft,
+            candidateStatus: this.candidateCorrectionState.candidate.status,
+            correctionMode: this.candidateCorrectionState.mode,
+            correctionStatus: this.candidateCorrectionState.status,
+            liftReadiness: this.liftReadinessState,
+            canConfirmMask,
+            canConfirmReview,
+            anchorNeedsConfirmation
+        });
+    }
+
+    private reLiftDescription(): string {
+        const presentation = this.workAreaActions().reLift;
+        if (presentation.state === 'updating') {
+            return i18n.t('ai-select.candidate.updating');
+        }
+        return presentation.reason === null
+            ? i18n.t('ai-select.candidate.update')
+            : i18n.t(`ai-select.re-lift.reason.${presentation.reason}`);
+    }
+
+    private renderWorkAreaActions(): void {
+        const presentation = this.workAreaActions().reLift;
+        const description = this.reLiftDescription();
+        this.reLiftButton.hidden = !presentation.visible;
+        this.reLiftButton.enabled = presentation.enabled;
+        this.reLiftButton.dom.title = description;
+        this.reLiftButton.dom.setAttribute('aria-label', description);
+        this.reLiftButton.dom.setAttribute('aria-description', description);
+        this.reLiftButton.dom.setAttribute(
+            'aria-busy',
+            String(presentation.state === 'updating')
+        );
+        this.reLiftButton.dom.dataset.reason = presentation.reason ?? '';
+        this.reLiftButton.dom.classList.toggle(
+            'readiness-limited',
+            presentation.emphasis === 'warning'
+        );
+        this.reLiftButton.dom.classList.toggle(
+            'updating',
+            presentation.state === 'updating'
+        );
     }
 
     /**
@@ -1757,14 +1780,15 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.image.src = `data:image/png;base64,${view.rgb.pngBase64}`;
             this.image.hidden = false;
             this.imageSurface.hidden = false;
+            this.status.hidden = true;
             this.updateImageSurfaceRect(view.rgb.width, view.rgb.height);
         } else {
             this.image.hidden = true;
             this.imageSurface.hidden = true;
             this.overlay.hidden = true;
+            this.status.hidden = false;
         }
         this.status.text = i18n.t('ai-select.views.inspecting-editing');
-        this.anchorActions.hidden = true;
         this.validationStatus.hidden = true;
         const mask = getViewMaskPresentation(authoring.maskState);
         this.renderMaskSurface(
@@ -1785,6 +1809,20 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
      * inspected. Render-pending Views have no ready authoring surface.
      */
     private authoring(): DockAuthoringTarget | null {
+        const adjustmentDraft = this.anchorAdjustmentState.draft;
+        if (adjustmentDraft !== null) {
+            return {
+                ops: this.anchorAdjustment.mask,
+                maskState: this.anchorAdjustment.mask.state,
+                locked: false,
+                ready:
+                    adjustmentDraft.renderStatus === 'ready' &&
+                    adjustmentDraft.rgb !== undefined,
+                ...(adjustmentDraft.rgb === undefined
+                    ? {}
+                    : { rgb: adjustmentDraft.rgb })
+            };
+        }
         const inspected = this.inspectedGeneratedView();
         if (inspected !== null) {
             const session = this.userViewMasks.sessionFor(inspected.viewId);
@@ -1822,11 +1860,13 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.image.src = `data:image/png;base64,${view.rgb.pngBase64}`;
             this.image.hidden = false;
             this.imageSurface.hidden = false;
+            this.status.hidden = true;
             this.updateImageSurfaceRect(view.rgb.width, view.rgb.height);
         } else {
             this.image.hidden = true;
             this.imageSurface.hidden = true;
             this.overlay.hidden = true;
+            this.status.hidden = false;
         }
         const roleKey =
             galleryViewRole(view.source) === 'user-added'
@@ -1836,7 +1876,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.maskStatus.hidden = true;
         this.promptStatus.hidden = true;
         this.maskActions.hidden = true;
-        this.anchorActions.hidden = true;
         this.validationStatus.hidden = true;
         this.boxPreview.hidden = true;
         this.image.style.cursor = 'default';
@@ -2248,7 +2287,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         ordered: readonly GeneratedAIView[],
         ordinals: ReadonlyMap<string, number>
     ): void {
-        const selected = this.inspectedGeneratedView();
+        const selected =
+            this.anchorAdjustmentState.draft === null
+                ? this.inspectedGeneratedView()
+                : null;
         if (selected === null) {
             this.selectedViewPrimaryAction = null;
             this.selectedViewPrimaryButton.hidden = true;
@@ -2289,7 +2331,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     }
 
     private runSelectedViewPrimaryAction(): void {
-        const selected = this.inspectedGeneratedView();
+        const selected =
+            this.anchorAdjustmentState.draft === null
+                ? this.inspectedGeneratedView()
+                : null;
         if (selected === null || this.selectedViewPrimaryAction === null) {
             return;
         }
@@ -2432,8 +2477,13 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
 
     /** The palette checkmark confirms the draft Mask first, then Review. */
     private runPaletteConfirmAction(
-        onConfirmAnchor: () => Promise<void>
+        onConfirmAnchor: () => Promise<void>,
+        onConfirmAnchorAdjustment: () => Promise<void>
     ): void {
+        if (this.anchorAdjustmentState.draft !== null) {
+            onConfirmAnchorAdjustment().catch((error) => console.error(error));
+            return;
+        }
         const authoring = this.authoring();
         if (
             authoring !== null &&
@@ -2450,6 +2500,15 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             galleryCardPresentation(selected, 1).actions.confirmAsIs
         ) {
             this.confirmGeneratedReview(selected.viewId);
+            return;
+        }
+        if (
+            selected === null &&
+            authoring !== null &&
+            authoring.maskState.stableMask !== null &&
+            this.confirmationState.confirmedAnchor === null
+        ) {
+            onConfirmAnchor().catch((error) => console.error(error));
         }
     }
 
@@ -2526,13 +2585,37 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.activeTool === 'paint' || this.activeTool === 'erase';
         const canConfirmMask =
             ready && getViewMaskPresentation(maskState).showConfirm;
-        const selected = this.inspectedGeneratedView();
+        const selected =
+            this.anchorAdjustmentState.draft === null
+                ? this.inspectedGeneratedView()
+                : null;
         const canConfirmReview =
             ready &&
             selected !== null &&
             galleryCardPresentation(selected, 1).actions.confirmAsIs;
+        const anchorNeedsConfirmation =
+            ready &&
+            selected === null &&
+            maskState.stableMask !== null &&
+            (this.anchorAdjustmentState.draft !== null ||
+                this.confirmationState.confirmedAnchor === null) &&
+            this.confirmationState.validationStatus !== 'validating' &&
+            this.anchorAdjustmentState.confirmationStatus !== 'validating';
+        const actions = this.workAreaActions(
+            canConfirmMask,
+            canConfirmReview,
+            anchorNeedsConfirmation
+        ).palette;
+        const contextAction =
+            this.anchorAdjustmentState.draft === null
+                ? actions.context
+                : 'none';
         this.palette.render({
-            visible: ready,
+            visible:
+                authoring.ready &&
+                (ready ||
+                    actions.confirmation !== 'none' ||
+                    contextAction !== 'none'),
             activeTool: this.activeTool,
             availability,
             historyKind: editingMask ? 'mask' : 'prompt',
@@ -2548,20 +2631,26 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                   maskState.promptState !== null &&
                   (maskState.promptState.points.length > 0 ||
                       maskState.promptState.boxes.length > 0),
-            canConfirmMask: canConfirmMask || canConfirmReview,
-            confirmLabelKey:
-                canConfirmReview && !canConfirmMask
-                    ? 'ai-select.review.confirm-as-is'
-                    : 'ai-select.mask.confirm',
+            canConfirmMask: actions.confirmation !== 'none',
+            confirmLabelKey: {
+                none: 'ai-select.mask.confirm',
+                'confirm-mask': 'ai-select.mask.confirm',
+                'confirm-review': 'ai-select.review.confirm-as-is',
+                'confirm-anchor': 'ai-select.anchor.confirm'
+            }[actions.confirmation],
+            contextAction,
+            contextLabelKey:
+                contextAction === 'back-to-candidate'
+                    ? 'ai-select.candidate.back-to-candidate'
+                    : 'ai-select.candidate.fix-result',
             canRestoreAutoMask: ready && maskState.canRestoreAuto
         });
         this.image.style.cursor = cursorForTool(this.activeTool);
     }
 
-    private renderPrimaryActionsVisibility(): void {
-        this.primaryActions.hidden = [
+    private renderCanvasStateActionsVisibility(): void {
+        this.canvasStateActions.hidden = [
             this.selectedViewPrimaryButton,
-            this.anchorActions,
             this.maskActions
         ].every((action) => action.hidden);
     }
@@ -2592,33 +2681,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.promptStatus.hidden = false;
     }
 
-    private renderAnchorActions(presentation: AnchorDockPresentation): void {
+    private renderAnchorValidationStatus(): void {
         const confirmation = this.confirmationState;
         const confirmed = confirmation.confirmedAnchor !== null;
-        const ready = presentation.status === 'ready';
-        const maskPrimaryVisible =
-            getViewMaskPresentation(this.maskState).showConfirm ||
-            !this.retryMaskButton.hidden;
-        const canConfirm =
-            ready &&
-            confirmation.validationStatus !== 'validating' &&
-            confirmation.validation !== null &&
-            confirmation.validation.canConfirm;
-        const showValidate =
-            !confirmed &&
-            ready &&
-            this.maskState.stableMask !== null &&
-            !canConfirm &&
-            !maskPrimaryVisible;
-        const showConfirm = !confirmed && canConfirm && !maskPrimaryVisible;
-        this.anchorActions.hidden = !showValidate && !showConfirm;
-        this.validateButton.hidden = !showValidate;
-        this.validateButton.enabled =
-            ready &&
-            confirmation.validationStatus !== 'validating' &&
-            this.maskState.stableMask !== null;
-        this.confirmAnchorButton.hidden = !showConfirm;
-        this.confirmAnchorButton.enabled = showConfirm;
         const lines: string[] = [];
         if (confirmed) {
             lines.push(i18n.t('ai-select.anchor.confirmed'));

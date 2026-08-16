@@ -15,13 +15,17 @@ const {
     AISelectAnchorConfirmationController
 } = require('../.test-dist/src/ai-select/anchor-confirmation.js');
 const {
+    AISelectAnchorCutoverCoordinator
+} = require('../.test-dist/src/ai-select/anchor-cutover.js');
+const {
     aiSelectEvidencePolicyVersion
 } = require('../.test-dist/src/ai-select/evidence-state.js');
 const {
     aiSelectSupportProbePolicyVersion
 } = require('../.test-dist/src/ai-select/support-probe.js');
 const {
-    captureEditorCameraBinding
+    captureEditorCameraBinding,
+    withCameraBindingPose
 } = require('../.test-dist/src/ai-select/camera-binding.js');
 const {
     maskBitsetEncoding
@@ -277,6 +281,9 @@ const setup = async (options = {}) => {
     const renderer = {
         renderAnchor: (request) => {
             renderRequests.push(request);
+            const renderedRgbDigest =
+                options.rgbDigestForRequest?.(request, renderRequests.length) ??
+                rgbDigest;
             return Promise.resolve({
                 requestBinding: request.requestBinding,
                 targetSplatId: request.target.splatId,
@@ -291,7 +298,7 @@ const setup = async (options = {}) => {
                         request.cameraBinding.projection.width,
                         request.cameraBinding.projection.height
                     ),
-                    digest: rgbDigest,
+                    digest: renderedRgbDigest,
                     width: request.cameraBinding.projection.width,
                     height: request.cameraBinding.projection.height
                 },
@@ -418,6 +425,84 @@ test('Confirm Anchor atomically publishes the fully bound record and locks', asy
     );
     // The normal Confirm path never invokes another render or Contributor op.
     assert.equal(renderRequests.length, 1);
+});
+
+test('changed-Anchor cutover keeps real Evidence until replacement confirmation publishes', async () => {
+    const oldRgbDigest = `sha256:${'a'.repeat(64)}`;
+    const newRgbDigest = `sha256:${'c'.repeat(64)}`;
+    const { anchor, mask, confirmation } = await setup({
+        rgbDigestForRequest: (_request, ordinal) =>
+            ordinal === 1 ? oldRgbDigest : newRgbDigest
+    });
+    const oldStable = await confirmStableMask(mask);
+    const original = await confirmation.confirmAnchor();
+    const oldEvidenceIdentity = {
+        viewId: 'anchor-view',
+        rgbDigest: oldRgbDigest,
+        stableMaskDigest: oldStable.artifact.digest,
+        evidencePolicyDigest: aiSelectEvidencePolicyVersion
+    };
+    mask.evidenceRegistry.markReady(oldEvidenceIdentity);
+
+    const currentBinding = anchor.state.anchor.cameraBinding;
+    const changedPose = [...currentBinding.cameraToWorld];
+    changedPose[3] += 1;
+    const draftBinding = withCameraBindingPose(
+        currentBinding,
+        changedPose,
+        currentBinding.revision + 1
+    );
+    const render = await anchor.renderAnchorAdjustmentDraft(draftBinding);
+    assert.equal(render.rgb.digest, newRgbDigest);
+    const draftStable = Object.freeze({
+        maskId: 'draft-stable-mask',
+        viewId: 'anchor-adjustment-draft',
+        source: 'manual',
+        status: 'user-confirmed',
+        artifact: bitsetArtifact(64, 48, solidForeground(64, 48)),
+        createdFromRgbDigest: newRgbDigest
+    });
+
+    let replacementPublished = false;
+    confirmation.subscribe((state) => {
+        if (
+            state.confirmedAnchor !== null &&
+            state.confirmedAnchor !== original
+        ) {
+            replacementPublished = true;
+            assert.equal(
+                mask.evidenceRegistry.statusFor(
+                    'anchor-view',
+                    oldEvidenceIdentity
+                ).status,
+                'ready'
+            );
+        }
+    });
+    let dependentProductsReleased = false;
+    const cutover = new AISelectAnchorCutoverCoordinator({
+        anchor,
+        mask,
+        confirmation,
+        releaseDependentProducts: () => {
+            assert.equal(replacementPublished, true);
+            assert.equal(
+                mask.evidenceRegistry.statusFor(
+                    'anchor-view',
+                    oldEvidenceIdentity
+                ).status,
+                'not-requested'
+            );
+            dependentProductsReleased = true;
+        }
+    });
+
+    const replacement = cutover.commit({ render, stableMask: draftStable });
+
+    assert.equal(replacement.rgbDigest, newRgbDigest);
+    assert.equal(replacement.contextRevision, original.contextRevision + 1);
+    assert.equal(confirmation.state.confirmedAnchor, replacement);
+    assert.equal(dependentProductsReleased, true);
 });
 
 test('weak visible support stays a user-overridable soft warning', async () => {

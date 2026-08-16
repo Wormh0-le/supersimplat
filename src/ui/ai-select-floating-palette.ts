@@ -24,6 +24,7 @@ import chevronSvg from './svg/ai-select-chevron.svg';
 import confirmSvg from './svg/ai-select-confirm.svg';
 import eraseSvg from './svg/ai-select-erase.svg';
 import gripSvg from './svg/ai-select-grip.svg';
+import candidatePreviewSvg from './svg/ai-select-overlay.svg';
 import paintSvg from './svg/ai-select-paint.svg';
 import pointNegativeSvg from './svg/ai-select-point-negative.svg';
 import pointPositiveSvg from './svg/ai-select-point-positive.svg';
@@ -52,6 +53,8 @@ export interface FloatingPaletteView {
     readonly canClearHistory: boolean;
     readonly canConfirmMask: boolean;
     readonly confirmLabelKey?: string;
+    readonly contextAction?: 'none' | 'enter-correction' | 'back-to-candidate';
+    readonly contextLabelKey?: string;
     readonly canRestoreAutoMask: boolean;
 }
 
@@ -61,6 +64,7 @@ export interface AISelectFloatingPaletteOptions {
     readonly onHistoryRedo: (kind: PaletteHistoryKind) => void;
     readonly onHistoryClear: (kind: PaletteHistoryKind) => void;
     readonly onConfirmMask: () => void;
+    readonly onContextAction: () => void;
     readonly onRestoreAutoMask: () => void;
     readonly onBrushSizeChange: (sizePx: number) => void;
 }
@@ -120,6 +124,7 @@ export class AISelectFloatingPalette {
     private readonly undoButton: HTMLButtonElement;
     private readonly redoButton: HTMLButtonElement;
     private readonly confirmMaskButton: HTMLButtonElement;
+    private readonly contextButton: HTMLButtonElement;
     private readonly restoreAutoMaskButton: HTMLButtonElement;
     private readonly clearButton: HTMLButtonElement;
     private readonly popover: HTMLDivElement;
@@ -190,6 +195,10 @@ export class AISelectFloatingPalette {
             'palette-action palette-confirm-mask',
             confirmSvg
         );
+        this.contextButton = createIconButton(
+            'palette-action palette-context-action',
+            candidatePreviewSvg
+        );
         this.restoreAutoMaskButton = createIconButton(
             'palette-action palette-restore-auto-mask',
             restoreAutoSvg
@@ -208,6 +217,9 @@ export class AISelectFloatingPalette {
         this.confirmMaskButton.addEventListener('click', () =>
             this.options.onConfirmMask()
         );
+        this.contextButton.addEventListener('click', () =>
+            this.options.onContextAction()
+        );
         this.restoreAutoMaskButton.addEventListener('click', () =>
             this.options.onRestoreAutoMask()
         );
@@ -219,6 +231,7 @@ export class AISelectFloatingPalette {
         historyGroup.appendChild(this.undoButton);
         historyGroup.appendChild(this.redoButton);
         historyGroup.appendChild(this.confirmMaskButton);
+        historyGroup.appendChild(this.contextButton);
         historyGroup.appendChild(this.restoreAutoMaskButton);
         historyGroup.appendChild(this.clearButton);
         this.collapseButton = createIconButton(
@@ -489,6 +502,19 @@ export class AISelectFloatingPalette {
         this.undoButton.disabled = !view.canUndoHistory;
         this.redoButton.disabled = !view.canRedoHistory;
         this.confirmMaskButton.disabled = !view.canConfirmMask;
+        this.confirmMaskButton.hidden = !view.canConfirmMask;
+        const contextAction = view.contextAction ?? 'none';
+        this.contextButton.hidden = contextAction === 'none';
+        this.contextButton.disabled = contextAction === 'none';
+        if (contextAction !== 'none') {
+            this.contextButton.replaceChildren(
+                createSvg(
+                    contextAction === 'enter-correction'
+                        ? paintSvg
+                        : candidatePreviewSvg
+                )
+            );
+        }
         this.restoreAutoMaskButton.disabled = !view.canRestoreAutoMask;
         this.clearButton.disabled = !view.canClearHistory;
         const historyPrefix =
@@ -498,6 +524,10 @@ export class AISelectFloatingPalette {
         this.setActionLabel(
             this.confirmMaskButton,
             view.confirmLabelKey ?? 'ai-select.mask.confirm'
+        );
+        this.setActionLabel(
+            this.contextButton,
+            view.contextLabelKey ?? 'ai-select.candidate.fix-result'
         );
         this.setActionLabel(
             this.restoreAutoMaskButton,

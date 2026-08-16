@@ -2,38 +2,38 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const test = require('node:test');
 
-test('the View Action Bar stays fixed and never scrolls the image or actions', () => {
+test('the Work Area releases permanent header and action-bar height to the image', () => {
     const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
-    const block = styles.match(
-        /#ai-select-anchor-dock-primary-actions\s*\{(?<body>[\s\S]*?)\n\}/
-    )?.groups?.body;
-    assert.ok(block, 'missing View Action Bar styles');
-    assert.match(block, /box-sizing:\s*border-box;/);
-    assert.match(block, /flex-direction:\s*row;/);
-    assert.match(block, /flex:\s*0 0 auto;/);
-    assert.match(block, /min-height:\s*46px;/);
-    assert.match(block, /justify-content:\s*flex-end;/);
-    assert.match(block, /overflow:\s*hidden;/);
-    assert.doesNotMatch(block, /overflow-[xy]:\s*auto;/);
-    assert.match(block, /> \.pcui-container:not\(\.pcui-hidden\)/);
-});
-
-test('bottom action groups use responsive button grids', () => {
-    const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
+    const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
+    assert.doesNotMatch(dock, /ai-select-anchor-dock-header/);
+    assert.doesNotMatch(dock, /ai-select-view-work-header/);
+    assert.doesNotMatch(dock, /ai-select-anchor-dock-primary-actions/);
+    assert.doesNotMatch(styles, /#ai-select-anchor-dock-header\s*\{/);
+    assert.doesNotMatch(styles, /#ai-select-view-work-header\s*\{/);
+    assert.doesNotMatch(styles, /#ai-select-anchor-dock-primary-actions\s*\{/);
     assert.match(
         styles,
-        /#ai-select-anchor-dock-primary-actions[\s\S]*?> \.pcui-container[\s\S]*?grid-template-columns:\s*repeat\(auto-fit, minmax\(120px, 1fr\)\);/
+        /#ai-select-view-work-canvas-row\s*\{[\s\S]*?flex:\s*1 1 auto;/
     );
 });
 
-test('Candidate operations belong to Toolbar while correction stays in Dock', () => {
+test('compact canvas state actions overlay instead of reserving a bottom row', () => {
+    const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
+    assert.match(
+        styles,
+        /#ai-select-work-canvas-actions\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?bottom:\s*12px;/
+    );
+});
+
+test('Candidate operations belong to Toolbar while correction stays in the palette', () => {
     const toolbar = readFileSync('src/ui/ai-select-toolbar.ts', 'utf8');
     const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
     assert.match(toolbar, /ai-select-candidate-operation-group/);
     assert.match(toolbar, /ai-select-toolbar-candidate-\$\{operation\}/);
     assert.doesNotMatch(dock, /ai-select-apply-candidate-/);
-    assert.match(dock, /ai-select-fix-candidate/);
-    assert.match(dock, /ai-select-back-to-candidate/);
+    assert.doesNotMatch(dock, /ai-select-fix-candidate/);
+    assert.doesNotMatch(dock, /ai-select-back-to-candidate/);
+    assert.match(dock, /onContextAction:/);
 });
 
 test('viewport Toolbar is icon-only with two normal-mode split actions', () => {
@@ -110,18 +110,10 @@ test('Candidate shader state is independent and explicitly released', () => {
 
 test('AI View Dock caps semantic sidebars and gives surplus width to the Work Area', () => {
     const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
-    const header = styles.match(
-        /#ai-select-anchor-dock-header\s*\{(?<body>[\s\S]*?)\n\}/
-    )?.groups?.body;
     const workspace = styles.match(
         /#ai-select-anchor-dock-main\s*\{(?<body>[\s\S]*?)\n\}/
     )?.groups?.body;
-    assert.ok(header, 'missing compact Dock header styles');
     assert.ok(workspace, 'missing Dock workspace styles');
-    assert.match(header, /display:\s*flex;/);
-    assert.match(header, /height:\s*48px;/);
-    assert.doesNotMatch(header, /max-width:\s*1440px;/);
-    assert.doesNotMatch(header, /margin-inline:\s*auto;/);
     assert.doesNotMatch(workspace, /max-width:\s*1440px;/);
     assert.doesNotMatch(workspace, /margin-inline:\s*auto;/);
     assert.match(
@@ -134,10 +126,7 @@ test('AI View Dock caps semantic sidebars and gives surplus width to the Work Ar
     );
     assert.match(styles, /\.ai-select-sidebar-resize-handle\s*\{/);
     assert.doesNotMatch(styles, /data-spacious/);
-    assert.match(
-        styles,
-        /#ai-select-anchor-dock-availability\s*\{[\s\S]*?display:\s*flex;/
-    );
+    assert.doesNotMatch(styles, /#ai-select-anchor-dock-availability\s*\{/);
 });
 
 test('single-result Mask authoring has no Proposal choice or acceptance UI', () => {
@@ -148,10 +137,10 @@ test('single-result Mask authoring has no Proposal choice or acceptance UI', () 
     assert.doesNotMatch(dock, /\.ops\.acceptProposal\(/);
 });
 
-test('the View Action Bar releases image height when there is no primary action', () => {
+test('view-level recovery remains a compact canvas state instead of a View Action Bar', () => {
     const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
-    assert.match(dock, /private readonly primaryActions:\s*Container;/);
-    assert.match(dock, /this\.primaryActions\.hidden\s*=/);
+    assert.match(dock, /private readonly canvasStateActions:\s*Container;/);
+    assert.match(dock, /this\.canvasStateActions\.hidden\s*=/);
     assert.match(dock, /this\.maskActions\.hidden\s*=\s*!mask\.showRetry;/);
 });
 
@@ -173,12 +162,13 @@ test('Mask and Generated View confirmation share the compact palette action', ()
     );
     const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
     assert.match(palette, /readonly canConfirmMask:\s*boolean;/);
+    assert.match(palette, /readonly contextAction\?:/);
     assert.match(palette, /readonly canRestoreAutoMask:\s*boolean;/);
     assert.match(palette, /readonly onConfirmMask:\s*\(\) => void;/);
     assert.match(palette, /readonly onRestoreAutoMask:\s*\(\) => void;/);
     assert.match(
         palette,
-        /historyGroup\.appendChild\(this\.confirmMaskButton\);[\s\S]*?historyGroup\.appendChild\(this\.clearButton\);/
+        /historyGroup\.appendChild\(this\.confirmMaskButton\);[\s\S]*?historyGroup\.appendChild\(this\.contextButton\);[\s\S]*?historyGroup\.appendChild\(this\.clearButton\);/
     );
     assert.doesNotMatch(dock, /confirmMaskButton/);
     assert.doesNotMatch(dock, /restoreAutoButton/);
@@ -192,6 +182,33 @@ test('Mask and Generated View confirmation share the compact palette action', ()
     );
     assert.doesNotMatch(dock, /case 'confirm-as-is'/);
     assert.match(dock, /onRestoreAutoMask:/);
+    assert.match(dock, /'confirm-anchor': 'ai-select\.anchor\.confirm'/);
+    assert.doesNotMatch(dock, /ai-select-anchor-dock-validate/);
+    assert.doesNotMatch(dock, /ai-select-anchor-dock-confirm-anchor/);
+});
+
+test('Re-Lift is the sole emphasized target action in upper-right Work Area chrome', () => {
+    const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
+    const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
+    assert.match(dock, /ai-select-work-area-re-lift/);
+    assert.match(dock, /ai-select-re-lift\.svg/);
+    assert.match(
+        dock,
+        /options\.tooltips\.register\([\s\S]*?this\.reLiftButton,/
+    );
+    assert.match(dock, /aria-description/);
+    assert.match(
+        styles,
+        /#ai-select-work-area-controls\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*8px;[\s\S]*?right:\s*8px;/
+    );
+    assert.match(
+        styles,
+        /\.ai-select-re-lift-glyph\s*\{[\s\S]*?width:\s*19px;[\s\S]*?height:\s*19px;/
+    );
+    assert.match(
+        styles,
+        /#ai-select-work-area-controls[\s\S]*?min-width:\s*40px;[\s\S]*?min-height:\s*40px;/
+    );
 });
 
 test('confirming the Anchor Mask continues through Anchor confirmation', () => {

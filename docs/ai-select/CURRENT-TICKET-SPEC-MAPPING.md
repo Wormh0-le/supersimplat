@@ -1,6 +1,6 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.30
+# Current Final Spec v1.3 → Ticket Mapping — v2.31
 
-Status: **current normative ticket mapping — Ticket 16C implemented; Ticket 16D ready**
+Status: **current normative ticket mapping — Ticket 16E implemented; Ticket 16D remains the current ready stage**
 
 This file maps every active AI Select parent Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
@@ -10,8 +10,10 @@ All 31 parent Ticket files carry a direct current mapping to Final Spec v1.3.
 Ticket 14A–14D and post-closure Ticket 16A–16G are implementation stages
 under their respective parent Tickets; they refine execution scope without
 creating a competing parent graph. Ticket 16B published the accepted
-superseding ADR and updated Final Spec v1.3; Ticket 16C implemented Mask state
-truth and the compact current-View Inspector.
+superseding ADR and updated Final Spec v1.3. Ticket 16C implemented Mask state
+truth and the compact current-View Inspector; Ticket 16E implemented the
+header-free 2D Work Area, explicit Re-Lift mapping, floating action slots and
+staged changed-Anchor cutover.
 
 | Ticket | Final Spec v1.3 mapping    | Current responsibility                                                         |
 | ------ | -------------------------- | ------------------------------------------------------------------------------ |
@@ -72,17 +74,19 @@ Stage contracts live under `docs/ai-select/tickets/14A-*` through `14D-*`. `docs
 | 16B   | Ticket 16 / §§4, 6–8, 16–26      | Implemented single-result contract, `4–8` initial Views and ADR 0018           |
 | 16C   | Ticket 16 / §§4, 7–8, 17–19, 24  | Implemented Mask state truth and compact current-View Inspector                |
 | 16D   | Ticket 16 / §§4, 9–10, 17–19, 24 | Canvas-first three-pane shell and stable Navigator                             |
-| 16E   | Ticket 16 / §§4–8, 17–22, 24–26  | 2D Work Area, floating-palette actions and explicit Re-Lift                    |
+| 16E   | Ticket 16 / §§4–8, 17–22, 24–26  | Implemented 2D Work Area, palette actions, Re-Lift and Anchor cutover          |
 | 16F   | Ticket 16 / §§4–5, 9–10, 17–24   | Compact 3D toolbar and non-destructive Anchor adjustment                       |
 | 16G   | Ticket 16 / §§3–8, 16–26         | Obsolete-control removal, integration and final operator visual closure        |
 
 Ticket 16 remains implemented for native application semantics and adapters.
 Ticket 16A remains the implemented functional presentation baseline. Its
 completed operator visual walkthrough found the release-presentation issues
-owned by 16B–16G. Tickets 16B and 16C are implemented. The accepted initial planner range is `4–8` automatic
+owned by 16B–16G. Tickets 16B, 16C and 16E are implemented. The accepted initial planner range is `4–8` automatic
 Generated Views, excluding the Anchor and User-added Views. Those stages do not
 reopen Ticket 16's application algebra;
-Ticket 15 remains the owner of Correction/Re-Lift semantics. Ticket 17 follows
+Ticket 15 remains the owner of Correction/Re-Lift semantics. Tickets 16D and
+16F retain their own closure records, while Ticket 16G owns integrated
+obsolete-control and operator visual closure. Ticket 17 follows
 16G and must not reintroduce the 3D Toolbar More/Restart surface removed by the
 follow-up contract.
 
@@ -103,13 +107,13 @@ implemented prerequisites:
 - 16A — AI View Dock + Candidate viewport presentation baseline
 - 16B — Single-result Mask product contract + capability/planner correction
 - 16C — Mask state truth + compact Inspector
+- 16E — header-free Work Area + palette actions + explicit Re-Lift
 
 current execution stage:
 - 16D — canvas-first shell + stable Navigator
 
 following post-visual-review stages:
 - 16D — canvas-first shell + stable Navigator
-- 16E — 2D Work Area + floating palette + Re-Lift
 - 16F — compact 3D Toolbar + non-destructive Anchor adjustment
 - 16G — obsolete-control removal + integration closure
 
@@ -125,9 +129,8 @@ next_implementation_subticket = 16D
 ```
 
 Ticket 16 is the current parent compatibility frontier with 16D as its active
-post-visual-review execution stage. Ticket 16F may proceed from the 16B
-contract baseline; 16E joins the implemented 16C Inspector with the 16D
-surface; 16G closes the integrated slice. Ticket 17 follows
+post-visual-review execution stage. Ticket 16E is implemented; Tickets 16D,
+16F and 16G retain their own closure stages. Ticket 17 follows
 16G. Ticket 10 remains optional and may execute after parent Ticket 14 + 09 +
 07 without blocking the core release path.
 
@@ -167,7 +170,7 @@ The mapping passes only when:
 - older spec names appear only under explicit historical/superseded/migration labels;
 - implemented prerequisites through 12 are not reported as current ready work;
 - parent Ticket 14 and stages 14A through 14D are recognized as implemented;
-- Tickets 13 through 15, Ticket 16's application core and Tickets 16A–16C are recognized as implemented, with 16D as the current execution stage and Ticket 17 following 16G;
+- Tickets 13 through 15, Ticket 16's application core, Tickets 16A–16C and Ticket 16E are recognized as implemented, with 16D as the current execution stage and Ticket 17 following 16G;
 - `next_implementation_ticket = 16` and `next_implementation_subticket = 16D` are current;
 - Ticket 16B published ADR 0018 and the current Final Spec correction before
   dependent stages;

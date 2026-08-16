@@ -279,6 +279,55 @@ export class AISelectAnchorConfirmationController {
         return confirmed;
     }
 
+    /**
+     * Publish the already validated changed Anchor after its live RGB and
+     * Stable Mask have been synchronously swapped. This method performs no
+     * async work and rejects any partial or non-revisioned replacement.
+     */
+    replaceConfirmedAnchorFromAdjustment(): ConfirmedAnchor {
+        const previous = this.confirmedAnchor;
+        const context = this.anchorState.context;
+        const anchor = this.anchorState.anchor;
+        const stableMask = this.maskState?.stableMask ?? null;
+        const sceneIdentity = this.anchor.getAnchorSceneIdentity();
+        if (
+            previous === null ||
+            context === null ||
+            context.lifecycle !== 'active' ||
+            context.targetContextId !== previous.targetContextId ||
+            context.revision <= previous.contextRevision ||
+            anchor?.renderStatus !== 'ready' ||
+            anchor.rgb === undefined ||
+            stableMask === null ||
+            stableMask.createdFromRgbDigest !== anchor.rgb.digest ||
+            sceneIdentity === null
+        ) {
+            throw new Error(
+                'AI Select cannot publish a partial changed-Anchor confirmation.'
+            );
+        }
+        const confirmed: ConfirmedAnchor = Object.freeze({
+            targetContextId: context.targetContextId,
+            contextRevision: context.revision,
+            cameraBinding: copyCameraBinding(anchor.cameraBinding),
+            rgbDigest: anchor.rgb.digest,
+            stableMask,
+            maskEvidencePolicyVersion: aiSelectEvidencePolicyVersion,
+            dependencyToken: copyDependencyToken(context.dependencyToken),
+            sceneId: sceneIdentity.sceneId,
+            sceneVersion: sceneIdentity.sceneVersion
+        });
+        this.activeProbe = null;
+        this.validation = null;
+        this.validationStatus = 'idle';
+        this.lastErrorMessage = undefined;
+        this.trackedRgbDigest = anchor.rgb.digest;
+        this.trackedStableMaskDigest = stableMask.artifact.digest;
+        this.confirmedAnchor = confirmed;
+        this.publish();
+        return confirmed;
+    }
+
     private evaluate(
         support: AnchorSupportProbeSupport | null
     ): AnchorValidationResult {

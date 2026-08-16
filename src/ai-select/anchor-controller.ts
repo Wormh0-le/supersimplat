@@ -533,6 +533,112 @@ export class AISelectAnchorController {
         );
     }
 
+    /** Build a support probe for the exact staged Camera/RGB/Mask identity. */
+    createAnchorAdjustmentSupportProbeRequest(
+        draft: AnchorAdjustmentRenderArtifact,
+        stableMask: MaskArtifact,
+        supportProbeAttemptId: string
+    ): AnchorSupportProbeRequest | null {
+        const activeRequest = this.activeRequest;
+        const effectiveDependencyToken = this.getCurrentDependencyToken?.();
+        if (
+            activeRequest === null ||
+            effectiveDependencyToken === undefined ||
+            !this.contexts.acceptsResult(
+                draft.requestBinding,
+                effectiveDependencyToken
+            ) ||
+            !isMaskArtifact(stableMask) ||
+            stableMask.width !== draft.rgb.width ||
+            stableMask.height !== draft.rgb.height
+        ) {
+            return null;
+        }
+        return Object.freeze({
+            requestBinding: this.contexts.createRequestBinding(),
+            target: Object.freeze({ splatId: activeRequest.target.splatId }),
+            snapshot: activeRequest.snapshot,
+            sceneId: activeRequest.snapshot.sceneId,
+            sceneVersion: activeRequest.snapshot.sceneVersion,
+            viewId: 'anchor-adjustment-draft',
+            supportProbeAttemptId,
+            cameraBinding: copyCameraBinding(draft.cameraBinding),
+            rgbDigest: draft.rgb.digest,
+            stableMask,
+            supportProbePolicyVersion: aiSelectSupportProbePolicyVersion
+        });
+    }
+
+    /** Reject support responses after the staged draft or target moved on. */
+    acceptsAnchorAdjustmentSupportProbeResponse(
+        response: AnchorSupportProbeResponse,
+        request: AnchorSupportProbeRequest,
+        draft: AnchorAdjustmentRenderArtifact
+    ): boolean {
+        const effectiveDependencyToken = this.getCurrentDependencyToken?.();
+        return (
+            effectiveDependencyToken !== undefined &&
+            this.contexts.acceptsResult(
+                draft.requestBinding,
+                effectiveDependencyToken
+            ) &&
+            this.contexts.acceptsResult(
+                request.requestBinding,
+                effectiveDependencyToken
+            ) &&
+            cameraBindingDigest(request.cameraBinding) ===
+                cameraBindingDigest(draft.cameraBinding) &&
+            request.rgbDigest === draft.rgb.digest &&
+            isAnchorSupportProbeResponse(response) &&
+            supportProbeResponseMatchesRequest(response, request)
+        );
+    }
+
+    /**
+     * Synchronously promote one fully validated draft into the live Anchor.
+     * No provider call occurs here, allowing a cutover without an async gap.
+     */
+    commitAnchorAdjustmentDraft(
+        draft: AnchorAdjustmentRenderArtifact
+    ): AISelectAnchorState {
+        const activeRequest = this.activeRequest;
+        const effectiveDependencyToken = this.getCurrentDependencyToken?.();
+        if (
+            activeRequest === null ||
+            effectiveDependencyToken === undefined ||
+            !this.contexts.acceptsResult(
+                draft.requestBinding,
+                effectiveDependencyToken
+            ) ||
+            draft.rgb.width !== draft.cameraBinding.projection.width ||
+            draft.rgb.height !== draft.cameraBinding.projection.height
+        ) {
+            throw new Error(
+                'AI Select cannot commit a stale changed-Anchor draft.'
+            );
+        }
+        this.contexts.revise();
+        const requestBinding = this.contexts.createRequestBinding();
+        this.activeRequest = this.createRequest(
+            activeRequest.target,
+            activeRequest.snapshot,
+            requestBinding,
+            draft.cameraBinding
+        );
+        this.activeRender = null;
+        this.initialAnchorCameraBinding = copyCameraBinding(
+            draft.cameraBinding
+        );
+        this.anchor = createAnchor(
+            draft.cameraBinding,
+            requestBinding,
+            'ready',
+            { rgb: draft.rgb, rendererId: draft.rendererId }
+        );
+        this.publish();
+        return this.state;
+    }
+
     /**
      * Build a single-frame SAM mask request bound to the current RGB Ready
      * Anchor. Returns null unless the exact full-resolution Anchor RGB is

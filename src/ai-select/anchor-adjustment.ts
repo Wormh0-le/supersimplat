@@ -1,7 +1,8 @@
 import type {
     AISelectAnchorConfirmationController,
     AISelectAnchorConfirmationState,
-    ConfirmedAnchor
+    ConfirmedAnchor,
+    ConfirmAnchorOptions
 } from './anchor-confirmation';
 import {
     type AISelectAnchorController,
@@ -10,6 +11,10 @@ import {
 } from './anchor-controller';
 import type { AnchorRgbArtifact } from './anchor-render-service';
 import {
+    evaluateAnchorValidation,
+    type AnchorValidationResult
+} from './anchor-validation';
+import {
     assertCameraToWorldMatrix,
     cameraBindingDigest,
     copyCameraBinding,
@@ -17,6 +22,7 @@ import {
     type CameraBinding
 } from './camera-binding';
 import { PerViewEvidenceRegistry } from './evidence-state';
+import type { MaskAnnotation } from './mask-annotation';
 import { MaskAnnotationRegistry } from './mask-registry';
 import type {
     AISelectMaskProvider,
@@ -25,6 +31,10 @@ import type {
     PreviousPredictionLogitsRef
 } from './mask-service';
 import type { PromptAdapterCapabilities, PromptState } from './prompt-state';
+import type {
+    AISelectSupportProbeProvider,
+    AnchorSupportProbeRequest
+} from './support-probe';
 import {
     AISelectViewMaskSession,
     type AISelectMaskAuthoring
@@ -51,6 +61,9 @@ export interface AnchorAdjustmentDraft {
 export interface AISelectAnchorAdjustmentState {
     readonly status: AnchorAdjustmentStatus;
     readonly draft: AnchorAdjustmentDraft | null;
+    readonly confirmationStatus: 'idle' | 'validating' | 'failed';
+    readonly validation: AnchorValidationResult | null;
+    readonly errorMessage?: string;
 }
 
 export type AISelectAnchorAdjustmentListener = (
@@ -63,11 +76,27 @@ export interface AISelectAnchorAdjustmentControllerOptions {
     readonly maskProvider: AISelectMaskProvider;
     readonly getModelManifestDigest?: () => string | null;
     readonly getPromptAdapterCapabilities?: () => PromptAdapterCapabilities | null;
+    readonly supportProbe: AISelectSupportProbeProvider;
+    readonly getStableIdMappingValid?: () => boolean;
+    readonly getRenderWorkingSetValid?: () => boolean;
+    readonly commitDraft: (input: {
+        readonly render: AnchorAdjustmentRenderArtifact;
+        readonly stableMask: MaskAnnotation;
+    }) => ConfirmedAnchor;
 }
 
 interface PendingDraftRender {
     readonly adjustmentId: string;
     readonly cameraBindingDigest: string;
+}
+
+interface PendingDraftConfirmation {
+    readonly adjustmentId: string;
+    readonly cameraBindingDigest: string;
+    readonly stableMaskId: string;
+    readonly stableMaskDigest: string;
+    readonly draftMaskStateRevision: number;
+    readonly request: AnchorSupportProbeRequest;
 }
 
 const copyRgb = (rgb: AnchorRgbArtifact): AnchorRgbArtifact => {
@@ -132,6 +161,10 @@ const errorMessage = (error: unknown): string => {
 export class AISelectAnchorAdjustmentController {
     private readonly anchor: AISelectAnchorController;
     private readonly confirmation: AISelectAnchorConfirmationController;
+    private readonly supportProbe: AISelectSupportProbeProvider;
+    private readonly getStableIdMappingValid: () => boolean;
+    private readonly getRenderWorkingSetValid: () => boolean;
+    private readonly commitDraft: AISelectAnchorAdjustmentControllerOptions['commitDraft'];
     private readonly listeners = new Set<AISelectAnchorAdjustmentListener>();
     private readonly maskRegistry = new MaskAnnotationRegistry();
     private readonly evidenceRegistry = new PerViewEvidenceRegistry();
@@ -151,10 +184,23 @@ export class AISelectAnchorAdjustmentController {
     private activeRender: PendingDraftRender | null = null;
     private nextAdjustmentOrdinal = 0;
     private nextCameraRevision = 0;
+    private nextSupportProbeAttemptOrdinal = 0;
+    private activeConfirmation: PendingDraftConfirmation | null = null;
+    private draftMaskStateRevision = 0;
+    private confirmationStatus: AISelectAnchorAdjustmentState['confirmationStatus'] =
+        'idle';
+    private validation: AnchorValidationResult | null = null;
+    private confirmationErrorMessage: string | undefined;
 
     constructor(options: AISelectAnchorAdjustmentControllerOptions) {
         this.anchor = options.anchor;
         this.confirmation = options.confirmation;
+        this.supportProbe = options.supportProbe;
+        this.getStableIdMappingValid =
+            options.getStableIdMappingValid ?? (() => true);
+        this.getRenderWorkingSetValid =
+            options.getRenderWorkingSetValid ?? (() => true);
+        this.commitDraft = options.commitDraft;
         this.maskSession = new AISelectViewMaskSession({
             host: {
                 viewId: ANCHOR_ADJUSTMENT_DRAFT_VIEW_ID,
@@ -219,6 +265,24 @@ export class AISelectAnchorAdjustmentController {
                   })
         });
         this.mask = this.maskSession;
+        this.maskSession.subscribe(() => {
+            this.draftMaskStateRevision += 1;
+            const pending = this.activeConfirmation;
+            if (
+                pending !== null &&
+                pending.draftMaskStateRevision !== this.draftMaskStateRevision
+            ) {
+                // Prompt/Editing intent stays usable while the support probe
+                // is pending. Any such revision retires that exact-bound
+                // probe so its late response cannot commit obsolete pixels.
+                this.activeConfirmation = null;
+                this.confirmationStatus = 'failed';
+                this.validation = null;
+                this.confirmationErrorMessage =
+                    'The changed-Anchor Mask changed during validation. Confirm the latest draft again.';
+                this.publish();
+            }
+        });
         this.anchor.subscribe((state) => {
             this.anchorState = state;
             this.discardIfBaselineIsNoLongerCurrent();
@@ -232,7 +296,12 @@ export class AISelectAnchorAdjustmentController {
     get state(): AISelectAnchorAdjustmentState {
         return Object.freeze({
             status: this.status,
-            draft: this.draft === null ? null : copyDraft(this.draft)
+            draft: this.draft === null ? null : copyDraft(this.draft),
+            confirmationStatus: this.confirmationStatus,
+            validation: this.validation,
+            ...(this.confirmationErrorMessage === undefined
+                ? {}
+                : { errorMessage: this.confirmationErrorMessage })
         });
     }
 
@@ -293,6 +362,10 @@ export class AISelectAnchorAdjustmentController {
         );
         const changed = !poseMatches(cameraBinding, baseline.cameraBinding);
         this.activeRender = null;
+        this.activeConfirmation = null;
+        this.confirmationStatus = 'idle';
+        this.validation = null;
+        this.confirmationErrorMessage = undefined;
         this.readyRender = null;
         this.status = changed ? 'changed' : 'adjusting';
         this.draft = Object.freeze({
@@ -369,6 +442,126 @@ export class AISelectAnchorAdjustmentController {
         return 'staged';
     }
 
+    /**
+     * Confirm the changed Anchor as one intent: publish a fresh draft-local
+     * Stable Mask when needed, probe and validate the exact staged
+     * Camera/RGB/Mask identity, then invoke the synchronous cutover seam.
+     * The currently confirmed run is never touched before that final call.
+     */
+    async confirmAdjustment(
+        options: ConfirmAnchorOptions = {}
+    ): Promise<ConfirmedAnchor | null> {
+        const draft = this.requireDraft();
+        const render = this.readyRender;
+        if (draft.renderStatus !== 'ready' || render === null) {
+            throw new Error(
+                'AI Select requires a ready changed-Anchor RGB draft before confirmation.'
+            );
+        }
+        const before = this.mask.state;
+        if (before.requestStatus === 'pending') {
+            throw new Error(
+                'AI Select must finish the current changed-Anchor Mask request before confirmation.'
+            );
+        }
+        if (before.hasUnconfirmedMaskChanges) {
+            this.mask.confirmEditingMask();
+        }
+        const stableMask = this.mask.state.stableMask;
+        if (stableMask === null) {
+            throw new Error(
+                'AI Select requires a fresh Stable Mask for the changed Anchor.'
+            );
+        }
+        const request = this.anchor.createAnchorAdjustmentSupportProbeRequest(
+            render,
+            stableMask.artifact,
+            this.mintSupportProbeAttemptId()
+        );
+        if (request === null) {
+            throw new Error(
+                'AI Select could not bind changed-Anchor validation to the current draft.'
+            );
+        }
+        const pending: PendingDraftConfirmation = Object.freeze({
+            adjustmentId: draft.adjustmentId,
+            cameraBindingDigest: draft.cameraBindingDigest,
+            stableMaskId: stableMask.maskId,
+            stableMaskDigest: stableMask.artifact.digest,
+            draftMaskStateRevision: this.draftMaskStateRevision,
+            request
+        });
+        this.activeConfirmation = pending;
+        this.confirmationStatus = 'validating';
+        this.validation = null;
+        this.confirmationErrorMessage = undefined;
+        this.publish();
+
+        try {
+            const response =
+                await this.supportProbe.probeAnchorSupport(request);
+            if (!this.isCurrentConfirmation(pending)) {
+                return null;
+            }
+            if (
+                !this.anchor.acceptsAnchorAdjustmentSupportProbeResponse(
+                    response,
+                    request,
+                    render
+                )
+            ) {
+                throw new Error(
+                    'The Selection Service Companion returned an invalid or stale changed-Anchor support probe binding.'
+                );
+            }
+            const validation = evaluateAnchorValidation({
+                rgbReady: true,
+                rgbDigest: render.rgb.digest,
+                rgbWidth: render.rgb.width,
+                rgbHeight: render.rgb.height,
+                cameraBindingCurrent: true,
+                stableMask,
+                maskRevisionPending: false,
+                stableIdMappingValid: this.getStableIdMappingValid(),
+                renderWorkingSetValid: this.getRenderWorkingSetValid(),
+                support: response.support
+            });
+            this.validation = validation;
+            if (validation.hardBlocks.length > 0) {
+                throw new Error(
+                    `AI Select changed-Anchor validation blocks Confirm: ${validation.hardBlocks.join(
+                        ', '
+                    )}.`
+                );
+            }
+            if (
+                validation.softWarnings.length > 0 &&
+                options.overrideSoftWarnings !== true
+            ) {
+                throw new Error(
+                    'AI Select changed-Anchor validation raised soft warnings. Confirm again with an explicit override to proceed.'
+                );
+            }
+            this.confirmationStatus = 'idle';
+            this.confirmationErrorMessage = undefined;
+            const confirmed = this.commitDraft({ render, stableMask });
+            this.activeConfirmation = null;
+            if (this.draft !== null) {
+                this.discardDraft(true);
+            }
+            return confirmed;
+        } catch (error) {
+            if (!this.isCurrentConfirmation(pending)) {
+                return null;
+            }
+            this.activeConfirmation = null;
+            this.confirmationStatus = 'failed';
+            this.confirmationErrorMessage = errorMessage(error);
+            this.publish();
+            throw error;
+        }
+    }
+
     cancelAdjustment(): void {
         this.discardDraft(true);
     }
@@ -416,11 +609,15 @@ export class AISelectAnchorAdjustmentController {
             return;
         }
         this.activeRender = null;
+        this.activeConfirmation = null;
         this.readyRender = null;
         this.status = 'current';
         this.draft = null;
         this.baseline = null;
         this.baselineIdentity = null;
+        this.confirmationStatus = 'idle';
+        this.validation = null;
+        this.confirmationErrorMessage = undefined;
         this.maskRegistry.disposeView(ANCHOR_ADJUSTMENT_DRAFT_VIEW_ID);
         this.evidenceRegistry.disposeView(ANCHOR_ADJUSTMENT_DRAFT_VIEW_ID);
         this.maskSession.notifyHostStateChanged();
@@ -440,6 +637,37 @@ export class AISelectAnchorAdjustmentController {
             confirmedIdentity(this.confirmationState.confirmedAnchor) ===
                 this.baselineIdentity
         );
+    }
+
+    private isCurrentConfirmation(pending: PendingDraftConfirmation): boolean {
+        const draft = this.draft;
+        return (
+            this.activeConfirmation === pending &&
+            draft !== null &&
+            draft.adjustmentId === pending.adjustmentId &&
+            draft.cameraBindingDigest === pending.cameraBindingDigest &&
+            this.draftMaskStateRevision === pending.draftMaskStateRevision &&
+            this.mask.state.stableMask?.maskId === pending.stableMaskId &&
+            this.mask.state.stableMask?.artifact.digest ===
+                pending.stableMaskDigest &&
+            this.mask.state.requestStatus !== 'pending' &&
+            !this.mask.state.hasUnconfirmedChanges &&
+            this.readyRender !== null &&
+            this.readyRender.rgb.digest === pending.request.rgbDigest &&
+            this.confirmationState.confirmedAnchor !== null &&
+            confirmedIdentity(this.confirmationState.confirmedAnchor) ===
+                this.baselineIdentity
+        );
+    }
+
+    private mintSupportProbeAttemptId(): string {
+        if (this.nextSupportProbeAttemptOrdinal >= Number.MAX_SAFE_INTEGER) {
+            throw new Error(
+                'Changed-Anchor support probe identity cannot advance safely.'
+            );
+        }
+        this.nextSupportProbeAttemptOrdinal += 1;
+        return `anchor-adjustment-support-probe-${this.nextSupportProbeAttemptOrdinal}`;
     }
 
     private requireDraft(): AnchorAdjustmentDraft {

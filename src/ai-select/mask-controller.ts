@@ -5,7 +5,7 @@ import type {
 import type { AnchorRgbArtifact } from './anchor-render-service';
 import { AISelectDirtyStateTracker } from './dirty-state';
 import { PerViewEvidenceRegistry } from './evidence-state';
-import type { BrushStroke } from './mask-annotation';
+import type { BrushStroke, MaskAnnotation } from './mask-annotation';
 import { MaskAnnotationRegistry } from './mask-registry';
 import type {
     AISelectMaskProvider,
@@ -211,6 +211,34 @@ export class AISelectMaskController implements AISelectMaskAuthoring {
 
     confirmEditingMask(): void {
         this.session.confirmEditingMask();
+    }
+
+    beginCorrectionFromStable(): void {
+        this.session.beginCorrectionFromStable();
+    }
+
+    /** Promote one draft-local confirmed Mask onto the new live Anchor RGB. */
+    replaceStableFromAdjustment(source: MaskAnnotation): MaskAnnotation {
+        const rgb = this.currentAnchorRgb();
+        if (rgb === null) {
+            throw new Error(
+                'AI Select requires the committed changed-Anchor RGB before replacing its Stable Mask.'
+            );
+        }
+        const stable = this.maskRegistry.replaceStableFromAdjustment(
+            ANCHOR_VIEW_ID,
+            rgb.digest,
+            source
+        );
+        this.session.notifyHostStateChanged();
+        return stable;
+    }
+
+    /** Release the superseded Anchor products after ConfirmedAnchor rotates. */
+    releasePreviousAnchorProductsAfterAdjustment(): void {
+        this.evidenceRegistry.disposeView(ANCHOR_VIEW_ID);
+        this.dirtyState.markAnchorStableChanged([]);
+        this.dirtyState.markStableMaskPublished(ANCHOR_VIEW_ID);
     }
 
     clearEditingMask(): void {

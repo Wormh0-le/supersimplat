@@ -607,12 +607,13 @@ test('ordinary Availability UI is accessible and contains no technical/model con
         'utf8'
     );
 
-    // The three-state projection rides on the AI Select toggle and inside
-    // the AI Select panel; both are localized, never hardcoded.
+    // The three-state projection stays in the Status Bar. The header-free
+    // Dock consumes availability only as contextual action gating.
     assert.match(statusBarSource, /status-bar-availability-dot/);
     assert.match(statusBarSource, /ai-select\.availability\./);
-    assert.match(dockSource, /ai-select-anchor-dock-availability/);
-    assert.match(dockSource, /ai-select\.availability\./);
+    assert.doesNotMatch(dockSource, /ai-select-anchor-dock-availability/);
+    assert.match(dockSource, /serviceAvailable:/);
+    assert.match(dockSource, /reLiftDescription/);
     assert.match(dockSource, /aria-live/);
     const locales = JSON.parse(
         fs.readFileSync(

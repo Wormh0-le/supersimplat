@@ -613,3 +613,64 @@ test('returned annotations are immutable domain records', () => {
         })
     );
 });
+
+test('changed-Anchor cutover imports only a confirmed draft artifact under the live RGB identity', () => {
+    const registry = new MaskAnnotationRegistry();
+    registry.registerSamResult({
+        viewId: 'anchor-view',
+        rgbDigest: rgbDigest('a'),
+        artifact: samArtifact(8, 8, 0b101),
+        prompts
+    });
+    const previous = registry.confirm('anchor-view', rgbDigest('a'));
+    const draft = Object.freeze({
+        maskId: 'draft-stable',
+        viewId: 'anchor-adjustment-draft',
+        source: 'manual',
+        status: 'user-confirmed',
+        artifact: samArtifact(8, 8, 0b111),
+        createdFromRgbDigest: rgbDigest('b')
+    });
+
+    const replacement = registry.replaceStableFromAdjustment(
+        'anchor-view',
+        rgbDigest('b'),
+        draft
+    );
+
+    assert.equal(replacement.viewId, 'anchor-view');
+    assert.equal(replacement.createdFromRgbDigest, rgbDigest('b'));
+    assert.equal(replacement.artifact.digest, draft.artifact.digest);
+    assert.equal(replacement.parentMaskId, previous.maskId);
+    assert.equal(
+        registry.viewState('anchor-view', rgbDigest('a')).stableMask,
+        null
+    );
+    assert.equal(
+        registry.viewState('anchor-view', rgbDigest('b')).stableMask.maskId,
+        replacement.maskId
+    );
+});
+
+test('entering correction branches Editing from automatic Stable without publishing it', () => {
+    const registry = new MaskAnnotationRegistry();
+    const stable = registry.publishAutoStable({
+        viewId: 'generated-00',
+        rgbDigest: rgbDigest('g'),
+        artifact: samArtifact(8, 8, 0b111),
+        source: 'single-frame-sam',
+        status: 'auto-good'
+    });
+
+    const editing = registry.beginEditingFromStable(
+        'generated-00',
+        rgbDigest('g')
+    );
+    const state = registry.viewState('generated-00', rgbDigest('g'));
+
+    assert.equal(editing.status, 'draft');
+    assert.equal(editing.parentMaskId, stable.maskId);
+    assert.equal(editing.artifact.digest, stable.artifact.digest);
+    assert.equal(state.stableMask.maskId, stable.maskId);
+    assert.equal(state.editingMask.maskId, editing.maskId);
+});

@@ -4,6 +4,7 @@ import { Color, Mat4, Quat, Vec3, createGraphicsDevice } from 'playcanvas';
 import { AISelectAnchorAdjustmentController } from './ai-select/anchor-adjustment';
 import { AISelectAnchorConfirmationController } from './ai-select/anchor-confirmation';
 import { AISelectAnchorController } from './ai-select/anchor-controller';
+import { AISelectAnchorCutoverCoordinator } from './ai-select/anchor-cutover';
 import {
     captureEditorCameraBinding,
     playCanvasWorldTransformFromCameraBinding
@@ -21,6 +22,7 @@ import { CandidatePresentationCoordinator } from './ai-select/candidate-presenta
 import { CandidatePublicationStore } from './ai-select/candidate-publication';
 import { pickGeneratedViewFrustum } from './ai-select/generated-frustum-picking';
 import { AISelectGeneratedViewController } from './ai-select/generated-view-controller';
+import { LiftReadinessStore } from './ai-select/lift-readiness';
 import { AISelectMaskController } from './ai-select/mask-controller';
 import { createPromptAdapterCapabilities } from './ai-select/prompt-state';
 import { AISelectUserViewMaskController } from './ai-select/user-view-mask-controller';
@@ -477,11 +479,15 @@ const main = async () => {
     const aiSelectCandidatePublications = new CandidatePublicationStore(
         aiSelectMaskController.dirtyState
     );
+    const aiSelectLiftReadiness = new LiftReadinessStore(
+        aiSelectMaskController.dirtyState
+    );
     let aiSelectCandidateContextId: string | null = null;
     aiSelectController.subscribe((state) => {
         const contextId = state.context?.targetContextId ?? null;
         if (contextId !== aiSelectCandidateContextId) {
             aiSelectCandidatePublications.reset();
+            aiSelectLiftReadiness.reset();
             aiSelectCandidateContextId = contextId;
         }
     });
@@ -505,10 +511,22 @@ const main = async () => {
         mask: aiSelectMaskController,
         supportProbe: selectionServiceAdapter
     });
+    const aiSelectAnchorCutover = new AISelectAnchorCutoverCoordinator({
+        anchor: aiSelectController,
+        mask: aiSelectMaskController,
+        confirmation: aiSelectConfirmation,
+        releaseDependentProducts: () => {
+            aiSelectCandidateCorrection?.reset();
+            aiSelectCandidatePublications.reset();
+            aiSelectLiftReadiness.reset();
+        }
+    });
     aiSelectAnchorAdjustment = new AISelectAnchorAdjustmentController({
         anchor: aiSelectController,
         confirmation: aiSelectConfirmation,
         maskProvider: selectionServiceAdapter,
+        supportProbe: selectionServiceAdapter,
+        commitDraft: (input) => aiSelectAnchorCutover.commit(input),
         getModelManifestDigest: getAISelectModelManifestDigest,
         getPromptAdapterCapabilities: getAISelectPromptAdapterCapabilities
     });
@@ -941,6 +959,7 @@ const main = async () => {
         aiSelectMaskController,
         aiSelectConfirmation,
         {
+            anchorAdjustment: aiSelectAnchorAdjustment,
             generatedViews: aiSelectGeneratedViews,
             candidateCorrection: aiSelectCandidateCorrection,
             candidatePresentation: aiSelectCandidatePresentation,
@@ -972,9 +991,8 @@ const main = async () => {
                 });
             },
             readiness: selectionServiceReadiness,
-            onValidate: async () => {
-                await aiSelectConfirmation.validate();
-            },
+            liftReadiness: aiSelectLiftReadiness,
+            tooltips: editorUI.tooltips,
             onConfirmAnchor: async () => {
                 try {
                     await aiSelectConfirmation.confirmAnchor();
@@ -1002,6 +1020,35 @@ const main = async () => {
                         return;
                     }
                     await aiSelectConfirmation.confirmAnchor({
+                        overrideSoftWarnings: true
+                    });
+                }
+            },
+            onConfirmAnchorAdjustment: async () => {
+                try {
+                    await aiSelectAnchorAdjustment.confirmAdjustment();
+                } catch (error) {
+                    const warnings =
+                        aiSelectAnchorAdjustment.state.validation
+                            ?.softWarnings ?? [];
+                    if (warnings.length === 0) {
+                        throw error;
+                    }
+                    const result = await events.invoke('showPopup', {
+                        type: 'yesno',
+                        header: i18n.t('ai-select.anchor.confirm'),
+                        message: `${warnings
+                            .map((warning) =>
+                                i18n.t(`ai-select.validation.soft.${warning}`)
+                            )
+                            .join('\n')}\n${i18n.t(
+                            'ai-select.validation.soft-confirm'
+                        )}`
+                    });
+                    if (result.action !== 'yes') {
+                        return;
+                    }
+                    await aiSelectAnchorAdjustment.confirmAdjustment({
                         overrideSoftWarnings: true
                     });
                 }

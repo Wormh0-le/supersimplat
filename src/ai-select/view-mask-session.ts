@@ -128,6 +128,7 @@ export interface AISelectMaskAuthoring {
     applyBrushStroke(stroke: BrushStroke): void;
     applyBrushGesture(input: ApplyBrushGestureInput): void;
     confirmEditingMask(): void;
+    beginCorrectionFromStable(): void;
     clearEditingMask(): void;
     restoreAutoMask(): void;
     undoMaskEdit(): void;
@@ -608,6 +609,14 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         this.lastErrorMessage = undefined;
         this.publish();
         this.onStableMaskPublished?.();
+    }
+
+    /** Create an identical Editing branch while retaining Stable authority. */
+    beginCorrectionFromStable(): void {
+        this.requireUnlocked();
+        const rgb = this.requireReadyRgb();
+        this.maskRegistry.beginEditingFromStable(this.host.viewId, rgb.digest);
+        this.publish();
     }
 
     /**

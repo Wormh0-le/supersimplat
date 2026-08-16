@@ -66,6 +66,20 @@ GAUSSIANS: tuple[tuple[int, tuple[float, float, float], float], ...] = (
 
 def _binary_fixture() -> tuple[bytes, BinarySceneSnapshotManifest]:
     count = len(GAUSSIANS)
+    source_digest = 'sha256:' + 'b' * 64
+    scope_identity = json.dumps(
+        {
+            'policyId': 'visible-editor-splats-conservative/v1',
+            'targetSplatId': 'splat-1',
+            'sources': [{
+                'splatId': 'splat-1',
+                'sourceContentDigest': source_digest,
+                'gaussianCount': count,
+            }],
+        },
+        separators=(',', ':'),
+        ensure_ascii=False,
+    ).encode('utf-8')
     payload = b''.join(
         (
             b''.join(struct.pack('<I', stable_id) for stable_id, _, _ in GAUSSIANS),
@@ -109,6 +123,19 @@ def _binary_fixture() -> tuple[bytes, BinarySceneSnapshotManifest]:
             'alphaMode': 'opaque-background',
             'shBands': 0,
             'rasterizer': 'playcanvas-gsplat-classic',
+        },
+        'authoritativeRenderScope': {
+            'policyId': 'visible-editor-splats-conservative/v1',
+            'targetSplatId': 'splat-1',
+            'identityDigest': 'sha256:' + hashlib.sha256(scope_identity).hexdigest(),
+            'entries': [{
+                'splatId': 'splat-1',
+                'role': 'target',
+                'sourceContentDigest': source_digest,
+                'rowOffset': 0,
+                'rowCount': count,
+                'renderIdStart': GAUSSIANS[0][0],
+            }],
         },
         'shFloatCountPerGaussian': 0,
         'payloadByteLength': len(payload),

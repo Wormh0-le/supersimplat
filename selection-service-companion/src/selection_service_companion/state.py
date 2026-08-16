@@ -51,6 +51,8 @@ from .generated_views import (
 from .gsplat_renderer import (
     AnchorRenderArtifact,
     GsplatContributorRenderer,
+    REFERENCE_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+    REFERENCE_EVIDENCE_RUNTIME_BUILD_ID,
     production_gsplat_renderer,
     validate_supported_snapshot,
 )
@@ -274,6 +276,8 @@ MODEL_MANIFEST_IDENTITY_FIELDS = (
 # replaces this seam with the FlashSplat-style same-decision kernel; the
 # browser fails closed on any version it does not explicitly support.
 AI_SELECT_RGB_RENDERER_VERSION = 'gsplat-rgb/v1'
+AI_SELECT_RASTER_IMPLEMENTATION_ID = REFERENCE_EVIDENCE_RASTER_IMPLEMENTATION_ID
+AI_SELECT_RUNTIME_BUILD_ID = REFERENCE_EVIDENCE_RUNTIME_BUILD_ID
 
 
 @dataclass(frozen=True)
@@ -317,6 +321,143 @@ class AISelectAnchorRequest:
         }
 
 
+def _authoritative_rgb_cache_key(
+    request: AISelectAnchorRequest,
+    scene_snapshot: Mapping[str, Any] | PackedBinarySceneSnapshot | SpatialWorkingSet,
+) -> str:
+    if isinstance(scene_snapshot, SpatialWorkingSet):
+        working_set_token = scene_snapshot.working_set_token
+        membership_digest = scene_snapshot.membership_digest
+        render_scope = scene_snapshot.manifest.authoritative_render_scope
+    elif isinstance(scene_snapshot, PackedBinarySceneSnapshot):
+        working_set_token = scene_snapshot.content_digest
+        membership_digest = scene_snapshot.content_digest
+        render_scope = scene_snapshot.authoritative_render_scope
+    else:
+        working_set_token = request.scene_version
+        membership_digest = request.scene_version
+        render_scope = scene_snapshot.get('authoritativeRenderScope')
+    dependency_token = request.request_binding.get('dependencyToken')
+    if not isinstance(dependency_token, Mapping):
+        raise ValueError('AI Select RGB cache requires a complete dependency identity')
+    return _canonical_json_digest(
+        {
+            'cachePolicyId': 'authoritative-rgb-cache/v1',
+            'targetSplatId': request.target_splat_id,
+            'sceneId': request.scene_id,
+            'sceneVersion': request.scene_version,
+            'renderConfigVersion': request.render_config_version,
+            'dependencyToken': dict(dependency_token),
+            'cameraBinding': request.camera_binding,
+            'workingSetToken': working_set_token,
+            'membershipDigest': membership_digest,
+            'renderScopeIdentity': (
+                render_scope.get('identityDigest')
+                if isinstance(render_scope, Mapping)
+                else None
+            ),
+            'rasterImplementationId': AI_SELECT_RASTER_IMPLEMENTATION_ID,
+            'runtimeBuildId': AI_SELECT_RUNTIME_BUILD_ID,
+        }
+    )
+
+
+def _authoritative_target_row_range(
+    scene_snapshot: Mapping[str, Any] | PackedBinarySceneSnapshot | SpatialWorkingSet,
+    target_splat_id: str,
+) -> tuple[int, int]:
+    if isinstance(scene_snapshot, SpatialWorkingSet):
+        scope = scene_snapshot.manifest.authoritative_render_scope
+        gaussian_count = scene_snapshot.manifest.total_gaussian_count
+    elif isinstance(scene_snapshot, PackedBinarySceneSnapshot):
+        scope = scene_snapshot.authoritative_render_scope
+        gaussian_count = scene_snapshot.gaussian_count
+    else:
+        scope = scene_snapshot.get('authoritativeRenderScope')
+        gaussian_count = scene_snapshot.get('gaussianCount')
+    if not isinstance(scope, Mapping):
+        raise ValueError(
+            'AI Select authoritative RGB requires a validated visible-Splat render scope'
+        )
+    if scope.get('targetSplatId') != target_splat_id:
+        raise ValueError(
+            'AI Select authoritative render scope does not match the Active Target'
+        )
+    entries = scope.get('entries')
+    if not isinstance(entries, Sequence) or isinstance(entries, (str, bytes)):
+        raise ValueError('AI Select authoritative render scope entries are absent')
+    target_entries = [
+        entry
+        for entry in entries
+        if isinstance(entry, Mapping) and entry.get('role') == 'target'
+    ]
+    if len(target_entries) != 1:
+        raise ValueError('AI Select authoritative render scope target is ambiguous')
+    entry = target_entries[0]
+    row_offset = entry.get('rowOffset')
+    row_count = entry.get('rowCount')
+    if (
+        isinstance(row_offset, bool)
+        or not isinstance(row_offset, int)
+        or isinstance(row_count, bool)
+        or not isinstance(row_count, int)
+        or isinstance(gaussian_count, bool)
+        or not isinstance(gaussian_count, int)
+        or row_offset < 0
+        or row_count <= 0
+        or row_offset + row_count > gaussian_count
+    ):
+        raise ValueError('AI Select authoritative render scope target rows are invalid')
+    return row_offset, row_count
+
+
+def _target_planes_from_packed_snapshot(
+    snapshot: PackedBinarySceneSnapshot,
+    target_splat_id: str,
+) -> list[tuple[memoryview, memoryview]]:
+    row_offset, row_count = _authoritative_target_row_range(
+        snapshot, target_splat_id
+    )
+    return [
+        (
+            snapshot.field('means')[row_offset * 12:(row_offset + row_count) * 12],
+            snapshot.field('logitOpacities')[
+                row_offset * 4:(row_offset + row_count) * 4
+            ],
+        )
+    ]
+
+
+def _target_planes_from_spatial_working_set(
+    working_set: SpatialWorkingSet,
+    target_splat_id: str,
+) -> list[tuple[memoryview, memoryview]]:
+    row_offset, row_count = _authoritative_target_row_range(
+        working_set, target_splat_id
+    )
+    row_end = row_offset + row_count
+    planes: list[tuple[memoryview, memoryview]] = []
+    for chunk in working_set.chunks:
+        ordinals = chunk.field('globalOrdinals').cast('I')
+        start: int | None = None
+        for index in range(len(ordinals) + 1):
+            is_target = (
+                index < len(ordinals)
+                and row_offset <= int(ordinals[index]) < row_end
+            )
+            if is_target and start is None:
+                start = index
+            elif not is_target and start is not None:
+                planes.append(
+                    (
+                        chunk.field('means')[start * 12:index * 12],
+                        chunk.field('logitOpacities')[start * 4:index * 4],
+                    )
+                )
+                start = None
+    return planes
+
+
 @dataclass
 class AnchorRenderAdmission:
     """One private, replayable Anchor publication reserved by request binding."""
@@ -324,6 +465,17 @@ class AnchorRenderAdmission:
     completed: Event = field(default_factory=Event)
     publication: str | None = None
     failure: tuple[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class AuthoritativeRGBArtifact:
+    """One semantic RGB cache entry independent from debug Contributor data."""
+
+    image_png: bytes
+    rgb_digest: str
+    width: int
+    height: int
+    alpha_coverage: float | None
 
 
 @dataclass(frozen=True)
@@ -1067,6 +1219,16 @@ class CompanionState:
     # proposal requests; digest-only requests resolve against it. Guarded by
     # _session_lock; never held across model work.
     _rgb_cache: dict[str, tuple[bytes, int, int]] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _authoritative_rgb_cache: dict[str, AuthoritativeRGBArtifact] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _reference_contributor_cache: dict[str, dict[str, str]] = field(
         default_factory=dict,
         init=False,
         repr=False,
@@ -1906,6 +2068,13 @@ class CompanionState:
                         'AI Select Anchor render configuration does not match the registered Scene Snapshot'
                     )
                 scene_snapshot = snapshot.scene
+            # Snapshot transports may remain reusable for non-AI-Select
+            # compatibility routes, but authoritative RGB never publishes
+            # unless the editor declared and authenticated its full visible
+            # Splat render scope.
+            _authoritative_target_row_range(
+                scene_snapshot, anchor_request.target_splat_id
+            )
 
         renderer = self._require_contributor_renderer()
         if getattr(renderer, 'renderer_id', None) != 'gsplat':
@@ -1926,6 +2095,56 @@ class CompanionState:
             )
             if not owns_admission:
                 return self._replay_anchor_render(admission)
+
+        rgb_cache_key = _authoritative_rgb_cache_key(
+            anchor_request, scene_snapshot
+        )
+        reference_cache_key = self._reference_contributor_cache_key(
+            rgb_cache_key
+        )
+        cached_rgb = self._resolve_authoritative_rgb(rgb_cache_key)
+        with self._session_lock:
+            cached_reference = self._reference_contributor_cache.get(
+                reference_cache_key
+            )
+        if cached_rgb is not None and (
+            not anchor_request.reference_contributor
+            or cached_reference is not None
+        ):
+            if (
+                expected_view_id is None
+                and cached_rgb.alpha_coverage is not None
+                and cached_rgb.alpha_coverage < _BLANK_RENDER_MIN_ALPHA_COVERAGE
+            ):
+                failure = MaskSessionError(
+                    'blankRender',
+                    'The cached authoritative gsplat render is blank for the planned Key View.',
+                )
+                self._complete_anchor_render(
+                    anchor_key,
+                    admission,
+                    failure=failure,
+                    timing=anchor_timing,
+                )
+                raise failure
+            with anchor_timing.measure('json-base64'):
+                response = self._anchor_response_from_artifact(
+                    anchor_request,
+                    cached_rgb,
+                    cached_reference
+                    if anchor_request.reference_contributor
+                    else None,
+                )
+            self._cache_rgb(
+                cached_rgb.rgb_digest,
+                cached_rgb.image_png,
+                cached_rgb.width,
+                cached_rgb.height,
+            )
+            self._complete_anchor_render(
+                anchor_key, admission, response=response, timing=anchor_timing
+            )
+            return response
 
         try:
             try:
@@ -1966,6 +2185,15 @@ class CompanionState:
                     'rendererFailure',
                     'The gsplat/CUDA renderer returned an invalid AI Select Anchor artifact.',
                 )
+            if (
+                cached_rgb is not None
+                and anchor_request.reference_contributor
+                and artifact.rgb_digest != cached_rgb.rgb_digest
+            ):
+                raise MaskSessionError(
+                    'rendererFailure',
+                    'The reference Contributor pass changed the independently cached authoritative RGB.',
+                )
             # Authoritative nonblank gate (view-renders only): a planned Key
             # View whose raster alpha covers nothing fails closed before any
             # RGB publishes. The Anchor route never takes this branch.
@@ -1978,36 +2206,50 @@ class CompanionState:
                     'blankRender',
                     'The authoritative gsplat render is blank for the planned Key View.',
                 )
-            with anchor_timing.measure('json-base64'):
-                response = {
-                    'status': 'complete',
-                    **anchor_request.response_fields(),
-                    'rgb': {
-                        'pngBase64': base64.b64encode(artifact.image_png).decode('ascii'),
-                        'digest': _anchor_digest(artifact.rgb_digest, 'RGB digest'),
-                        'width': anchor_request.width,
-                        'height': anchor_request.height,
-                    },
-                    'rgbRendererVersion': AI_SELECT_RGB_RENDERER_VERSION,
-                    'rendererId': 'gsplat',
-                }
-                if anchor_request.reference_contributor:
-                    # The explicit debug/reference capability reports its own
-                    # outcome beside the RGB; its failure never converts the
-                    # successful authoritative render into a Preview Failure.
-                    if artifact.reference_contributor_error is not None:
-                        response['referenceContributorError'] = (
+            reference_record: dict[str, str] | None = None
+            if anchor_request.reference_contributor:
+                # This independently keyed debug record is never required for
+                # production RGB reuse or View readiness.
+                if artifact.reference_contributor_error is not None:
+                    reference_record = {
+                        'referenceContributorError':
                             artifact.reference_contributor_error
-                        )
-                    elif artifact.contributor_digest is not None:
-                        response['referenceContributorDigest'] = _anchor_digest(
+                    }
+                elif artifact.contributor_digest is not None:
+                    reference_record = {
+                        'referenceContributorDigest': _anchor_digest(
                             artifact.contributor_digest,
                             'reference contributor digest',
                         )
-                    else:
-                        response['referenceContributorError'] = (
+                    }
+                else:
+                    reference_record = {
+                        'referenceContributorError': (
                             'rendererUnavailable: The renderer did not produce a reference Contributor artifact.'
                         )
+                    }
+                with self._session_lock:
+                    self._reference_contributor_cache[
+                        reference_cache_key
+                    ] = reference_record
+                    while (
+                        len(self._reference_contributor_cache)
+                        > AI_SELECT_RGB_CACHE_LIMIT
+                    ):
+                        del self._reference_contributor_cache[
+                            next(iter(self._reference_contributor_cache))
+                        ]
+            authoritative_artifact = AuthoritativeRGBArtifact(
+                artifact.image_png,
+                _anchor_digest(artifact.rgb_digest, 'RGB digest'),
+                anchor_request.width,
+                anchor_request.height,
+                artifact.alpha_coverage,
+            )
+            with anchor_timing.measure('json-base64'):
+                response = self._anchor_response_from_artifact(
+                    anchor_request, authoritative_artifact, reference_record
+                )
         except MaskSessionError as error:
             self._complete_anchor_render(
                 anchor_key, admission, failure=error, timing=anchor_timing
@@ -2026,6 +2268,12 @@ class CompanionState:
         self._cache_rgb(
             _anchor_digest(artifact.rgb_digest, 'RGB digest'),
             artifact.image_png,
+            anchor_request.width,
+            anchor_request.height,
+        )
+        self._cache_authoritative_rgb(
+            rgb_cache_key,
+            artifact,
             anchor_request.width,
             anchor_request.height,
         )
@@ -2154,67 +2402,19 @@ class CompanionState:
         """
 
         probe_request = self._parse_ai_select_support_probe_request(request)
-        planes: list[tuple[memoryview, memoryview]] = []
-        if probe_request.scene_transport == 'spatial-v1':
-            try:
-                resolution = self._spatial_scene_store.resolve_working_set(
-                    probe_request.scene_id,
-                    probe_request.scene_version,
-                    probe_request.camera_binding,
-                )
-            except SnapshotUploadError:
-                return {
-                    'status': 'sceneCacheMiss',
-                    **probe_request.response_fields(),
-                }
-            if resolution.missing_chunk_ids:
-                return {
-                    'status': 'sceneChunkMiss',
-                    **probe_request.response_fields(),
-                    'workingSetToken': resolution.working_set_token,
-                    'missingChunkIds': list(resolution.missing_chunk_ids),
-                }
-            if resolution.working_set is None:
-                raise ValueError(
-                    'AI Select Anchor support probe Spatial Scene working set is incomplete'
-                )
-            render_configuration = (
-                resolution.working_set.manifest.render_configuration
-            )
-            if (
-                render_configuration.get('version')
-                != probe_request.render_config_version
-            ):
-                raise ValueError(
-                    'AI Select Anchor support probe render configuration does not match the registered Spatial Scene manifest'
-                )
-            # Resident chunks expose their immutable mmap planes directly; the
-            # probe never materializes the renderer's torch tensor views.
-            planes.extend(
-                (chunk.field('means'), chunk.field('logitOpacities'))
-                for chunk in resolution.working_set.chunks
-            )
-        else:
-            snapshot = self.scene_snapshot(
-                probe_request.scene_id, probe_request.scene_version
-            )
-            if snapshot is None:
-                return {
-                    'status': 'sceneCacheMiss',
-                    **probe_request.response_fields(),
-                }
-            if snapshot.render_config_version != probe_request.render_config_version:
-                raise ValueError(
-                    'AI Select Anchor support probe render configuration does not match the registered Scene Snapshot'
-                )
-            if not isinstance(snapshot.scene, PackedBinarySceneSnapshot):
-                raise MaskSessionError(
-                    'supportProbeFailure',
-                    'AI Select Anchor support probes require a packed binary Scene Snapshot.',
-                )
-            planes.append(
-                (snapshot.scene.field('means'), snapshot.scene.field('logitOpacities'))
-            )
+        planes, miss = self._resolve_ai_select_scene_planes(
+            scene_id=probe_request.scene_id,
+            scene_version=probe_request.scene_version,
+            render_config_version=probe_request.render_config_version,
+            camera_binding=probe_request.camera_binding,
+            scene_transport=probe_request.scene_transport,
+            target_splat_id=probe_request.target_splat_id,
+            response_fields=probe_request.response_fields(),
+            failure_code='supportProbeFailure',
+            failure_label='AI Select Anchor support probe',
+        )
+        if miss is not None:
+            return miss
 
         probe_key, admission, owns_admission = self._admit_support_probe(
             probe_request
@@ -2896,6 +3096,67 @@ class CompanionState:
                 'The authoritative RGB reference cannot be resolved by this Companion; resend the RGB artifact.',
             )
         return entry[0]
+
+    def _cache_authoritative_rgb(
+        self, cache_key: str, artifact: AnchorRenderArtifact, width: int, height: int
+    ) -> None:
+        entry = AuthoritativeRGBArtifact(
+            artifact.image_png,
+            _anchor_digest(artifact.rgb_digest, 'RGB digest'),
+            width,
+            height,
+            artifact.alpha_coverage,
+        )
+        with self._session_lock:
+            self._authoritative_rgb_cache.pop(cache_key, None)
+            self._authoritative_rgb_cache[cache_key] = entry
+            while len(self._authoritative_rgb_cache) > AI_SELECT_RGB_CACHE_LIMIT:
+                del self._authoritative_rgb_cache[next(iter(self._authoritative_rgb_cache))]
+
+    def _resolve_authoritative_rgb(
+        self, cache_key: str
+    ) -> AuthoritativeRGBArtifact | None:
+        with self._session_lock:
+            entry = self._authoritative_rgb_cache.pop(cache_key, None)
+            if entry is not None:
+                self._authoritative_rgb_cache[cache_key] = entry
+            return entry
+
+    @staticmethod
+    def _reference_contributor_cache_key(rgb_cache_key: str) -> str:
+        return _canonical_json_digest(
+            {
+                'rgbCacheKey': rgb_cache_key,
+                'backendKind': 'reference-contributor',
+                'backendId': 'complete-contributor/reference-v1',
+                'rasterImplementationId': AI_SELECT_RASTER_IMPLEMENTATION_ID,
+                'runtimeBuildId': AI_SELECT_RUNTIME_BUILD_ID,
+            }
+        )
+
+    def _anchor_response_from_artifact(
+        self,
+        request: AISelectAnchorRequest,
+        artifact: AuthoritativeRGBArtifact,
+        reference_record: Mapping[str, str] | None = None,
+    ) -> dict[str, object]:
+        response: dict[str, object] = {
+            'status': 'complete',
+            **request.response_fields(),
+            'rgb': {
+                'pngBase64': base64.b64encode(artifact.image_png).decode('ascii'),
+                'digest': artifact.rgb_digest,
+                'width': artifact.width,
+                'height': artifact.height,
+            },
+            'rgbRendererVersion': AI_SELECT_RGB_RENDERER_VERSION,
+            'rendererId': 'gsplat',
+            'rasterImplementationId': AI_SELECT_RASTER_IMPLEMENTATION_ID,
+            'runtimeBuildId': AI_SELECT_RUNTIME_BUILD_ID,
+        }
+        if reference_record is not None:
+            response.update(reference_record)
+        return response
 
     def _adapter_runtime_digest(self, model: Mapping[str, Any]) -> str:
         """Bind adapter, compiler, runtime, checkpoint, and source identity."""
@@ -4610,6 +4871,8 @@ class CompanionState:
         # Target disposal invalidates every Companion-held RGB reference and
         # previous-prediction logits reference with the same transaction.
         self._rgb_cache.clear()
+        self._authoritative_rgb_cache.clear()
+        self._reference_contributor_cache.clear()
         self._logits_store.clear()
         with self._frame_lock:
             self._frame_sets.clear()
@@ -4637,6 +4900,7 @@ class CompanionState:
             render_config_version=hint_request.render_config_version,
             camera_binding=hint_request.camera_binding,
             scene_transport=hint_request.scene_transport,
+            target_splat_id=hint_request.target_splat_id,
             response_fields=hint_request.response_fields(),
             failure_code='geometryFailure',
             failure_label='AI Select Target Geometry Hint',
@@ -6402,6 +6666,7 @@ class CompanionState:
             render_config_version=mask_request.render_config_version,
             camera_binding=mask_request.anchor_camera_binding,
             scene_transport=mask_request.scene_transport,
+            target_splat_id=mask_request.target_splat_id,
             response_fields=mask_request.response_fields(),
             failure_code='modelFailure',
             failure_label='AI Select Generated View Mask production',
@@ -6770,17 +7035,19 @@ class CompanionState:
         render_config_version: str,
         camera_binding: Mapping[str, object],
         scene_transport: str,
+        target_splat_id: str,
         response_fields: dict[str, object],
         failure_code: str,
         failure_label: str,
     ) -> tuple[list[tuple[memoryview, memoryview]], dict[str, object] | None]:
-        """Resolve immutable Gaussian planes or a bound scene miss response.
+        """Resolve immutable Active-Target planes or a bound scene miss response.
 
         The resolution is identical to the Anchor support probe: spatial
-        working sets expose their resident chunk mmap planes, and packed
-        binary snapshots expose the whole-scene planes. A cache or chunk miss
-        returns bound identity echoes so the editor can re-register or upload
-        exactly once before one bounded retry.
+        working sets expose target-row mmap slices from resident chunks, and
+        packed binary snapshots expose the declared target row range. Read-only
+        occluders remain in rasterization but cannot establish target support
+        or geometry. A cache or chunk miss returns bound identity echoes so the
+        editor can re-register or upload exactly once before one bounded retry.
         """
 
         planes: list[tuple[memoryview, memoryview]] = []
@@ -6817,11 +7084,10 @@ class CompanionState:
                 raise ValueError(
                     f'{failure_label} render configuration does not match the registered Spatial Scene manifest'
                 )
-            # Resident chunks expose their immutable mmap planes directly; the
-            # policies never materialize the renderer's torch tensor views.
             planes.extend(
-                (chunk.field('means'), chunk.field('logitOpacities'))
-                for chunk in resolution.working_set.chunks
+                _target_planes_from_spatial_working_set(
+                    resolution.working_set, target_splat_id
+                )
             )
         else:
             snapshot = self.scene_snapshot(scene_id, scene_version)
@@ -6839,8 +7105,10 @@ class CompanionState:
                     failure_code,
                     f'{failure_label} requires a packed binary Scene Snapshot.',
                 )
-            planes.append(
-                (snapshot.scene.field('means'), snapshot.scene.field('logitOpacities'))
+            planes.extend(
+                _target_planes_from_packed_snapshot(
+                    snapshot.scene, target_splat_id
+                )
             )
         return planes, None
 
@@ -7349,6 +7617,8 @@ class CompanionState:
                 "status": "ready",
                 "cudaVersion": runtime.cuda_version,
                 "rgbRendererVersion": AI_SELECT_RGB_RENDERER_VERSION,
+                "rasterImplementationId": AI_SELECT_RASTER_IMPLEMENTATION_ID,
+                "runtimeBuildId": AI_SELECT_RUNTIME_BUILD_ID,
             }
         return renderer_capability
 

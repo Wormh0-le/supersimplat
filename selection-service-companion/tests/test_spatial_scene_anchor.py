@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from dataclasses import replace
 import hashlib
 from http import HTTPStatus
 import json
@@ -70,6 +71,22 @@ def payload() -> bytes:
 
 def manifest() -> SpatialSceneManifest:
     chunk = payload()
+    source_digest = "sha256:" + "b" * 64
+    identity = json.dumps(
+        {
+            "policyId": "visible-editor-splats-conservative/v1",
+            "targetSplatId": "editor-splat:42",
+            "sources": [
+                {
+                    "splatId": "editor-splat:42",
+                    "sourceContentDigest": source_digest,
+                    "gaussianCount": 1,
+                }
+            ],
+        },
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
     return SpatialSceneManifest(
         scene_id="editor-splat:42",
         scene_version="sha256:" + "a" * 64,
@@ -88,6 +105,21 @@ def manifest() -> SpatialSceneManifest:
             "rasterizer": "playcanvas-gsplat-classic",
         },
         sh_float_count_per_gaussian=0,
+        authoritative_render_scope={
+            "policyId": "visible-editor-splats-conservative/v1",
+            "targetSplatId": "editor-splat:42",
+            "identityDigest": "sha256:" + hashlib.sha256(identity).hexdigest(),
+            "entries": [
+                {
+                    "splatId": "editor-splat:42",
+                    "role": "target",
+                    "sourceContentDigest": source_digest,
+                    "rowOffset": 0,
+                    "rowCount": 1,
+                    "renderIdStart": 7,
+                }
+            ],
+        },
         chunks=(
             SpatialChunkDescriptor(
                 chunk_id="chunk-a",
@@ -189,6 +221,25 @@ class SpatialSceneAnchorTests(unittest.TestCase):
         self.assertEqual(len(self.renderer.scene_snapshots), 1)
         self.assertIsInstance(self.renderer.scene_snapshots[0], SpatialWorkingSet)
 
+    def test_rejects_unscoped_spatial_scene_before_authoritative_rgb(self) -> None:
+        registered = replace(manifest(), authoritative_render_scope=None)
+        self.state.register_spatial_scene_manifest(registered)
+        admission = self.state.begin_spatial_scene_chunk_upload(
+            registered.scene_id, registered.scene_version, ("chunk-a",)
+        )
+        chunk = payload()
+        self.state.accept_spatial_scene_chunk(
+            admission.upload_id or "",
+            "chunk-a",
+            chunk,
+            "sha256:" + hashlib.sha256(chunk).hexdigest(),
+        )
+        self.state.commit_spatial_scene_chunk_upload(admission.upload_id or "")
+
+        with self.assertRaisesRegex(ValueError, "visible-Splat render scope"):
+            self.state.render_ai_select_anchor(request(registered.scene_version))
+        self.assertEqual(self.renderer.scene_snapshots, [])
+
 
 class SpatialSceneAnchorRouteTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -245,6 +296,7 @@ class SpatialSceneAnchorRouteTests(unittest.TestCase):
             "appearancePolicy": registered.appearance_policy,
             "renderConfiguration": registered.render_configuration,
             "shFloatCountPerGaussian": registered.sh_float_count_per_gaussian,
+            "authoritativeRenderScope": registered.authoritative_render_scope,
             "chunks": [
                 {
                     "chunkId": chunk.chunk_id,

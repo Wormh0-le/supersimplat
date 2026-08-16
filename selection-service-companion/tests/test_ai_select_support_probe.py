@@ -89,7 +89,74 @@ SINGLE_MASK = bytes([0x00, 0x04])   # pixel {10} only
 EMPTY_MASK = bytes([0x01, 0x00])    # pixel {0}: foreground, but nothing projects there
 
 
-def _binary_fixture() -> tuple[bytes, BinarySceneSnapshotManifest]:
+def _render_scope(
+    target_splat_id: str,
+    gaussian_count: int,
+    render_id_start: int,
+    *,
+    target_row_count: int | None = None,
+) -> dict[str, object]:
+    target_row_count = gaussian_count if target_row_count is None else target_row_count
+    target_source_digest = "sha256:" + "b" * 64
+    sources = [
+        {
+            "splatId": target_splat_id,
+            "sourceContentDigest": target_source_digest,
+            "gaussianCount": target_row_count,
+        }
+    ]
+    entries = [
+        {
+            "splatId": target_splat_id,
+            "role": "target",
+            "sourceContentDigest": target_source_digest,
+            "rowOffset": 0,
+            "rowCount": target_row_count,
+            "renderIdStart": render_id_start,
+        }
+    ]
+    if target_row_count < gaussian_count:
+        occluder_count = gaussian_count - target_row_count
+        occluder_digest = "sha256:" + "c" * 64
+        sources.append(
+            {
+                "splatId": "visible-occluder",
+                "sourceContentDigest": occluder_digest,
+                "gaussianCount": occluder_count,
+            }
+        )
+        entries.append(
+            {
+                "splatId": "visible-occluder",
+                "role": "occluder",
+                "sourceContentDigest": occluder_digest,
+                "rowOffset": target_row_count,
+                "rowCount": occluder_count,
+                "renderIdStart": render_id_start + target_row_count,
+            }
+        )
+    identity = "sha256:" + hashlib.sha256(
+        json.dumps(
+            {
+                "policyId": "visible-editor-splats-conservative/v1",
+                "targetSplatId": target_splat_id,
+                "sources": sources,
+            },
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    return {
+        "policyId": "visible-editor-splats-conservative/v1",
+        "targetSplatId": target_splat_id,
+        "identityDigest": identity,
+        "entries": entries,
+    }
+
+
+def _binary_fixture(
+    *, target_row_count: int | None = None
+) -> tuple[bytes, BinarySceneSnapshotManifest]:
     count = len(GAUSSIANS)
     payload = b"".join(
         (
@@ -137,6 +204,12 @@ def _binary_fixture() -> tuple[bytes, BinarySceneSnapshotManifest]:
             "shBands": 0,
             "rasterizer": "playcanvas-gsplat-classic",
         },
+        "authoritativeRenderScope": _render_scope(
+            "splat-1",
+            count,
+            GAUSSIANS[0][0],
+            target_row_count=target_row_count,
+        ),
         "shFloatCountPerGaussian": 0,
         "payloadByteLength": len(payload),
         "fields": fields,
@@ -236,6 +309,7 @@ def _spatial_manifest() -> SpatialSceneManifest:
             "rasterizer": "playcanvas-gsplat-classic",
         },
         sh_float_count_per_gaussian=0,
+        authoritative_render_scope=_render_scope("editor-splat:42", 1, 7),
         chunks=(
             SpatialChunkDescriptor(
                 chunk_id="chunk-a",
@@ -572,6 +646,23 @@ class AnchorSupportProbeRouteTests(unittest.TestCase):
         self.assertEqual(
             response["support"],
             {"computable": True, "observedGaussianCount": 3},
+        )
+
+    def test_visible_occluder_cannot_establish_target_support(self) -> None:
+        self.payload, self.manifest = _binary_fixture(target_row_count=1)
+        self.register_binary_snapshot()
+        # Pixel 7 observes only row 2, which belongs to the read-only
+        # occluder scope. The single target row projects to pixel 10.
+        occluder_only_mask = bytes([0x80, 0x00])
+        body = _request_body(self.manifest.scene_version, occluder_only_mask)
+
+        response = self.request_json(
+            "/ai-select/anchor-support-probes", "POST", body
+        )
+
+        self.assertEqual(
+            response["support"],
+            {"computable": False, "observedGaussianCount": 0},
         )
 
     def test_reports_no_computable_support_when_the_mask_misses_every_projection(self) -> None:

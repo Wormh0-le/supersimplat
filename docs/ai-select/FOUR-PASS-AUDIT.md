@@ -1,9 +1,9 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.34
+# Eight-Pass Bidirectional Traceability Audit — v2.35
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
 The v2.12–v2.27 sections and detailed pass text below are retained as historical
-audit evidence. The controlling v2.34 result is the post-Ticket-18 closure at
+audit evidence. The controlling v2.35 result is the post-Ticket-19 closure at
 the end of this document; Ticket 21 still owns calibration of the accepted
 `4–8` initial automatic-View range.
 
@@ -571,3 +571,35 @@ when retained artifacts become usable. Ticket 19 inherits a coherent semantic
 dependency seam without any partial RGB/Mask/Evidence repair contract.
 
 Overall result: **PASS_V2_34**.
+
+## v2.35 Ticket 19 controlling audit result
+
+Ticket 19 is implemented and Ticket 20 is the sole current execution
+frontier. The current pass supersedes the v2.34 frontier values while
+preserving its historical Ticket 18 suspension evidence.
+
+| Pass | Current v2.35 check                                                                                                                                                                   | Result |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 1    | All 31 parent Tickets and the 14A–14D / 16A–16G stage graph resolve; Ticket 20 is the only current frontier                                                                           | PASS   |
+| 2    | Final Spec v1.3 remains the sole current specification and all 31 parent Ticket mappings resolve directly to it                                                                       | PASS   |
+| 3    | Packed/spatial SceneSnapshot identity declares the target plus deterministic visible-Splat occluders without remapping target Stable IDs                                              | PASS   |
+| 4    | WorkingSet, scene tensor and RGB caches bind exact Camera/dependency/raster/runtime identity; exact Undo reuse and incompatible identity recompute are tested                         | PASS   |
+| 5    | Locked-GPU SH0–SH3 selective/full parity and a non-target occluder-versus-target-only fixture pass                                                                                    | PASS   |
+| 6    | Browser effective snapshot tests cover delete, world/palette transforms, color grade and Stable ID mapping; production packed RGB/alpha parity and separate browser heap are measured | PASS   |
+| 7    | RGB responses/readiness expose raster/runtime identity and reference Contributor caching remains independent from Ready RGB                                                           | PASS   |
+| 8    | Integrated tests, Companion tests, lint, locale lint, build, locked-GPU profile and browser profile pass                                                                              | PASS   |
+
+Current critical scan: authoritative render scope means every visible editor
+Splat that can affect RGB, occlusion or transmittance, not only the Active
+Target. Non-target rows are render-only occluders outside target Evidence
+writes and target geometry/support. Scene/Chunk Miss, absent or unauthenticated
+scope, duplicate render IDs and stale raster/runtime identities fail before
+Ready publication; the camera-keyed CPU working-set cache is bounded.
+
+Measured evidence is recorded in
+`docs/ai-select/benchmarks/19-large-scene-render-path.md`. Ticket 20 inherits a
+versioned `rasterImplementationId` seam, exact render-scope/WorkingSet identity
+and cached authoritative RGB without inheriting reference Contributor as a
+production dependency.
+
+Overall result: **PASS_V2_35**.

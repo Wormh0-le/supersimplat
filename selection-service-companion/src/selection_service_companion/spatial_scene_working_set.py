@@ -9,6 +9,7 @@ Gaussian; mmap-backed planes flow straight into tensor operations.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 import hashlib
 import json
@@ -37,6 +38,7 @@ SPATIAL_SCENE_CHUNK_FORMAT_VERSION = 1
 MAX_SPATIAL_SCENE_CHUNK_BYTES = 4 * 1024 * 1024
 MAX_SPATIAL_SCENE_CHUNK_COUNT = 4096
 MAX_SPATIAL_SCENE_MANIFEST_BYTES = 2 * 1024 * 1024
+MAX_SPATIAL_WORKING_SET_CACHE_ENTRIES = 8
 _VALIDITY_CUT = 1.0 / 255.0
 _OPACITY_GUARD = 1.0 - 2.0 ** -12
 _WORLD_EPSILON = 1e-5
@@ -95,6 +97,7 @@ class SpatialSceneManifest:
     render_configuration: Mapping[str, object]
     sh_float_count_per_gaussian: int
     chunks: tuple[SpatialChunkDescriptor, ...]
+    authoritative_render_scope: Mapping[str, object] | None = None
     protocol_version: str = "1"
     format: str = SPATIAL_SCENE_MANIFEST_FORMAT
     format_version: int = SPATIAL_SCENE_MANIFEST_FORMAT_VERSION
@@ -204,6 +207,7 @@ class SpatialWorkingSet:
     manifest: SpatialSceneManifest
     chunks: tuple[ResidentSpatialChunk, ...]
     working_set_token: str
+    membership_digest: str = ""
     _cached_tensors: dict[str, Any] | None = None
 
     def ordered_tensors(self) -> Mapping[str, Any]:
@@ -338,6 +342,11 @@ def _manifest_wire(manifest: SpatialSceneManifest) -> dict[str, object]:
         "appearancePolicy": manifest.appearance_policy,
         "renderConfiguration": manifest.render_configuration,
         "shFloatCountPerGaussian": manifest.sh_float_count_per_gaussian,
+        **(
+            {}
+            if manifest.authoritative_render_scope is None
+            else {"authoritativeRenderScope": manifest.authoritative_render_scope}
+        ),
         "chunks": [
             {
                 "chunkId": chunk.chunk_id,
@@ -408,6 +417,78 @@ def _validate_manifest(manifest: SpatialSceneManifest) -> None:
         raise SnapshotUploadError("Spatial Scene manifest identity is invalid")
     if manifest.total_gaussian_count < 0 or manifest.sh_float_count_per_gaussian not in (0, 9, 24, 45):
         raise SnapshotUploadError("Spatial Scene manifest count or SH schema is invalid")
+    if manifest.authoritative_render_scope is not None:
+        scope = manifest.authoritative_render_scope
+        if (
+            scope.get("policyId") != "visible-editor-splats-conservative/v1"
+            or scope.get("targetSplatId") != manifest.target_splat_id
+            or not _is_digest(scope.get("identityDigest"))
+        ):
+            raise SnapshotUploadError("Spatial Scene authoritative render scope identity is invalid")
+        entries = scope.get("entries")
+        if not isinstance(entries, Sequence) or isinstance(entries, (str, bytes)) or not entries:
+            raise SnapshotUploadError("Spatial Scene authoritative render scope entries are absent")
+        expected_offset = 0
+        target_count = 0
+        splat_ids: set[str] = set()
+        source_identities: list[dict[str, object]] = []
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                raise SnapshotUploadError("Spatial Scene authoritative render scope entry is invalid")
+            splat_id = entry.get("splatId")
+            role = entry.get("role")
+            row_offset = entry.get("rowOffset")
+            row_count = entry.get("rowCount")
+            render_id_start = entry.get("renderIdStart")
+            if (
+                not isinstance(splat_id, str)
+                or not splat_id
+                or splat_id in splat_ids
+                or role not in ("target", "occluder")
+                or (role == "target") != (splat_id == manifest.target_splat_id)
+                or not _is_digest(entry.get("sourceContentDigest"))
+                or isinstance(row_offset, bool)
+                or not isinstance(row_offset, int)
+                or isinstance(row_count, bool)
+                or not isinstance(row_count, int)
+                or isinstance(render_id_start, bool)
+                or not isinstance(render_id_start, int)
+                or render_id_start < 0
+                or render_id_start > 0xFFFFFFFF
+                or row_offset != expected_offset
+                or row_count <= 0
+            ):
+                raise SnapshotUploadError("Spatial Scene authoritative render scope entry is invalid")
+            splat_ids.add(splat_id)
+            target_count += int(role == "target")
+            expected_offset += row_count
+            source_identities.append(
+                {
+                    "splatId": splat_id,
+                    "sourceContentDigest": entry.get("sourceContentDigest"),
+                    "gaussianCount": row_count,
+                }
+            )
+        if target_count != 1 or expected_offset != manifest.total_gaussian_count:
+            raise SnapshotUploadError("Spatial Scene authoritative render scope coverage is incomplete")
+        if entries[0].get("role") != "target":
+            raise SnapshotUploadError("Spatial Scene authoritative render scope must begin with the target")
+        occluder_ids = [entry.get("splatId") for entry in entries[1:]]
+        if occluder_ids != sorted(occluder_ids):
+            raise SnapshotUploadError("Spatial Scene occluder scope order must be deterministic")
+        identity = json.dumps(
+            {
+                "policyId": "visible-editor-splats-conservative/v1",
+                "targetSplatId": manifest.target_splat_id,
+                "sources": source_identities,
+            },
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        if scope.get("identityDigest") != _digest(identity):
+            raise SnapshotUploadError(
+                "Spatial Scene authoritative render scope identity digest is invalid"
+            )
     if len(manifest.chunks) > MAX_SPATIAL_SCENE_CHUNK_COUNT:
         raise SnapshotUploadError("Spatial Scene manifest exceeds the bounded chunk count")
     if len(_canonical_json(_manifest_wire(manifest)).encode("utf-8")) > MAX_SPATIAL_SCENE_MANIFEST_BYTES:
@@ -543,6 +624,11 @@ def _working_set_token(
         "format": "supersplat-camera-working-set-v1",
         "sceneId": manifest.scene_id,
         "sceneVersion": manifest.scene_version,
+        "renderScopeIdentity": (
+            None
+            if manifest.authoritative_render_scope is None
+            else manifest.authoritative_render_scope.get("identityDigest")
+        ),
         "cameraBinding": camera_binding,
         "chunks": [
             {"chunkId": chunk.chunk_id, "chunkDigest": chunk.chunk_digest}
@@ -717,6 +803,20 @@ class SpatialSceneStore:
         self._resident: dict[tuple[str, str, str], ResidentSpatialChunk] = {}
         self._staged: dict[str, _StagedChunkUpload] = {}
         self._completed: dict[str, _CompletedChunkUpload] = {}
+        self._working_sets: OrderedDict[str, SpatialWorkingSet] = OrderedDict()
+
+    def _cached_working_set(self, token: str) -> SpatialWorkingSet | None:
+        working_set = self._working_sets.get(token)
+        if working_set is not None:
+            self._working_sets.move_to_end(token)
+        return working_set
+
+    def _cache_working_set(self, working_set: SpatialWorkingSet) -> None:
+        self._working_sets[working_set.working_set_token] = working_set
+        self._working_sets.move_to_end(working_set.working_set_token)
+        while len(self._working_sets) > MAX_SPATIAL_WORKING_SET_CACHE_ENTRIES:
+            _, evicted = self._working_sets.popitem(last=False)
+            evicted._cached_tensors = None
 
     def register_manifest(self, manifest: SpatialSceneManifest) -> SpatialManifestRegistration:
         _validate_manifest(manifest)
@@ -910,6 +1010,10 @@ class SpatialSceneStore:
                 return
             for resident_key in [candidate for candidate in self._resident if candidate[:2] == key]:
                 self._resident.pop(resident_key).close()
+            for token, working_set in list(self._working_sets.items()):
+                if working_set.manifest.scene_id == key[0] and working_set.manifest.scene_version == key[1]:
+                    self._working_sets.pop(token, None)
+                    working_set._cached_tensors = None
             for upload_id, staged in list(self._staged.items()):
                 if staged.registration_id == registration_id:
                     self._discard_staged_locked(upload_id)
@@ -935,14 +1039,31 @@ class SpatialSceneStore:
             )
             working_set = None
             if not missing:
-                working_set = SpatialWorkingSet(
-                    registered.manifest,
-                    tuple(
-                        self._resident[(scene_id, scene_version, descriptor.chunk_id)]
-                        for descriptor in required
-                    ),
-                    token,
-                )
+                working_set = self._cached_working_set(token)
+                if working_set is None:
+                    membership_digest = _digest(
+                        _canonical_json(
+                            [
+                                {
+                                    "chunkId": descriptor.chunk_id,
+                                    "chunkDigest": descriptor.chunk_digest,
+                                    "globalOrdinalMin": descriptor.global_ordinal_min,
+                                    "globalOrdinalMax": descriptor.global_ordinal_max,
+                                }
+                                for descriptor in required
+                            ]
+                        ).encode("utf-8")
+                    )
+                    working_set = SpatialWorkingSet(
+                        registered.manifest,
+                        tuple(
+                            self._resident[(scene_id, scene_version, descriptor.chunk_id)]
+                            for descriptor in required
+                        ),
+                        token,
+                        membership_digest,
+                    )
+                    self._cache_working_set(working_set)
             return SpatialWorkingSetResolution(
                 scene_id,
                 scene_version,
@@ -984,16 +1105,36 @@ class SpatialSceneStore:
                     "Spatial Scene full reference is missing: " + ", ".join(missing)
                 )
             descriptors = registered.manifest.chunks
-            return SpatialWorkingSet(
+            token = _working_set_token(
+                registered.manifest, camera_binding, descriptors
+            )
+            cached = self._cached_working_set(token)
+            if cached is not None:
+                return cached
+            membership_digest = _digest(
+                _canonical_json(
+                    [
+                        {
+                            "chunkId": descriptor.chunk_id,
+                            "chunkDigest": descriptor.chunk_digest,
+                            "globalOrdinalMin": descriptor.global_ordinal_min,
+                            "globalOrdinalMax": descriptor.global_ordinal_max,
+                        }
+                        for descriptor in descriptors
+                    ]
+                ).encode("utf-8")
+            )
+            working_set = SpatialWorkingSet(
                 registered.manifest,
                 tuple(
                     self._resident[(scene_id, scene_version, descriptor.chunk_id)]
                     for descriptor in descriptors
                 ),
-                _working_set_token(
-                    registered.manifest, camera_binding, descriptors
-                ),
+                token,
+                membership_digest,
             )
+            self._cache_working_set(working_set)
+            return working_set
 
     @staticmethod
     def _descriptor(manifest: SpatialSceneManifest, chunk_id: str) -> SpatialChunkDescriptor:
@@ -1148,6 +1289,9 @@ def parse_spatial_scene_manifest(value: object) -> SpatialSceneManifest:
     render_configuration = value.get("renderConfiguration")
     if not isinstance(render_configuration, Mapping):
         raise SnapshotUploadError("Spatial Scene manifest renderConfiguration must be an object")
+    authoritative_render_scope = value.get("authoritativeRenderScope")
+    if authoritative_render_scope is not None and not isinstance(authoritative_render_scope, Mapping):
+        raise SnapshotUploadError("Spatial Scene manifest authoritativeRenderScope must be an object")
     manifest = SpatialSceneManifest(
         scene_id=string("sceneId"),
         scene_version=string("sceneVersion"),
@@ -1160,6 +1304,11 @@ def parse_spatial_scene_manifest(value: object) -> SpatialSceneManifest:
         appearance_policy=string("appearancePolicy"),
         render_configuration=dict(render_configuration),
         sh_float_count_per_gaussian=integer("shFloatCountPerGaussian"),
+        authoritative_render_scope=(
+            None
+            if authoritative_render_scope is None
+            else json.loads(_canonical_json(authoritative_render_scope))
+        ),
         chunks=tuple(descriptors),
         protocol_version=string("protocolVersion"),
         format=string("format"),

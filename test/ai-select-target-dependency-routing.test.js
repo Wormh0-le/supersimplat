@@ -44,12 +44,38 @@ test('render, transform, world-pose, and Delete/Separate routes reach dependency
     );
 });
 
-test('target routing accepts global/current changes and excludes unrelated Splats', () => {
+test('target routing accepts global/current/render-scope changes and excludes non-scene values', () => {
     const target = {};
+    const occluder = {};
     const unrelated = {};
 
     assert.equal(isCurrentTargetDependencyChange(null), false);
     assert.equal(isCurrentTargetDependencyChange(target), true);
     assert.equal(isCurrentTargetDependencyChange(target, target), true);
+    assert.equal(
+        isCurrentTargetDependencyChange(target, occluder, [target, occluder]),
+        true
+    );
     assert.equal(isCurrentTargetDependencyChange(target, unrelated), false);
+});
+
+test('composition retains hidden Splats and synchronizes scene membership transitions', () => {
+    const mainSource = readFileSync('src/main.ts', 'utf8');
+
+    assert.match(
+        mainSource,
+        /getVisibleSplats: \(\) => events\.invoke\('scene\.allSplats'\)/
+    );
+    assert.match(
+        mainSource,
+        /isCurrentTargetDependencyChange\([\s\S]*?events\.invoke\('scene\.allSplats'\)/
+    );
+    assert.match(
+        mainSource,
+        /scene\.elementAdded[\s\S]*?synchronizeAISelectSceneMembership/
+    );
+    assert.match(
+        mainSource,
+        /scene\.elementRemoved[\s\S]*?synchronizeAISelectSceneMembership/
+    );
 });

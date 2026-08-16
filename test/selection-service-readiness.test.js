@@ -48,7 +48,10 @@ const capabilities = (overrides = {}) => ({
         id: 'gsplat',
         status: 'ready',
         cudaVersion: '12.8',
-        rgbRendererVersion: 'gsplat-rgb/v1'
+        rgbRendererVersion: 'gsplat-rgb/v1',
+        rasterImplementationId: 'gsplat-reference-rgb/v1',
+        runtimeBuildId:
+            'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40'
     },
     imageInstanceProvider: {
         status: 'ready',

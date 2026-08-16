@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 import math
 from pathlib import Path
 import struct
+import subprocess
 import tempfile
 import unittest
 
+from selection_service_companion.binary_scene_snapshot import (
+    BinarySceneSnapshotUploadStore,
+    parse_binary_scene_snapshot_manifest,
+)
 from selection_service_companion.gsplat_renderer import (
     GsplatContributorRenderer,
     LockedGsplatBackend,
@@ -32,6 +39,20 @@ def _digest(payload: bytes) -> str:
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
+def _scope_identity(target_splat_id: str, sources: list[dict[str, object]]) -> str:
+    return _digest(
+        json.dumps(
+            {
+                "policyId": "visible-editor-splats-conservative/v1",
+                "targetSplatId": target_splat_id,
+                "sources": sources,
+            },
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    )
+
+
 def _payload(
     *,
     ordinal: int,
@@ -39,6 +60,7 @@ def _payload(
     mean: tuple[float, float, float],
     sh_float_count: int,
     transformed: bool,
+    dc_override: tuple[float, float, float] | None = None,
 ) -> bytes:
     # `transformed` represents already-effective 02A values: a non-identity
     # world/palette transform, anisotropic rotation/scale, and color grade.
@@ -53,7 +75,9 @@ def _payload(
         math.log(0.2) if transformed else math.log(0.5),
         math.log(0.4) if transformed else math.log(0.5),
     )
-    dc = (0.4, -0.1, 0.2) if transformed else (0.1, 0.2, 0.3)
+    dc = dc_override or (
+        (0.4, -0.1, 0.2) if transformed else (0.1, 0.2, 0.3)
+    )
     sh = tuple((index + 1) * 0.001 for index in range(sh_float_count))
     return b"".join(
         (
@@ -137,6 +161,235 @@ def _global_contributors(raster: object, working_set: object) -> tuple[object, .
 
 @unittest.skipUnless(_locked_gpu_available(), "locked CUDA gsplat runtime is unavailable")
 class SpatialSceneLockedGpuParityTests(unittest.TestCase):
+    def test_production_effective_snapshot_matches_locked_rgb_and_alpha(self) -> None:
+        repository = Path(__file__).resolve().parents[2]
+        exported = subprocess.run(
+            [
+                "node",
+                str(
+                    repository
+                    / "scripts/benchmarks/export_ticket19_effective_snapshot_fixture.cjs"
+                ),
+            ],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        fixture = json.loads(exported.stdout)
+
+        def committed_snapshot(
+            record: dict[str, object], directory: Path
+        ):
+            manifest = parse_binary_scene_snapshot_manifest(record["manifest"])
+            payload = base64.b64decode(str(record["payloadBase64"]))
+            store = BinarySceneSnapshotUploadStore(directory)
+            admission = store.begin(manifest)
+            self.assertIsNotNone(admission.upload_id)
+            upload_id = admission.upload_id or ""
+            for chunk in manifest.chunks:
+                body = payload[chunk.offset:chunk.offset + chunk.byte_length]
+                store.accept_chunk(upload_id, chunk.index, body, chunk.digest)
+            return store, store.commit(upload_id)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            _, production = committed_snapshot(
+                fixture["production"], root / "production"
+            )
+            _, expected = committed_snapshot(
+                fixture["expected"], root / "expected"
+            )
+            self.assertEqual(
+                list(production.stable_ids()), fixture["expectedStableIds"]
+            )
+            self.assertEqual(
+                list(struct.unpack("<9f", production.field("means"))),
+                fixture["expectedMeans"],
+            )
+            _, renderer_camera = _camera()
+            backend = LockedGsplatBackend()
+            renderer = GsplatContributorRenderer(backend=backend)
+            production_artifact = renderer.render_anchor(
+                scene_snapshot=production,
+                view_id="anchor-view",
+                camera=renderer_camera,
+                width=64,
+                height=64,
+            )
+            expected_artifact = renderer.render_anchor(
+                scene_snapshot=expected,
+                view_id="anchor-view",
+                camera=renderer_camera,
+                width=64,
+                height=64,
+            )
+            self.assertEqual(
+                production_artifact.rgb_digest, expected_artifact.rgb_digest
+            )
+            self.assertEqual(
+                production_artifact.alpha_coverage,
+                expected_artifact.alpha_coverage,
+            )
+            self.assertGreater(production_artifact.alpha_coverage or 0.0, 0.0)
+            production.close()
+            expected.close()
+
+    def test_visible_non_target_occluder_is_required_for_authoritative_rgb(self) -> None:
+        binding, renderer_camera = _camera()
+        target = _payload(
+            ordinal=0,
+            stable_id=11,
+            mean=(0.0, 0.0, 5.0),
+            sh_float_count=0,
+            transformed=False,
+            dc_override=(1.5, -1.0, -1.0),
+        )
+        occluder = _payload(
+            ordinal=1,
+            stable_id=12,
+            mean=(0.0, 0.0, 4.0),
+            sh_float_count=0,
+            transformed=False,
+            dc_override=(-1.0, -1.0, 1.5),
+        )
+        broad = SpatialSupportBounds.finite((-4.0, -4.0, 1.0), (4.0, 4.0, 9.0))
+        common = {
+            "coordinate_convention": "right-handed world coordinates; quaternion xyzw",
+            "stable_id_schema": "uint32",
+            "attribute_schema": "mean:f32x3;rotation:f32x4;logScale:f32x3;logitOpacity:f32;dc:f32x3;sh:f32x0",
+            "appearance_policy": "effective-editor-dc-sh-bands-0",
+            "render_configuration": {
+                "version": "supersplat-effective-rgb-v1",
+                "backgroundRgba": [0.0, 0.0, 0.0, 1.0],
+                "alphaMode": "opaque-background",
+                "shBands": 0,
+                "rasterizer": "playcanvas-gsplat-classic",
+            },
+            "sh_float_count_per_gaussian": 0,
+        }
+        scope_manifest = SpatialSceneManifest(
+            scene_id="editor-splat:scope-target",
+            scene_version="sha256:" + "c" * 64,
+            content_digest="sha256:" + "c" * 64,
+            target_splat_id="editor-splat:scope-target",
+            total_gaussian_count=2,
+            chunks=(
+                _descriptor("chunk-target", target, 0, broad),
+                _descriptor("chunk-visible-occluder", occluder, 1, broad),
+            ),
+            authoritative_render_scope={
+                "policyId": "visible-editor-splats-conservative/v1",
+                "targetSplatId": "editor-splat:scope-target",
+                "identityDigest": _scope_identity(
+                    "editor-splat:scope-target",
+                    [
+                        {
+                            "splatId": "editor-splat:scope-target",
+                            "sourceContentDigest": "sha256:" + "e" * 64,
+                            "gaussianCount": 1,
+                        },
+                        {
+                            "splatId": "editor-splat:visible-occluder",
+                            "sourceContentDigest": "sha256:" + "f" * 64,
+                            "gaussianCount": 1,
+                        },
+                    ],
+                ),
+                "entries": [
+                    {
+                        "splatId": "editor-splat:scope-target",
+                        "role": "target",
+                        "sourceContentDigest": "sha256:" + "e" * 64,
+                        "rowOffset": 0,
+                        "rowCount": 1,
+                        "renderIdStart": 11,
+                    },
+                    {
+                        "splatId": "editor-splat:visible-occluder",
+                        "role": "occluder",
+                        "sourceContentDigest": "sha256:" + "f" * 64,
+                        "rowOffset": 1,
+                        "rowCount": 1,
+                        "renderIdStart": 12,
+                    },
+                ],
+            },
+            **common,
+        )
+        target_manifest = SpatialSceneManifest(
+            scene_id="editor-splat:target-only",
+            scene_version="sha256:" + "1" * 64,
+            content_digest="sha256:" + "1" * 64,
+            target_splat_id="editor-splat:target-only",
+            total_gaussian_count=1,
+            chunks=(_descriptor("chunk-target", target, 0, broad),),
+            **common,
+        )
+
+        def resident_working_set(
+            root: Path, manifest: SpatialSceneManifest, payloads: dict[str, bytes]
+        ) -> tuple[SpatialSceneStore, object]:
+            store = SpatialSceneStore(root)
+            store.register_manifest(manifest)
+            admission = store.begin_chunk_upload(
+                manifest.scene_id,
+                manifest.scene_version,
+                tuple(payloads),
+            )
+            for chunk_id, payload in payloads.items():
+                store.accept_chunk(
+                    admission.upload_id or "", chunk_id, payload, _digest(payload)
+                )
+            store.commit_chunk_upload(admission.upload_id or "")
+            resolution = store.resolve_working_set(
+                manifest.scene_id, manifest.scene_version, binding
+            )
+            self.assertEqual(resolution.missing_chunk_ids, ())
+            self.assertIsNotNone(resolution.working_set)
+            return store, resolution.working_set
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scope_store, scope_working_set = resident_working_set(
+                root / "scope",
+                scope_manifest,
+                {"chunk-target": target, "chunk-visible-occluder": occluder},
+            )
+            target_store, target_working_set = resident_working_set(
+                root / "target", target_manifest, {"chunk-target": target}
+            )
+            backend = LockedGsplatBackend()
+            authoritative = backend.rasterize(
+                snapshot=scope_working_set,
+                camera=renderer_camera,
+                width=64,
+                height=64,
+            )
+            full = backend.rasterize(
+                snapshot=scope_store.full_working_set(
+                    scope_manifest.scene_id, scope_manifest.scene_version, binding
+                ),
+                camera=renderer_camera,
+                width=64,
+                height=64,
+            )
+            target_only = backend.rasterize(
+                snapshot=target_working_set,
+                camera=renderer_camera,
+                width=64,
+                height=64,
+            )
+            self.assertEqual(authoritative.service_rgb_bytes, full.service_rgb_bytes)
+            self.assertNotEqual(
+                authoritative.service_rgb_bytes, target_only.service_rgb_bytes
+            )
+            self.assertEqual(
+                scope_working_set.manifest.authoritative_render_scope["entries"][1]["role"],
+                "occluder",
+            )
+            del target_store
+
     def test_selective_and_full_typed_paths_match_for_every_supported_sh_degree(self) -> None:
         binding, renderer_camera = _camera()
         backend = LockedGsplatBackend()
@@ -271,6 +524,9 @@ class SpatialSceneLockedGpuParityTests(unittest.TestCase):
                     selective_artifact.contributor_digest,
                     full_artifact.contributor_digest,
                 )
+        stats = backend.scene_tensor_cache_stats()
+        self.assertGreaterEqual(stats["hits"], 8)
+        self.assertEqual(stats["misses"], 8)
 
 
 if __name__ == "__main__":

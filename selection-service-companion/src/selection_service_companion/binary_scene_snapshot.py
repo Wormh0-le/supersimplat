@@ -124,6 +124,11 @@ class PackedBinarySceneSnapshot:
             "shFloatCountPerGaussian",
         )
 
+    @property
+    def authoritative_render_scope(self) -> Mapping[str, object] | None:
+        value = self.content.get("authoritativeRenderScope")
+        return None if value is None else _mapping(value, "authoritativeRenderScope")
+
     def field(self, name: str) -> memoryview:
         for field in _fields_from_content(self.content):
             if field.name == name:
@@ -264,6 +269,78 @@ def _validate_render_configuration(content: Mapping[str, object]) -> Mapping[str
     return render_configuration
 
 
+def _validate_authoritative_render_scope(
+    content: Mapping[str, object], gaussian_count: int
+) -> Mapping[str, object] | None:
+    value = content.get("authoritativeRenderScope")
+    if value is None:
+        return None
+    scope = _mapping(value, "content.authoritativeRenderScope")
+    if scope.get("policyId") != "visible-editor-splats-conservative/v1":
+        raise SnapshotUploadError("Binary Scene Snapshot render-scope policy is unsupported")
+    target_splat_id = _string(
+        scope.get("targetSplatId"), "content.authoritativeRenderScope.targetSplatId"
+    )
+    identity_digest = _digest(
+        scope.get("identityDigest"), "content.authoritativeRenderScope.identityDigest"
+    )
+    entries_value = scope.get("entries")
+    if not isinstance(entries_value, list) or not entries_value:
+        raise SnapshotUploadError("Binary Scene Snapshot render scope must contain entries")
+    expected_offset = 0
+    target_count = 0
+    source_identities: list[dict[str, object]] = []
+    splat_ids: set[str] = set()
+    for index, entry_value in enumerate(entries_value):
+        entry = _mapping(entry_value, f"content.authoritativeRenderScope.entries[{index}]")
+        splat_id = _string(entry.get("splatId"), f"render-scope entry {index} splatId")
+        if splat_id in splat_ids:
+            raise SnapshotUploadError("Binary Scene Snapshot render-scope Splat identities must be unique")
+        splat_ids.add(splat_id)
+        role = entry.get("role")
+        if role not in ("target", "occluder") or (role == "target") != (splat_id == target_splat_id):
+            raise SnapshotUploadError("Binary Scene Snapshot render-scope roles are invalid")
+        target_count += int(role == "target")
+        source_content_digest = _digest(
+            entry.get("sourceContentDigest"), f"render-scope entry {index} sourceContentDigest"
+        )
+        row_offset = _integer(entry.get("rowOffset"), f"render-scope entry {index} rowOffset")
+        row_count = _integer(entry.get("rowCount"), f"render-scope entry {index} rowCount")
+        render_id_start = _integer(
+            entry.get("renderIdStart"), f"render-scope entry {index} renderIdStart"
+        )
+        if row_offset != expected_offset or row_count <= 0 or render_id_start > 0xFFFFFFFF:
+            raise SnapshotUploadError("Binary Scene Snapshot render-scope row coverage is invalid")
+        expected_offset += row_count
+        source_identities.append(
+            {
+                "splatId": splat_id,
+                "sourceContentDigest": source_content_digest,
+                "gaussianCount": row_count,
+            }
+        )
+    if target_count != 1 or expected_offset != gaussian_count:
+        raise SnapshotUploadError("Binary Scene Snapshot render scope must cover every row exactly once")
+    if entries_value[0].get("role") != "target":
+        raise SnapshotUploadError("Binary Scene Snapshot render scope must begin with the target")
+    occluder_ids = [entry.get("splatId") for entry in entries_value[1:]]
+    if occluder_ids != sorted(occluder_ids):
+        raise SnapshotUploadError("Binary Scene Snapshot occluder scope order must be deterministic")
+    identity = json.dumps(
+        {
+            "policyId": "visible-editor-splats-conservative/v1",
+            "targetSplatId": target_splat_id,
+            "sources": source_identities,
+        },
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    expected_identity_digest = f"sha256:{hashlib.sha256(identity).hexdigest()}"
+    if identity_digest != expected_identity_digest:
+        raise SnapshotUploadError("Binary Scene Snapshot render-scope identity digest is invalid")
+    return scope
+
+
 def _validate_content(content: Mapping[str, object]) -> tuple[_PackedField, ...]:
     if content.get("protocolVersion") != BINARY_SCENE_SNAPSHOT_PROTOCOL_VERSION:
         raise SnapshotUploadError("Binary Scene Snapshot protocolVersion is unsupported")
@@ -297,6 +374,7 @@ def _validate_content(content: Mapping[str, object]) -> tuple[_PackedField, ...]
         raise SnapshotUploadError("Binary Scene Snapshot renderer semantics are unsupported")
     if _integer(render_configuration.get("shBands"), "content.renderConfiguration.shBands") > available_bands:
         raise SnapshotUploadError("Binary Scene Snapshot SH data does not support the declared shBands")
+    _validate_authoritative_render_scope(content, gaussian_count)
     fields = _field_layout(gaussian_count, sh_float_count)
     field_records = content.get("fields")
     if not isinstance(field_records, list) or len(field_records) != len(fields):
@@ -447,6 +525,32 @@ def _digest_metadata(hasher: hashlib._Hash, content: Mapping[str, object]) -> No
         hasher.update(struct.pack("<f", float(value)))
     for field in _fields_from_content(content):
         hasher.update(struct.pack("<I", field.component_count))
+    scope = _validate_authoritative_render_scope(
+        content, _integer(content.get("gaussianCount"), "content.gaussianCount")
+    )
+    if scope is not None:
+        hasher.update(struct.pack("<I", 1))
+        for value in (
+            scope["policyId"],
+            scope["targetSplatId"],
+            scope["identityDigest"],
+        ):
+            assert isinstance(value, str)
+            encoded = value.encode("utf-8")
+            hasher.update(struct.pack("<I", len(encoded)))
+            hasher.update(encoded)
+        entries = scope["entries"]
+        assert isinstance(entries, list)
+        hasher.update(struct.pack("<I", len(entries)))
+        for entry_value in entries:
+            entry = _mapping(entry_value, "content.authoritativeRenderScope entry")
+            for key in ("splatId", "role", "sourceContentDigest"):
+                value = _string(entry.get(key), f"render-scope entry {key}")
+                encoded = value.encode("utf-8")
+                hasher.update(struct.pack("<I", len(encoded)))
+                hasher.update(encoded)
+            for key in ("rowOffset", "rowCount", "renderIdStart"):
+                hasher.update(struct.pack("<I", _integer(entry.get(key), f"render-scope entry {key}")))
 
 
 def _content_digest(

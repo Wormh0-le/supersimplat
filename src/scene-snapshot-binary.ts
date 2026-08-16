@@ -10,6 +10,22 @@ const MAX_BINARY_SCENE_SNAPSHOT_CHUNK_COUNT = 4096;
 
 type SceneSnapshotShFloatCount = 0 | 9 | 24 | 45;
 
+interface AuthoritativeRenderScopeEntry {
+    readonly splatId: string;
+    readonly role: 'target' | 'occluder';
+    readonly sourceContentDigest: string;
+    readonly rowOffset: number;
+    readonly rowCount: number;
+    readonly renderIdStart: number;
+}
+
+interface AuthoritativeRenderScope {
+    readonly policyId: 'visible-editor-splats-conservative/v1';
+    readonly targetSplatId: string;
+    readonly identityDigest: string;
+    readonly entries: readonly AuthoritativeRenderScopeEntry[];
+}
+
 type PackedSceneSnapshotFieldName =
     | 'stableIds'
     | 'means'
@@ -33,6 +49,7 @@ interface PackedSceneSnapshotInput {
     readonly dc: Float32Array;
     readonly sh: Float32Array;
     readonly shFloatCountPerGaussian: SceneSnapshotShFloatCount;
+    readonly authoritativeRenderScope?: AuthoritativeRenderScope;
 }
 
 interface PackedSceneSnapshotField {
@@ -57,6 +74,7 @@ interface PackedSceneSnapshot {
     readonly appearancePolicy: string;
     readonly renderConfiguration: SceneSnapshotRenderConfiguration;
     readonly shFloatCountPerGaussian: SceneSnapshotShFloatCount;
+    readonly authoritativeRenderScope?: AuthoritativeRenderScope;
     readonly payloadByteLength: number;
     readonly fields: readonly PackedSceneSnapshotField[];
     readonly stableIds: Uint32Array;
@@ -91,6 +109,7 @@ interface BinarySceneSnapshotManifest {
         readonly appearancePolicy: string;
         readonly renderConfiguration: SceneSnapshotRenderConfiguration;
         readonly shFloatCountPerGaussian: SceneSnapshotShFloatCount;
+        readonly authoritativeRenderScope?: AuthoritativeRenderScope;
         readonly payloadByteLength: number;
         readonly fields: readonly PackedSceneSnapshotField[];
     };
@@ -150,6 +169,79 @@ const copyRenderConfiguration = (
         alphaMode: value.alphaMode,
         shBands: value.shBands,
         rasterizer: value.rasterizer
+    });
+};
+
+const copyAuthoritativeRenderScope = (
+    value: AuthoritativeRenderScope | undefined,
+    gaussianCount: number
+): AuthoritativeRenderScope | undefined => {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (
+        value.policyId !== 'visible-editor-splats-conservative/v1' ||
+        !value.targetSplatId ||
+        !/^sha256:[0-9a-f]{64}$/.test(value.identityDigest) ||
+        value.entries.length === 0
+    ) {
+        throw new Error(
+            'Packed Scene Snapshot authoritative render scope is incomplete.'
+        );
+    }
+    let expectedOffset = 0;
+    let targetCount = 0;
+    const splatIds = new Set<string>();
+    const entries = value.entries.map((entry) => {
+        if (
+            !entry.splatId ||
+            splatIds.has(entry.splatId) ||
+            !/^sha256:[0-9a-f]{64}$/.test(entry.sourceContentDigest) ||
+            !Number.isSafeInteger(entry.rowOffset) ||
+            !Number.isSafeInteger(entry.rowCount) ||
+            !Number.isSafeInteger(entry.renderIdStart) ||
+            entry.rowOffset !== expectedOffset ||
+            entry.rowCount <= 0 ||
+            entry.renderIdStart < 0 ||
+            entry.renderIdStart > 0xffffffff ||
+            (entry.role === 'target') !==
+                (entry.splatId === value.targetSplatId)
+        ) {
+            throw new Error(
+                'Packed Scene Snapshot authoritative render scope entries are invalid.'
+            );
+        }
+        if (entry.role === 'target') {
+            targetCount += 1;
+        }
+        splatIds.add(entry.splatId);
+        expectedOffset += entry.rowCount;
+        return Object.freeze({ ...entry });
+    });
+    if (targetCount !== 1 || expectedOffset !== gaussianCount) {
+        throw new Error(
+            'Packed Scene Snapshot authoritative render scope must cover every row exactly once.'
+        );
+    }
+    if (
+        entries[0].role !== 'target' ||
+        entries
+            .slice(1)
+            .some(
+                (entry, index) =>
+                    index > 0 &&
+                    entries[index].splatId.localeCompare(entry.splatId) > 0
+            )
+    ) {
+        throw new Error(
+            'Packed Scene Snapshot authoritative render scope order is invalid.'
+        );
+    }
+    return Object.freeze({
+        policyId: value.policyId,
+        targetSplatId: value.targetSplatId,
+        identityDigest: value.identityDigest,
+        entries: Object.freeze(entries)
     });
 };
 
@@ -438,6 +530,26 @@ const updateCanonicalMetadata = (
     [1, 3, 4, 3, 1, 3, snapshot.shFloatCountPerGaussian].forEach(
         (componentCount) => digest.updateUint32(componentCount)
     );
+    const scope = (
+        snapshot as {
+            readonly authoritativeRenderScope?: AuthoritativeRenderScope;
+        }
+    ).authoritativeRenderScope;
+    if (scope !== undefined) {
+        digest.updateUint32(1);
+        digest.updateString(scope.policyId);
+        digest.updateString(scope.targetSplatId);
+        digest.updateString(scope.identityDigest);
+        digest.updateUint32(scope.entries.length);
+        scope.entries.forEach((entry) => {
+            digest.updateString(entry.splatId);
+            digest.updateString(entry.role);
+            digest.updateString(entry.sourceContentDigest);
+            digest.updateUint32(entry.rowOffset);
+            digest.updateUint32(entry.rowCount);
+            digest.updateUint32(entry.renderIdStart);
+        });
+    }
 };
 
 const snapshotContentDigest = (
@@ -588,6 +700,10 @@ const buildPackedSceneSnapshot = (
     const renderConfiguration = copyRenderConfiguration(
         input.renderConfiguration
     );
+    const authoritativeRenderScope = copyAuthoritativeRenderScope(
+        input.authoritativeRenderScope,
+        gaussianCount
+    );
     const attributeSchema = `mean:f32x3;rotation:f32x4;logScale:f32x3;logitOpacity:f32;dc:f32x3;sh:f32x${input.shFloatCountPerGaussian}`;
     const planes = {
         stableIds: input.stableIds,
@@ -626,6 +742,9 @@ const buildPackedSceneSnapshot = (
         appearancePolicy: input.appearancePolicy,
         renderConfiguration,
         shFloatCountPerGaussian: input.shFloatCountPerGaussian,
+        ...(authoritativeRenderScope === undefined
+            ? {}
+            : { authoritativeRenderScope }),
         payloadByteLength,
         fields,
         ...planes
@@ -700,6 +819,12 @@ const createBinarySceneSnapshotManifest = (
             appearancePolicy: snapshot.appearancePolicy,
             renderConfiguration: snapshot.renderConfiguration,
             shFloatCountPerGaussian: snapshot.shFloatCountPerGaussian,
+            ...(snapshot.authoritativeRenderScope === undefined
+                ? {}
+                : {
+                      authoritativeRenderScope:
+                          snapshot.authoritativeRenderScope
+                  }),
             payloadByteLength: snapshot.payloadByteLength,
             fields: snapshot.fields
         }),
@@ -744,6 +869,8 @@ export {
 };
 
 export type {
+    AuthoritativeRenderScope,
+    AuthoritativeRenderScopeEntry,
     BinarySceneSnapshotChunk,
     BinarySceneSnapshotManifest,
     PackedSceneSnapshot,

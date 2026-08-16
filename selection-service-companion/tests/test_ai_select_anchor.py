@@ -9,6 +9,7 @@ import tempfile
 from threading import Event, Thread
 from typing import Any, Mapping
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -85,6 +86,17 @@ class BlockingAnchorFixtureRenderer(AnchorFixtureRenderer):
         )
 
 
+class BlankAnchorFixtureRenderer(AnchorFixtureRenderer):
+    def render_anchor(self, **kwargs: Any) -> AnchorRenderArtifact:
+        artifact = super().render_anchor(**kwargs)
+        return AnchorRenderArtifact(
+            image_png=artifact.image_png,
+            rgb_digest=artifact.rgb_digest,
+            contributor_digest=artifact.contributor_digest,
+            alpha_coverage=0.0,
+        )
+
+
 class AISelectAnchorRouteTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
@@ -113,6 +125,7 @@ class AISelectAnchorRouteTests(unittest.TestCase):
 
     @staticmethod
     def snapshot() -> dict[str, object]:
+        source_digest = 'sha256:' + 'a' * 64
         return {
             'protocolVersion': '1',
             'sceneId': 'splat-1',
@@ -128,6 +141,19 @@ class AISelectAnchorRouteTests(unittest.TestCase):
                 'alphaMode': 'opaque-background',
                 'shBands': 0,
                 'rasterizer': 'playcanvas-gsplat-classic',
+            },
+            'authoritativeRenderScope': {
+                'policyId': 'visible-editor-splats-conservative/v1',
+                'targetSplatId': 'splat-1',
+                'identityDigest': 'sha256:' + 'b' * 64,
+                'entries': [{
+                    'splatId': 'splat-1',
+                    'role': 'target',
+                    'sourceContentDigest': source_digest,
+                    'rowOffset': 0,
+                    'rowCount': 1,
+                    'renderIdStart': 3,
+                }],
             },
             'gaussians': [{
                 'stableId': 3,
@@ -224,6 +250,10 @@ class AISelectAnchorRouteTests(unittest.TestCase):
         self.assertEqual(response['renderAttemptId'], 'attempt-1')
         self.assertEqual(response['cameraBinding'], self.request_body()['cameraBinding'])
         self.assertEqual(response['rgbRendererVersion'], 'gsplat-rgb/v1')
+        self.assertEqual(
+            response['rasterImplementationId'], 'gsplat-reference-rgb/v1'
+        )
+        self.assertRegex(response['runtimeBuildId'], r'^sha256:[0-9a-f]{64}$')
         # RGB Ready stands alone: the production response carries no complete
         # Contributor identity or mass-validation result.
         self.assertNotIn('contributorDigest', response)
@@ -255,6 +285,34 @@ class AISelectAnchorRouteTests(unittest.TestCase):
                 'farPlane': 100.0,
             },
         )
+
+    def test_rejects_authoritative_rgb_when_render_scope_is_absent(self) -> None:
+        snapshot = self.snapshot()
+        snapshot.pop('authoritativeRenderScope')
+        self.state.register_scene_snapshot(snapshot)
+
+        with self.assertRaisesRegex(ValueError, 'visible-Splat render scope'):
+            self.state.render_ai_select_anchor(self.request_body())
+        self.assertEqual(self.renderer.calls, [])
+
+    def test_generated_view_blank_gate_applies_to_anchor_cached_rgb(self) -> None:
+        renderer = BlankAnchorFixtureRenderer()
+        self.state.contributor_renderer = renderer  # type: ignore[assignment]
+        self.state.register_scene_snapshot(self.snapshot())
+        anchor_request = self.request_body()
+        self.assertEqual(
+            self.state.render_ai_select_anchor(anchor_request)['status'],
+            'complete',
+        )
+        view_request = self.request_body()
+        view_request['viewId'] = 'generated-view-1'
+        view_request['renderAttemptId'] = 'generated-attempt-1'
+
+        with self.assertRaises(MaskSessionError) as error:
+            self.state.render_ai_select_view(view_request)
+
+        self.assertEqual(error.exception.code, 'blankRender')
+        self.assertEqual(len(renderer.calls), 1)
 
     def test_reports_all_anchor_server_timing_phases(self) -> None:
         """The browser can distinguish the Anchor publication stages in DevTools."""
@@ -472,7 +530,7 @@ class AISelectAnchorRouteTests(unittest.TestCase):
             first['requestBinding']['contextRevision'],
             second['requestBinding']['contextRevision'],
         )
-        self.assertEqual(len(self.renderer.calls), 2)
+        self.assertEqual(len(self.renderer.calls), 1)
         self.assertEqual(len(self.state._anchor_render_admissions), 1)  # type: ignore[attr-defined]
 
     def test_rejects_a_request_without_a_render_attempt_identity(self) -> None:
@@ -521,6 +579,27 @@ class AISelectAnchorRouteTests(unittest.TestCase):
         self.assertNotIn('referenceContributorError', response)
         self.assertNotIn('contributorDigest', response)
 
+    def test_reference_contributor_cache_is_independent_from_authoritative_rgb(self) -> None:
+        self.state.register_scene_snapshot(self.snapshot())
+        self.state.render_ai_select_anchor(self.request_body())
+
+        reference = self.request_body()
+        reference['renderAttemptId'] = 'attempt-reference-1'
+        reference['referenceContributor'] = True
+        first_reference = self.state.render_ai_select_anchor(reference)
+        self.assertEqual(len(self.renderer.calls), 2)
+        self.assertIn('referenceContributorDigest', first_reference)
+
+        replay = self.request_body()
+        replay['renderAttemptId'] = 'attempt-reference-2'
+        replay['referenceContributor'] = True
+        second_reference = self.state.render_ai_select_anchor(replay)
+        self.assertEqual(len(self.renderer.calls), 2)
+        self.assertEqual(
+            second_reference['referenceContributorDigest'],
+            first_reference['referenceContributorDigest'],
+        )
+
     def test_reference_contributor_failure_never_blocks_rgb_publication(self) -> None:
         class FailingReferenceRenderer(AnchorFixtureRenderer):
             def render_anchor(self, **kwargs: object) -> AnchorRenderArtifact:
@@ -548,7 +627,7 @@ class AISelectAnchorRouteTests(unittest.TestCase):
             'rendererMassMismatch: contributor alpha diverged',
         )
 
-    def test_distinct_attempt_actually_rerenders(self) -> None:
+    def test_distinct_attempt_reuses_semantically_identical_authoritative_rgb(self) -> None:
         self.state.register_scene_snapshot(self.snapshot())
 
         first = self.state.render_ai_select_anchor(self.request_body())
@@ -557,12 +636,51 @@ class AISelectAnchorRouteTests(unittest.TestCase):
         retry_request['renderAttemptId'] = 'attempt-2'
         retry = self.state.render_ai_select_anchor(retry_request)
 
-        # The same attempt replays idempotently; a distinct normal execution
-        # mints a new identity for the same CameraBinding and really reruns.
+        # Admission replay remains attempt-bound, while the independent RGB
+        # cache reuses exact Camera/dependency/raster/runtime identity.
         self.assertEqual(replay, first)
         self.assertEqual(retry['renderAttemptId'], 'attempt-2')
         self.assertEqual(retry['cameraBinding'], first['cameraBinding'])
-        self.assertEqual(len(self.renderer.calls), 2)
+        self.assertEqual(len(self.renderer.calls), 1)
+
+    def test_rgb_cache_invalidates_camera_dependency_runtime_and_raster_identity_but_supports_exact_undo(self) -> None:
+        self.state.register_scene_snapshot(self.snapshot())
+        self.state.render_ai_select_anchor(self.request_body())
+
+        camera_request = self.request_body()
+        camera_request['renderAttemptId'] = 'attempt-camera'
+        camera_request['cameraBinding']['revision'] = 1  # type: ignore[index]
+        camera_request['cameraBinding']['cameraToWorld'][3] = 2  # type: ignore[index]
+        self.state.render_ai_select_anchor(camera_request)
+
+        dependency_request = self.request_body()
+        dependency_request['renderAttemptId'] = 'attempt-dependency'
+        dependency_request['requestBinding']['dependencyToken'][  # type: ignore[index]
+            'geometryToken'
+        ] = 'geometry-v2'
+        self.state.render_ai_select_anchor(dependency_request)
+        self.assertEqual(len(self.renderer.calls), 3)
+
+        undo_request = self.request_body()
+        undo_request['renderAttemptId'] = 'attempt-exact-undo'
+        self.state.render_ai_select_anchor(undo_request)
+        self.assertEqual(len(self.renderer.calls), 3)
+
+        with patch(
+            'selection_service_companion.state.AI_SELECT_RUNTIME_BUILD_ID',
+            'runtime-build-v2',
+        ):
+            runtime_request = self.request_body()
+            runtime_request['renderAttemptId'] = 'attempt-runtime'
+            self.state.render_ai_select_anchor(runtime_request)
+        with patch(
+            'selection_service_companion.state.AI_SELECT_RASTER_IMPLEMENTATION_ID',
+            'gsplat-reference-rgb/v2',
+        ):
+            raster_request = self.request_body()
+            raster_request['renderAttemptId'] = 'attempt-raster'
+            self.state.render_ai_select_anchor(raster_request)
+        self.assertEqual(len(self.renderer.calls), 5)
 
     def test_a_new_attempt_reruns_instead_of_replaying_a_cached_failure(self) -> None:
         class FlakyAnchorFixtureRenderer(AnchorFixtureRenderer):

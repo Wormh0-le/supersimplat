@@ -4,6 +4,8 @@ import {
 } from '../scene-snapshot-binary';
 import {
     aiSelectRgbRendererVersion,
+    aiSelectRasterImplementationId,
+    aiSelectRuntimeBuildId,
     isAnchorRgbArtifact,
     parsePngDimensions,
     decodePngBase64,
@@ -68,6 +70,8 @@ export interface AIViewRenderResponse {
     readonly rgb: AnchorRgbArtifact;
     readonly rgbRendererVersion: typeof aiSelectRgbRendererVersion;
     readonly rendererId: 'gsplat';
+    readonly rasterImplementationId: typeof aiSelectRasterImplementationId;
+    readonly runtimeBuildId: typeof aiSelectRuntimeBuildId;
 }
 
 export interface AISelectViewRenderer {
@@ -644,7 +648,9 @@ export const isAIViewRenderResponse = (
         isCameraBinding(value.cameraBinding) &&
         isAnchorRgbArtifact(value.rgb) &&
         value.rgbRendererVersion === aiSelectRgbRendererVersion &&
-        value.rendererId === 'gsplat'
+        value.rendererId === 'gsplat' &&
+        value.rasterImplementationId === aiSelectRasterImplementationId &&
+        value.runtimeBuildId === aiSelectRuntimeBuildId
     );
 };
 

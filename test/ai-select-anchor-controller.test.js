@@ -119,7 +119,10 @@ const responseFor = (request) => ({
         height: request.cameraBinding.projection.height
     },
     rgbRendererVersion: 'gsplat-rgb/v1',
-    rendererId: 'gsplat'
+    rendererId: 'gsplat',
+    rasterImplementationId: 'gsplat-reference-rgb/v1',
+    runtimeBuildId:
+        'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40'
 });
 
 test('copies the Current Scene View into an immutable OpenCV CameraBinding without moving it', () => {
@@ -658,6 +661,28 @@ test('rejects an Anchor response from an unsupported RGB renderer version', asyn
         controller.state.anchor.errorMessage,
         /invalid Anchor render binding/i
     );
+});
+
+test('rejects old authoritative RGB across raster implementation or runtime changes', async () => {
+    for (const incompatible of [
+        { rasterImplementationId: 'gsplat-reference-rgb/v2' },
+        { runtimeBuildId: `sha256:${'f'.repeat(64)}` }
+    ]) {
+        const controller = new AISelectAnchorController({
+            renderer: {
+                async renderAnchor(request) {
+                    return { ...responseFor(request), ...incompatible };
+                }
+            }
+        });
+
+        await controller.start(input());
+        assert.equal(controller.state.anchor.renderStatus, 'failed');
+        assert.match(
+            controller.state.anchor.errorMessage,
+            /invalid Anchor render binding/i
+        );
+    }
 });
 
 test('rejects an Anchor response whose actual PNG raster dimensions differ from its CameraBinding', async () => {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import hashlib
+import json
 from pathlib import Path
 import struct
 import tempfile
@@ -12,11 +13,52 @@ from selection_service_companion.binary_scene_snapshot import (
     SnapshotUploadError,
 )
 from selection_service_companion.spatial_scene_working_set import (
+    MAX_SPATIAL_WORKING_SET_CACHE_ENTRIES,
     SpatialChunkDescriptor,
     SpatialSceneManifest,
     SpatialSceneStore,
     SpatialSupportBounds,
 )
+
+
+def scoped_manifest(value: SpatialSceneManifest) -> SpatialSceneManifest:
+    source_digest = "sha256:" + "b" * 64
+    sources = [
+        {
+            "splatId": value.target_splat_id,
+            "sourceContentDigest": source_digest,
+            "gaussianCount": value.total_gaussian_count,
+        }
+    ]
+    identity = "sha256:" + hashlib.sha256(
+        json.dumps(
+            {
+                "policyId": "visible-editor-splats-conservative/v1",
+                "targetSplatId": value.target_splat_id,
+                "sources": sources,
+            },
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    return replace(
+        value,
+        authoritative_render_scope={
+            "policyId": "visible-editor-splats-conservative/v1",
+            "targetSplatId": value.target_splat_id,
+            "identityDigest": identity,
+            "entries": [
+                {
+                    "splatId": value.target_splat_id,
+                    "role": "target",
+                    "sourceContentDigest": source_digest,
+                    "rowOffset": 0,
+                    "rowCount": value.total_gaussian_count,
+                    "renderIdStart": 0,
+                }
+            ],
+        },
+    )
 
 
 def camera() -> dict[str, object]:
@@ -194,6 +236,14 @@ class SpatialSceneWorkingSetTests(unittest.TestCase):
         tensors = resolved.working_set.ordered_tensors()
         self.assertEqual(tensors["globalOrdinals"].tolist(), [0, 1])
         self.assertEqual(tensors["stableIds"].tolist(), [101, 102])
+        repeated = self.store.resolve_working_set(
+            registered.scene_id, registered.scene_version, camera()
+        )
+        self.assertIs(repeated.working_set, resolved.working_set)
+        self.assertRegex(
+            resolved.working_set.membership_digest,
+            r"^sha256:[0-9a-f]{64}$",
+        )
 
         import torch
 
@@ -325,6 +375,72 @@ class SpatialSceneWorkingSetTests(unittest.TestCase):
 
         with self.assertRaises(SnapshotUploadError):
             self.store.register_manifest(invalid)
+
+    def test_rejects_tampered_authoritative_render_scope_identity(self) -> None:
+        payload = chunk_payload(0, 7, (0.0, 0.0, 5.0))
+        scoped = scoped_manifest(
+            manifest(
+                descriptor(
+                    "chunk-a",
+                    payload,
+                    0,
+                    SpatialSupportBounds.finite(
+                        (-1.0, -1.0, 4.0), (1.0, 1.0, 6.0)
+                    ),
+                )
+            )
+        )
+        tampered_scope = dict(scoped.authoritative_render_scope or {})
+        tampered_scope["identityDigest"] = "sha256:" + "f" * 64
+
+        with self.assertRaises(SnapshotUploadError):
+            self.store.register_manifest(
+                replace(scoped, authoritative_render_scope=tampered_scope)
+            )
+
+    def test_bounds_camera_keyed_working_sets_and_releases_evicted_tensors(self) -> None:
+        payload = chunk_payload(0, 7, (0.0, 0.0, 5.0))
+        registered = manifest(
+            descriptor(
+                "chunk-a",
+                payload,
+                0,
+                SpatialSupportBounds.finite(
+                    (-10.0, -10.0, -5.0), (10.0, 10.0, 15.0)
+                ),
+            )
+        )
+        self.store.register_manifest(registered)
+        admission = self.store.begin_chunk_upload(
+            registered.scene_id, registered.scene_version, ("chunk-a",)
+        )
+        self.store.accept_chunk(
+            admission.upload_id or "",
+            "chunk-a",
+            payload,
+            "sha256:" + hashlib.sha256(payload).hexdigest(),
+        )
+        self.store.commit_chunk_upload(admission.upload_id or "")
+
+        first = None
+        for revision in range(MAX_SPATIAL_WORKING_SET_CACHE_ENTRIES + 3):
+            binding = camera()
+            binding["revision"] = revision
+            resolved = self.store.resolve_working_set(
+                registered.scene_id, registered.scene_version, binding
+            )
+            self.assertIsNotNone(resolved.working_set)
+            assert resolved.working_set is not None
+            resolved.working_set.ordered_tensors()
+            if first is None:
+                first = resolved.working_set
+
+        self.assertEqual(
+            len(self.store._working_sets), MAX_SPATIAL_WORKING_SET_CACHE_ENTRIES
+        )
+        self.assertIsNotNone(first)
+        assert first is not None
+        self.assertIsNone(first._cached_tensors)
 
 
 if __name__ == "__main__":

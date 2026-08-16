@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 import struct
 import tempfile
@@ -128,6 +129,66 @@ class BinarySceneSnapshotRegistrationTests(unittest.TestCase):
         )
 
         self.assertEqual(by_small_chunks, manifest.content_digest)
+
+    def test_render_scope_identity_is_validated_and_bound_into_content_digest(self) -> None:
+        baseline = self.manifest()
+        source_identity = {
+            "policyId": "visible-editor-splats-conservative/v1",
+            "targetSplatId": baseline.scene_id,
+            "sources": [
+                {
+                    "splatId": baseline.scene_id,
+                    "sourceContentDigest": baseline.content_digest,
+                    "gaussianCount": 1,
+                }
+            ],
+        }
+        identity_digest = "sha256:" + hashlib.sha256(
+            json.dumps(
+                source_identity, separators=(",", ":"), ensure_ascii=False
+            ).encode("utf-8")
+        ).hexdigest()
+        content = {
+            **baseline.content,
+            "authoritativeRenderScope": {
+                "policyId": "visible-editor-splats-conservative/v1",
+                "targetSplatId": baseline.scene_id,
+                "identityDigest": identity_digest,
+                "entries": [
+                    {
+                        "splatId": baseline.scene_id,
+                        "role": "target",
+                        "sourceContentDigest": baseline.content_digest,
+                        "rowOffset": 0,
+                        "rowCount": 1,
+                        "renderIdStart": 7,
+                    }
+                ],
+            },
+        }
+        scoped_digest = binary_scene_snapshot_content_digest(
+            content, (self.payload,)
+        )
+        self.assertNotEqual(scoped_digest, baseline.content_digest)
+        scoped = BinarySceneSnapshotManifest(
+            scene_id=baseline.scene_id,
+            scene_version=scoped_digest,
+            content_digest=scoped_digest,
+            content=content,
+            chunk_byte_length=baseline.chunk_byte_length,
+            chunks=baseline.chunks,
+        )
+        admission = self.store.begin(scoped)
+        for chunk in scoped.chunks:
+            payload = self.payload[chunk.offset:chunk.offset + chunk.byte_length]
+            self.store.accept_chunk(
+                admission.upload_id or "", chunk.index, payload, chunk.digest
+            )
+        snapshot = self.store.commit(admission.upload_id or "")
+        self.assertEqual(
+            snapshot.authoritative_render_scope["identityDigest"],
+            identity_digest,
+        )
 
     def test_rejects_an_immutable_conflict_and_cleans_incomplete_uploads(self) -> None:
         manifest = self.manifest()

@@ -91,7 +91,60 @@ EXPECTED_EXTENT = [0.0926625, 0.185325, 0.001]
 EXPECTED_VISIBLE_POINTS = [[0.125, -0.25, 2.0], [0.25, 0.0, 2.0]]
 
 
-def _binary_fixture() -> tuple[bytes, BinarySceneSnapshotManifest]:
+def _render_scope(
+    gaussian_count: int, *, target_row_count: int | None = None
+) -> dict[str, object]:
+    target_row_count = gaussian_count if target_row_count is None else target_row_count
+    target_digest = 'sha256:' + 'b' * 64
+    sources = [{
+        'splatId': 'splat-1',
+        'sourceContentDigest': target_digest,
+        'gaussianCount': target_row_count,
+    }]
+    entries = [{
+        'splatId': 'splat-1',
+        'role': 'target',
+        'sourceContentDigest': target_digest,
+        'rowOffset': 0,
+        'rowCount': target_row_count,
+        'renderIdStart': GAUSSIANS[0][0],
+    }]
+    if target_row_count < gaussian_count:
+        occluder_count = gaussian_count - target_row_count
+        occluder_digest = 'sha256:' + 'c' * 64
+        sources.append({
+            'splatId': 'visible-occluder',
+            'sourceContentDigest': occluder_digest,
+            'gaussianCount': occluder_count,
+        })
+        entries.append({
+            'splatId': 'visible-occluder',
+            'role': 'occluder',
+            'sourceContentDigest': occluder_digest,
+            'rowOffset': target_row_count,
+            'rowCount': occluder_count,
+            'renderIdStart': GAUSSIANS[0][0] + target_row_count,
+        })
+    identity = json.dumps(
+        {
+            'policyId': 'visible-editor-splats-conservative/v1',
+            'targetSplatId': 'splat-1',
+            'sources': sources,
+        },
+        separators=(',', ':'),
+        ensure_ascii=False,
+    ).encode('utf-8')
+    return {
+        'policyId': 'visible-editor-splats-conservative/v1',
+        'targetSplatId': 'splat-1',
+        'identityDigest': 'sha256:' + hashlib.sha256(identity).hexdigest(),
+        'entries': entries,
+    }
+
+
+def _binary_fixture(
+    *, target_row_count: int | None = None
+) -> tuple[bytes, BinarySceneSnapshotManifest]:
     count = len(GAUSSIANS)
     payload = b''.join(
         (
@@ -139,6 +192,9 @@ def _binary_fixture() -> tuple[bytes, BinarySceneSnapshotManifest]:
             'shBands': 0,
             'rasterizer': 'playcanvas-gsplat-classic',
         },
+        'authoritativeRenderScope': _render_scope(
+            count, target_row_count=target_row_count
+        ),
         'shFloatCountPerGaussian': 0,
         'payloadByteLength': len(payload),
         'fields': fields,
@@ -502,6 +558,22 @@ class TargetGeometryRouteTests(unittest.TestCase):
     def test_hint_fails_closed_when_the_mask_has_no_first_hit_support(self) -> None:
         self.register_binary_snapshot()
         body = _hint_request_body(self.manifest.scene_version, EMPTY_MASK)
+
+        payload = self.post_error(
+            '/ai-select/target-geometry-hints', body, HTTPStatus.CONFLICT
+        )
+
+        self.assertEqual(payload['status'], 'geometryHintError')
+        self.assertEqual(payload['code'], 'geometryUnavailable')
+
+    def test_visible_occluder_cannot_establish_target_geometry(self) -> None:
+        self.payload, self.manifest = _binary_fixture(target_row_count=1)
+        self.register_binary_snapshot()
+        # Pixel 7 observes only an occluder row. The target row projects to
+        # pixel 10 and must be the sole geometry-support authority.
+        body = _hint_request_body(
+            self.manifest.scene_version, bytes([0x80, 0x00])
+        )
 
         payload = self.post_error(
             '/ai-select/target-geometry-hints', body, HTTPStatus.CONFLICT

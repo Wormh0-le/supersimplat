@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.34
+# AI Select v1 — Implementation Ticket Graph v2.35
 
-Status: **active implementation graph — Ticket 18 implemented; Ticket 19 current**
+Status: **active implementation graph — Ticket 19 implemented; Ticket 20 current**
 
 Branch: `ai-select-v1`
 
@@ -154,9 +154,10 @@ implemented prerequisites:
 - 16G — obsolete-control retirement + integrated visual closure
 - 17 — exact Undo-and-Fix + Restart + multi-target/tool-switch lifecycle
 - 18 — Scene mutation Suspended state + exact Undo recovery
+- 19 — Large SceneSnapshot + authoritative RGB / Render Working Set hardening
 
 current parent compatibility frontier:
-- 19 — Large SceneSnapshot + authoritative RGB / Render Working Set hardening
+- 20 — Same-decision GPU Evidence + artifact / working-set hardening
 
 current execution stage:
 - none
@@ -165,14 +166,14 @@ current execution stage:
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 19
+next_implementation_ticket = 20
 next_implementation_subticket = none
 ```
 
 Ticket 17 closes the implemented Ticket 16G Toolbar/presentation seam without
 reintroducing retired 3D More/Restart or identical-input product Retry/planning
-controls. Ticket 18 consumes those lifecycle/history seams and is implemented;
-Ticket 19 is now current. Ticket 10 remains optional and off the core release
+controls. Tickets 18 and 19 consume those lifecycle/render seams and are
+implemented; Ticket 20 is now current. Ticket 10 remains optional and off the core release
 path.
 
 ## One valid topological order

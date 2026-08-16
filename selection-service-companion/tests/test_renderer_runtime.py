@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from selection_service_companion.evidence import StaticContributorRenderer
 from selection_service_companion.renderer_runtime import (
+    EXPECTED_RENDERER_LOCK_DIGEST,
     GsplatRuntime,
     GsplatRuntimeFacts,
     RendererRuntimeStatus,
@@ -68,6 +69,8 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                     "status": "ready",
                     "cudaVersion": "12.8",
                     "rgbRendererVersion": "gsplat-rgb/v1",
+                    "rasterImplementationId": "gsplat-reference-rgb/v1",
+                    "runtimeBuildId": EXPECTED_RENDERER_LOCK_DIGEST,
                 },
             )
 
@@ -91,6 +94,8 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                     "status": "ready",
                     "cudaVersion": "12.8",
                     "rgbRendererVersion": "gsplat-rgb/v1",
+                    "rasterImplementationId": "gsplat-reference-rgb/v1",
+                    "runtimeBuildId": EXPECTED_RENDERER_LOCK_DIGEST,
                 },
             )
 
@@ -216,6 +221,8 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                     "status": "ready",
                     "cudaVersion": "12.8",
                     "rgbRendererVersion": "gsplat-rgb/v1",
+                    "rasterImplementationId": "gsplat-reference-rgb/v1",
+                    "runtimeBuildId": EXPECTED_RENDERER_LOCK_DIGEST,
                 },
             )
 

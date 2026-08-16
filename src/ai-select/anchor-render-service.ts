@@ -5,6 +5,10 @@ import {
     type CameraBinding
 } from './camera-binding';
 import {
+    referenceEvidenceRasterImplementationId,
+    referenceEvidenceRuntimeBuildId
+} from './candidate-re-lift';
+import {
     areTargetDependencyTokensEqual,
     isAIRequestBinding,
     type AIRequestBinding,
@@ -17,6 +21,9 @@ import {
  * FlashSplat-style same-decision kernel behind a new value of this seam.
  */
 export const aiSelectRgbRendererVersion = 'gsplat-rgb/v1';
+export const aiSelectRasterImplementationId =
+    referenceEvidenceRasterImplementationId;
+export const aiSelectRuntimeBuildId = referenceEvidenceRuntimeBuildId;
 
 export interface AnchorRenderRequest {
     readonly requestBinding: AIRequestBinding;
@@ -51,6 +58,8 @@ export interface AnchorRenderResponse {
     readonly rgb: AnchorRgbArtifact;
     readonly rgbRendererVersion: typeof aiSelectRgbRendererVersion;
     readonly rendererId: 'gsplat';
+    readonly rasterImplementationId: typeof aiSelectRasterImplementationId;
+    readonly runtimeBuildId: typeof aiSelectRuntimeBuildId;
 }
 
 export interface AISelectAnchorRenderer {
@@ -499,7 +508,9 @@ export const isAnchorRenderResponse = (
         isCameraBinding(value.cameraBinding) &&
         isAnchorRgbArtifact(value.rgb) &&
         value.rgbRendererVersion === aiSelectRgbRendererVersion &&
-        value.rendererId === 'gsplat'
+        value.rendererId === 'gsplat' &&
+        value.rasterImplementationId === aiSelectRasterImplementationId &&
+        value.runtimeBuildId === aiSelectRuntimeBuildId
     );
 };
 

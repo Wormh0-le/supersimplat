@@ -2,6 +2,7 @@ import type { SceneSnapshotRenderConfiguration } from './scene-snapshot';
 import {
     MAX_BINARY_SCENE_SNAPSHOT_CHUNK_BYTES,
     sha256Digest,
+    type AuthoritativeRenderScope,
     type PackedSceneSnapshot,
     type SceneSnapshotShFloatCount
 } from './scene-snapshot-binary';
@@ -58,6 +59,7 @@ interface SpatialSceneManifest {
     readonly sceneVersion: string;
     readonly contentDigest: string;
     readonly targetSplatId: string;
+    readonly authoritativeRenderScope?: AuthoritativeRenderScope;
     readonly totalGaussianCount: number;
     readonly coordinateConvention: string;
     readonly stableIdSchema: 'uint32';
@@ -82,7 +84,8 @@ const finite = (value: number): boolean => Number.isFinite(value);
 
 const freezeTriple = (
     values: readonly [number, number, number]
-): readonly [number, number, number] => Object.freeze([...values]) as readonly [number, number, number];
+): readonly [number, number, number] =>
+    Object.freeze([...values]) as readonly [number, number, number];
 
 const SUPPORT_EMPTY = 0;
 const SUPPORT_FINITE = 1;
@@ -470,6 +473,15 @@ const buildSpatialSceneSnapshot = (
             'Spatial Scene Snapshot target identity must match its packed SceneSnapshot.'
         );
     }
+    if (
+        snapshot.authoritativeRenderScope !== undefined &&
+        snapshot.authoritativeRenderScope.targetSplatId !==
+            options.targetSplatId
+    ) {
+        throw new Error(
+            'Spatial Scene Snapshot authoritative render scope must bind the Active Target Splat.'
+        );
+    }
     const chunkByteLength =
         options.chunkByteLength ?? DEFAULT_SPATIAL_SCENE_CHUNK_BYTES;
     const bytesPerGaussian = spatialChunkByteLength(
@@ -526,6 +538,11 @@ const buildSpatialSceneSnapshot = (
         sceneVersion: snapshot.sceneVersion,
         contentDigest: snapshot.contentDigest,
         targetSplatId: options.targetSplatId,
+        ...(snapshot.authoritativeRenderScope === undefined
+            ? {}
+            : {
+                  authoritativeRenderScope: snapshot.authoritativeRenderScope
+              }),
         totalGaussianCount: snapshot.gaussianCount,
         coordinateConvention: snapshot.coordinateConvention,
         stableIdSchema: snapshot.stableIdSchema,
@@ -553,7 +570,9 @@ const buildSpatialSceneSnapshot = (
                 );
             }
             const payload = buildChunkPayload(snapshot, rows);
-            const descriptor = chunks.find(chunk => chunk.chunkId === chunkId);
+            const descriptor = chunks.find(
+                (chunk) => chunk.chunkId === chunkId
+            );
             if (
                 !descriptor ||
                 sha256Digest(payload) !== descriptor.chunkDigest

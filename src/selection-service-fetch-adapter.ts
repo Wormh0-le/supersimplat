@@ -156,6 +156,19 @@ interface FetchSelectionServiceAdapterOptions {
     candidateReLiftTimeoutMs?: number;
 }
 
+type SceneRecoveryResult<TResult> =
+    | { readonly status: 'complete'; readonly response: TResult }
+    | { readonly status: 'sceneCacheMiss' }
+    | {
+          readonly status: 'sceneChunkMiss';
+          readonly missingChunkIds: readonly string[];
+      };
+
+interface SpatialSceneRecoveryMessages {
+    readonly repeatedManifestMiss: string;
+    readonly repeatedChunkMiss: string;
+}
+
 interface SceneCacheMissResponse extends ObjectSelectionPreviewBindings {
     status: 'sceneCacheMiss';
 }
@@ -407,21 +420,11 @@ class FetchSelectionServiceAdapter
             return this.renderSpatialAnchor(request);
         }
 
-        await this.registerPackedSnapshot(request.snapshot);
-        const first = await this.sendAnchorRender(request);
-        if (first.status === 'complete') {
-            return first.response;
-        }
-
-        await this.registerPackedSnapshot(request.snapshot, true);
-        const retry = await this.sendAnchorRender(request);
-        if (retry.status !== 'complete') {
-            throw transportError(
-                'invalidResponse',
-                'The Selection Service Companion repeated an Anchor Scene Snapshot cache miss after the editor resent the snapshot.'
-            );
-        }
-        return retry.response;
+        return await this.recoverPackedSceneMiss(
+            request.snapshot,
+            () => this.sendAnchorRender(request),
+            'The Selection Service Companion repeated an Anchor Scene Snapshot cache miss after the editor resent the snapshot.'
+        );
     }
 
     async produceCandidateReLift(
@@ -493,37 +496,16 @@ class FetchSelectionServiceAdapter
     ): Promise<AnchorRenderResponse> {
         const spatialSnapshot = this.spatialSnapshotFor(request);
         await this.registerSpatialSceneManifest(spatialSnapshot);
-
-        let manifestRecoveryAttempts = 0;
-        let chunkRecoveryAttempts = 0;
-        for (;;) {
-            const result = await this.sendAnchorRender(request, 'spatial-v1');
-            if (result.status === 'complete') {
-                return result.response;
-            }
-            if (result.status === 'sceneCacheMiss') {
-                if (manifestRecoveryAttempts >= 1) {
-                    throw transportError(
-                        'invalidResponse',
-                        'The Selection Service Companion repeated an Anchor Spatial Scene manifest cache miss after the editor resent the manifest.'
-                    );
-                }
-                manifestRecoveryAttempts += 1;
-                await this.registerSpatialSceneManifest(spatialSnapshot, true);
-                continue;
-            }
-            if (chunkRecoveryAttempts >= 1) {
-                throw transportError(
-                    'invalidResponse',
+        return this.recoverSpatialSceneMisses(
+            spatialSnapshot,
+            () => this.sendAnchorRender(request, 'spatial-v1'),
+            {
+                repeatedManifestMiss:
+                    'The Selection Service Companion repeated an Anchor Spatial Scene manifest cache miss after the editor resent the manifest.',
+                repeatedChunkMiss:
                     'The Selection Service Companion repeated an Anchor Spatial Scene chunk miss after the editor uploaded its validated working set.'
-                );
             }
-            chunkRecoveryAttempts += 1;
-            await this.uploadSpatialSceneChunks(
-                spatialSnapshot,
-                result.missingChunkIds
-            );
-        }
+        );
     }
 
     async releaseSceneSnapshot(
@@ -1359,20 +1341,11 @@ class FetchSelectionServiceAdapter
         if (this.supportsCameraAwareSpatialWorkingSet()) {
             return this.probeSpatialAnchorSupport(request);
         }
-        await this.registerPackedSnapshot(request.snapshot);
-        const first = await this.sendAnchorSupportProbe(request);
-        if (first.status === 'complete') {
-            return first.response;
-        }
-        await this.registerPackedSnapshot(request.snapshot, true);
-        const retry = await this.sendAnchorSupportProbe(request);
-        if (retry.status !== 'complete') {
-            throw transportError(
-                'invalidResponse',
-                'The Selection Service Companion repeated an Anchor Scene Snapshot cache miss after the editor resent the snapshot.'
-            );
-        }
-        return retry.response;
+        return await this.recoverPackedSceneMiss(
+            request.snapshot,
+            () => this.sendAnchorSupportProbe(request),
+            'The Selection Service Companion repeated an Anchor Scene Snapshot cache miss after the editor resent the snapshot.'
+        );
     }
 
     private async probeSpatialAnchorSupport(
@@ -1380,40 +1353,16 @@ class FetchSelectionServiceAdapter
     ): Promise<AnchorSupportProbeResponse> {
         const spatialSnapshot = this.spatialSnapshotFor(request);
         await this.registerSpatialSceneManifest(spatialSnapshot);
-
-        let manifestRecoveryAttempts = 0;
-        let chunkRecoveryAttempts = 0;
-        for (;;) {
-            const result = await this.sendAnchorSupportProbe(
-                request,
-                'spatial-v1'
-            );
-            if (result.status === 'complete') {
-                return result.response;
-            }
-            if (result.status === 'sceneCacheMiss') {
-                if (manifestRecoveryAttempts >= 1) {
-                    throw transportError(
-                        'invalidResponse',
-                        'The Selection Service Companion repeated an Anchor Spatial Scene manifest cache miss after the editor resent the manifest.'
-                    );
-                }
-                manifestRecoveryAttempts += 1;
-                await this.registerSpatialSceneManifest(spatialSnapshot, true);
-                continue;
-            }
-            if (chunkRecoveryAttempts >= 1) {
-                throw transportError(
-                    'invalidResponse',
+        return this.recoverSpatialSceneMisses(
+            spatialSnapshot,
+            () => this.sendAnchorSupportProbe(request, 'spatial-v1'),
+            {
+                repeatedManifestMiss:
+                    'The Selection Service Companion repeated an Anchor Spatial Scene manifest cache miss after the editor resent the manifest.',
+                repeatedChunkMiss:
                     'The Selection Service Companion repeated an Anchor Spatial Scene chunk miss after the editor uploaded its validated working set.'
-                );
             }
-            chunkRecoveryAttempts += 1;
-            await this.uploadSpatialSceneChunks(
-                spatialSnapshot,
-                result.missingChunkIds
-            );
-        }
+        );
     }
 
     private async sendAnchorSupportProbe(
@@ -1535,20 +1484,11 @@ class FetchSelectionServiceAdapter
         if (this.supportsCameraAwareSpatialWorkingSet()) {
             return this.produceSpatialTargetGeometryHint(request);
         }
-        await this.registerPackedSnapshot(request.snapshot);
-        const first = await this.sendTargetGeometryHint(request);
-        if (first.status === 'complete') {
-            return first.response;
-        }
-        await this.registerPackedSnapshot(request.snapshot, true);
-        const retry = await this.sendTargetGeometryHint(request);
-        if (retry.status !== 'complete') {
-            throw transportError(
-                'invalidResponse',
-                'The Selection Service Companion repeated a Target Geometry Hint Scene Snapshot cache miss after the editor resent the snapshot.'
-            );
-        }
-        return retry.response;
+        return await this.recoverPackedSceneMiss(
+            request.snapshot,
+            () => this.sendTargetGeometryHint(request),
+            'The Selection Service Companion repeated a Target Geometry Hint Scene Snapshot cache miss after the editor resent the snapshot.'
+        );
     }
 
     private async produceSpatialTargetGeometryHint(
@@ -1556,40 +1496,16 @@ class FetchSelectionServiceAdapter
     ): Promise<TargetGeometryHintResponse> {
         const spatialSnapshot = this.spatialSnapshotFor(request);
         await this.registerSpatialSceneManifest(spatialSnapshot);
-
-        let manifestRecoveryAttempts = 0;
-        let chunkRecoveryAttempts = 0;
-        for (;;) {
-            const result = await this.sendTargetGeometryHint(
-                request,
-                'spatial-v1'
-            );
-            if (result.status === 'complete') {
-                return result.response;
-            }
-            if (result.status === 'sceneCacheMiss') {
-                if (manifestRecoveryAttempts >= 1) {
-                    throw transportError(
-                        'invalidResponse',
-                        'The Selection Service Companion repeated a Target Geometry Hint Spatial Scene manifest cache miss after the editor resent the manifest.'
-                    );
-                }
-                manifestRecoveryAttempts += 1;
-                await this.registerSpatialSceneManifest(spatialSnapshot, true);
-                continue;
-            }
-            if (chunkRecoveryAttempts >= 1) {
-                throw transportError(
-                    'invalidResponse',
+        return this.recoverSpatialSceneMisses(
+            spatialSnapshot,
+            () => this.sendTargetGeometryHint(request, 'spatial-v1'),
+            {
+                repeatedManifestMiss:
+                    'The Selection Service Companion repeated a Target Geometry Hint Spatial Scene manifest cache miss after the editor resent the manifest.',
+                repeatedChunkMiss:
                     'The Selection Service Companion repeated a Target Geometry Hint Spatial Scene chunk miss after the editor uploaded its validated working set.'
-                );
             }
-            chunkRecoveryAttempts += 1;
-            await this.uploadSpatialSceneChunks(
-                spatialSnapshot,
-                result.missingChunkIds
-            );
-        }
+        );
     }
 
     private async sendTargetGeometryHint(
@@ -1788,21 +1704,11 @@ class FetchSelectionServiceAdapter
             return this.renderSpatialView(request);
         }
 
-        await this.registerPackedSnapshot(request.snapshot);
-        const first = await this.sendViewRender(request);
-        if (first.status === 'complete') {
-            return first.response;
-        }
-
-        await this.registerPackedSnapshot(request.snapshot, true);
-        const retry = await this.sendViewRender(request);
-        if (retry.status !== 'complete') {
-            throw transportError(
-                'invalidResponse',
-                'The Selection Service Companion repeated a Generated View Scene Snapshot cache miss after the editor resent the snapshot.'
-            );
-        }
-        return retry.response;
+        return await this.recoverPackedSceneMiss(
+            request.snapshot,
+            () => this.sendViewRender(request),
+            'The Selection Service Companion repeated a Generated View Scene Snapshot cache miss after the editor resent the snapshot.'
+        );
     }
 
     private async renderSpatialView(
@@ -1810,37 +1716,16 @@ class FetchSelectionServiceAdapter
     ): Promise<AIViewRenderResponse> {
         const spatialSnapshot = this.spatialSnapshotFor(request);
         await this.registerSpatialSceneManifest(spatialSnapshot);
-
-        let manifestRecoveryAttempts = 0;
-        let chunkRecoveryAttempts = 0;
-        for (;;) {
-            const result = await this.sendViewRender(request, 'spatial-v1');
-            if (result.status === 'complete') {
-                return result.response;
-            }
-            if (result.status === 'sceneCacheMiss') {
-                if (manifestRecoveryAttempts >= 1) {
-                    throw transportError(
-                        'invalidResponse',
-                        'The Selection Service Companion repeated a Generated View Spatial Scene manifest cache miss after the editor resent the manifest.'
-                    );
-                }
-                manifestRecoveryAttempts += 1;
-                await this.registerSpatialSceneManifest(spatialSnapshot, true);
-                continue;
-            }
-            if (chunkRecoveryAttempts >= 1) {
-                throw transportError(
-                    'invalidResponse',
+        return this.recoverSpatialSceneMisses(
+            spatialSnapshot,
+            () => this.sendViewRender(request, 'spatial-v1'),
+            {
+                repeatedManifestMiss:
+                    'The Selection Service Companion repeated a Generated View Spatial Scene manifest cache miss after the editor resent the manifest.',
+                repeatedChunkMiss:
                     'The Selection Service Companion repeated a Generated View Spatial Scene chunk miss after the editor uploaded its validated working set.'
-                );
             }
-            chunkRecoveryAttempts += 1;
-            await this.uploadSpatialSceneChunks(
-                spatialSnapshot,
-                result.missingChunkIds
-            );
-        }
+        );
     }
 
     private async sendViewRender(
@@ -2464,6 +2349,72 @@ class FetchSelectionServiceAdapter
             renderConfigVersion: value.renderConfigVersion,
             modelManifestDigest: value.modelManifestDigest
         };
+    }
+
+    /**
+     * Recover one immutable packed scene transaction through the same bounded
+     * retry policy used by every authoritative AI Select route.
+     */
+    private async recoverPackedSceneMiss<TResult>(
+        snapshot: PackedSceneSnapshot,
+        send: () => Promise<SceneRecoveryResult<TResult>>,
+        repeatedMissMessage: string
+    ): Promise<TResult> {
+        await this.registerPackedSnapshot(snapshot);
+        let recoveryAttempts = 0;
+        for (;;) {
+            const result = await send();
+            if (result.status === 'complete') {
+                return result.response;
+            }
+            if (result.status !== 'sceneCacheMiss' || recoveryAttempts >= 1) {
+                throw transportError('invalidResponse', repeatedMissMessage);
+            }
+            recoveryAttempts += 1;
+            await this.registerPackedSnapshot(snapshot, true);
+        }
+    }
+
+    /**
+     * Recover one immutable spatial scene transaction without duplicating the
+     * bounded retry policy in every AI Select route. A manifest miss and a
+     * chunk miss each get one repair; any repeated miss fails closed.
+     */
+    private async recoverSpatialSceneMisses<TResult>(
+        snapshot: SpatialSceneSnapshot,
+        send: () => Promise<SceneRecoveryResult<TResult>>,
+        messages: SpatialSceneRecoveryMessages
+    ): Promise<TResult> {
+        let manifestRecoveryAttempts = 0;
+        let chunkRecoveryAttempts = 0;
+        for (;;) {
+            const result = await send();
+            if (result.status === 'complete') {
+                return result.response;
+            }
+            if (result.status === 'sceneCacheMiss') {
+                if (manifestRecoveryAttempts >= 1) {
+                    throw transportError(
+                        'invalidResponse',
+                        messages.repeatedManifestMiss
+                    );
+                }
+                manifestRecoveryAttempts += 1;
+                await this.registerSpatialSceneManifest(snapshot, true);
+                continue;
+            }
+            if (chunkRecoveryAttempts >= 1) {
+                throw transportError(
+                    'invalidResponse',
+                    messages.repeatedChunkMiss
+                );
+            }
+            chunkRecoveryAttempts += 1;
+            await this.uploadSpatialSceneChunks(
+                snapshot,
+                result.missingChunkIds
+            );
+        }
     }
 
     private async requestJson(

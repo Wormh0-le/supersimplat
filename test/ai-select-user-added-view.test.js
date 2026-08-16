@@ -216,7 +216,10 @@ const anchorRenderResponseFor = (request) => ({
         height: request.cameraBinding.projection.height
     },
     rgbRendererVersion: 'gsplat-rgb/v1',
-    rendererId: 'gsplat'
+    rendererId: 'gsplat',
+    rasterImplementationId: 'gsplat-reference-rgb/v1',
+    runtimeBuildId:
+        'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40'
 });
 
 /** A controllable confirmation seam with the exact subscribe/state contract. */
@@ -644,7 +647,10 @@ const viewRenderResponseFor = (request, digest = rgbDigest('b')) => ({
         height: request.cameraBinding.projection.height
     },
     rgbRendererVersion: 'gsplat-rgb/v1',
-    rendererId: 'gsplat'
+    rendererId: 'gsplat',
+    rasterImplementationId: 'gsplat-reference-rgb/v1',
+    runtimeBuildId:
+        'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40'
 });
 
 const viewById = (harness, viewId) =>

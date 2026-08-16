@@ -38,6 +38,7 @@ import { CommandQueue } from './command-queue';
 import { registerDocEvents } from './doc';
 import { EditHistory } from './edit-history';
 import { registerEditorEvents } from './editor';
+import { ElementType, type Element } from './element';
 import { Events } from './events';
 import { initFileHandler } from './file-handler';
 import { registerIframeApi } from './iframe-api';
@@ -420,7 +421,11 @@ const main = async () => {
             };
         };
     const aiSelectTargetFactory = new AISelectEditorTargetFactory({
-        getRenderConfiguration: getAISelectRenderConfiguration
+        getRenderConfiguration: getAISelectRenderConfiguration,
+        // Hidden Splats must remain observable to the dependency token so a
+        // hide/show transition cannot remove the changed Splat before the
+        // synchronizer sees it. The render-scope builder filters visibility.
+        getVisibleSplats: () => events.invoke('scene.allSplats') as Splat[]
     });
     // The confirmed current Anchor stays locked while adjustment is staged in
     // an isolated draft; the confirmation controller is composed just below,
@@ -475,7 +480,11 @@ const main = async () => {
         changedSplat?: Splat
     ): void => {
         if (
-            !isCurrentTargetDependencyChange(aiSelectTargetSplat, changedSplat)
+            !isCurrentTargetDependencyChange(
+                aiSelectTargetSplat,
+                changedSplat,
+                events.invoke('scene.allSplats') as Splat[]
+            )
         ) {
             return;
         }
@@ -485,6 +494,13 @@ const main = async () => {
         'splat.aiSelectDependencyChanged',
         synchronizeAISelectTargetDependency
     );
+    const synchronizeAISelectSceneMembership = (element: Element): void => {
+        if (element.type === ElementType.splat) {
+            synchronizeAISelectTargetDependency();
+        }
+    };
+    events.on('scene.elementAdded', synchronizeAISelectSceneMembership);
+    events.on('scene.elementRemoved', synchronizeAISelectSceneMembership);
     // Background and SH-band changes affect authoritative AI RGB even though
     // they do not belong to one Splat. Editor-only colors and UI state do not.
     events.on('bgClr', () => synchronizeAISelectTargetDependency());

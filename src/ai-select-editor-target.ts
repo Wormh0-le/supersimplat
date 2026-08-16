@@ -1,11 +1,16 @@
 import type { StartAnchorInput } from './ai-select/anchor-controller';
+import { buildAuthoritativeRenderScopeSnapshot } from './ai-select/authoritative-render-scope';
 import {
     captureEditorCameraBinding,
     type EditorCameraBindingSource
 } from './ai-select/camera-binding';
 import type { SceneSnapshotRenderConfiguration } from './scene-snapshot';
+import { sha256Digest } from './scene-snapshot-binary';
 import type { Splat } from './splat';
-import { SplatSceneSnapshotBinding } from './splat-scene-snapshot';
+import {
+    SplatSceneSnapshotBinding,
+    type SplatSnapshotSemanticRevision
+} from './splat-scene-snapshot';
 
 export interface AISelectEditorTargetInput {
     readonly targetSplat: Splat;
@@ -20,12 +25,15 @@ export interface AISelectEditorTargetInput {
  */
 export class AISelectEditorTargetFactory {
     private readonly getRenderConfiguration: () => SceneSnapshotRenderConfiguration;
+    private readonly getVisibleSplats: () => readonly Splat[];
     private readonly bindings = new WeakMap<Splat, SplatSceneSnapshotBinding>();
 
     constructor(options: {
         getRenderConfiguration: () => SceneSnapshotRenderConfiguration;
+        getVisibleSplats: () => readonly Splat[];
     }) {
         this.getRenderConfiguration = options.getRenderConfiguration;
+        this.getVisibleSplats = options.getVisibleSplats;
     }
 
     create(
@@ -40,7 +48,11 @@ export class AISelectEditorTargetFactory {
         }
         const splatId = this.splatId(targetSplat);
         const binding = this.bindingFor(targetSplat, splatId);
-        const snapshot = binding.getPackedSnapshot();
+        const visibleSources = this.visibleRenderSources(targetSplat);
+        const snapshot = buildAuthoritativeRenderScopeSnapshot(
+            { splatId, snapshot: binding.getPackedSnapshot() },
+            visibleSources
+        );
         const getCurrentDependencyToken = () =>
             this.currentDependencyTokenFor(targetSplat);
         const dependencyToken = getCurrentDependencyToken();
@@ -69,15 +81,53 @@ export class AISelectEditorTargetFactory {
 
     currentDependencyTokenFor(targetSplat: Splat) {
         const splatId = this.splatId(targetSplat);
-        const revision =
-            this.bindingForTarget(targetSplat).getSemanticRevision();
+        const revisions = this.visibleRenderRevisions(targetSplat);
+        const digest = (field: keyof SplatSnapshotSemanticRevision) =>
+            sha256Digest(
+                new TextEncoder().encode(
+                    JSON.stringify(
+                        revisions.map((entry) => [
+                            entry.splatId,
+                            entry.revision[field]
+                        ])
+                    )
+                )
+            );
         return Object.freeze({
             splatId,
-            renderStateToken: revision.renderStateToken,
-            geometryToken: revision.geometryToken,
-            gaussianIdentityToken: revision.gaussianIdentityToken,
-            worldTransformToken: revision.worldTransformToken
+            renderStateToken: digest('renderStateToken'),
+            geometryToken: digest('geometryToken'),
+            gaussianIdentityToken: digest('gaussianIdentityToken'),
+            worldTransformToken: digest('worldTransformToken')
         });
+    }
+
+    private visibleRenderSources(targetSplat: Splat) {
+        return this.visibleSplats(targetSplat).map((splat) => {
+            const splatId = this.splatId(splat);
+            return Object.freeze({
+                splatId,
+                snapshot: this.bindingFor(splat, splatId).getPackedSnapshot()
+            });
+        });
+    }
+
+    private visibleRenderRevisions(targetSplat: Splat) {
+        return this.visibleSplats(targetSplat).map((splat) => {
+            const splatId = this.splatId(splat);
+            return Object.freeze({
+                splatId,
+                revision: this.bindingFor(splat, splatId).getSemanticRevision()
+            });
+        });
+    }
+
+    private visibleSplats(targetSplat: Splat): readonly Splat[] {
+        const visible = this.getVisibleSplats().filter(
+            (splat) => splat.visible && splat !== targetSplat
+        );
+        visible.sort((left, right) => left.uid - right.uid);
+        return Object.freeze([targetSplat, ...visible]);
     }
 
     private splatId(targetSplat: Splat): string {

@@ -126,6 +126,8 @@ interface SelectionServiceRendererCapability {
     status: SelectionServiceRendererStatus;
     cudaVersion?: string;
     rgbRendererVersion?: string;
+    rasterImplementationId?: string;
+    runtimeBuildId?: string;
     message?: string;
 }
 
@@ -204,6 +206,8 @@ interface SelectionServiceReadinessRequirements {
     runtimeProfileId: string;
     rendererId: string;
     rgbRendererVersion: string;
+    rasterImplementationId: string;
+    runtimeBuildId: string;
     modelAdapterId: string;
     aiSelectAnchorOperation: string;
     candidateReLiftOperation: string;
@@ -321,6 +325,8 @@ const defaultRequirements: SelectionServiceReadinessRequirements = {
     runtimeProfileId: currentRuntimeProfileId,
     rendererId: 'gsplat',
     rgbRendererVersion: 'gsplat-rgb/v1',
+    rasterImplementationId: referenceEvidenceRasterImplementationId,
+    runtimeBuildId: referenceEvidenceRuntimeBuildId,
     modelAdapterId: currentImageInstanceAdapterId,
     aiSelectAnchorOperation: 'aiSelectAnchorRender',
     candidateReLiftOperation: 'aiSelectReferenceCandidateReLift',
@@ -366,6 +372,8 @@ const copyCapabilities = (
         status: capabilities.renderer.status,
         cudaVersion: capabilities.renderer.cudaVersion,
         rgbRendererVersion: capabilities.renderer.rgbRendererVersion,
+        rasterImplementationId: capabilities.renderer.rasterImplementationId,
+        runtimeBuildId: capabilities.renderer.runtimeBuildId,
         message: capabilities.renderer.message
     },
     imageInstanceProvider: {
@@ -1070,7 +1078,11 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
         if (
             capabilities.renderer.id !== this.requirements.rendererId ||
             capabilities.renderer.rgbRendererVersion !==
-                this.requirements.rgbRendererVersion
+                this.requirements.rgbRendererVersion ||
+            capabilities.renderer.rasterImplementationId !==
+                this.requirements.rasterImplementationId ||
+            capabilities.renderer.runtimeBuildId !==
+                this.requirements.runtimeBuildId
         ) {
             return diagnostic(
                 'rendererMismatch',

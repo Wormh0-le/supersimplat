@@ -1,6 +1,6 @@
 # 20 — FlashSplat-style same-decision GPU Evidence + artifact / working-set hardening
 
-Status: ready-for-agent — Final Spec v1.3 aligned
+Status: current — ready after implemented Ticket 19; Final Spec v1.3 aligned
 
 Blocked by: 19, 14, 09
 

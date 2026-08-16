@@ -12,10 +12,12 @@ any other mismatch fails closed.
 from __future__ import annotations
 
 from contextlib import nullcontext
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import Enum
 import hashlib
 from io import BytesIO
+import json
 import math
 import struct
 import sys
@@ -411,6 +413,42 @@ class GsplatBackend(Protocol):
 class LockedGsplatBackend:
     """Call only APIs available at the exact source revision pinned by the lock."""
 
+    def __init__(self, *, scene_tensor_cache_entries: int = 4) -> None:
+        if scene_tensor_cache_entries <= 0:
+            raise ValueError("gsplat scene tensor cache must retain at least one entry")
+        self._scene_tensor_cache_entries = scene_tensor_cache_entries
+        self._scene_tensor_cache: OrderedDict[str, Mapping[str, Any]] = OrderedDict()
+        self.scene_tensor_cache_hits = 0
+        self.scene_tensor_cache_misses = 0
+
+    def scene_tensor_cache_stats(self) -> Mapping[str, int]:
+        return {
+            "entries": len(self._scene_tensor_cache),
+            "hits": self.scene_tensor_cache_hits,
+            "misses": self.scene_tensor_cache_misses,
+        }
+
+    def _locked_inputs(
+        self,
+        snapshot: SceneSnapshotInput,
+        camera: Mapping[str, Any],
+        device: Any,
+    ) -> dict[str, Any]:
+        cache_key = _scene_tensor_cache_key(snapshot, device)
+        scene_inputs = self._scene_tensor_cache.get(cache_key) if cache_key is not None else None
+        if scene_inputs is None:
+            scene_inputs = _locked_scene_inputs(snapshot, device)
+            if cache_key is not None:
+                self.scene_tensor_cache_misses += 1
+                self._scene_tensor_cache[cache_key] = scene_inputs
+                self._scene_tensor_cache.move_to_end(cache_key)
+                while len(self._scene_tensor_cache) > self._scene_tensor_cache_entries:
+                    self._scene_tensor_cache.popitem(last=False)
+        else:
+            self.scene_tensor_cache_hits += 1
+            self._scene_tensor_cache.move_to_end(cache_key)
+        return {**scene_inputs, **_locked_camera_inputs(camera, device)}
+
     def rasterize(
         self,
         *,
@@ -565,7 +603,7 @@ class LockedGsplatBackend:
 
         device = torch.device("cuda")
         torch.cuda.reset_peak_memory_stats(device)
-        inputs = _locked_inputs(snapshot, camera, device)
+        inputs = self._locked_inputs(snapshot, camera, device)
 
         service_rgb, raster_alpha, meta = rasterization(
             inputs["means"],
@@ -730,7 +768,7 @@ class LockedGsplatBackend:
         from gsplat.rendering import rasterization
 
         device = torch.device("cuda")
-        inputs = _locked_inputs(snapshot, camera, device)
+        inputs = self._locked_inputs(snapshot, camera, device)
         _, raster_alpha, meta = rasterization(
             inputs["means"],
             inputs["quats"],
@@ -883,8 +921,40 @@ def _render_working_set_token(scene_snapshot: SceneSnapshotInput) -> str | None:
     return scene_version if isinstance(scene_version, str) else None
 
 
+def _scene_tensor_cache_key(
+    snapshot: SceneSnapshotInput, device: Any
+) -> str | None:
+    """Bind immutable CUDA scene tensors to exact content/runtime identity."""
+
+    if isinstance(snapshot, PackedBinarySceneSnapshot):
+        identity = {
+            "transport": "packed-v1",
+            "sceneId": snapshot.scene_id,
+            "sceneVersion": snapshot.scene_version,
+            "contentDigest": snapshot.content_digest,
+        }
+    elif isinstance(snapshot, SpatialWorkingSet):
+        identity = {
+            "transport": "spatial-v1",
+            "sceneId": snapshot.manifest.scene_id,
+            "sceneVersion": snapshot.manifest.scene_version,
+            "workingSetToken": snapshot.working_set_token,
+            "membershipDigest": snapshot.membership_digest,
+        }
+    else:
+        return None
+    identity.update(
+        {
+            "device": str(device),
+            "rasterImplementationId": REFERENCE_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+            "runtimeBuildId": REFERENCE_EVIDENCE_RUNTIME_BUILD_ID,
+        }
+    )
+    return f"sha256:{hashlib.sha256(json.dumps(identity, separators=(',', ':'), sort_keys=True).encode('utf-8')).hexdigest()}"
+
+
 def _packed_locked_inputs(
-    snapshot: PackedBinarySceneSnapshot, camera: Mapping[str, Any], device: Any
+    snapshot: PackedBinarySceneSnapshot, device: Any
 ) -> dict[str, Any]:
     """Create gsplat tensors directly from the mmap-backed SoA planes."""
 
@@ -937,12 +1007,6 @@ def _packed_locked_inputs(
         "scales": scales,
         "opacities": opacities,
         "colors": colors,
-        "viewmats": torch.tensor(
-            camera["worldToCamera"], dtype=torch.float32, device=device
-        ).reshape(1, 4, 4),
-        "intrinsics": torch.tensor(
-            camera["intrinsics"], dtype=torch.float32, device=device
-        ).reshape(1, 3, 3),
         "background": torch.tensor(
             [background[:3]], dtype=torch.float32, device=device
         ),
@@ -951,7 +1015,7 @@ def _packed_locked_inputs(
 
 
 def _spatial_locked_inputs(
-    snapshot: SpatialWorkingSet, camera: Mapping[str, Any], device: Any
+    snapshot: SpatialWorkingSet, device: Any
 ) -> dict[str, Any]:
     """Build gsplat tensors from mmap-backed chunks in global ordinal order."""
 
@@ -993,12 +1057,6 @@ def _spatial_locked_inputs(
         "scales": scales,
         "opacities": opacities,
         "colors": colors,
-        "viewmats": torch.tensor(
-            camera["worldToCamera"], dtype=torch.float32, device=device
-        ).reshape(1, 4, 4),
-        "intrinsics": torch.tensor(
-            camera["intrinsics"], dtype=torch.float32, device=device
-        ).reshape(1, 3, 3),
         "background": torch.tensor(
             [background[:3]], dtype=torch.float32, device=device
         ),
@@ -1006,15 +1064,15 @@ def _spatial_locked_inputs(
     }
 
 
-def _locked_inputs(
-    snapshot: SceneSnapshotInput, camera: Mapping[str, Any], device: Any
+def _locked_scene_inputs(
+    snapshot: SceneSnapshotInput, device: Any
 ) -> dict[str, Any]:
-    """Build the shared locked-revision projection inputs for probe or render."""
+    """Build immutable locked-revision scene tensors for probe or render."""
 
     if isinstance(snapshot, PackedBinarySceneSnapshot):
-        return _packed_locked_inputs(snapshot, camera, device)
+        return _packed_locked_inputs(snapshot, device)
     if isinstance(snapshot, SpatialWorkingSet):
-        return _spatial_locked_inputs(snapshot, camera, device)
+        return _spatial_locked_inputs(snapshot, device)
 
     import torch
 
@@ -1072,18 +1130,38 @@ def _locked_inputs(
         "scales": scales,
         "opacities": opacities,
         "colors": colors,
-        "viewmats": torch.tensor(
-            camera["worldToCamera"], dtype=torch.float32, device=device
-        ).reshape(1, 4, 4),
-        "intrinsics": torch.tensor(
-            camera["intrinsics"], dtype=torch.float32, device=device
-        ).reshape(1, 3, 3),
         "background": torch.tensor(
             [render_configuration["backgroundRgba"][:3]],
             dtype=torch.float32,
             device=device,
         ),
         "sh_degree": sh_degree,
+    }
+
+
+def _locked_camera_inputs(camera: Mapping[str, Any], device: Any) -> dict[str, Any]:
+    """Create only CameraBinding tensors; immutable scene tensors stay cached."""
+
+    import torch
+
+    return {
+        "viewmats": torch.tensor(
+            camera["worldToCamera"], dtype=torch.float32, device=device
+        ).reshape(1, 4, 4),
+        "intrinsics": torch.tensor(
+            camera["intrinsics"], dtype=torch.float32, device=device
+        ).reshape(1, 3, 3),
+    }
+
+
+def _locked_inputs(
+    snapshot: SceneSnapshotInput, camera: Mapping[str, Any], device: Any
+) -> dict[str, Any]:
+    """Compatibility seam for fixtures; production uses the backend cache."""
+
+    return {
+        **_locked_scene_inputs(snapshot, device),
+        **_locked_camera_inputs(camera, device),
     }
 
 

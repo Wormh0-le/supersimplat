@@ -85,7 +85,7 @@ export interface AnchorAIView {
     readonly rendererId?: 'gsplat';
     readonly errorMessage?: string;
     readonly preview?: AnchorPreview;
-    /** Retained for display/retry only, never for inference. */
+    /** Retained for display and adjustment recovery only, never for inference. */
     readonly lastValidPreview?: AnchorPreviewArtifact;
 }
 
@@ -375,14 +375,6 @@ export class AISelectAnchorController {
             );
         }
         this.updateAnchorCameraPose(initial.cameraToWorld);
-        await this.renderFinalPreview();
-    }
-
-    async retryAnchorPreview(): Promise<void> {
-        if (this.anchor?.preview?.kind === 'interactive') {
-            await this.renderInteractivePreview();
-            return;
-        }
         await this.renderFinalPreview();
     }
 

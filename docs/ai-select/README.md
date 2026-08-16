@@ -39,19 +39,18 @@ Repository-wide specifications and ADRs remain canonical under `docs/specs/` and
 
 ## Accepted designs
 
-- [AI View Dock layout](ai-view-dock-layout.md) — implemented Ticket 16A
-  baseline; conflicting presentation details are superseded by 16B–16G.
+- [AI View Dock layout](ai-view-dock-layout.md) — current implemented
+  Tickets 16D/16E/16G contract.
 - [AI View Dock visual](show-me-ai-view-dock-layout.html) — visual companion for the accepted layout.
-- [AI Select Toolbar layout](ai-select-toolbar-layout.md) — implemented Ticket
-  16A baseline; the Candidate Overlay remains valid while 16F/16G refine the
-  toolbar surface.
+- [AI Select Toolbar layout](ai-select-toolbar-layout.md) — current implemented
+  Tickets 16F/16G contract and Ticket 17 handoff seam.
 - [Ticket 16A](tickets/16A-candidate-viewport-presentation.md) — implemented
   presentation baseline and completed operator visual-review record.
 - [Ticket 16B](tickets/16B-single-result-product-contract.md) — implemented
   single-result product-contract stage.
-- [Ticket 16C](tickets/16C-mask-inspector-state-truth.md) — implemented Mask
-  state truth and compact Inspector; Ticket 16D is current and 16E–16G carry
-  the remaining integrated follow-up.
+- [Ticket 16G](tickets/16G-obsolete-controls-integration-closure.md) —
+  implemented obsolete-control and integrated visual closure; Ticket 17 is
+  current.
 
 ## Scratch policy
 
@@ -84,8 +83,5 @@ Execution order is:
 ```
 
 14A through 14D, parent Ticket 14, Tickets 13 through 15, Ticket 16's native
-application core and Tickets 16A–16C are implemented. The completed 16A
-operator visual walkthrough created follow-up stages 16B–16G. Ticket 16C is
-implemented and Ticket 16D is current (`next_implementation_ticket = 16`,
-`next_implementation_subticket = 16D`);
-Ticket 17 follows 16G.
+application core and Tickets 16A–16G are implemented. Ticket 17 is current
+(`next_implementation_ticket = 17`, `next_implementation_subticket = none`).

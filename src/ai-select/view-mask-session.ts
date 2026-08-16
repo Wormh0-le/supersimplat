@@ -133,7 +133,6 @@ export interface AISelectMaskAuthoring {
     restoreAutoMask(): void;
     undoMaskEdit(): void;
     redoMaskEdit(): void;
-    retryMaskRequest(): Promise<void>;
 }
 
 interface PendingMaskRequest {
@@ -699,26 +698,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         this.supersedeLocalEditing();
     }
 
-    /**
-     * An explicit Retry submits a new attempt for the same prompt set. Retry
-     * is not a refinement: it must actually rerun the render/inference path,
-     * so the held logits reference is omitted (04C contract §7).
-     */
-    async retryMaskRequest(): Promise<void> {
-        this.requireUnlocked();
-        this.requireReadyRgb();
-        if (
-            this.promptState === null ||
-            !promptStateHasConstraints(this.promptState)
-        ) {
-            throw new Error('AI Select has no Mask prompt set to retry.');
-        }
-        await this.submitMaskRequest({ omitRefinementRef: true });
-    }
-
-    private async submitMaskRequest(
-        options: { readonly omitRefinementRef?: boolean } = {}
-    ): Promise<void> {
+    private async submitMaskRequest(): Promise<void> {
         if (this.activeMaskRequest !== null) {
             // One in-flight SAM attempt per view: a concurrent attempt would
             // hit the Companion's single operation slot as a 409. Supersede
@@ -743,10 +723,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
             return;
         }
         const rgbDigest = this.promptState.rgbDigest;
-        const refinementRef = this.currentRefinementRef(
-            promptCapabilities,
-            options.omitRefinementRef === true
-        );
+        const refinementRef = this.currentRefinementRef(promptCapabilities);
         const request = this.host.createMaskRequest(
             this.promptState,
             this.mintMaskAttemptId(),
@@ -1128,15 +1105,14 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
     /**
      * The held logits reference crosses the boundary only for a same-View,
      * same-RGB, same-target refinement attempt on an adapter that advertised
-     * previous-logits refinement; a fresh attempt never reuses it silently.
+     * previous-logits refinement. Changed Prompt input creates the normal new
+     * intent; there is no identical-input product retry path.
      */
     private currentRefinementRef(
-        capabilities: PromptAdapterCapabilities,
-        omitted: boolean
+        capabilities: PromptAdapterCapabilities
     ): PreviousPredictionLogitsRef | null {
         const ref = this.refinementLogitsRef;
         if (
-            omitted ||
             ref === null ||
             !capabilities.previousLogitsRefinement ||
             this.promptState === null ||

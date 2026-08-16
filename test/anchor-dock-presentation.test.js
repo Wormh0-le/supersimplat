@@ -138,7 +138,7 @@ test('AI View Dock Mask surface stays none when no Mask exists', () => {
     assert.equal(result.mask.promptCount, 0);
     assert.equal(result.mask.evidenceStatus, 'not-requested');
     assert.equal(result.mask.showConfirm, false);
-    assert.equal(result.mask.showRetry, false);
+    assert.equal(Object.hasOwn(result.mask, 'showRetry'), false);
 });
 
 test('AI View Dock Mask surface exposes an Editing Mask draft with prompts', () => {
@@ -203,7 +203,7 @@ test('AI View Dock Mask surface keeps Mask failure distinct from render state', 
     assert.equal(result.status, 'ready');
     assert.equal(result.mask.status, 'failed');
     assert.equal(result.mask.errorMessage, 'SAM failed.');
-    assert.equal(result.mask.showRetry, true);
+    assert.equal(Object.hasOwn(result.mask, 'showRetry'), false);
 });
 
 test('AI View Dock Mask surface shows pending SAM feedback', () => {
@@ -262,11 +262,11 @@ test('AI View Dock exposes Mask result states independently from Mask pixels', (
     assert.equal(failed.mask.resultFeedback, 'failed');
 });
 
-test('AI View Dock Mask surface hides retry when nothing can be retried', () => {
+test('AI View Dock Mask failure without a Prompt still has no recovery command', () => {
     const result = getAnchorDockPresentation(
         state(baseAnchor()),
         maskState({ requestStatus: 'failed', errorMessage: 'SAM failed.' })
     );
     assert.equal(result.mask.status, 'failed');
-    assert.equal(result.mask.showRetry, false);
+    assert.equal(Object.hasOwn(result.mask, 'showRetry'), false);
 });

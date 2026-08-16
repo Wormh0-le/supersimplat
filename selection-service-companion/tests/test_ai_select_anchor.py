@@ -548,7 +548,7 @@ class AISelectAnchorRouteTests(unittest.TestCase):
             'rendererMassMismatch: contributor alpha diverged',
         )
 
-    def test_explicit_retry_creates_a_new_attempt_that_actually_rerenders(self) -> None:
+    def test_distinct_attempt_actually_rerenders(self) -> None:
         self.state.register_scene_snapshot(self.snapshot())
 
         first = self.state.render_ai_select_anchor(self.request_body())
@@ -557,8 +557,8 @@ class AISelectAnchorRouteTests(unittest.TestCase):
         retry_request['renderAttemptId'] = 'attempt-2'
         retry = self.state.render_ai_select_anchor(retry_request)
 
-        # The same attempt replays idempotently; the explicit Retry mints a
-        # new attempt identity for the same CameraBinding and really reruns.
+        # The same attempt replays idempotently; a distinct normal execution
+        # mints a new identity for the same CameraBinding and really reruns.
         self.assertEqual(replay, first)
         self.assertEqual(retry['renderAttemptId'], 'attempt-2')
         self.assertEqual(retry['cameraBinding'], first['cameraBinding'])

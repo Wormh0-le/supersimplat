@@ -9,7 +9,7 @@ Status: current reusable interface guidance
 - **使用者**：正在主 3D 视口中检查、编辑和应用高斯选择结果的专业创作者。
 - **核心任务**：在不中断空间判断的前提下，在 2D 观察/编辑与 3D 原生操作之间快速往返。
 - **感受**：紧凑、克制、精确，像持续工作的技术工作台，而不是独立的向导、仪表盘或展示页。
-- **焦点**：当前图像/Mask 或主 3D 视口始终是唯一视觉焦点；导航、状态和恢复操作主动降级。
+- **焦点**：当前图像/Mask 或主 3D 视口始终是唯一视觉焦点；导航、状态和解释操作主动降级。
 - **产品特征**：一个连续工作区同时保留“观察和修正”与“空间结果和原生操作”，但每个表面只有一个明确所有者。
 
 拒绝以下默认方案：
@@ -42,7 +42,7 @@ Status: current reusable interface guidance
 - 当前没有建立新的全局字号比例。实现时先复用现有字号，通过字重、明度和空间建立层级。
 - 层级顺序：当前内容/主操作 > 状态和值 > 标签和说明 > 技术细节/禁用信息。
 - 动态计数使用 tabular numerals，避免 Status Bar 和进度文本产生横向跳动。
-- 主操作每个状态最多一个；次级、恢复和破坏性操作不得与主操作争夺同等视觉权重。
+- 主操作每个状态最多一个；次级、解释和破坏性操作不得与主操作争夺同等视觉权重。
 
 ## 色彩语义
 
@@ -93,7 +93,7 @@ Status: current reusable interface guidance
 - Toolbar、浮动 palette、Dock chrome 和紧凑控制组中的动作按钮，默认只显示可辨识的自定义 SVG 图标，尽量不使用常驻文字按钮。
 - 每个图标按钮必须同时提供项目 tooltip 和可访问名称；tooltip 说明动作结果，不能只重复含糊的图标名。
 - 图标约 `18–20px`，交互命中区域至少 `40×40px`。同一动作在不同表面复用同一图标，不使用 Unicode 字符充当图标。
-- Retry、Reset/Fit 等常见动作优先复用仓库中语义一致的 SVG 资产；即使字符箭头看起来相似，也不能把 `↻`、`↺` 等 Unicode 字符作为最终按钮图标。
+- failure-only planning retry、Reset/Fit 等动作优先复用仓库中语义一致的 SVG 资产；即使字符箭头看起来相似，也不能把 `↻`、`↺` 等 Unicode 字符作为最终按钮图标。通用 Retry 图标模式不构成产品命令许可。
 - pressed、selected、disabled、warning 和 focus 状态不能只靠 tooltip 或颜色表达；禁用原因必须可由键盘和辅助技术读取。
 - 当动作概念陌生、多个图标难以区分、菜单需要快速扫读，或破坏性后果必须持续可见时，可以使用“图标 + 短文字”。这属于有理由的例外，不是默认按钮样式。
 
@@ -120,10 +120,11 @@ Status: current reusable interface guidance
 
 ### Inspector
 
-- 只负责解释、只读状态、次级操作和恢复操作。
+- 只负责解释、只读状态和次级操作。
 - 信息分组纵向排列并按内容自然收紧；侧栏不通过增宽或多列布局填充可用空间。
 - 技术细节默认折叠。
-- 高频 Mask 恢复（重置为自动 Mask）属于图像内浮动工具栏，不在 Inspector 重复。
+- 重置为自动 Mask 属于图像内浮动工具栏，不在 Inspector 重复。
+- Inspector 不提供 identical-input Render、Prompt 或 Mask recovery；失败通过 changed Prompt、manual Paint/Erase、changed/reset Anchor pose 或 replacement View 恢复。
 - 不复制主 Action Bar 或 Navigator 的可变控件。
 
 ### Overlay Split Control
@@ -137,7 +138,7 @@ Status: current reusable interface guidance
 - 固定顺序：`Overlay | Set | Add | Remove | Intersect | Undo and Fix*`；均使用统一图标语法。
 - Overlay 和四个集合操作不进入 overflow。
 - 生命周期状态改变样式、enablement 和禁用原因，不重排整条工具栏。
-- 四个集合操作共享一个按恢复动作归类的禁用原因。
+- 四个集合操作共享一个按可执行恢复路径归类的禁用原因。
 
 ## 状态、反馈与动效
 

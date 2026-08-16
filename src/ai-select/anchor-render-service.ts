@@ -25,9 +25,9 @@ export interface AnchorRenderRequest {
     readonly cameraBinding: CameraBinding;
     /**
      * The identity of one actual render execution attempt. Replaying the same
-     * request (for example after a lost response) stays idempotent; an
-     * explicit user Retry submits a new attempt identity for the same
-     * CameraBinding instead of mutating the camera to bypass a cached result.
+     * request (for example after a lost response) stays idempotent; a
+     * changed/reset pose creates a normal attempt identity instead of
+     * bypassing the cached result.
      */
     readonly renderAttemptId: string;
 }

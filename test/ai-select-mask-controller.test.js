@@ -721,7 +721,7 @@ test('a fully manual mask uses the same publication contract as SAM output', asy
     assert.equal(stable.status, 'user-confirmed');
 });
 
-test('Mask failure keeps the RGB Ready view and permits retry and manual recovery', async () => {
+test('Mask failure keeps RGB Ready and a changed Prompt starts a new attempt', async () => {
     let failures = 0;
     const maskRequests = [];
     const { anchor, mask } = await setup({
@@ -741,9 +741,9 @@ test('Mask failure keeps the RGB Ready view and permits retry and manual recover
     assert.equal(mask.state.editingMask, null);
     assert.equal(anchor.state.anchor.renderStatus, 'ready');
 
-    await mask.retryMaskRequest();
+    await mask.addPrompt({ xPx: 20, yPx: 22, polarity: 'exclude' });
     assert.equal(maskRequests.length, 2);
-    // An explicit Retry mints a new attempt identity for the same prompt set.
+    // A changed Prompt is new user intent and mints a distinct attempt.
     assert.notEqual(
         maskRequests[1].proposalAttemptId,
         maskRequests[0].proposalAttemptId
@@ -1024,7 +1024,6 @@ test('a locked confirmed Anchor rejects every Mask mutation', async () => {
     assert.throws(() => mask.undoMaskEdit());
     assert.throws(() => mask.redoMaskEdit());
     assert.throws(() => mask.confirmEditingMask());
-    await assert.rejects(mask.retryMaskRequest());
     locked = false;
     mask.applyBrushStroke({ xPx: 4, yPx: 4, radiusPx: 2, mode: 'add' });
     assert.equal(mask.state.editingMask.source, 'hybrid');
@@ -1168,28 +1167,6 @@ test('a prompt revision refines from the chosen candidate logits reference', asy
     assert.equal(refinement.previousLogitsRef.rgbDigest, refinement.rgbDigest);
     assert.notEqual(
         refinement.proposalAttemptId,
-        maskRequests[0].proposalAttemptId
-    );
-});
-
-test('an explicit Retry mints a new attempt and omits the logits reference', async () => {
-    const maskRequests = [];
-    const { mask } = await setup({
-        promptCapabilities: richPromptCapabilities,
-        produceMask: (request) => {
-            maskRequests.push(request);
-            return Promise.resolve(
-                maskResponseFor(request, { withLogitsRef: true })
-            );
-        }
-    });
-    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
-
-    await mask.retryMaskRequest();
-    assert.equal(maskRequests.length, 2);
-    assert.equal(maskRequests[1].previousLogitsRef, undefined);
-    assert.notEqual(
-        maskRequests[1].proposalAttemptId,
         maskRequests[0].proposalAttemptId
     );
 });

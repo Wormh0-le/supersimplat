@@ -258,7 +258,7 @@ export const resetPalettePlacement = (
 
 /**
  * Palette state is scoped to the current Target Context: it survives Prompt
- * revisions, Retry, tool changes and Dock resize, and resets on Restart,
+ * revisions, normal attempts, tool changes and Dock resize, and resets on Restart,
  * targetContextId rotation, scene/target replacement and AI Select disposal
  * (an empty id represents the disposed state).
  */

@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
+const { readFileSync, readdirSync } = require('node:fs');
 const test = require('node:test');
 
 test('the Work Area releases permanent header and action-bar height to the image', () => {
@@ -137,11 +137,73 @@ test('single-result Mask authoring has no Proposal choice or acceptance UI', () 
     assert.doesNotMatch(dock, /\.ops\.acceptProposal\(/);
 });
 
-test('view-level recovery remains a compact canvas state instead of a View Action Bar', () => {
+test('the compact canvas state has navigation only and no recovery Action Bar', () => {
     const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
     assert.match(dock, /private readonly canvasStateActions:\s*Container;/);
     assert.match(dock, /this\.canvasStateActions\.hidden\s*=/);
-    assert.match(dock, /this\.maskActions\.hidden\s*=\s*!mask\.showRetry;/);
+    assert.match(
+        dock,
+        /this\.canvasStateActions\.append\(this\.selectedViewPrimaryButton\)/
+    );
+    assert.doesNotMatch(dock, /maskActions|retryMaskButton/);
+});
+
+test('obsolete planning and identical-input recovery commands are absent', () => {
+    const anchor = readFileSync('src/ai-select/anchor-controller.ts', 'utf8');
+    const generated = readFileSync(
+        'src/ai-select/generated-view-controller.ts',
+        'utf8'
+    );
+    const gallery = readFileSync(
+        'src/ai-select/gallery-presentation.ts',
+        'utf8'
+    );
+    const mask = readFileSync('src/ai-select/view-mask-session.ts', 'utf8');
+    const maskController = readFileSync(
+        'src/ai-select/mask-controller.ts',
+        'utf8'
+    );
+    const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
+
+    assert.doesNotMatch(anchor, /retryAnchorPreview/);
+    assert.doesNotMatch(
+        generated,
+        /retryViewRender|retryViewMask|refreshViewMask|regenerateViewPrompt|stopGeneration|generateMoreViews|regenerateViews/
+    );
+    assert.doesNotMatch(generated, /regenerate the Prompt/i);
+    assert.match(generated, /retryPlanning\(\): void/);
+    assert.doesNotMatch(gallery, /retryRender|regeneratePrompt|refreshMask/);
+    assert.doesNotMatch(mask, /retryMaskRequest/);
+    assert.doesNotMatch(maskController, /retryMaskRequest/);
+    assert.doesNotMatch(
+        dock,
+        /retry-mask|mask\.showRetry|refreshGeneratedViewMask/
+    );
+
+    const obsoleteLocaleKeys = [
+        'ai-select.retry',
+        'ai-select.more',
+        'ai-select.mask.retry',
+        'ai-select.readiness.action.generate-more',
+        'ai-select.views.planner.active',
+        'ai-select.views.planner.more',
+        'ai-select.views.planner.regenerate',
+        'ai-select.views.planner.regenerate-confirm',
+        'ai-select.views.planner.stop',
+        'ai-select.views.planner.stopped',
+        'ai-select.views.refresh-mask',
+        'ai-select.views.retry-mask',
+        'ai-select.views.retry-prompt',
+        'ai-select.views.retry-render'
+    ];
+    for (const file of readdirSync('static/locales')) {
+        const locale = JSON.parse(
+            readFileSync(`static/locales/${file}`, 'utf8')
+        );
+        for (const key of obsoleteLocaleKeys) {
+            assert.equal(locale[key], undefined, `${file} retains ${key}`);
+        }
+    }
 });
 
 test('the draggable snap palette stays inside the image instead of a Tool Rail', () => {

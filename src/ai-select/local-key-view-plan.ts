@@ -15,8 +15,9 @@ import {
  * Ticket 08). The Companion plans a small bounded local batch of Key Views
  * from the Target Geometry Hint — left/right azimuth plus modest elevation,
  * never a room-scale orbit — and validates every candidate conservatively.
- * The editor owns plan lifecycle (Stop / Generate More / Regenerate) and
- * fails closed on any other policy version.
+ * The editor owns the initial bounded plan and its failure-only recovery, and
+ * fails closed on any other policy version. Batch ordinals remain in the
+ * Companion contract for future planner evolution, not as product controls.
  */
 export const aiSelectLocalKeyViewPlannerVersion = 'local-key-view-planner/v2';
 
@@ -50,11 +51,10 @@ export interface LocalKeyViewPlanRequest {
     readonly target: AITarget;
     /**
      * The identity of one actual planning execution. Same-attempt replay is
-     * idempotent; an explicit Retry, Generate More, or Regenerate submits a
-     * new attempt.
+     * idempotent; a new planning intent submits a new attempt.
      */
     readonly planAttemptId: string;
-    /** 0 is the default batch; Generate More increments; Regenerate replans 0. */
+    /** 0 is the current initial batch; later ordinals remain protocol-reserved. */
     readonly batchOrdinal: number;
     readonly anchorCameraBinding: CameraBinding;
     readonly anchorCameraBindingDigest: string;

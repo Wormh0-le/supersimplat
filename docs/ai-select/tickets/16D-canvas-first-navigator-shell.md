@@ -1,8 +1,8 @@
 # 16D — Canvas-first three-pane shell + stable Navigator
 
-Status: planned — blocked by Ticket 16B
+Status: implemented — 2026-08-17
 
-Blocked by: 16B, 16A, 11, 09, 08, 07
+Prerequisites: 16B, 16A, 11, 09, 08, 07 (implemented)
 
 ## Current Final Spec mapping
 
@@ -41,71 +41,71 @@ selection must never reorder the Gallery.
 
 ### Three-pane shell
 
-- [ ] Wide layouts render Navigator, 2D Work Area and Inspector in that order.
-- [ ] Navigator defaults to approximately `220px` and supports `180–280px`.
-- [ ] Inspector defaults to approximately `280px` and supports `240–360px`.
-- [ ] Surplus width belongs to the 2D Work Area.
-- [ ] User-controlled sidebar widths and expanded states persist as local
+- [x] Wide layouts render Navigator, 2D Work Area and Inspector in that order.
+- [x] Navigator defaults to approximately `220px` and supports `180–280px`.
+- [x] Inspector defaults to approximately `280px` and supports `240–360px`.
+- [x] Surplus width belongs to the 2D Work Area.
+- [x] User-controlled sidebar widths and expanded states persist as local
       editor/device preferences only.
-- [ ] Expanded sidebars push the Work Area instead of overlaying the
+- [x] Expanded sidebars push the Work Area instead of overlaying the
       authoritative image.
-- [ ] Each expanded sidebar owns a header collapse control; a collapsed sidebar
+- [x] Each expanded sidebar owns a header collapse control; a collapsed sidebar
       leaves only a small adjacent-edge restore affordance.
-- [ ] Constrained layouts collapse Inspector before Navigator and always keep
+- [x] Constrained layouts collapse Inspector before Navigator and always keep
       the Work Area resident.
-- [ ] The authoritative RGB/Mask remains centered, aspect-preserving and
+- [x] The authoritative RGB/Mask remains centered, aspect-preserving and
       contained with a small safety margin; it is never cropped or stretched
       to satisfy pane widths.
-- [ ] Automatic fit stops after manual zoom and resumes only on explicit reset.
+- [x] Automatic fit stops after manual zoom and resumes only on explicit reset.
 
 ### Navigator controls and projection
 
-- [ ] Navigator title row contains only `Navigator` and its collapse control.
-- [ ] One compact trigger below the title displays the active Filter and Sort
+- [x] Navigator title row contains only `Navigator` and its collapse control.
+- [x] One compact trigger below the title displays the active Filter and Sort
       combination and opens two radio groups.
-- [ ] Filter options are `All` and `Needs Review`.
-- [ ] Sort options are global creation order, newest first and Needs Review
+- [x] Filter options are `All` and `Needs Review`.
+- [x] Sort options are global creation order, newest first and Needs Review
       first.
-- [ ] Default order is strict global creation order across Anchor, generated
+- [x] Default order is strict global creation order across Anchor, generated
       and user-added Views.
-- [ ] Selecting a View may scroll it into view but never changes its position.
-- [ ] Filtering is a pure presentation projection and mutates no View state.
-- [ ] If the current View no longer matches, the first matching View becomes
+- [x] Selecting a View may scroll it into view but never changes its position.
+- [x] Filtering is a pure presentation projection and mutates no View state.
+- [x] If the current View no longer matches, the first matching View becomes
       current. No match shows an explicit filter-empty state.
 
 ### Navigator items and exceptional states
 
-- [ ] Each item is a full-width 16:9 thumbnail with no multi-line metadata.
-- [ ] Anchor identity is an overlay pin, workflow state is one prioritized
+- [x] Each item is a full-width 16:9 thumbnail with no multi-line metadata.
+- [x] Anchor identity is an overlay pin, workflow state is one prioritized
       badge and selection is an inset outline.
-- [ ] Badge priority is failure, Needs Review, processing, then ready.
-- [ ] Excluded Views are low-emphasis but remain inspectable.
-- [ ] Quality, Mask, role and Participation text are absent from cards.
-- [ ] Persistent Stop, Continue, Generate More and Regenerate controls are not
+- [x] Badge priority is failure, Needs Review, processing, then ready.
+- [x] Excluded Views are low-emphasis but remain inspectable.
+- [x] Quality, Mask, role and Participation text are absent from cards.
+- [x] Persistent Stop, Continue, Generate More and Regenerate controls are not
       rendered.
-- [ ] Initial planning failure exposes one recovery icon only in the Navigator
+- [x] Initial planning failure exposes one recovery icon only in the Navigator
       empty/error state.
-- [ ] The retained fixed-offset initial planner schedules `4–8` automatic
+- [x] The retained fixed-offset initial planner schedules `4–8` automatic
       Generated Views, excluding the Anchor and User-added Views. This stage
       changes only their presentation, not their camera choices or validity
       policy; failures may leave fewer usable Views.
-- [ ] No-Target, initial planning, loading, failure and filter-empty states are
+- [x] No-Target, initial planning, loading, failure and filter-empty states are
       compact and do not replace an existing Anchor or completed View list.
 
 ### Accessibility
 
-- [ ] Visible sidebar, filter/sort, retry and thumbnail controls keep at least
+- [x] Visible sidebar, filter/sort, retry and thumbnail controls keep at least
       a `40×40px` hit area where interactive.
-- [ ] Icon controls expose accessible names, focus state and tooltips.
-- [ ] Filter/sort popover closes on Escape/outside click and restores focus.
+- [x] Icon controls expose accessible names, focus state and tooltips.
+- [x] Filter/sort popover closes on Escape/outside click and restores focus.
 
 ## Failure / recovery criteria
 
-- [ ] Corrupt saved width/expanded preferences clamp to supported defaults.
-- [ ] Empty filtering cannot leave a hidden View active in the Work Area.
-- [ ] Initial planning retry creates a normal new planning attempt and cannot
+- [x] Corrupt saved width/expanded preferences clamp to supported defaults.
+- [x] Empty filtering cannot leave a hidden View active in the Work Area.
+- [x] Initial planning retry creates a normal new planning attempt and cannot
       resurrect stale output.
-- [ ] Layout, filter, sort, selection and scroll state never enter Prompt,
+- [x] Layout, filter, sort, selection and scroll state never enter Prompt,
       Mask, Evidence, Candidate identity or project data.
 
 ## Validation
@@ -123,6 +123,16 @@ selection must never reorder the Gallery.
   approximately `1024×720`
 - Browser visual inspection of normal, loading, failure, filter-empty and
   collapsed-sidebar states
+
+## Implementation record
+
+- Implemented in commit `c1d9df7` through the Dock layout mapper, stable
+  Gallery projection, sidebar preference seam and compact Navigator rendering.
+- Source/style contracts cover canvas priority, fixed sidebar ranges,
+  thumbnail-only cards, filter/sort behavior and the failure-only planning
+  retry icon.
+- Ticket 16G revalidated this surface as part of the integrated responsive
+  walkthrough and removed the remaining retired command paths.
 
 ## Non-goals
 

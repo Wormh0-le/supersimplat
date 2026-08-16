@@ -440,7 +440,7 @@ test('Reset Anchor restores the initial CameraBinding pose and rerenders it at f
     assert.equal(controller.state.anchor.renderStatus, 'ready');
 });
 
-test('preserves a valid preview when the current final render fails and retries it', async () => {
+test('preserves a valid preview when a final render fails and a changed pose recovers', async () => {
     const requests = [];
     const controller = new AISelectAnchorController({
         renderer: {
@@ -468,15 +468,18 @@ test('preserves a valid preview when the current final render fails and retries 
         firstDigest
     );
 
-    await controller.retryAnchorPreview();
+    controller.updateAnchorCameraPose([
+        1, 0, 0, 30, 0, -1, 0, 31, 0, 0, -1, 32, 0, 0, 0, 1
+    ]);
+    await controller.renderFinalPreview();
 
     assert.equal(requests.length, 3);
-    assert.deepEqual(requests[2].cameraBinding, requests[1].cameraBinding);
-    // The explicit user Retry mints a fresh render-attempt identity for the
-    // same CameraBinding instead of replaying the cached failed attempt.
+    assert.notDeepEqual(requests[2].cameraBinding, requests[1].cameraBinding);
+    // A changed pose is a new normal user intent and therefore receives a new
+    // render-attempt identity without an identical-input Retry command.
     assert.notEqual(requests[2].renderAttemptId, requests[1].renderAttemptId);
     assert.equal(controller.state.anchor.renderStatus, 'ready');
-    assert.equal(controller.state.anchor.cameraBinding.cameraToWorld[3], 20);
+    assert.equal(controller.state.anchor.cameraBinding.cameraToWorld[3], 30);
 });
 
 test('mints a distinct render-attempt identity for every actual render execution', async () => {
@@ -491,8 +494,14 @@ test('mints a distinct render-attempt identity for every actual render execution
     });
 
     await controller.start(input());
+    controller.updateAnchorCameraPose([
+        1, 0, 0, 10, 0, -1, 0, 11, 0, 0, -1, 12, 0, 0, 0, 1
+    ]);
     await controller.renderFinalPreview();
-    await controller.retryAnchorPreview();
+    controller.updateAnchorCameraPose([
+        1, 0, 0, 20, 0, -1, 0, 21, 0, 0, -1, 22, 0, 0, 0, 1
+    ]);
+    await controller.renderFinalPreview();
 
     assert.equal(requests.length, 3);
     const attemptIds = requests.map((request) => request.renderAttemptId);
@@ -501,10 +510,12 @@ test('mints a distinct render-attempt identity for every actual render execution
         assert.equal(typeof attemptId, 'string');
         assert.ok(attemptId.length > 0);
     });
-    // Every attempt reused the same semantic CameraBinding without jitter.
-    requests.forEach((request) => {
-        assert.deepEqual(request.cameraBinding, requests[0].cameraBinding);
-    });
+    assert.equal(
+        new Set(
+            requests.map((request) => request.cameraBinding.cameraToWorld[3])
+        ).size,
+        requests.length
+    );
 });
 
 test('rejects an Anchor response bound to a different render attempt', async () => {

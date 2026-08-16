@@ -65,7 +65,7 @@ export interface AIViewMaskRequest {
     readonly rankingPolicyVersion: typeof anchorMaskRankingPolicyVersion;
     /**
      * The identity of one actual mask-production attempt. Same-attempt
-     * replay is idempotent; an explicit user Retry submits a new attempt.
+     * replay is idempotent; changed Prompt intent submits a new attempt.
      */
     readonly proposalAttemptId: string;
 }

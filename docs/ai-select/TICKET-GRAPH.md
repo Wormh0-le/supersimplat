@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.30
+# AI Select v1 — Implementation Ticket Graph v2.32
 
-Status: **active implementation graph — Ticket 16C implemented; post-visual-review Ticket 16D is current**
+Status: **active implementation graph — Tickets 16A–16G implemented; Ticket 17 current**
 
 Branch: `ai-select-v1`
 
@@ -20,8 +20,9 @@ Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical only. A
 All 31 parent Ticket files contain a current mapping to Final Spec v1.3. Ticket
 14A–14D and Ticket 16A–16G are execution stages under their respective parent
 Tickets and do not create a second normative graph. Ticket 16B published the
-accepted ADR 0018 and current-spec correction before its dependents; Ticket
-16C implemented the Mask/Prompt truth and compact Inspector seam.
+accepted ADR 0018 and current-spec correction before its dependents; Tickets
+16C–16G completed the accepted Inspector, shell, Work Area, Toolbar and
+obsolete-control closure.
 
 ## Current review closures
 
@@ -51,8 +52,8 @@ accepted ADR 0018 and current-spec correction before its dependents; Ticket
   Status Bar and Dock-cutover baseline.
 - Ticket 16B is implemented as the single-result authoring, capability-truth
   and `4–8` initial automatic-View contract baseline.
-- The completed 16A operator visual walkthrough found release-presentation and
-  product-contract gaps now owned by Tickets 16B–16G.
+- Tickets 16C–16G implemented the post-16A Inspector, canvas-first shell, Work
+  Area, compact Toolbar and obsolete-control integration closure.
 
 ## Dependency graph
 
@@ -133,56 +134,38 @@ Ticket 10 does not block Ticket 13, Ticket 21 or native application.
 
 ```text
 implemented prerequisites:
-- 04C — SAM 3 Image migration
-- 07 / 07A / 07B — Mask Review, Anchor acquisition, authoring/edit UX
-- 02C — automatic runtime readiness
-- 08 / 08A / 08B / 08C — target geometry, local views, per-View SAM acquisition, retained Prompt Support
-- 09 — scalable Gallery, frustum sync and View camera/Mask inspection
-- 11 — user-added AIView using current or adjusted camera
-- 12 — Explicit Mask Refresh + Evidence Dirty / Candidate Stale
-- 14A — Evidence Contract & Working Set
-- 14B — Reference Per-View P/N/V Evidence
-- 14C — Multi-view Aggregation & Classification
-- 14D — Atomic Candidate Publication & Reference Validation
-- 13 — Visible Evidence Coverage + View Diversity + Lift Readiness
-- 15 — Candidate correction + explicit Evidence-aware Re-Lift
+- 04C, 07, 02C, 07A, 07B
+- 08, 08A, 08B, 08C
+- 09, 11, 12
+- 14A–14D and parent Ticket 14
+- 13 — Lift Readiness
+- 15 — Candidate correction / Re-Lift
 - 16 — Candidate → Native Set / Add / Remove / Intersect core
 - 16A — AI View Dock + Candidate viewport presentation baseline
-- 16B — Single-result Mask product contract + capability/planner correction
-- 16C — Mask state truth + compact current-View Inspector
+- 16B — single-result Mask contract + 4–8 initial Views
+- 16C — Mask state truth + compact Inspector
+- 16D — canvas-first shell + stable Navigator
+- 16E — 2D Work Area + floating palette + explicit Re-Lift
+- 16F — compact viewport Toolbar + non-destructive Anchor adjustment
+- 16G — obsolete-control retirement + integrated visual closure
 
 current parent compatibility frontier:
-- 16 — Native Candidate operations
+- 17 — Applied Undo-and-Fix + complete Restart + multi-object/tool-switch lifecycle
 
 current execution stage:
-- 16D — canvas-first three-pane shell + stable Navigator
-
-post-visual-review follow-up:
-- 16D — canvas-first three-pane shell + stable Navigator
-- 16E — 2D Work Area + floating palette + explicit Re-Lift
-- 16F — compact viewport toolbar + non-destructive Anchor adjustment
-- 16G — obsolete-control removal + integration closure
-
-current implementation stage:
-- 16D — next post-visual-review Ticket 16 execution stage
-
-follows 16G:
-- 17 — Applied Undo-and-Fix + complete Restart + multi-object/tool-switch lifecycle
+- none
 ```
 
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 16
-next_implementation_subticket = 16D
+next_implementation_ticket = 17
+next_implementation_subticket = none
 ```
 
-Ticket 16 is the current parent compatibility frontier with 16D as its active
-execution stage. Ticket 16's application core, Tickets 16A–16C, Ticket 15 and
-their Ticket 13 / parent Ticket 14 prerequisites remain implemented. Tickets
-16F follows the 16B contract baseline; 16E joins the 16C/16D surfaces;
-16G closes the slice.
-Ticket 17 follows 16G. Ticket 10 remains optional and off the core release
+Ticket 17 consumes the implemented Ticket 16G Toolbar/presentation seam. It
+must not reintroduce retired 3D More/Restart or identical-input product
+Retry/planning controls. Ticket 10 remains optional and off the core release
 path.
 
 ## One valid topological order

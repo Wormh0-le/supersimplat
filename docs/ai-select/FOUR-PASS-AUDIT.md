@@ -1,11 +1,11 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.27
+# Eight-Pass Bidirectional Traceability Audit — v2.32
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
-Post-audit note: the accepted Ticket 16B delta changes the initial automatic
-Generated-View range from the audited `2–4` baseline to `4–8`. The Pass 4 text
-below is retained as v2.27 audit evidence and does not validate the expanded
-range; Ticket 21 owns its calibration.
+The v2.12–v2.27 sections and detailed pass text below are retained as historical
+audit evidence. The controlling v2.32 result is the post-Ticket-16G closure at
+the end of this document; Ticket 21 still owns calibration of the accepted
+`4–8` initial automatic-View range.
 
 ## Independent review findings corrected in v2.12
 
@@ -495,3 +495,29 @@ Mask Review / Lift Readiness / optional P1    PASS
 Legacy + planning migration                   PASS
 Traceability / walkthroughs                   PASS
 ```
+
+## v2.32 Ticket 16G controlling audit result
+
+The post-16A integration series is closed through Ticket 16G and Ticket 17 is
+the only current execution frontier. This current pass supersedes the
+historical frontier and planning-control values retained above.
+
+| Pass | Current v2.32 check                                                                                                              | Result |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 1    | All 31 parent Tickets and the 14A–14D / 16A–16G stage graph resolve; Ticket 17 is the only current frontier                      | PASS   |
+| 2    | Final Spec v1.3 remains the sole current specification and all 31 parent Ticket mappings resolve directly to it                  | PASS   |
+| 3    | SAM 3 Image, authoritative RGB, single-result Prompt and opaque refinement contracts remain unchanged by 16G                     | PASS   |
+| 4    | The bounded initial `4–8` local-View plan remains; persistent Stop/Continue/More/regeneration product commands are retired       | PASS   |
+| 5    | Per-View Mask architecture remains unchanged; changed Prompt/manual editing/replacement are the supported recovery paths         | PASS   |
+| 6    | Mask Review, Lift Readiness and optional Ticket 10 ownership remain unchanged; 16G adds no renderer/Evidence behavior            | PASS   |
+| 7    | Removed planning/recovery commands are absent from editor APIs, presentation flags, locales, styles and current UI documentation | PASS   |
+| 8    | Requirements remain 62/62 mapped; walkthroughs and error flows are 17/17; Ticket 16G operator evidence is recorded               | PASS   |
+
+Current critical scan: no active surface or planning document requires an
+obsolete Dock header/action bar, 3D More/Restart/Exit control, persistent
+planning command, or identical-input product recovery command. Retained
+attempt identity, replay, cancellation, stale-result rejection, atomic
+publication and Companion batch/ordinal protocol are correctness
+infrastructure rather than product controls.
+
+Overall result: **PASS_V2_32**.

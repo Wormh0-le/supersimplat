@@ -1,8 +1,8 @@
 # 16F — Compact 3D viewport toolbar + non-destructive Anchor adjustment
 
-Status: planned — blocked by Ticket 16B
+Status: implemented — 2026-08-17
 
-Blocked by: 16B, 16A, 16, 11, 08, 05, 03
+Prerequisites: 16B, 16A, 16, 11, 08, 05, 03 (implemented)
 
 ## Current Final Spec mapping
 
@@ -40,57 +40,57 @@ menus are removed.
 
 ### Toolbar surface
 
-- [ ] Normal mode contains one combined Anchor-state/Adjust control and one Add
+- [x] Normal mode contains one combined Anchor-state/Adjust control and one Add
       View split control.
-- [ ] Anchor status and adjustment are not rendered as separate controls or
+- [x] Anchor status and adjustment are not rendered as separate controls or
       repeated text.
-- [ ] Add Current View is the split control's primary action and Add From New
+- [x] Add Current View is the split control's primary action and Add From New
       Pose is its alternate action.
-- [ ] Candidate mode retains Overlay and Ticket 16 Set/Add/Remove/Intersect in
+- [x] Candidate mode retains Overlay and Ticket 16 Set/Add/Remove/Intersect in
       stable order.
-- [ ] Adjustment and Candidate operations use one coherent custom SVG family;
+- [x] Adjustment and Candidate operations use one coherent custom SVG family;
       no Unicode symbols or text substitutes remain.
-- [ ] The leading `AI Select` label, textual Anchor status, More menu, Restart
+- [x] The leading `AI Select` label, textual Anchor status, More menu, Restart
       Current Target and Exit AI Select are removed.
-- [ ] The existing global AI Select tool control remains the single exit
+- [x] The existing global AI Select tool control remains the single exit
       affordance.
-- [ ] No Re-Lift action appears in the 3D viewport.
-- [ ] Visible glyphs remain compact while interactive hit areas are at least
+- [x] No Re-Lift action appears in the 3D viewport.
+- [x] Visible glyphs remain compact while interactive hit areas are at least
       `40×40px`.
-- [ ] Tooltips, selected/pressed state, disabled reasons, focus and keyboard
+- [x] Tooltips, selected/pressed state, disabled reasons, focus and keyboard
       activation are complete for every operation.
 
 ### Anchor adjustment lifecycle
 
-- [ ] Entering Adjust Anchor preserves the current run and all dependent Views.
-- [ ] Canceling adjustment preserves Anchor, Views, Masks, Evidence, Candidate,
+- [x] Entering Adjust Anchor preserves the current run and all dependent Views.
+- [x] Canceling adjustment preserves Anchor, Views, Masks, Evidence, Candidate,
       Native Selection and scroll state.
-- [ ] Confirming an unchanged Anchor is a no-op and preserves the same state.
-- [ ] Confirming an actually changed adjustment pose stages a draft Anchor
+- [x] Confirming an unchanged Anchor is a no-op and preserves the same state.
+- [x] Confirming an actually changed adjustment pose stages a draft Anchor
       CameraBinding and authoritative RGB without rotating the current target
       identity or clearing the current run.
-- [ ] The changed-Anchor draft has its own Prompt and Editing Mask state. It
+- [x] The changed-Anchor draft has its own Prompt and Editing Mask state. It
       requires fresh Mask confirmation and may require modified or additional
       Prompt input.
-- [ ] Only Ticket 16E's combined Confirm Mask, fresh validation and atomic
+- [x] Only Ticket 16E's combined Confirm Mask, fresh validation and atomic
       Confirm Anchor cutover rotates the relevant identity, clears dependent
       generated and user-added Views, and begins the retained initial planning
       path.
-- [ ] Old asynchronous render, Mask, Evidence and Candidate work cannot publish
+- [x] Old asynchronous render, Mask, Evidence and Candidate work cannot publish
       across the successful changed-Anchor cutover.
 
 ## Failure / recovery criteria
 
-- [ ] Failed or canceled Anchor adjustment leaves the original run usable.
-- [ ] Failed draft render, Mask inference or validation cannot partially replace
+- [x] Failed or canceled Anchor adjustment leaves the original run usable.
+- [x] Failed draft render, Mask inference or validation cannot partially replace
       the original Anchor or its dependent artifacts; cancellation discards
       only the staged draft.
-- [ ] A failed changed-Anchor render can be escaped by changing/resetting pose
+- [x] A failed changed-Anchor render can be escaped by changing/resetting pose
       and starting a new normal render; no explicit Retry Preview action is
       exposed.
-- [ ] Add View failure leaves an inspectable failed/excluded View record when a
+- [x] Add View failure leaves an inspectable failed/excluded View record when a
       record exists and does not mutate Native Selection.
-- [ ] Toolbar presentation failure cannot execute a hidden or disabled native
+- [x] Toolbar presentation failure cannot execute a hidden or disabled native
       operation.
 
 ## Validation
@@ -107,6 +107,16 @@ menus are removed.
 - Ticket 16 native-operation regression through the real applicability gate
 - Toolbar keyboard, tooltip, pressed-state and disabled-reason tests
 - Browser visual inspection of icon density and popover placement
+
+## Implementation record
+
+- Implemented in commit `7e61cb6` through the compact Toolbar presentation,
+  Add View split control and staged Anchor-adjustment controller.
+- Lifecycle tests cover enter/cancel/no-op, changed-pose draft isolation,
+  validation, atomic cutover and late-result rejection.
+- Ticket 16G revalidated the final Toolbar seam and removed the remaining
+  identical-input Anchor/View recovery commands without adding Ticket 17
+  lifecycle controls.
 
 ## Non-goals
 

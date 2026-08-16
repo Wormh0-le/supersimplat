@@ -97,16 +97,9 @@ export class AISelectDirtyStateTracker {
         this.publish();
     }
 
-    /** A user requested replacement of the accepted local Key-View plan. */
-    markLocalKeyViewPlanDirty(): void {
-        this.localKeyViewPlanDirty = true;
-        this.publish();
-    }
-
     /**
-     * A local Key-View plan was replaced. Only Views in that plan acquire a
-     * new Prompt/Mask dependency; Generate More never calls this method for
-     * existing Views.
+     * The bounded initial local Key-View plan became current. Only Views in
+     * that plan acquire a new Prompt/Mask dependency.
      */
     markLocalKeyViewPlanReady(dependentViewIds: readonly string[]): void {
         this.localKeyViewPlanDirty = false;
@@ -121,8 +114,8 @@ export class AISelectDirtyStateTracker {
         this.publish();
     }
 
-    /** A new immutable 3D-guided Prompt needs a separate explicit Mask run. */
-    markPromptRegenerated(viewId: string): void {
+    /** A new immutable 3D-guided Prompt is ready for its bound Mask run. */
+    markPromptReady(viewId: string): void {
         assertViewId(viewId);
         this.promptDirtyViewIds.delete(viewId);
         this.maskInferenceDirtyViewIds.add(viewId);

@@ -295,14 +295,11 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly technicalDetails: HTMLDetailsElement;
     private readonly technicalDetailsBody: HTMLPreElement;
     private readonly canvasStateActions: Container;
-    private readonly maskActions: Container;
     private readonly palette: AISelectFloatingPalette;
     private readonly boxPreview: HTMLDivElement;
-    private readonly retryMaskButton: Button;
     private readonly validationStatus: Label;
     private readonly selectedViewPrimaryButton: Button;
-    private selectedViewPrimaryAction: 'retry-mask' | 'next-review' | null =
-        null;
+    private selectedViewPrimaryAction: 'next-review' | null = null;
     private readonly gallery: Container;
     private readonly plannerLine: Container;
     private readonly plannerStatus: Label;
@@ -473,10 +470,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         );
         this.technicalDetails.open = false;
 
-        this.maskActions = new Container({
-            id: 'ai-select-anchor-dock-mask-actions',
-            hidden: true
-        });
         // The floating Prompt/Edit palette (Ticket 07B, DG-22): draggable,
         // collapsible and clamped inside the fitted image. It exposes exactly
         // the v1 tool set; Negative Box and Prompt Brush are absent.
@@ -554,16 +547,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             onBrushSizeChange: () => this.renderCurrentMaskOverlay()
         });
         this.imageSurface.appendChild(this.palette.dom);
-        this.retryMaskButton = new Button({
-            id: 'ai-select-anchor-dock-retry-mask'
-        });
-        i18n.bindText(this.retryMaskButton, 'ai-select.mask.retry');
-        this.retryMaskButton.on('click', () => {
-            this.authoring()
-                ?.ops.retryMaskRequest()
-                .catch((error) => console.error(error));
-        });
-        this.maskActions.append(this.retryMaskButton);
 
         this.validationStatus = new Label({
             id: 'ai-select-anchor-dock-validation-status',
@@ -903,7 +886,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             hidden: true
         });
         this.canvasStateActions.append(this.selectedViewPrimaryButton);
-        this.canvasStateActions.append(this.maskActions);
         navigator.append(navigatorHeader);
         navigator.append(this.gallery);
         this.workCanvasRow = new Container({
@@ -1592,12 +1574,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.renderMaskSurface(
             presentation.mask,
             this.maskState,
-            presentation.status === 'ready',
-            this.confirmation.locked
+            presentation.status === 'ready'
         );
         this.renderPromptStatus(presentation.mask, this.maskState);
         this.renderAnchorMetadata(presentation, textKey);
-        this.renderEditingActions();
         this.renderAuthoringTools();
         this.renderAnchorValidationStatus();
         this.renderCurrentMaskOverlay();
@@ -1630,14 +1610,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                     : i18n.t('ai-select.anchor.rendering');
         }
         const mask = getViewMaskPresentation(authoring.maskState);
-        this.renderMaskSurface(
-            mask,
-            authoring.maskState,
-            authoring.ready,
-            false
-        );
+        this.renderMaskSurface(mask, authoring.maskState, authoring.ready);
         this.renderPromptStatus(mask, authoring.maskState);
-        this.renderEditingActions();
         this.renderAuthoringTools();
         this.renderCurrentMaskOverlay();
         this.renderInspectorPresentation({
@@ -1737,13 +1711,13 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     /**
      * The Mask surface shared by the Anchor and user-added Views: request
      * currency, draft/confirmed Mask currency, technical failure details, and
-     * the palette Confirm affordance and retry recovery action.
+     * the palette Confirm affordance. Failure recovery changes the Prompt,
+     * edits the Mask manually, or adds a replacement View.
      */
     private renderMaskSurface(
         mask: AnchorDockMaskPresentation,
         maskState: AISelectMaskState,
-        ready: boolean,
-        locked: boolean
+        ready: boolean
     ): void {
         if (mask.status === 'none' && !ready) {
             this.maskStatus.hidden = true;
@@ -1760,8 +1734,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                       ? i18n.t('ai-select.mask.unavailable')
                       : i18n.t(`ai-select.mask.${mask.status}`);
         }
-        this.retryMaskButton.hidden = !mask.showRetry;
-        this.retryMaskButton.enabled = mask.showRetry && !locked;
     }
 
     /**
@@ -1791,14 +1763,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.status.text = i18n.t('ai-select.views.inspecting-editing');
         this.validationStatus.hidden = true;
         const mask = getViewMaskPresentation(authoring.maskState);
-        this.renderMaskSurface(
-            mask,
-            authoring.maskState,
-            authoring.ready,
-            authoring.locked
-        );
+        this.renderMaskSurface(mask, authoring.maskState, authoring.ready);
         this.renderPromptStatus(mask, authoring.maskState);
-        this.renderEditingActions();
         this.renderAuthoringTools();
         this.renderCurrentMaskOverlay();
     }
@@ -1875,7 +1841,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.status.text = `${i18n.t(roleKey)} — ${i18n.t('ai-select.views.inspecting')}`;
         this.maskStatus.hidden = true;
         this.promptStatus.hidden = true;
-        this.maskActions.hidden = true;
         this.validationStatus.hidden = true;
         this.boxPreview.hidden = true;
         this.image.style.cursor = 'default';
@@ -2302,31 +2267,25 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         );
         const authoring = this.authoring();
         const authoringPrimaryVisible =
-            (authoring !== null &&
-                getViewMaskPresentation(authoring.maskState).showConfirm) ||
-            !this.retryMaskButton.hidden;
+            authoring !== null &&
+            getViewMaskPresentation(authoring.maskState).showConfirm;
         let action: AISelectAnchorDock<TCandidatePayload>['selectedViewPrimaryAction'] =
             null;
-        if (!authoringPrimaryVisible) {
-            if (card.actions.refreshMask) {
-                action = 'retry-mask';
-            } else if (
-                !card.actions.confirmAsIs &&
-                filterGalleryViews(ordered, 'needs-review').some(
-                    (view) => view.viewId !== selected.viewId
-                )
-            ) {
-                action = 'next-review';
-            }
+        if (
+            !authoringPrimaryVisible &&
+            !card.actions.confirmAsIs &&
+            filterGalleryViews(ordered, 'needs-review').some(
+                (view) => view.viewId !== selected.viewId
+            )
+        ) {
+            action = 'next-review';
         }
         this.selectedViewPrimaryAction = action;
         this.selectedViewPrimaryButton.hidden = action === null;
         if (action !== null) {
-            const labelKey = {
-                'retry-mask': 'ai-select.views.retry-mask',
-                'next-review': 'ai-select.views.next-review'
-            }[action];
-            this.selectedViewPrimaryButton.text = i18n.t(labelKey);
+            this.selectedViewPrimaryButton.text = i18n.t(
+                'ai-select.views.next-review'
+            );
         }
     }
 
@@ -2339,9 +2298,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             return;
         }
         switch (this.selectedViewPrimaryAction) {
-            case 'retry-mask':
-                this.refreshGeneratedViewMask(selected.viewId);
-                return;
             case 'next-review': {
                 const next = filterGalleryViews(
                     orderGalleryViews(this.generatedState.views),
@@ -2359,8 +2315,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
      * full-resolution artifact stays in controller state and is never realized
      * as a card image — on a cache miss the card waits for its downscaled
      * thumbnail so a large Gallery stays inside the resource bound. Unchanged
-     * digests keep their thumbnail, so Generate More never visually stales
-     * prior completed Views.
+     * digests keep their thumbnail while the bounded initial plan completes.
      */
     private applyCardThumbnail(
         card: GeneratedCardElements,
@@ -2416,14 +2371,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         try {
             this.generatedViews.selectView(viewId);
             this.onInspectCamera(viewId);
-        } catch (error) {
-            console.error(error);
-        }
-    }
-
-    private refreshGeneratedViewMask(viewId: string): void {
-        try {
-            this.generatedViews.refreshViewMask(viewId);
         } catch (error) {
             console.error(error);
         }
@@ -2510,16 +2457,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         ) {
             onConfirmAnchor().catch((error) => console.error(error));
         }
-    }
-
-    private renderEditingActions(): void {
-        const authoring = this.authoring();
-        if (authoring === null) {
-            this.maskActions.hidden = true;
-            return;
-        }
-        const mask = getViewMaskPresentation(authoring.maskState);
-        this.maskActions.hidden = !mask.showRetry;
     }
 
     /**
@@ -2649,10 +2586,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     }
 
     private renderCanvasStateActionsVisibility(): void {
-        this.canvasStateActions.hidden = [
-            this.selectedViewPrimaryButton,
-            this.maskActions
-        ].every((action) => action.hidden);
+        this.canvasStateActions.hidden = this.selectedViewPrimaryButton.hidden;
     }
 
     private renderPromptStatus(

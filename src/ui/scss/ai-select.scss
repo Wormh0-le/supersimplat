@@ -885,26 +885,6 @@
     }
 }
 
-#ai-select-anchor-dock-mask-actions {
-    gap: 6px;
-    flex-shrink: 0;
-    flex-wrap: wrap;
-
-    &:not(.pcui-hidden) {
-        display: flex;
-    }
-}
-
-#ai-select-anchor-dock-failure-actions {
-    gap: 6px;
-    flex-shrink: 0;
-    flex-wrap: wrap;
-
-    &:not(.pcui-hidden) {
-        display: flex;
-    }
-}
-
 #ai-select-view-gallery {
     flex-direction: column;
     gap: 6px;

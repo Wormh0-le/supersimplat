@@ -3,7 +3,6 @@ import type { AnchorRgbArtifact } from './anchor-render-service';
 import type { EvidenceStatus } from './evidence-state';
 import type { AISelectMaskState } from './mask-controller';
 import { hasSemanticEditingMaskChange } from './mask-registry';
-import { promptStateHasConstraints } from './prompt-state';
 
 export type AnchorDockStatus =
     'idle' | 'ready' | 'previewing' | 'rendering' | 'failed';
@@ -30,8 +29,6 @@ export interface AnchorDockMaskPresentation {
     readonly automaticMaskStatus: AISelectMaskState['automaticMaskStatus'];
     /** A current Editing Mask exists and can be atomically published. */
     readonly showConfirm: boolean;
-    /** The failed SAM request can be retried with its prompt set. */
-    readonly showRetry: boolean;
     readonly errorMessage?: string;
 }
 
@@ -66,15 +63,14 @@ const emptyMaskPresentation = (
         resultFeedback: 'none',
         evidenceStatus: 'not-requested',
         automaticMaskStatus: 'none',
-        showConfirm: false,
-        showRetry: false
+        showConfirm: false
     });
 };
 
 /**
  * The Mask surface of any one View's Mask state (Anchor or user-added
  * AIView): request currency, draft/confirmed Mask currency, prompt summary,
- * and the Confirm/Retry affordances. View source never determines trust.
+ * and the Confirm affordance. View source never determines trust.
  */
 export const getViewMaskPresentation = (
     maskState: AISelectMaskState
@@ -120,10 +116,6 @@ export const getViewMaskPresentation = (
             maskState.editingMask !== null &&
             (editingMaskChanged ||
                 maskState.hasUnconfirmedPromptChanges === true),
-        showRetry:
-            maskState.requestStatus === 'failed' &&
-            maskState.promptState != null &&
-            promptStateHasConstraints(maskState.promptState),
         ...(maskState.errorMessage === undefined
             ? {}
             : { errorMessage: maskState.errorMessage })
@@ -143,8 +135,8 @@ export const getAnchorDockMaskPresentation = (
 
 /**
  * Decide presentation separately from inference state. In particular, a
- * transient interactive failure remains retryable even when a formal Anchor
- * image from the same binding is still displayable.
+ * transient interactive failure remains visible even when a prior formal
+ * Anchor image from the same binding is still displayable.
  */
 export const getAnchorDockPresentation = (
     state: AISelectAnchorState,

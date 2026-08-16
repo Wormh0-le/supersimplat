@@ -256,8 +256,4 @@ export class AISelectMaskController implements AISelectMaskAuthoring {
     redoMaskEdit(): void {
         this.session.redoMaskEdit();
     }
-
-    async retryMaskRequest(): Promise<void> {
-        await this.session.retryMaskRequest();
-    }
 }

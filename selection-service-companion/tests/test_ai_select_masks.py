@@ -839,8 +839,8 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(replay, first)
         self.assertEqual(len(self.runtime.predict_calls), 1)
 
-        # An explicit Retry mints a new attempt identity for the same RGB and
-        # prompts and really reruns the adapter without reusing logits.
+        # A distinct normal execution mints a new attempt identity for the
+        # same RGB and prompts, then reruns the adapter without reusing logits.
         retry_request = self.request_body()
         retry_request['proposalAttemptId'] = 'proposal-attempt-2'
         retry = self.state.produce_ai_select_mask(retry_request)

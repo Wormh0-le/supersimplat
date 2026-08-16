@@ -1,326 +1,135 @@
 # AI View Dock 布局设计
 
-状态：**Ticket 16A 已确认并实现的历史基线；16B–16G 正在修正人工视觉走查发现项**
+状态：**当前可复用合同 — Tickets 16D、16E、16G 已实现**
 
-> Ticket 16A 完成后的人工视觉走查不接受本文的最终呈现效果。本文保留
-> 16A 的实现依据和历史验收边界；与 `docs/ai-select/tickets/16B-*` 至
-> `16G-*` 冲突的布局、控件和信息归属要求已被后续 Ticket 取代。当前
-> 合同不保留永久标题/Action Bar、Proposal 交互、显式 Mask/Render Retry
-> 或持久 planner 控件；操作者发起的 Mask 结果进入 Editing，而已审阅的
-> 自动 Generated-View Mask 可直接发布 Stable。
+本文记录 Ticket 16G 闭合后的 AI View Dock。它取代 Ticket 16A 历史基线中关于永久标题、Action Bar、Proposal、显式 recovery 和 persistent planner controls 的描述。
 
-本文记录 Ticket 16A 的目标布局、信息归属、响应式行为和验收条件。它不改变 AI Select Final Spec v1.3 的 Prompt、Mask、View、Evidence、Candidate 或 Native Selection 语义。
+## 目标
 
-视觉线框见 [AI View Dock accepted layout](show-me-ai-view-dock-layout.html)。
+Dock 是连续的 2D 观察与修正工作台：
 
-配套的主视口操作设计见 [AI Select Toolbar 布局与交互设计](ai-select-toolbar-layout.md)。
+`Navigator → selected-View Work Area → current-View Inspector`
 
-## 解决的问题
+权威 RGB/Mask canvas 始终是视觉焦点。导航、状态和解释保持紧凑；Native Candidate Operations 留在主 3D Toolbar。
 
-当前 Dock 使用固定左右布局。右栏名义宽度为 `340px`，最多占主区域的 `45%`；图像在剩余区域内等比居中。面板较宽但高度有限时，图像两侧会出现较大空白，右栏同时混合 View 状态、Gallery、Mask 操作、Candidate 操作和失败恢复入口。
+## 三栏结构
 
-新设计需要满足以下结果：
+| 区域      | 拥有                                                                        | 不拥有                                                                |
+| --------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Navigator | View 选择、filter/sort、缩略图、优先状态 badge、初始 planning failure retry | Prompt/Mask 编辑、Participation mutation、persistent planner commands |
+| Work Area | 权威 RGB、Mask overlay、浮动 palette、Re-Lift、必要的 Next Review 导航      | View 集合管理、Native Candidate Operations、bottom Action Bar         |
+| Inspector | Assessment、Participation、Prompt/Mask 状态、technical details              | 主操作、重复 recovery controls、第二个 Participation toggle           |
 
-- View Review、Prompt 编辑和 Mask 编辑在同一个工作区内连续完成。
-- 图像保持完整、等比、无裁切和无拉伸，并成为唯一视觉焦点。
-- 操作按作用对象分区，不把 View、View 集合、Candidate 生产和 Native Selection 操作混在同一栏。
-- `1280×720` 提供完整三栏体验；约 `1024px` 宽时仍保留 Navigator 和图像编辑能力。
-- View 切换、过滤、侧栏折叠和面板 resize 不丢失 Editing Mask、Prompt、Proposal 或历史状态。
+Dock 不渲染 Dock-wide status header、selected-work header 或 bottom Action Bar。
 
-## 范围
+## 尺寸与响应式
 
-本文覆盖：
+- Navigator 默认约 `220px`，范围 `180–280px`。
+- Inspector 默认约 `280px`，范围 `240–360px`。
+- 多余宽度和高度属于 Work Area；侧栏保持单列。
+- 图像使用完整、居中、等比 contain，保留小安全边距；不得 crop 或 stretch。
+- Wide 和约 `1280×720` 显示三栏。
+- 约 `1024×720` 保留 Navigator + Work Area，并先折叠 Inspector。
+- 更窄时 Work Area 常驻；侧栏展开时推挤画布而不是覆盖。
+- Dock 默认高度 `420px`，最小 `300px`，最大为编辑区域高度减 `160px`。
+- 手动 zoom 在 resize 后保留，直到显式 Reset Fit。
+- 宽度、展开状态和 Dock 高度只存本机 editor preference，不进入项目或领域 identity。
 
-- Dock 顶栏；
-- AI View Navigator；
-- Selected AI View Work Area；
-- 当前 View Inspector；
-- Candidate 生产状态；
-- View 生成命令的渐进披露；
-- 宽度、高度、滚动、键盘和焦点行为；
-- UI 实现的验证矩阵。
+## Navigator
 
-本文不重复定义：
+标题行只有 Navigator 和相邻 collapse control。下方一个紧凑 trigger 打开两个 radio groups：
 
-- AI Select 子工具栏的最终布局；
-- `Set`、`Add`、`Remove`、`Intersect` 的最终控件形态；
-- 主 3D 视口中的 Candidate/Uncertain 可视化；
-- Selection Service、协议、SAM 3、Evidence 或 lifting 算法变更。
+- Filter：All、Needs Review；
+- Sort：global creation order、newest first、Needs Review first。
 
-## 交互模型
+默认顺序是 Anchor、Generated 和 User-added Views 的严格全局创建顺序。选择 View 不改变顺序；filter/sort 只改变 presentation projection。当前 View 不匹配时选中第一个匹配项；没有匹配项显示 filter-empty state。
 
-Dock 不按「View Review」「Prompt/Mask 编辑」「Candidate 应用」切换页面。View Review 和编辑是同一个循环：
+每个 item 是全宽 `16:9` 缩略图：
 
-```text
-在 Navigator 选择 AI View
-→ 查看权威 RGB、Mask 和 Assessment
-→ 满意：确认或调整 Participation
-→ 不满意：修改 Prompt 或 Editing Mask
-→ Confirm Mask
-→ 显式前往下一张 Needs Review View
-```
+- Anchor 使用 overlay pin；
+- badge 优先级为 failure、Needs Review、processing、ready；
+- Excluded 降低强调但保持可检查；
+- selection 使用 inset outline；
+- 卡片不显示多行 Quality、Mask、role 或 Participation 元数据。
 
-Gallery 是 Navigator，不是独立工作阶段。Anchor View、Generated View 和 User-added View 使用同一个 Selected AI View Work Area；Anchor 保留自身的确认语义。
+### 初始规划
 
-## 信息和操作归属
+初始 planner 一次调度 `4–8` 个固定 local-offset automatic Generated Views，不含 Anchor 和 User-added Views；有效性失败可能留下更少 usable Views。
 
-| 区域                       | 负责                                                                           | 不负责                                      |
-| -------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------- |
-| 紧凑顶栏                   | AI Select Availability、Candidate 生产状态、Included View 摘要、一个上下文动作 | Native Candidate Operations                 |
-| AI View Navigator          | View 选择、过滤、Assessment 摘要、Participation、View 集合状态                 | 当前 View 的 Prompt/Mask 编辑和低频恢复操作 |
-| Selected AI View Work Area | 权威 RGB、Prompt、Editing Mask、浮动工具栏和 View 主操作                       | View 集合管理和 Native Selection            |
-| 当前 View Inspector        | 当前 View 的 Review 原因、状态解释、只读 Participation、次级和恢复操作         | 主操作、重复的 Participation 开关           |
-| AI Select Toolbar          | 主 3D 视口交互和 Native Candidate Operations                                   | View Review 和 2D Prompt/Mask 编辑          |
+Navigator 不提供 Stop、Continue、Generate More 或 Regenerate Plan。仅初始 planning 失败时显示一个 failure-only retry icon；该动作创建新的 bounded planning attempt。Anchor 和已完成 Views 不被 planning/loading/failure empty state 覆盖。Companion batch/ordinal protocol 保留为内部扩展基础。
 
-## 布局
+## Work Area
 
-### 宽屏布局
+Work Area 不保留永久 selected-View 标题或底部 Action Bar。它包含：
 
-```text
-┌──────────────────────── 紧凑顶栏 ────────────────────────┐
-├──────────────┬──────────────────────────┬─────────────────┤
-│ View         │ Selected AI View         │ Current View    │
-│ Navigator    │ Work Area                │ Inspector       │
-│              │ RGB/Mask + 浮动工具栏    │                 │
-└──────────────┴──────────────────────────┴─────────────────┘
-```
+1. aspect-preserving RGB/Mask surface；
+2. 图像内可拖动、吸附、折叠的 Prompt/Edit palette；
+3. 图像外上方少量 target-level chrome，包括 Re-Lift 和 Reset Fit；
+4. 仅在有其他待审 View 且当前无 authoring primary 时出现的 Next Review 导航。
 
-- Navigator 保持在 `240–280px`，只满足单列缩略图和状态文本的可读性。
-- Inspector 保持在 `280–320px`，信息分组始终纵向排列。
-- Work Area 占用侧栏之外的全部剩余宽度；图像高度和权威 RGB 宽高比共同决定图像的实际显示宽度。
-- 图像继续使用 contain 语义：完整显示、等比缩放、居中，不使用 crop 或 stretch 消除空白。
-- Dock 使用完整容器宽度，不在最大化窗口中居中保留固定舞台外边距。
-- 多余横向空间优先分配给 Work Area。宽屏不放大稀疏侧栏，也不把 Navigator 卡片或 Inspector 分组改成多列。
-- 精确阈值由容器尺寸和浏览器走查校准，不以浏览器窗口宽度代替 Dock 实际宽度。
+浮动 palette 提供：
 
-### 响应式退化
+- Positive Point、Negative Point、Positive Instance Box；
+- Paint、Erase 和 brush size；
+- Prompt 或 Mask-local Undo/Redo/Clear；
+- Confirm Mask / Confirm Review / Confirm Anchor 的稳定 confirmation slot；
+- Correction 与 Back to Candidate 的稳定 context slot；
+- Restore Auto Mask。
 
-布局按 Dock 容器宽度退化：
+每个 operator Prompt inference 最多产生一个 usable result，并自动成为 Editing Mask；没有 Proposal carousel/count/Accept。已审阅 automatic Generated-View result 可直接成为 Stable Mask，后续 correction 才建立独立 Editing draft。
 
-1. 宽：Navigator、Work Area、Inspector 三栏同时显示。
-2. 中：Navigator 和 Work Area 常驻；Inspector 折叠。
-3. 窄：Work Area 常驻；Navigator 和 Inspector 均可折叠。
+Re-Lift 是唯一强调的 target-level action。它映射 Ticket 13 Lift Readiness 和 Ticket 15 Candidate lifecycle，不在 3D Toolbar 重复。
 
-折叠侧栏展开时推挤 Work Area，不覆盖图像。展开状态的折叠入口位于对应侧栏标题行；收起后，Work Area 相邻边缘显示恢复入口。顶栏不放置脱离侧栏上下文的开关。`Esc`、关闭按钮或再次点击触发按钮均可收起侧栏。收起后焦点返回可见的恢复入口；当前 View、草稿和各区域滚动位置保持不变。
+## Inspector
 
-约 `1024px` 宽时 Navigator 必须常驻。Navigator 仅在低于目标支持范围的窄宽条件下折叠。
+Inspector 纵向显示：
 
-### 高度和滚动
-
-- 默认高度：`420px`。
-- 最小高度：`300px`。
-- 最大高度：主编辑区域高度减 `160px`。
-- 首次打开和窗口尺寸变化时立即限制高度。
-- 用户调整后的高度保存在当前设备的编辑器偏好中，不进入项目数据。
-- 顶栏、图像和 View Action Bar 固定；Navigator 与 Inspector 分别纵向滚动。
-- 图像不进入滚动容器。
-
-## 紧凑顶栏
-
-Dock 标题、Availability 和 Candidate 生产摘要合并为一条顶栏：
-
-```text
-AI Select · Available    Candidate stale · 4 Included    Update 3D Candidate
-```
-
-顶栏最多显示一个上下文动作：
-
-| 状态                              | 动作                    |
-| --------------------------------- | ----------------------- |
-| 尚无 Candidate 或 Candidate stale | `Update 3D Candidate`   |
-| 正在更新                          | `Updating…`，不显示按钮 |
-| Candidate current                 | `Fix AI Result`         |
-| 更新失败                          | `Retry Update`          |
-| Correction 且 Stable 输入未变化   | `Back to Candidate`     |
-
-`Back to Candidate` 保留每张 View 的 Editing Mask 草稿，不执行 Confirm 或 discard。Stable 输入已经变化时，Candidate 保持 stale，并显示 `Update 3D Candidate`。
-
-`Show AI Result`、`Set`、`Add`、`Remove` 和 `Intersect` 不属于 Dock。
-
-## AI View Navigator
-
-### 当前 View 和过滤
-
-- 当前 View 固定显示在过滤结果上方，并标记 `Current`。
-- 当前 View 不在过滤结果中重复出现。
-- 默认过滤控件为 `All Views ▾`。
-- `Review N` 是唯一常驻快捷过滤入口。
-- All、Included、Excluded 和 Needs Review 过滤只改变列表显示，不修改 View、Mask、Participation、Evidence 或 Candidate。
-
-### View 卡片
-
-卡片只显示影响导航和判断的信息：
-
-- 缩略图；
-- View 名称和来源；
-- Assessment；
-- Participation；
-- `Editing` 草稿标记；
-- 阻止继续工作的错误。
-
-卡片始终按单列列表排列，并保证卡片最小高度完整容纳缩略图、名称和状态。宽屏不会切换为多列卡片网格。
-
-Participation 开关只存在于 Navigator 卡片。Inspector 只显示 Participation 结果和不可 Include 的原因。
-
-Retry、Inspect、Regenerate Prompt、Refresh Mask 等操作不在每张卡片内重复出现；这些操作属于当前 View Inspector。
-
-### View 切换和草稿
-
-普通 View 切换保持现有 per-View 行为：
-
-- Editing Mask 保留且不自动 Confirm；
-- 未接受的 Proposal 和当前 Proposal 预览保留；
-- Prompt 及 Prompt/Mask Undo/Redo 历史保留；
-- 进行中的 SAM 请求继续，并把结果写回对应 View session；
-- 尚未原子提交的当前 Pointer gesture 取消。
-
-普通切换不弹出确认框。Restart、Regenerate 或移除 View 等会销毁状态的操作必须明确说明影响，并在需要时确认。
-
-### View 集合状态
-
-集合级状态显示在 Navigator 标题下方：
-
-```text
-Planning       Generating views 2 / 3… · Stop
-Failed         <简短原因> · Retry
-Plan exhausted No more planned views
-```
-
-`Generate More`、`Stop` 和 `Regenerate` 不常驻：
-
-- Lift Readiness 因 Coverage 或 View Diversity 不足且 planner 仍有容量时，显示 `Generate More` 建议；更多菜单保留同一能力。
-- `Stop` 仅在生成过程中显示。
-- `Regenerate Auto Views…` 位于更多菜单，并在执行前说明 planner-owned Views 会被替换、User-added Views 会被保留。
-
-Anchor 和已完成 View 不因 Planning、Failed 或 plan exhausted 状态被空态覆盖。
-
-## Selected AI View Work Area
-
-### 结构
-
-Work Area 包含：
-
-1. 约 `28px` 高的轻量 View 标题行，显示名称、来源和 Assessment；
-2. 权威 RGB、Prompt、Mask overlay 和 Box preview；
-3. 图像内可拖动、自动吸附、可折叠的浮动工具栏；
-4. 图像下方只在存在上下文恢复动作时显示的 View Action Bar。
-
-浮动工具栏暴露 Positive Point、Negative Point、Positive Instance Box、Paint、Erase、Mask 历史、确认 Mask 和重置为自动 Mask。拖动和吸附只改变呈现状态，不进入 Prompt、Mask 或项目数据。
-
-### 单结果 Mask
-
-每次 Prompt 推理最多返回一个可用 Mask 结果：
-
-```text
-Prompt → 单个自动结果 → Editing Mask → Confirm Mask → Stable Mask
-```
-
-- Companion 固定 `multimask_output=false`，浏览器拒绝超过一个结果的响应。
-- 唯一可用结果自动成为 Editing Mask，不显示 Proposal 轮播、计数、下拉框、模型分数或接受按钮。
-- 继续添加 Prompt 时，唯一结果的 opaque logits ref 可作为 refinement lineage；Retry 仍显式丢弃该 lineage。
-- `Confirm Mask` 在浮动工具栏内发布 Stable Mask；若当前 View 是未确认 Anchor，同一动作继续 Anchor 确认并启动 Generated View 规划。
-
-### 主操作
-
-每个状态只显示一个主操作：
-
-| 当前状态         | 主操作或恢复动作          |
-| ---------------- | ------------------------- |
-| Editing Mask     | 浮动工具栏 `Confirm Mask` |
-| Auto Review      | `Confirm As Is`           |
-| Mask 失败        | `Retry Mask`              |
-| 当前 View 已完成 | `Next Review`             |
-
-无关操作隐藏。只有操作存在但暂时被阻止时才禁用，并紧邻显示原因。
-没有任何主操作时，View Action Bar 整体隐藏并把高度还给图像。
-
-`Next Review` 不自动执行。按钮和键盘快捷键显式前往下一张 Needs Review View；具体按键需要在实现时完成现有快捷键冲突审计，并显示在 tooltip 中。
-
-## 当前 View Inspector
-
-Inspector 只承载当前 View 的解释和次级操作：
-
-- Assessment 和 Review reason；
-- 只读 Participation 和不可 Include 的原因；
-- Prompt、Stable Mask 和 Editing Mask 状态；
-- Retry、Refresh、Inspect Camera 等低频或恢复操作；重置为自动 Mask 留在浮动工具栏；
+- Assessment 和 actionable Review reasons；
+- Participation 只读结果和 blocker；
+- Prompt、Editing Mask、Stable Mask 与 Evidence 状态；
 - 默认折叠的 technical details。
 
-Inspector 的信息分组按内容自然收紧并保持单列；额外窗口宽度归还 Work Area，不为稀疏状态制造第二列或扩大侧栏。
+Inspector 不提供 Retry Render、Regenerate Prompt、Retry Mask、Retry Auto Segmentation 或其他 identical-input recovery。Restore Auto Mask 属于 palette，不在 Inspector 重复。
 
-Inspector 不重复 View Action Bar 的主操作，也不提供第二个 Participation 开关。
+## Failure 与恢复
 
-## 视觉系统
+- failed Generated/User-added render 保持可检查、failed、Excluded；添加 replacement View 是支持的产品恢复。
+- Prompt/Mask failure 保留 RGB 和 prior Stable Mask；改变 PromptState 会创建 normal new intent，或使用 Paint/Erase 手动修正。
+- Anchor render failure 通过改变或 Reset pose 后启动 normal render intent。
+- semantic unavailable 与 technical failure 分开显示。
+- failed Candidate replacement 保留 prior stale Candidate；Re-Lift 仍通过原子 publication gate。
+- service unavailable/incompatible 保留 local inspectable work，并把原因投影到真实 action；不增加 duplicate Dock availability header。
+- target disposal 释放 target-local transient state，late result 由 identity mismatch 拒绝。
 
-- 延续 SuperSplat/PCUI 的深灰表面和现有字体，不引入新的字体或独立主题。
-- 以 4px 为基础间距单位；控制区使用 `8–12px` 的紧凑间距。
-- 图像和 Mask 是唯一焦点。层级主要通过字重、文本明度和空间建立，不依赖高对比边框。
-- 橙色保留给主操作和既有 SuperSplat 高亮语义。
-- Positive Point、Negative Point、Paint 和 Erase 保留现有绿色、红色、橙色和青色语义。
-- Assessment、错误和不可用状态使用项目现有 semantic colors，不增加装饰性色彩。
-- 深色界面使用低对比边界和轻微表面明度差分层，不混用新的阴影体系。
-- 交互控件的有效 hit area 不小于 `40×40px`；焦点环、hover、active、disabled 和 loading 状态必须完整。
-- 动画只用于折叠侧栏和低频 popover，使用 transform/opacity，并遵循 `prefers-reduced-motion`。
+## Accessibility
 
-## 键盘和焦点
+- 所有交互命中区域至少 `40×40px`；icon button 有 tooltip、accessible name 和 visible focus。
+- Thumbnail、collapse/restore、filter/sort、planning retry、Reset Fit 和 palette 支持键盘。
+- Popover 支持 Escape/outside click，关闭后恢复焦点。
+- disabled reason 不只依赖 hover 或颜色。
+- sidebar transition 只使用 transform/opacity 并遵守 reduced motion。
+- 普通 navigation、filter、collapse、resize 不丢失 drafts、history、selection 或 scroll。
 
-- Navigator 使用 roving focus；方向键移动焦点，`Enter` 选择 View。
-- Participation 是独立按钮，不借用卡片的选择操作。
-- View 切换后焦点保持在 Navigator，不自动跳进图像区。
-- 浮动工具栏、View Action Bar、Inspector 和侧栏触发按钮均可键盘操作。
-- `Esc` 收起 Inspector，并把焦点还给触发按钮。
-- Dock resize handle 保留方向键调整能力。
-- 快捷键在文本或数值输入获得焦点时不触发。
+## 状态走查矩阵
 
-## 验证
+必须在 wide、`1280×720`、`1024×720` 走查：
 
-### 尺寸矩阵
+- service unavailable/incompatible；
+- no Target；
+- planning、planning failure、RGB Ready；
+- confirmed/unconfirmed Mask、Review、Excluded；
+- Candidate current/stale/updating/failed；
+- Anchor adjustment；
+- filter-empty；
+- collapsed Navigator/Inspector。
 
-- `1280×720`：完整三栏布局；
-- `1024×720`：Navigator 与 Work Area 常驻，Inspector 可折叠；
-- 窄宽条件：Navigator 和 Inspector 均可折叠，Work Area 保持可用。
+走查同时确认 canvas priority、无重叠、图像 fidelity、禁止控件不存在，以及 planning retry 仅出现在 failure state。
 
-### 状态矩阵
+## 禁止面
 
-- Anchor Proposal；
-- Generated View Auto Review；
-- Editing Mask 草稿；
-- Planner Planning、Failed 和 plan exhausted；
-- Candidate current、stale 和 updating；
-- Companion unavailable；
-- Inspector 和 Navigator 折叠、恢复及焦点返回。
-
-### 实现验证
-
-UI 实现至少需要：
-
-- 为列模式、图像理想宽度和 Dock 高度 clamp 增加纯逻辑测试；
-- 更新样式契约测试，移除固定 `340px / 45%` 两栏假设；
-- 增加 View A 草稿 → View B → View A 的显式保留测试；
-- 验证当前 View 在过滤后仍固定可见；
-- 验证 Proposal stepper、单一主操作和 Candidate 顶栏状态投影；
-- 验证 0/1/多个 Proposal 分别隐藏、仅显示接受动作、显示相册式切换；
-- 在尺寸矩阵和状态矩阵下保存浏览器截图或走查记录；
-- 运行 `rtk npm test`、`rtk npm run lint`、`rtk npm run lint:locales` 和 `rtk npm run build`。
-
-纯布局改动不建立生产 GPU 正确性；若实现同时改变 Generated View、Evidence 或 lifting 行为，必须另行执行对应的锁定 GPU 验证。
-
-## 实现路由和已知差异
-
-主要实现入口预计包括：
-
-- `src/ui/ai-select-anchor-dock.ts`；
-- `src/ui/ai-select-floating-palette.ts`；
-- `src/ui/ai-select-toolbar.ts`；
-- `src/ui/editor.ts`；
-- `src/ui/scss/ai-select.scss`；
-- `src/ai-select/image-viewport.ts`；
-- 对应 presentation、locale 和 test 文件。
-
-布局状态不得进入模型请求、PromptState、Mask artifact、Evidence 或 Candidate identity。
-
-已实现的 Ticket 16 保留其关于 Dock 操作和最小 Candidate 状态强调的历史闭环证据。Ticket 16A 使用本文和配套 Toolbar 设计作为当前 UI 验收合同，一次实现完整 Dock 布局、真实 Candidate Overlay、固定 Toolbar、Status Bar 状态和 Dock 旧操作移除。
-
-当前 `Show AI Result` 只调整 Dock Candidate 状态文字的 emphasis，没有连接主 3D 视口 Overlay。Ticket 16A 不迁移该旧按钮，而是以非破坏性 3D Candidate Overlay 取代它。
-
-本次布局决策可逆，不满足 ADR 的「难以逆转」条件，因此不创建 ADR。
+- 无 Proposal choice/accept；
+- 无 persistent planning controls；
+- 无 explicit Render/Prompt/Mask recovery commands；
+- 无 permanent Dock header、selected-work header 或 bottom Action Bar；
+- 无 Native Set/Add/Remove/Intersect；
+- 无新 UI framework、icon library、font 或 theme。

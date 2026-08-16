@@ -515,10 +515,7 @@ test('card actions carry no obsolete backend, tracker or prompt-family surface',
         'confirmAsIs',
         'excludeView',
         'inspectCamera',
-        'participationToggle',
-        'refreshMask',
-        'regeneratePrompt',
-        'retryRender'
+        'participationToggle'
     ]);
     for (const key of statusKeys(presentation)) {
         assert.match(key, /^ai-select\.(views|review|participation)\./);
@@ -534,20 +531,18 @@ test('card actions carry no obsolete backend, tracker or prompt-family surface',
     assert.ok(!('proposalDecision' in presentation));
 });
 
-test('action visibility follows Render / Prompt / Mask / Review state', () => {
+test('failed Render / Prompt / Mask states expose no identical-input recovery action', () => {
     const ready = galleryCardPresentation(view(), 1);
-    // Successful Views are corrected on the selected image surface. Routine
-    // Prompt/Mask reruns are not duplicated on every Gallery card.
-    assert.equal(ready.actions.regeneratePrompt, false);
-    assert.equal(ready.actions.refreshMask, false);
+    assert.equal(ready.actions.inspectCamera, true);
 
     const renderFailed = galleryCardPresentation(
         view({ renderStatus: 'failed', renderErrorMessage: 'oom' }),
         1
     );
-    assert.equal(renderFailed.actions.retryRender, true);
-    assert.equal(renderFailed.actions.regeneratePrompt, false);
-    assert.equal(renderFailed.actions.refreshMask, false);
+    assert.deepEqual(
+        Object.keys(renderFailed.actions).sort(),
+        Object.keys(ready.actions).sort()
+    );
     assert.deepEqual(detailTexts(renderFailed), ['oom']);
 
     const promptFailed = galleryCardPresentation(
@@ -560,8 +555,7 @@ test('action visibility follows Render / Prompt / Mask / Review state', () => {
         }),
         1
     );
-    assert.equal(promptFailed.actions.regeneratePrompt, true);
-    assert.equal(promptFailed.actions.refreshMask, false);
+    assert.equal(promptFailed.actions.inspectCamera, true);
 
     const maskFailed = galleryCardPresentation(
         view({
@@ -572,8 +566,7 @@ test('action visibility follows Render / Prompt / Mask / Review state', () => {
         }),
         1
     );
-    assert.equal(maskFailed.actions.regeneratePrompt, false);
-    assert.equal(maskFailed.actions.refreshMask, true);
+    assert.equal(maskFailed.actions.inspectCamera, true);
 
     const maskUnavailable = galleryCardPresentation(
         view({
@@ -584,8 +577,7 @@ test('action visibility follows Render / Prompt / Mask / Review state', () => {
         }),
         1
     );
-    assert.equal(maskUnavailable.actions.regeneratePrompt, false);
-    assert.equal(maskUnavailable.actions.refreshMask, true);
+    assert.equal(maskUnavailable.actions.inspectCamera, true);
 
     const reviewPending = galleryCardPresentation(
         view({
@@ -652,8 +644,6 @@ test('card selection owns Mask editing; a user View without a Mask offers only E
     assert.equal(noMask.role, 'user-added');
     assert.equal(noMask.actions.excludeView, true);
     assert.equal(noMask.actions.participationToggle, null);
-    assert.equal(noMask.actions.regeneratePrompt, false);
-    assert.equal(noMask.actions.refreshMask, false);
     assert.equal(noMask.actions.confirmAsIs, false);
 
     // A User Confirmed Stable Mask adds the Participation toggle. Selecting
@@ -679,7 +669,7 @@ test('card selection owns Mask editing; a user View without a Mask offers only E
     assert.equal(generated.actions.excludeView, false);
 });
 
-test('a render-failed user-added View offers Retry and Exclude but no Mask choices', () => {
+test('a render-failed user-added View stays inspectable and excluded', () => {
     const failed = galleryCardPresentation(
         view({
             viewId: 'user-view-3',
@@ -695,6 +685,6 @@ test('a render-failed user-added View offers Retry and Exclude but no Mask choic
         }),
         1
     );
-    assert.equal(failed.actions.retryRender, true);
+    assert.equal(failed.actions.inspectCamera, true);
     assert.equal(failed.actions.excludeView, true);
 });

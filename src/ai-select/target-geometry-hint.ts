@@ -55,7 +55,7 @@ export interface TargetGeometryHintRequest {
     readonly sceneVersion: string;
     /**
      * The identity of one actual derivation execution. Same-attempt replay is
-     * idempotent; an explicit Retry submits a new attempt.
+     * idempotent; a distinct normal execution submits a new attempt.
      */
     readonly geometryAttemptId: string;
     readonly anchorCameraBinding: CameraBinding;

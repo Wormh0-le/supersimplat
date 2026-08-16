@@ -894,50 +894,21 @@ test('Box/multiple-Point prompts require exactly one result', async () => {
     await pending;
     assert.equal(session.state.requestStatus, 'failed');
 
-    // A single Box result is adopted automatically.
-    const retry = session.retryMaskRequest();
+    // A changed Prompt starts a new normal attempt and one result is adopted.
+    const changedPrompt = session.addPrompt({
+        xPx: 12,
+        yPx: 12,
+        polarity: 'include'
+    });
     await flush();
-    const retryRequest = harness.proposalProvider.calls[1];
+    const changedRequest = harness.proposalProvider.calls[1];
     harness.proposalProvider.deferreds[1].resolve(
-        maskResponseFor(retryRequest)
+        maskResponseFor(changedRequest)
     );
-    await retry;
+    await changedPrompt;
     assert.equal(session.state.requestStatus, 'idle');
     assert.equal(session.state.automaticMaskStatus, 'editing');
     assert.ok(session.state.editingMask);
-});
-
-test('an explicit Retry omits the previous-logits refinement ref', async () => {
-    const harness = createHarness();
-    await driveToActive(harness);
-    const viewId = await addReadyUserView(harness);
-    const session = harness.userMasks.sessionFor(viewId);
-
-    const pending = session.addPrompt({ xPx: 4, yPx: 4, polarity: 'include' });
-    await flush();
-    harness.proposalProvider.deferreds[0].resolve(
-        maskResponseFor(harness.proposalProvider.calls[0], {
-            proposals: [
-                proposalFor(harness.proposalProvider.calls[0], 0, {
-                    withLogitsRef: true
-                })
-            ]
-        })
-    );
-    await pending;
-
-    const retry = session.retryMaskRequest();
-    await flush();
-    const retryRequest = harness.proposalProvider.calls[1];
-    assert.equal(retryRequest.previousLogitsRef, undefined);
-    assert.notEqual(
-        retryRequest.proposalAttemptId,
-        harness.proposalProvider.calls[0].proposalAttemptId
-    );
-    harness.proposalProvider.deferreds[1].resolve(
-        maskResponseFor(retryRequest)
-    );
-    await retry;
 });
 
 test('automatic adoption and Confirm publish the Stable Mask with User Confirmed Participation', async () => {
@@ -1002,7 +973,7 @@ test('Paint/Erase author a manual Mask without entering inference', async () => 
     assert.equal(viewById(harness, viewId).participation, 'included');
 });
 
-test('a Mask technical failure preserves View, RGB and prior Stable Mask and retries', async () => {
+test('a Mask technical failure preserves View, RGB and prior Stable Mask across a changed Prompt', async () => {
     const harness = createHarness();
     await driveToActive(harness);
     const viewId = await addReadyUserView(harness);
@@ -1030,12 +1001,16 @@ test('a Mask technical failure preserves View, RGB and prior Stable Mask and ret
     assert.equal(view.rgbDigest, rgbDigest('b'));
     assert.equal(session.state.stableMask?.maskId, stableMaskId);
 
-    const retry = session.retryMaskRequest();
+    const changedPrompt = session.addPrompt({
+        xPx: 10,
+        yPx: 10,
+        polarity: 'exclude'
+    });
     await flush();
     harness.proposalProvider.deferreds[1].resolve(
         maskResponseFor(harness.proposalProvider.calls[1])
     );
-    await retry;
+    await changedPrompt;
     assert.equal(session.state.requestStatus, 'idle');
     assert.equal(session.state.stableMask?.maskId, stableMaskId);
 });

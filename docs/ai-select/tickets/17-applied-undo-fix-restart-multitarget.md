@@ -1,8 +1,8 @@
 # 17 — Applied Undo-and-Fix + complete Restart + multi-object/tool-switch lifecycle
 
-Status: planned — blocked by Ticket 16G
+Status: current — ready after implemented Ticket 16G
 
-Blocked by: 16G, 16, 05, 03
+Prerequisites: 16G, 16, 05, 03 (implemented)
 
 ## Current Final Spec mapping
 

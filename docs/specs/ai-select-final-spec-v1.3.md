@@ -3,8 +3,8 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.30 / Ticket 16C implemented / Ticket 16D current
-**日期：** 2026-08-16
+**规划版本：** Ticket Graph v2.32 / Ticket 16G implemented / Ticket 17 current
+**日期：** 2026-08-17
 **适用分支：** `ai-select-v1`  
 **决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017、ADR 0018
 
@@ -596,9 +596,10 @@ collapse below their supported container widths without covering the image.
 
 Ordinary View navigation preserves each View's Prompt, Editing Mask
 and authoring history. Navigator owns View selection and filtering, the Work
-Area owns the single state-appropriate primary or recovery action, and
+Area owns the single state-appropriate authoring or navigation action, and
 Inspector owns assessment, Participation, Prompt/Mask state and technical
-explanations without duplicating those controls.
+explanations without duplicating those controls. Product surfaces expose no
+identical-input Render, Prompt or Mask recovery command.
 
 ---
 
@@ -710,6 +711,11 @@ Minimum rules：
 - malformed or multiple compatibility results fail closed without a chooser；
 - expired previous-logits ref reruns current Points/Box without `mask_input`；
 - no usable Mask offers Point/Box adjustment、Manual Draw or Exclude；
+- failed Prompt/Mask work recovers through changed PromptState or Manual Draw；
+- failed generated/user-added render stays inspectable and Excluded while a
+  replacement View may be added；
+- Anchor render failure recovers through a changed/reset pose and a normal new
+  render intent；
 - geometry failure preserves Anchor and allows local/user-added alternatives；
 - stale or old-schema artifacts are rejected, never rebound；
 - OOM/cancellation publishes no partial artifact；
@@ -766,30 +772,33 @@ Required validation：
 16A  AI View Dock + Candidate viewport presentation                         implemented
 16B  single-result product contract + planner/capability correction         implemented
 16C  Mask state truth + compact Inspector                                   implemented
-16D  canvas-first shell + stable Navigator                                  ready / current stage
-17   Applied Undo-and-Fix + Restart + multi-target lifecycle                planned / follows 16G
+16D  canvas-first shell + stable Navigator                                  implemented
+16E  2D Work Area + floating palette + explicit Re-Lift                     implemented
+16F  compact viewport toolbar + non-destructive Anchor adjustment           implemented
+16G  obsolete-control removal + integrated visual closure                   implemented
+17   Applied Undo-and-Fix + Restart + multi-target lifecycle                ready / current
 10   optional cross-view Evidence-conflict diagnostics                      nonblocking
 ```
 
 Current ready implementation frontier：
 
 ```text
-parent: 16  Native Candidate operations core
-stage:  16D canvas-first shell + stable Navigator
+parent: 17  Applied Undo-and-Fix + Restart + multi-target lifecycle
+stage:  none
 
-14A (implemented) → 14B (implemented) → 14C (implemented) → 14D (implemented) → 13 (implemented) → 15 (implemented) → 16 (core implemented) → 16A (implemented) → 16B (implemented) → 16C (implemented) → 16D
+14A (implemented) → 14B (implemented) → 14C (implemented) → 14D (implemented) → 13 (implemented) → 15 (implemented) → 16 (core implemented) → 16A → 16B → 16C / 16D / 16F → 16E → 16G (all implemented) → 17
 ```
 
 Compatibility fields：
 
 ```text
-next_implementation_ticket = 16
-next_implementation_subticket = 16D
+next_implementation_ticket = 17
+next_implementation_subticket = none
 ```
 
 Parent Ticket 14, Tickets 13 through 15 and Ticket 16's native-application core
-are closed. Tickets 16A through 16C are implemented; Ticket 16D is the current
-post-visual-review stage and Ticket 17 follows 16G. Ticket 10 remains optional
+are closed. Tickets 16A through 16G are implemented; Ticket 17 is the current
+ready frontier. Ticket 10 remains optional
 and off the core release path。
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported。

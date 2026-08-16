@@ -41,7 +41,7 @@ test('dirty state keeps upstream replacement scoped to bound View dependencies',
         candidateStale: false
     });
 
-    tracker.markPromptRegenerated('view-a');
+    tracker.markPromptReady('view-a');
     assert.deepEqual(state(tracker).promptDirtyViewIds, ['view-b']);
     assert.deepEqual(state(tracker).maskInferenceDirtyViewIds, [
         'view-a',

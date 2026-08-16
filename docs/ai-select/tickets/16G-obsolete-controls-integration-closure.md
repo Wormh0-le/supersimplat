@@ -1,8 +1,8 @@
 # 16G — Obsolete-control removal + post-16A integration closure
 
-Status: planned — blocked by Tickets 16C, 16D, 16E and 16F
+Status: implemented — 2026-08-17
 
-Blocked by: 16C, 16D, 16E, 16F, 16B, 16A
+Prerequisites: 16C, 16D, 16E, 16F, 16B, 16A (implemented)
 
 ## Current Final Spec mapping
 
@@ -40,87 +40,87 @@ and validate the final workspace across representative states and sizes.
 
 ### Planning-control retirement
 
-- [ ] Persistent Stop, Continue, Generate More and Regenerate Plan controls are
+- [x] Persistent Stop, Continue, Generate More and Regenerate Plan controls are
       absent from Navigator, Work Area, Inspector, toolbar and hidden menus.
-- [ ] Their editor-side commands, presentation flags, public methods, locale
+- [x] Their editor-side commands, presentation flags, public methods, locale
       strings, recovery-only styles and behavior tests are removed.
-- [ ] Initial bounded planning remains intact and schedules `4–8` fixed local-
+- [x] Initial bounded planning remains intact and schedules `4–8` fixed local-
       offset automatic Generated Views, excluding the Anchor and User-added
       Views; validity failures may leave fewer usable Views.
-- [ ] Initial planning failure retains exactly one failure-only retry icon in
+- [x] Initial planning failure retains exactly one failure-only retry icon in
       the Navigator empty/error state.
-- [ ] Companion batch/ordinal planning protocol remains available for future
+- [x] Companion batch/ordinal planning protocol remains available for future
       planner work.
 
 ### Explicit recovery-command retirement
 
-- [ ] Retry Render, Regenerate Prompt, Retry Mask and Retry Auto Segmentation
+- [x] Retry Render, Regenerate Prompt, Retry Mask and Retry Auto Segmentation
       are absent from Inspector actions, cards, bottom actions, Anchor Preview,
       menus and other product surfaces.
-- [ ] Corresponding editor presentation flags, controller commands, public
+- [x] Corresponding editor presentation flags, controller commands, public
       authoring wrappers, locale strings, recovery-only styling and direct
       behavior tests are removed.
-- [ ] A failed generated or user-added render remains inspectable, failed and
+- [x] A failed generated or user-added render remains inspectable, failed and
       excluded; users may add a replacement View.
-- [ ] Prompt/Mask failure recovery uses changed PromptState or manual
+- [x] Prompt/Mask failure recovery uses changed PromptState or manual
       Paint/Erase, creating a normal new intent rather than identical-input
       explicit retry.
-- [ ] Anchor render failure recovery uses changed/reset pose and a normal new
+- [x] Anchor render failure recovery uses changed/reset pose and a normal new
       render.
 
 ### Retained correctness infrastructure
 
-- [ ] Normal execution attempt identity, stale-result rejection, cancellation
+- [x] Normal execution attempt identity, stale-result rejection, cancellation
       boundaries and distinct normal attempts remain tested.
-- [ ] Idempotent same-attempt replay, transport cache-miss resubmission and
+- [x] Idempotent same-attempt replay, transport cache-miss resubmission and
       Companion admission/cache remain intact.
-- [ ] Removing product Retry commands does not weaken atomic publication or
+- [x] Removing product Retry commands does not weaken atomic publication or
       allow late work to attach to a new identity.
 
 ### Integrated surface and documentation
 
-- [ ] Navigator, 2D Work Area and Inspector have one non-duplicated ownership
+- [x] Navigator, 2D Work Area and Inspector have one non-duplicated ownership
       model and the 2D canvas remains visually dominant.
-- [ ] No Dock-wide status header, selected-work header or bottom Action Bar is
+- [x] No Dock-wide status header, selected-work header or bottom Action Bar is
       rendered.
-- [ ] No obsolete Proposal, planning or recovery terminology remains in current
+- [x] No obsolete Proposal, planning or recovery terminology remains in current
       UI/locales.
-- [ ] Icon controls use existing PCUI/editor controls, semantic tokens, tooltip
+- [x] Icon controls use existing PCUI/editor controls, semantic tokens, tooltip
       service, focus behavior and custom SVG conventions.
-- [ ] Compact action buttons prefer icon-only presentation with a mandatory
+- [x] Compact action buttons prefer icon-only presentation with a mandatory
       tooltip and accessible name; persistent text buttons remain only where an
       icon would not provide a safely recognizable action.
-- [ ] The final surface preserves the restrained dark technical-workbench
+- [x] The final surface preserves the restrained dark technical-workbench
       language; no new UI framework, icon library or theme is introduced.
-- [ ] Final Spec, ADR index, domain/lifecycle guidance, reusable interface
+- [x] Final Spec, ADR index, domain/lifecycle guidance, reusable interface
       documentation, mapping, traceability, Ticket graph and migration status
       agree with the implemented result.
-- [ ] Ticket 17 consumes the final 16G toolbar/presentation seam and remains the
+- [x] Ticket 17 consumes the final 16G toolbar/presentation seam and remains the
       owner of Undo and Fix, complete Restart and multi-target/tool-switch
       lifecycle.
-- [ ] The 3D viewport does not regain Restart/Exit/More. Ticket 17 receives a
+- [x] The 3D viewport does not regain Restart/Exit/More. Ticket 17 receives a
       global AI Select lifecycle-menu seam for target disposal and tool exit.
 
 ### Accessibility and responsive closure
 
-- [ ] Every icon control has an accessible name, visible focus, keyboard
+- [x] Every icon control has an accessible name, visible focus, keyboard
       activation and an accessible disabled reason where applicable.
-- [ ] Menus/popovers close on Escape/outside click and restore focus.
-- [ ] Reduced-motion preferences are respected.
-- [ ] Wide desktop, approximately `1280×720` and approximately `1024×720`
+- [x] Menus/popovers close on Escape/outside click and restore focus.
+- [x] Reduced-motion preferences are respected.
+- [x] Wide desktop, approximately `1280×720` and approximately `1024×720`
       layouts preserve image fidelity, canvas priority and non-overlapping
       controls.
 
 ## Failure / recovery criteria
 
-- [ ] No removed control can remain callable through an undocumented UI or
+- [x] No removed control can remain callable through an undocumented UI or
       public editor API.
-- [ ] A failed replacement Candidate preserves the prior stale Candidate and
+- [x] A failed replacement Candidate preserves the prior stale Candidate and
       never enables native application of partial/currently invalid data.
-- [ ] Companion unavailable/incompatible states preserve inspectable local
+- [x] Companion unavailable/incompatible states preserve inspectable local
       work and expose actionable disabled reasons without a duplicate Dock
       availability header.
-- [ ] Tool disposal still releases target-local transient state and blocks late
+- [x] Tool disposal still releases target-local transient state and blocks late
       publication.
 
 ## Validation
@@ -155,3 +155,37 @@ camera-planner quality improvement.
 - No Candidate provenance/history browser
 - No per-View delete action
 - No Ticket 17 Undo and Fix, Restart or multi-target lifecycle
+
+## Implementation record
+
+- Removed persistent Stop/Continue/Generate More/Regenerate product state and
+  editor commands while retaining the initial bounded plan, its sole
+  failure-only planning retry and Companion batch/ordinal protocol.
+- Removed identical-input Render, Prompt and Mask recovery commands from the
+  controller, presentation, Dock, locale and style surfaces. Changed Prompt,
+  manual Paint/Erase, changed/reset Anchor pose, exclusion and replacement
+  Views now provide normal-intent recovery without weakening attempt identity,
+  replay, cancellation, stale-result rejection or atomic publication.
+- Synchronized the Final Spec, ADR index in the manifest, reusable Dock and
+  Toolbar contracts, design system, ticket mapping, traceability, graph,
+  migration status, walkthrough matrix and audit bundle to v2.32 with Ticket
+  17 as the current frontier. `CONTEXT.md`, ADR 0018 and lifecycle/protocol
+  guidance already stated the accepted contract and required no semantic
+  amendment.
+- The fresh production bundle contained no retired Dock header or recovery
+  control, imported the tracked controlled-overlap fixture as 16,384 splats
+  and opened AI Select. Wide desktop, `1280×720` and `1024×720` inspection
+  preserved the canvas-first layout; deterministic tests cover the remaining
+  state matrix that the unavailable local Companion could not drive live.
+- Formal Standards and Spec reviews ran against `b82b9a8`. Their two findings
+  were closed by expanding the negative source contract and replacing the last
+  user-visible `regenerate the Prompt` instruction with changed-Prompt or
+  replacement-View guidance.
+- Validation passed: `rtk npm test` (607 editor tests and 446 Companion tests,
+  with one existing Companion skip), `rtk npm run lint`,
+  `rtk npm run lint:locales` (8 locales synchronized with 557 English keys),
+  `rtk npm run build`, focused UI style-contract tests, touched-document link
+  checks, manifest closure checks and `rtk git diff --check`.
+- Ticket 16G changes editor UI/state and documentation only. It changes no
+  Companion capability, protocol, renderer, CUDA, Evidence or planner-quality
+  behavior, and adds no production GPU validation claim.

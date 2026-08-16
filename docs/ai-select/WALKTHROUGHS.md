@@ -1,56 +1,74 @@
-# Final Spec v1.3 Walkthrough Coverage — v2.12
+# Final Spec v1.3 Walkthrough Coverage — v2.32
 
 ## Typical flows
 
-| ID    | Flow                              | Ticket path                                 | Required result                                                                                                          |
-| ----- | --------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| WF-01 | SAM 3 Image migration             | `04B → 04C`                                 | Current static path uses official SAM 3 Image and rejects Multiplex manifest/artifacts                                   |
-| WF-02 | Parallel current frontier         | `04C ∥ 07`                                  | Model migration and MaskReview correction proceed independently and converge at 07A/08B                                  |
-| WF-03 | Automatic availability            | `04C + 02 → 02C`                            | Only Connecting/Available/Unavailable appears; current SAM 3 Image profile validates                                     |
-| WF-04 | Authoritative RGB inference       | `04C/08A`                                   | Provider resolves exact RGB bytes/ref and rejects digest-only input                                                      |
-| WF-05 | One-click Anchor                  | `04C + 07 → 07A`                            | One result becomes Editing Mask; user refines/confirms; no automatic correctness claim                                   |
-| WF-06 | Box/multi-point Anchor            | `04C + 07 → 07A`                            | One result becomes Editing Mask, then Edit/Confirm                                                                       |
-| WF-07 | Opaque previous-logits refinement | `04C → 07A`                                 | Companion-local logits ref refines the sole automatic result and returns one Mask                                        |
-| WF-08 | Floating palette                  | `07A → 07B`                                 | Positive/Negative Point, Positive Box, Paint/Erase only; no stale hit region                                             |
-| WF-09 | Geometry hint                     | `07A → 08`                                  | Anchor produces deterministic compact TargetGeometryHint without ownership                                               |
-| WF-10 | Local Views                       | `08 → 16B/21`                               | Schedule 4–8 framed automatic Generated Views; retain failures and calibrate the expanded envelope                       |
-| WF-11 | Per-View contracts                | `08 + 04C → 08A`                            | RGB-bound Prompt/request/result/ref identities validate without backend registry                                         |
-| WF-12 | 3D-guided per-View Mask           | `08A + 07 → 08B`                            | Projected Box/Points run SAM 3 Image single-mask inference and Mask Review                                               |
-| WF-13 | Gallery inspection                | `08B → 09`                                  | Render, Prompt, inference, Review, Participation and Evidence remain separate                                            |
-| WF-14 | User-added View                   | `07B + 09 → 11`                             | Same RGB/image instance path and manual correction behavior apply                                                        |
-| WF-15 | Refresh lifecycle                 | `09 → 12 → 16G`                             | Changed Prompt/manual edits create normal intents; refs invalidate correctly; no product Mask Retry or automatic Re-Lift |
-| WF-16 | Lift and optional diagnostics     | `11/12 → 14/13 → 15/16`, optional `14 → 10` | Ticket 13 owns readiness; Ticket 10 may enrich conflict diagnostics but does not block release                           |
+| ID    | Flow                              | Ticket path                                 | Required result                                                                                                    |
+| ----- | --------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| WF-01 | SAM 3 Image migration             | `04B → 04C`                                 | Current static path uses official SAM 3 Image and rejects Multiplex manifest/artifacts                             |
+| WF-02 | Automatic availability            | `04C + 02 → 02C`                            | Only Connecting/Available/Unavailable appears; current SAM 3 Image profile validates                               |
+| WF-03 | Authoritative RGB inference       | `04C/08A`                                   | Provider resolves exact RGB bytes/ref and rejects digest-only input                                                |
+| WF-04 | One-click Anchor                  | `04C + 07 → 07A`                            | One result becomes Editing Mask; user refines/confirms; no automatic correctness claim                             |
+| WF-05 | Box/multi-point Anchor            | `04C + 07 → 07A`                            | One result becomes Editing Mask, then Edit/Confirm                                                                 |
+| WF-06 | Opaque previous-logits refinement | `04C → 07A`                                 | Companion-local logits ref refines the sole automatic result and returns one Mask                                  |
+| WF-07 | Floating palette                  | `07A → 07B`                                 | Positive/Negative Point, Positive Box, Paint/Erase only; no stale hit region                                       |
+| WF-08 | Geometry hint                     | `07A → 08`                                  | Anchor produces deterministic compact TargetGeometryHint without ownership                                         |
+| WF-09 | Initial local Views               | `08 → 16B/16G/21`                           | Schedule 4–8 framed automatic Generated Views once; no persistent planning controls                                |
+| WF-10 | Per-View contracts                | `08 + 04C → 08A`                            | RGB-bound Prompt/request/result/ref identities validate without backend registry                                   |
+| WF-11 | 3D-guided per-View Mask           | `08A + 07 → 08B`                            | Projected Box/Points run SAM 3 Image single-mask inference and Mask Review                                         |
+| WF-12 | Gallery inspection                | `08B → 09`                                  | Render, Prompt, inference, Review, Participation and Evidence remain separate                                      |
+| WF-13 | User-added View                   | `07B + 09 → 11`                             | Same RGB/image instance path and manual correction behavior apply                                                  |
+| WF-14 | Changed-intent lifecycle          | `09 → 12 → 16G`                             | Changed Prompt/manual edits create normal intents; refs invalidate correctly; no product Mask recovery command     |
+| WF-15 | Lift and optional diagnostics     | `11/12 → 14/13 → 15/16`, optional `14 → 10` | Ticket 13 owns readiness; Ticket 10 may enrich conflict diagnostics but does not block release                     |
+| WF-16 | Native application                | `14/15 → 16`                                | Candidate stays non-destructive until an explicit Set/Add/Remove/Intersect operation                               |
+| WF-17 | Integrated canvas-first surface   | `16A–16G → 17`                              | One Navigator/Work Area/Inspector ownership model, no Dock header/action bar, and a Ticket 17-ready lifecycle seam |
 
 ## Error and recovery flows
 
-| ID    | Failure                                  | Ticket path     | Required retained state / recovery                                                        |
-| ----- | ---------------------------------------- | --------------- | ----------------------------------------------------------------------------------------- |
-| EF-01 | old Multiplex manifest active            | `04C → 02C`     | Availability Unavailable; native editor usable; operator installs current manifest        |
-| EF-02 | historical 04A removed Prompt artifact   | `04A → 04C/08A` | fail current schema validation; no Negative Box/Brush conversion                          |
-| EF-03 | Ticket 06 legacy fallback invoked        | `06 → 08B/21`   | reject as current production route; preserve RGB/manual recovery                          |
-| EF-04 | RGB digest has no resolvable bytes/ref   | `04C/08A/08B`   | reject before inference; preserve Prompt/RGB-ready record                                 |
-| EF-05 | RGB ref digest/dimensions mismatch       | `08A/08B`       | fail closed; no partial Mask/ref result                                                   |
-| EF-06 | binary Brush supplied as logits          | `04C/08A`       | reject artifact; keep Prompt/Editing state; no inference                                  |
-| EF-07 | Companion Instance replaces logits owner | `02C/04C/12`    | invalidate ref; rerun current Points/Box without mask_input                               |
-| EF-08 | stale candidate/logits lineage           | `04C/07A/12`    | reject cross-RGB/adapter/candidate ref; preserve prior Stable Mask                        |
-| EF-09 | one-click result needs correction        | `07A`           | add Point/add Box, edit the Mask, Retry or use manual recovery                            |
-| EF-10 | no Anchor candidate                      | `07A`           | preserve RGB and Stable history; adjust Prompt/Retry/Manual Draw                          |
-| EF-11 | geometry extraction unavailable          | `08`            | preserve Anchor; offer limited local/user-added View path                                 |
-| EF-12 | local View blank or invalid              | `08`            | reject/replace within bounded policy; preserve completed Views                            |
-| EF-13 | per-View SAM technical failure           | `08B/09`        | preserve RGB/prior Stable Mask; Retry/manual/exclude; no automatic fallback               |
-| EF-14 | semantic per-View unavailable or Review  | `07/08B/09`     | no arbitrary Stable Mask; adjust Prompt/View/manual or keep Review Excluded               |
-| EF-15 | weak Gaussian support / Ticket 10 absent | `13/21`         | Lift Readiness Limited/Not Ready; release/readiness still work without optional Ticket 10 |
-| EF-16 | Evidence/Lift failure                    | `14/20/21`      | preserve Views and Stable Masks; Candidate remains prior/stale; explicit Retry            |
+| ID    | Failure                                  | Ticket path     | Required retained state / supported recovery                                                                                  |
+| ----- | ---------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| EF-01 | old Multiplex manifest active            | `04C → 02C`     | Availability Unavailable; native editor usable; operator installs current manifest                                            |
+| EF-02 | historical 04A Prompt artifact supplied  | `04A → 04C/08A` | Fail current schema validation; no removed Prompt-family conversion                                                           |
+| EF-03 | Ticket 06 legacy fallback invoked        | `06 → 08B/21`   | Reject as current production route; preserve RGB/manual recovery                                                              |
+| EF-04 | RGB digest has no resolvable bytes/ref   | `04C/08A/08B`   | Reject before inference; preserve Prompt/RGB-ready record                                                                     |
+| EF-05 | RGB ref digest/dimensions mismatch       | `08A/08B`       | Fail closed; no partial Mask/ref result                                                                                       |
+| EF-06 | binary Brush supplied as logits          | `04C/08A`       | Reject artifact; keep Prompt/Editing state; no inference                                                                      |
+| EF-07 | Companion Instance replaces logits owner | `02C/04C/12`    | Invalidate ref; a changed Point/Box starts a normal fresh inference                                                           |
+| EF-08 | stale candidate/logits lineage           | `04C/07A/12`    | Reject cross-RGB/adapter/candidate ref; preserve prior Stable Mask                                                            |
+| EF-09 | Anchor result needs correction           | `07A/16G`       | Change Point/Box input or use Paint/Erase; identical-input explicit recovery is absent                                        |
+| EF-10 | no Anchor result                         | `07A/16G`       | Preserve RGB and Stable history; change Prompt or use manual editing                                                          |
+| EF-11 | geometry extraction unavailable          | `08`            | Preserve Anchor; offer the bounded local/user-added View path                                                                 |
+| EF-12 | local View blank or invalid              | `08/16G`        | Keep the failed View inspectable/excluded; user may add a replacement View                                                    |
+| EF-13 | per-View SAM technical failure           | `08B/09/16G`    | Preserve RGB/prior Stable Mask; change Prompt, edit manually, exclude, or add a replacement View                              |
+| EF-14 | semantic per-View unavailable or Review  | `07/08B/09`     | No arbitrary Stable Mask; adjust Prompt/View/manual state or keep Review Excluded                                             |
+| EF-15 | weak Gaussian support / Ticket 10 absent | `13/21`         | Lift Readiness Limited/Not Ready; release/readiness still work without optional Ticket 10                                     |
+| EF-16 | Evidence/Lift failure                    | `14/20/21`      | Preserve Views and Stable Masks; previous Candidate remains prior/stale and normal correction/Re-Lift may produce replacement |
+| EF-17 | render or Candidate replacement failure  | `03/14D/16G`    | Changed/reset Anchor pose or corrected input creates a normal attempt; prior valid Candidate remains atomically inspectable   |
+
+## Ticket 16G operator evidence
+
+On 2026-08-17 the fresh production bundle was opened from a clean `127.0.0.1`
+origin to avoid an older service-worker cache. The tracked
+`controlled_front_back_overlap.ply` fixture imported successfully as 16,384
+splats, the AI Select tool opened, and the rendered DOM contained neither the
+removed Dock-wide header nor removed recovery controls. The inspection covered
+wide desktop, `1280×720`, and `1024×720`; the 2D canvas retained priority and
+the visible controls did not overlap.
+
+The local Companion was unavailable, so the interactive pass covered the real
+Connecting/Unavailable, no-Target and loaded-Target surfaces. Deterministic UI,
+presentation and controller tests cover planning/failure, RGB Ready,
+confirmed/unconfirmed Mask, Review, Excluded, Candidate
+current/stale/updating/failed, adjustment, filter-empty and collapsed-sidebar
+projections. This walkthrough is editor UI/state evidence only; it makes no new
+production GPU, Companion model-capability or camera-planner quality claim.
 
 ## Coverage result
 
-- typical walkthroughs: 16;
-- error walkthroughs: 16;
-- current model migration covered: yes;
-- authoritative RGB provider input covered: yes;
-- opaque previous-logits lifecycle covered: yes;
-- removed Prompt families covered: yes;
-- geometry/local-view simplification covered: yes;
-- Mask Review/Lift Readiness/Ticket 10 boundary covered: yes;
-- current ready frontier covered: yes;
-- P/N/V ownership boundary covered: yes.
+- typical walkthroughs: 17;
+- error walkthroughs: 17;
+- current ready frontier: Ticket 17;
+- current product recovery contract: changed intent, manual editing, exclusion,
+  replacement View, or normal Re-Lift as applicable;
+- obsolete product planning/recovery controls present: no;
+- fresh-bundle operator evidence recorded: yes;
+- production GPU validation added by Ticket 16G: no.

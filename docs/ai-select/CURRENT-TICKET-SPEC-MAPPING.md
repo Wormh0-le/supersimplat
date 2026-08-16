@@ -1,6 +1,6 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.31
+# Current Final Spec v1.3 → Ticket Mapping — v2.32
 
-Status: **current normative ticket mapping — Ticket 16E implemented; Ticket 16D remains the current ready stage**
+Status: **current normative ticket mapping — Tickets 16A–16G implemented; Ticket 17 current**
 
 This file maps every active AI Select parent Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
@@ -11,16 +11,16 @@ Ticket 14A–14D and post-closure Ticket 16A–16G are implementation stages
 under their respective parent Tickets; they refine execution scope without
 creating a competing parent graph. Ticket 16B published the accepted
 superseding ADR and updated Final Spec v1.3. Ticket 16C implemented Mask state
-truth and the compact current-View Inspector; Ticket 16E implemented the
-header-free 2D Work Area, explicit Re-Lift mapping, floating action slots and
-staged changed-Anchor cutover.
+truth and the compact current-View Inspector; Tickets 16D–16G completed the
+canvas-first shell, header-free Work Area, compact Toolbar, obsolete-control
+retirement and integrated visual closure.
 
 | Ticket | Final Spec v1.3 mapping    | Current responsibility                                                         |
 | ------ | -------------------------- | ------------------------------------------------------------------------------ |
 | 01     | §§1–4, 19, 22, 24          | CurrentTargetContext and lifecycle identity                                    |
 | 02     | §§1–5, 24–25               | AI Select shell and authoritative Anchor RGB                                   |
 | 02C    | §§3–6, 16, 19, 24–26       | automatic readiness and Companion-ref invalidation                             |
-| 03     | §§4–5, 16–17, 24–25        | Camera Inspection, RGB publication and Retry                                   |
+| 03     | §§4–5, 16–17, 24–25        | Camera Inspection, RGB publication and render-attempt identity                 |
 | 04     | §§4, 7, 14–15, 19–20, 24   | Editing/Stable/Evidence lifecycle                                              |
 | 05     | §§4–7, 19, 22, 24          | Anchor validation, Confirm and Restart                                         |
 | 04A    | §§0, 4, 6–8, 16, 26        | historical Prompt/proposal foundation; removed Prompt families are non-current |
@@ -37,7 +37,7 @@ staged changed-Anchor cutover.
 | 09     | §§17–19, 24–26             | Gallery/frustum/Mask inspection                                                |
 | 10     | §§14, 20–21, 24–26         | optional cross-view Evidence-conflict diagnostics                              |
 | 11     | §§5–8, 11–19, 24–26        | user-added Views through current image path                                    |
-| 12     | §§16, 19–21, 24–26         | refresh, dirty, stale and Companion-ref lifecycle                              |
+| 12     | §§16, 19–21, 24–26         | intent, dirty, stale and Companion-ref lifecycle                               |
 | 13     | §§14, 20–21, 24–26         | sole coverage, visibility and Lift Readiness authority                         |
 | 14     | §§20–22, 24–25             | reference P/N/V, aggregation, Gaussian lifting and Candidate                   |
 | 15     | §§19–22, 24                | Candidate correction and explicit Re-Lift                                      |
@@ -73,21 +73,19 @@ Stage contracts live under `docs/ai-select/tickets/14A-*` through `14D-*`. `docs
 | 16A   | Ticket 16 / §§4, 17–19, 22, 24   | Implemented AI View Dock, Candidate Overlay, Toolbar and presentation baseline |
 | 16B   | Ticket 16 / §§4, 6–8, 16–26      | Implemented single-result contract, `4–8` initial Views and ADR 0018           |
 | 16C   | Ticket 16 / §§4, 7–8, 17–19, 24  | Implemented Mask state truth and compact current-View Inspector                |
-| 16D   | Ticket 16 / §§4, 9–10, 17–19, 24 | Canvas-first three-pane shell and stable Navigator                             |
+| 16D   | Ticket 16 / §§4, 9–10, 17–19, 24 | Implemented canvas-first three-pane shell and stable Navigator                 |
 | 16E   | Ticket 16 / §§4–8, 17–22, 24–26  | Implemented 2D Work Area, palette actions, Re-Lift and Anchor cutover          |
-| 16F   | Ticket 16 / §§4–5, 9–10, 17–24   | Compact 3D toolbar and non-destructive Anchor adjustment                       |
-| 16G   | Ticket 16 / §§3–8, 16–26         | Obsolete-control removal, integration and final operator visual closure        |
+| 16F   | Ticket 16 / §§4–5, 9–10, 17–24   | Implemented compact 3D toolbar and non-destructive Anchor adjustment           |
+| 16G   | Ticket 16 / §§3–8, 16–26         | Implemented obsolete-control removal and integrated operator visual closure    |
 
 Ticket 16 remains implemented for native application semantics and adapters.
 Ticket 16A remains the implemented functional presentation baseline. Its
 completed operator visual walkthrough found the release-presentation issues
-owned by 16B–16G. Tickets 16B, 16C and 16E are implemented. The accepted initial planner range is `4–8` automatic
+closed by 16B–16G. Tickets 16B through 16G are implemented. The accepted initial planner range is `4–8` automatic
 Generated Views, excluding the Anchor and User-added Views. Those stages do not
 reopen Ticket 16's application algebra;
-Ticket 15 remains the owner of Correction/Re-Lift semantics. Tickets 16D and
-16F retain their own closure records, while Ticket 16G owns integrated
-obsolete-control and operator visual closure. Ticket 17 follows
-16G and must not reintroduce the 3D Toolbar More/Restart surface removed by the
+Ticket 15 remains the owner of Correction/Re-Lift semantics. Ticket 17 is the
+current frontier and must not reintroduce the 3D Toolbar More/Restart surface removed by the
 follow-up contract.
 
 ## Current implementation frontier
@@ -97,44 +95,40 @@ implemented prerequisites:
 - 04C, 07, 02C, 07A, 07B
 - 08, 08A, 08B, 08C
 - 09, 11, 12
-- 14A — Evidence Contract & Working Set
-- 14B — Reference Per-View P/N/V Evidence
-- 14C — Multi-view Aggregation & Classification
-- 14D — Atomic Candidate Publication & Reference Validation
+- 14A–14D and parent Ticket 14
 - 13 — Visible Evidence Coverage + View Diversity + Lift Readiness
 - 15 — Candidate correction + explicit Evidence-aware Re-Lift
 - 16 — Native application core
-- 16A — AI View Dock + Candidate viewport presentation baseline
-- 16B — Single-result Mask product contract + capability/planner correction
+- 16A — Candidate viewport presentation baseline
+- 16B — single-result contract + `4–8` initial Views
 - 16C — Mask state truth + compact Inspector
-- 16E — header-free Work Area + palette actions + explicit Re-Lift
-
-current execution stage:
 - 16D — canvas-first shell + stable Navigator
-
-following post-visual-review stages:
-- 16D — canvas-first shell + stable Navigator
+- 16E — header-free Work Area + palette actions + Re-Lift
 - 16F — compact 3D Toolbar + non-destructive Anchor adjustment
-- 16G — obsolete-control removal + integration closure
+- 16G — obsolete-control retirement + integrated visual closure
 
-follows 16G:
-- 17 — Applied Undo-and-Fix + Restart + multi-target lifecycle
+current execution frontier:
+- 17 — Applied Undo-and-Fix + complete Restart + multi-target lifecycle
 ```
 
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 16
-next_implementation_subticket = 16D
+next_implementation_ticket = 17
+next_implementation_subticket = none
 ```
 
-Ticket 16 is the current parent compatibility frontier with 16D as its active
-post-visual-review execution stage. Ticket 16E is implemented; Tickets 16D,
-16F and 16G retain their own closure stages. Ticket 17 follows
-16G. Ticket 10 remains optional and may execute after parent Ticket 14 + 09 +
-07 without blocking the core release path.
+Ticket 17 consumes the final Ticket 16G Toolbar, presentation and lifecycle
+seam. It must keep Restart/tool exit in the global AI Select lifecycle menu and
+must not reintroduce 3D Toolbar More/Restart or retired product Retry/planning
+commands. Ticket 10 remains optional and may execute after parent Ticket 14 +
+09 + 07 without blocking the core release path.
 
-Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported. The locked-GPU large-Gallery browser walkthrough for Ticket 09 passed on 2026-08-07. Ticket 11 shipped with repository test/lint/locales/build green; its locked-GPU browser walkthrough is still pending.
+Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no
+blocking issue reported. The locked-GPU large-Gallery browser walkthrough for
+Ticket 09 passed on 2026-08-07. Ticket 11 shipped with repository
+test/lint/locales/build green; its locked-GPU browser walkthrough is still
+pending.
 
 ## Supersession rules
 
@@ -170,8 +164,8 @@ The mapping passes only when:
 - older spec names appear only under explicit historical/superseded/migration labels;
 - implemented prerequisites through 12 are not reported as current ready work;
 - parent Ticket 14 and stages 14A through 14D are recognized as implemented;
-- Tickets 13 through 15, Ticket 16's application core, Tickets 16A–16C and Ticket 16E are recognized as implemented, with 16D as the current execution stage and Ticket 17 following 16G;
-- `next_implementation_ticket = 16` and `next_implementation_subticket = 16D` are current;
+- Tickets 13 through 15, Ticket 16's application core and Tickets 16A–16G are recognized as implemented, with Ticket 17 as the current execution frontier;
+- `next_implementation_ticket = 17` and `next_implementation_subticket = none` are current;
 - Ticket 16B published ADR 0018 and the current Final Spec correction before
   dependent stages;
 - no active closure criterion relies on superseded v1.2 architecture;

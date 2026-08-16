@@ -723,7 +723,7 @@ test('a user View reaches RGB Ready with no Mask and Evidence Not Requested', as
     assert.equal(harness.maskProvider.calls.length, 0);
 });
 
-test('user View render failure preserves the record and a true Retry reruns the render', async () => {
+test('user View render failure preserves the record and a replacement View can succeed', async () => {
     const harness = createHarness();
     await startAnchor(harness);
     await confirmAnchor(harness);
@@ -736,79 +736,16 @@ test('user View render failure preserves the record and a true Retry reruns the 
         .at(-1)
         .reject(new Error('companion capacity'));
     await flush();
-    let view = viewById(harness, viewId);
+    const view = viewById(harness, viewId);
     assert.equal(view.renderStatus, 'failed');
     assert.match(view.renderErrorMessage, /companion capacity/);
 
-    harness.controller.retryViewRender(viewId);
-    await flush();
-    const retryRequest = harness.viewRenderer.calls.at(-1);
-    assert.equal(retryRequest.viewId, viewId);
-    assert.notEqual(
-        retryRequest.renderAttemptId,
-        harness.viewRenderer.calls.at(-2).renderAttemptId
+    const replacementId = await addReadyUserView(
+        harness,
+        shiftedCameraBinding()
     );
-    harness.viewRenderer.deferreds
-        .at(-1)
-        .resolve(viewRenderResponseFor(retryRequest));
-    await flush();
-    view = viewById(harness, viewId);
-    assert.equal(view.renderStatus, 'ready');
-});
-
-test('adding a user View never resumes stopped local generation', async () => {
-    const harness = createHarness();
-    await startAnchor(harness);
-    await confirmAnchor(harness);
-    await driveToActive(harness);
-    await failPendingPlannedRenders(harness);
-    harness.controller.stopGeneration();
-    assert.equal(harness.controller.state.generationStopped, true);
-    const planCalls = harness.planner.calls.length;
-
-    await addReadyUserView(harness);
-    assert.equal(harness.controller.state.generationStopped, true);
-    assert.equal(harness.planner.calls.length, planCalls);
-});
-
-test('Regenerate Auto Views preserves user-owned Views and their artifacts', async () => {
-    const harness = createHarness();
-    await startAnchor(harness);
-    await confirmAnchor(harness);
-    await driveToActive(harness, [plannedKeyView('key-view-0-0', 100)]);
-    await failPendingPlannedRenders(harness);
-
-    const viewId = await addReadyUserView(harness);
-    // Publish a user-confirmed Stable Mask on the user View.
-    const rgb = viewById(harness, viewId).rgb;
-    harness.maskRegistry.applyBrushGesture({
-        viewId,
-        rgbDigest: rgb.digest,
-        strokes: [{ xPx: 4, yPx: 4, radiusPx: 2, mode: 'add' }],
-        width: rgb.width,
-        height: rgb.height
-    });
-    harness.maskRegistry.confirm(viewId, rgb.digest);
-    harness.controller.noteUserViewStablePublication(viewId);
-    assert.equal(viewById(harness, viewId).participation, 'included');
-
-    harness.controller.regenerateViews();
-    await flush();
-    assert.equal(harness.planner.calls.length, 2);
-    harness.planner.deferreds[1].resolve(
-        planResponseFor(harness.planner.calls[1], [
-            plannedKeyView('key-view-0-1', 110)
-        ])
-    );
-    await flush();
-
-    const view = viewById(harness, viewId);
-    assert.ok(view);
-    assert.equal(view.renderStatus, 'ready');
-    assert.equal(view.rgbDigest, rgb.digest);
-    assert.equal(view.participation, 'included');
-    assert.equal(viewById(harness, 'key-view-0-0'), undefined);
-    assert.ok(viewById(harness, 'key-view-0-1'));
+    assert.notEqual(replacementId, viewId);
+    assert.equal(viewById(harness, replacementId).renderStatus, 'ready');
 });
 
 test('user View identities never collide with later additions', async () => {
@@ -823,25 +760,6 @@ test('user View identities never collide with later additions', async () => {
     assert.notEqual(first, second);
     assert.ok(viewById(harness, first));
     assert.ok(viewById(harness, second));
-});
-
-test('a planned View reusing a user-owned View identity fails closed', async () => {
-    const harness = createHarness();
-    await startAnchor(harness);
-    await confirmAnchor(harness);
-    await driveToActive(harness);
-    await failPendingPlannedRenders(harness);
-
-    const viewId = await addReadyUserView(harness);
-    harness.controller.regenerateViews();
-    await flush();
-    harness.planner.deferreds[1].resolve(
-        planResponseFor(harness.planner.calls[1], [plannedKeyView(viewId, 120)])
-    );
-    await flush();
-    // The batch was rejected; the user-owned View survives untouched.
-    assert.ok(harness.controller.state.plannerErrorMessage);
-    assert.ok(viewById(harness, viewId));
 });
 
 test('user View Mask requests bind the exact run, View, RGB and Camera identity', async () => {

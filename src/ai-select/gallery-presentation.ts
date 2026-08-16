@@ -52,15 +52,6 @@ export type GalleryCardLine =
  * construction — the Anchor candidate choice stays on the Anchor surface.
  */
 export interface GalleryCardActions {
-    readonly retryRender: boolean;
-    /** Rebuild the Route-B 3D-guided Prompt without running SAM. */
-    readonly regeneratePrompt: boolean;
-    /**
-     * Start one explicit Auto Mask inference attempt from the current Prompt.
-     * Ordinary successful correction stays on the selected image surface;
-     * this card action is reserved for failed/unavailable inference recovery.
-     */
-    readonly refreshMask: boolean;
     readonly confirmAsIs: boolean;
     readonly participationToggle: 'include' | 'exclude' | null;
     readonly inspectCamera: boolean;
@@ -285,21 +276,6 @@ export const galleryCardPresentation = (
         }
     }
 
-    const generatedAutoView =
-        galleryViewRole(view.source) === 'generated' &&
-        view.maskQuality !== 'user-confirmed';
-    // Successful Views are corrected on their selected image surface through
-    // Point/Box/Paint/Erase. Cards expose these independent operations only
-    // as failure recovery, avoiding duplicate no-op-looking routine actions.
-    const regeneratePrompt =
-        generatedAutoView &&
-        view.renderStatus === 'ready' &&
-        view.promptStatus === 'failed';
-    const refreshMask =
-        generatedAutoView &&
-        view.renderStatus === 'ready' &&
-        view.promptStatus === 'ready' &&
-        (view.maskStatus === 'failed' || view.maskStatus === 'unavailable');
     const canToggleParticipation =
         view.participation === 'included' ||
         view.maskQuality === 'auto-good' ||
@@ -309,9 +285,6 @@ export const galleryCardPresentation = (
         galleryViewRole(view.source) === 'user-added' &&
         view.stableMaskId === undefined;
     const actions: GalleryCardActions = Object.freeze({
-        retryRender: view.renderStatus === 'failed',
-        regeneratePrompt,
-        refreshMask,
         confirmAsIs:
             view.maskStatus === 'ready' &&
             view.assessment?.status === 'review' &&
@@ -324,9 +297,8 @@ export const galleryCardPresentation = (
         // The planner-owned CameraBinding always exists, even for a failed
         // render, so Camera Inspection is always available.
         inspectCamera: true,
-        // Render failure still offers the explicit Exclude decision next to
-        // Retry (Ticket 11 failure contract). Selecting a RGB Ready card
-        // already exposes its Mask editor; it needs no duplicate action.
+        // A failed user-owned View remains inspectable and can stay excluded;
+        // recovery is a replacement View, not an identical-input render.
         excludeView: userOwnedNoMask
     });
     return Object.freeze({

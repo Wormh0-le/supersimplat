@@ -74,7 +74,10 @@ This stage does **not** add a Candidate provenance browser, Gaussian-level Evide
   16 Native Candidate operations
    |
    v
-  16A AI View Dock + Candidate viewport presentation
+  16A AI View Dock + Candidate viewport presentation (implemented)
+   |
+   v
+  16B–16G post-visual-review correction stages
    |
    v
   17 Applied lifecycle
@@ -86,5 +89,5 @@ Compatibility fields remain:
 
 ```text
 next_implementation_ticket = 16
-next_implementation_subticket = 16A
+next_implementation_subticket = 16B
 ```

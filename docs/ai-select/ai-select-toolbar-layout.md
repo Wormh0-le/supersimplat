@@ -1,8 +1,13 @@
 # AI Select Toolbar 布局与交互设计
 
-Status: 设计已接受 — Ticket 16A 实现合同
+Status: Ticket 16A 已实现的历史合同 — 16F/16G 正在修正人工视觉走查发现项
 
-本文记录 AI Select Toolbar 的 Candidate 展示、Native Candidate Operations 和 Correction 跳转设计。AI View Dock 的已接受设计见 [AI View Dock 布局设计](ai-view-dock-layout.md)。
+> Ticket 16A 完成后的人工视觉走查不接受本文的最终 Toolbar 呈现。
+> Candidate Overlay 和 Native Candidate Operations 的职责仍然有效；与
+> `docs/ai-select/tickets/16F-*`、`16G-*` 冲突的文字标签、More、Restart、
+> Exit 和布局要求已由后续 Ticket 取代。
+
+本文记录 Ticket 16A 的 AI Select Toolbar Candidate 展示、Native Candidate Operations 和 Correction 跳转设计。AI View Dock 的对应历史基线见 [AI View Dock 布局设计](ai-view-dock-layout.md)。
 
 已接受 Q34–Q65。Toolbar 交互设计、相邻 Ticket 所有权、交付方式和验收边界已闭合。Ticket 16A 承载 Ticket 16 完成后新增的完整 AI View Dock 布局、视口展示与表面迁移范围。
 

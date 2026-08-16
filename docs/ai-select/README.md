@@ -19,7 +19,13 @@ docs/ai-select/
 │   ├── 14B-reference-per-view-pnv-evidence.md
 │   ├── 14C-multiview-aggregation-classification.md
 │   ├── 14D-atomic-candidate-publication-validation.md
-│   └── 16A-candidate-viewport-presentation.md
+│   ├── 16A-candidate-viewport-presentation.md
+│   ├── 16B-single-result-product-contract.md
+│   ├── 16C-mask-inspector-state-truth.md
+│   ├── 16D-canvas-first-navigator-shell.md
+│   ├── 16E-2d-work-area-floating-palette.md
+│   ├── 16F-viewport-toolbar-anchor-adjustment.md
+│   └── 16G-obsolete-controls-integration-closure.md
 ├── TRACEABILITY.md
 ├── WALKTHROUGHS.md
 ├── FOUR-PASS-AUDIT.md
@@ -33,10 +39,16 @@ Repository-wide specifications and ADRs remain canonical under `docs/specs/` and
 
 ## Accepted designs
 
-- [AI View Dock layout](ai-view-dock-layout.md) — accepted responsive Dock layout and interaction contract for Ticket 16A.
+- [AI View Dock layout](ai-view-dock-layout.md) — implemented Ticket 16A
+  baseline; conflicting presentation details are superseded by 16B–16G.
 - [AI View Dock visual](show-me-ai-view-dock-layout.html) — visual companion for the accepted layout.
-- [AI Select Toolbar layout](ai-select-toolbar-layout.md) — accepted Candidate Overlay, Toolbar, Status Bar and cross-surface state contract for Ticket 16A.
-- [Ticket 16A](tickets/16A-candidate-viewport-presentation.md) — current implementation stage combining both accepted designs.
+- [AI Select Toolbar layout](ai-select-toolbar-layout.md) — implemented Ticket
+  16A baseline; the Candidate Overlay remains valid while 16F/16G refine the
+  toolbar surface.
+- [Ticket 16A](tickets/16A-candidate-viewport-presentation.md) — implemented
+  presentation baseline and completed operator visual-review record.
+- [Ticket 16B](tickets/16B-single-result-product-contract.md) — current
+  post-visual-review execution stage; 16C–16G carry the remaining follow-up.
 
 ## Scratch policy
 
@@ -62,10 +74,14 @@ Parent Ticket 14 is decomposed into:
 Execution order is:
 
 ```text
-14A → 14B → 14C → 14D → 13 → 15 → 16 → 16A → 17
+14A → 14B → 14C → 14D → 13 → 15 → 16 → 16A → 16B
+                                                       ├→ 16C ─┐
+                                                       ├→ 16D ─┴→ 16E ─┐
+                                                       └→ 16F ─────────┴→ 16G → 17
 ```
 
-14A through 14D, parent Ticket 14, Tickets 13 through 15 and Ticket 16's native
-application core are implemented. Ticket 16A is the current post-closure
-presentation stage (`next_implementation_ticket = 16`,
-`next_implementation_subticket = 16A`); Ticket 17 follows it.
+14A through 14D, parent Ticket 14, Tickets 13 through 15, Ticket 16's native
+application core and Ticket 16A are implemented. The completed 16A operator
+visual walkthrough created follow-up stages 16B–16G. Ticket 16B is current
+(`next_implementation_ticket = 16`, `next_implementation_subticket = 16B`);
+Ticket 17 follows 16G.

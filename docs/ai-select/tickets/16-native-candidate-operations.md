@@ -10,7 +10,8 @@ Blocked by: 15
 - ADR 0013 implementation staging where not superseded
 - DG-07 and Final Spec v1.1 Amendment 001 as historical native-application/readiness rationale only
 - MVP Phase 6 as historical implementation provenance
-- Ticket 16A as the post-closure AI View Dock and Candidate viewport-presentation stage
+- Ticket 16A as the implemented post-closure presentation baseline and Tickets
+  16B–16G as its operator-visual-review follow-up
 
 Final Spec v1.3 is the only current closure source.
 
@@ -84,6 +85,11 @@ non-destructive main-viewport Candidate Overlay, moves the four operations to
 the fixed AI Select Toolbar, adds the Status Bar Candidate projection and
 removes the old `Show AI Result`. Ticket 16A must reuse rather than reimplement
 this Ticket's application core.
+
+Tickets 16B–16G refine the 16A product contract and presentation after its
+completed operator visual review. They may simplify Toolbar chrome and move
+review/authoring actions, but they must preserve this Ticket's application
+gate, exact algebra, Native history adapter and application record.
 
 ## Validation
 

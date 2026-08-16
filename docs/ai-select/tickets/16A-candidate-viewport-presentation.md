@@ -1,6 +1,6 @@
 # 16A — AI View Dock + Candidate viewport presentation
 
-Status: implemented — 2026-08-16 — automated gates complete; operator visual walkthrough pending
+Status: implemented — 2026-08-16 — automated gates and operator visual walkthrough complete; presentation follow-up required
 
 Blocked by: 16, 15
 
@@ -246,3 +246,24 @@ Fix` may enter `More` on narrow layouts.
 - No Candidate 3D paint, merge or Gaussian Evidence inspector
 - No project persistence for Candidate Overlay visibility
 - No production Direct Evidence or release-calibration claim
+
+## Post-implementation operator visual review
+
+The operator visual walkthrough completed after implementation. It accepted
+16A as the functional baseline for the three-surface presentation, Candidate
+Overlay and native-operation cutover, but did not accept the resulting Dock and
+toolbar presentation as the release-ready interaction design.
+
+The walkthrough found excess permanent chrome, incorrect pane proportions,
+selected-item reordering, duplicated status, truncated and contradictory Mask
+state, text-heavy controls, obsolete planning/recovery actions and remaining
+single-result/Proposal contract drift. Tickets 16B–16G own that follow-up:
+
+```text
+16B → 16C / 16D / 16F → 16E → 16G → 17
+```
+
+16A remains an implemented historical baseline. Where the follow-up Ticket
+contracts conflict with 16A presentation criteria, 16B's superseding ADR and
+the completed 16G surface become current; Ticket 16's native application
+semantics and 16A's non-destructive Candidate Overlay remain intact.

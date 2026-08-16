@@ -95,6 +95,11 @@ application when Stable inputs are unchanged, and otherwise keeps Candidate
 stale until explicit update. This follow-up does not reopen or replace Ticket
 15's implemented Re-Lift core.
 
+The completed 16A operator visual review moves the visible Re-Lift control into
+the 2D Work Area and consolidates Correction switching into the floating
+palette under Ticket 16E. Ticket 15 continues to own the same underlying
+Correction/Re-Lift semantics.
+
 ## Validation
 
 - npm test

@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.26
+# AI Select v1 — Implementation Ticket Graph v2.27
 
-Status: **active implementation graph — Final Spec v1.3 synchronized; Ticket 16 core is implemented and Ticket 16A is current**
+Status: **active implementation graph — Ticket 16A implemented; post-visual-review Ticket 16B is current**
 
 Branch: `ai-select-v1`
 
@@ -16,7 +16,11 @@ Branch: `ai-select-v1`
 
 Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical only. ADR 0014 and DG-24 through DG-26 are historical where they conflict with ADR 0016 / Final Spec v1.3.
 
-All 31 parent Ticket files contain a current mapping to Final Spec v1.3. Ticket 14A–14D and Ticket 16A are execution stages under their respective parent Tickets and do not create a second normative graph.
+All 31 parent Ticket files contain a current mapping to Final Spec v1.3. Ticket
+14A–14D and Ticket 16A–16G are execution stages under their respective parent
+Tickets and do not create a second normative graph. Ticket 16B publishes the
+accepted superseding ADR and current-spec correction before its dependents
+close.
 
 ## Current review closures
 
@@ -40,8 +44,10 @@ All 31 parent Ticket files contain a current mapping to Final Spec v1.3. Ticket 
 - Ticket 13 is complete as the versioned reference/calibration Visible Evidence Coverage, View Diversity and Lift Readiness path.
 - Ticket 15 is complete as the pre-apply Candidate correction and explicit Re-Lift path.
 - Ticket 16's fail-closed native Candidate application core is complete.
-- Ticket 16A is the current post-closure presentation stage for the real
-  Candidate Overlay, fixed Toolbar, Status Bar and Dock cutover.
+- Ticket 16A is implemented as the functional Candidate Overlay, Toolbar,
+  Status Bar and Dock-cutover baseline.
+- The completed 16A operator visual walkthrough found release-presentation and
+  product-contract gaps now owned by Tickets 16B–16G.
 
 ## Dependency graph
 
@@ -107,7 +113,13 @@ Paint/Erase palette                + local Key Views
                        10 optional      13 Lift Readiness
                        diagnostics       │
                                          ▼
-                      15 → 16 → 16A → 17 → 18 → 19 → 20 → 21 → 22
+                      15 → 16 → 16A → 16B
+                                       ├────────► 16C ─┐
+                                       ├────────► 16D ─┴► 16E ─┐
+                                       └────────► 16F ──────────┴► 16G
+                                                                  │
+                                                                  ▼
+                                       17 → 18 → 19 → 20 → 21 → 22
 ```
 
 Ticket 10 does not block Ticket 13, Ticket 21 or native application.
@@ -130,31 +142,41 @@ implemented prerequisites:
 - 13 — Visible Evidence Coverage + View Diversity + Lift Readiness
 - 15 — Candidate correction + explicit Evidence-aware Re-Lift
 - 16 — Candidate → Native Set / Add / Remove / Intersect core
+- 16A — AI View Dock + Candidate viewport presentation baseline
 
 current parent compatibility frontier:
 - 16 — Native Candidate operations
 
 current execution stage:
-- 16A — AI View Dock + Candidate viewport presentation
+- 16B — Single-result Mask product contract + execution-frontier correction
 
-follows 16A:
-- 17 — Applied Undo-and-Fix + complete Restart + multi-object/tool-switch lifecycle
+post-visual-review follow-up:
+- 16C — Mask state truth + compact current-View Inspector
+- 16D — canvas-first three-pane shell + stable Navigator
+- 16E — 2D Work Area + floating palette + explicit Re-Lift
+- 16F — compact viewport toolbar + non-destructive Anchor adjustment
+- 16G — obsolete-control removal + integration closure
 
 current implementation stage:
-- 16A — post-closure Ticket 16 presentation integration
+- 16B — first post-visual-review Ticket 16 execution stage
+
+follows 16G:
+- 17 — Applied Undo-and-Fix + complete Restart + multi-object/tool-switch lifecycle
 ```
 
 Compatibility fields:
 
 ```text
 next_implementation_ticket = 16
-next_implementation_subticket = 16A
+next_implementation_subticket = 16B
 ```
 
-Ticket 16 is the current parent compatibility frontier with 16A as its sole
-active execution stage. Ticket 16's application core, Ticket 15 and their
-Ticket 13 / parent Ticket 14 prerequisites remain implemented. Ticket 17
-follows 16A. Ticket 10 remains optional and off the core release path.
+Ticket 16 is the current parent compatibility frontier with 16B as its active
+execution stage. Ticket 16's application core, Ticket 16A, Ticket 15 and their
+Ticket 13 / parent Ticket 14 prerequisites remain implemented. Tickets 16C,
+16D and 16F follow 16B; 16E joins the 16C/16D surfaces; 16G closes the slice.
+Ticket 17 follows 16G. Ticket 10 remains optional and off the core release
+path.
 
 ## One valid topological order
 
@@ -163,7 +185,8 @@ follows 16A. Ticket 10 remains optional and off the core release path.
 → 04A → 04B → 06 → 07 → 04C
 → 02C → 07A → 07B / 08 → 08A → 08B → 08C / 09
 → 11 → 12 → 14A → 14B → 14C → 14D → 13
-→ 15 → 16 → 16A → 17 → 18 → 19 → 20 → 21 → 22
+→ 15 → 16 → 16A → 16B → 16C / 16D / 16F → 16E → 16G
+→ 17 → 18 → 19 → 20 → 21 → 22
 
 10 may execute any time after parent Ticket 14 + 09 + 07 and is not on the core release path.
 ```
@@ -184,6 +207,10 @@ follows 16A. Ticket 10 remains optional and off the core release path.
 - no Candidate provenance browser or Gaussian Evidence inspector in Ticket 14D;
 - no Candidate Overlay membership stored in Native SplatState or EditHistory;
 - no duplicate Native Candidate Operations in both Dock and Toolbar after Ticket 16A closure;
+- no persistent planning controls, explicit product Retry commands or
+  Proposal-choice UI after Ticket 16G closure;
 - Complete Contributor remains reference/debug only.
 
-See `docs/ai-select/TICKET-14-SPLIT.md` and the `docs/ai-select/tickets/14A-*` through `14D-*` stage contracts.
+See `docs/ai-select/TICKET-14-SPLIT.md`, the
+`docs/ai-select/tickets/14A-*` through `14D-*` stage contracts and the
+`docs/ai-select/tickets/16A-*` through `16G-*` presentation-stage contracts.

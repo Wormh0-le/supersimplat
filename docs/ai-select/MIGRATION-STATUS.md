@@ -6,7 +6,7 @@ Status: **substantive migration complete; historical scratch paths are compatibi
 
 - Stable AI Select planning root established at `docs/ai-select/`.
 - Full 31-parent-ticket Final Spec v1.3 mapping restored and promoted.
-- Ticket graph promoted and synchronized to v2.26.
+- Ticket graph promoted and synchronized to v2.27.
 - Parent Ticket 14 decomposed into executable 14A–14D stage contracts without changing normative product scope.
 - Active Ticket control plane promoted to `docs/ai-select/tickets/`.
 - Planning manifest promoted to `docs/ai-select/manifest.json` and updated with parent/stage frontier fields.
@@ -37,7 +37,7 @@ Old scratch compatibility pointers may be removed in a future cleanup only after
 
 ```text
 next_implementation_ticket = 16
-next_implementation_subticket = 16A
+next_implementation_subticket = 16B
 
 14A Evidence Contract & Working Set (implemented)
 → 14B Reference Per-View P/N/V Evidence (implemented)
@@ -46,6 +46,10 @@ next_implementation_subticket = 16A
 → 13 Lift Readiness (implemented)
 → 15 Candidate correction / Re-Lift (implemented)
 → 16 Native Candidate operations core (implemented)
-→ 16A AI View Dock + Candidate viewport presentation (current)
-→ 17 Applied Undo-and-Fix / Restart / multi-target lifecycle (follows 16A)
+→ 16A AI View Dock + Candidate viewport presentation (implemented; operator visual review complete)
+→ 16B single-result product contract (current)
+→ 16C / 16D / 16F post-visual-review surfaces
+→ 16E 2D Work Area integration
+→ 16G obsolete-control removal and visual closure
+→ 17 Applied Undo-and-Fix / Restart / multi-target lifecycle (follows 16G)
 ```

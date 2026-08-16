@@ -1,9 +1,12 @@
 import { WebPCodec, WorkerQueue } from '@playcanvas/splat-transform';
-import { Color, Vec3, createGraphicsDevice } from 'playcanvas';
+import { Color, Mat4, Quat, Vec3, createGraphicsDevice } from 'playcanvas';
 
 import { AISelectAnchorConfirmationController } from './ai-select/anchor-confirmation';
 import { AISelectAnchorController } from './ai-select/anchor-controller';
-import { captureEditorCameraBinding } from './ai-select/camera-binding';
+import {
+    captureEditorCameraBinding,
+    playCanvasWorldTransformFromCameraBinding
+} from './ai-select/camera-binding';
 import {
     CameraInspectionController,
     isAnchorInspectionTarget
@@ -684,6 +687,33 @@ const main = async () => {
             setSceneView: (view) => {
                 scene.camera.setSceneView(view);
                 scene.forceRender = true;
+            },
+            setCameraBindingView: (binding) => {
+                const transform = new Mat4();
+                transform.data.set(
+                    playCanvasWorldTransformFromCameraBinding(binding)
+                );
+                const projection = binding.projection;
+                const horizontal = scene.camera.camera.horizontalFov;
+                const sensorSize = horizontal
+                    ? projection.width
+                    : projection.height;
+                const focalLength = horizontal ? projection.fx : projection.fy;
+                const fov =
+                    (2 * Math.atan(sensorSize / (2 * focalLength)) * 180) /
+                    Math.PI;
+                scene.camera.ortho = false;
+                scene.camera.setPoseOverride(
+                    {
+                        position: transform.getTranslation(),
+                        rotation: new Quat().setFromMat4(transform),
+                        fov,
+                        near: projection.near,
+                        far: projection.far
+                    },
+                    transform
+                );
+                scene.forceRender = true;
             }
         }
     });
@@ -914,17 +944,19 @@ const main = async () => {
             maskRegistry: aiSelectMaskController.maskRegistry,
             userViewMasks: aiSelectUserViewMasks,
             onInspectCamera: (viewId) => {
+                if (viewId === null) {
+                    cameraInspection.returnToSceneView();
+                    return;
+                }
                 const view = aiSelectGeneratedViews.state.views.find(
                     (entry) => entry.viewId === viewId
                 );
                 if (view === undefined) {
                     return;
                 }
-                // Inspecting a Generated View selects it so its frustum
-                // highlights, then observes its planner-owned CameraBinding;
-                // the Editor Camera only moves to the external observer and
-                // never becomes an implicit new Anchor or View camera.
-                aiSelectGeneratedViews.selectView(viewId);
+                // Navigator selection adopts the planner-owned CameraBinding
+                // exactly, including roll, so the main viewport matches the
+                // authoritative 2D RGB. The binding remains read-only.
                 cameraInspection.enter({
                     kind: 'view',
                     viewId,
@@ -934,9 +966,6 @@ const main = async () => {
             readiness: selectionServiceReadiness,
             onValidate: async () => {
                 await aiSelectConfirmation.validate();
-            },
-            onAdjustAnchor: () => {
-                aiSelectConfirmation.adjustAnchor();
             },
             onConfirmAnchor: async () => {
                 try {

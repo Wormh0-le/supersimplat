@@ -280,6 +280,7 @@ test('Camera Inspection observes a Generated View binding without touching the A
     const viewBinding = captureEditorCameraBinding(editorCamera());
     const savedSceneView = sceneView();
     const appliedSceneViews = [];
+    const appliedCameraBindings = [];
     let anchorBindingReads = 0;
     let anchorPoses = 0;
     let restored = 0;
@@ -302,7 +303,9 @@ test('Camera Inspection observes a Generated View binding without touching the A
                     restored += 1;
                 }
             }),
-            setSceneView: (view) => appliedSceneViews.push(view)
+            setSceneView: (view) => appliedSceneViews.push(view),
+            setCameraBindingView: (binding) =>
+                appliedCameraBindings.push(binding)
         }
     });
 
@@ -316,10 +319,8 @@ test('Camera Inspection observes a Generated View binding without touching the A
     assert.equal(inspection.state.target.kind, 'view');
     assert.equal(inspection.state.target.viewId, 'view-1');
     assert.equal(anchorBindingReads, 0);
-    assert.deepEqual(
-        appliedSceneViews[0],
-        cameraInspectionObserverView(viewBinding)
-    );
+    assert.deepEqual(appliedCameraBindings, [viewBinding]);
+    assert.deepEqual(appliedSceneViews, []);
     assert.deepEqual(inspection.state.savedSceneView, savedSceneView);
 
     // A Generated View camera is planner-owned and read-only.
@@ -344,6 +345,7 @@ test('switching the inspection target while active keeps the saved Scene View', 
     });
     const savedSceneView = sceneView();
     const appliedSceneViews = [];
+    const appliedCameraBindings = [];
     let captures = 0;
     let restored = 0;
     const inspection = new CameraInspectionController({
@@ -363,7 +365,9 @@ test('switching the inspection target while active keeps the saved Scene View', 
                     }
                 };
             },
-            setSceneView: (view) => appliedSceneViews.push(view)
+            setSceneView: (view) => appliedSceneViews.push(view),
+            setCameraBindingView: (binding) =>
+                appliedCameraBindings.push(binding)
         }
     });
 
@@ -377,11 +381,8 @@ test('switching the inspection target while active keeps the saved Scene View', 
     // The Scene View is captured once; switching targets only re-derives the
     // observer, so returning still restores the original editor camera.
     assert.equal(captures, 1);
-    assert.equal(appliedSceneViews.length, 2);
-    assert.deepEqual(
-        appliedSceneViews[1],
-        cameraInspectionObserverView(viewBinding)
-    );
+    assert.equal(appliedSceneViews.length, 1);
+    assert.deepEqual(appliedCameraBindings, [viewBinding]);
     assert.deepEqual(inspection.state.savedSceneView, savedSceneView);
     assert.equal(inspection.state.target.kind, 'view');
 

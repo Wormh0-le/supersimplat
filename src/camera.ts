@@ -540,8 +540,11 @@ class Camera extends Element {
 
     // set or clear the pose override and apply it immediately so subsequent
     // splat sorting and rendering see the new transform
-    setPoseOverride(override: Camera['poseOverride']) {
+    setPoseOverride(override: Camera['poseOverride'], displayTransform?: Mat4) {
         this.poseOverride = override;
+        if (displayTransform !== undefined) {
+            this.displayTransform.copy(displayTransform);
+        }
         this.onUpdate(0);
     }
 

@@ -36,7 +36,7 @@ test('Candidate operations belong to Toolbar while correction stays in Dock', ()
     assert.match(dock, /ai-select-back-to-candidate/);
 });
 
-test('Navigator and View Action Bar expose the accepted keyboard and ownership seams', () => {
+test('Navigator selection owns both image selection and camera navigation', () => {
     const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
     assert.match(dock, /setAttribute\('role', 'listbox'\)/);
     assert.match(dock, /setAttribute\('role', 'option'\)/);
@@ -44,6 +44,10 @@ test('Navigator and View Action Bar expose the accepted keyboard and ownership s
     assert.match(dock, /event\.key === 'Enter'/);
     assert.doesNotMatch(dock, /ai-select-proposal-stepper/);
     assert.match(dock, /selectedViewPrimaryAction/);
+    assert.match(
+        dock,
+        /private selectGeneratedView[\s\S]*?this\.generatedViews\.selectView\(viewId\);[\s\S]*?this\.onInspectCamera\(viewId\);/
+    );
 });
 
 test('Candidate shader state is independent and explicitly released', () => {
@@ -113,7 +117,7 @@ test('the draggable snap palette stays inside the image instead of a Tool Rail',
     assert.match(dock, /this\.imageSurface\.appendChild\(this\.palette\.dom\)/);
 });
 
-test('Mask confirmation and auto reset are compact palette actions', () => {
+test('Mask and Generated View confirmation share the compact palette action', () => {
     const palette = readFileSync(
         'src/ui/ai-select-floating-palette.ts',
         'utf8'
@@ -129,7 +133,15 @@ test('Mask confirmation and auto reset are compact palette actions', () => {
     );
     assert.doesNotMatch(dock, /confirmMaskButton/);
     assert.doesNotMatch(dock, /restoreAutoButton/);
-    assert.match(dock, /onConfirmMask:[\s\S]{0,120}this\.confirmCurrentMask\(/);
+    assert.match(
+        dock,
+        /onConfirmMask:[\s\S]{0,120}this\.runPaletteConfirmAction\(/
+    );
+    assert.match(
+        dock,
+        /private runPaletteConfirmAction[\s\S]*?this\.confirmCurrentMask\([\s\S]*?this\.confirmGeneratedReview\(/
+    );
+    assert.doesNotMatch(dock, /case 'confirm-as-is'/);
     assert.match(dock, /onRestoreAutoMask:/);
 });
 
@@ -158,5 +170,34 @@ test('Inspector restores the accepted assessment, participation, and Mask hierar
     assert.doesNotMatch(
         dock,
         /recoveryGroup\.append\(this\.restoreAutoButton\)/
+    );
+    assert.doesNotMatch(dock, /ai-select-anchor-dock-adjust-anchor/);
+    assert.doesNotMatch(dock, /ai-select-selected-view-inspect-camera/);
+});
+
+test('Navigator controls do not overlap cards and Inspector status can wrap', () => {
+    const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
+    assert.match(
+        styles,
+        /#ai-select-view-gallery-filters\s*\{[\s\S]*?flex:\s*0 0 auto;/
+    );
+    assert.match(
+        styles,
+        /#ai-select-view-gallery-cards\s*\{[\s\S]*?flex:\s*1 1 0;/
+    );
+    assert.match(
+        styles,
+        /#ai-select-selected-view-assessment,[\s\S]*?#ai-select-selected-view-participation[\s\S]*?white-space:\s*pre-line;/
+    );
+});
+
+test('Dock sidebars use the editor panel disclosure icons', () => {
+    const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
+    assert.match(dock, /import arrowSvg from '\.\/svg\/arrow\.svg';/);
+    assert.match(dock, /import collapseSvg from '\.\/svg\/collapse\.svg';/);
+    assert.match(dock, /aria-expanded/);
+    assert.doesNotMatch(
+        dock,
+        /i18n\.bindText\(navigatorToggle, 'ai-select\.dock\.navigator'\)/
     );
 });

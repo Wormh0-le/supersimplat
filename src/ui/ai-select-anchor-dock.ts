@@ -5,6 +5,8 @@ import {
     type PaletteToolAvailability
 } from './ai-select-floating-palette';
 import { i18n } from './localization';
+import arrowSvg from './svg/arrow.svg';
+import collapseSvg from './svg/collapse.svg';
 import {
     resolveAIViewDockColumns,
     resolveAIViewWorkAreaWidth
@@ -77,13 +79,12 @@ import type {
 export interface AISelectAnchorDockOptions<TCandidatePayload = unknown> {
     readonly onValidate: () => Promise<void>;
     readonly onConfirmAnchor: () => Promise<void>;
-    readonly onAdjustAnchor: () => void;
     readonly generatedViews: AISelectGeneratedViewController;
     readonly candidateCorrection: AISelectCandidateCorrectionController<TCandidatePayload>;
     readonly candidatePresentation: CandidatePresentationCoordinator;
     readonly maskRegistry: MaskAnnotationRegistry;
     readonly userViewMasks: AISelectUserViewMaskController;
-    readonly onInspectCamera: (viewId: string) => void;
+    readonly onInspectCamera: (viewId: string | null) => void;
     readonly readiness: SelectionServiceReadinessInterface;
 }
 
@@ -98,7 +99,6 @@ interface GeneratedCardElements {
     readonly refreshMaskButton: Button;
     readonly confirmReviewButton: Button;
     readonly participationButton: Button;
-    readonly inspectCameraButton: Button;
     readonly excludeViewButton: Button;
     rgbDigest?: string;
 }
@@ -125,6 +125,14 @@ const THUMBNAIL_MAX_WIDTH_PX = 368;
 // bounded downscaled thumbnails so 10–20+ Views stay resource-bounded.
 const THUMBNAIL_CACHE_CAPACITY = 24;
 type DockAuthoringTool = PaletteTool;
+
+const createSvg = (svgString: string): Element => {
+    const decoded = decodeURIComponent(
+        svgString.substring('data:image/svg+xml,'.length)
+    );
+    return new DOMParser().parseFromString(decoded, 'image/svg+xml')
+        .documentElement;
+};
 
 const cursorForTool = (tool: DockAuthoringTool): string => {
     const cursors: Partial<Record<DockAuthoringTool, string>> = {
@@ -218,7 +226,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly generatedViews: AISelectGeneratedViewController;
     private readonly maskRegistry: MaskAnnotationRegistry;
     private readonly userViewMasks: AISelectUserViewMaskController;
-    private readonly onInspectCamera: (viewId: string) => void;
+    private readonly onInspectCamera: (viewId: string | null) => void;
     private readonly status: Label;
     private readonly includedViewCount: Label;
     private readonly availabilityDot: HTMLSpanElement;
@@ -246,13 +254,12 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly anchorActions: Container;
     private readonly validateButton: Button;
     private readonly confirmAnchorButton: Button;
-    private readonly adjustAnchorButton: Button;
     private readonly validationStatus: Label;
     private readonly selectedViewPrimaryButton: Button;
-    private selectedViewPrimaryAction:
-        'retry-mask' | 'confirm-as-is' | 'next-review' | null = null;
+    private selectedViewPrimaryAction: 'retry-mask' | 'next-review' | null =
+        null;
+    private readonly selectedViewRecoveryGroup: Container;
     private readonly selectedViewRecoveryActions: Container;
-    private readonly inspectSelectedViewButton: Button;
     private readonly retrySelectedViewRenderButton: Button;
     private readonly regenerateSelectedViewPromptButton: Button;
     private readonly gallery: Container;
@@ -507,9 +514,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 }
             },
             onConfirmMask: () => {
-                this.confirmCurrentMask(options.onConfirmAnchor).catch(
-                    (error) => console.error(error)
-                );
+                this.runPaletteConfirmAction(options.onConfirmAnchor);
             },
             onRestoreAutoMask: () => {
                 try {
@@ -542,21 +547,13 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.confirmAnchorButton = new Button({
             id: 'ai-select-anchor-dock-confirm-anchor'
         });
-        this.adjustAnchorButton = new Button({
-            id: 'ai-select-anchor-dock-adjust-anchor',
-            hidden: true
-        });
         i18n.bindText(this.validateButton, 'ai-select.anchor.validate');
         i18n.bindText(this.confirmAnchorButton, 'ai-select.anchor.confirm');
-        i18n.bindText(this.adjustAnchorButton, 'ai-select.adjust-anchor');
         this.validateButton.on('click', () => {
             options.onValidate().catch((error) => console.error(error));
         });
         this.confirmAnchorButton.on('click', () => {
             options.onConfirmAnchor().catch((error) => console.error(error));
-        });
-        this.adjustAnchorButton.on('click', () => {
-            options.onAdjustAnchor();
         });
         this.anchorActions.append(this.validateButton);
         this.anchorActions.append(this.confirmAnchorButton);
@@ -574,19 +571,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.selectedViewRecoveryActions = new Container({
             id: 'ai-select-selected-view-recovery-actions',
             hidden: true
-        });
-        this.inspectSelectedViewButton = new Button({
-            id: 'ai-select-selected-view-inspect-camera'
-        });
-        i18n.bindText(
-            this.inspectSelectedViewButton,
-            'ai-select.views.inspect-camera'
-        );
-        this.inspectSelectedViewButton.on('click', () => {
-            const selected = this.inspectedGeneratedView();
-            if (selected !== null) {
-                this.onInspectCamera(selected.viewId);
-            }
         });
         this.retrySelectedViewRenderButton = new Button({
             id: 'ai-select-selected-view-retry-render',
@@ -616,7 +600,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 this.regenerateGeneratedViewPrompt(selected.viewId);
             }
         });
-        this.selectedViewRecoveryActions.append(this.inspectSelectedViewButton);
         this.selectedViewRecoveryActions.append(
             this.retrySelectedViewRenderButton
         );
@@ -781,13 +764,21 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
 
         const header = new Container({ id: 'ai-select-anchor-dock-header' });
         const navigatorToggle = new Button({
-            id: 'ai-select-navigator-toggle'
+            id: 'ai-select-navigator-toggle',
+            class: 'ai-select-dock-toggle'
         });
         const inspectorToggle = new Button({
-            id: 'ai-select-inspector-toggle'
+            id: 'ai-select-inspector-toggle',
+            class: 'ai-select-dock-toggle'
         });
-        i18n.bindText(navigatorToggle, 'ai-select.dock.navigator');
-        i18n.bindText(inspectorToggle, 'ai-select.dock.inspector');
+        navigatorToggle.dom.setAttribute(
+            'aria-controls',
+            'ai-select-view-navigator'
+        );
+        inspectorToggle.dom.setAttribute(
+            'aria-controls',
+            'ai-select-view-inspector'
+        );
         header.append(title);
         header.append(availability);
         header.append(this.includedViewCount);
@@ -856,15 +847,14 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         maskGroup.append(this.maskStatus);
         maskGroup.dom.appendChild(this.technicalDetails);
         maskGroup.append(this.validationStatus);
-        const recoveryGroup = createInspectorGroup(
+        this.selectedViewRecoveryGroup = createInspectorGroup(
             'ai-select-inspector-recovery-group',
             'ai-select.dock.recovery'
         );
-        recoveryGroup.append(this.adjustAnchorButton);
-        recoveryGroup.append(this.selectedViewRecoveryActions);
+        this.selectedViewRecoveryGroup.append(this.selectedViewRecoveryActions);
         information.append(assessmentGroup);
         information.append(maskGroup);
-        information.append(recoveryGroup);
+        information.append(this.selectedViewRecoveryGroup);
         this.primaryActions = new Container({
             id: 'ai-select-anchor-dock-primary-actions',
             hidden: true
@@ -905,12 +895,39 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             navigator.hidden = !columns.navigator;
             inspector.hidden = !columns.inspector;
             navigatorToggle.dom.setAttribute(
-                'aria-pressed',
+                'aria-expanded',
                 columns.navigator.toString()
             );
             inspectorToggle.dom.setAttribute(
-                'aria-pressed',
+                'aria-expanded',
                 columns.inspector.toString()
+            );
+            const renderToggle = (
+                button: Button,
+                expanded: boolean,
+                labelKey: string
+            ): void => {
+                const icon = createSvg(expanded ? collapseSvg : arrowSvg);
+                icon.classList.add('ai-select-dock-toggle-icon');
+                button.dom.replaceChildren(icon);
+                button.dom.classList.toggle('collapsed', !expanded);
+                const label = `${i18n.t(
+                    expanded
+                        ? 'ai-select.palette.collapse'
+                        : 'ai-select.palette.expand'
+                )} ${i18n.t(labelKey)}`;
+                button.dom.title = label;
+                button.dom.setAttribute('aria-label', label);
+            };
+            renderToggle(
+                navigatorToggle,
+                columns.navigator,
+                'ai-select.dock.navigator'
+            );
+            renderToggle(
+                inspectorToggle,
+                columns.inspector,
+                'ai-select.dock.inspector'
             );
         };
         navigatorToggle.on('click', () => {
@@ -1010,7 +1027,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.candidateCorrectionState = correctionState;
             this.render();
         });
-        i18n.onChange(() => this.render(), this);
+        i18n.onChange(() => {
+            renderColumns();
+            this.render();
+        }, this);
     }
 
     private renderAvailability(): void {
@@ -1450,10 +1470,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             class: 'ai-select-view-card-participation',
             hidden: true
         });
-        const inspectCameraButton = new Button({
-            class: 'ai-select-view-card-inspect-camera',
-            hidden: true
-        });
         const excludeViewButton = new Button({
             class: 'ai-select-view-card-exclude',
             hidden: true
@@ -1461,7 +1477,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         i18n.bindText(retryButton, 'ai-select.views.retry-render');
         i18n.bindText(regeneratePromptButton, 'ai-select.views.retry-prompt');
         i18n.bindText(confirmReviewButton, 'ai-select.review.confirm-as-is');
-        i18n.bindText(inspectCameraButton, 'ai-select.views.inspect-camera');
         i18n.bindText(excludeViewButton, 'ai-select.participation.exclude');
         if (onRetry !== null) {
             retryButton.on('click', (event: Event) => {
@@ -1497,13 +1512,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 this.toggleGeneratedViewParticipation(viewId);
             }
         });
-        inspectCameraButton.on('click', (event: Event) => {
-            event.stopPropagation();
-            const viewId = root.dom.dataset.viewId;
-            if (viewId !== undefined) {
-                this.onInspectCamera(viewId);
-            }
-        });
         excludeViewButton.on('click', (event: Event) => {
             event.stopPropagation();
             const viewId = root.dom.dataset.viewId;
@@ -1527,7 +1535,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         });
         actions.append(confirmReviewButton);
         actions.append(participationButton);
-        actions.append(inspectCameraButton);
         actions.append(regeneratePromptButton);
         actions.append(refreshMaskButton);
         actions.append(retryButton);
@@ -1568,7 +1575,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             refreshMaskButton,
             confirmReviewButton,
             participationButton,
-            inspectCameraButton,
             excludeViewButton
         };
     }
@@ -1581,6 +1587,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.selectedViewPrimaryAction = null;
             this.selectedViewPrimaryButton.hidden = true;
             this.selectedViewRecoveryActions.hidden = true;
+            this.selectedViewRecoveryGroup.hidden = true;
             return;
         }
 
@@ -1655,7 +1662,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.anchorCard.refreshMaskButton.hidden = true;
         this.anchorCard.confirmReviewButton.hidden = true;
         this.anchorCard.participationButton.hidden = true;
-        this.anchorCard.inspectCameraButton.hidden = true;
         this.anchorCard.excludeViewButton.hidden = true;
         if (presentation.rgb !== undefined) {
             this.applyCardThumbnail(
@@ -1783,8 +1789,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         card.detail.text = detailLines.join('\n');
         card.detail.hidden = detailLines.length === 0;
 
-        // Cards keep only the Participation control. Current-View primary,
-        // recovery and camera actions belong to Work Area or Inspector.
+        // Cards keep only the Participation control. Selection itself owns
+        // camera navigation; current-view actions stay in Work Area/Inspector.
         card.retryButton.hidden = true;
         card.regeneratePromptButton.hidden = true;
         card.refreshMaskButton.hidden = true;
@@ -1796,7 +1802,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 `ai-select.participation.${presentation.actions.participationToggle}`
             );
         }
-        card.inspectCameraButton.hidden = true;
         card.excludeViewButton.hidden = true;
         if (view.rgb !== undefined) {
             this.applyCardThumbnail(card, view.rgb.digest, view.rgb.pngBase64);
@@ -1831,15 +1836,15 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         ordinals: ReadonlyMap<string, number>
     ): void {
         const selected = this.inspectedGeneratedView();
-        this.selectedViewRecoveryActions.hidden = selected === null;
         if (selected === null) {
             this.selectedViewPrimaryAction = null;
             this.selectedViewPrimaryButton.hidden = true;
             this.retrySelectedViewRenderButton.hidden = true;
             this.regenerateSelectedViewPromptButton.hidden = true;
+            this.selectedViewRecoveryActions.hidden = true;
+            this.selectedViewRecoveryGroup.hidden = true;
             return;
         }
-        this.inspectSelectedViewButton.enabled = true;
         const card = galleryCardPresentation(
             selected,
             ordinals.get(selected.viewId) ?? 0
@@ -1847,6 +1852,11 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.retrySelectedViewRenderButton.hidden = !card.actions.retryRender;
         this.regenerateSelectedViewPromptButton.hidden =
             !card.actions.regeneratePrompt;
+        const hasRecovery =
+            !this.retrySelectedViewRenderButton.hidden ||
+            !this.regenerateSelectedViewPromptButton.hidden;
+        this.selectedViewRecoveryActions.hidden = !hasRecovery;
+        this.selectedViewRecoveryGroup.hidden = !hasRecovery;
         const authoring = this.authoring();
         const authoringPrimaryVisible =
             (authoring !== null &&
@@ -1857,9 +1867,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         if (!authoringPrimaryVisible) {
             if (card.actions.refreshMask) {
                 action = 'retry-mask';
-            } else if (card.actions.confirmAsIs) {
-                action = 'confirm-as-is';
             } else if (
+                !card.actions.confirmAsIs &&
                 filterGalleryViews(ordered, 'needs-review').some(
                     (view) => view.viewId !== selected.viewId
                 )
@@ -1872,7 +1881,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         if (action !== null) {
             const labelKey = {
                 'retry-mask': 'ai-select.views.retry-mask',
-                'confirm-as-is': 'ai-select.review.confirm-as-is',
                 'next-review': 'ai-select.views.next-review'
             }[action];
             this.selectedViewPrimaryButton.text = i18n.t(labelKey);
@@ -1887,9 +1895,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         switch (this.selectedViewPrimaryAction) {
             case 'retry-mask':
                 this.refreshGeneratedViewMask(selected.viewId);
-                return;
-            case 'confirm-as-is':
-                this.confirmGeneratedReview(selected.viewId);
                 return;
             case 'next-review': {
                 const next = filterGalleryViews(
@@ -1964,6 +1969,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private selectGeneratedView(viewId: string | null): void {
         try {
             this.generatedViews.selectView(viewId);
+            this.onInspectCamera(viewId);
         } catch (error) {
             console.error(error);
         }
@@ -2039,6 +2045,29 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         }
     }
 
+    /** The palette checkmark confirms the draft Mask first, then Review. */
+    private runPaletteConfirmAction(
+        onConfirmAnchor: () => Promise<void>
+    ): void {
+        const authoring = this.authoring();
+        if (
+            authoring !== null &&
+            getViewMaskPresentation(authoring.maskState).showConfirm
+        ) {
+            this.confirmCurrentMask(onConfirmAnchor).catch((error) =>
+                console.error(error)
+            );
+            return;
+        }
+        const selected = this.inspectedGeneratedView();
+        if (
+            selected !== null &&
+            galleryCardPresentation(selected, 1).actions.confirmAsIs
+        ) {
+            this.confirmGeneratedReview(selected.viewId);
+        }
+    }
+
     private renderEditingActions(): void {
         const authoring = this.authoring();
         if (authoring === null) {
@@ -2110,6 +2139,13 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         }
         const editingMask =
             this.activeTool === 'paint' || this.activeTool === 'erase';
+        const canConfirmMask =
+            ready && getViewMaskPresentation(maskState).showConfirm;
+        const selected = this.inspectedGeneratedView();
+        const canConfirmReview =
+            ready &&
+            selected !== null &&
+            galleryCardPresentation(selected, 1).actions.confirmAsIs;
         this.palette.render({
             visible: ready,
             activeTool: this.activeTool,
@@ -2127,8 +2163,11 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                   maskState.promptState !== null &&
                   (maskState.promptState.points.length > 0 ||
                       maskState.promptState.boxes.length > 0),
-            canConfirmMask:
-                ready && getViewMaskPresentation(maskState).showConfirm,
+            canConfirmMask: canConfirmMask || canConfirmReview,
+            confirmLabelKey:
+                canConfirmReview && !canConfirmMask
+                    ? 'ai-select.review.confirm-as-is'
+                    : 'ai-select.mask.confirm',
             canRestoreAutoMask: ready && maskState.canRestoreAuto
         });
         this.image.style.cursor = cursorForTool(this.activeTool);
@@ -2207,8 +2246,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.maskState.stableMask !== null;
         this.confirmAnchorButton.hidden = !showConfirm;
         this.confirmAnchorButton.enabled = showConfirm;
-        this.adjustAnchorButton.hidden = !confirmed;
-
         const lines: string[] = [];
         if (confirmed) {
             lines.push(i18n.t('ai-select.anchor.confirmed'));

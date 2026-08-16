@@ -51,6 +51,7 @@ export interface FloatingPaletteView {
     readonly canRedoHistory: boolean;
     readonly canClearHistory: boolean;
     readonly canConfirmMask: boolean;
+    readonly confirmLabelKey?: string;
     readonly canRestoreAutoMask: boolean;
 }
 
@@ -494,7 +495,10 @@ export class AISelectFloatingPalette {
             view.historyKind === 'mask' ? 'ai-select.mask' : 'ai-select.prompt';
         this.setActionLabel(this.undoButton, `${historyPrefix}.undo`);
         this.setActionLabel(this.redoButton, `${historyPrefix}.redo`);
-        this.setActionLabel(this.confirmMaskButton, 'ai-select.mask.confirm');
+        this.setActionLabel(
+            this.confirmMaskButton,
+            view.confirmLabelKey ?? 'ai-select.mask.confirm'
+        );
         this.setActionLabel(
             this.restoreAutoMaskButton,
             'ai-select.mask.restore-auto'

@@ -33,6 +33,8 @@ export interface CapturedSceneView {
 export interface CameraInspectionEditor {
     captureSceneView(): CapturedSceneView;
     setSceneView(view: SavedSceneView): void;
+    /** Adopt the exact planner-owned pose, including roll, for RGB parity. */
+    setCameraBindingView(binding: CameraBinding): void;
 }
 
 /**
@@ -308,13 +310,19 @@ export class CameraInspectionController {
 
     enter(target: CameraInspectionTarget = { kind: 'anchor' }): void {
         const binding = this.bindingForTarget(target);
-        const observerView = cameraInspectionObserverView(binding);
         const nextTarget = copyTarget(target);
+        const applyTargetView = (): void => {
+            if (nextTarget.kind === 'view') {
+                this.editor.setCameraBindingView(binding);
+            } else {
+                this.editor.setSceneView(cameraInspectionObserverView(binding));
+            }
+        };
         if (this.mode === 'active') {
-            // Switching targets only re-derives the external observer; the
-            // original saved Scene View and its atomic restore are kept, so
-            // returning still recovers the exact pre-inspection editor camera.
-            this.editor.setSceneView(observerView);
+            // Switching targets keeps the original saved Scene View. A
+            // generated View adopts its exact binding; manipulable Anchor and
+            // draft targets continue to use the external frustum observer.
+            applyTargetView();
             this.target = nextTarget;
             this.publish();
             return;
@@ -326,7 +334,7 @@ export class CameraInspectionController {
             );
         }
         const savedSceneView = copySavedSceneView(capturedSceneView.sceneView);
-        this.editor.setSceneView(observerView);
+        applyTargetView();
         this.mode = 'active';
         this.manipulation = 'move';
         this.savedSceneView = savedSceneView;

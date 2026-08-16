@@ -2,6 +2,10 @@
 
 Status: implemented historical foundation — current Prompt contract is migrated by Ticket 04C
 
+Post-16B supersession notice: ADR 0018 supersedes this historical Ticket's
+public Proposal-choice and explicit Accept clauses. Its identity, transport
+validation and Editing/Stable separation remain reusable foundations.
+
 Blocked by: 03, 04, 05
 
 Historical consumer: 04B
@@ -11,6 +15,7 @@ Current migration consumer: 04C
 ## Current normative mapping
 
 - Final Spec v1.3 §§4, 6–8, 16, 24–26
+- ADR 0018
 - ADR 0016
 
 ## Current status

@@ -707,6 +707,42 @@
                 </div>
             </section>
 
+            <h2>16B 单结果 Mask 状态</h2>
+            <section class="principles" aria-label="16B 单结果 Mask 状态核查">
+                <div class="principle">
+                    <span class="pill">Editing</span>
+                    <strong>一个可用 Mask</strong>
+                    <p>
+                        结果直接成为 Editing Mask；界面不再出现 Proposal
+                        选择、预览或 Accept 步骤。
+                    </p>
+                </div>
+                <div class="principle">
+                    <span class="pill review">Unavailable</span>
+                    <strong>无可用 Mask</strong>
+                    <p>
+                        不发布 Editing 或 Stable Mask；可继续修改 Prompt、重试
+                        Mask 请求或手绘。
+                    </p>
+                </div>
+                <div class="principle">
+                    <span class="pill review">Review</span>
+                    <strong>Review 与回退反馈</strong>
+                    <p>
+                        Review 原因随唯一结果展示；refinement
+                        过期时明确说明已改用全新推理。
+                    </p>
+                </div>
+                <div class="principle">
+                    <span class="pill good">Stable</span>
+                    <strong>Stable，无 Editing</strong>
+                    <p>
+                        自动发布的 Stable Mask 可独立成立；后续修正创建单独
+                        Editing 草稿。
+                    </p>
+                </div>
+            </section>
+
             <section class="principles" aria-label="设计原则">
                 <div class="principle">
                     <strong>Review 与 Edit 不切换</strong>

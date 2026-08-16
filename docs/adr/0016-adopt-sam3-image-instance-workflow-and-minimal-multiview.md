@@ -7,8 +7,9 @@ Date: 2026-07-30
 Post-16A supersession notice: Decision item 9 and the `Generate More`
 consequence below remain historical rationale. The accepted Ticket 16B product
 delta changes initial planning to `4–8` automatic Generated Views and removes
-persistent planning controls; pending ADR 0018 will record that supersession
-without rewriting this accepted historical decision.
+persistent planning controls; ADR 0018 records that supersession without
+rewriting this accepted historical decision. ADR 0018 also supersedes Decision
+items 5 and 7 for current single-result authoring.
 
 ## Context
 

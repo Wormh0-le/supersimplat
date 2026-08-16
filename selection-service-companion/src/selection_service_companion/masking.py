@@ -112,7 +112,7 @@ def sam3_image_instance_capabilities() -> dict[str, object]:
         'negativePoints': True,
         'positiveInstanceBox': True,
         'previousLogitsRefinement': True,
-        'singlePointMultimask': True,
+        'singlePointMultimask': False,
         'negativeBox': False,
         'promptBrush': False,
         'maskConstraints': False,

@@ -9,6 +9,9 @@ const {
     AISelectMaskController
 } = require('../.test-dist/src/ai-select/mask-controller.js');
 const {
+    adaptMaskProposalEnvelope
+} = require('../.test-dist/src/ai-select/mask-service.js');
+const {
     AISelectAnchorConfirmationController
 } = require('../.test-dist/src/ai-select/anchor-confirmation.js');
 const {
@@ -299,9 +302,9 @@ const setup = async (options = {}) => {
     };
     const maskRequests = [];
     const maskProvider = {
-        produceMaskProposals: (request) => {
+        produceMask: async (request) => {
             maskRequests.push(request);
-            return Promise.resolve(maskResponseFor(request));
+            return adaptMaskProposalEnvelope(maskResponseFor(request), request);
         }
     };
     let confirmation = null;
@@ -336,9 +339,7 @@ const setup = async (options = {}) => {
 
 const confirmStableMask = async (mask) => {
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
-    const proposalId = mask.state.proposalDecision?.selectedProposalId;
-    assert.ok(proposalId);
-    mask.acceptProposal(proposalId);
+    assert.equal(mask.state.automaticMaskStatus, 'editing');
     mask.confirmEditingMask();
     return mask.state.stableMask;
 };

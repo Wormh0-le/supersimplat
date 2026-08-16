@@ -32,8 +32,8 @@ export type {
     AISelectMaskState,
     ApplyBrushGestureInput,
     BrushGestureSample,
+    AutomaticMaskStatus,
     MaskFailureKind,
-    MaskProposalStatus,
     MaskRequestStatus
 } from './view-mask-session';
 
@@ -181,10 +181,6 @@ export class AISelectMaskController implements AISelectMaskAuthoring {
         await this.session.addBoxPrompt(input);
     }
 
-    previewProposal(proposalId: string): void {
-        this.session.previewProposal(proposalId);
-    }
-
     clearPrompts(): void {
         this.session.clearPrompts();
     }
@@ -203,10 +199,6 @@ export class AISelectMaskController implements AISelectMaskAuthoring {
 
     redoPromptEdit(): void {
         this.session.redoPromptEdit();
-    }
-
-    acceptProposal(proposalId: string): void {
-        this.session.acceptProposal(proposalId);
     }
 
     applyBrushStroke(stroke: BrushStroke): void {

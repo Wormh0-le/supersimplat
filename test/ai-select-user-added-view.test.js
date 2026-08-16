@@ -36,6 +36,9 @@ const {
     anchorMaskRankingPolicyVersion
 } = require('../.test-dist/src/ai-select/mask-proposal.js');
 const {
+    adaptMaskProposalEnvelope
+} = require('../.test-dist/src/ai-select/mask-service.js');
+const {
     MaskAnnotationRegistry
 } = require('../.test-dist/src/ai-select/mask-registry.js');
 const {
@@ -991,7 +994,10 @@ test('user View Mask responses pass only with the exact current binding', async 
         { includeRgbArtifact: true }
     );
 
-    const response = maskResponseFor(request);
+    const response = adaptMaskProposalEnvelope(
+        maskResponseFor(request),
+        request
+    );
     assert.equal(
         harness.controller.acceptsUserViewMaskResponse(response, request),
         true

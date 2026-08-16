@@ -37,7 +37,7 @@ class ReadySam3ImageInstanceAdapter:
                 "negativePoints": True,
                 "positiveInstanceBox": True,
                 "previousLogitsRefinement": True,
-                "singlePointMultimask": True,
+                "singlePointMultimask": False,
                 "negativeBox": False,
                 "promptBrush": False,
                 "maskConstraints": False,
@@ -188,7 +188,7 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
         self.assertTrue(
             provider["promptCapabilities"]["previousLogitsRefinement"]
         )
-        self.assertTrue(provider["promptCapabilities"]["singlePointMultimask"])
+        self.assertFalse(provider["promptCapabilities"]["singlePointMultimask"])
         expected = sam3_image_instance_capabilities()
         self.assertEqual(
             provider["compilerPolicyVersion"],

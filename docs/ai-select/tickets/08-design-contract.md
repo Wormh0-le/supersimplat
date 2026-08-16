@@ -1,5 +1,12 @@
 # 08 — Implementation Design Contract (pinned 2026-08-01)
 
+Post-16B supersession notice: this file remains the historical Ticket 08
+implementation contract. ADR 0018 supersedes its current-facing
+`local-key-view-planner/v1` identity with `local-key-view-planner/v2`, sets the
+initial fixed-offset automatic-view range to `4–8`, and retires persistent
+Stop / Generate More / Regenerate product controls through stages 16D and 16G;
+the historical body below is preserved unchanged.
+
 This file pins the editor↔Companion wire contract and algorithm policy for
 ticket 08 (TargetGeometryHint + Bounded Local Key Views). Both implementation
 tracks (Companion Python, editor TypeScript) must match this file exactly.

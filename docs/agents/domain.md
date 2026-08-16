@@ -4,9 +4,9 @@ Read this file for AI Select behavior, terminology, product scope, current speci
 
 ## Current baseline
 
-The implementation target is **AI Select Final Spec v1.3**. It uses the official SAM 3 Image instance-interaction path for static Anchor and Key-View segmentation. Target geometry is compact Prompt/framing context without Gaussian ownership; Included Stable Masks drive P/N/V Gaussian Evidence and lifting.
+The implementation target is **AI Select Final Spec v1.3** plus accepted ADR 0018. It uses the official SAM 3 Image instance-interaction path for static Anchor and Key-View segmentation and exposes one usable operator-authored Mask or unavailable. Target geometry is compact Prompt/framing context without Gaussian ownership; Included Stable Masks drive P/N/V Gaussian Evidence and lifting.
 
-Final Spec v1.1, its Amendments, Final Spec v1.2, ADR 0014, and DG-24 through DG-26 are historical where they conflict with Final Spec v1.3, ADR 0016, or ADR 0017. Old implementation, fixtures, issues, and tests do not restore superseded behavior.
+Final Spec v1.1, its Amendments, Final Spec v1.2, ADR 0014, and DG-24 through DG-26 are historical where they conflict with Final Spec v1.3, ADR 0016, ADR 0017, or ADR 0018. Old implementation, fixtures, issues, and tests do not restore superseded behavior.
 
 ## Sources of truth
 
@@ -14,13 +14,14 @@ Before changing non-trivial AI Select behavior, inspect these sources in order:
 
 1. `docs/specs/ai-select-final-spec-v1.3.md`
 2. `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`
-3. `docs/adr/0016-adopt-sam3-image-instance-workflow-and-minimal-multiview.md`
-4. `docs/adr/0017-separate-geometry-quality-from-route-b-prompt-support.md` when TargetGeometryHint or Prompt Support is involved
-5. `docs/adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md` and `docs/adr/0015-automate-readiness-and-keep-model-resolution-operator-owned.md` where not superseded
-6. `CONTEXT.md`
-7. The associated implementation ticket under `docs/ai-select/tickets/` and its audit or traceability artifacts under `docs/ai-select/`
-8. The nearest implementation and tests
-9. Dependency and runtime declarations when installation, rendering, inference, CUDA, or calibration is affected
+3. `docs/adr/0018-adopt-single-result-authoring-and-retire-explicit-recovery-planning-controls.md`
+4. `docs/adr/0016-adopt-sam3-image-instance-workflow-and-minimal-multiview.md`
+5. `docs/adr/0017-separate-geometry-quality-from-route-b-prompt-support.md` when TargetGeometryHint or Prompt Support is involved
+6. `docs/adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md` and `docs/adr/0015-automate-readiness-and-keep-model-resolution-operator-owned.md` where not superseded
+7. `CONTEXT.md`
+8. The associated implementation ticket under `docs/ai-select/tickets/` and its audit or traceability artifacts under `docs/ai-select/`
+9. The nearest implementation and tests
+10. Dependency and runtime declarations when installation, rendering, inference, CUDA, or calibration is affected
 
 For domain work outside non-trivial AI Select behavior, read `CONTEXT.md` and the ADRs that touch the area being changed. Use the terms defined in `CONTEXT.md`; surface conflicts with an ADR explicitly.
 
@@ -33,7 +34,9 @@ Camera View
     ↓
 Authoritative gsplat RGB
     ↓
-Independent Versioned Mask
+One usable Mask or unavailable
+    ↓
+Independent Versioned Stable Mask
     ↓
 Included Stable View Annotations
     ↓

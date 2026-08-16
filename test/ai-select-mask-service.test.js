@@ -2,9 +2,11 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const {
+    adaptMaskProposalEnvelope,
     isAIViewMaskRequest,
     isMaskResultResponse,
     isPreviousPredictionLogitsRef,
+    MaskArtifactInvalidError,
     maskResponseMatchesRequest
 } = require('../.test-dist/src/ai-select/mask-service.js');
 const {
@@ -209,15 +211,140 @@ const responseFor = (req, overrides = {}) => {
 
 test('a complete bound proposal response matches its request', () => {
     const req = request();
-    const response = responseFor(req);
+    const response = adaptMaskProposalEnvelope(responseFor(req), req);
     assert.ok(isMaskResultResponse(response));
     assert.ok(maskResponseMatchesRequest(response, req));
+});
+
+test('the compatibility adapter exposes one usable Mask with Review metadata', () => {
+    const req = request();
+    const resultLogitsRef = logitsRef({
+        sourceInferenceAttemptId: req.proposalAttemptId
+    });
+    const baseProposal = proposalSetFor(req).proposals[0];
+    const proposalSet = proposalSetFor(req, {
+        diagnostics: { refinementFallback: true },
+        proposals: [{ ...baseProposal, logitsRef: resultLogitsRef }]
+    });
+    const response = responseFor(req, {
+        proposalSet,
+        proposalDecision: {
+            schemaVersion: 2,
+            viewId: req.viewId,
+            rgbDigest: req.rgbDigest,
+            promptStateDigest: req.promptState.digest,
+            proposalSetDigest: proposalSet.digest,
+            rankingPolicyVersion: req.rankingPolicyVersion,
+            status: 'selected',
+            selectedProposalId: 'proposal-0',
+            alternativeProposalIds: ['proposal-0']
+        }
+    });
+
+    const product = adaptMaskProposalEnvelope(response, req);
+
+    assert.equal(product.result.status, 'usable');
+    assert.deepEqual(product.result.mask, proposalSet.proposals[0].mask);
+    assert.deepEqual(product.result.review, goodReview());
+    assert.deepEqual(product.result.logitsRef, resultLogitsRef);
+    assert.equal(product.result.refinementFallback, true);
+    assert.ok(!('proposalSet' in product));
+    assert.ok(!('proposalDecision' in product));
+});
+
+test('the compatibility adapter maps an empty result to unavailable', () => {
+    const req = request();
+    const proposalSet = proposalSetFor(req, { proposals: [] });
+    const response = responseFor(req, {
+        proposalSet,
+        proposalDecision: {
+            schemaVersion: 2,
+            viewId: req.viewId,
+            rgbDigest: req.rgbDigest,
+            promptStateDigest: req.promptState.digest,
+            proposalSetDigest: proposalSet.digest,
+            rankingPolicyVersion: req.rankingPolicyVersion,
+            status: 'unavailable',
+            alternativeProposalIds: []
+        }
+    });
+
+    const product = adaptMaskProposalEnvelope(response, req);
+
+    assert.deepEqual(product.result, {
+        status: 'unavailable',
+        refinementFallback: false
+    });
+});
+
+test('the compatibility adapter rejects malformed or multiple results', () => {
+    const req = request();
+    const first = proposalSetFor(req).proposals[0];
+    const payload = {
+        ...proposalSetFor(req),
+        proposals: [
+            first,
+            { ...first, proposalId: 'proposal-1', sourceIndex: 1 }
+        ]
+    };
+    delete payload.digest;
+    const proposalSet = {
+        ...payload,
+        digest: autoMaskProposalSetDigest(payload)
+    };
+    const multiple = responseFor(req, {
+        proposalSet,
+        proposalDecision: {
+            schemaVersion: 2,
+            viewId: req.viewId,
+            rgbDigest: req.rgbDigest,
+            promptStateDigest: req.promptState.digest,
+            proposalSetDigest: proposalSet.digest,
+            rankingPolicyVersion: req.rankingPolicyVersion,
+            status: 'ambiguous',
+            selectedProposalId: 'proposal-0',
+            alternativeProposalIds: ['proposal-0', 'proposal-1']
+        }
+    });
+
+    assert.throws(
+        () => adaptMaskProposalEnvelope(multiple, req),
+        MaskArtifactInvalidError
+    );
+    const baseProposal = proposalSetFor(req).proposals[0];
+    const foreignRefSet = proposalSetFor(req, {
+        proposals: [
+            {
+                ...baseProposal,
+                logitsRef: logitsRef({
+                    sourceInferenceAttemptId: req.proposalAttemptId,
+                    viewId: 'foreign-view'
+                })
+            }
+        ]
+    });
+    assert.throws(
+        () =>
+            adaptMaskProposalEnvelope(
+                responseFor(req, { proposalSet: foreignRefSet }),
+                req
+            ),
+        MaskArtifactInvalidError
+    );
+    assert.throws(
+        () =>
+            adaptMaskProposalEnvelope(
+                { ...responseFor(req), rgbDigest: digest('b') },
+                req
+            ),
+        MaskArtifactInvalidError
+    );
 });
 
 test('responses match on RGB digest, not on RGB artifact presence', () => {
     const req = request({ rgb: undefined });
     assert.ok(isAIViewMaskRequest(req));
-    const response = responseFor(req);
+    const response = adaptMaskProposalEnvelope(responseFor(req), req);
     assert.ok(isMaskResultResponse(response));
     assert.ok(maskResponseMatchesRequest(response, req));
 });
@@ -290,56 +417,78 @@ test('a previous-logits reference is structural, digest-bound, and lineage-bound
 
 test('stale, corrupt, or partial proposal responses are rejected', () => {
     const req = request();
-    assert.ok(
-        !maskResponseMatchesRequest(
-            responseFor(req, { rgbDigest: digest('b') }),
-            req
-        )
+    assert.throws(
+        () =>
+            adaptMaskProposalEnvelope(
+                responseFor(req, { rgbDigest: digest('b') }),
+                req
+            ),
+        MaskArtifactInvalidError
     );
-    assert.ok(
-        !maskResponseMatchesRequest(
-            responseFor(req, {
-                proposalAttemptId: 'proposal-attempt-8'
-            }),
-            req
-        )
+    assert.throws(
+        () =>
+            adaptMaskProposalEnvelope(
+                responseFor(req, {
+                    proposalAttemptId: 'proposal-attempt-8'
+                }),
+                req
+            ),
+        MaskArtifactInvalidError
     );
-    assert.ok(
-        !maskResponseMatchesRequest(
-            responseFor(req, { adapterCapabilityDigest: digest('c') }),
-            req
-        )
+    assert.throws(
+        () =>
+            adaptMaskProposalEnvelope(
+                responseFor(req, { adapterCapabilityDigest: digest('c') }),
+                req
+            ),
+        MaskArtifactInvalidError
     );
-    assert.ok(
-        !maskResponseMatchesRequest(
-            responseFor(req, { rankingPolicyVersion: 'stale-ranking/v0' }),
-            req
-        )
+    assert.throws(
+        () =>
+            adaptMaskProposalEnvelope(
+                responseFor(req, {
+                    rankingPolicyVersion: 'stale-ranking/v0'
+                }),
+                req
+            ),
+        MaskArtifactInvalidError
     );
-    assert.ok(
-        !isMaskResultResponse(
-            responseFor(req, {
-                proposalDecision: {
-                    ...responseFor(req).proposalDecision,
-                    proposalSetDigest: digest('f')
-                }
-            })
-        )
+    assert.throws(
+        () =>
+            adaptMaskProposalEnvelope(
+                responseFor(req, {
+                    proposalDecision: {
+                        ...responseFor(req).proposalDecision,
+                        proposalSetDigest: digest('f')
+                    }
+                }),
+                req
+            ),
+        MaskArtifactInvalidError
     );
     const wrongRevision = responseFor(req);
     wrongRevision.requestBinding = {
         ...req.requestBinding,
         contextRevision: 4
     };
-    assert.ok(!maskResponseMatchesRequest(wrongRevision, req));
+    assert.throws(
+        () => adaptMaskProposalEnvelope(wrongRevision, req),
+        MaskArtifactInvalidError
+    );
     const proposalSet = proposalSetFor(req);
     proposalSet.proposals[0].mask.data = bitsetArtifact(
         req.rgbWidth,
         req.rgbHeight,
         0b111
     ).data;
-    assert.ok(!isMaskResultResponse(responseFor(req, { proposalSet })));
-    assert.ok(!isMaskResultResponse({ status: 'maskProposalError' }));
+    assert.throws(
+        () => adaptMaskProposalEnvelope(responseFor(req, { proposalSet }), req),
+        MaskArtifactInvalidError
+    );
+    assert.throws(
+        () => adaptMaskProposalEnvelope({ status: 'maskResultError' }, req),
+        MaskArtifactInvalidError
+    );
 });
 
 test('a Box prompt request requires per-family candidate diagnostics', () => {
@@ -359,7 +508,10 @@ test('a Box prompt request requires per-family candidate diagnostics', () => {
     const req = request({ promptState: visualPromptState });
 
     assert.ok(isAIViewMaskRequest(req));
-    assert.ok(!maskResponseMatchesRequest(responseFor(req), req));
+    assert.throws(
+        () => adaptMaskProposalEnvelope(responseFor(req), req),
+        MaskArtifactInvalidError
+    );
 
     const proposalSet = proposalSetFor(req);
     proposalSet.proposals[0].promptDiagnostics = [
@@ -383,7 +535,10 @@ test('a Box prompt request requires per-family candidate diagnostics', () => {
         digest: undefined
     });
     assert.ok(
-        maskResponseMatchesRequest(responseFor(req, { proposalSet }), req)
+        maskResponseMatchesRequest(
+            adaptMaskProposalEnvelope(responseFor(req, { proposalSet }), req),
+            req
+        )
     );
 
     proposalSet.proposals[0].promptDiagnostics[1].satisfied = false;
@@ -391,8 +546,9 @@ test('a Box prompt request requires per-family candidate diagnostics', () => {
         ...proposalSet,
         digest: undefined
     });
-    assert.ok(
-        !maskResponseMatchesRequest(responseFor(req, { proposalSet }), req)
+    assert.throws(
+        () => adaptMaskProposalEnvelope(responseFor(req, { proposalSet }), req),
+        MaskArtifactInvalidError
     );
 });
 
@@ -446,14 +602,17 @@ test('the single-result candidate bound is enforced fail-closed for every prompt
     const oneCandidate = responseWithCandidates(pointReq, [
         candidateFor(pointReq, 0)
     ]);
-    assert.ok(isMaskResultResponse(oneCandidate));
-    assert.ok(maskResponseMatchesRequest(oneCandidate, pointReq));
+    const oneMask = adaptMaskProposalEnvelope(oneCandidate, pointReq);
+    assert.ok(isMaskResultResponse(oneMask));
+    assert.ok(maskResponseMatchesRequest(oneMask, pointReq));
     const twoPointCandidates = responseWithCandidates(
         pointReq,
         [0, 1].map((index) => candidateFor(pointReq, index))
     );
-    assert.ok(!isMaskResultResponse(twoPointCandidates));
-    assert.ok(!maskResponseMatchesRequest(twoPointCandidates, pointReq));
+    assert.throws(
+        () => adaptMaskProposalEnvelope(twoPointCandidates, pointReq),
+        MaskArtifactInvalidError
+    );
 
     // A Box prompt forces single-mask mode: two candidates fail closed even
     // though the response is otherwise structurally valid and fully bound.
@@ -489,8 +648,10 @@ test('the single-result candidate bound is enforced fail-closed for every prompt
         boxReq,
         [0, 1].map((index) => candidateFor(boxReq, index, boxDiagnostics))
     );
-    assert.ok(!isMaskResultResponse(twoBoxCandidates));
-    assert.ok(!maskResponseMatchesRequest(twoBoxCandidates, boxReq));
+    assert.throws(
+        () => adaptMaskProposalEnvelope(twoBoxCandidates, boxReq),
+        MaskArtifactInvalidError
+    );
 
     // A refinement attempt also forces single-mask mode.
     const refinedReq = request({ previousLogitsRef: logitsRef() });
@@ -498,6 +659,8 @@ test('the single-result candidate bound is enforced fail-closed for every prompt
         refinedReq,
         [0, 1].map((index) => candidateFor(refinedReq, index))
     );
-    assert.ok(!isMaskResultResponse(twoRefinedCandidates));
-    assert.ok(!maskResponseMatchesRequest(twoRefinedCandidates, refinedReq));
+    assert.throws(
+        () => adaptMaskProposalEnvelope(twoRefinedCandidates, refinedReq),
+        MaskArtifactInvalidError
+    );
 });

@@ -31,7 +31,7 @@ const promptCapabilities = (overrides = {}) => ({
     negativePoints: true,
     positiveInstanceBox: true,
     previousLogitsRefinement: true,
-    singlePointMultimask: true,
+    singlePointMultimask: false,
     negativeBox: false,
     promptBrush: false,
     maskConstraints: false,
@@ -365,10 +365,7 @@ test('rejects a Candidate Re-Lift policy, backend, or runtime identity mismatch'
     await readiness.refresh();
 
     assert.equal(readiness.state.status, 'unavailable');
-    assert.equal(
-        readiness.state.diagnostic.code,
-        'candidateReLiftUnsupported'
-    );
+    assert.equal(readiness.state.diagnostic.code, 'candidateReLiftUnsupported');
 });
 
 test('rejects the historical Multiplex static manifest', async () => {
@@ -424,6 +421,15 @@ test('rejects authoritative RGB, opaque refinement, and removed Prompt capabilit
             {
                 promptCapabilities: promptCapabilities({
                     promptBrush: true
+                })
+            },
+            'imageInstanceCapabilityMismatch'
+        ],
+        [
+            'single-point multimask',
+            {
+                promptCapabilities: promptCapabilities({
+                    singlePointMultimask: true
                 })
             },
             'imageInstanceCapabilityMismatch'

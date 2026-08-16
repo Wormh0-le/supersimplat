@@ -2,7 +2,7 @@
 
 This context defines the current **AI Select Final Spec v1.3** vocabulary for turning a user's object-level intent into a native SuperSplat Gaussian Selection.
 
-Final Spec v1.3 retains the mask-conditioned direct-Evidence product/lifecycle model while standardizing the official SAM 3 Image static instance workflow, retained-support TargetGeometryHint semantics, and bounded local Key-View acquisition. Final Spec v1.1, its Amendments, and Final Spec v1.2 are historical where superseded. Historical v1.0 Contributor terminology remains valid only for migration, reference fixtures, diagnostics, and the explicit debug/reference backend.
+Final Spec v1.3 retains the mask-conditioned direct-Evidence product/lifecycle model while standardizing the official SAM 3 Image static instance workflow, single-result Mask authoring, retained-support TargetGeometryHint semantics, and bounded local Key-View acquisition. ADR 0018 is current for single-result authoring and the `4–8` initial automatic-View range. Final Spec v1.1, its Amendments, and Final Spec v1.2 are historical where superseded. Historical v1.0 Contributor terminology remains valid only for migration, reference fixtures, diagnostics, and the explicit debug/reference backend.
 
 ## Current Product Vocabulary
 
@@ -157,7 +157,7 @@ An immutable-by-revision, per-View set of positive/negative Point prompts and at
 _Avoid_: legacy Prompt Log, bitmap edit history
 
 **Prompt Adapter Capabilities**
-The versioned, digest-bound declaration of which positive/negative prompt families and multi-candidate output an installed model adapter supports. The editor never infers these capabilities from a model name; unsupported tools are disabled or rejected explicitly.
+The versioned, digest-bound declaration of which positive/negative prompt families and refinement behavior an installed model adapter supports. The current product requires `singlePointMultimask: false`; the editor never infers capabilities from a model name, and unsupported or mismatched behavior is rejected explicitly.
 _Avoid_: best-effort ignored prompts, model-name feature detection
 
 **Prompt Compiler Policy**
@@ -165,31 +165,27 @@ The versioned deterministic mapping from one exact PromptState into adapter-nati
 _Avoid_: implicit coordinate conversion, silently ignored prompt, model-name default
 
 **Image Instance Mask Contract**
-The compact versioned per-View boundary shared by Anchor, Generated, and User-added View acquisition. It binds a canonical pixel Prompt artifact, one resolvable authoritative RGB payload or current-Companion RGB reference, exact request identity, bounded inference-only Mask result, and opaque logits metadata. A completed empty result is semantic unavailable; transport, runtime, OOM, and cancellation failures publish no partial result. Mask Review, Stable publication, Participation, Evidence, and Candidate remain outside the provider result.
+The compact versioned per-View boundary shared by Anchor, Generated, and User-added View acquisition. It binds a canonical pixel Prompt artifact, one resolvable authoritative RGB payload or current-Companion RGB reference, exact request identity, at most one inference-only Mask result, and opaque logits metadata. A completed empty result is semantic unavailable; malformed or multiple results fail closed, and transport, runtime, OOM, and cancellation failures publish no partial result. Stable publication, Participation, Evidence, and Candidate remain outside the provider result.
 _Avoid_: digest-only RGB, raw logits payload, backend registry, route fallback, provider-side Stable publication
 
 **PreviousPredictionLogitsRef**
-An opaque, digest-bound browser-held reference to Companion-local low-resolution previous-prediction logits. Raw logits never cross the protocol or enter PromptState/persistence. The reference resolves only inside the exact Companion Instance that minted it, for the same View/RGB/adapter lineage and chosen candidate, and forces single-mask refinement linked to the source inference attempt. An expired or unresolvable reference falls back to a fresh Point/Box prediction without `mask_input`.
+An opaque, digest-bound browser-held reference to Companion-local low-resolution previous-prediction logits. Raw logits never cross the protocol or enter PromptState/persistence. The reference resolves only inside the exact Companion Instance that minted it, for the same View/RGB/adapter and sole-result lineage, and forces single-mask refinement linked to the source inference attempt. Its retained wire identity may still name a compatibility candidate. An expired or unresolvable reference falls back to a fresh Point/Box prediction without `mask_input`.
 _Avoid_: binary brush as mask input, cross-session logits cache
 
 **Generated View Image Instance Prompt**
 A deterministic Route B `ImageInstancePromptArtifact` synthesized from the exact TargetGeometryHint's retained visible points, accepted Local Key View plan, authoritative View RGB, View CameraBinding, and locked SAM 3 Image runtime identity. It contains one positive instance Box, 1–3 positive points, at most two local negative points, and `multimaskOutput: false`; `Prompt Support: limited` yields no inference request even when geometry quality is limited for a separately disclosed reason. Changed Prompt input publishes a new Prompt artifact and creates a normal inference intent; current product surfaces expose no Regenerate Prompt or identical-input Auto Mask Retry command.
 _Avoid_: propagation/tracker state, Negative Box, text/brush/mask-constraint prompt, previous logits
 
-**AutoMaskProposalSet**
-A deterministic bounded set of structurally valid model Mask alternatives bound to exact target/context, Camera/RGB, PromptState, model, adapter capability, policy, and attempt identities. Exactly one Positive Point with no Box and no refinement yields at most three candidates; Box, multiple Points, or previous-logits refinement yields at most one. A proposal may seed Editing Mask but is never Stable without Confirm Mask. Raw adapter scores retain their declared semantics and are not correctness confidence.
-_Avoid_: Stable Mask, highest-score auto-confirm, ProposalDecision
+**Single Mask Result**
+The current product result for operator-authored Point, Box or refinement input: exactly one usable Mask with its Review and optional previous-logits lineage, or semantic unavailable. A usable result automatically becomes the Editing Mask; there is no Proposal preview, choice or Accept state. Multiple or malformed compatibility results fail closed before product state changes.
+_Avoid_: candidate chooser, selected-awaiting-accept, highest-score auto-confirm
 
-**Proposal Ranking Features**
-A versioned per-proposal 2D record reduced by Ticket 07A to exactly what candidate choice consumes: hard prompt consistency, eligibility, area fraction, connected component count, and the echoed raw model score. Pairwise containment/IoU, material-distinctness clustering, compactness, decision-margin features, and Gaussian support sanity are removed; Gaussian readiness belongs to Lift Readiness, never to Anchor candidate selection. Each candidate also carries its own Mask Review record under the shared `local-view-assessment/v2` policy.
-_Avoid_: calibrated confidence, Gaussian ownership, candidate clustering/ranking pipelines
-
-**ProposalDecision**
-The versioned pre-Stable result that binds one exact AutoMaskProposalSet and classifies it as Selected, Ambiguous, or Unavailable. It enumerates exactly the eligible candidates in deterministic default-preview order — highest raw model score, ties broken by source order — and carries no ranking reason codes; Mask-quality claims live on the per-candidate Mask Review record. The default preview is never auto-confirmed; explicit user choice resolves one-point ambiguity, and explicit acceptance or manual replacement creates the Editing Mask.
-_Avoid_: ViewAssessment, Stable Mask, highest-score auto-confirm, margin calibration
+**Mask Proposal Compatibility Envelope**
+The temporarily retained internal `/ai-select/mask-proposals` wire envelope and `AutoMaskProposalSet` / `ProposalDecision` types. The browser compatibility adapter validates exact identity, eligibility, Review, refinement fallback and logits lineage, then collapses the envelope into Single Mask Result. Browser product state outside that adapter does not consume proposal plurality.
+_Avoid_: public authoring model, user-facing Proposal state, new cross-runtime schema
 
 **Pixel Editing**
-Explicit Paint/Erase mutation of the unpublished Editing Mask. Pixel edits use Mask-local history and never rewrite PromptState or silently rerun proposal ranking.
+Explicit Paint/Erase mutation of the unpublished Editing Mask. Pixel edits use Mask-local history and never rewrite PromptState or silently rerun inference.
 _Avoid_: Prompt Brush, model constraint
 
 **MaskAnnotation**  

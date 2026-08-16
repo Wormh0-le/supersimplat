@@ -1,12 +1,12 @@
-# Final Spec v1.3 → Ticket Traceability Matrix — v2.28
+# Final Spec v1.3 → Ticket Traceability Matrix — v2.29
 
 A requirement counts as covered only when a mapped parent Ticket or explicitly
 mapped execution stage contains acceptance, failure, validation or migration
 criteria. Every parent Ticket-local current mapping points directly to Final
 Spec v1.3; older specs are historical provenance only. Ticket 14A–14D and
 Ticket 16A–16G are execution stages under their parent Tickets and preserve the
-parent requirement mapping. Ticket 16B owns the accepted current-spec and ADR
-correction before dependent stages close.
+parent requirement mapping. Ticket 16B owns and has completed the accepted
+current-spec and ADR correction.
 
 | ID   | Requirement                                                                                                          | Ticket(s)                                                   |
 | ---- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
@@ -16,7 +16,7 @@ correction before dependent stages close.
 | R004 | all AI observation RGB uses authoritative gsplat and exact CameraBinding                                             | 02, 03, 06, 11, 19                                          |
 | R005 | RGB Ready is independent from Mask, Evidence and Candidate                                                           | 03, 06, 09, 11                                              |
 | R006 | asynchronous artifacts are identity-bound and stale results fail closed                                              | 01, 03, 04C, 08, 08A, 08B, 12, 21                           |
-| R007 | explicit Retry creates a new attempt; same-attempt replay may be idempotent                                          | 03, 04C, 08B, 12, 21                                        |
+| R007 | normal new intent creates a new attempt; same-attempt replay remains idempotent infrastructure                       | 03, 04C, 08B, 12, 16B, 21                                   |
 | R008 | cancellation/OOM/model failure publishes no partial current artifact                                                 | 04C, 08B, 12, 20, 21                                        |
 | R009 | User Confirmed Stable Mask cannot be silently replaced                                                               | 04, 04C, 07, 08B, 12, 21                                    |
 | R010 | static instance segmentation uses official SAM 3 Image interactivity                                                 | 04C, 07A, 08B, 21                                           |
@@ -32,11 +32,11 @@ correction before dependent stages close.
 | R020 | previous-logits ref binds Companion Instance, same View/RGB/adapter/source candidate                                 | 02C, 04C, 07A, 08A, 12, 21                                  |
 | R021 | binary Brush or Editing Mask cannot validate as previous logits                                                      | 04C, 07A, 08A, 12, 21                                       |
 | R022 | expired/refused logits ref falls back to fresh Point/Box inference without mask_input                                | 04C, 07A, 11, 12, 21                                        |
-| R023 | every Point, Box or refinement request returns at most one candidate                                                 | 04C, 07A, 08A, 08B, 11, 21                                  |
+| R023 | every Point, Box or refinement request returns at most one usable Mask result                                        | 04C, 07A, 08A, 08B, 11, 16B, 21                             |
 | R024 | the sole eligible result automatically becomes Editing Mask; no Proposal choice/accept interaction exists            | 07A, 07B, 11, 16A, 16B                                      |
 | R025 | raw model score is diagnostic only and is not correctness probability                                                | 04C, 07A, 08A                                               |
-| R026 | Anchor Prompt ambiguity is resolved by adding Prompt input, manual editing or Retry, not candidate selection         | 07A, 11                                                     |
-| R027 | opaque refinement continues from the sole automatic result until Retry or a non-refining transition                  | 04C, 07A, 11, 12                                            |
+| R026 | an unavailable Anchor result is resolved by adding Prompt input or manual editing, never candidate selection         | 07A, 11, 16B                                                |
+| R027 | opaque refinement continues from the sole automatic result until a fresh or non-refining transition                  | 04C, 07A, 11, 12, 16B                                       |
 | R028 | generic near-duplicate/material-distinct clustering is not a v1 closure gate                                         | 07A, 08B, 21                                                |
 | R029 | automatic result adoption, Editing Mask, Paint/Erase, Confirm and Stable Mask remain distinct                        | 04, 05, 07A, 07B                                            |
 | R030 | only Confirm publishes Anchor Stable Mask                                                                            | 04, 05, 07A                                                 |
@@ -49,7 +49,7 @@ correction before dependent stages close.
 | R037 | local Views validate projection, clipping and nonblank RGB                                                           | 08, 21                                                      |
 | R038 | adaptive/free-space/room-scale planner is deferred                                                                   | 08, 21                                                      |
 | R039 | 07B and 08 run in parallel after 07A                                                                                 | 07A, 07B, 08                                                |
-| R040 | Tickets through 16A are implemented; 16B–16G own the visual-review follow-up and Ticket 17 follows 16G               | 09, 11, 12, 13, 14, 14A, 14B, 14C, 14D, 15, 16, 16A–16G, 17 |
+| R040 | Tickets through 16B are implemented; 16C–16G own the remaining visual-review follow-up and Ticket 17 follows 16G     | 09, 11, 12, 13, 14, 14A, 14B, 14C, 14D, 15, 16, 16A–16G, 17 |
 | R041 | 02C may proceed after 04C; 07A requires both 04C and 07                                                              | 02C, 07A                                                    |
 | R042 | 08A defines compact RGB-bound Image Instance Prompt/Mask contracts                                                   | 08A                                                         |
 | R043 | current contracts require no backend registry, route bundle or sequence extension                                    | 08A, 08B, 12, 21                                            |
@@ -75,10 +75,9 @@ correction before dependent stages close.
 
 ## Accepted post-16A delta coverage
 
-These deltas come from the completed 16A operator visual review. They are
-accepted implementation requirements but are not counted as amendments to the
-62 current Final Spec v1.3 rows above until Ticket 16B publishes the
-superseding ADR and current-spec update.
+These deltas come from the completed 16A operator visual review. Ticket 16B
+incorporated D16-01 through D16-04 into ADR 0018 and Final Spec v1.3; the
+remaining rows continue to route downstream implementation ownership.
 
 | Delta  | Accepted change                                                                                                                                                   | Ticket(s)         |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
@@ -108,8 +107,8 @@ Parent Ticket 14 requirements are partitioned without changing requirement owner
 
 ## Ticket 16 post-closure stage coverage
 
-Ticket 16 retains native application core ownership. Ticket 16A is the
-implemented presentation baseline. Its completed operator visual review is
+Ticket 16 retains native application core ownership. Tickets 16A and 16B are
+implemented baselines. The completed operator visual review is
 partitioned as follows without changing parent ownership:
 
 - 16B — single-result authoring, capability truth, superseding ADR and current
@@ -134,12 +133,12 @@ application core and cannot reintroduce the removed 3D More/Restart control.
 - Ticket 16 post-closure stage files mapped through parent 16 + Final Spec v1.3: 7/7;
 - Ticket files with v1.1/v1.2 as current mapping authority: 0;
 - older-spec references outside explicit historical/superseded/migration sections: 0;
-- implemented prerequisite chain: through 12, parent Ticket 14 / 14D, Tickets 13 through 16 and Ticket 16A;
+- implemented prerequisite chain: through 12, parent Ticket 14 / 14D, Tickets 13 through 16 and Tickets 16A–16B;
 - Ticket 09 locked-GPU large-Gallery browser walkthrough: passed 2026-08-07;
 - current parent compatibility frontier: 16;
-- current Ticket 16 execution stage: 16B;
+- current Ticket 16 execution stage: 16C;
 - current Ticket 14 execution stage: none (all implemented);
 - next implementation Ticket: 16;
-- next implementation subticket: 16B;
+- next implementation subticket: 16C;
 - optional nonblocking Ticket: 10;
 - current normative spec: Final Spec v1.3.

@@ -55,6 +55,9 @@ Companion caches may include scene tensors, RGB, Evidence, reference Contributor
 - `src/main.ts` — composition root, command queue, event registration, UI construction, and Companion readiness wiring
 - `src/scene-snapshot.ts` and related modules — immutable Scene Snapshot and Stable Gaussian ID contracts
 - `src/selection-service-fetch-adapter.ts` — browser/Companion transport, registration, retries, and response validation
+- `src/ai-select/mask-service.ts` — the singular product Mask result and the
+  only compatibility adapter allowed to consume the retained internal
+  ProposalSet / ProposalDecision wire envelope
 - `src/selection-service-readiness*.ts` — readiness and capability gating
 - `src/selection.ts`, `src/edit-history.ts`, `src/edit-ops.ts`, and `src/tools/` — native selection/edit behavior and final mutation authority
 

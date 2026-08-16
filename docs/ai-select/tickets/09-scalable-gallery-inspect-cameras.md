@@ -8,6 +8,10 @@ Point/Box/Paint correction for Generated Views remains on the Anchor surface
 and card Retry/Confirm/Participation actions; per-View Mask editing arrives
 with the user-added View and refresh Tickets (11/12).
 
+Post-16B supersession notice: ADR 0018 supersedes the historical Anchor
+candidate-choice and current-facing explicit Retry clauses. The Gallery and
+inspection implementation record remains current where not superseded.
+
 Blocked by: 08B (satisfied)
 
 Blocks: 11, 12

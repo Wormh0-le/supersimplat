@@ -60,12 +60,10 @@ import {
     type LocalKeyViewPlanRequest,
     type LocalKeyViewPlanResponse
 } from './ai-select/local-key-view-plan';
-import { isAutoMaskProposalSet } from './ai-select/mask-proposal';
 import {
+    adaptMaskProposalEnvelope,
     MaskArtifactInvalidError,
     isAIViewMaskRequest,
-    isMaskResultResponse,
-    maskResponseMatchesRequest,
     type AISelectMaskProvider,
     type AIViewMaskRequest,
     type MaskResultResponse
@@ -1290,9 +1288,7 @@ class FetchSelectionServiceAdapter
      * and the artifact digest verify; anything less is a transport failure,
      * never a publishable Mask.
      */
-    async produceMaskProposals(
-        request: AIViewMaskRequest
-    ): Promise<MaskResultResponse> {
+    async produceMask(request: AIViewMaskRequest): Promise<MaskResultResponse> {
         if (!isAIViewMaskRequest(request)) {
             throw transportError(
                 'invalidResponse',
@@ -1331,25 +1327,17 @@ class FetchSelectionServiceAdapter
                 'The Selection Service Companion returned an incomplete or stale Mask result.'
             );
         }
-        if (!isMaskResultResponse(result)) {
-            if (
-                isRecord(result.proposalSet) &&
-                !isAutoMaskProposalSet(result.proposalSet)
-            ) {
-                throw new MaskArtifactInvalidError();
+        try {
+            return adaptMaskProposalEnvelope(result, request);
+        } catch (error) {
+            if (error instanceof MaskArtifactInvalidError) {
+                throw error;
             }
             throw transportError(
                 'invalidResponse',
                 'The Selection Service Companion returned an incomplete or stale Mask result.'
             );
         }
-        if (!maskResponseMatchesRequest(result, request)) {
-            throw transportError(
-                'invalidResponse',
-                'The Selection Service Companion returned an incomplete or stale Mask result.'
-            );
-        }
-        return result;
     }
 
     /**

@@ -206,7 +206,7 @@ test('a complete Planned Key View validates; the Anchor view id stays reserved',
 test('a complete local Key-View plan validates', () => {
     const request = planRequest();
     assert.ok(isLocalKeyViewPlan(planFor(request)));
-    // One to three bounded local Key Views per batch.
+    // One to eight bounded local Key Views per plan.
     assert.ok(
         isLocalKeyViewPlan(
             planFor(request, {
@@ -239,7 +239,12 @@ test('plan validation fails closed on malformed fields', () => {
                 plannedKeyView('key-view-0-0', 100),
                 plannedKeyView('key-view-0-1', 101),
                 plannedKeyView('key-view-0-2', 102),
-                plannedKeyView('key-view-0-3', 103)
+                plannedKeyView('key-view-0-3', 103),
+                plannedKeyView('key-view-0-4', 104),
+                plannedKeyView('key-view-0-5', 105),
+                plannedKeyView('key-view-0-6', 106),
+                plannedKeyView('key-view-0-7', 107),
+                plannedKeyView('key-view-0-8', 108)
             ]
         })
     );

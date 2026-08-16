@@ -2,7 +2,7 @@
 
 The ``target-geometry/v2`` policy compresses the exact confirmed Anchor Stable
 Mask into one compact visible-surface geometry hint, and the
-``local-key-view-planner/v1`` policy turns that hint into a small bounded local
+``local-key-view-planner/v2`` policy turns that hint into a small bounded local
 Key-View batch. Both policies are pure CPU geometry over immutable mmap planes
 and plain mappings, exactly like the Anchor support probe: they never import
 the locked renderer runtime (no torch, no gsplat), never run SAM inference,
@@ -27,7 +27,7 @@ from .support_probe import AnchorSupportProbeCamera
 
 
 AI_SELECT_TARGET_GEOMETRY_POLICY_VERSION = "target-geometry/v2"
-AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION = "local-key-view-planner/v1"
+AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION = "local-key-view-planner/v2"
 TARGET_GEOMETRY_HINT_SCHEMA_VERSION = 2
 LOCAL_KEY_VIEW_PLAN_SCHEMA_VERSION = 1
 
@@ -51,9 +51,10 @@ _PROMPT_SUPPORT_PROMOTABLE_REASONS = frozenset({"separatedSupportFiltered"})
 _EXTENT_RADIUS_FLOOR = 0.05
 _DISTANCE_EXTENT_FACTOR = 4.0
 _DISTANCE_NEAR_FACTOR = 4.0
-# Fixed deterministic (azimuth, elevation) offset sequence in degrees. Batch k
-# takes offsets [3k : 3k+3]: batch 0 is left/right/elevated; every later
-# "Generate More" batch stays inside the same bounded local fan.
+# Fixed deterministic (azimuth, elevation) offset sequence in degrees. The
+# current fixed configuration schedules four initial automatic Generated
+# Views, inside the normative 4–8 range; later compatibility batches consume
+# the remaining offsets inside the same bounded local fan.
 _VIEW_OFFSETS_DEGREES = (
     (30.0, 0.0),
     (-30.0, 0.0),
@@ -64,7 +65,9 @@ _VIEW_OFFSETS_DEGREES = (
     (-30.0, 20.0),
     (0.0, 40.0),
 )
-_VIEWS_PER_BATCH = 3
+_INITIAL_AUTOMATIC_VIEW_COUNT_MIN = 4
+_INITIAL_AUTOMATIC_VIEW_COUNT_MAX = 8
+_VIEWS_PER_BATCH = 4
 _MIN_PROJECTED_SIZE_FRACTION = 0.05
 _VISIBILITY_FAIL_FRACTION = 0.25
 _VISIBILITY_LIMITED_FRACTION = 0.5
@@ -154,6 +157,11 @@ def local_key_view_policy_descriptor() -> dict[str, object]:
         "viewOffsetsDegrees": [
             [azimuth, elevation] for azimuth, elevation in _VIEW_OFFSETS_DEGREES
         ],
+        "initialAutomaticViewCountRange": [
+            _INITIAL_AUTOMATIC_VIEW_COUNT_MIN,
+            _INITIAL_AUTOMATIC_VIEW_COUNT_MAX,
+        ],
+        "initialAutomaticViewCount": _VIEWS_PER_BATCH,
         "viewsPerBatch": _VIEWS_PER_BATCH,
         "minProjectedSizeFraction": _MIN_PROJECTED_SIZE_FRACTION,
         "visibilityFailFraction": _VISIBILITY_FAIL_FRACTION,

@@ -3,10 +3,10 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.28 / Ticket 16B current
+**规划版本：** Ticket Graph v2.29 / Ticket 16B implemented / Ticket 16C current
 **日期：** 2026-08-16
 **适用分支：** `ai-select-v1`  
-**决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017
+**决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017、ADR 0018
 
 ---
 
@@ -20,11 +20,12 @@
 
 1. Final Spec v1.3；
 2. 当前 Ticket mapping；
-3. ADR 0016；
-4. ADR 0017（TargetGeometryHint / Prompt Support 语义）；
-5. ADR 0013、ADR 0015；
-6. 未冲突的 Ticket acceptance criteria；
-7. 当前实现与测试。
+3. ADR 0018；
+4. ADR 0016；
+5. ADR 0017（TargetGeometryHint / Prompt Support 语义）；
+6. ADR 0013、ADR 0015；
+7. 未冲突的 Ticket acceptance criteria；
+8. 当前实现与测试。
 
 历史 Ticket 中的 Negative Box、Prompt Brush、Mask Constraint、Multiplex static path、Route fallback、backend registry 和 adaptive planner 文字均不具有当前规范效力，除非本文件明确保留。
 
@@ -57,13 +58,9 @@ Current Scene Camera
     ├── Negative Point
     └── optional Positive Instance Box
 → SAM 3 Image instance prediction
-    ├── one Positive Point only: up to 3 candidates
-    └── Box / multiple Points / refinement: one candidate
-→ user candidate choice where needed
-→ optional Point refinement before Accept
-→ basic Prompt/Mask validity and Review
-→ Accept
-→ Editing Mask
+→ one usable Mask with Review, or unavailable
+→ usable operator-authored result automatically becomes Editing Mask
+→ optional Point refinement / Paint / Erase
 → Confirm
 → Anchor Stable Mask
 → TargetGeometryHintArtifact
@@ -97,11 +94,11 @@ RGB Ready
 
 - CurrentTargetContext、CameraBinding 和 stale-result rejection；
 - PromptState、Prompt history 和 Mask editing history；
-- candidate choice、Accept、Paint、Erase、Confirm；
+- automatic Editing-Mask adoption、Paint、Erase、Confirm；
 - opaque previous-logits reference metadata；
 - Stable Mask registry 和 Participation；
 - Gallery、Frustum、Camera Inspection；
-- explicit Retry、Refresh、Re-Lift 和 Restart；
+- new-intent attempts、explicit Re-Lift 和 Restart；
 - Native Selection operations。
 
 ## 3.2 Selection Service Companion owns
@@ -145,7 +142,7 @@ Evidence / Lift policy digest
 
 Rules：
 
-- explicit Retry creates a new attempt；
+- each normal new intent creates a new attempt；
 - same-attempt replay may be idempotent；
 - stale or incompatible artifacts fail closed；
 - no partial Mask、refinement state、Evidence or Candidate becomes current；
@@ -231,29 +228,31 @@ It is not：
 - a cross-View artifact；
 - browser-persisted tensor data。
 
-A valid ref may refine the currently chosen candidate while still in Prompt mode。The refinement creates a new inference attempt with `multimask_output=false`。
+A valid ref may refine the sole current automatic result while still in Prompt mode。The refinement creates a new inference attempt with `multimask_output=false`。
 
-After `Accept`, Paint/Erase operate on Editing Mask。Returning to Prompt mode is explicit and never converts Editing pixels into `mask_input`。
+After automatic adoption, Paint/Erase operate on Editing Mask。Returning to Prompt mode is explicit and never converts Editing pixels into `mask_input`。
 
 Companion restart/Instance replacement、state eviction、target disposal、RGB change or adapter/runtime change invalidates the ref。An expired ref falls back to fresh inference from current Points/Box without `mask_input`。
 
-## 6.4 Multimask policy
+## 6.4 Single-result policy
 
 ```text
 exactly one Positive Point
 + no Box
 + no previous logits
-→ multimask_output=true
-→ retain at most 3 candidates
+→ multimask_output=false
+→ retain at most 1 usable Mask
 
 Positive Instance Box
 or multiple Points
 or previous-logits refinement
 → multimask_output=false
-→ retain at most 1 candidate
+→ retain at most 1 usable Mask
 ```
 
-Raw model score may choose default preview ordering。It is not a correctness probability and never auto-confirms a Stable Mask。
+The product capability handshake reports `singlePointMultimask: false`。A
+malformed or multiple-result compatibility response fails closed before
+product state changes。Raw model score is not a correctness probability。
 
 ---
 
@@ -264,11 +263,10 @@ Anchor acquisition is intentionally 2D-first：
 ```text
 Prompt
 → SAM 3 Image prediction
-→ candidate choice when single-click ambiguity exists
-→ optional Point refinement before Accept
+→ one usable Mask with Review, or unavailable
+→ usable result automatically becomes Editing Mask
+→ optional Point refinement / Paint / Erase
 → basic validity / Review
-→ Accept
-→ Editing Mask
 → Confirm
 ```
 
@@ -282,9 +280,7 @@ Required validity checks：
 - severe fragmentation or material boundary clipping enters Review；
 - no result becomes Stable before Confirm。
 
-Generic near-duplicate clustering、material-distinct clustering、automatic Top-1 calibration、Gaussian-support-based Anchor selection and repeated-run stability ranking are not v1 requirements。
-
-For a one-point multimask result, exact duplicate removal is allowed and the user resolves material ambiguity directly。
+Generic near-duplicate clustering、material-distinct clustering、automatic Top-1 calibration、Gaussian-support-based Anchor selection and repeated-run stability ranking are not v1 requirements。Plural results never enter an interactive chooser。
 
 ---
 
@@ -371,8 +367,7 @@ Each candidate performs minimal validity checks：
 
 Adaptive marginal-gain optimization、general free-space reconstruction、room/outside-room inference、Bridge Views、dense trajectories and append-only multi-segment planner frameworks are deferred。
 
-`4–8` 范围是 Ticket 16B 已接受的产品变更，取代 ADR 0016 第 9 项，并须写入
-待发布的 ADR 0018。当前产品界面不提供常驻的 Stop、Generate More 或
+`4–8` 范围由 Ticket 16B 和 ADR 0018 接受，取代 ADR 0016 第 9 项。当前产品界面不提供常驻的 Stop、Generate More 或
 Regenerate 控件。只有初始规划失败时才显示一个失败恢复入口；该入口创建新的
 有界规划 attempt，且不使已完成的有效 View 失效。
 
@@ -433,8 +428,10 @@ Invariants：
 - result echoes exact request identity；
 - resolved RGB matches digest/dimensions；
 - Mask/score/ref cardinality matches；
-- single-mask mode returns at most one usable Mask；
-- multimask mode returns at most three；
+- every current Point、Box or refinement request returns at most one usable Mask；
+- a completed empty result is semantic unavailable；
+- the retained internal proposal envelope is collapsed at the browser
+  compatibility boundary; plurality or malformed output fails closed；
 - raw logits tensors remain Companion-local；
 - technical failure returns no partial result；
 - provider does not publish Stable Mask、Participation、Evidence or Candidate；
@@ -462,7 +459,9 @@ Prompt synthesis MUST NOT create：
 - concept-level normalized CXCYWH Box；
 - guessed oversized target regions when support is insufficient。
 
-Prompt regeneration and Mask Retry are distinct operations。
+Prompt regeneration and Mask inference remain distinct execution intents。
+Current product surfaces expose no identical-input Regenerate Prompt or Auto
+Mask Retry command；attempt and replay infrastructure remains required。
 
 Prompt Support is also a per-View gate: at least two distinct retained points
 must project inside the authoritative View image. A failed global or per-View
@@ -551,6 +550,11 @@ plan local Views
 
 It does not implement model internals or geometry algorithms。
 
+The current browser product consumes a singular usable-Mask-or-unavailable
+model。The internal `/ai-select/mask-proposals` route and its
+`ProposalSet` / `ProposalDecision` wire envelope remain a temporary
+compatibility boundary and are not public authoring state。
+
 Migration MUST retire or isolate：
 
 - SAM 3.1 Multiplex static-image shim；
@@ -582,9 +586,7 @@ Evidence
 Candidate stale/current
 ```
 
-The Gallery does not expose backend-route matrices、fallback provenance、sequence state or generic ProposalDecision for ordinary Generated Views。
-
-Anchor candidate choice remains in the Anchor editing surface。
+The Gallery does not expose backend-route matrices、fallback provenance、sequence state or Proposal choice/acceptance state。
 
 The AI View Dock keeps View Review and Prompt/Mask editing in one loop rather
 than separate workflow pages. Its responsive layout projects one View
@@ -592,7 +594,7 @@ Navigator, one selected-View RGB/Mask Work Area and one current-View Inspector.
 The Work Area keeps complete aspect-preserving image contain semantics; sidebars
 collapse below their supported container widths without covering the image.
 
-Ordinary View navigation preserves each View's Prompt, Proposal, Editing Mask
+Ordinary View navigation preserves each View's Prompt, Editing Mask
 and authoring history. Navigator owns View selection/filtering/Participation,
 the Work Area owns the single state-appropriate primary action, and Inspector
 owns explanations and low-frequency recovery actions without duplicating those
@@ -625,10 +627,10 @@ Rules：
 - unconfirmed Editing changes do not dirty Evidence；
 - Anchor Stable change invalidates geometry、plan and dependent per-View Prompts/Masks；
 - Camera/RGB change dirties that View Prompt、Mask and Evidence；
-- Point refinement may reuse exact previous-logits ref only on the same RGB/Companion/candidate lineage；
+- Point refinement may reuse exact previous-logits ref only on the same RGB/Companion/result lineage；
 - Companion Instance change invalidates all previous-logits and Companion RGB refs；
 - missing refinement state causes fresh no-logits inference；
-- Refresh creates a new inference attempt；
+- each new Prompt or correction intent creates a new inference attempt；
 - no Mask refresh automatically Re-Lifts；
 - manual correction affects only that View by default。
 
@@ -705,9 +707,9 @@ Minimum rules：
 - RGB failure preserves inspectable prior state；
 - unresolved/digest-only RGB request fails before inference；
 - SAM technical failure preserves RGB、prior Stable Mask and manual editing；
-- one-point candidate ambiguity asks the user to choose/refine；
+- malformed or multiple compatibility results fail closed without a chooser；
 - expired previous-logits ref reruns current Points/Box without `mask_input`；
-- no usable Mask offers Point/Box adjustment、Retry、Manual Draw or Exclude；
+- no usable Mask offers Point/Box adjustment、Manual Draw or Exclude；
 - geometry failure preserves Anchor and allows local/user-added alternatives；
 - stale or old-schema artifacts are rejected, never rebound；
 - OOM/cancellation publishes no partial artifact；
@@ -726,7 +728,7 @@ Required validation：
 - authoritative RGB artifact/reference resolution and mismatch fixtures；
 - Point、Negative Point、Positive Box and opaque previous-logits-ref refinement fixtures；
 - Companion restart/state eviction invalidation；
-- single-point multimask and Box/multi-point single-mask fixtures；
+- single-result Point、Box and refinement fixtures plus plural-result rejection；
 - PromptState migration rejecting Negative Box/Mask Constraint artifacts；
 - Paint/Erase never entering model request；
 - TargetGeometryHint deterministic projection fixtures；
@@ -734,7 +736,7 @@ Required validation：
 - 3D-guided Box/Point per-View quality fixtures；
 - Mask Review versus Lift Readiness reason separation；
 - core release without Ticket 10 output；
-- stale identity、Retry、OOM and User Confirmed preservation tests。
+- stale identity、attempt/replay、OOM and User Confirmed preservation tests。
 
 ---
 
@@ -744,7 +746,7 @@ Required validation：
 04C  SAM 3 Image adapter + Prompt/RGB/refinement contract migration        implemented
 07   MaskReviewPolicy correction                                           implemented
 02C  automatic readiness for the new Active Model Manifest                 implemented
-07A  simplified Anchor candidate choice and confirmation                   implemented
+07A  historical candidate pipeline; single-result adoption now current     implemented / superseded in part by ADR 0018
 07B  Point/Box + Paint/Erase palette hardening                             implemented
 08   TargetGeometryHint + bounded local Key Views                           implemented
 08A  compact Image Instance Mask contracts                                 implemented
@@ -761,8 +763,10 @@ Required validation：
 13   sole Lift Readiness / visibility authority                             implemented
 15   Candidate correction + explicit Re-Lift                                implemented
 16   Native Candidate operations core                                       implemented
-16A  AI View Dock + Candidate viewport presentation                         ready / current stage
-17   Applied Undo-and-Fix + Restart + multi-target lifecycle                planned / follows 16A
+16A  AI View Dock + Candidate viewport presentation                         implemented
+16B  single-result product contract + planner/capability correction         implemented
+16C  Mask state truth + compact Inspector                                   ready / current stage
+17   Applied Undo-and-Fix + Restart + multi-target lifecycle                planned / follows 16G
 10   optional cross-view Evidence-conflict diagnostics                      nonblocking
 ```
 
@@ -770,21 +774,22 @@ Current ready implementation frontier：
 
 ```text
 parent: 16  Native Candidate operations core
-stage:  16A AI View Dock + Candidate viewport presentation
+stage:  16C Mask state truth + compact Inspector
 
-14A (implemented) → 14B (implemented) → 14C (implemented) → 14D (implemented) → 13 (implemented) → 15 (implemented) → 16 (core implemented) → 16A
+14A (implemented) → 14B (implemented) → 14C (implemented) → 14D (implemented) → 13 (implemented) → 15 (implemented) → 16 (core implemented) → 16A (implemented) → 16B (implemented) → 16C
 ```
 
 Compatibility fields：
 
 ```text
 next_implementation_ticket = 16
-next_implementation_subticket = 16A
+next_implementation_subticket = 16C
 ```
 
 Parent Ticket 14, Tickets 13 through 15 and Ticket 16's native-application core
-are closed. Ticket 16A is the current post-closure presentation stage; Ticket
-17 follows it. Ticket 10 remains optional and off the core release path。
+are closed. Tickets 16A and 16B are implemented; Ticket 16C is the current
+post-visual-review stage and Ticket 17 follows 16G. Ticket 10 remains optional
+and off the core release path。
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported。
 

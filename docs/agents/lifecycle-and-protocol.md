@@ -46,6 +46,10 @@ Read this file for target lifecycle, Mask or Candidate state, identity, retries,
 ## AI Views and Mask publication
 
 - An `AIView` may have RGB without a Mask.
+- Operator-authored Point, Box and refinement input produces exactly one usable
+  Mask with Review or semantic unavailable. A usable result automatically
+  becomes Editing; multiple or malformed compatibility results fail closed.
+- Proposal choice, preview and acceptance are not product lifecycle states.
 - `stableMaskId` identifies the Mask version allowed to participate in Evidence, Coverage, and Lifting.
 - `editingMaskId` is unpublished and does not replace the Stable Mask until Confirm Mask.
 - Confirm Mask atomically publishes an edited or manually corrected Mask and invalidates dependent Evidence and Candidate state by identity.
@@ -55,6 +59,9 @@ Read this file for target lifecycle, Mask or Candidate state, identity, retries,
 - Stable-without-Editing is a valid confirmed state. Entering later correction
   creates an independent Editing draft and retains the Stable revision until
   explicit Confirm Mask.
+- The internal proposal wire envelope is compatibility-only. Review,
+  refinement fallback and previous-logits lineage must survive its collapse at
+  the browser boundary.
 
 ## Quality and Participation
 

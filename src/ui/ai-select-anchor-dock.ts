@@ -1297,14 +1297,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                               ? 'ai-select.mask.artifact-invalid'
                               : 'ai-select.mask.failed'
                       )
-                    : mask.proposalStatus === 'unavailable'
-                      ? i18n.t('ai-select.proposal.unavailable')
-                      : mask.proposalStatus === 'ambiguous'
-                        ? i18n.t('ai-select.proposal.ambiguous')
-                        : mask.proposalStatus === 'selected' &&
-                            maskState.editingMask === null
-                          ? i18n.t('ai-select.proposal.selected')
-                          : i18n.t(`ai-select.mask.${mask.status}`);
+                    : mask.automaticMaskStatus === 'unavailable'
+                      ? i18n.t('ai-select.mask.unavailable')
+                      : i18n.t(`ai-select.mask.${mask.status}`);
         }
         const technicalMessage =
             this.candidateCorrectionState.status === 'failed'
@@ -1320,7 +1315,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     }
 
     /**
-     * The editable Gallery View surface: the same Prompt/candidate/Brush/
+     * The editable Gallery View surface: the same Prompt/Mask/Brush/
      * Confirm UI as the Anchor, bound to this View's exact Mask session.
      */
     private renderViewMaskAuthoring(view: GeneratedAIView): void {
@@ -2244,23 +2239,11 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             `${i18n.t('ai-select.prompt.summary-boxes')} ${i18n.formatInteger(prompt.boxCount)}`,
             `${i18n.t('ai-select.prompt.summary-revision')} ${i18n.formatInteger(prompt.promptRevision)}`
         ].join(' · ');
-        // Mask-quality claims live on the previewed candidate's Review record
-        // (the simplified 07A decision carries no ranking reason codes). The
-        // accepted single result owns review diagnostics; retain the
-        // defensive fallbacks for persisted pre-single-result sessions.
-        const previewedProposalId =
-            maskState.previewedProposalId ??
-            maskState.acceptedProposalId ??
-            maskState.proposalDecision?.selectedProposalId ??
-            maskState.proposalDecision?.alternativeProposalIds[0];
-        const previewedProposal = maskState.proposalSet?.proposals.find(
-            (candidate) => candidate.proposalId === previewedProposalId
-        );
-        const reasons = (previewedProposal?.review.reasons ?? []).map(
+        const reasons = (maskState.automaticMaskReview?.reasons ?? []).map(
             (reason) => i18n.t(`ai-select.review.reason.${reason}`)
         );
-        if (maskState.proposalSet?.diagnostics?.refinementFallback) {
-            reasons.push(i18n.t('ai-select.proposal.refinement-fallback'));
+        if (maskState.refinementFallback) {
+            reasons.push(i18n.t('ai-select.mask.refinement-fallback'));
         }
         this.promptStatus.text = [summary, ...reasons]
             .filter((entry) => entry.length > 0)
@@ -2456,19 +2439,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         rgb: AnchorRgbArtifact | undefined,
         ready: boolean
     ): void {
-        const selectedProposal = maskState.proposalSet?.proposals.find(
-            (candidate) =>
-                candidate.proposalId === maskState.previewedProposalId
-        );
-        const proposal =
-            selectedProposal?.proposalId !== maskState.acceptedProposalId
-                ? selectedProposal
-                : undefined;
-        const annotation =
-            proposal === undefined
-                ? (maskState.editingMask ?? maskState.stableMask)
-                : null;
-        const artifact = annotation?.artifact ?? proposal?.mask;
+        const annotation = maskState.editingMask ?? maskState.stableMask;
+        const artifact = annotation?.artifact;
         if (
             !ready ||
             rgb === undefined ||
@@ -2485,7 +2457,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         const pixels = maskOverlayPixels(
             bits,
             width * height,
-            maskState.editingMask !== null || proposal !== undefined
+            maskState.editingMask !== null
         );
         this.overlay.width = width;
         this.overlay.height = height;

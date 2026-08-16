@@ -5463,9 +5463,9 @@ class CompanionState:
         if (
             not isinstance(ordered_views, list)
             or len(ordered_views) < 1
-            or len(ordered_views) > 3
+            or len(ordered_views) > 8
         ):
-            raise ValueError('Route B localKeyViewPlan must contain 1..3 Views')
+            raise ValueError('Route B localKeyViewPlan must contain 1..8 Views')
         matching_view = None
         seen_view_ids: set[str] = set()
         for index, planned in enumerate(ordered_views):

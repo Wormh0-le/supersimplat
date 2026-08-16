@@ -1,4 +1,4 @@
-"""Ticket 08 bounded local Key-View planner policy tests (pure CPU fixtures).
+"""Ticket 08/16B bounded local Key-View planner policy tests (pure CPU fixtures).
 
 The planner turns one TargetGeometryHint derivation into a bounded local fan:
 left/right azimuth plus modest elevation around the hint center, conservative
@@ -12,8 +12,11 @@ import math
 import unittest
 
 from selection_service_companion.target_geometry import (
+    AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION,
     PlanExhaustedError,
     PlannerFailureError,
+    local_key_view_policy_descriptor,
+    local_key_view_policy_digest,
     plan_local_key_views,
 )
 
@@ -80,6 +83,18 @@ def _assert_looks_at_center(
 
 
 class LocalKeyViewPlannerTests(unittest.TestCase):
+    def test_policy_identity_records_the_initial_product_range(self) -> None:
+        descriptor = local_key_view_policy_descriptor()
+
+        self.assertEqual(
+            AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION,
+            "local-key-view-planner/v2",
+        )
+        self.assertEqual(descriptor["version"], AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION)
+        self.assertEqual(descriptor["initialAutomaticViewCountRange"], [4, 8])
+        self.assertEqual(descriptor["initialAutomaticViewCount"], 4)
+        self.assertRegex(local_key_view_policy_digest(), r"^sha256:[a-f0-9]{64}$")
+
     def test_default_batch_is_left_right_elevated(self) -> None:
         views = plan_local_key_views(
             anchor_camera_binding=ANCHOR_CAMERA,
@@ -91,13 +106,13 @@ class LocalKeyViewPlannerTests(unittest.TestCase):
 
         self.assertEqual(
             [view.view_id for view in views],
-            ["key-view-0-0", "key-view-0-1", "key-view-0-2"],
+            ["key-view-0-0", "key-view-0-1", "key-view-0-2", "key-view-0-3"],
         )
         for view in views:
             self.assertEqual(view.quality, "usable")
             self.assertEqual(view.reasons, ())
             _assert_looks_at_center(self, view, 10.0)
-        left, right, elevated = (_position(view) for view in views)
+        left, right, elevated, far_left = (_position(view) for view in views)
         # Azimuth offsets sweep symmetrically around the anchor direction.
         self.assertAlmostEqual(left[0], 10.0 * math.sin(math.radians(30.0)), places=7)
         self.assertAlmostEqual(left[2], 10.0 * math.cos(math.radians(30.0)), places=7)
@@ -111,6 +126,9 @@ class LocalKeyViewPlannerTests(unittest.TestCase):
         self.assertAlmostEqual(
             elevated[1], 10.0 * math.sin(math.radians(20.0)), places=7
         )
+        self.assertAlmostEqual(
+            far_left[0], 10.0 * math.sin(math.radians(60.0)), places=7
+        )
 
     def test_generate_more_batches_walk_the_bounded_offset_sequence(self) -> None:
         batch_one = plan_local_key_views(
@@ -122,26 +140,14 @@ class LocalKeyViewPlannerTests(unittest.TestCase):
         )
         self.assertEqual(
             [view.view_id for view in batch_one],
-            ["key-view-1-0", "key-view-1-1", "key-view-1-2"],
+            ["key-view-1-0", "key-view-1-1", "key-view-1-2", "key-view-1-3"],
         )
-        far_left = _position(batch_one[0])
+        far_right = _position(batch_one[0])
         self.assertAlmostEqual(
-            far_left[0], 10.0 * math.sin(math.radians(60.0)), places=7
+            far_right[0], -10.0 * math.sin(math.radians(60.0)), places=7
         )
         self.assertAlmostEqual(
-            far_left[2], 10.0 * math.cos(math.radians(60.0)), places=7
-        )
-
-        batch_two = plan_local_key_views(
-            anchor_camera_binding=ANCHOR_CAMERA,
-            center=CENTER,
-            extent=EXTENT,
-            visible_points=VISIBLE_POINTS,
-            batch_ordinal=2,
-        )
-        self.assertEqual(
-            [view.view_id for view in batch_two],
-            ["key-view-2-0", "key-view-2-1"],
+            far_right[2], 10.0 * math.cos(math.radians(60.0)), places=7
         )
 
     def test_exhausted_batch_fails_closed(self) -> None:
@@ -151,7 +157,7 @@ class LocalKeyViewPlannerTests(unittest.TestCase):
                 center=CENTER,
                 extent=EXTENT,
                 visible_points=VISIBLE_POINTS,
-                batch_ordinal=3,
+                batch_ordinal=2,
             )
 
     def test_invalid_batch_ordinal_is_rejected(self) -> None:
@@ -175,7 +181,7 @@ class LocalKeyViewPlannerTests(unittest.TestCase):
             batch_ordinal=0,
         )
 
-        self.assertEqual(len(views), 3)
+        self.assertEqual(len(views), 4)
         for view in views:
             _assert_looks_at_center(self, view, 7.0)
             self.assertEqual(view.quality, "usable")
@@ -193,7 +199,7 @@ class LocalKeyViewPlannerTests(unittest.TestCase):
             batch_ordinal=0,
         )
 
-        self.assertEqual(len(views), 3)
+        self.assertEqual(len(views), 4)
         for view in views:
             position = _position(view)
             self.assertAlmostEqual(math.dist(position, CENTER), 7.0, places=7)
@@ -215,7 +221,7 @@ class LocalKeyViewPlannerTests(unittest.TestCase):
             batch_ordinal=0,
         )
 
-        self.assertEqual(len(views), 3)
+        self.assertEqual(len(views), 4)
         for view in views:
             self.assertEqual(view.quality, "limited")
             self.assertEqual(view.reasons, ("reducedVisibility",))

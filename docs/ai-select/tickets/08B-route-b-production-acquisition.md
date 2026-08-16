@@ -2,6 +2,10 @@
 
 Status: implemented — Route B browser/Companion slice + locked-GPU browser E2E completed 2026-08-07
 
+Post-16B supersession notice: the Route B single-mask implementation record
+remains current. ADR 0018 supersedes only this Ticket's references to Anchor
+candidate choice and explicit product Mask Retry.
+
 Blocked by: 08A, 04C, 07
 
 Blocks: 09

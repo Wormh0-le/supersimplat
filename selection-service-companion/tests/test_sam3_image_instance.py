@@ -91,7 +91,7 @@ class Sam3ImageCapabilitiesTests(unittest.TestCase):
         self.assertTrue(capabilities['negativePoints'])
         self.assertTrue(capabilities['positiveInstanceBox'])
         self.assertTrue(capabilities['previousLogitsRefinement'])
-        self.assertTrue(capabilities['singlePointMultimask'])
+        self.assertFalse(capabilities['singlePointMultimask'])
         self.assertFalse(capabilities['negativeBox'])
         self.assertFalse(capabilities['promptBrush'])
         self.assertFalse(capabilities['maskConstraints'])

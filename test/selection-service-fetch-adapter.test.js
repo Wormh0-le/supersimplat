@@ -1509,7 +1509,7 @@ test('sends a bound single-frame Mask request and returns the validated Mask res
         }
     });
 
-    const response = await adapter.produceMaskProposals(maskRequest);
+    const response = await adapter.produceMask(maskRequest);
 
     assert.equal(calls.length, 1);
     assert.match(calls[0].url, /\/ai-select\/mask-proposals$/);
@@ -1525,9 +1525,10 @@ test('sends a bound single-frame Mask request and returns the validated Mask res
     assert.equal(calls[0].body.rgbWidth, 64);
     assert.equal(calls[0].body.rgbHeight, 48);
     assert.deepEqual(calls[0].body.rgb, maskRequest.rgb);
+    assert.equal(response.result.status, 'usable');
     assert.equal(
-        response.proposalSet.digest,
-        maskReply(maskRequest).proposalSet.digest
+        response.result.mask.digest,
+        maskReply(maskRequest).proposalSet.proposals[0].mask.digest
     );
 });
 
@@ -1570,7 +1571,7 @@ test('sends an RGB reference and refinement lineage without the RGB artifact', a
         }
     });
 
-    await adapter.produceMaskProposals(refinementRequest);
+    await adapter.produceMask(refinementRequest);
 
     assert.equal(calls.length, 1);
     assert.equal(calls[0].body.rgb, undefined);
@@ -1590,7 +1591,7 @@ test('rejects a structurally invalid refinement reference before transport', asy
         }
     });
     await assert.rejects(
-        adapter.produceMaskProposals({
+        adapter.produceMask({
             ...maskRequest,
             previousLogitsRef: {
                 stateId: 'logits-state-1',
@@ -1618,8 +1619,8 @@ test('rejects a Mask response bound to a stale attempt or RGB identity', async (
             )
     });
     await assert.rejects(
-        staleAttempt.produceMaskProposals(maskRequest),
-        /incomplete or stale Mask result/
+        staleAttempt.produceMask(maskRequest),
+        /invalid Mask artifact publication/
     );
 
     const staleRgb = new FetchSelectionServiceAdapter({
@@ -1638,8 +1639,8 @@ test('rejects a Mask response bound to a stale attempt or RGB identity', async (
             )
     });
     await assert.rejects(
-        staleRgb.produceMaskProposals(maskRequest),
-        /incomplete or stale Mask result/
+        staleRgb.produceMask(maskRequest),
+        /invalid Mask artifact publication/
     );
 });
 
@@ -1660,12 +1661,12 @@ test('rejects a Mask artifact whose bytes do not match its digest', async () => 
             )
     });
     await assert.rejects(
-        adapter.produceMaskProposals(maskRequest),
+        adapter.produceMask(maskRequest),
         /invalid Mask artifact publication/
     );
 });
 
-test('keeps malformed Mask decisions distinct from invalid artifacts', async () => {
+test('rejects malformed compatibility Mask decisions at the product adapter', async () => {
     const reply = maskReply(maskRequest);
     reply.proposalDecision.status = 'made-up';
     const adapter = new FetchSelectionServiceAdapter({
@@ -1679,8 +1680,8 @@ test('keeps malformed Mask decisions distinct from invalid artifacts', async () 
             })
     });
     await assert.rejects(
-        adapter.produceMaskProposals(maskRequest),
-        /incomplete or stale Mask result/
+        adapter.produceMask(maskRequest),
+        /invalid Mask artifact publication/
     );
 });
 
@@ -1701,7 +1702,7 @@ test('surfaces a Companion Mask error without publishing anything', async () => 
             )
     });
     await assert.rejects(
-        adapter.produceMaskProposals(maskRequest),
+        adapter.produceMask(maskRequest),
         (error) =>
             error.message.includes('HTTP 409') &&
             error.serviceCode === 'incompleteMaskSet' &&
@@ -1720,7 +1721,7 @@ test('rejects a Mask request that is not bound to the configured Model Manifest'
             throw new Error('must not be called');
         }
     });
-    await assert.rejects(adapter.produceMaskProposals(maskRequest));
+    await assert.rejects(adapter.produceMask(maskRequest));
 });
 
 test('bounds a Candidate Re-Lift transport that never completes', async () => {

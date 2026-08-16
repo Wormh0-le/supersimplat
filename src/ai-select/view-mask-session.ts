@@ -12,11 +12,7 @@ import {
     type MaskPolarity,
     type MaskPrompt
 } from './mask-annotation';
-import {
-    autoMaskProposalPolicyVersion,
-    type AutoMaskProposalSet,
-    type ProposalDecision
-} from './mask-proposal';
+import { autoMaskProposalPolicyVersion } from './mask-proposal';
 import type { MaskAnnotationRegistry } from './mask-registry';
 import {
     isMaskResultResponse,
@@ -38,17 +34,11 @@ import {
     type PromptState,
     type PromptTool
 } from './prompt-state';
+import type { ViewAssessmentShape } from './view-assessment';
 
 export type MaskRequestStatus = 'idle' | 'pending' | 'failed';
-export type MaskFailureKind = 'maskProposalFailed' | 'maskArtifactInvalid';
-export type MaskProposalStatus =
-    | 'none'
-    | 'pending'
-    | 'selected'
-    | 'ambiguous'
-    | 'unavailable'
-    | 'editing'
-    | 'failed';
+export type MaskFailureKind = 'maskResultFailed' | 'maskArtifactInvalid';
+export type AutomaticMaskStatus = 'none' | 'unavailable' | 'editing';
 
 export interface AddMaskPromptInput {
     readonly xPx: number;
@@ -86,12 +76,12 @@ export interface AISelectMaskState {
     readonly prompts: readonly MaskPrompt[];
     readonly promptState: PromptState | null;
     readonly promptCapabilities: PromptAdapterCapabilities | null;
-    readonly proposalSet: AutoMaskProposalSet | null;
-    readonly proposalDecision: ProposalDecision | null;
-    /** The proposal currently shown on the image surface. */
-    readonly previewedProposalId: string | null;
-    readonly acceptedProposalId: string | null;
-    readonly proposalStatus: MaskProposalStatus;
+    /** The latest automatic authoring outcome for this Prompt revision. */
+    readonly automaticMaskStatus: AutomaticMaskStatus;
+    /** Review metadata carried by the sole usable automatic Mask. */
+    readonly automaticMaskReview: ViewAssessmentShape | null;
+    /** The Companion dropped an expired/foreign logits ref and ran fresh. */
+    readonly refinementFallback: boolean;
     readonly requestStatus: MaskRequestStatus;
     readonly failureKind?: MaskFailureKind;
     readonly errorMessage?: string;
@@ -123,11 +113,9 @@ export interface AISelectMaskAuthoring {
     subscribe(listener: AISelectMaskListener): () => void;
     addPrompt(input: AddMaskPromptInput): Promise<void>;
     addBoxPrompt(input: AddBoxPromptInput): Promise<void>;
-    previewProposal(proposalId: string): void;
     clearPrompts(): void;
     undoPromptEdit(): void;
     redoPromptEdit(): void;
-    acceptProposal(proposalId: string): void;
     applyBrushStroke(stroke: BrushStroke): void;
     applyBrushGesture(input: ApplyBrushGestureInput): void;
     confirmEditingMask(): void;
@@ -266,14 +254,10 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
     private hasObservedHostIdentity = false;
     private lastRgbDigest: string | null = null;
     private promptState: PromptState | null = null;
-    private proposalSet: AutoMaskProposalSet | null = null;
-    private proposalDecision: ProposalDecision | null = null;
-    private previewedProposalId: string | null = null;
-    private acceptedProposalId: string | null = null;
-    private readonly acceptedProposalMaskIdsByPromptDigest = new Map<
-        string,
-        string
-    >();
+    private automaticMaskStatus: AutomaticMaskStatus = 'none';
+    private automaticMaskReview: ViewAssessmentShape | null = null;
+    private refinementFallback = false;
+    private readonly automaticMaskIdsByPromptDigest = new Map<string, string>();
     private requestStatus: MaskRequestStatus = 'idle';
     private failureKind: MaskFailureKind | undefined;
     private lastErrorMessage: string | undefined;
@@ -295,10 +279,10 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
     private promptUndoStack: PromptState[] = [];
     private promptRedoStack: PromptState[] = [];
     /**
-     * The opaque logits reference of the currently previewed proposal
-     * candidate. Held only while still in Prompt mode: a subsequent Prompt
-     * revision for the same View/RGB sends it as `previousLogitsRef`, an
-     * explicit Retry omits it, and Accept/RGB/View/Target changes clear it.
+     * The opaque logits reference of the sole usable automatic Mask. Held
+     * only while still in Prompt mode: a subsequent Prompt
+     * revision for the same View/RGB sends it as `previousLogitsRef`; a fresh
+     * non-refining attempt omits it, and RGB/View/Target changes clear it.
      */
     private refinementLogitsRef: PreviousPredictionLogitsRef | null = null;
     /**
@@ -341,7 +325,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         const restorableAutoMaskId =
             this.promptState === null
                 ? null
-                : (this.acceptedProposalMaskIdsByPromptDigest.get(
+                : (this.automaticMaskIdsByPromptDigest.get(
                       this.promptState.digest
                   ) ?? null);
         const promptCapabilities = this.getPromptAdapterCapabilities();
@@ -356,22 +340,9 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
             ),
             promptState: this.promptState,
             promptCapabilities,
-            proposalSet: this.proposalSet,
-            proposalDecision: this.proposalDecision,
-            previewedProposalId: this.previewedProposalId,
-            acceptedProposalId: this.acceptedProposalId,
-            proposalStatus:
-                this.requestStatus === 'pending'
-                    ? 'pending'
-                    : this.requestStatus === 'failed'
-                      ? 'failed'
-                      : this.proposalDecision === null
-                        ? 'none'
-                        : this.acceptedProposalId !== null ||
-                            view.editingMask?.source === 'manual' ||
-                            view.editingMask?.source === 'hybrid'
-                          ? 'editing'
-                          : this.proposalDecision.status,
+            automaticMaskStatus: this.automaticMaskStatus,
+            automaticMaskReview: this.automaticMaskReview,
+            refinementFallback: this.refinementFallback,
             requestStatus: this.requestStatus,
             ...(this.failureKind === undefined
                 ? {}
@@ -516,28 +487,6 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         await this.submitMaskRequest();
     }
 
-    /**
-     * Choose the previewed proposal candidate. The chosen candidate's opaque
-     * logits reference becomes the refinement lineage for the next Prompt
-     * revision (04C contract §7); it never leaves the request boundary.
-     */
-    previewProposal(proposalId: string): void {
-        const proposal = this.proposalSet?.proposals.find(
-            (candidate) => candidate.proposalId === proposalId
-        );
-        if (proposal === undefined) {
-            throw new Error(
-                'AI Select cannot preview an unknown Mask proposal.'
-            );
-        }
-        this.previewedProposalId = proposalId;
-        this.refinementLogitsRef = proposal.logitsRef ?? null;
-        // Proposal choice is visible UI state. Publishing it keeps the image,
-        // dropdown, status, and Accept action synchronized without relying on
-        // a later View switch to trigger a render.
-        this.publish();
-    }
-
     clearPrompts(): void {
         this.requireUnlocked();
         const rgb = this.requireReadyRgb();
@@ -586,61 +535,6 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         this.restorePromptHistory(this.promptRedoStack, this.promptUndoStack);
     }
 
-    acceptProposal(proposalId: string): void {
-        this.requireUnlocked();
-        const rgb = this.requireReadyRgb();
-        if (
-            this.acceptedProposalId === proposalId &&
-            this.maskRegistry.viewState(this.host.viewId, rgb.digest)
-                .editingMask !== null
-        ) {
-            return;
-        }
-        const proposal = this.proposalSet?.proposals.find(
-            (candidate) => candidate.proposalId === proposalId
-        );
-        if (
-            proposal === undefined ||
-            !proposal.rankingFeatures.eligible ||
-            !this.proposalDecision?.alternativeProposalIds.includes(proposalId)
-        ) {
-            throw new Error(
-                'AI Select cannot accept an unknown, ineligible, or stale Mask proposal.'
-            );
-        }
-        const promptState = this.promptState;
-        if (promptState === null) {
-            throw new Error(
-                'AI Select cannot accept a proposal without its Prompt identity.'
-            );
-        }
-        this.recordEdit(rgb.digest);
-        const editing = this.maskRegistry.registerSamResult({
-            viewId: this.host.viewId,
-            rgbDigest: rgb.digest,
-            artifact: proposal.mask,
-            prompts: (this.promptState?.points ?? []).map((point) => ({
-                promptId: point.promptId,
-                xPx: point.xPx,
-                yPx: point.yPx,
-                polarity: point.polarity
-            }))
-        });
-        this.acceptedProposalMaskIdsByPromptDigest.set(
-            promptState.digest,
-            editing.maskId
-        );
-        this.acceptedProposalId = proposalId;
-        this.previewedProposalId = proposalId;
-        // Accept leaves Prompt mode: refinement lineage is dropped and any
-        // later return to Prompt mode mints a fresh inference attempt.
-        this.refinementLogitsRef = null;
-        this.editingRevision += 1;
-        this.failureKind = undefined;
-        this.lastErrorMessage = undefined;
-        this.publish();
-    }
-
     /**
      * Apply one local brush stroke to the Editing Mask. Brush edits are
      * editor-local, never call SAM, and supersede any in-flight SAM response.
@@ -685,6 +579,8 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         this.requireUnlocked();
         const rgb = this.requireReadyRgb();
         this.maskRegistry.confirm(this.host.viewId, rgb.digest);
+        this.automaticMaskStatus = 'none';
+        this.refinementLogitsRef = null;
         this.failureKind = undefined;
         this.lastErrorMessage = undefined;
         this.publish();
@@ -710,7 +606,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
     }
 
     /**
-     * Restore Auto brings back the explicitly accepted SAM Mask for the
+     * Restore Auto brings back the automatically adopted SAM Mask for the
      * current RGB and exact Prompt identity.
      */
     restoreAutoMask(): void {
@@ -720,7 +616,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         const latestMaskId =
             promptState === null
                 ? null
-                : (this.acceptedProposalMaskIdsByPromptDigest.get(
+                : (this.automaticMaskIdsByPromptDigest.get(
                       promptState.digest
                   ) ?? null);
         const currentEditing = this.maskRegistry.viewState(
@@ -729,7 +625,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         ).editingMask;
         if (latestMaskId === null || latestMaskId === currentEditing?.maskId) {
             throw new Error(
-                'AI Select has no restorable accepted Mask for the current RGB and Prompt identity.'
+                'AI Select has no restorable automatic Mask for the current RGB and Prompt identity.'
             );
         }
         this.recordEdit(rgb.digest);
@@ -810,7 +706,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         const promptCapabilities = this.getPromptAdapterCapabilities();
         if (promptCapabilities === null || this.promptState === null) {
             this.failMaskRequest(
-                'AI Select requires negotiated Prompt Adapter capabilities before proposal production.'
+                'AI Select requires negotiated Prompt Adapter capabilities before Mask production.'
             );
             return;
         }
@@ -851,7 +747,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
 
         let response: MaskResultResponse;
         try {
-            response = await this.maskProvider.produceMaskProposals(request);
+            response = await this.maskProvider.produceMask(request);
         } catch (error) {
             if (!this.isCurrentMaskRequest(pending)) {
                 this.discardStaleMaskRequest(pending);
@@ -863,7 +759,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
                     (error instanceof SelectionServiceTransportError &&
                         error.serviceCode === 'incompleteMaskSet')
                     ? 'maskArtifactInvalid'
-                    : 'maskProposalFailed'
+                    : 'maskResultFailed'
             );
             this.resubmitLatestPromptSet();
             return;
@@ -888,32 +784,48 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
             return;
         }
         try {
-            this.proposalSet = immutableTransportCopy(response.proposalSet);
-            this.proposalDecision = immutableTransportCopy(
-                response.proposalDecision
-            );
-            this.acceptedProposalId = null;
             // The Companion accepted this RGB digest; later attempts in this
             // target context may reference it without reshipping the bytes.
             this.shippedRgbDigests.add(request.rgbDigest);
-            // The suggested candidate is the default preview; its opaque
-            // logits reference is the refinement lineage until the user
-            // previews another candidate or leaves Prompt mode.
-            const suggested = this.proposalSet.proposals.find(
-                (candidate) =>
-                    candidate.proposalId ===
-                    this.proposalDecision?.selectedProposalId
-            );
-            this.previewedProposalId = suggested?.proposalId ?? null;
-            this.refinementLogitsRef = suggested?.logitsRef ?? null;
             this.activeMaskRequest = null;
             this.requestStatus = 'idle';
-            if (suggested !== undefined) {
-                const refinementLogitsRef = suggested.logitsRef ?? null;
-                this.acceptProposal(suggested.proposalId);
-                // Automatic adoption keeps the sole result's opaque logits
-                // lineage so the next Prompt revision can refine it.
-                this.refinementLogitsRef = refinementLogitsRef;
+            this.refinementFallback = response.result.refinementFallback;
+            if (response.result.status === 'unavailable') {
+                this.automaticMaskStatus = 'unavailable';
+                this.automaticMaskReview = null;
+                this.refinementLogitsRef = null;
+            } else {
+                const promptState = this.promptState;
+                if (promptState === null) {
+                    throw new Error(
+                        'AI Select cannot adopt a Mask without its Prompt identity.'
+                    );
+                }
+                this.recordEdit(request.rgbDigest);
+                const editing = this.maskRegistry.registerSamResult({
+                    viewId: this.host.viewId,
+                    rgbDigest: request.rgbDigest,
+                    artifact: response.result.mask,
+                    prompts: promptState.points.map((point) => ({
+                        promptId: point.promptId,
+                        xPx: point.xPx,
+                        yPx: point.yPx,
+                        polarity: point.polarity
+                    }))
+                });
+                this.automaticMaskIdsByPromptDigest.set(
+                    promptState.digest,
+                    editing.maskId
+                );
+                this.automaticMaskStatus = 'editing';
+                this.automaticMaskReview = immutableTransportCopy(
+                    response.result.review
+                );
+                this.refinementLogitsRef =
+                    response.result.logitsRef === undefined
+                        ? null
+                        : immutableTransportCopy(response.result.logitsRef);
+                this.editingRevision += 1;
             }
         } catch (error) {
             this.failMaskRequest(errorMessage(error));
@@ -965,7 +877,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
 
     private failMaskRequest(
         message: string,
-        failureKind: MaskFailureKind = 'maskProposalFailed'
+        failureKind: MaskFailureKind = 'maskResultFailed'
     ): void {
         this.activeMaskRequest = null;
         this.requestStatus = 'failed';
@@ -980,13 +892,12 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
             rgbDigest === null
                 ? null
                 : createEmptyPromptState(this.host.viewId, rgbDigest);
-        this.proposalSet = null;
-        this.proposalDecision = null;
-        this.previewedProposalId = null;
-        this.acceptedProposalId = null;
+        this.automaticMaskStatus = 'none';
+        this.automaticMaskReview = null;
+        this.refinementFallback = false;
         this.refinementLogitsRef = null;
         this.shippedRgbDigests.clear();
-        this.acceptedProposalMaskIdsByPromptDigest.clear();
+        this.automaticMaskIdsByPromptDigest.clear();
         this.activeMaskRequest = null;
         this.resubmitMaskRequested = false;
         this.requestStatus = 'idle';
@@ -1097,10 +1008,9 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
      */
     private supersedeLocalEditing(): void {
         this.editingRevision += 1;
-        // A local Paint/Erase/Clear result becomes the image authority. Keep
-        // an accepted proposal selected only as lineage metadata; an
-        // unaccepted proposal must no longer cover the new Editing Mask.
-        this.previewedProposalId = this.acceptedProposalId;
+        // A local Paint/Erase/Clear result becomes the Editing authority while
+        // the adopted automatic Mask remains reachable through Restore Auto.
+        this.automaticMaskStatus = 'editing';
         if (this.activeMaskRequest !== null) {
             this.requestStatus = 'idle';
         }
@@ -1174,7 +1084,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
     /**
      * The held logits reference crosses the boundary only for a same-View,
      * same-RGB, same-target refinement attempt on an adapter that advertised
-     * previous-logits refinement; Retry never reuses it silently.
+     * previous-logits refinement; a fresh attempt never reuses it silently.
      */
     private currentRefinementRef(
         capabilities: PromptAdapterCapabilities,
@@ -1214,10 +1124,9 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         }
         this.promptState = next;
         this.promptRedoStack = [];
-        this.proposalSet = null;
-        this.proposalDecision = null;
-        this.previewedProposalId = null;
-        this.acceptedProposalId = null;
+        this.automaticMaskStatus = 'none';
+        this.automaticMaskReview = null;
+        this.refinementFallback = false;
         this.editingRevision += 1;
         this.failureKind = undefined;
         this.lastErrorMessage = undefined;
@@ -1236,10 +1145,9 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         }
         destination.push(this.promptState);
         this.promptState = target;
-        this.proposalSet = null;
-        this.proposalDecision = null;
-        this.previewedProposalId = null;
-        this.acceptedProposalId = null;
+        this.automaticMaskStatus = 'none';
+        this.automaticMaskReview = null;
+        this.refinementFallback = false;
         this.resubmitMaskRequested = false;
         this.requestStatus = 'idle';
         this.editingRevision += 1;

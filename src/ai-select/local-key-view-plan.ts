@@ -18,7 +18,7 @@ import {
  * The editor owns plan lifecycle (Stop / Generate More / Regenerate) and
  * fails closed on any other policy version.
  */
-export const aiSelectLocalKeyViewPlannerVersion = 'local-key-view-planner/v1';
+export const aiSelectLocalKeyViewPlannerVersion = 'local-key-view-planner/v2';
 
 export const localKeyViewPlanSchemaVersion = 1;
 
@@ -127,7 +127,7 @@ export const isLocalKeyViewPlan = (
         !isDigest(value.localViewPolicyDigest) ||
         !Array.isArray(value.orderedViews) ||
         value.orderedViews.length === 0 ||
-        value.orderedViews.length > 3 ||
+        value.orderedViews.length > 8 ||
         !value.orderedViews.every(isPlannedKeyView) ||
         !isNonEmptyString(value.planAttemptId) ||
         !isDigest(value.artifactDigest)

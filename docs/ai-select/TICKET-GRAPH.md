@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.28
+# AI Select v1 — Implementation Ticket Graph v2.29
 
-Status: **active implementation graph — Ticket 16A implemented; post-visual-review Ticket 16B is current**
+Status: **active implementation graph — Ticket 16B implemented; post-visual-review Ticket 16C is current**
 
 Branch: `ai-select-v1`
 
@@ -8,19 +8,19 @@ Branch: `ai-select-v1`
 
 1. `docs/specs/ai-select-final-spec-v1.3.md`
 2. `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`
-3. ADR 0016
-4. ADR 0017 where TargetGeometryHint / Prompt Support semantics are involved
-5. ADR 0013 and ADR 0015 where not superseded
-6. current Ticket acceptance criteria
-7. implementation and tests
+3. ADR 0018
+4. ADR 0016
+5. ADR 0017 where TargetGeometryHint / Prompt Support semantics are involved
+6. ADR 0013 and ADR 0015 where not superseded
+7. current Ticket acceptance criteria
+8. implementation and tests
 
 Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical only. ADR 0014 and DG-24 through DG-26 are historical where they conflict with ADR 0016 / Final Spec v1.3.
 
 All 31 parent Ticket files contain a current mapping to Final Spec v1.3. Ticket
 14A–14D and Ticket 16A–16G are execution stages under their respective parent
-Tickets and do not create a second normative graph. Ticket 16B publishes the
-accepted superseding ADR and current-spec correction before its dependents
-close.
+Tickets and do not create a second normative graph. Ticket 16B published the
+accepted ADR 0018 and current-spec correction before its dependents.
 
 ## Current review closures
 
@@ -31,7 +31,7 @@ close.
 - Paint/Erase remain Editing Mask operations.
 - Every provider request carries resolvable authoritative RGB, not only a digest.
 - Actual previous logits remain Companion-local; browser state carries only an opaque same-Instance reference.
-- Candidate refinement occurs before Accept while still in Prompt mode.
+- Opaque refinement follows the sole current result while still in Prompt mode.
 - Point, Box and refinement requests return at most one result, which enters Editing Mask automatically.
 - Target geometry is one compact `TargetGeometryHintArtifact`.
 - Initial planning schedules `4–8` bounded automatic Generated Views,
@@ -48,6 +48,8 @@ close.
 - Ticket 16's fail-closed native Candidate application core is complete.
 - Ticket 16A is implemented as the functional Candidate Overlay, Toolbar,
   Status Bar and Dock-cutover baseline.
+- Ticket 16B is implemented as the single-result authoring, capability-truth
+  and `4–8` initial automatic-View contract baseline.
 - The completed 16A operator visual walkthrough found release-presentation and
   product-contract gaps now owned by Tickets 16B–16G.
 
@@ -145,12 +147,13 @@ implemented prerequisites:
 - 15 — Candidate correction + explicit Evidence-aware Re-Lift
 - 16 — Candidate → Native Set / Add / Remove / Intersect core
 - 16A — AI View Dock + Candidate viewport presentation baseline
+- 16B — Single-result Mask product contract + capability/planner correction
 
 current parent compatibility frontier:
 - 16 — Native Candidate operations
 
 current execution stage:
-- 16B — Single-result Mask product contract + execution-frontier correction
+- 16C — Mask state truth + compact current-View Inspector
 
 post-visual-review follow-up:
 - 16C — Mask state truth + compact current-View Inspector
@@ -160,7 +163,7 @@ post-visual-review follow-up:
 - 16G — obsolete-control removal + integration closure
 
 current implementation stage:
-- 16B — first post-visual-review Ticket 16 execution stage
+- 16C — next post-visual-review Ticket 16 execution stage
 
 follows 16G:
 - 17 — Applied Undo-and-Fix + complete Restart + multi-object/tool-switch lifecycle
@@ -170,13 +173,14 @@ Compatibility fields:
 
 ```text
 next_implementation_ticket = 16
-next_implementation_subticket = 16B
+next_implementation_subticket = 16C
 ```
 
-Ticket 16 is the current parent compatibility frontier with 16B as its active
-execution stage. Ticket 16's application core, Ticket 16A, Ticket 15 and their
-Ticket 13 / parent Ticket 14 prerequisites remain implemented. Tickets 16C,
-16D and 16F follow 16B; 16E joins the 16C/16D surfaces; 16G closes the slice.
+Ticket 16 is the current parent compatibility frontier with 16C as its active
+execution stage. Ticket 16's application core, Tickets 16A–16B, Ticket 15 and
+their Ticket 13 / parent Ticket 14 prerequisites remain implemented. Tickets
+16D and 16F follow the 16B contract baseline; 16E joins the 16C/16D surfaces;
+16G closes the slice.
 Ticket 17 follows 16G. Ticket 10 remains optional and off the core release
 path.
 

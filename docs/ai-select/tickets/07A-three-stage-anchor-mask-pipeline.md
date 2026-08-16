@@ -2,6 +2,12 @@
 
 Status: implemented — `anchor-mask-ranking/v3` + proposal set schema v4 + per-candidate Mask Review
 
+Post-16B supersession notice: this Ticket remains the historical implementation
+record for the compatibility envelope, Review and refinement lineage. ADR 0018
+supersedes its public candidate-choice, preview and explicit Accept product
+states; the sole usable operator-authored result now enters Editing
+automatically and plural output fails closed at the compatibility boundary.
+
 Blocked by: 04A, 04C, 05, 07
 
 Blocks: 07B, 08

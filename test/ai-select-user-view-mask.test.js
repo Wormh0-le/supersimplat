@@ -38,6 +38,9 @@ const {
     MaskAnnotationRegistry
 } = require('../.test-dist/src/ai-select/mask-registry.js');
 const {
+    adaptMaskProposalEnvelope
+} = require('../.test-dist/src/ai-select/mask-service.js');
+const {
     previousPredictionLogitsRefDigest
 } = require('../.test-dist/src/ai-select/previous-logits-ref.js');
 const {
@@ -493,11 +496,13 @@ const createHarness = () => {
     const proposalProvider = {
         calls: [],
         deferreds: [],
-        produceMaskProposals(request) {
+        produceMask(request) {
             this.calls.push(request);
             const next = deferred();
             this.deferreds.push(next);
-            return next.promise;
+            return next.promise.then((response) =>
+                adaptMaskProposalEnvelope(response, request)
+            );
         }
     };
     const promptCapabilities = createPromptAdapterCapabilities({
@@ -505,7 +510,7 @@ const createHarness = () => {
         negativePoints: true,
         positiveInstanceBox: true,
         previousLogitsRefinement: true,
-        singlePointMultimask: true,
+        singlePointMultimask: false,
         negativeBox: false,
         promptBrush: false,
         maskConstraints: false,
@@ -808,12 +813,7 @@ test('one Point auto-generates one editable Mask with exact RGB on first ship', 
     await pending;
     const state = session.state;
     assert.equal(state.requestStatus, 'idle');
-    assert.equal(state.proposalStatus, 'editing');
-    assert.equal(state.proposalSet.proposals.length, 1);
-    assert.equal(
-        state.acceptedProposalId,
-        state.proposalSet.proposals[0].proposalId
-    );
+    assert.equal(state.automaticMaskStatus, 'editing');
     assert.ok(state.editingMask);
     // The sole result's opaque ref is the refinement lineage.
     const followUp = session.addPrompt({
@@ -845,7 +845,7 @@ test('one Point auto-generates one editable Mask with exact RGB on first ship', 
     assert.ok(session.state.editingMask);
 });
 
-test('Box/multiple-Point prompts return exactly one candidate (multimask policy)', async () => {
+test('Box/multiple-Point prompts require exactly one result', async () => {
     const harness = createHarness();
     await driveToActive(harness);
     const viewId = await addReadyUserView(harness);
@@ -859,7 +859,7 @@ test('Box/multiple-Point prompts return exactly one candidate (multimask policy)
     });
     await flush();
     const request = harness.proposalProvider.calls[0];
-    // A Box program may not return multiple candidates; the editor fails
+    // A Box program may not return multiple results; the editor fails
     // closed rather than trusting the wire.
     harness.proposalProvider.deferreds[0].resolve(
         maskResponseFor(request, {
@@ -869,7 +869,7 @@ test('Box/multiple-Point prompts return exactly one candidate (multimask policy)
     await pending;
     assert.equal(session.state.requestStatus, 'failed');
 
-    // A single Box candidate is accepted.
+    // A single Box result is adopted automatically.
     const retry = session.retryMaskRequest();
     await flush();
     const retryRequest = harness.proposalProvider.calls[1];
@@ -878,8 +878,7 @@ test('Box/multiple-Point prompts return exactly one candidate (multimask policy)
     );
     await retry;
     assert.equal(session.state.requestStatus, 'idle');
-    assert.equal(session.state.proposalSet.proposals.length, 1);
-    assert.equal(session.state.proposalStatus, 'editing');
+    assert.equal(session.state.automaticMaskStatus, 'editing');
     assert.ok(session.state.editingMask);
 });
 
@@ -916,7 +915,7 @@ test('an explicit Retry omits the previous-logits refinement ref', async () => {
     await retry;
 });
 
-test('Accept and Confirm publish the Stable Mask with User Confirmed Participation', async () => {
+test('automatic adoption and Confirm publish the Stable Mask with User Confirmed Participation', async () => {
     const harness = createHarness();
     await driveToActive(harness);
     const viewId = await addReadyUserView(harness);
@@ -929,9 +928,8 @@ test('Accept and Confirm publish the Stable Mask with User Confirmed Participati
     );
     await pending;
 
-    session.acceptProposal('proposal-0');
     assert.ok(session.state.editingMask);
-    assert.equal(session.state.proposalStatus, 'editing');
+    assert.equal(session.state.automaticMaskStatus, 'editing');
     // Unpublished Editing state never touches the View's Stable surface.
     assert.equal(viewById(harness, viewId).stableMaskId, undefined);
 
@@ -1081,6 +1079,7 @@ test('a local edit supersedes the in-flight SAM attempt and resubmits the latest
         maskResponseFor(harness.proposalProvider.calls[1])
     );
     await second;
+    await flush();
     assert.equal(session.state.requestStatus, 'idle');
     assert.equal(session.state.promptState.points.length, 2);
 });

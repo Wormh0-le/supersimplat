@@ -1,6 +1,14 @@
 # 04C Protocol Contract — SAM 3 Image Instance Adapter Migration
 
-> **07A amendment (current):** Ticket 07A rotated the ranking/decision layer
+> **16B amendment (current):** ADR 0018 makes this document an internal wire
+> compatibility contract, not a public authoring model. Every Point, Box or
+> refinement request uses `singlePointMultimask: false` and admits at most one
+> usable Mask. The browser validates the retained ProposalSet / ProposalDecision
+> envelope, propagates Review/refinement lineage, and collapses it to usable or
+> unavailable at `mask-service.ts`; product code outside that adapter sees no
+> choice, preview or Accept state.
+>
+> **07A wire amendment (current compatibility only):** Ticket 07A rotated the ranking/decision layer
 > of this contract. Current identities: ranking policy
 > `anchor-mask-ranking/v3`, proposal set schemaVersion `4`, ProposalDecision
 > schemaVersion `2` (no ranking reason codes; default preview is the highest
@@ -8,14 +16,16 @@
 > are slimmed to prompt consistency, eligibility, area fraction, connected
 > component count, and echoed model score; each candidate additionally carries
 > a `review` record under the shared `local-view-assessment/v2` Mask Review
-> policy. The editor also enforces the 3-vs-1 candidate bound fail-closed on
-> every response. Everything below otherwise remains the 04C baseline.
+> policy. ADR 0018 supersedes its former 3-vs-1 product bound; the editor now
+> enforces one result fail-closed on every response. Everything below otherwise
+> remains the 04C compatibility baseline.
 
 Working design note pinning the exact editor↔Companion contract for ticket
 `.scratch/ai-select-v1/issues/04C-sam3-image-instance-adapter-migration.md`.
 Both implementation slices (Companion Python, Editor TypeScript) implement
 against this document. It is a scratch coordination artifact, not a spec; Final
-Spec v1.3 / ADR 0016 remain authoritative for semantics.
+Spec v1.3 / ADR 0018 remain authoritative for current product semantics; ADR
+0016 remains authority where not superseded.
 
 ## 1. Identities (exact strings)
 
@@ -82,7 +92,7 @@ sha256 over canonical JSON of:
     "negativePoints": true,
     "positiveInstanceBox": true,
     "previousLogitsRefinement": true,
-    "singlePointMultimask": true,
+    "singlePointMultimask": false,
     "negativeBox": false,
     "promptBrush": false,
     "maskConstraints": false,
@@ -225,9 +235,9 @@ adapterRuntimeDigest, dataDigest }`, ≤8 entries FIFO. Entries are minted only
 - Refinement reuses the stored inference state + logits as `mask_input`,
   forces `multimask_output=false`, mints a NEW ref whose
   `sourceInferenceAttemptId` is the OLD attempt id (attempt linkage).
-- Retry (explicit, no prompt change) ⇒ editor omits `previousLogitsRef`.
-- After Accept, editor clears its held ref; returning to Prompt mode mints a
-  fresh attempt.
+- A fresh non-refining attempt omits `previousLogitsRef`.
+- The sole usable result carries its ref into the next Prompt refinement;
+  RGB/View/Target or other non-refining transitions clear it.
 
 ## 8. Response / proposal set v3
 
@@ -304,15 +314,17 @@ Legacy isolation in `masking.py`:
 - `prompt-state.ts`: schema v2 per §4; `PromptTool` shrunk; capability record
   per §3; `promptStateHasConstraints` = points+boxes; old-shape artifacts fail
   `isPromptState`.
-- `mask-service.ts`: request/response per §5/§8 (rgbDigest/width/height always,
-  optional artifact, optional `previousLogitsRef`; `isPreviousPredictionLogitsRef`
-  with refDigest recompute; response match updated).
+- `mask-service.ts`: request plus singular product response per §5/§8
+  (rgbDigest/width/height always, optional artifact, optional
+  `previousLogitsRef`; compatibility-envelope adapter;
+  `isPreviousPredictionLogitsRef` with refDigest recompute; response match
+  updated).
 - `mask-proposal.ts`: schema v3, policy-driven candidate bound, shrunk
   consistency facts, `logitsRef` on proposals, policy/ranking version rotation.
 - `mask-controller.ts` / `anchor-controller.ts`: positive-box only, box
-  replace semantics, refinement lineage (hold chosen candidate's `logitsRef`;
-  send on prompt revision; omit on Retry; clear on Accept/RGB/view/target
-  change), rgb artifact first-then-reference rule, anchor auto masks register
+  replace semantics, refinement lineage (hold the sole result's `logitsRef`;
+  send on prompt revision; omit on a fresh attempt; clear on
+  RGB/view/target change), rgb artifact first-then-reference rule, anchor auto masks register
   `maskSource: 'single-frame-sam'` (generated-view 'propagated' path is owned
   by later tickets — leave it).
 - `ai-select-anchor-dock.ts`: remove negative-box/mask-constraint/text tools,

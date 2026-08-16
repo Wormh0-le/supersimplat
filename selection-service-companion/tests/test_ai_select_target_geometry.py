@@ -623,7 +623,7 @@ class TargetGeometryRouteTests(unittest.TestCase):
         views = plan['orderedViews']
         self.assertEqual(
             [view['viewId'] for view in views],
-            ['key-view-0-0', 'key-view-0-1', 'key-view-0-2'],
+            ['key-view-0-0', 'key-view-0-1', 'key-view-0-2', 'key-view-0-3'],
         )
         for view in views:
             self.assertEqual(view['quality'], 'usable')
@@ -672,14 +672,14 @@ class TargetGeometryRouteTests(unittest.TestCase):
         self.assertEqual(response['batchOrdinal'], 1)
         self.assertEqual(
             [view['viewId'] for view in response['plan']['orderedViews']],
-            ['key-view-1-0', 'key-view-1-1', 'key-view-1-2'],
+            ['key-view-1-0', 'key-view-1-1', 'key-view-1-2', 'key-view-1-3'],
         )
 
     def test_plan_reports_plan_exhausted_beyond_the_bounded_sequence(self) -> None:
         self.register_binary_snapshot()
         hint_response = self.produce_hint()
         body = _plan_request_body(
-            hint_response, batch=3, attempt='local-key-view-plan-attempt-3'
+            hint_response, batch=2, attempt='local-key-view-plan-attempt-3'
         )
 
         payload = self.post_error(

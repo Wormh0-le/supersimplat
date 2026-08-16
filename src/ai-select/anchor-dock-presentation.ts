@@ -14,15 +14,8 @@ export type AnchorDockStatus =
  */
 export type AnchorDockMaskStatus =
     'none' | 'pending' | 'draft' | 'confirmed' | 'failed';
-export type ProposalFeedback =
-    | 'none'
-    | 'accepted'
-    | 'pending'
-    | 'selected'
-    | 'ambiguous'
-    | 'editing'
-    | 'unavailable'
-    | 'failed';
+export type MaskResultFeedback =
+    'none' | 'pending' | 'editing' | 'unavailable' | 'failed';
 
 export interface AnchorDockMaskPresentation {
     readonly status: AnchorDockMaskStatus;
@@ -31,9 +24,9 @@ export interface AnchorDockMaskPresentation {
     readonly negativePointCount: number;
     readonly boxCount: number;
     readonly promptRevision: number;
-    readonly proposalFeedback: ProposalFeedback;
+    readonly resultFeedback: MaskResultFeedback;
     readonly evidenceStatus: EvidenceStatus;
-    readonly proposalStatus: AISelectMaskState['proposalStatus'];
+    readonly automaticMaskStatus: AISelectMaskState['automaticMaskStatus'];
     /** A current Editing Mask exists and can be atomically published. */
     readonly showConfirm: boolean;
     /** The failed SAM request can be retried with its prompt set. */
@@ -69,9 +62,9 @@ const emptyMaskPresentation = (
         negativePointCount: 0,
         boxCount: 0,
         promptRevision: 0,
-        proposalFeedback: 'none',
+        resultFeedback: 'none',
         evidenceStatus: 'not-requested',
-        proposalStatus: 'none',
+        automaticMaskStatus: 'none',
         showConfirm: false,
         showRetry: false
     });
@@ -98,22 +91,12 @@ export const getViewMaskPresentation = (
     const promptState = maskState.promptState;
     const promptCount =
         (promptState?.points.length ?? 0) + (promptState?.boxes.length ?? 0);
-    const proposalFeedback: ProposalFeedback =
+    const resultFeedback: MaskResultFeedback =
         maskState.requestStatus === 'pending'
             ? 'pending'
             : maskState.requestStatus === 'failed'
               ? 'failed'
-              : maskState.proposalStatus === 'selected'
-                ? 'selected'
-                : maskState.proposalStatus === 'ambiguous'
-                  ? 'ambiguous'
-                  : maskState.proposalStatus === 'editing'
-                    ? 'editing'
-                    : maskState.proposalStatus === 'unavailable'
-                      ? 'unavailable'
-                      : promptCount > 0
-                        ? 'accepted'
-                        : 'none';
+              : maskState.automaticMaskStatus;
     return Object.freeze({
         status,
         promptCount,
@@ -125,9 +108,9 @@ export const getViewMaskPresentation = (
                 .length ?? 0,
         boxCount: promptState?.boxes.length ?? 0,
         promptRevision: promptState?.revision ?? 0,
-        proposalFeedback,
+        resultFeedback,
         evidenceStatus: maskState.evidence.status,
-        proposalStatus: maskState.proposalStatus ?? 'none',
+        automaticMaskStatus: maskState.automaticMaskStatus,
         showConfirm: maskState.editingMask !== null,
         showRetry:
             maskState.requestStatus === 'failed' &&

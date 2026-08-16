@@ -1,16 +1,16 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.28
+# Current Final Spec v1.3 → Ticket Mapping — v2.29
 
-Status: **current normative ticket mapping — Ticket 16A implemented; Ticket 16B ready**
+Status: **current normative ticket mapping — Ticket 16B implemented; Ticket 16C ready**
 
 This file maps every active AI Select parent Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
-Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical. ADR 0016 supersedes conflicting route/backend/planner details in ADR 0014 and DG-24 through DG-26. ADR 0017 is current where TargetGeometryHint Geometry Quality and Prompt Support semantics are involved.
+Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical. ADR 0016 supersedes conflicting route/backend/planner details in ADR 0014 and DG-24 through DG-26. ADR 0017 is current where TargetGeometryHint Geometry Quality and Prompt Support semantics are involved. ADR 0018 supersedes current-facing multi-result authoring and `2–4` / Generate More clauses in ADR 0016.
 
 All 31 parent Ticket files carry a direct current mapping to Final Spec v1.3.
 Ticket 14A–14D and post-closure Ticket 16A–16G are implementation stages
 under their respective parent Tickets; they refine execution scope without
-creating a competing parent graph. Ticket 16B must publish the accepted
-superseding ADR and update Final Spec v1.3 before dependent stages close.
+creating a competing parent graph. Ticket 16B published the accepted
+superseding ADR and updated Final Spec v1.3.
 
 | Ticket | Final Spec v1.3 mapping    | Current responsibility                                                         |
 | ------ | -------------------------- | ------------------------------------------------------------------------------ |
@@ -25,7 +25,7 @@ superseding ADR and update Final Spec v1.3 before dependent stages close.
 | 04C    | §§4–8, 11, 16, 19, 24–26   | SAM 3 Image adapter, authoritative RGB and opaque refinement refs              |
 | 06     | §§0, 5, 13–16, 24–26       | progressive Generated RGB tracer; legacy Mask/fallback isolated                |
 | 07     | §§7, 13–15, 18–19, 24–26   | MaskReviewPolicy and Participation                                             |
-| 07A    | §§4, 6–8, 14–16, 24–26     | simplified Anchor candidate choice/refinement/confirmation                     |
+| 07A    | §§4, 6–8, 14–16, 24–26     | historical candidate pipeline; current single-result refinement/confirmation   |
 | 07B    | §8, §§17–19, 26            | Point/Box + Paint/Erase floating palette                                       |
 | 08     | §§9–10, 19, 21, 24–26      | TargetGeometryHint and bounded local Views                                     |
 | 08A    | §§4–6, 9–13, 16, 19, 24–26 | compact RGB-bound image instance Mask contracts                                |
@@ -65,20 +65,20 @@ Stage contracts live under `docs/ai-select/tickets/14A-*` through `14D-*`. `docs
 
 ## Ticket 16 post-closure presentation and visual-review stages
 
-| Stage | Parent mapping                   | Responsibility                                                                   |
-| ----- | -------------------------------- | -------------------------------------------------------------------------------- |
-| 16A   | Ticket 16 / §§4, 17–19, 22, 24   | Implemented AI View Dock, Candidate Overlay, Toolbar and presentation baseline   |
-| 16B   | Ticket 16 / §§4, 6–8, 16–26      | Single-result contract, `4–8` initial automatic Views and normative supersession |
-| 16C   | Ticket 16 / §§4, 7–8, 17–19, 24  | Mask state truth and compact current-View Inspector                              |
-| 16D   | Ticket 16 / §§4, 9–10, 17–19, 24 | Canvas-first three-pane shell and stable Navigator                               |
-| 16E   | Ticket 16 / §§4–8, 17–22, 24–26  | 2D Work Area, floating-palette actions and explicit Re-Lift                      |
-| 16F   | Ticket 16 / §§4–5, 9–10, 17–24   | Compact 3D toolbar and non-destructive Anchor adjustment                         |
-| 16G   | Ticket 16 / §§3–8, 16–26         | Obsolete-control removal, integration and final operator visual closure          |
+| Stage | Parent mapping                   | Responsibility                                                                 |
+| ----- | -------------------------------- | ------------------------------------------------------------------------------ |
+| 16A   | Ticket 16 / §§4, 17–19, 22, 24   | Implemented AI View Dock, Candidate Overlay, Toolbar and presentation baseline |
+| 16B   | Ticket 16 / §§4, 6–8, 16–26      | Implemented single-result contract, `4–8` initial Views and ADR 0018           |
+| 16C   | Ticket 16 / §§4, 7–8, 17–19, 24  | Mask state truth and compact current-View Inspector                            |
+| 16D   | Ticket 16 / §§4, 9–10, 17–19, 24 | Canvas-first three-pane shell and stable Navigator                             |
+| 16E   | Ticket 16 / §§4–8, 17–22, 24–26  | 2D Work Area, floating-palette actions and explicit Re-Lift                    |
+| 16F   | Ticket 16 / §§4–5, 9–10, 17–24   | Compact 3D toolbar and non-destructive Anchor adjustment                       |
+| 16G   | Ticket 16 / §§3–8, 16–26         | Obsolete-control removal, integration and final operator visual closure        |
 
 Ticket 16 remains implemented for native application semantics and adapters.
 Ticket 16A remains the implemented functional presentation baseline. Its
 completed operator visual walkthrough found the release-presentation issues
-owned by 16B–16G. The accepted initial planner range is `4–8` automatic
+owned by 16B–16G. Ticket 16B is implemented. The accepted initial planner range is `4–8` automatic
 Generated Views, excluding the Anchor and User-added Views. Those stages do not
 reopen Ticket 16's application algebra;
 Ticket 15 remains the owner of Correction/Re-Lift semantics. Ticket 17 follows
@@ -100,9 +100,10 @@ implemented prerequisites:
 - 15 — Candidate correction + explicit Evidence-aware Re-Lift
 - 16 — Native application core
 - 16A — AI View Dock + Candidate viewport presentation baseline
+- 16B — Single-result Mask product contract + capability/planner correction
 
 current execution stage:
-- 16B — Single-result Mask product contract + execution-frontier correction
+- 16C — Mask state truth + compact Inspector
 
 following post-visual-review stages:
 - 16C — Mask state truth + compact Inspector
@@ -119,12 +120,12 @@ Compatibility fields:
 
 ```text
 next_implementation_ticket = 16
-next_implementation_subticket = 16B
+next_implementation_subticket = 16C
 ```
 
-Ticket 16 is the current parent compatibility frontier with 16B as its active
-post-visual-review execution stage. Tickets 16C, 16D and 16F follow 16B; 16E
-joins the 16C/16D surfaces; 16G closes the integrated slice. Ticket 17 follows
+Ticket 16 is the current parent compatibility frontier with 16C as its active
+post-visual-review execution stage. Tickets 16D and 16F may proceed from the
+16B contract baseline; 16E joins the 16C/16D surfaces; 16G closes the integrated slice. Ticket 17 follows
 16G. Ticket 10 remains optional and may execute after parent Ticket 14 + 09 +
 07 without blocking the core release path.
 
@@ -164,10 +165,10 @@ The mapping passes only when:
 - older spec names appear only under explicit historical/superseded/migration labels;
 - implemented prerequisites through 12 are not reported as current ready work;
 - parent Ticket 14 and stages 14A through 14D are recognized as implemented;
-- Tickets 13 through 15, Ticket 16's application core and Ticket 16A are recognized as implemented, with 16B as the current execution stage and Ticket 17 following 16G;
-- `next_implementation_ticket = 16` and `next_implementation_subticket = 16B` are current;
-- Ticket 16B is required to publish the superseding ADR and update the current
-  Final Spec before dependent stages close;
+- Tickets 13 through 15, Ticket 16's application core and Tickets 16A–16B are recognized as implemented, with 16C as the current execution stage and Ticket 17 following 16G;
+- `next_implementation_ticket = 16` and `next_implementation_subticket = 16C` are current;
+- Ticket 16B published ADR 0018 and the current Final Spec correction before
+  dependent stages;
 - no active closure criterion relies on superseded v1.2 architecture;
 - provider requests carry resolvable authoritative RGB;
 - previous logits remain Companion-local behind opaque refs;

@@ -579,9 +579,7 @@ const validateCapabilities = (
     const candidateReLift = value.referenceCandidateReLift;
     if (
         typeof candidateReLift.evidencePolicyDigest !== 'string' ||
-        !/^sha256:[a-f0-9]{64}$/i.test(
-            candidateReLift.evidencePolicyDigest
-        ) ||
+        !/^sha256:[a-f0-9]{64}$/i.test(candidateReLift.evidencePolicyDigest) ||
         typeof candidateReLift.aggregationPolicyDigest !== 'string' ||
         !/^sha256:[a-f0-9]{64}$/i.test(
             candidateReLift.aggregationPolicyDigest
@@ -1132,7 +1130,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             !prompts.negativePoints ||
             !prompts.positiveInstanceBox ||
             !prompts.previousLogitsRefinement ||
-            !prompts.singlePointMultimask ||
+            prompts.singlePointMultimask ||
             prompts.negativeBox ||
             prompts.promptBrush ||
             prompts.maskConstraints ||
@@ -1173,20 +1171,18 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
         if (
             !capabilities.supportedOperations.includes(
                 this.requirements.candidateReLiftOperation
-            )
-            || capabilities.referenceCandidateReLift.evidencePolicyDigest !==
-                referenceEvidencePolicyDigest
-            || capabilities.referenceCandidateReLift
-                    .aggregationPolicyDigest !==
-                referenceAggregationPolicyDigest
-            || capabilities.referenceCandidateReLift
-                    .rasterImplementationId !==
-                referenceEvidenceRasterImplementationId
-            || capabilities.referenceCandidateReLift.evidenceBackendKind !==
-                'reference-contributor'
-            || capabilities.referenceCandidateReLift.evidenceBackendId !==
-                referenceContributorEvidenceBackendId
-            || capabilities.referenceCandidateReLift.runtimeBuildId !==
+            ) ||
+            capabilities.referenceCandidateReLift.evidencePolicyDigest !==
+                referenceEvidencePolicyDigest ||
+            capabilities.referenceCandidateReLift.aggregationPolicyDigest !==
+                referenceAggregationPolicyDigest ||
+            capabilities.referenceCandidateReLift.rasterImplementationId !==
+                referenceEvidenceRasterImplementationId ||
+            capabilities.referenceCandidateReLift.evidenceBackendKind !==
+                'reference-contributor' ||
+            capabilities.referenceCandidateReLift.evidenceBackendId !==
+                referenceContributorEvidenceBackendId ||
+            capabilities.referenceCandidateReLift.runtimeBuildId !==
                 referenceEvidenceRuntimeBuildId
         ) {
             return diagnostic(
@@ -1418,11 +1414,9 @@ class ReadinessGatedSelectionServiceAdapter
         return await this.requireAnchorRenderer().renderAnchor(request);
     }
 
-    async produceMaskProposals(
-        request: AIViewMaskRequest
-    ): Promise<MaskResultResponse> {
+    async produceMask(request: AIViewMaskRequest): Promise<MaskResultResponse> {
         this.readiness.requireReady();
-        return await this.requireMaskProvider().produceMaskProposals(request);
+        return await this.requireMaskProvider().produceMask(request);
     }
 
     async probeAnchorSupport(
@@ -1514,8 +1508,8 @@ class ReadinessGatedSelectionServiceAdapter
     private requireMaskProvider(): AISelectMaskProvider {
         const adapter = this.requireAdapter();
         if (
-            typeof (adapter as Partial<AISelectMaskProvider>)
-                .produceMaskProposals !== 'function'
+            typeof (adapter as Partial<AISelectMaskProvider>).produceMask !==
+            'function'
         ) {
             throw new SelectionServiceAdapterNotConfiguredError();
         }

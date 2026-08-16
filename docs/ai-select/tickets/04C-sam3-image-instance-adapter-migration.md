@@ -2,6 +2,12 @@
 
 Status: implemented — locked GPU fixture passed on operator CUDA hardware (see implementation record)
 
+Post-16B supersession notice: the implementation record below remains
+historical evidence. ADR 0018 supersedes its current-facing multimask,
+candidate-choice/Accept, explicit Retry and `singlePointMultimask: true`
+product clauses. The retained internal proposal wire and attempt/refinement
+infrastructure remain compatibility behavior.
+
 Blocked by: 04B
 
 Blocks: 02C, 07A, 08A, 08B

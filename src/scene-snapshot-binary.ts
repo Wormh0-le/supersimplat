@@ -133,7 +133,7 @@ const copyRenderConfiguration = (
         value.shBands < 0 ||
         value.shBands > 3 ||
         value.backgroundRgba.length !== 4 ||
-        !value.backgroundRgba.every(component => Number.isFinite(component))
+        !value.backgroundRgba.every((component) => Number.isFinite(component))
     ) {
         throw new Error(
             'Packed Scene Snapshot requires complete finite render configuration semantics.'
@@ -428,7 +428,7 @@ const updateCanonicalMetadata = (
         snapshot.renderConfiguration.version,
         snapshot.renderConfiguration.alphaMode,
         snapshot.renderConfiguration.rasterizer
-    ].forEach(value => digest.updateString(value));
+    ].forEach((value) => digest.updateString(value));
     digest.updateUint32(snapshot.gaussianCount);
     digest.updateUint32(snapshot.shFloatCountPerGaussian);
     digest.updateUint32(snapshot.renderConfiguration.shBands);
@@ -436,7 +436,7 @@ const updateCanonicalMetadata = (
         digest.updateFloat32(value);
     });
     [1, 3, 4, 3, 1, 3, snapshot.shFloatCountPerGaussian].forEach(
-        componentCount => digest.updateUint32(componentCount)
+        (componentCount) => digest.updateUint32(componentCount)
     );
 };
 
@@ -448,12 +448,21 @@ const snapshotContentDigest = (
 ): string => {
     const digest = new IncrementalSha256();
     updateCanonicalMetadata(digest, snapshot);
-    fieldNames.forEach(name => digest.update(bytesOf(snapshot[name])));
+    fieldNames.forEach((name) => digest.update(bytesOf(snapshot[name])));
     return `sha256:${digest.digest()}`;
 };
 
 const sha256Digest = (bytes: Uint8Array): string => {
     return `sha256:${new IncrementalSha256().update(bytes).digest()}`;
+};
+
+/** Hash a bounded stream without materializing its concatenated byte plane. */
+const sha256DigestParts = (parts: Iterable<Uint8Array>): string => {
+    const digest = new IncrementalSha256();
+    for (const part of parts) {
+        digest.update(part);
+    }
+    return `sha256:${digest.digest()}`;
 };
 
 const chunkDigest = (bytes: Uint8Array): string => {
@@ -730,7 +739,8 @@ export {
     buildPackedSceneSnapshot,
     createBinarySceneSnapshotManifest,
     isPackedSceneSnapshot,
-    sha256Digest
+    sha256Digest,
+    sha256DigestParts
 };
 
 export type {

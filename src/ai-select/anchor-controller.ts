@@ -303,6 +303,62 @@ export class AISelectAnchorController {
             : copyCameraBinding(this.anchor.cameraBinding);
     }
 
+    /**
+     * Synchronize the product lifecycle with the editor's effective semantic
+     * dependency. Artifacts stay intact while suspended; an exact restoration
+     * mints a fresh request revision so late pre-suspension work stays stale.
+     */
+    synchronizeTargetDependency(): CurrentTargetContext | null {
+        const effectiveDependencyToken = this.getCurrentDependencyToken?.();
+        if (effectiveDependencyToken === undefined) {
+            return this.contexts.current;
+        }
+        const previous = this.contexts.current;
+        const current = this.contexts.synchronizeDependency(
+            effectiveDependencyToken
+        );
+        if (current === previous) {
+            return current;
+        }
+        this.activeRender = null;
+        if (
+            current?.lifecycle === 'active' &&
+            previous?.lifecycle === 'suspended' &&
+            this.activeRequest !== null
+        ) {
+            const requestBinding = copyRequestBinding(
+                this.contexts.createRequestBinding()
+            );
+            this.activeRequest = Object.freeze({
+                ...this.activeRequest,
+                requestBinding
+            });
+            if (this.anchor !== null) {
+                // Exact restoration makes the retained artifact usable under
+                // the new lifecycle revision. Artifact-specific RGB/Camera
+                // identities stay unchanged; old request revisions remain
+                // rejected by the kernel.
+                this.anchor = copyAnchor({
+                    ...this.anchor,
+                    requestBinding
+                });
+            }
+        }
+        this.publish();
+        return current;
+    }
+
+    isTargetActive(): boolean {
+        return this.contexts.current?.lifecycle === 'active';
+    }
+
+    /** Fresh binding for new work; preserved artifacts retain their own identity. */
+    createCurrentTargetRequestBinding(): AIRequestBinding | null {
+        return this.contexts.current?.lifecycle === 'active'
+            ? copyRequestBinding(this.contexts.createRequestBinding())
+            : null;
+    }
+
     subscribe(listener: AISelectAnchorListener): () => void {
         this.listeners.add(listener);
         listener(this.state);
@@ -811,6 +867,7 @@ export class AISelectAnchorController {
         if (effectiveDependencyToken === undefined) {
             return false;
         }
+        this.synchronizeTargetDependency();
         return this.contexts.acceptsResult(binding, effectiveDependencyToken);
     }
 

@@ -62,6 +62,7 @@ test('changed-Anchor cutover publishes confirmation before releasing real Candid
                 payload: null
             }
         ],
+        isTargetActive: () => true,
         produceCandidate: () => candidateUpdate.promise
     });
     candidateCorrection.rememberPublishedEvidence({

@@ -44,6 +44,9 @@ export type MaskRequestStatus = 'idle' | 'pending' | 'failed';
 export type MaskFailureKind = 'maskResultFailed' | 'maskArtifactInvalid';
 export type AutomaticMaskStatus = 'none' | 'unavailable' | 'editing';
 
+export const suspendedTargetMaskAuthoringLockReason =
+    'AI Select Mask authoring is unavailable while the current target is suspended.';
+
 export interface AddMaskPromptInput {
     readonly xPx: number;
     readonly yPx: number;

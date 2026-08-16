@@ -218,6 +218,44 @@
     }
 }
 
+#ai-select-suspended-surface {
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 40px;
+    padding: 4px 4px 4px 8px;
+    border: 1px solid $ai-uncertain;
+    border-radius: 4px;
+    background-color: $bcg-darker;
+
+    &:not(.pcui-hidden) {
+        display: flex;
+    }
+}
+
+#ai-select-suspended-message {
+    color: $text-primary;
+    line-height: 18px;
+}
+
+#ai-select-undo-scene-change {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 40px;
+    flex: 0 0 auto;
+    color: $ai-uncertain;
+    border-color: $ai-uncertain;
+
+    .ai-select-undo-scene-change-icon {
+        width: 16px;
+        height: 16px;
+        pointer-events: none;
+    }
+}
+
 #ai-select-view-navigator {
     flex-direction: column;
     width: 220px;

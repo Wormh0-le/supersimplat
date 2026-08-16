@@ -324,6 +324,106 @@ test('discards an Anchor result after the editor semantic dependency changes', a
     assert.deepEqual(controller.getAnchorCameraBinding(), cameraBinding());
 });
 
+test('suspends immediately, preserves artifacts, and resumes only on exact dependency restoration', async () => {
+    let effectiveDependency = dependency();
+    const controller = new AISelectAnchorController({
+        renderer: {
+            async renderAnchor(request) {
+                return responseFor(request);
+            }
+        }
+    });
+    await controller.start(
+        input({ getCurrentDependencyToken: () => effectiveDependency })
+    );
+    const original = controller.state;
+    const originalBinding = original.anchor.requestBinding;
+
+    effectiveDependency = dependency({ geometryToken: 'geometry-v2' });
+    const suspended = controller.synchronizeTargetDependency();
+
+    assert.equal(suspended.lifecycle, 'suspended');
+    assert.equal(
+        controller.state.anchor.rgb.digest,
+        original.anchor.rgb.digest
+    );
+    assert.equal(controller.isTargetActive(), false);
+    assert.equal(controller.createCurrentTargetRequestBinding(), null);
+    assert.equal(controller.acceptsTargetBinding(originalBinding), false);
+
+    effectiveDependency = dependency({
+        geometryToken: 'geometry-v2',
+        renderStateToken: 'render-v2'
+    });
+    assert.equal(
+        controller.synchronizeTargetDependency().lifecycle,
+        'suspended'
+    );
+
+    effectiveDependency = dependency();
+    const resumed = controller.synchronizeTargetDependency();
+    const resumedBinding = controller.createCurrentTargetRequestBinding();
+
+    assert.equal(resumed.lifecycle, 'active');
+    assert.equal(resumed.revision, original.context.revision + 2);
+    assert.equal(
+        controller.state.anchor.rgb.digest,
+        original.anchor.rgb.digest
+    );
+    assert.equal(controller.isTargetActive(), true);
+    assert.ok(resumedBinding);
+    assert.equal(controller.acceptsTargetBinding(originalBinding), false);
+    assert.equal(controller.acceptsTargetBinding(resumedBinding), true);
+
+    await controller.renderFinalPreview();
+    assert.equal(controller.state.anchor.renderStatus, 'ready');
+    assert.equal(
+        controller.state.anchor.requestBinding.contextRevision,
+        resumedBinding.contextRevision
+    );
+});
+
+test('target dependency mutation matrix suspends for each semantic dependency only', async () => {
+    const cases = [
+        ['renderStateToken', 'render-v2'],
+        ['geometryToken', 'geometry-v2'],
+        ['gaussianIdentityToken', 'gaussians-v2'],
+        ['worldTransformToken', 'transform-v2']
+    ];
+
+    for (const [field, value] of cases) {
+        let effectiveDependency = dependency();
+        const controller = new AISelectAnchorController({
+            renderer: {
+                async renderAnchor(request) {
+                    return responseFor(request);
+                }
+            }
+        });
+        await controller.start(
+            input({ getCurrentDependencyToken: () => effectiveDependency })
+        );
+
+        assert.equal(
+            controller.synchronizeTargetDependency().lifecycle,
+            'active',
+            'selection/UI changes leave the semantic dependency token unchanged'
+        );
+        effectiveDependency = dependency({ [field]: value });
+        assert.equal(
+            controller.synchronizeTargetDependency().lifecycle,
+            'suspended',
+            `${field} mutation must suspend`
+        );
+        effectiveDependency = dependency();
+        assert.equal(
+            controller.synchronizeTargetDependency().lifecycle,
+            'active',
+            `${field} exact restoration must resume`
+        );
+    }
+});
+
 test('keeps an Anchor render failure local to the AI view and can exit without a native-selection side effect', async () => {
     const controller = new AISelectAnchorController({
         renderer: {

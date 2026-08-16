@@ -1,9 +1,9 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.33
+# Eight-Pass Bidirectional Traceability Audit — v2.34
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
 The v2.12–v2.27 sections and detailed pass text below are retained as historical
-audit evidence. The controlling v2.33 result is the post-Ticket-17 closure at
+audit evidence. The controlling v2.34 result is the post-Ticket-18 closure at
 the end of this document; Ticket 21 still owns calibration of the accepted
 `4–8` initial automatic-View range.
 
@@ -546,3 +546,28 @@ Restart confirmation preserves Native Selection/EditHistory, Candidate Applied
 alone does not force confirmation, and Ticket 18 inherits the global menu seam.
 
 Overall result: **PASS_V2_33**.
+
+## v2.34 Ticket 18 controlling audit result
+
+Ticket 18 is implemented and Ticket 19 is the sole current execution frontier.
+The current pass supersedes the v2.33 frontier values while preserving its
+historical Ticket 17 lifecycle evidence.
+
+| Pass | Current v2.34 check                                                                                                                      | Result |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 1    | All 31 parent Tickets and the 14A–14D / 16A–16G stage graph resolve; Ticket 19 is the only current frontier                              | PASS   |
+| 2    | Final Spec v1.3 remains the sole current specification and all 31 parent Ticket mappings resolve directly to it                          | PASS   |
+| 3    | Semantic dependency fingerprints include render, geometry, deleted membership and target transform while excluding native selection/lock | PASS   |
+| 4    | Target-scoped mutation suspends immediately; unrelated Splats and presentation-only state do not globally invalidate                     | PASS   |
+| 5    | Exact Native Undo resumes only on complete token equality; non-exact Undo retains Suspended and no cross-dependency remap occurs         | PASS   |
+| 6    | Anchor/View/Mask/Evidence/Candidate artifacts remain inspectable, while edit/inference/Re-Lift/application paths fail closed             | PASS   |
+| 7    | The Dock exposes Undo Scene Change; `选择另一个对象` remains global and the compact contextual Toolbar still contains no Restart         | PASS   |
+| 8    | Requirements remain 62/62 mapped; walkthroughs and error flows are 19/19; deterministic async suspension stress is recorded              | PASS   |
+
+Current critical scan: monotonic edit counters are cache invalidators only,
+not semantic recovery identity. Suspension rotates the context revision, exact
+restoration rotates it again, and every pre-suspension request stays stale even
+when retained artifacts become usable. Ticket 19 inherits a coherent semantic
+dependency seam without any partial RGB/Mask/Evidence repair contract.
+
+Overall result: **PASS_V2_34**.

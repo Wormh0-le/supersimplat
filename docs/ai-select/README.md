@@ -52,7 +52,9 @@ Repository-wide specifications and ADRs remain canonical under `docs/specs/` and
   implemented obsolete-control and integrated visual closure.
 - [Ticket 17](tickets/17-applied-undo-fix-restart-multitarget.md) — implemented
   exact Undo-and-Fix, target Restart, lifecycle menu and tool-switch disposal;
-  Ticket 18 is current.
+- [Ticket 18](tickets/18-scene-mutation-suspended-undo.md) — implemented
+  target-scoped suspension, preserved read-only artifacts and exact Undo;
+  Ticket 19 is current.
 
 ## Scratch policy
 
@@ -81,9 +83,9 @@ Execution order is:
 14A → 14B → 14C → 14D → 13 → 15 → 16 → 16A → 16B
                                                        ├→ 16C ─┐
                                                        ├→ 16D ─┴→ 16E ─┐
-                                                       └→ 16F ─────────┴→ 16G → 17 → 18
+                                                       └→ 16F ─────────┴→ 16G → 17 → 18 → 19
 ```
 
 14A through 14D, parent Ticket 14, Tickets 13 through 15, Ticket 16's native
-application core, Tickets 16A–16G and Ticket 17 are implemented. Ticket 18 is
-current (`next_implementation_ticket = 18`, `next_implementation_subticket = none`).
+application core, Tickets 16A–16G and Tickets 17–18 are implemented. Ticket 19
+is current (`next_implementation_ticket = 19`, `next_implementation_subticket = none`).

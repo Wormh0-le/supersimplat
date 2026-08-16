@@ -1,5 +1,10 @@
 import { Mat3, Mat4, Quat, Vec3 } from 'playcanvas';
 
+import {
+    semanticDeletedMembershipFingerprint,
+    semanticGeometryFingerprint,
+    semanticValueFingerprint
+} from './ai-select/target-dependency-fingerprint';
 import { ColorGrade, dcDecode, dcEncode } from './color-grade';
 import type { StableGaussianIdMap } from './object-selection-session-editor';
 import {
@@ -64,7 +69,11 @@ const shProperties = (splat: Splat) => {
 };
 
 const shBandCount = (coefficientsPerChannel: number) => {
-    return ({ 0: 0, 3: 1, 8: 2, 15: 3 } as Record<number, number>)[coefficientsPerChannel] ?? -1;
+    return (
+        ({ 0: 0, 3: 1, 8: 2, 15: 3 } as Record<number, number>)[
+            coefficientsPerChannel
+        ] ?? -1
+    );
 };
 
 const semanticRenderConfigurationToken = (
@@ -163,7 +172,9 @@ const legacySceneSnapshotFromPacked = (
 
 // Stable IDs are allocated after loading/reordering, remain editor-owned, and
 // are intentionally separate from the service's renderer/tensor positions.
-class SplatSceneSnapshotBinding implements SceneSnapshotBinding, StableGaussianIdMap {
+class SplatSceneSnapshotBinding
+    implements SceneSnapshotBinding, StableGaussianIdMap
+{
     private readonly splat: Splat;
     private readonly sceneId: string;
     private stableIds: Uint32Array;
@@ -171,6 +182,12 @@ class SplatSceneSnapshotBinding implements SceneSnapshotBinding, StableGaussianI
     private packedSnapshot: PackedSceneSnapshot | null = null;
     private packedSnapshotRevision: string | null = null;
     private legacySnapshot: SceneSnapshot | null = null;
+    private semanticGeometryRevision = -1;
+    private semanticGeometryContentRevision = -1;
+    private semanticGeometryToken = '';
+    private semanticMembershipRevision = -1;
+    private semanticMembershipContentRevision = -1;
+    private semanticMembershipToken = '';
 
     constructor(options: {
         splat: Splat;
@@ -227,11 +244,78 @@ class SplatSceneSnapshotBinding implements SceneSnapshotBinding, StableGaussianI
 
     getSemanticRevision(): SplatSnapshotSemanticRevision {
         const configuredRender = this.getRenderConfiguration();
+        const contentIdentity = `content:${this.splat.aiSelectContentRevision}`;
+        if (
+            this.semanticGeometryRevision !==
+                this.splat.aiSelectGeometryRevision ||
+            this.semanticGeometryContentRevision !==
+                this.splat.aiSelectContentRevision
+        ) {
+            const transformIndices =
+                (this.splat.transformTexture.getSource() as unknown as ArrayLike<number> | null) ??
+                new Uint16Array(this.splat.splatData.numSplats);
+            const matrix = new Mat4();
+            const matrixIndices = [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14];
+            this.semanticGeometryToken = semanticGeometryFingerprint({
+                contentIdentity,
+                transformIndices,
+                writeTransform: (transformIndex, target) => {
+                    this.splat.transformPalette.getTransform(
+                        transformIndex,
+                        matrix
+                    );
+                    for (
+                        let index = 0;
+                        index < matrixIndices.length;
+                        index += 1
+                    ) {
+                        target[index] = matrix.data[matrixIndices[index]];
+                    }
+                }
+            });
+            this.semanticGeometryRevision = this.splat.aiSelectGeometryRevision;
+            this.semanticGeometryContentRevision =
+                this.splat.aiSelectContentRevision;
+        }
+        if (
+            this.semanticMembershipRevision !==
+                this.splat.aiSelectGaussianIdentityRevision ||
+            this.semanticMembershipContentRevision !==
+                this.splat.aiSelectContentRevision
+        ) {
+            this.semanticMembershipToken = semanticDeletedMembershipFingerprint(
+                this.splat.state.data,
+                State.deleted,
+                contentIdentity
+            );
+            this.semanticMembershipRevision =
+                this.splat.aiSelectGaussianIdentityRevision;
+            this.semanticMembershipContentRevision =
+                this.splat.aiSelectContentRevision;
+        }
+        const tint = this.splat.tintClr;
         return Object.freeze({
-            renderStateToken: `render:${this.splat.aiSelectRenderStateRevision}:${semanticRenderConfigurationToken(configuredRender)}`,
-            geometryToken: `geometry:${this.splat.aiSelectGeometryRevision}`,
-            gaussianIdentityToken: `membership:${this.splat.aiSelectGaussianIdentityRevision}`,
-            worldTransformToken: `world:${this.splat.aiSelectWorldTransformRevision}`
+            renderStateToken: semanticValueFingerprint('render', [
+                contentIdentity,
+                tint.r,
+                tint.g,
+                tint.b,
+                tint.a,
+                this.splat.visible,
+                this.splat.temperature,
+                this.splat.saturation,
+                this.splat.brightness,
+                this.splat.blackPoint,
+                this.splat.whitePoint,
+                this.splat.transparency,
+                semanticRenderConfigurationToken(configuredRender)
+            ]),
+            geometryToken: this.semanticGeometryToken,
+            gaussianIdentityToken: this.semanticMembershipToken,
+            worldTransformToken: semanticValueFingerprint('world', [
+                contentIdentity,
+                ...this.splat.worldTransform.data
+            ])
         });
     }
 
@@ -346,7 +430,10 @@ class SplatSceneSnapshotBinding implements SceneSnapshotBinding, StableGaussianI
                 matrix,
                 rotation,
                 scale: matrix.getScale(new Vec3()),
-                shRotation: shCoefficients > 0 ? new SHRotation(new Mat3().setFromQuat(rotation)) : null
+                shRotation:
+                    shCoefficients > 0
+                        ? new SHRotation(new Mat3().setFromQuat(rotation))
+                        : null
             };
             transforms.set(transformIndex, result);
             return result;

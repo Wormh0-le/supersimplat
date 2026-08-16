@@ -325,6 +325,7 @@ const emptyProposalResponseFor = (request) => {
 
 const setup = async (options = {}) => {
     let rgbDigest = options.rgbDigest ?? `sha256:${'a'.repeat(64)}`;
+    let currentDependencyToken = dependency();
     const renderRequests = [];
     const renderer = {
         renderAnchor: (request) => {
@@ -368,7 +369,12 @@ const setup = async (options = {}) => {
         }
     };
     const anchor = new AISelectAnchorController({ renderer });
-    await anchor.start(input());
+    await anchor.start(
+        input({
+            dependencyToken: currentDependencyToken,
+            getCurrentDependencyToken: () => currentDependencyToken
+        })
+    );
     const mask = new AISelectMaskController({
         anchor,
         maskProvider,
@@ -395,6 +401,9 @@ const setup = async (options = {}) => {
         renderRequests,
         setRgbDigest: (digest) => {
             rgbDigest = digest;
+        },
+        setCurrentDependencyToken: (value) => {
+            currentDependencyToken = value;
         }
     };
 };
@@ -1330,15 +1339,12 @@ test('Clear Prompts preserves the Stable Mask and current Evidence', async () =>
     assertAutomaticMaskAdopted(mask);
     mask.confirmEditingMask();
     const stable = mask.state.stableMask;
-    mask.evidenceRegistry.markReady(
-        {
-            viewId: 'anchor-view',
-            rgbDigest: stable.createdFromRgbDigest,
-            stableMaskDigest: stable.artifact.digest,
-            evidencePolicyDigest: aiSelectEvidencePolicyVersion
-        },
-        'evidence-1'
-    );
+    mask.evidenceRegistry.markReady({
+        viewId: 'anchor-view',
+        rgbDigest: stable.createdFromRgbDigest,
+        stableMaskDigest: stable.artifact.digest,
+        evidencePolicyDigest: aiSelectEvidencePolicyVersion
+    });
 
     mask.clearPrompts();
 
@@ -1365,6 +1371,61 @@ test('unconfirmed Prompt and automatic Mask work leaves Stable Mask and Evidence
 
     assert.equal(mask.state.stableMask.maskId, stable.maskId);
     assert.equal(mask.state.evidence.status, 'ready');
+});
+
+test('suspend and exact dependency restoration preserve Mask and Evidence artifacts read-only', async () => {
+    const { anchor, mask, setCurrentDependencyToken } = await setup();
+    await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
+    mask.confirmEditingMask();
+    const stable = mask.state.stableMask;
+    mask.evidenceRegistry.markReady(
+        {
+            viewId: 'anchor-view',
+            rgbDigest: stable.createdFromRgbDigest,
+            stableMaskDigest: stable.artifact.digest,
+            evidencePolicyDigest: aiSelectEvidencePolicyVersion
+        },
+        'evidence-1'
+    );
+    mask.applyBrushStroke({
+        xPx: 20,
+        yPx: 20,
+        radiusPx: 2,
+        mode: 'add'
+    });
+    const editingMaskId = mask.state.editingMask.maskId;
+    const promptDigest = mask.state.promptState.digest;
+    const evidenceIdentity = mask.state.evidence.artifactIdentity;
+
+    setCurrentDependencyToken(dependency({ geometryToken: 'geometry-v2' }));
+    anchor.synchronizeTargetDependency();
+
+    assert.equal(anchor.state.context.lifecycle, 'suspended');
+    assert.equal(mask.state.stableMask.maskId, stable.maskId);
+    assert.equal(mask.state.editingMask.maskId, editingMaskId);
+    assert.equal(mask.state.promptState.digest, promptDigest);
+    assert.equal(mask.state.evidence.status, 'ready');
+    assert.deepEqual(mask.state.evidence.artifactIdentity, evidenceIdentity);
+    assert.throws(
+        () =>
+            mask.applyBrushStroke({
+                xPx: 24,
+                yPx: 24,
+                radiusPx: 2,
+                mode: 'add'
+            }),
+        /unavailable while the current target is suspended/
+    );
+
+    setCurrentDependencyToken(dependency());
+    anchor.synchronizeTargetDependency();
+
+    assert.equal(anchor.state.context.lifecycle, 'active');
+    assert.equal(mask.state.stableMask.maskId, stable.maskId);
+    assert.equal(mask.state.editingMask.maskId, editingMaskId);
+    assert.equal(mask.state.promptState.digest, promptDigest);
+    assert.equal(mask.state.evidence.status, 'ready');
+    assert.deepEqual(mask.state.evidence.artifactIdentity, evidenceIdentity);
 });
 
 test('no-result output is Mask unavailable, not render or technical failure', async () => {

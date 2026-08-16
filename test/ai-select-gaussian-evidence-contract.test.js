@@ -10,6 +10,7 @@ const {
     gaussianEvidenceArtifactMatchesAdmission,
     isCurrentGaussianEvidenceArtifact,
     isGaussianEvidenceArtifact,
+    rebindGaussianEvidenceArtifactForExactRestoration,
     resolveEvidenceWorkingSetBoundary
 } = require('../.test-dist/src/ai-select/gaussian-evidence-contract.js');
 
@@ -177,6 +178,43 @@ test('Evidence Working Set writes exclude a Render Working Set occluder', () => 
     assert.equal('viewSource' in artifact, false);
     assert.equal('promptArtifactDigest' in artifact, false);
     assert.equal('maskReviewReasons' in artifact, false);
+});
+
+test('exact restoration rebinds retained Evidence to the fresh lifecycle revision only', () => {
+    const artifact = createGaussianEvidenceArtifact(admitted(), masses());
+    const restoredBinding = requestBinding({ contextRevision: 5 });
+    const restoredInput = input({ requestBinding: restoredBinding });
+
+    assert.equal(
+        isCurrentGaussianEvidenceArtifact(artifact, restoredInput),
+        false
+    );
+    const rebound = rebindGaussianEvidenceArtifactForExactRestoration(
+        artifact,
+        restoredBinding
+    );
+
+    assert.equal(
+        isCurrentGaussianEvidenceArtifact(rebound, restoredInput),
+        true
+    );
+    assert.notEqual(rebound.artifactDigest, artifact.artifactDigest);
+    assert.deepEqual(rebound.positiveMass, artifact.positiveMass);
+    assert.deepEqual(rebound.negativeMass, artifact.negativeMass);
+    assert.deepEqual(rebound.visibleMass, artifact.visibleMass);
+    assert.throws(
+        () =>
+            rebindGaussianEvidenceArtifactForExactRestoration(
+                artifact,
+                requestBinding({
+                    contextRevision: 5,
+                    dependencyToken: dependency({
+                        geometryToken: 'geometry-v2'
+                    })
+                })
+            ),
+        /cannot rebind Evidence across/
+    );
 });
 
 test('a TargetGeometryHint seed can expand through a later Included Stable View', () => {

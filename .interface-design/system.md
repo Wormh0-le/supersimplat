@@ -173,5 +173,6 @@ Status: current reusable interface guidance
 - [Ticket 16A 实现合同](../docs/ai-select/tickets/16A-candidate-viewport-presentation.md)
 - [Tickets 16B–16G 视觉走查修正](../docs/ai-select/tickets/README.md)
 - [Ticket 17 目标生命周期合同](../docs/ai-select/tickets/17-applied-undo-fix-restart-multitarget.md)
+- [Ticket 18 Suspended 与精确撤销合同](../docs/ai-select/tickets/18-scene-mutation-suspended-undo.md)
 
 当功能设计与本文存在表达差异时，以当前 Final Spec、`CONTEXT.md` 和对应功能设计/验收合同为准，再回写本文中可复用的新规则。

@@ -1,6 +1,6 @@
 # 19 — Large SceneSnapshot + authoritative RGB / Render Working Set hardening
 
-Status: ready-for-agent — Final Spec v1.3 mapped; prior 02B observability baseline retained
+Status: current — ready after implemented Ticket 18; Final Spec v1.3 mapped; prior 02B observability baseline retained
 
 Blocked by: 18, 14
 

@@ -25,6 +25,7 @@ import { AISelectGeneratedViewController } from './ai-select/generated-view-cont
 import { LiftReadinessStore } from './ai-select/lift-readiness';
 import { AISelectMaskController } from './ai-select/mask-controller';
 import { createPromptAdapterCapabilities } from './ai-select/prompt-state';
+import { isCurrentTargetDependencyChange } from './ai-select/target-dependency-routing';
 import { AISelectTargetLifecycleController } from './ai-select/target-lifecycle';
 import { AISelectUserViewMaskController } from './ai-select/user-view-mask-controller';
 import { AnchorFrustum } from './ai-select-anchor-frustum';
@@ -470,6 +471,24 @@ const main = async () => {
         renderer: selectionServiceAdapter,
         isAnchorLocked: isAISelectAnchorMaskLocked
     });
+    const synchronizeAISelectTargetDependency = (
+        changedSplat?: Splat
+    ): void => {
+        if (
+            !isCurrentTargetDependencyChange(aiSelectTargetSplat, changedSplat)
+        ) {
+            return;
+        }
+        aiSelectController.synchronizeTargetDependency();
+    };
+    events.on(
+        'splat.aiSelectDependencyChanged',
+        synchronizeAISelectTargetDependency
+    );
+    // Background and SH-band changes affect authoritative AI RGB even though
+    // they do not belong to one Splat. Editor-only colors and UI state do not.
+    events.on('bgClr', () => synchronizeAISelectTargetDependency());
+    events.on('view.bands', () => synchronizeAISelectTargetDependency());
     const aiSelectMaskController = new AISelectMaskController({
         anchor: aiSelectController,
         maskProvider: selectionServiceAdapter,
@@ -604,6 +623,11 @@ const main = async () => {
         generatedViews: aiSelectGeneratedViews,
         candidatePublications: aiSelectCandidatePublications,
         provider: selectionServiceAdapter
+    });
+    aiSelectController.subscribe((state) => {
+        if (state.context?.lifecycle === 'suspended') {
+            aiSelectCandidateCorrection.discardPendingUpdate();
+        }
     });
     const referenceCandidateApplicationEnabled =
         (
@@ -1039,6 +1063,11 @@ const main = async () => {
             readiness: selectionServiceReadiness,
             liftReadiness: aiSelectLiftReadiness,
             tooltips: editorUI.tooltips,
+            canUndoSceneChange: () => editHistory.canUndo(),
+            onUndoSceneChange: async () => {
+                await editHistory.undo();
+                synchronizeAISelectTargetDependency();
+            },
             onConfirmAnchor: async () => {
                 try {
                     await aiSelectConfirmation.confirmAnchor();

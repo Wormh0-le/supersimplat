@@ -11,6 +11,7 @@ import type {
 import type { PromptAdapterCapabilities, PromptState } from './prompt-state';
 import {
     AISelectViewMaskSession,
+    suspendedTargetMaskAuthoringLockReason,
     type AISelectMaskState
 } from './view-mask-session';
 
@@ -147,9 +148,10 @@ export class AISelectUserViewMaskController {
                 targetContextId: () =>
                     this.generatedViews.getRunTargetContextId(),
                 currentRgb: () => this.currentRgbFor(viewId),
-                // View correction is always target-local; run currency is
-                // enforced again when the exact request is built.
-                lockReason: () => null,
+                lockReason: () =>
+                    this.generatedViews.isTargetActive()
+                        ? null
+                        : suspendedTargetMaskAuthoringLockReason,
                 createMaskRequest: (
                     promptState: PromptState,
                     proposalAttemptId: string,

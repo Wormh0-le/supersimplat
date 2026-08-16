@@ -12,6 +12,9 @@ const {
 const {
     AISelectDirtyStateTracker
 } = require('../.test-dist/src/ai-select/dirty-state.js');
+const {
+    createGaussianEvidenceArtifact
+} = require('../.test-dist/src/ai-select/gaussian-evidence-contract.js');
 
 const digest = (letter) => `sha256:${letter.repeat(64)}`;
 
@@ -44,7 +47,53 @@ const view = (viewId, overrides = {}) => ({
     ...overrides
 });
 
+const evidenceArtifactFor = (entry) =>
+    createGaussianEvidenceArtifact(
+        {
+            requestBinding: {
+                targetContextId: 'ai-target-context-1',
+                contextRevision: 3,
+                dependencyToken: dependency()
+            },
+            targetSplatId: 'editor-splat:1',
+            viewId: entry.viewId,
+            cameraBindingDigest: entry.evidenceIdentity.cameraBindingDigest,
+            rgbDigest: entry.evidenceIdentity.rgbDigest,
+            stableMaskDigest: entry.evidenceIdentity.stableMaskDigest,
+            evidencePolicyDigest: entry.evidenceIdentity.evidencePolicyDigest,
+            renderWorkingSetToken: entry.evidenceIdentity.renderWorkingSetToken,
+            evidenceWorkingSetToken:
+                entry.evidenceIdentity.evidenceWorkingSetToken,
+            stableGaussianIds: [5, 9],
+            rasterImplementationId:
+                entry.evidenceIdentity.rasterImplementationId,
+            evidenceBackendKind: entry.evidenceIdentity.evidenceBackendKind,
+            evidenceBackendId: entry.evidenceIdentity.evidenceBackendId,
+            runtimeBuildId: entry.evidenceIdentity.runtimeBuildId
+        },
+        {
+            positiveMass: [0.75, 0],
+            negativeMass: [0, 0.5],
+            visibleMass: [1, 1]
+        }
+    );
+
 const result = (views, selected = [5], uncertain = [9]) => {
+    const evidence = Object.fromEntries(
+        views
+            .filter((entry) => entry.participation === 'included')
+            .map((entry) => {
+                const artifact = evidenceArtifactFor(entry);
+                return [
+                    entry.viewId,
+                    {
+                        identity: entry.evidenceIdentity,
+                        artifactDigest: artifact.artifactDigest,
+                        artifact
+                    }
+                ];
+            })
+    );
     const publicationBinding = createCandidatePublicationBinding({
         requestBinding: {
             targetContextId: 'ai-target-context-1',
@@ -58,7 +107,7 @@ const result = (views, selected = [5], uncertain = [9]) => {
             stableMaskDigest: entry.stableMaskDigest,
             evidenceArtifactDigest:
                 entry.participation === 'included'
-                    ? digest(entry.viewId === 'view-1' ? '6' : '7')
+                    ? evidence[entry.viewId].artifactDigest
                     : null
         })),
         aggregationPolicyDigest: digest('8'),
@@ -80,23 +129,11 @@ const result = (views, selected = [5], uncertain = [9]) => {
             selectedStableGaussianIds: selected,
             uncertainStableGaussianIds: uncertain
         }),
-        evidence: Object.fromEntries(
-            views
-                .filter((entry) => entry.participation === 'included')
-                .map((entry) => [
-                    entry.viewId,
-                    {
-                        identity: entry.evidenceIdentity,
-                        artifactDigest: digest(
-                            entry.viewId === 'view-1' ? '6' : '7'
-                        )
-                    }
-                ])
-        )
+        evidence
     };
 };
 
-const harness = (produceReplacement) => {
+const harness = (produceReplacement, isTargetActive = () => true) => {
     const dirty = new AISelectDirtyStateTracker();
     const publications = new CandidatePublicationStore(dirty);
     const currentViews = [view('view-1'), view('view-2')];
@@ -107,6 +144,7 @@ const harness = (produceReplacement) => {
         dirtyState: dirty,
         candidatePublications: publications,
         resolveCurrentViews: () => currentViews,
+        isTargetActive,
         produceCandidate: async (input) => {
             calls.push(input);
             return produceReplacement(input, currentViews);
@@ -139,6 +177,33 @@ test('browsing and unpublished Editing Mask changes do not stale Candidate or Ev
     assert.equal(h.controller.state.candidate.status, 'current');
     assert.equal(h.dirty.state.candidateStale, false);
     assert.deepEqual(h.dirty.state.evidenceDirtyViewIds, []);
+});
+
+test('suspension retains exact Evidence artifacts and reuses them after resume', async () => {
+    let targetActive = true;
+    const h = harness(
+        async (_input, views) => result(views),
+        () => targetActive
+    );
+    const retainedArtifactDigest =
+        h.first.evidence['view-1'].artifact.artifactDigest;
+
+    targetActive = false;
+    assert.throws(
+        () => h.controller.beginCorrection(),
+        /current target is suspended/
+    );
+    assert.equal(h.controller.state.candidate.status, 'current');
+    assert.deepEqual(h.controller.cachedEvidenceViewIds, ['view-1', 'view-2']);
+
+    targetActive = true;
+    await h.controller.updateCandidate();
+
+    assert.deepEqual(h.calls[0].reuseViewIds, ['view-1', 'view-2']);
+    assert.equal(
+        h.calls[0].cachedEvidence.get('view-1').artifact.artifactDigest,
+        retainedArtifactDigest
+    );
 });
 
 test('Back to Candidate retains the editing draft and restores applicability when Stable inputs did not change', () => {

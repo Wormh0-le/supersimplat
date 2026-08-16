@@ -37,6 +37,7 @@ import type {
 } from './support-probe';
 import {
     AISelectViewMaskSession,
+    suspendedTargetMaskAuthoringLockReason,
     type AISelectMaskAuthoring
 } from './view-mask-session';
 
@@ -207,9 +208,11 @@ export class AISelectAnchorAdjustmentController {
                 targetContextId: () => this.draft?.targetContextId ?? null,
                 currentRgb: () => this.currentDraftRgb(),
                 lockReason: () =>
-                    this.readyRender === null
-                        ? 'AI Select requires a ready changed-Anchor RGB draft before Mask authoring.'
-                        : null,
+                    this.anchorState.context?.lifecycle === 'suspended'
+                        ? suspendedTargetMaskAuthoringLockReason
+                        : this.readyRender === null
+                          ? 'AI Select requires a ready changed-Anchor RGB draft before Mask authoring.'
+                          : null,
                 createMaskRequest: (
                     promptState: PromptState,
                     proposalAttemptId: string,
@@ -596,7 +599,6 @@ export class AISelectAnchorAdjustmentController {
         if (
             confirmed === null ||
             context === null ||
-            context.lifecycle !== 'active' ||
             context.targetContextId !== this.draft.targetContextId ||
             confirmedIdentity(confirmed) !== this.baselineIdentity
         ) {
@@ -633,6 +635,7 @@ export class AISelectAnchorAdjustmentController {
             draft !== null &&
             draft.adjustmentId === pending.adjustmentId &&
             draft.cameraBindingDigest === pending.cameraBindingDigest &&
+            this.anchorState.context?.lifecycle === 'active' &&
             this.confirmationState.confirmedAnchor !== null &&
             confirmedIdentity(this.confirmationState.confirmedAnchor) ===
                 this.baselineIdentity
@@ -646,6 +649,7 @@ export class AISelectAnchorAdjustmentController {
             draft !== null &&
             draft.adjustmentId === pending.adjustmentId &&
             draft.cameraBindingDigest === pending.cameraBindingDigest &&
+            this.anchorState.context?.lifecycle === 'active' &&
             this.draftMaskStateRevision === pending.draftMaskStateRevision &&
             this.mask.state.stableMask?.maskId === pending.stableMaskId &&
             this.mask.state.stableMask?.artifact.digest ===
@@ -673,6 +677,11 @@ export class AISelectAnchorAdjustmentController {
     private requireDraft(): AnchorAdjustmentDraft {
         if (this.draft === null) {
             throw new Error('AI Select has no active Anchor adjustment draft.');
+        }
+        if (this.anchorState.context?.lifecycle !== 'active') {
+            throw new Error(
+                'AI Select Anchor adjustment is unavailable while the current target is suspended.'
+            );
         }
         return this.draft;
     }

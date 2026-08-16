@@ -243,6 +243,7 @@ const confirmedAnchorFor = (anchorController, overrides = {}) => {
 };
 
 const createHarness = (options = {}) => {
+    let effectiveDependency = dependency();
     const anchorController = new AISelectAnchorController({
         renderer: {
             renderAnchor: async (request) => anchorRenderResponseFor(request)
@@ -347,7 +348,11 @@ const createHarness = (options = {}) => {
         maskProvider,
         reviewProvider,
         imageInstanceRuntimeBinding,
-        controller
+        controller,
+        getEffectiveDependency: () => effectiveDependency,
+        setEffectiveDependency: (value) => {
+            effectiveDependency = value;
+        }
     };
 };
 
@@ -355,7 +360,7 @@ const startAnchor = async (harness) => {
     await harness.anchorController.start({
         target: target(),
         dependencyToken: dependency(),
-        getCurrentDependencyToken: () => dependency(),
+        getCurrentDependencyToken: () => harness.getEffectiveDependency(),
         snapshot,
         cameraBinding: cameraBinding()
     });
@@ -1211,6 +1216,45 @@ test('a late hint or plan response with an obsolete Anchor identity is discarded
     await flush();
     assert.equal(harness.controller.state.plannerStatus, 'active');
     assert.equal(harness.controller.state.views.length, 2);
+});
+
+test('suspension preserves Generated View state, rejects late work, and resumes with a fresh binding', async () => {
+    const harness = createHarness();
+    await startAnchor(harness);
+    await confirmAnchor(harness);
+    const staleHintRequest = harness.geometryHints.calls[0];
+    const originalRevision = staleHintRequest.requestBinding.contextRevision;
+
+    harness.setEffectiveDependency(
+        dependency({ geometryToken: 'geometry-v2' })
+    );
+    harness.anchorController.synchronizeTargetDependency();
+
+    assert.equal(harness.anchorController.state.context.lifecycle, 'suspended');
+    assert.equal(harness.controller.state.plannerStatus, 'planning');
+    assert.throws(
+        () => harness.controller.addUserView(cameraBinding()),
+        /suspended/i
+    );
+
+    harness.setEffectiveDependency(dependency());
+    harness.anchorController.synchronizeTargetDependency();
+    const resumedRevision = harness.anchorController.state.context.revision;
+    const viewId = harness.controller.addUserView(cameraBinding());
+
+    harness.geometryHints.deferreds[0].resolve(
+        hintResponseFor(staleHintRequest)
+    );
+    await flush();
+
+    assert.equal(harness.planner.calls.length, 0);
+    assert.equal(harness.viewRenderer.calls.length, 1);
+    assert.equal(harness.controller.state.views[0].viewId, viewId);
+    assert.equal(
+        harness.viewRenderer.calls[0].requestBinding.contextRevision,
+        resumedRevision
+    );
+    assert.ok(resumedRevision > originalRevision);
 });
 
 test('Restart disposes target-local Generated View and Mask state', async () => {

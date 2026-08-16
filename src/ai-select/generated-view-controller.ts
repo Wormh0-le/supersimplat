@@ -485,6 +485,8 @@ export class AISelectGeneratedViewController {
     private nextPublicationAttemptOrdinal = 0;
     private nextUserViewOrdinal = 0;
     private nextViewCreationOrdinal = 0;
+    private observedTargetContextId: string | null = null;
+    private observedTargetLifecycle: 'active' | 'suspended' | null = null;
 
     constructor(options: AISelectGeneratedViewControllerOptions) {
         this.anchor = options.anchor;
@@ -502,6 +504,15 @@ export class AISelectGeneratedViewController {
         this.supportsGeneratedViews =
             options.supportsGeneratedViews ?? (() => true);
         this.dirtyState.subscribe(() => this.publish());
+        this.anchor.subscribe((state) =>
+            this.handleTargetLifecycle(
+                state.context?.targetContextId ?? null,
+                state.context?.lifecycle === 'active' ||
+                    state.context?.lifecycle === 'suspended'
+                    ? state.context.lifecycle
+                    : null
+            )
+        );
         options.confirmation.subscribe((state) =>
             this.handleConfirmationState(state)
         );
@@ -551,6 +562,7 @@ export class AISelectGeneratedViewController {
      * inspectable.
      */
     confirmReviewAsIs(viewId: string): void {
+        this.requireTargetActive();
         const view = this.requireView(viewId);
         if (
             view.rgb === undefined ||
@@ -585,6 +597,7 @@ export class AISelectGeneratedViewController {
         viewId: string,
         participation: AIViewParticipation
     ): void {
+        this.requireTargetActive();
         const view = this.requireView(viewId);
         if (participation === 'included') {
             const stable =
@@ -621,6 +634,7 @@ export class AISelectGeneratedViewController {
      * never the Route-B planner pipeline (Final Spec v1.3 §§5, 17–18).
      */
     addUserView(cameraBinding: CameraBinding): string {
+        this.requireTargetActive();
         if (!this.isRunCurrent(this.runOrdinal)) {
             throw new Error(
                 'AI Select requires the confirmed Current Target Context before adding a user View.'
@@ -766,6 +780,7 @@ export class AISelectGeneratedViewController {
      * atomic swap and its rotated identity dirties Evidence without lifting.
      */
     noteViewStablePublication(viewId: string): void {
+        this.requireTargetActive();
         const view = this.views.find((entry) => entry.viewId === viewId);
         if (
             view === undefined ||
@@ -810,8 +825,13 @@ export class AISelectGeneratedViewController {
         return this.requestBinding?.targetContextId ?? null;
     }
 
+    isTargetActive(): boolean {
+        return this.anchor.isTargetActive();
+    }
+
     /** Re-run the initial bounded plan after its one product failure state. */
     retryPlanning(): void {
+        this.requireTargetActive();
         if (this.identity === null || this.plannerStatus !== 'failed') {
             throw new Error(
                 'AI Select can retry planning only after a planner failure.'
@@ -837,6 +857,40 @@ export class AISelectGeneratedViewController {
         }
         this.disposeRun();
         this.beginRun(confirmed, identity);
+    }
+
+    private handleTargetLifecycle(
+        targetContextId: string | null,
+        lifecycle: 'active' | 'suspended' | null
+    ): void {
+        if (targetContextId !== this.observedTargetContextId) {
+            this.observedTargetContextId = targetContextId;
+            this.observedTargetLifecycle = lifecycle;
+            return;
+        }
+        const previous = this.observedTargetLifecycle;
+        this.observedTargetLifecycle = lifecycle;
+        if (this.identity === null || previous === lifecycle) {
+            return;
+        }
+        if (lifecycle === 'suspended') {
+            // Logical cancellation only: artifacts remain inspectable while
+            // every pre-suspension asynchronous completion becomes stale.
+            this.runOrdinal += 1;
+            this.publish();
+            return;
+        }
+        if (previous === 'suspended' && lifecycle === 'active') {
+            const requestBinding =
+                this.anchor.createCurrentTargetRequestBinding();
+            if (
+                requestBinding !== null &&
+                requestBinding.targetContextId === targetContextId
+            ) {
+                this.requestBinding = requestBinding;
+                this.publish();
+            }
+        }
     }
 
     private beginRun(confirmed: ConfirmedAnchor, identity: string): void {
@@ -1659,6 +1713,14 @@ export class AISelectGeneratedViewController {
             throw new Error('AI Select requires a known Generated AIView.');
         }
         return view;
+    }
+
+    private requireTargetActive(): void {
+        if (!this.anchor.isTargetActive()) {
+            throw new Error(
+                'AI Select target-dependent editing is unavailable while the current target is suspended.'
+            );
+        }
     }
 
     private isRunCurrent(run: number): boolean {

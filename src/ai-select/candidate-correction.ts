@@ -75,6 +75,7 @@ export interface AISelectCandidateCorrectionControllerOptions<
     readonly produceCandidate: (
         input: CandidateCorrectionProductionInput<TPayload>
     ) => Promise<CandidateCorrectionProductionResult>;
+    readonly isTargetActive: () => boolean;
 }
 
 const copyEvidence = (
@@ -162,6 +163,7 @@ export class AISelectCandidateCorrectionController<TPayload = unknown> {
     private readonly produceCandidate: (
         input: CandidateCorrectionProductionInput<TPayload>
     ) => Promise<CandidateCorrectionProductionResult>;
+    private readonly isTargetActive: () => boolean;
     private readonly cachedEvidence = new Map<
         string,
         CachedCandidateEvidence
@@ -179,6 +181,7 @@ export class AISelectCandidateCorrectionController<TPayload = unknown> {
         this.candidatePublications = options.candidatePublications;
         this.resolveCurrentViews = options.resolveCurrentViews;
         this.produceCandidate = options.produceCandidate;
+        this.isTargetActive = options.isTargetActive;
         this.candidatePublications.subscribe(() => this.publish());
     }
 
@@ -212,6 +215,7 @@ export class AISelectCandidateCorrectionController<TPayload = unknown> {
     }
 
     beginCorrection(): void {
+        this.requireTargetActive();
         if (this.candidatePublications.presentationState.status !== 'current') {
             throw new Error('AI Select can fix only a current 3D Candidate.');
         }
@@ -237,6 +241,7 @@ export class AISelectCandidateCorrectionController<TPayload = unknown> {
     }
 
     async updateCandidate(): Promise<void> {
+        this.requireTargetActive();
         if (this.status === 'updating') {
             throw new Error('AI Select is already updating the 3D Candidate.');
         }
@@ -318,12 +323,21 @@ export class AISelectCandidateCorrectionController<TPayload = unknown> {
             this.errorMessage = undefined;
             this.publish();
         } catch (error) {
-            if (ordinal === this.updateOrdinal) {
-                this.status = 'failed';
-                this.errorMessage = messageFor(error);
-                this.publish();
+            if (ordinal !== this.updateOrdinal) {
+                return;
             }
+            this.status = 'failed';
+            this.errorMessage = messageFor(error);
+            this.publish();
             throw error;
+        }
+    }
+
+    private requireTargetActive(): void {
+        if (!this.isTargetActive()) {
+            throw new Error(
+                'AI Select cannot edit or Re-Lift while the current target is suspended.'
+            );
         }
     }
 
@@ -331,6 +345,17 @@ export class AISelectCandidateCorrectionController<TPayload = unknown> {
         this.updateOrdinal += 1;
         this.cachedEvidence.clear();
         this.mode = 'candidate';
+        this.status = 'idle';
+        this.errorMessage = undefined;
+        this.publish();
+    }
+
+    /** Logical cancellation for target suspension; retained Candidate survives. */
+    discardPendingUpdate(): void {
+        if (this.status !== 'updating') {
+            return;
+        }
+        this.updateOrdinal += 1;
         this.status = 'idle';
         this.errorMessage = undefined;
         this.publish();

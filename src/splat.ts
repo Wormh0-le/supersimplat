@@ -62,6 +62,8 @@ class Splat extends Element {
     aiSelectGeometryRevision = 0;
     aiSelectGaussianIdentityRevision = 0;
     aiSelectWorldTransformRevision = 0;
+    /** Non-reversible identity for an underlying GSplatData replacement. */
+    aiSelectContentRevision = 0;
     stateTexture: Texture;
     // encapsulates per-splat state mirror (cpu Uint8Array + gpu Texture).
     // all writes go through state.setBits/clearBits/toggleBits, then flush().
@@ -346,10 +348,12 @@ class Splat extends Element {
         oldAsset.unload();
 
         this.changedCounter++;
+        this.aiSelectContentRevision++;
         this.aiSelectRenderStateRevision++;
         this.aiSelectGeometryRevision++;
         this.aiSelectGaussianIdentityRevision++;
         this.aiSelectWorldTransformRevision++;
+        this.notifyAISelectDependencyChanged();
         this.scene.forceRender = true;
     }
 
@@ -371,6 +375,9 @@ class Splat extends Element {
         // handle splats being added or removed
         if (changedState & State.deleted) {
             this.aiSelectGaussianIdentityRevision++;
+            // Membership changed synchronously. Suspend before the asynchronous
+            // sort/bounds refresh can yield to more target-bound authoring.
+            this.notifyAISelectDependencyChanged();
             await this.updateSorting();
         } else {
             await this.updateLocalBounds();
@@ -620,11 +627,17 @@ class Splat extends Element {
         this.aiSelectWorldTransformRevision++;
 
         this.scene.events.fire('splat.moved', this);
+        this.notifyAISelectDependencyChanged();
     }
 
     /** Mark an effective per-Gaussian transform/geometry mutation for AI Select. */
     markAISelectGeometryChanged() {
         this.aiSelectGeometryRevision++;
+        this.notifyAISelectDependencyChanged();
+    }
+
+    private notifyAISelectDependencyChanged() {
+        this.scene?.events.fire('splat.aiSelectDependencyChanged', this);
     }
 
     // calculate both selection and local bounds (async, callers must await)
@@ -664,7 +677,9 @@ class Splat extends Element {
     set visible(value: boolean) {
         if (value !== this.visible) {
             this._visible = value;
+            this.aiSelectRenderStateRevision++;
             this.scene?.events.fire('splat.visibility', this);
+            this.notifyAISelectDependencyChanged();
         }
     }
 
@@ -677,6 +692,7 @@ class Splat extends Element {
             this._tintClr.set(value.r, value.g, value.b);
             this.aiSelectRenderStateRevision++;
             this.scene.events.fire('splat.tintClr', this);
+            this.notifyAISelectDependencyChanged();
         }
     }
 
@@ -689,6 +705,7 @@ class Splat extends Element {
             this._temperature = value;
             this.aiSelectRenderStateRevision++;
             this.scene.events.fire('splat.temperature', this);
+            this.notifyAISelectDependencyChanged();
         }
     }
 
@@ -701,6 +718,7 @@ class Splat extends Element {
             this._saturation = value;
             this.aiSelectRenderStateRevision++;
             this.scene.events.fire('splat.saturation', this);
+            this.notifyAISelectDependencyChanged();
         }
     }
 
@@ -713,6 +731,7 @@ class Splat extends Element {
             this._brightness = value;
             this.aiSelectRenderStateRevision++;
             this.scene.events.fire('splat.brightness', this);
+            this.notifyAISelectDependencyChanged();
         }
     }
 
@@ -725,6 +744,7 @@ class Splat extends Element {
             this._blackPoint = value;
             this.aiSelectRenderStateRevision++;
             this.scene.events.fire('splat.blackPoint', this);
+            this.notifyAISelectDependencyChanged();
         }
     }
 
@@ -737,6 +757,7 @@ class Splat extends Element {
             this._whitePoint = value;
             this.aiSelectRenderStateRevision++;
             this.scene.events.fire('splat.whitePoint', this);
+            this.notifyAISelectDependencyChanged();
         }
     }
 
@@ -749,6 +770,7 @@ class Splat extends Element {
             this._transparency = value;
             this.aiSelectRenderStateRevision++;
             this.scene.events.fire('splat.transparency', this);
+            this.notifyAISelectDependencyChanged();
         }
     }
 

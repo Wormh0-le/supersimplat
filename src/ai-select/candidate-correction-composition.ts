@@ -14,7 +14,10 @@ import {
     type AISelectCandidateReLiftProvider,
     type CandidateReLiftViewInput
 } from './candidate-re-lift';
-import { createEvidenceWorkingSet } from './gaussian-evidence-contract';
+import {
+    createEvidenceWorkingSet,
+    rebindGaussianEvidenceArtifactForExactRestoration
+} from './gaussian-evidence-contract';
 import type { AISelectGeneratedViewController } from './generated-view-controller';
 import type { AISelectMaskController } from './mask-controller';
 
@@ -175,6 +178,7 @@ export const createAISelectCandidateCorrectionController = (
     const controller = new AISelectCandidateCorrectionController({
         dirtyState: options.masks.dirtyState,
         candidatePublications: options.candidatePublications,
+        isTargetActive: () => options.anchor.isTargetActive(),
         resolveCurrentViews: resolveViews,
         produceCandidate: async (
             input: CandidateCorrectionProductionInput<CandidateReLiftViewInput>
@@ -183,9 +187,18 @@ export const createAISelectCandidateCorrectionController = (
                 const cachedArtifact = input.cachedEvidence.get(
                     view.viewId
                 )?.artifact;
+                const currentCachedArtifact =
+                    cachedArtifact === undefined
+                        ? undefined
+                        : rebindGaussianEvidenceArtifactForExactRestoration(
+                              cachedArtifact,
+                              view.payload.currentInput.requestBinding
+                          );
                 return Object.freeze({
                     ...view.payload,
-                    ...(cachedArtifact === undefined ? {} : { cachedArtifact })
+                    ...(currentCachedArtifact === undefined
+                        ? {}
+                        : { cachedArtifact: currentCachedArtifact })
                 });
             });
             const first = views[0];

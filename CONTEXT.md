@@ -326,6 +326,13 @@ _Avoid_: Candidate stale, destroyed session
 A semantic identity covering the target dependencies relevant to rendering/lifting, including render state, geometry, Gaussian identity/membership, and world/target transform as required. Exact Undo may restore the same semantic token.  
 _Avoid_: monotonic global scene counter only
 
+**Undo Scene Change**  
+The Suspended-context action that invokes one ordinary Native Undo. It resumes
+AI Select only when the resulting effective TargetDependencyToken exactly
+matches the retained pre-mutation token; otherwise the context remains
+Suspended and no artifact is remapped.  
+_Avoid_: forced resume, partial artifact repair, AI-local undo
+
 **AIRequestBinding**  
 The minimum async identity carried by AI requests/results: targetContextId, contextRevision, and dependencyToken. Non-matching results are stale and discarded regardless of cancellation success.  
 _Avoid_: request ID alone

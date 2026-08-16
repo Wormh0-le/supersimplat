@@ -10,6 +10,7 @@ import reLiftSvg from './svg/ai-select-re-lift.svg';
 import arrowSvg from './svg/arrow.svg';
 import cameraResetSvg from './svg/camera-reset.svg';
 import collapseSvg from './svg/collapse.svg';
+import undoSvg from './svg/edit-undo.svg';
 import hiddenSvg from './svg/hidden.svg';
 import pinSvg from './svg/pin.svg';
 import redoSvg from './svg/redo.svg';
@@ -126,6 +127,8 @@ export interface AISelectAnchorDockOptions<TCandidatePayload = unknown> {
     readonly readiness: SelectionServiceReadinessInterface;
     readonly liftReadiness: LiftReadinessStore;
     readonly tooltips: Tooltips;
+    readonly onUndoSceneChange: () => Promise<void>;
+    readonly canUndoSceneChange: () => boolean;
 }
 
 interface GeneratedCardElements {
@@ -281,6 +284,13 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly userViewMasks: AISelectUserViewMaskController;
     private readonly onInspectCamera: (viewId: string | null) => void;
     private readonly status: Label;
+    private readonly suspendedSurface: Container;
+    private readonly suspendedMessage: Label;
+    private readonly undoSceneChangeButton: Button;
+    private readonly canUndoSceneChange: () => boolean;
+    private undoSceneChangePending = false;
+    private undoSceneChangeFailed = false;
+    private suspendedTargetContextId: string | null = null;
     private availabilityStatus: SelectionServiceReadinessStatus;
     private readonly maskStatus: Label;
     private readonly promptStatus: Label;
@@ -359,6 +369,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.maskRegistry = options.maskRegistry;
         this.userViewMasks = options.userViewMasks;
         this.onInspectCamera = options.onInspectCamera;
+        this.canUndoSceneChange = options.canUndoSceneChange;
         this.maskState = mask.state;
         this.confirmationState = confirmation.state;
         this.anchorAdjustmentState = options.anchorAdjustment.state;
@@ -390,6 +401,49 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.availabilityStatus = readinessState.status;
             this.render();
         });
+
+        this.suspendedSurface = new Container({
+            id: 'ai-select-suspended-surface',
+            hidden: true
+        });
+        this.suspendedSurface.dom.setAttribute('role', 'status');
+        this.suspendedMessage = new Label({
+            id: 'ai-select-suspended-message'
+        });
+        this.undoSceneChangeButton = new Button({
+            id: 'ai-select-undo-scene-change'
+        });
+        const renderUndoSceneChangeLabel = (): void => {
+            const label = i18n.t('ai-select.suspended.undo-scene-change');
+            const icon = createSvg(undoSvg);
+            icon.classList.add('ai-select-undo-scene-change-icon');
+            icon.setAttribute('aria-hidden', 'true');
+            const text = document.createElement('span');
+            text.textContent = label;
+            this.undoSceneChangeButton.dom.replaceChildren(icon, text);
+            setSvgButtonLabel(this.undoSceneChangeButton, label);
+        };
+        this.undoSceneChangeButton.on('click', () => {
+            if (this.undoSceneChangePending) {
+                return;
+            }
+            this.undoSceneChangeFailed = false;
+            this.undoSceneChangePending = true;
+            this.renderSuspensionSurface();
+            options
+                .onUndoSceneChange()
+                .catch((error) => {
+                    console.error(error);
+                    this.undoSceneChangeFailed = true;
+                })
+                .finally(() => {
+                    this.undoSceneChangePending = false;
+                    this.renderSuspensionSurface();
+                });
+        });
+        this.suspendedSurface.append(this.suspendedMessage);
+        this.suspendedSurface.append(this.undoSceneChangeButton);
+        renderUndoSceneChangeLabel();
 
         this.imageViewport = document.createElement('div');
         this.imageViewport.id = 'ai-select-anchor-dock-image-viewport';
@@ -959,6 +1013,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         mainRow.append(workArea);
         mainRow.dom.appendChild(inspectorResizeHandle);
         mainRow.append(inspector);
+        this.append(this.suspendedSurface);
         this.append(mainRow);
 
         const dockPreferenceKey = 'supersplat.ai-select.view-dock-layout';
@@ -1258,6 +1313,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.render();
         });
         i18n.onChange(() => {
+            renderUndoSceneChangeLabel();
             setSvgButtonLabel(
                 this.plannerRetryButton,
                 i18n.t('ai-select.views.planner.retry')
@@ -1402,7 +1458,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         participationIcon.setAttribute('aria-hidden', 'true');
         participationIcon.classList.add('ai-select-participation-icon');
         this.selectedViewParticipation.dom.replaceChildren(participationIcon);
-        this.selectedViewParticipation.enabled = participation.toggle !== null;
+        this.selectedViewParticipation.enabled =
+            participation.toggle !== null &&
+            this.state.context?.lifecycle === 'active';
         this.selectedViewParticipation.dom.setAttribute(
             'aria-pressed',
             participation.pressed.toString()
@@ -1488,6 +1546,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     }
 
     private render(): void {
+        this.renderSuspensionSurface();
         this.renderWorkAreaActions();
         const presentation = getAnchorDockPresentation(
             this.state,
@@ -1583,6 +1642,31 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.renderCurrentMaskOverlay();
         this.renderGallery(presentation);
         this.renderCanvasStateActionsVisibility();
+    }
+
+    private renderSuspensionSurface(): void {
+        const suspended = this.state.context?.lifecycle === 'suspended';
+        const suspendedTargetContextId = suspended
+            ? (this.state.context?.targetContextId ?? null)
+            : null;
+        if (suspendedTargetContextId !== this.suspendedTargetContextId) {
+            this.suspendedTargetContextId = suspendedTargetContextId;
+            this.undoSceneChangeFailed = false;
+        }
+        this.suspendedSurface.hidden = !suspended;
+        this.suspendedMessage.text = i18n.t(
+            this.undoSceneChangeFailed
+                ? 'ai-select.suspended.undo-failed'
+                : 'ai-select.suspended.message'
+        );
+        this.undoSceneChangeButton.enabled =
+            suspended &&
+            !this.undoSceneChangePending &&
+            this.canUndoSceneChange();
+        this.undoSceneChangeButton.dom.setAttribute(
+            'aria-busy',
+            String(this.undoSceneChangePending)
+        );
     }
 
     private renderAnchorAdjustmentDraft(): void {
@@ -1775,6 +1859,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
      * inspected. Render-pending Views have no ready authoring surface.
      */
     private authoring(): DockAuthoringTarget | null {
+        const targetActive = this.state.context?.lifecycle === 'active';
         const adjustmentDraft = this.anchorAdjustmentState.draft;
         if (adjustmentDraft !== null) {
             return {
@@ -1782,6 +1867,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 maskState: this.anchorAdjustment.mask.state,
                 locked: false,
                 ready:
+                    targetActive &&
                     adjustmentDraft.renderStatus === 'ready' &&
                     adjustmentDraft.rgb !== undefined,
                 ...(adjustmentDraft.rgb === undefined
@@ -1799,7 +1885,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 ops: session,
                 maskState: session.state,
                 locked: false,
-                ready: inspected.renderStatus === 'ready',
+                ready: targetActive && inspected.renderStatus === 'ready',
                 ...(inspected.rgb === undefined ? {} : { rgb: inspected.rgb })
             };
         }
@@ -1813,7 +1899,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             locked:
                 this.confirmation.locked &&
                 this.candidateCorrectionState.mode !== 'correcting',
-            ready: presentation.status === 'ready',
+            ready: targetActive && presentation.status === 'ready',
             ...(presentation.rgb === undefined ? {} : { rgb: presentation.rgb })
         };
     }

@@ -116,6 +116,17 @@ export class AISelectAnchorConfirmationController {
             options.getRenderWorkingSetValid ?? (() => true);
         this.anchor.subscribe((state) => {
             this.anchorState = state;
+            if (
+                state.context?.lifecycle === 'suspended' &&
+                this.activeProbe !== null
+            ) {
+                // Suspension is logical cancellation: keep published
+                // artifacts, but make the exact in-flight probe unable to
+                // replace validation state when it returns late.
+                this.activeProbe = null;
+                this.validationStatus = 'idle';
+                this.lastErrorMessage = undefined;
+            }
             this.trackInputIdentity();
         });
         this.mask.subscribe((state) => {

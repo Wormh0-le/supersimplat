@@ -1170,6 +1170,70 @@ export const copyGaussianEvidenceArtifact = (
     );
 };
 
+/**
+ * Exact dependency restoration advances the lifecycle revision to reject late
+ * work, while the retained numerical Evidence remains semantically current.
+ * Rebind only that revision and recompute the artifact digest; any target or
+ * dependency mismatch remains a hard failure and is never partially remapped.
+ */
+export const rebindGaussianEvidenceArtifactForExactRestoration = (
+    value: GaussianEvidenceArtifact,
+    requestBinding: AIRequestBinding
+): GaussianEvidenceArtifact => {
+    if (
+        !isGaussianEvidenceArtifact(value) ||
+        !isAIRequestBinding(requestBinding)
+    ) {
+        throw new Error(
+            'AI Select can rebind only a complete Evidence artifact and request identity.'
+        );
+    }
+    if (
+        value.requestBinding.targetContextId !==
+            requestBinding.targetContextId ||
+        !areTargetDependencyTokensEqual(
+            value.requestBinding.dependencyToken,
+            requestBinding.dependencyToken
+        ) ||
+        requestBinding.contextRevision < value.requestBinding.contextRevision
+    ) {
+        throw new Error(
+            'AI Select cannot rebind Evidence across a target or dependency change.'
+        );
+    }
+    if (
+        value.requestBinding.contextRevision === requestBinding.contextRevision
+    ) {
+        return copyGaussianEvidenceArtifact(value);
+    }
+    return createGaussianEvidenceArtifact(
+        {
+            requestBinding,
+            targetSplatId: value.targetSplatId,
+            viewId: value.viewId,
+            cameraBindingDigest: value.cameraBindingDigest,
+            rgbDigest: value.rgbDigest,
+            stableMaskDigest: value.stableMaskDigest,
+            evidencePolicyDigest: value.evidencePolicyDigest,
+            renderWorkingSetToken: value.renderWorkingSetToken,
+            evidenceWorkingSetToken: value.evidenceWorkingSetToken,
+            stableGaussianIds: value.stableGaussianIds,
+            rasterImplementationId: value.rasterImplementationId,
+            evidenceBackendKind: value.evidenceBackendKind,
+            evidenceBackendId: value.evidenceBackendId,
+            runtimeBuildId: value.runtimeBuildId
+        },
+        {
+            positiveMass: value.positiveMass,
+            negativeMass: value.negativeMass,
+            visibleMass: value.visibleMass,
+            ...(value.boundaryMass === undefined
+                ? {}
+                : { boundaryMass: value.boundaryMass })
+        }
+    );
+};
+
 const areRequestBindingsEqual = (
     left: AIRequestBinding,
     right: AIRequestBinding

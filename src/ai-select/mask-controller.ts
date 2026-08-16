@@ -16,6 +16,7 @@ import type {
 import type { PromptAdapterCapabilities, PromptState } from './prompt-state';
 import {
     AISelectViewMaskSession,
+    suspendedTargetMaskAuthoringLockReason,
     type AddBoxPromptInput,
     type AddMaskPromptInput,
     type AISelectMaskAuthoring,
@@ -92,9 +93,11 @@ export class AISelectMaskController implements AISelectMaskAuthoring {
                     this.anchorState.context?.targetContextId ?? null,
                 currentRgb: () => this.currentAnchorRgb(),
                 lockReason: () =>
-                    this.isAnchorLocked()
-                        ? 'AI Select Mask authoring is locked while the Anchor is confirmed. Adjust or restart the Anchor first.'
-                        : null,
+                    this.anchorState.context?.lifecycle === 'suspended'
+                        ? suspendedTargetMaskAuthoringLockReason
+                        : this.isAnchorLocked()
+                          ? 'AI Select Mask authoring is locked while the Anchor is confirmed. Adjust or restart the Anchor first.'
+                          : null,
                 createMaskRequest: (
                     promptState: PromptState,
                     proposalAttemptId: string,
@@ -155,11 +158,7 @@ export class AISelectMaskController implements AISelectMaskAuthoring {
 
     private currentAnchorRgb(): AnchorRgbArtifact | null {
         const anchor = this.anchorState.anchor;
-        if (
-            this.anchorState.context?.lifecycle !== 'active' ||
-            anchor?.renderStatus !== 'ready' ||
-            anchor.rgb === undefined
-        ) {
+        if (anchor?.renderStatus !== 'ready' || anchor.rgb === undefined) {
             return null;
         }
         return anchor.rgb;

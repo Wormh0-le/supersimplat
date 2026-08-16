@@ -1,3 +1,4 @@
+import type { AnchorAdjustmentPoseOutcome } from './anchor-adjustment';
 import {
     assertCameraToWorldMatrix,
     copyCameraBinding,
@@ -49,6 +50,12 @@ export interface CameraInspectionAnchor {
     resetAnchor(): Promise<void>;
 }
 
+/** Non-destructive changed-Anchor draft operations owned outside inspection. */
+export interface CameraInspectionAnchorAdjustment {
+    updateAdjustmentPose(cameraToWorld: readonly number[]): CameraBinding;
+    confirmAdjustmentPose(): Promise<AnchorAdjustmentPoseOutcome>;
+}
+
 export type CameraInspectionMode = 'inactive' | 'active';
 export type CameraInspectionManipulation = 'move' | 'rotate';
 
@@ -60,7 +67,9 @@ export type CameraInspectionManipulation = 'move' | 'rotate';
  * `user-view-draft` is the provisional Adjust New View target (Ticket 11):
  * manipulable like the Anchor, but its binding lives only inside the
  * inspection until an explicit Confirm View publishes it as a user-added
- * AIView; returning without confirming discards it.
+ * AIView; returning without confirming discards it. An
+ * `anchor-adjustment-draft` uses the same external observer and gizmos, while
+ * its pose and authoritative render remain isolated from the current Anchor.
  */
 export type CameraInspectionTarget =
     | { readonly kind: 'anchor' }
@@ -71,6 +80,10 @@ export type CameraInspectionTarget =
       }
     | {
           readonly kind: 'user-view-draft';
+          readonly cameraBinding: CameraBinding;
+      }
+    | {
+          readonly kind: 'anchor-adjustment-draft';
           readonly cameraBinding: CameraBinding;
       };
 
@@ -83,6 +96,7 @@ export interface CameraInspectionState {
 
 export interface CameraInspectionOptions {
     readonly anchor: CameraInspectionAnchor;
+    readonly anchorAdjustment?: CameraInspectionAnchorAdjustment;
     readonly editor: CameraInspectionEditor;
 }
 
@@ -210,9 +224,12 @@ const copyTarget = (target: CameraInspectionTarget): CameraInspectionTarget => {
     if (target.kind === 'anchor') {
         return Object.freeze({ kind: 'anchor' });
     }
-    if (target.kind === 'user-view-draft') {
+    if (
+        target.kind === 'user-view-draft' ||
+        target.kind === 'anchor-adjustment-draft'
+    ) {
         return Object.freeze({
-            kind: 'user-view-draft',
+            kind: target.kind,
             cameraBinding: copyCameraBinding(target.cameraBinding)
         });
     }
@@ -245,6 +262,15 @@ export const isUserViewDraftInspectionTarget = (
     return state?.mode === 'active' && state.target?.kind === 'user-view-draft';
 };
 
+export const isAnchorAdjustmentInspectionTarget = (
+    state: CameraInspectionState | undefined
+): boolean => {
+    return (
+        state?.mode === 'active' &&
+        state.target?.kind === 'anchor-adjustment-draft'
+    );
+};
+
 const copyState = (state: CameraInspectionState): CameraInspectionState => {
     return Object.freeze({
         mode: state.mode,
@@ -265,6 +291,7 @@ const copyState = (state: CameraInspectionState): CameraInspectionState => {
  */
 export class CameraInspectionController {
     private readonly anchor: CameraInspectionAnchor;
+    private readonly anchorAdjustment: CameraInspectionAnchorAdjustment | null;
     private readonly editor: CameraInspectionEditor;
     private readonly listeners = new Set<CameraInspectionListener>();
     private mode: CameraInspectionMode = 'inactive';
@@ -277,6 +304,7 @@ export class CameraInspectionController {
 
     constructor(options: CameraInspectionOptions) {
         this.anchor = options.anchor;
+        this.anchorAdjustment = options.anchorAdjustment ?? null;
         this.editor = options.editor;
     }
 
@@ -296,7 +324,7 @@ export class CameraInspectionController {
     }
 
     private bindingForTarget(target: CameraInspectionTarget): CameraBinding {
-        if (target.kind === 'view' || target.kind === 'user-view-draft') {
+        if (target.kind !== 'anchor') {
             return copyCameraBinding(target.cameraBinding);
         }
         const anchorBinding = this.anchor.getAnchorCameraBinding();
@@ -357,21 +385,39 @@ export class CameraInspectionController {
     }
 
     /**
-     * Drag the provisional Adjust New View draft. Only the draft binding's
-     * pose changes — projection, clipping, convention, and revision stay
-     * exactly as captured from the Editor Camera — and nothing renders until
-     * Confirm View publishes the draft as a user-added AIView.
+     * Drag a provisional camera draft. User View drafts stay inspection-local;
+     * changed-Anchor drafts additionally update their non-destructive owner.
      */
     moveDraftFrustum(cameraToWorld: readonly number[]): void {
         this.requireActive();
         const target = this.requireDraftTarget();
         assertCameraToWorldMatrix(cameraToWorld);
+        const cameraBinding =
+            target.kind === 'anchor-adjustment-draft'
+                ? this.requireAnchorAdjustment().updateAdjustmentPose(
+                      cameraToWorld
+                  )
+                : copyCameraBinding({
+                      ...target.cameraBinding,
+                      cameraToWorld: Object.freeze([...cameraToWorld])
+                  });
         this.target = Object.freeze({
-            kind: 'user-view-draft',
-            cameraBinding: copyCameraBinding({
-                ...target.cameraBinding,
-                cameraToWorld: Object.freeze([...cameraToWorld])
-            })
+            kind: target.kind,
+            cameraBinding
+        });
+        this.publish();
+    }
+
+    syncAnchorAdjustmentDraft(binding: CameraBinding): void {
+        this.requireActive();
+        if (this.target?.kind !== 'anchor-adjustment-draft') {
+            throw new Error(
+                'Camera Inspection has no changed-Anchor adjustment draft.'
+            );
+        }
+        this.target = Object.freeze({
+            kind: 'anchor-adjustment-draft',
+            cameraBinding: copyCameraBinding(binding)
         });
         this.publish();
     }
@@ -385,6 +431,11 @@ export class CameraInspectionController {
     confirmDraftView(): CameraBinding {
         this.requireActive();
         const target = this.requireDraftTarget();
+        if (target.kind !== 'user-view-draft') {
+            throw new Error(
+                'Camera Inspection changed-Anchor drafts are not user Views.'
+            );
+        }
         const binding = copyCameraBinding(target.cameraBinding);
         this.returnToSceneView();
         return binding;
@@ -392,6 +443,10 @@ export class CameraInspectionController {
 
     async endAnchorManipulation(): Promise<void> {
         this.requireActive();
+        if (this.target?.kind === 'anchor-adjustment-draft') {
+            await this.requireAnchorAdjustment().confirmAdjustmentPose();
+            return;
+        }
         this.requireAnchorTarget();
         await this.queueFinalAnchorRender(() =>
             this.anchor.renderFinalPreview()
@@ -465,15 +520,27 @@ export class CameraInspectionController {
     }
 
     private requireDraftTarget(): {
-        readonly kind: 'user-view-draft';
+        readonly kind: 'user-view-draft' | 'anchor-adjustment-draft';
         readonly cameraBinding: CameraBinding;
     } {
-        if (this.target?.kind !== 'user-view-draft') {
+        if (
+            this.target?.kind !== 'user-view-draft' &&
+            this.target?.kind !== 'anchor-adjustment-draft'
+        ) {
             throw new Error(
                 'Camera Inspection has no provisional user View draft.'
             );
         }
         return this.target;
+    }
+
+    private requireAnchorAdjustment(): CameraInspectionAnchorAdjustment {
+        if (this.anchorAdjustment === null) {
+            throw new Error(
+                'Camera Inspection has no changed-Anchor adjustment owner.'
+            );
+        }
+        return this.anchorAdjustment;
     }
 
     private publish(): void {

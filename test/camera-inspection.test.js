@@ -504,3 +504,57 @@ test('returning from a draft inspection discards the provisional View', () => {
     assert.equal(inspection.state.mode, 'inactive');
     assert.throws(() => inspection.confirmDraftView());
 });
+
+test('changed-Anchor inspection updates and confirms only the staged adjustment pose', async () => {
+    const anchorBinding = captureEditorCameraBinding(editorCamera(), 5);
+    const poses = [];
+    let confirmations = 0;
+    const inspection = new CameraInspectionController({
+        anchor: {
+            getAnchorCameraBinding: () => anchorBinding,
+            updateAnchorCameraPose: () => {
+                throw new Error('adjustment draft never mutates the Anchor');
+            },
+            renderFinalPreview: async () => {
+                throw new Error('adjustment draft has its own render path');
+            },
+            resetAnchor: async () => undefined
+        },
+        anchorAdjustment: {
+            updateAdjustmentPose: (pose) => {
+                poses.push([...pose]);
+                return {
+                    ...anchorBinding,
+                    revision: anchorBinding.revision + 1,
+                    cameraToWorld: Object.freeze([...pose])
+                };
+            },
+            confirmAdjustmentPose: async () => {
+                confirmations += 1;
+            }
+        },
+        editor: {
+            captureSceneView: () => ({
+                sceneView: sceneView(),
+                restore: () => undefined
+            }),
+            setSceneView: () => undefined
+        }
+    });
+
+    inspection.enter({
+        kind: 'anchor-adjustment-draft',
+        cameraBinding: anchorBinding
+    });
+    inspection.moveDraftFrustum(cameraToWorld(7, 8, 9));
+    await inspection.endAnchorManipulation();
+
+    assert.deepEqual(poses, [cameraToWorld(7, 8, 9)]);
+    assert.equal(confirmations, 1);
+    assert.equal(inspection.state.target.kind, 'anchor-adjustment-draft');
+    assert.equal(
+        inspection.state.target.cameraBinding.revision,
+        anchorBinding.revision + 1
+    );
+    assert.throws(() => inspection.confirmDraftView());
+});

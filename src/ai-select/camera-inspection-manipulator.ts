@@ -14,6 +14,7 @@ import {
     type CameraBinding
 } from './camera-binding';
 import {
+    isAnchorAdjustmentInspectionTarget,
     isUserViewDraftInspectionTarget,
     type CameraInspectionController,
     type CameraInspectionManipulation,
@@ -52,7 +53,10 @@ export class AnchorFrustumManipulator {
         // Confirm View publishes the user-added AIView.
         this.manipulation = new AnchorFrustumManipulation({
             moveAnchorFrustum: (cameraToWorld) => {
-                if (isUserViewDraftInspectionTarget(this.inspectionState)) {
+                if (
+                    isUserViewDraftInspectionTarget(this.inspectionState) ||
+                    isAnchorAdjustmentInspectionTarget(this.inspectionState)
+                ) {
                     this.inspection.moveDraftFrustum(cameraToWorld);
                     return;
                 }
@@ -152,7 +156,8 @@ export class AnchorFrustumManipulator {
     private manipulableTarget(): CameraBinding | null {
         const target = this.inspectionState?.target;
         if (
-            target?.kind === 'user-view-draft' &&
+            (target?.kind === 'user-view-draft' ||
+                target?.kind === 'anchor-adjustment-draft') &&
             this.inspectionState?.mode === 'active'
         ) {
             return target.cameraBinding;

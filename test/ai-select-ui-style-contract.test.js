@@ -36,6 +36,53 @@ test('Candidate operations belong to Toolbar while correction stays in Dock', ()
     assert.match(dock, /ai-select-back-to-candidate/);
 });
 
+test('viewport Toolbar is icon-only with two normal-mode split actions', () => {
+    const toolbar = readFileSync('src/ui/ai-select-toolbar.ts', 'utf8');
+    assert.match(toolbar, /ai-select-toolbar-adjust-anchor/);
+    assert.match(toolbar, /ai-select-toolbar-add-view-group/);
+    assert.match(toolbar, /ai-select-toolbar-add-current-view/);
+    assert.match(toolbar, /ai-select-toolbar-adjust-new-view/);
+    assert.match(toolbar, /ai-select-add-view\.svg/);
+    assert.match(toolbar, /ai-select-new-pose\.svg/);
+    assert.doesNotMatch(toolbar, /ai-select-toolbar-tool/);
+    assert.doesNotMatch(toolbar, /ai-select-toolbar-status/);
+    assert.doesNotMatch(toolbar, /ai-select-toolbar-more/);
+    assert.doesNotMatch(toolbar, /ai-select-toolbar-overflow/);
+    assert.doesNotMatch(toolbar, /onRestart|onExit|onRetryPreview/);
+    assert.doesNotMatch(toolbar, /[◆＋−∩◉⋯▾]/u);
+});
+
+test('viewport Toolbar operations have custom SVG, hit targets and accessible state', () => {
+    const toolbar = readFileSync('src/ui/ai-select-toolbar.ts', 'utf8');
+    const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
+    for (const icon of [
+        'anchor-adjust',
+        'move',
+        'rotate',
+        'reset',
+        'cancel',
+        'overlay',
+        'set',
+        'add',
+        'remove',
+        'intersect'
+    ]) {
+        assert.match(toolbar, new RegExp(`ai-select-${icon}\\.svg`));
+    }
+    assert.match(styles, /\.pcui-button\s*\{[\s\S]*?min-width:\s*40px;/);
+    assert.match(styles, /\.pcui-button\s*\{[\s\S]*?min-height:\s*40px;/);
+    assert.match(toolbar, /button\.dom\.title\s*=/);
+    assert.match(toolbar, /setAttribute\('aria-label', label\)/);
+    assert.match(toolbar, /setAttribute\(\s*'aria-pressed'/);
+    assert.match(toolbar, /event\.key === 'ArrowDown'/);
+    assert.match(toolbar, /event\.key !== 'Escape'/);
+    assert.match(toolbar, /aria-description/);
+    assert.match(
+        toolbar,
+        /if \(!candidatePresentation\.toolbar\.operationsEnabled\)\s*\{\s*return;/
+    );
+});
+
 test('Navigator selection owns both image selection and camera navigation', () => {
     const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
     assert.match(dock, /setAttribute\('role', 'listbox'\)/);

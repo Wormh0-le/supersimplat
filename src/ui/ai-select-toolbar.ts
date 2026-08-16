@@ -1,17 +1,10 @@
 import { Button, Container, Label } from '@playcanvas/pcui';
 
 import { i18n } from './localization';
+import type { AISelectAnchorAdjustmentController } from '../ai-select/anchor-adjustment';
 import type { AISelectAnchorConfirmationController } from '../ai-select/anchor-confirmation';
 import type { AISelectAnchorController } from '../ai-select/anchor-controller';
-import {
-    getAnchorDockPresentation,
-    type AnchorDockStatus
-} from '../ai-select/anchor-dock-presentation';
-import {
-    isAnchorInspectionTarget,
-    isUserViewDraftInspectionTarget,
-    type CameraInspectionController
-} from '../ai-select/camera-inspection';
+import type { CameraInspectionController } from '../ai-select/camera-inspection';
 import type {
     CandidateApplicationController,
     CandidateApplicationOperation
@@ -22,29 +15,37 @@ import type {
     CandidatePresentation,
     CandidatePresentationCoordinator
 } from '../ai-select/candidate-presentation';
+import {
+    mapAISelectViewportToolbar,
+    type AISelectViewportToolbarControl
+} from '../ai-select/viewport-toolbar-presentation';
+import addViewSvg from './svg/ai-select-add-view.svg';
+import addSvg from './svg/ai-select-add.svg';
+import anchorAdjustSvg from './svg/ai-select-anchor-adjust.svg';
+import cancelSvg from './svg/ai-select-cancel.svg';
+import chevronSvg from './svg/ai-select-chevron.svg';
+import confirmSvg from './svg/ai-select-confirm.svg';
+import intersectSvg from './svg/ai-select-intersect.svg';
+import moveSvg from './svg/ai-select-move.svg';
+import newPoseSvg from './svg/ai-select-new-pose.svg';
+import overlaySvg from './svg/ai-select-overlay.svg';
+import removeSvg from './svg/ai-select-remove.svg';
+import resetSvg from './svg/ai-select-reset.svg';
+import rotateSvg from './svg/ai-select-rotate.svg';
+import setSvg from './svg/ai-select-set.svg';
+
 export interface AISelectToolbarOptions {
     readonly candidatePresentation: CandidatePresentationCoordinator;
     readonly candidateOverlay: CandidateOverlayController;
     readonly candidateApplication: CandidateApplicationController;
     readonly onCandidateApplicationFailure: (error: unknown) => void;
-    readonly onRestart: () => Promise<void>;
-    readonly onExit: () => void;
-    readonly onEnterInspection: () => void;
-    readonly onReturnToSceneView: () => void;
-    readonly onResetAnchor: () => Promise<void>;
-    readonly onRetryPreview: () => Promise<void>;
+    readonly onBeginAnchorAdjustment: () => void;
+    readonly onCancelInspection: () => void;
+    readonly onResetAnchorAdjustment: () => void;
     readonly onAddCurrentView: () => void;
     readonly onAdjustNewView: () => void;
     readonly onConfirmDraftView: () => void;
 }
-
-const statusTextKeys: Record<AnchorDockStatus, string> = {
-    idle: 'ai-select.panel.idle',
-    ready: 'ai-select.anchor.ready',
-    previewing: 'ai-select.anchor.previewing',
-    rendering: 'ai-select.anchor.rendering',
-    failed: 'ai-select.anchor.failed'
-};
 
 const disabledReasonKeys: Record<CandidateOperationDisabledReason, string> = {
     'wait-for-update': 'ai-select.candidate.disabled.wait-for-update',
@@ -54,12 +55,50 @@ const disabledReasonKeys: Record<CandidateOperationDisabledReason, string> = {
     'restart-target': 'ai-select.candidate.disabled.restart-target'
 };
 
-/** Fixed, single-row main-viewport subtoolbar for the active AI context. */
+const operationIcons: Readonly<Record<CandidateApplicationOperation, string>> =
+    Object.freeze({
+        set: setSvg,
+        add: addSvg,
+        remove: removeSvg,
+        intersect: intersectSvg
+    });
+
+const createSvg = (svgString: string): Element => {
+    const decoded = decodeURIComponent(
+        svgString.substring('data:image/svg+xml,'.length)
+    );
+    return new DOMParser().parseFromString(decoded, 'image/svg+xml')
+        .documentElement;
+};
+
+const iconButton = (id: string, icon: string): Button => {
+    const button = new Button({ id });
+    button.dom.appendChild(createSvg(icon));
+    return button;
+};
+
+const describeButton = (
+    button: Button,
+    label: string,
+    description = ''
+): void => {
+    button.dom.setAttribute('aria-label', label);
+    button.dom.title =
+        description.length > 0 ? `${label}: ${description}` : label;
+    if (description.length > 0) {
+        button.dom.setAttribute('aria-description', description);
+    } else {
+        button.dom.removeAttribute('aria-description');
+    }
+};
+
+/** Compact, icon-only spatial actions for the active AI Select context. */
 export class AISelectToolbar extends Container {
     constructor(
         controller: AISelectAnchorController,
         inspection: CameraInspectionController,
         confirmation: AISelectAnchorConfirmationController,
+        adjustment: AISelectAnchorAdjustmentController,
         options: AISelectToolbarOptions,
         args = {}
     ) {
@@ -68,48 +107,57 @@ export class AISelectToolbar extends Container {
             id: 'ai-select-toolbar',
             hidden: true
         });
+        this.dom.setAttribute('role', 'toolbar');
+        this.dom.setAttribute('aria-label', i18n.t('ai-select.tool'));
         this.dom.addEventListener('pointerdown', (event) =>
             event.stopPropagation()
         );
 
-        const tool = new Label({ id: 'ai-select-toolbar-tool' });
-        const anchor = new Label({ id: 'ai-select-toolbar-anchor' });
-        const adjust = new Button({
-            id: 'ai-select-toolbar-adjust-anchor',
-            enabled: false
-        });
-        const move = new Button({
-            id: 'ai-select-toolbar-move-anchor',
+        const anchorAdjust = iconButton(
+            'ai-select-toolbar-adjust-anchor',
+            anchorAdjustSvg
+        );
+        const addViewGroup = new Container({
+            id: 'ai-select-toolbar-add-view-group',
             hidden: true
         });
-        const rotate = new Button({
-            id: 'ai-select-toolbar-rotate-anchor',
+        addViewGroup.dom.setAttribute('role', 'group');
+        const addCurrentView = iconButton(
+            'ai-select-toolbar-add-current-view',
+            addViewSvg
+        );
+        const addViewMenuTrigger = iconButton(
+            'ai-select-toolbar-add-view-menu-trigger',
+            chevronSvg
+        );
+        addViewMenuTrigger.dom.setAttribute('aria-haspopup', 'menu');
+        addViewMenuTrigger.dom.setAttribute('aria-expanded', 'false');
+        const addViewMenu = new Container({
+            id: 'ai-select-toolbar-add-view-menu',
             hidden: true
         });
-        const returnToSceneView = new Button({
-            id: 'ai-select-toolbar-return-to-scene-view',
-            hidden: true
-        });
-        const resetAnchor = new Button({
-            id: 'ai-select-toolbar-reset-anchor',
-            hidden: true
-        });
-        const confirmDraftView = new Button({
-            id: 'ai-select-toolbar-confirm-view',
-            hidden: true
-        });
-        const status = new Label({
-            id: 'ai-select-toolbar-status',
-            hidden: true
-        });
-        const retry = new Button({
-            id: 'ai-select-toolbar-retry-preview',
-            hidden: true
-        });
-        const addCurrentView = new Button({
-            id: 'ai-select-toolbar-add-current-view',
-            hidden: true
-        });
+        addViewMenu.dom.setAttribute('role', 'menu');
+        const adjustNewView = iconButton(
+            'ai-select-toolbar-adjust-new-view',
+            newPoseSvg
+        );
+        adjustNewView.dom.setAttribute('role', 'menuitem');
+        addViewMenu.append(adjustNewView);
+        addViewGroup.append(addCurrentView);
+        addViewGroup.append(addViewMenuTrigger);
+        addViewGroup.append(addViewMenu);
+
+        const move = iconButton('ai-select-toolbar-move-anchor', moveSvg);
+        const rotate = iconButton('ai-select-toolbar-rotate-anchor', rotateSvg);
+        const reset = iconButton('ai-select-toolbar-reset-anchor', resetSvg);
+        const confirmDraftView = iconButton(
+            'ai-select-toolbar-confirm-view',
+            confirmSvg
+        );
+        const cancel = iconButton(
+            'ai-select-toolbar-cancel-inspection',
+            cancelSvg
+        );
 
         const candidateGroup = new Container({
             id: 'ai-select-candidate-operation-group',
@@ -120,21 +168,28 @@ export class AISelectToolbar extends Container {
             id: 'ai-select-candidate-operation-reason'
         });
         operationReason.dom.setAttribute('role', 'status');
-        const overlayToggle = new Button({
-            id: 'ai-select-candidate-overlay-toggle'
+        const overlaySplit = new Container({
+            id: 'ai-select-candidate-overlay-split'
         });
-        const overlayMenuTrigger = new Button({
-            id: 'ai-select-candidate-overlay-menu-trigger',
-            text: '▾'
-        });
+        const overlayToggle = iconButton(
+            'ai-select-candidate-overlay-toggle',
+            overlaySvg
+        );
+        const overlayMenuTrigger = iconButton(
+            'ai-select-candidate-overlay-menu-trigger',
+            chevronSvg
+        );
+        overlayMenuTrigger.dom.setAttribute('aria-haspopup', 'menu');
+        overlayMenuTrigger.dom.setAttribute('aria-expanded', 'false');
         const overlayMenu = new Container({
             id: 'ai-select-candidate-overlay-menu',
             hidden: true
         });
         overlayMenu.dom.setAttribute('role', 'menu');
-        const uncertainToggle = new Button({
-            id: 'ai-select-candidate-uncertain-toggle'
-        });
+        const uncertainToggle = iconButton(
+            'ai-select-candidate-uncertain-toggle',
+            overlaySvg
+        );
         uncertainToggle.dom.setAttribute('role', 'menuitemcheckbox');
         const selectedLegend = new Label({
             class: ['ai-select-candidate-legend', 'candidate-selected']
@@ -145,6 +200,10 @@ export class AISelectToolbar extends Container {
         overlayMenu.append(uncertainToggle);
         overlayMenu.append(selectedLegend);
         overlayMenu.append(uncertainLegend);
+        overlaySplit.append(overlayToggle);
+        overlaySplit.append(overlayMenuTrigger);
+        overlaySplit.append(overlayMenu);
+        candidateGroup.append(overlaySplit);
 
         const candidateOperations: readonly CandidateApplicationOperation[] = [
             'set',
@@ -152,16 +211,12 @@ export class AISelectToolbar extends Container {
             'remove',
             'intersect'
         ];
-        const operationIcons: Record<CandidateApplicationOperation, string> = {
-            set: '◆',
-            add: '＋',
-            remove: '−',
-            intersect: '∩'
-        };
         const operationButtons = new Map<
             CandidateApplicationOperation,
             Button
         >();
+        let candidatePresentation: CandidatePresentation =
+            options.candidatePresentation.state;
         const applicationFailure = new Label({
             id: 'ai-select-candidate-application-failure',
             hidden: true
@@ -183,44 +238,39 @@ export class AISelectToolbar extends Container {
                 failureTimer = null;
             }, 4000);
         };
-        candidateGroup.append(overlayToggle);
-        candidateGroup.append(overlayMenuTrigger);
-        candidateGroup.append(overlayMenu);
-        for (const operation of candidateOperations) {
-            const button = new Button({
-                id: `ai-select-toolbar-candidate-${operation}`
-            });
-            button.dom.dataset.icon = operationIcons[operation];
-            button.on('click', () => {
+        const applyCandidate = (
+            operation: CandidateApplicationOperation
+        ): (() => void) => {
+            return () => {
+                if (!candidatePresentation.toolbar.operationsEnabled) {
+                    return;
+                }
                 options.candidateApplication
                     .apply(operation)
                     .catch((error) => reportApplicationFailure(error));
-            });
+            };
+        };
+        for (const operation of candidateOperations) {
+            const button = iconButton(
+                `ai-select-toolbar-candidate-${operation}`,
+                operationIcons[operation]
+            );
+            button.on('click', applyCandidate(operation));
             operationButtons.set(operation, button);
             candidateGroup.append(button);
         }
         candidateGroup.append(operationReason);
 
-        const more = new Button({
-            id: 'ai-select-toolbar-more',
-            text: '⋯'
-        });
-        more.dom.setAttribute('aria-expanded', 'false');
-        const overflow = new Container({
-            id: 'ai-select-toolbar-overflow',
-            hidden: true
-        });
-        overflow.dom.setAttribute('role', 'menu');
-        const adjustNewView = new Button({
-            id: 'ai-select-toolbar-adjust-new-view',
-            hidden: true
-        });
-        const restart = new Button({ id: 'ai-select-toolbar-restart' });
-        const exit = new Button({ id: 'ai-select-toolbar-exit' });
-        adjustNewView.dom.setAttribute('role', 'menuitem');
-        restart.dom.setAttribute('role', 'menuitem');
-        exit.dom.setAttribute('role', 'menuitem');
-
+        const closeAddViewMenu = (restoreFocus: boolean): void => {
+            if (addViewMenu.hidden) {
+                return;
+            }
+            addViewMenu.hidden = true;
+            addViewMenuTrigger.dom.setAttribute('aria-expanded', 'false');
+            if (restoreFocus) {
+                addViewMenuTrigger.dom.focus();
+            }
+        };
         const closeOverlayMenu = (restoreFocus: boolean): void => {
             if (overlayMenu.hidden) {
                 return;
@@ -231,196 +281,201 @@ export class AISelectToolbar extends Container {
                 overlayMenuTrigger.dom.focus();
             }
         };
-        const closeOverflow = (restoreFocus: boolean): void => {
-            if (overflow.hidden) {
-                return;
-            }
-            overflow.hidden = true;
-            more.dom.setAttribute('aria-expanded', 'false');
-            if (restoreFocus) {
-                more.dom.focus();
-            }
+        const openAddViewMenu = (): void => {
+            addViewMenu.hidden = false;
+            addViewMenuTrigger.dom.setAttribute('aria-expanded', 'true');
+            closeOverlayMenu(false);
+            adjustNewView.dom.focus();
+        };
+        const openOverlayMenu = (): void => {
+            overlayMenu.hidden = false;
+            overlayMenuTrigger.dom.setAttribute('aria-expanded', 'true');
+            closeAddViewMenu(false);
+            uncertainToggle.dom.focus();
         };
 
-        adjust.on('click', () => options.onEnterInspection());
+        anchorAdjust.on('click', () => options.onBeginAnchorAdjustment());
+        addCurrentView.on('click', () => options.onAddCurrentView());
+        addViewMenuTrigger.on('click', () => {
+            if (addViewMenu.hidden) {
+                openAddViewMenu();
+            } else {
+                closeAddViewMenu(true);
+            }
+        });
+        addViewMenuTrigger.dom.addEventListener('keydown', (event) => {
+            if (event.key === 'ArrowDown') {
+                openAddViewMenu();
+                event.preventDefault();
+            }
+        });
+        adjustNewView.on('click', () => {
+            closeAddViewMenu(false);
+            options.onAdjustNewView();
+        });
         move.on('click', () => inspection.setManipulation('move'));
         rotate.on('click', () => inspection.setManipulation('rotate'));
-        returnToSceneView.on('click', () => options.onReturnToSceneView());
-        resetAnchor.on('click', () => {
-            options
-                .onResetAnchor()
-                .catch((error: unknown): void => console.error(error));
-        });
+        reset.on('click', () => options.onResetAnchorAdjustment());
         confirmDraftView.on('click', () => options.onConfirmDraftView());
-        retry.on('click', () => {
-            options
-                .onRetryPreview()
-                .catch((error: unknown): void => console.error(error));
-        });
-        addCurrentView.on('click', () => options.onAddCurrentView());
+        cancel.on('click', () => options.onCancelInspection());
         overlayToggle.on('click', () =>
             options.candidateOverlay.toggleSelected()
         );
         overlayMenuTrigger.on('click', () => {
-            overlayMenu.hidden = !overlayMenu.hidden;
-            overlayMenuTrigger.dom.setAttribute(
-                'aria-expanded',
-                (!overlayMenu.hidden).toString()
-            );
-            closeOverflow(false);
+            if (overlayMenu.hidden) {
+                openOverlayMenu();
+            } else {
+                closeOverlayMenu(true);
+            }
+        });
+        overlayMenuTrigger.dom.addEventListener('keydown', (event) => {
+            if (event.key === 'ArrowDown') {
+                openOverlayMenu();
+                event.preventDefault();
+            }
         });
         uncertainToggle.on('click', () => {
             options.candidateOverlay.setUncertainVisible(
                 !options.candidateOverlay.state.uncertainVisible
             );
         });
-        adjustNewView.on('click', () => {
-            closeOverflow(false);
-            options.onAdjustNewView();
-        });
-        restart.on('click', () => {
-            closeOverflow(false);
-            options
-                .onRestart()
-                .catch((error: unknown): void => console.error(error));
-        });
-        exit.on('click', () => options.onExit());
-        more.on('click', () => {
-            overflow.hidden = !overflow.hidden;
-            more.dom.setAttribute(
-                'aria-expanded',
-                (!overflow.hidden).toString()
-            );
-            closeOverlayMenu(false);
-        });
         document.addEventListener('pointerdown', (event) => {
+            if (!addViewGroup.dom.contains(event.target as Node)) {
+                closeAddViewMenu(false);
+            }
             if (!candidateGroup.dom.contains(event.target as Node)) {
                 closeOverlayMenu(false);
-            }
-            if (!this.dom.contains(event.target as Node)) {
-                closeOverflow(false);
             }
         });
         window.addEventListener(
             'keydown',
             (event) => {
-                if (event.key === 'Escape') {
-                    const overlayWasOpen = !overlayMenu.hidden;
-                    const overflowWasOpen = !overflow.hidden;
-                    closeOverlayMenu(overlayWasOpen);
-                    closeOverflow(!overlayWasOpen && overflowWasOpen);
-                    if (overlayWasOpen || overflowWasOpen) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                    }
+                if (event.key !== 'Escape') {
+                    return;
+                }
+                const addWasOpen = !addViewMenu.hidden;
+                const overlayWasOpen = !overlayMenu.hidden;
+                closeAddViewMenu(addWasOpen);
+                closeOverlayMenu(!addWasOpen && overlayWasOpen);
+                if (addWasOpen || overlayWasOpen) {
+                    event.preventDefault();
+                    event.stopPropagation();
                 }
             },
             true
         );
 
-        this.append(tool);
-        this.append(anchor);
-        this.append(adjust);
+        this.append(anchorAdjust);
+        this.append(addViewGroup);
         this.append(move);
         this.append(rotate);
-        this.append(returnToSceneView);
-        this.append(resetAnchor);
+        this.append(reset);
         this.append(confirmDraftView);
-        this.append(status);
-        this.append(retry);
-        this.append(addCurrentView);
+        this.append(cancel);
         this.append(candidateGroup);
         this.append(applicationFailure);
-        this.append(more);
-        overflow.append(adjustNewView);
-        overflow.append(restart);
-        overflow.append(exit);
-        this.append(overflow);
 
+        const allButtons: Readonly<
+            Partial<Record<AISelectViewportToolbarControl, Button>>
+        > = Object.freeze({
+            'anchor-adjust': anchorAdjust,
+            'add-current-view': addCurrentView,
+            'add-new-pose': adjustNewView,
+            move,
+            rotate,
+            reset,
+            'confirm-view': confirmDraftView,
+            cancel,
+            overlay: overlayToggle,
+            set: operationButtons.get('set'),
+            add: operationButtons.get('add'),
+            remove: operationButtons.get('remove'),
+            intersect: operationButtons.get('intersect')
+        });
         let anchorState = controller.state;
         let inspectionState = inspection.state;
         let confirmationState = confirmation.state;
-        let candidatePresentation: CandidatePresentation =
-            options.candidatePresentation.state;
+        let adjustmentState = adjustment.state;
         let overlayState = options.candidateOverlay.state;
 
-        const render = () => {
-            const hasContext = anchorState.context !== null;
-            const hasAnchor = anchorState.anchor !== null;
-            const contextIsActive = anchorState.context?.lifecycle === 'active';
-            const inspecting = inspectionState.mode === 'active';
-            // Camera and draft inspection own the Toolbar while active. A
-            // Candidate remains inspectable in the viewport, but never
-            // displaces the higher-priority manipulation controls.
-            const candidateContext =
-                candidatePresentation.toolbar.visible && !inspecting;
-            const canAddUserView =
-                contextIsActive &&
-                hasAnchor &&
-                confirmationState.confirmedAnchor !== null &&
-                !inspecting;
-            const inspectingAnchor = isAnchorInspectionTarget(inspectionState);
-            const inspectingDraft =
-                isUserViewDraftInspectionTarget(inspectionState);
-            const presentation = getAnchorDockPresentation(anchorState);
-            this.hidden = !hasContext;
-
-            tool.text = i18n.t(
-                inspectingDraft
-                    ? 'ai-select.user-view.adjusting'
-                    : inspecting
-                      ? 'ai-select.camera-inspection'
-                      : 'ai-select.tool'
+        const render = (): void => {
+            const presentation = mapAISelectViewportToolbar({
+                hasContext: anchorState.context !== null,
+                contextActive: anchorState.context?.lifecycle === 'active',
+                hasConfirmedAnchor: confirmationState.confirmedAnchor !== null,
+                inspectionTarget:
+                    inspectionState.mode === 'active'
+                        ? inspectionState.target
+                        : null,
+                manipulation: inspectionState.manipulation,
+                adjustmentStatus: adjustmentState.status,
+                candidate: candidatePresentation.toolbar
+            });
+            const controls = new Map(
+                presentation.controls.map((entry) => [entry.control, entry])
             );
-            anchor.text = i18n.t('ai-select.anchor.current-view');
-            adjust.text = i18n.t('ai-select.adjust-anchor');
-            move.text = i18n.t('ai-select.move');
-            rotate.text = i18n.t('ai-select.rotate');
-            returnToSceneView.text = i18n.t('ai-select.return-to-scene-view');
-            resetAnchor.text = i18n.t('ai-select.reset-anchor');
-            confirmDraftView.text = i18n.t('ai-select.user-view.confirm');
-            status.text = i18n.t(statusTextKeys[presentation.status]);
-            retry.text = i18n.t('ai-select.retry');
-            addCurrentView.text = i18n.t('ai-select.views.use-current');
-            adjustNewView.text = i18n.t('ai-select.views.adjust-new');
-            restart.text = i18n.t('ai-select.restart-current-target');
-            exit.text = i18n.t('ai-select.exit');
-            more.dom.setAttribute('aria-label', i18n.t('ai-select.more'));
-            more.dom.setAttribute('aria-haspopup', 'menu');
+            this.hidden = presentation.mode === 'hidden';
+            anchorAdjust.hidden = !controls.has('anchor-adjust');
+            addViewGroup.hidden = !controls.has('add-current-view');
+            move.hidden = !controls.has('move');
+            rotate.hidden = !controls.has('rotate');
+            reset.hidden = !controls.has('reset');
+            confirmDraftView.hidden = !controls.has('confirm-view');
+            cancel.hidden = !controls.has('cancel');
+            candidateGroup.hidden = presentation.mode !== 'candidate';
 
-            tool.hidden = candidateContext;
-            anchor.hidden = inspecting || candidateContext;
-            adjust.hidden = inspecting || candidateContext;
-            move.hidden =
-                candidateContext || (!inspectingAnchor && !inspectingDraft);
-            rotate.hidden =
-                candidateContext || (!inspectingAnchor && !inspectingDraft);
-            returnToSceneView.hidden = candidateContext || !inspecting;
-            resetAnchor.hidden = candidateContext || !inspectingAnchor;
-            confirmDraftView.hidden = candidateContext || !inspectingDraft;
-            status.hidden = candidateContext || !inspecting;
-            retry.hidden =
-                candidateContext ||
-                !inspectingAnchor ||
-                presentation.status !== 'failed';
-            addCurrentView.hidden = candidateContext || !canAddUserView;
-            candidateGroup.hidden = !candidateContext;
+            for (const [name, button] of Object.entries(allButtons)) {
+                if (button === undefined) {
+                    continue;
+                }
+                const entry = controls.get(
+                    name as AISelectViewportToolbarControl
+                );
+                button.enabled = entry?.enabled ?? false;
+                if (
+                    name === 'anchor-adjust' ||
+                    name === 'move' ||
+                    name === 'rotate'
+                ) {
+                    button.dom.setAttribute(
+                        'aria-pressed',
+                        (entry?.pressed ?? false).toString()
+                    );
+                } else {
+                    button.dom.removeAttribute('aria-pressed');
+                }
+                button.dom.classList.toggle('active', entry?.pressed ?? false);
+            }
 
-            adjust.enabled = hasAnchor && hasContext && !inspecting;
-            move.enabled =
-                (inspectingAnchor && hasAnchor && contextIsActive) ||
-                inspectingDraft;
-            rotate.enabled = move.enabled;
-            returnToSceneView.enabled = inspecting;
-            resetAnchor.enabled =
-                inspectingAnchor && hasAnchor && contextIsActive;
-            retry.enabled = contextIsActive;
-            addCurrentView.enabled = canAddUserView;
-            adjustNewView.hidden = !canAddUserView;
-            adjustNewView.enabled = canAddUserView;
-            restart.enabled = hasContext;
+            describeButton(
+                anchorAdjust,
+                i18n.t('ai-select.adjust-anchor'),
+                adjustmentState.draft?.renderStatus === 'failed'
+                    ? i18n.t('ai-select.anchor.failed')
+                    : ''
+            );
+            describeButton(
+                addCurrentView,
+                i18n.t('ai-select.views.use-current')
+            );
+            describeButton(
+                addViewMenuTrigger,
+                i18n.t('ai-select.views.adjust-new')
+            );
+            describeButton(adjustNewView, i18n.t('ai-select.views.adjust-new'));
+            describeButton(move, i18n.t('ai-select.move'));
+            describeButton(rotate, i18n.t('ai-select.rotate'));
+            describeButton(reset, i18n.t('ai-select.reset-anchor'));
+            describeButton(
+                confirmDraftView,
+                i18n.t('ai-select.user-view.confirm')
+            );
+            describeButton(cancel, i18n.t('ai-select.return-to-scene-view'));
 
-            overlayToggle.text = i18n.t('ai-select.candidate.overlay');
+            describeButton(
+                overlayToggle,
+                i18n.t('ai-select.candidate.overlay')
+            );
             overlayToggle.dom.setAttribute(
                 'aria-pressed',
                 overlayState.selectedVisible.toString()
@@ -429,17 +484,13 @@ export class AISelectToolbar extends Container {
                 'active',
                 overlayState.selectedVisible
             );
-            overlayMenuTrigger.dom.setAttribute(
-                'aria-label',
+            describeButton(
+                overlayMenuTrigger,
                 i18n.t('ai-select.candidate.overlay-options')
             );
-            overlayMenuTrigger.dom.setAttribute('aria-haspopup', 'menu');
-            overlayMenuTrigger.dom.setAttribute(
-                'aria-expanded',
-                (!overlayMenu.hidden).toString()
-            );
-            uncertainToggle.text = i18n.t(
-                'ai-select.candidate.uncertain-layer'
+            describeButton(
+                uncertainToggle,
+                i18n.t('ai-select.candidate.uncertain-layer')
             );
             uncertainToggle.dom.setAttribute(
                 'aria-checked',
@@ -458,39 +509,35 @@ export class AISelectToolbar extends Container {
                     ? ''
                     : i18n.t(disabledReasonKeys[disabledReason]);
             operationReason.text = disabledText;
-            candidateGroup.dom.tabIndex = disabledReason === null ? -1 : 0;
-            if (disabledReason === null) {
-                candidateGroup.dom.removeAttribute('aria-describedby');
-            } else {
+            candidateGroup.dom.tabIndex = disabledText.length > 0 ? 0 : -1;
+            if (disabledText.length > 0) {
                 candidateGroup.dom.setAttribute(
                     'aria-describedby',
                     'ai-select-candidate-operation-reason'
                 );
+            } else {
+                candidateGroup.dom.removeAttribute('aria-describedby');
             }
             for (const operation of candidateOperations) {
                 const button = operationButtons.get(operation);
-                if (button === undefined) {
-                    continue;
-                }
-                const label = i18n.t(`select-toolbar.${operation}`);
-                const description = disabledText;
-                button.text = label;
-                button.dom.setAttribute('aria-label', label);
-                button.enabled =
-                    candidatePresentation.toolbar.operationsEnabled;
-                button.dom.title = description || label;
-                if (description.length > 0) {
-                    button.dom.setAttribute('aria-description', description);
-                } else {
-                    button.dom.removeAttribute('aria-description');
+                if (button !== undefined) {
+                    describeButton(
+                        button,
+                        i18n.t(`select-toolbar.${operation}`),
+                        disabledText
+                    );
                 }
             }
 
-            if (!candidateContext) {
-                closeOverlayMenu(false);
+            addViewMenuTrigger.enabled =
+                controls.get('add-new-pose')?.enabled ?? false;
+            overlayMenuTrigger.enabled = presentation.mode === 'candidate';
+            uncertainToggle.enabled = presentation.mode === 'candidate';
+            if (presentation.mode !== 'current') {
+                closeAddViewMenu(false);
             }
-            if (!hasContext) {
-                closeOverflow(false);
+            if (presentation.mode !== 'candidate') {
+                closeOverlayMenu(false);
             }
         };
         controller.subscribe((state) => {
@@ -503,6 +550,10 @@ export class AISelectToolbar extends Container {
         });
         confirmation.subscribe((state) => {
             confirmationState = state;
+            render();
+        });
+        adjustment.subscribe((state) => {
+            adjustmentState = state;
             render();
         });
         options.candidatePresentation.subscribe((state) => {

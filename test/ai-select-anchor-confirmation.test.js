@@ -549,21 +549,6 @@ test('a mismatching probe response fails validation without touching RGB', async
     assert.equal(anchor.state.anchor.renderStatus, 'ready');
 });
 
-test('Adjust Anchor unlocks without destroying Anchor or Mask state', async () => {
-    const { anchor, mask, confirmation } = await setup();
-    const stable = await confirmStableMask(mask);
-    await confirmation.confirmAnchor();
-    assert.equal(confirmation.locked, true);
-    confirmation.adjustAnchor();
-    assert.equal(confirmation.locked, false);
-    assert.equal(confirmation.state.confirmedAnchor, null);
-    assert.equal(anchor.state.anchor.renderStatus, 'ready');
-    assert.equal(mask.state.stableMask.maskId, stable.maskId);
-    anchor.updateAnchorCameraPose([
-        1, 0, 0, 9, 0, 1, 0, 9, 0, 0, 1, 9, 0, 0, 0, 1
-    ]);
-});
-
 test('Restart disposes the confirmed Anchor and unlocks Mask authoring', async () => {
     const { anchor, mask, confirmation } = await setup();
     await confirmStableMask(mask);

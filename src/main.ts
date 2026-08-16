@@ -1,6 +1,7 @@
 import { WebPCodec, WorkerQueue } from '@playcanvas/splat-transform';
 import { Color, Mat4, Quat, Vec3, createGraphicsDevice } from 'playcanvas';
 
+import { AISelectAnchorAdjustmentController } from './ai-select/anchor-adjustment';
 import { AISelectAnchorConfirmationController } from './ai-select/anchor-confirmation';
 import { AISelectAnchorController } from './ai-select/anchor-controller';
 import {
@@ -9,6 +10,7 @@ import {
 } from './ai-select/camera-binding';
 import {
     CameraInspectionController,
+    isAnchorAdjustmentInspectionTarget,
     isAnchorInspectionTarget
 } from './ai-select/camera-inspection';
 import { AnchorFrustumManipulator } from './ai-select/camera-inspection-manipulator';
@@ -416,10 +418,12 @@ const main = async () => {
     const aiSelectTargetFactory = new AISelectEditorTargetFactory({
         getRenderConfiguration: getAISelectRenderConfiguration
     });
-    // The confirmed Anchor locks CameraBinding and Mask authoring until an
-    // explicit Adjust/Restart flow; the confirmation controller is composed
-    // just below, so the lock reads through a lazy reference.
+    // The confirmed current Anchor stays locked while adjustment is staged in
+    // an isolated draft; the confirmation controller is composed just below,
+    // so the live-Anchor lock reads through a lazy reference.
     let aiSelectConfirmation: AISelectAnchorConfirmationController | null =
+        null;
+    let aiSelectAnchorAdjustment: AISelectAnchorAdjustmentController | null =
         null;
     let aiSelectCandidateCorrection: ReturnType<
         typeof createAISelectCandidateCorrectionController
@@ -486,18 +490,27 @@ const main = async () => {
     // Mask artifacts keep their own identity and are not touched.
     events.on('selectionService.companionInstanceChanged', () => {
         aiSelectMaskController.handleCompanionInstanceChanged();
+        aiSelectAnchorAdjustment?.handleCompanionInstanceChanged();
         aiSelectUserViewMasks?.handleCompanionInstanceChanged();
     });
     // Prompt Adapter capabilities derive from live readiness; a readiness
     // transition must republish or Prompt tools keep a stale gating snapshot.
     events.on('selectionService.readinessChanged', () => {
         aiSelectMaskController.refreshAvailability();
+        aiSelectAnchorAdjustment?.refreshAvailability();
         aiSelectUserViewMasks?.refreshAvailability();
     });
     aiSelectConfirmation = new AISelectAnchorConfirmationController({
         anchor: aiSelectController,
         mask: aiSelectMaskController,
         supportProbe: selectionServiceAdapter
+    });
+    aiSelectAnchorAdjustment = new AISelectAnchorAdjustmentController({
+        anchor: aiSelectController,
+        confirmation: aiSelectConfirmation,
+        maskProvider: selectionServiceAdapter,
+        getModelManifestDigest: getAISelectModelManifestDigest,
+        getPromptAdapterCapabilities: getAISelectPromptAdapterCapabilities
     });
     // Confirm Anchor starts automatic Key View planning: the Companion owns
     // the Target Geometry Hint and the bounded local Key-View batches, the
@@ -673,6 +686,7 @@ const main = async () => {
     editorUI.statusBar.bindCandidatePresentation(aiSelectCandidatePresentation);
     const cameraInspection = new CameraInspectionController({
         anchor: aiSelectController,
+        anchorAdjustment: aiSelectAnchorAdjustment,
         editor: {
             captureSceneView: () => {
                 const snapshot = scene.camera.captureSceneView();
@@ -717,6 +731,14 @@ const main = async () => {
             }
         }
     });
+    aiSelectAnchorAdjustment.subscribe((state) => {
+        if (
+            state.status === 'current' &&
+            isAnchorAdjustmentInspectionTarget(cameraInspection.state)
+        ) {
+            cameraInspection.returnToSceneView();
+        }
+    });
     const anchorFrustum = new AnchorFrustum();
     await scene.add(anchorFrustum);
     const updateAnchorFrustum = () => {
@@ -726,7 +748,10 @@ const main = async () => {
         // frustum through the Gallery selection instead. The provisional
         // Adjust New View draft reuses this manipulable frustum display.
         const draftTarget = cameraInspection.state.target;
-        if (draftTarget?.kind === 'user-view-draft') {
+        if (
+            draftTarget?.kind === 'user-view-draft' ||
+            draftTarget?.kind === 'anchor-adjustment-draft'
+        ) {
             anchorFrustum.setCameraBinding(draftTarget.cameraBinding);
             anchorFrustum.setVisible(true);
             return;
@@ -889,49 +914,27 @@ const main = async () => {
             await aiSelectController.start(input.start);
         }
     };
-    // Early Restart is available at every Anchor stage. The confirmation
-    // states clearly that Native Selection and EditHistory do not change.
-    const confirmAISelectRestart = async (): Promise<boolean> => {
-        const result = await events.invoke('showPopup', {
-            type: 'yesno',
-            header: i18n.t('ai-select.restart-current-target'),
-            message: i18n.t('ai-select.restart-confirm-message')
-        });
-        return result.action === 'yes';
-    };
-    const restartAISelect = async () => {
-        if (aiSelectController.state.context === null) {
-            return;
-        }
-        if (!(await confirmAISelectRestart())) {
-            return;
-        }
-        await startAISelect(true);
-    };
-    // Changing the Anchor discards unconfirmed Prompt/Editing state; warn
-    // before that happens. A confirmed Anchor unlocks only through this
-    // explicit Adjust flow or through Restart.
-    const confirmAnchorChange = async (): Promise<boolean> => {
-        if (aiSelectConfirmation?.locked) {
-            aiSelectConfirmation.adjustAnchor();
-            return true;
-        }
-        if (!aiSelectMaskController.state.hasUnconfirmedChanges) {
-            return true;
-        }
-        const result = await events.invoke('showPopup', {
-            type: 'yesno',
-            header: i18n.t('ai-select.adjust-anchor'),
-            message: i18n.t('ai-select.anchor-discard-message')
-        });
-        return result.action === 'yes';
-    };
-    const exitAISelect = () => {
+    const beginAnchorAdjustment = (): void => {
         cameraInspection.returnToSceneView();
-        aiSelectController.exit();
-        aiSelectTargetSplat = null;
-        aiSelectCandidateViewportOverlay.destroy();
-        events.fire('tool.deactivate');
+        aiSelectAnchorAdjustment.beginAdjustment();
+        const draft = aiSelectAnchorAdjustment.state.draft;
+        if (draft === null) {
+            throw new Error('AI Select failed to create an Anchor adjustment.');
+        }
+        cameraInspection.enter({
+            kind: 'anchor-adjustment-draft',
+            cameraBinding: draft.cameraBinding
+        });
+    };
+    const cancelInspection = (): void => {
+        if (isAnchorAdjustmentInspectionTarget(cameraInspection.state)) {
+            aiSelectAnchorAdjustment.cancelAdjustment();
+        }
+        cameraInspection.returnToSceneView();
+    };
+    const resetAnchorAdjustment = (): void => {
+        const binding = aiSelectAnchorAdjustment.resetAdjustmentPose();
+        cameraInspection.syncAnchorAdjustmentDraft(binding);
     };
     const aiSelectDock = new AISelectAnchorDock(
         aiSelectController,
@@ -944,6 +947,11 @@ const main = async () => {
             maskRegistry: aiSelectMaskController.maskRegistry,
             userViewMasks: aiSelectUserViewMasks,
             onInspectCamera: (viewId) => {
+                if (
+                    isAnchorAdjustmentInspectionTarget(cameraInspection.state)
+                ) {
+                    aiSelectAnchorAdjustment.cancelAdjustment();
+                }
                 if (viewId === null) {
                     cameraInspection.returnToSceneView();
                     return;
@@ -1004,29 +1012,21 @@ const main = async () => {
         aiSelectController,
         cameraInspection,
         aiSelectConfirmation,
+        aiSelectAnchorAdjustment,
         {
             candidatePresentation: aiSelectCandidatePresentation,
             candidateOverlay: aiSelectCandidateOverlay,
             candidateApplication: aiSelectCandidateApplication,
             onCandidateApplicationFailure: (error) => console.error(error),
-            onRestart: restartAISelect,
-            onExit: exitAISelect,
-            onEnterInspection: () => {
-                confirmAnchorChange()
-                    .then((confirmed) => {
-                        if (confirmed) {
-                            cameraInspection.enter();
-                        }
-                    })
-                    .catch((error) => reportAISelectError(error));
-            },
-            onReturnToSceneView: () => cameraInspection.returnToSceneView(),
-            onResetAnchor: async () => {
-                if (await confirmAnchorChange()) {
-                    await cameraInspection.resetAnchor();
+            onBeginAnchorAdjustment: () => {
+                try {
+                    beginAnchorAdjustment();
+                } catch (error) {
+                    reportAISelectError(error);
                 }
             },
-            onRetryPreview: () => aiSelectController.retryAnchorPreview(),
+            onCancelInspection: cancelInspection,
+            onResetAnchorAdjustment: resetAnchorAdjustment,
             onAddCurrentView: addAISelectUserViewFromCurrentCamera,
             onAdjustNewView: () => {
                 try {

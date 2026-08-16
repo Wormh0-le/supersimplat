@@ -85,7 +85,7 @@ const errorMessage = (error: unknown): string => {
  * versioned low-cost support probe — never through complete Contributor
  * publication or formal P/N/V Evidence. Confirm re-validates against the
  * latest exact revisions and then publishes the bound record atomically;
- * the confirmed Anchor stays locked until Adjust Anchor or Restart.
+ * the confirmed Anchor stays locked until an atomic replacement or Restart.
  */
 export class AISelectAnchorConfirmationController {
     private readonly anchor: AISelectAnchorController;
@@ -277,18 +277,6 @@ export class AISelectAnchorConfirmationController {
         this.confirmedAnchor = confirmed;
         this.publish();
         return confirmed;
-    }
-
-    /**
-     * The explicit adjustment flow: discard the confirmation record (and its
-     * lock) while keeping Anchor, RGB, and Mask state intact.
-     */
-    adjustAnchor(): void {
-        if (this.confirmedAnchor === null) {
-            return;
-        }
-        this.confirmedAnchor = null;
-        this.publish();
     }
 
     private evaluate(

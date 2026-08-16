@@ -52,6 +52,18 @@ export interface AnchorPreviewArtifact {
     readonly rgb: AnchorRgbArtifact;
 }
 
+/**
+ * Authoritative RGB staged for a changed-Anchor draft. It is deliberately
+ * outside `AnchorAIView`: publishing it must not revise the current Anchor or
+ * its Current Target Context before the later atomic cutover.
+ */
+export interface AnchorAdjustmentRenderArtifact {
+    readonly requestBinding: AIRequestBinding;
+    readonly cameraBinding: CameraBinding;
+    readonly rgb: AnchorRgbArtifact;
+    readonly rendererId: 'gsplat';
+}
+
 export interface AnchorPreview {
     readonly kind: AnchorPreviewKind;
     readonly cameraBinding: CameraBinding;
@@ -325,7 +337,7 @@ export class AISelectAnchorController {
     updateAnchorCameraPose(cameraToWorld: readonly number[]): void {
         if (this.isAnchorLocked()) {
             throw new Error(
-                'AI Select Anchor CameraBinding is locked while the Anchor is confirmed. Adjust or restart the Anchor first.'
+                'AI Select Anchor CameraBinding is locked while the Anchor is confirmed. Use the staged adjustment flow or restart the Anchor.'
             );
         }
         const anchor = this.requireAnchor();
@@ -372,6 +384,153 @@ export class AISelectAnchorController {
             return;
         }
         await this.renderFinalPreview();
+    }
+
+    /**
+     * Render a changed-Anchor draft without revising the live Anchor or target
+     * context. The returned artifact is caller-owned staged state; this
+     * controller only supplies the current request identity and the same
+     * fail-closed RGB validation used by ordinary Anchor rendering.
+     */
+    async renderAnchorAdjustmentDraft(
+        cameraBinding: CameraBinding
+    ): Promise<AnchorAdjustmentRenderArtifact> {
+        const activeRequest = this.activeRequest;
+        const context = this.contexts.current;
+        if (
+            activeRequest === null ||
+            context === null ||
+            context.lifecycle !== 'active'
+        ) {
+            throw new Error(
+                'AI Select requires an active current Anchor before rendering an adjustment draft.'
+            );
+        }
+        const request = this.createRequest(
+            activeRequest.target,
+            activeRequest.snapshot,
+            this.contexts.createRequestBinding(),
+            copyCameraBinding(cameraBinding)
+        );
+        this.retainSnapshot(request);
+        try {
+            const response: unknown = await this.renderer.renderAnchor(request);
+            const effectiveDependencyToken = this.getCurrentDependencyToken?.();
+            if (
+                effectiveDependencyToken === undefined ||
+                !this.contexts.acceptsResult(
+                    request.requestBinding,
+                    effectiveDependencyToken
+                )
+            ) {
+                throw new Error(
+                    'The changed-Anchor draft render was superseded by a newer target identity.'
+                );
+            }
+            if (
+                !isAnchorRenderResponse(response) ||
+                !anchorRenderResponseMatchesRequest(response, request)
+            ) {
+                throw new Error(
+                    'The Selection Service Companion returned an invalid changed-Anchor draft binding.'
+                );
+            }
+            try {
+                await validatePngDecodable(
+                    decodePngBase64(response.rgb.pngBase64)
+                );
+            } catch {
+                throw new Error(
+                    'The Selection Service Companion returned an invalid changed-Anchor draft binding.'
+                );
+            }
+            return Object.freeze({
+                requestBinding: copyRequestBinding(response.requestBinding),
+                cameraBinding: copyCameraBinding(response.cameraBinding),
+                rgb: copyRgb(response.rgb),
+                rendererId: response.rendererId
+            });
+        } finally {
+            this.completeSnapshotRender(request);
+        }
+    }
+
+    /** Build one draft-local Prompt/Mask request without touching Anchor Mask state. */
+    createAnchorAdjustmentMaskRequest(
+        draft: AnchorAdjustmentRenderArtifact,
+        promptState: PromptState,
+        proposalAttemptId: string,
+        modelManifestDigest: string,
+        adapterCapabilityDigest: string,
+        proposalPolicyVersion: string,
+        options: {
+            readonly includeRgbArtifact: boolean;
+            readonly previousLogitsRef?: PreviousPredictionLogitsRef;
+        }
+    ): AIViewMaskRequest | null {
+        const activeRequest = this.activeRequest;
+        const effectiveDependencyToken = this.getCurrentDependencyToken?.();
+        if (
+            activeRequest === null ||
+            effectiveDependencyToken === undefined ||
+            !this.contexts.acceptsResult(
+                draft.requestBinding,
+                effectiveDependencyToken
+            ) ||
+            promptState.rgbDigest !== draft.rgb.digest ||
+            draft.rgb.width !== draft.cameraBinding.projection.width ||
+            draft.rgb.height !== draft.cameraBinding.projection.height
+        ) {
+            return null;
+        }
+        return Object.freeze({
+            requestBinding: this.contexts.createRequestBinding(),
+            target: Object.freeze({ splatId: activeRequest.target.splatId }),
+            sceneId: activeRequest.snapshot.sceneId,
+            sceneVersion: activeRequest.snapshot.sceneVersion,
+            viewId: promptState.viewId,
+            cameraBindingDigest: cameraBindingDigest(draft.cameraBinding),
+            rgbDigest: draft.rgb.digest,
+            rgbWidth: draft.rgb.width,
+            rgbHeight: draft.rgb.height,
+            ...(options.includeRgbArtifact ? { rgb: copyRgb(draft.rgb) } : {}),
+            promptState,
+            ...(options.previousLogitsRef === undefined
+                ? {}
+                : { previousLogitsRef: options.previousLogitsRef }),
+            modelManifestDigest,
+            adapterCapabilityDigest,
+            proposalPolicyVersion,
+            rankingPolicyVersion: anchorMaskRankingPolicyVersion,
+            proposalAttemptId
+        });
+    }
+
+    /** Reject late Mask work after the draft RGB or target identity changed. */
+    acceptsAnchorAdjustmentMaskResponse(
+        response: MaskResultResponse,
+        request: AIViewMaskRequest,
+        draft: AnchorAdjustmentRenderArtifact
+    ): boolean {
+        const effectiveDependencyToken = this.getCurrentDependencyToken?.();
+        if (effectiveDependencyToken === undefined) {
+            return false;
+        }
+        return (
+            this.contexts.acceptsResult(
+                draft.requestBinding,
+                effectiveDependencyToken
+            ) &&
+            this.contexts.acceptsResult(
+                request.requestBinding,
+                effectiveDependencyToken
+            ) &&
+            request.cameraBindingDigest ===
+                cameraBindingDigest(draft.cameraBinding) &&
+            request.rgbDigest === draft.rgb.digest &&
+            isMaskResultResponse(response) &&
+            maskResponseMatchesRequest(response, request)
+        );
     }
 
     /**

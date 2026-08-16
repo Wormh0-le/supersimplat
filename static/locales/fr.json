@@ -547,5 +547,18 @@
   "ai-select.views.filter.review": "À vérifier",
   "ai-select.views.filter.all-views": "Toutes les vues",
   "ai-select.views.next-review": "Vérification suivante",
-  "ai-select.views.planner.regenerate-confirm": "Replanifier les vues automatiques ? Les vues du planificateur peuvent être remplacées ; les vues ajoutées par l’utilisateur seront conservées."
+  "ai-select.views.planner.regenerate-confirm": "Replanifier les vues automatiques ? Les vues du planificateur peuvent être remplacées ; les vues ajoutées par l’utilisateur seront conservées.",
+  "ai-select.dock.reset-fit": "Réinitialiser l’ajustement de l’image",
+  "ai-select.views.filter-sort": "Filtrer et trier les vues",
+  "ai-select.views.filter-group": "Filtre",
+  "ai-select.views.sort-group": "Tri",
+  "ai-select.views.sort.creation": "Ordre de création",
+  "ai-select.views.sort.newest": "Plus récentes d’abord",
+  "ai-select.views.sort.needs-review": "À vérifier d’abord",
+  "ai-select.views.filter-empty": "Aucune vue ne correspond à ce filtre.",
+  "ai-select.views.no-target": "Choisissez une cible pour commencer.",
+  "ai-select.views.badge.failure": "Échec",
+  "ai-select.views.badge.needs-review": "À vérifier",
+  "ai-select.views.badge.processing": "Traitement",
+  "ai-select.views.badge.ready": "Prête"
 }

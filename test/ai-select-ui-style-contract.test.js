@@ -79,12 +79,13 @@ test('AI View Dock caps semantic sidebars and gives surplus width to the Work Ar
     assert.doesNotMatch(workspace, /margin-inline:\s*auto;/);
     assert.match(
         styles,
-        /#ai-select-view-navigator\s*\{[\s\S]*?width:\s*clamp\(240px, 14vw, 280px\);/
+        /#ai-select-view-navigator\s*\{[\s\S]*?width:\s*220px;[\s\S]*?min-width:\s*180px;[\s\S]*?max-width:\s*280px;/
     );
     assert.match(
         styles,
-        /#ai-select-view-inspector\s*\{[\s\S]*?width:\s*clamp\(280px, 16vw, 320px\);/
+        /#ai-select-view-inspector\s*\{[\s\S]*?width:\s*280px;[\s\S]*?min-width:\s*240px;[\s\S]*?max-width:\s*360px;/
     );
+    assert.match(styles, /\.ai-select-sidebar-resize-handle\s*\{/);
     assert.doesNotMatch(styles, /data-spacious/);
     assert.match(
         styles,
@@ -156,11 +157,9 @@ test('confirming the Anchor Mask continues through Anchor confirmation', () => {
 
 test('Navigator remains useful with an Anchor before generated Views exist', () => {
     const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
-    assert.match(dock, /const showGallery = this\.state\.context !== null;/);
-    assert.doesNotMatch(
-        dock,
-        /const showGallery =[\s\S]{0,180}generated\.plannerStatus !== 'idle'/
-    );
+    assert.match(dock, /this\.gallery\.hidden = false;/);
+    assert.match(dock, /'ai-select\.views\.no-target'/);
+    assert.match(dock, /this\.anchorCard\.anchorPin\.hidden = false;/);
 });
 
 test('Inspector restores the accepted assessment, participation, and Mask hierarchy', () => {
@@ -198,7 +197,11 @@ test('Navigator controls do not overlap cards and Inspector status can wrap', ()
     );
     assert.match(
         styles,
-        /\.ai-select-view-card\s*\{[\s\S]*?min-height:\s*74px;/
+        /\.ai-select-view-card\s*\{[\s\S]*?aspect-ratio:\s*16 \/ 9;/
+    );
+    assert.doesNotMatch(
+        styles,
+        /\.ai-select-view-card[\s\S]*?&\.selected\s*\{[\s\S]*?order:\s*-1;/
     );
     assert.doesNotMatch(
         styles,
@@ -210,12 +213,59 @@ test('Navigator controls do not overlap cards and Inspector status can wrap', ()
     );
     assert.match(
         styles,
-        /#ai-select-anchor-technical-details[\s\S]*?> pre[\s\S]*?overflow:\s*visible;/
+        /#ai-select-anchor-technical-details[\s\S]*?> pre\s*\{[^}]*overflow:\s*visible;/
     );
     assert.doesNotMatch(
         styles,
-        /#ai-select-anchor-technical-details[\s\S]*?> pre[\s\S]*?max-height:/
+        /#ai-select-anchor-technical-details[\s\S]*?> pre\s*\{[^}]*max-height:/
     );
+});
+
+test('Navigator uses one filter-sort popover and compact prioritized badges', () => {
+    const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
+    const styles = readFileSync('src/ui/scss/ai-select.scss', 'utf8');
+    assert.match(dock, /import pinSvg from '\.\/svg\/pin\.svg';/);
+    assert.match(dock, /anchorPin\.appendChild\(createSvg\(pinSvg\)\)/);
+    assert.match(dock, /ai-select-view-gallery-filter-trigger/);
+    assert.match(dock, /role', 'radiogroup'/);
+    assert.match(dock, /nextRadioChoice/);
+    assert.match(
+        dock,
+        /button\.dom\.tabIndex = filter === this\.galleryFilter \? 0 : -1;/
+    );
+    assert.match(
+        dock,
+        /button\.dom\.tabIndex = sort === this\.gallerySort \? 0 : -1;/
+    );
+    assert.match(
+        dock,
+        /window\.addEventListener\(\s*'pointerdown',[\s\S]{0,500}?\s+true\s*\);/
+    );
+    assert.match(
+        styles,
+        /#ai-select-view-gallery-filter-popover[\s\S]*?overflow-y:\s*auto;/
+    );
+    assert.match(dock, /projectNavigatorViews/);
+    assert.match(dock, /navigatorBadgePresentation/);
+    assert.match(styles, /\.ai-select-view-card-badge/);
+    assert.match(styles, /&\.excluded/);
+    assert.doesNotMatch(dock, /ai-select-view-gallery-planner-stop/);
+    assert.doesNotMatch(dock, /ai-select-view-gallery-planner-more/);
+    assert.doesNotMatch(dock, /ai-select-view-gallery-planner-regenerate/);
+});
+
+test('compact retry and fit controls use SVG assets with tooltip and accessible names', () => {
+    const dock = readFileSync('src/ui/ai-select-anchor-dock.ts', 'utf8');
+    assert.match(
+        dock,
+        /import cameraResetSvg from '\.\/svg\/camera-reset\.svg';/
+    );
+    assert.match(dock, /import redoSvg from '\.\/svg\/redo\.svg';/);
+    assert.match(dock, /setSvgButtonIcon/);
+    assert.match(dock, /button\.dom\.title = label;/);
+    assert.match(dock, /button\.dom\.setAttribute\('aria-label', label\);/);
+    assert.match(dock, /setSvgButtonLabel\([\s\S]*?i18n\.onChange/);
+    assert.doesNotMatch(dock, /text:\s*'[↻↺]'/);
 });
 
 test('Dock sidebar controls stay adjacent to the sidebar they control', () => {
@@ -232,4 +282,22 @@ test('Dock sidebar controls stay adjacent to the sidebar they control', () => {
     assert.match(dock, /icon\.setAttribute\('aria-hidden', 'true'\)/);
     assert.match(dock, /'ai-select\.dock\.hide-navigator'/);
     assert.match(dock, /'ai-select\.dock\.show-inspector'/);
+    assert.match(dock, /supersplat\.ai-select\.view-dock-layout/);
+    assert.match(dock, /serializeAIViewDockPreferences/);
+    assert.match(dock, /bindSidebarResize/);
+    assert.match(dock, /navigatorResizeHandle/);
+    assert.match(dock, /inspectorResizeHandle/);
+    assert.match(
+        dock,
+        /navigatorResizeHandle\.setAttribute\([\s\S]*?'aria-labelledby'/
+    );
+    assert.match(
+        dock,
+        /inspectorResizeHandle\.setAttribute\([\s\S]*?'aria-labelledby'/
+    );
+    assert.match(dock, /revealButton\.hidden = expanded \|\| !canExpand;/);
+    assert.doesNotMatch(
+        dock,
+        /view\.selected && visible[\s\S]{0,100}scrollIntoView/
+    );
 });

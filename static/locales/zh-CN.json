@@ -547,5 +547,18 @@
   "ai-select.views.filter.review": "待检查",
   "ai-select.views.filter.all-views": "全部视图",
   "ai-select.views.next-review": "检查下一个",
-  "ai-select.views.planner.regenerate-confirm": "重新规划自动视图？规划器创建的视图可能会被替换，用户添加的视图将保留。"
+  "ai-select.views.planner.regenerate-confirm": "重新规划自动视图？规划器创建的视图可能会被替换，用户添加的视图将保留。",
+  "ai-select.dock.reset-fit": "重置图像适配",
+  "ai-select.views.filter-sort": "筛选和排序视图",
+  "ai-select.views.filter-group": "筛选",
+  "ai-select.views.sort-group": "排序",
+  "ai-select.views.sort.creation": "创建顺序",
+  "ai-select.views.sort.newest": "最新优先",
+  "ai-select.views.sort.needs-review": "待检查优先",
+  "ai-select.views.filter-empty": "没有符合此筛选条件的视图。",
+  "ai-select.views.no-target": "请选择目标以开始。",
+  "ai-select.views.badge.failure": "失败",
+  "ai-select.views.badge.needs-review": "待检查",
+  "ai-select.views.badge.processing": "处理中",
+  "ai-select.views.badge.ready": "就绪"
 }

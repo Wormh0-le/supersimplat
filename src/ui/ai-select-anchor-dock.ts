@@ -7,10 +7,25 @@ import {
 import { i18n } from './localization';
 import confirmSvg from './svg/ai-select-confirm.svg';
 import arrowSvg from './svg/arrow.svg';
+import cameraResetSvg from './svg/camera-reset.svg';
 import collapseSvg from './svg/collapse.svg';
 import hiddenSvg from './svg/hidden.svg';
+import pinSvg from './svg/pin.svg';
+import redoSvg from './svg/redo.svg';
 import {
+    AI_VIEW_DOCK_DEFAULT_PREFERENCES,
+    AI_VIEW_INSPECTOR_MAXIMUM_WIDTH_PX,
+    AI_VIEW_INSPECTOR_MINIMUM_WIDTH_PX,
+    AI_VIEW_NAVIGATOR_MAXIMUM_WIDTH_PX,
+    AI_VIEW_NAVIGATOR_MINIMUM_WIDTH_PX,
+    type AIViewDockPreferences,
+    type AIViewImageZoomState,
+    parseAIViewDockPreferences,
+    resizeAIViewDockSidebar,
     resolveAIViewDockColumns,
+    resolveAIViewImageRect,
+    serializeAIViewDockPreferences,
+    setAIViewDockSidebarExpanded,
     resolveAIViewWorkAreaWidth
 } from '../ai-select/ai-view-dock-layout';
 import {
@@ -49,9 +64,15 @@ import {
     filterGalleryViews,
     galleryCardPresentation,
     galleryViewRole,
+    NAVIGATOR_ANCHOR_ID,
+    nextRadioChoice,
+    navigatorBadgePresentation,
     orderGalleryViews,
+    projectNavigatorViews,
     type GalleryCardPresentation,
-    type GalleryFilter
+    type GalleryFilter,
+    type GallerySort,
+    type NavigatorBadge
 } from '../ai-select/gallery-presentation';
 import type {
     AISelectGeneratedViewController,
@@ -59,7 +80,6 @@ import type {
     GeneratedAIView
 } from '../ai-select/generated-view-controller';
 import {
-    fitImageRect,
     mapClientPointToImagePixel,
     type ImagePixel
 } from '../ai-select/image-viewport';
@@ -97,13 +117,8 @@ export interface AISelectAnchorDockOptions<TCandidatePayload = unknown> {
 interface GeneratedCardElements {
     readonly root: Container;
     readonly image: HTMLImageElement;
-    readonly title: Label;
-    readonly status: Label;
-    readonly detail: Label;
-    readonly retryButton: Button;
-    readonly regeneratePromptButton: Button;
-    readonly refreshMaskButton: Button;
-    readonly confirmReviewButton: Button;
+    readonly anchorPin: HTMLSpanElement;
+    readonly badge: HTMLSpanElement;
     rgbDigest?: string;
 }
 
@@ -123,8 +138,8 @@ interface DockAuthoringTarget {
 const CLICK_TOLERANCE_PX = 4;
 // DG-22 Decision 5 opacity assist proximity; unrelated to the snap threshold.
 const PALETTE_GESTURE_DIM_MARGIN_PX = 24;
-// Gallery thumbnails render at 64px; retain a 2× source for dense displays.
-const THUMBNAIL_MAX_WIDTH_PX = 128;
+// Navigator thumbnails fill a 220px-default strip; retain dense-display detail.
+const THUMBNAIL_MAX_WIDTH_PX = 512;
 // Full-resolution RGB stays authoritative in the controller; cards keep only
 // bounded downscaled thumbnails so 10–20+ Views stay resource-bounded.
 const THUMBNAIL_CACHE_CAPACITY = 24;
@@ -136,6 +151,25 @@ const createSvg = (svgString: string): Element => {
     );
     return new DOMParser().parseFromString(decoded, 'image/svg+xml')
         .documentElement;
+};
+
+const setSvgButtonLabel = (button: Button, label: string): void => {
+    button.dom.title = label;
+    button.dom.setAttribute('aria-label', label);
+};
+
+const setSvgButtonIcon = (
+    button: Button,
+    svg: string,
+    label: string,
+    iconClass = 'ai-select-icon-action-glyph'
+): void => {
+    const icon = createSvg(svg);
+    icon.classList.add(iconClass);
+    icon.setAttribute('aria-hidden', 'true');
+    icon.setAttribute('focusable', 'false');
+    button.dom.replaceChildren(icon);
+    setSvgButtonLabel(button, label);
 };
 
 const cursorForTool = (tool: DockAuthoringTool): string => {
@@ -266,19 +300,20 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly plannerLine: Container;
     private readonly plannerStatus: Label;
     private readonly plannerRetryButton: Button;
-    private readonly plannerStopButton: Button;
-    private readonly plannerMoreButton: Button;
-    private readonly plannerOverflowButton: Button;
-    private readonly plannerOverflowMenu: Container;
-    private readonly plannerRegenerateButton: Button;
     private readonly filterLine: Container;
+    private readonly filterTrigger: Button;
+    private readonly filterPopover: Container;
     private readonly filterButtons: ReadonlyMap<GalleryFilter, Button>;
+    private readonly sortButtons: ReadonlyMap<GallerySort, Button>;
     private galleryFilter: GalleryFilter = 'all';
+    private gallerySort: GallerySort = 'creation';
     private readonly galleryCards: Container;
+    private readonly galleryEmptyState: Label;
     private readonly anchorCard: GeneratedCardElements;
     private readonly selectedViewAssessment: Label;
     private readonly selectedViewParticipation: Button;
     private readonly selectedViewIssues: Label;
+    private readonly inspectorInformation: Container;
     private readonly generatedCards = new Map<string, GeneratedCardElements>();
     private readonly thumbnails = createThumbnailCache({
         capacity: THUMBNAIL_CACHE_CAPACITY
@@ -296,6 +331,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
     private readonly pixelStroke = new PointerStrokeBuffer();
     private activeTool: DockAuthoringTool = 'positive-point';
     private spaceHeld = false;
+    private imageZoom: AIViewImageZoomState = { mode: 'auto' };
+    private filteredSelectionEmpty = false;
+    private pendingGalleryScrollId: string | null = null;
 
     constructor(
         controller: AISelectAnchorController,
@@ -394,6 +432,27 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         );
         this.imageSurface.addEventListener('pointercancel', () =>
             this.cancelPointerGesture()
+        );
+        this.imageSurface.addEventListener(
+            'wheel',
+            (event) => {
+                if (this.image.hidden) {
+                    return;
+                }
+                const factor = Math.exp(-event.deltaY * 0.0015);
+                const width = Math.max(
+                    40,
+                    Math.min(
+                        this.image.naturalWidth * 8,
+                        this.imageSurface.clientWidth * factor
+                    )
+                );
+                this.imageZoom = { mode: 'manual', width };
+                this.updateImageSurfaceRect();
+                event.preventDefault();
+                event.stopPropagation();
+            },
+            { passive: false }
         );
         const resizeImageSurface = () => this.updateImageSurfaceRect();
         const imageResizeObserver = new ResizeObserver(resizeImageSurface);
@@ -585,7 +644,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.plannerRetryButton = new Button({
             id: 'ai-select-view-gallery-planner-retry'
         });
-        i18n.bindText(this.plannerRetryButton, 'ai-select.views.planner.retry');
+        const retryPlanningLabel = i18n.t('ai-select.views.planner.retry');
+        setSvgButtonIcon(this.plannerRetryButton, redoSvg, retryPlanningLabel);
         this.plannerRetryButton.on('click', () => {
             try {
                 this.generatedViews.retryPlanning();
@@ -593,135 +653,161 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 console.error(error);
             }
         });
-        this.plannerStopButton = new Button({
-            id: 'ai-select-view-gallery-planner-stop'
-        });
-        i18n.bindText(this.plannerStopButton, 'ai-select.views.planner.stop');
-        this.plannerStopButton.on('click', () => {
-            try {
-                this.generatedViews.stopGeneration();
-            } catch (error) {
-                console.error(error);
-            }
-        });
-        this.plannerMoreButton = new Button({
-            id: 'ai-select-view-gallery-planner-more'
-        });
-        i18n.bindText(this.plannerMoreButton, 'ai-select.views.planner.more');
-        this.plannerMoreButton.on('click', () => {
-            try {
-                this.generatedViews.generateMoreViews();
-            } catch (error) {
-                console.error(error);
-            }
-        });
-        this.plannerOverflowButton = new Button({
-            id: 'ai-select-view-gallery-planner-overflow'
-        });
-        i18n.bindText(this.plannerOverflowButton, 'ai-select.more');
-        this.plannerOverflowButton.dom.setAttribute('aria-haspopup', 'menu');
-        this.plannerOverflowButton.dom.setAttribute('aria-expanded', 'false');
-        this.plannerOverflowMenu = new Container({
-            id: 'ai-select-view-gallery-planner-menu',
-            hidden: true
-        });
-        this.plannerOverflowMenu.dom.setAttribute('role', 'menu');
-        this.plannerRegenerateButton = new Button({
-            id: 'ai-select-view-gallery-planner-regenerate'
-        });
-        i18n.bindText(
-            this.plannerRegenerateButton,
-            'ai-select.views.planner.regenerate'
-        );
-        this.plannerRegenerateButton.dom.setAttribute('role', 'menuitem');
-        const confirmPlannerRegeneration = window.confirm.bind(window);
-        this.plannerOverflowButton.on('click', () => {
-            this.plannerOverflowMenu.hidden = !this.plannerOverflowMenu.hidden;
-            this.plannerOverflowButton.dom.setAttribute(
-                'aria-expanded',
-                (!this.plannerOverflowMenu.hidden).toString()
-            );
-        });
-        this.plannerRegenerateButton.on('click', () => {
-            this.plannerOverflowMenu.hidden = true;
-            this.plannerOverflowButton.dom.setAttribute(
-                'aria-expanded',
-                'false'
-            );
-            if (
-                !confirmPlannerRegeneration(
-                    i18n.t('ai-select.views.planner.regenerate-confirm')
-                )
-            ) {
-                this.plannerOverflowButton.dom.focus();
-                return;
-            }
-            try {
-                this.generatedViews.regenerateViews();
-            } catch (error) {
-                console.error(error);
-            }
-        });
-        this.plannerOverflowMenu.append(this.plannerRegenerateButton);
         this.plannerLine.append(this.plannerStatus);
         this.plannerLine.append(this.plannerRetryButton);
-        this.plannerLine.append(this.plannerStopButton);
-        this.plannerLine.append(this.plannerMoreButton);
-        this.plannerLine.append(this.plannerOverflowButton);
-        this.plannerLine.append(this.plannerOverflowMenu);
+        // Filter and sort are one presentation-only control. The radio
+        // choices never call Prompt, Mask, Participation, Evidence, or
+        // Candidate operations.
+        this.filterLine = new Container({
+            id: 'ai-select-view-gallery-filters',
+            hidden: true
+        });
+        this.filterTrigger = new Button({
+            id: 'ai-select-view-gallery-filter-trigger'
+        });
+        this.filterTrigger.dom.setAttribute('aria-haspopup', 'dialog');
+        this.filterTrigger.dom.setAttribute('aria-expanded', 'false');
+        this.filterPopover = new Container({
+            id: 'ai-select-view-gallery-filter-popover',
+            hidden: true
+        });
+        this.filterPopover.dom.setAttribute('role', 'dialog');
+        this.filterPopover.dom.setAttribute(
+            'aria-label',
+            i18n.t('ai-select.views.filter-sort')
+        );
+        const filterEntries: readonly GalleryFilter[] = ['all', 'needs-review'];
+        const filterButtons = new Map<GalleryFilter, Button>();
+        const filterGroup = new Container({
+            class: 'ai-select-view-gallery-choice-group'
+        });
+        filterGroup.dom.setAttribute('role', 'radiogroup');
+        filterGroup.dom.setAttribute(
+            'aria-label',
+            i18n.t('ai-select.views.filter-group')
+        );
+        for (const filter of filterEntries) {
+            const button = new Button({
+                class: 'ai-select-view-gallery-choice'
+            });
+            button.dom.setAttribute('role', 'radio');
+            button.on('click', () => {
+                this.galleryFilter = filter;
+                this.render();
+            });
+            filterButtons.set(filter, button);
+            filterGroup.append(button);
+        }
+        this.filterButtons = filterButtons;
+        const sortEntries: readonly GallerySort[] = [
+            'creation',
+            'newest',
+            'needs-review'
+        ];
+        const sortButtons = new Map<GallerySort, Button>();
+        const sortGroup = new Container({
+            class: 'ai-select-view-gallery-choice-group'
+        });
+        sortGroup.dom.setAttribute('role', 'radiogroup');
+        sortGroup.dom.setAttribute(
+            'aria-label',
+            i18n.t('ai-select.views.sort-group')
+        );
+        for (const sort of sortEntries) {
+            const button = new Button({
+                class: 'ai-select-view-gallery-choice'
+            });
+            button.dom.setAttribute('role', 'radio');
+            button.on('click', () => {
+                this.gallerySort = sort;
+                this.render();
+            });
+            sortButtons.set(sort, button);
+            sortGroup.append(button);
+        }
+        this.sortButtons = sortButtons;
+        const bindRadioNavigation = <T extends string>(
+            entries: readonly T[],
+            buttons: ReadonlyMap<T, Button>,
+            current: () => T,
+            select: (entry: T) => void
+        ): void => {
+            for (const entry of entries) {
+                buttons.get(entry)?.dom.addEventListener('keydown', (event) => {
+                    const next = nextRadioChoice(entries, current(), event.key);
+                    if (next === null) {
+                        return;
+                    }
+                    select(next);
+                    buttons.get(next)?.dom.focus();
+                    event.preventDefault();
+                    event.stopPropagation();
+                });
+            }
+        };
+        bindRadioNavigation(
+            filterEntries,
+            filterButtons,
+            () => this.galleryFilter,
+            (filter) => {
+                this.galleryFilter = filter;
+                this.render();
+            }
+        );
+        bindRadioNavigation(
+            sortEntries,
+            sortButtons,
+            () => this.gallerySort,
+            (sort) => {
+                this.gallerySort = sort;
+                this.render();
+            }
+        );
+        this.filterPopover.append(filterGroup);
+        this.filterPopover.append(sortGroup);
+        this.filterTrigger.on('click', () =>
+            this.setFilterPopoverOpen(this.filterPopover.hidden)
+        );
+        this.filterLine.append(this.filterTrigger);
+        this.filterLine.append(this.filterPopover);
+        window.addEventListener(
+            'pointerdown',
+            (event) => {
+                if (
+                    !this.filterPopover.hidden &&
+                    event.target instanceof Node &&
+                    !this.filterLine.dom.contains(event.target)
+                ) {
+                    this.setFilterPopoverOpen(false, true);
+                }
+            },
+            true
+        );
         window.addEventListener(
             'keydown',
             (event) => {
-                if (
-                    event.key === 'Escape' &&
-                    !this.plannerOverflowMenu.hidden
-                ) {
-                    this.plannerOverflowMenu.hidden = true;
-                    this.plannerOverflowButton.dom.setAttribute(
-                        'aria-expanded',
-                        'false'
-                    );
-                    this.plannerOverflowButton.dom.focus();
+                if (event.key === 'Escape' && !this.filterPopover.hidden) {
+                    this.setFilterPopoverOpen(false, true);
                     event.preventDefault();
                     event.stopPropagation();
                 }
             },
             true
         );
-        // Gallery filters are presentation-only: they choose which cards are
-        // visible and never call into Prompt, Mask, Participation, Evidence,
-        // or Candidate state.
-        this.filterLine = new Container({
-            id: 'ai-select-view-gallery-filters',
-            hidden: true
-        });
-        const filterEntries: readonly GalleryFilter[] = ['all', 'needs-review'];
-        const filterButtons = new Map<GalleryFilter, Button>();
-        for (const filter of filterEntries) {
-            const button = new Button({
-                class: 'ai-select-view-gallery-filter'
-            });
-            button.on('click', () => {
-                this.galleryFilter = filter;
-                this.renderGallery(
-                    getAnchorDockPresentation(this.state, this.maskState)
-                );
-            });
-            filterButtons.set(filter, button);
-            this.filterLine.append(button);
-        }
-        this.filterButtons = filterButtons;
         this.galleryCards = new Container({
             id: 'ai-select-view-gallery-cards'
         });
         this.galleryCards.dom.setAttribute('role', 'listbox');
+        this.galleryEmptyState = new Label({
+            id: 'ai-select-view-gallery-empty',
+            hidden: true
+        });
+        this.galleryEmptyState.dom.setAttribute('role', 'status');
         this.gallery.append(this.plannerLine);
         this.gallery.append(this.filterLine);
+        this.gallery.append(this.galleryEmptyState);
         this.gallery.append(this.galleryCards);
-        this.anchorCard = this.createCard(
-            () => this.selectGeneratedView(null),
-            null
-        );
+        this.anchorCard = this.createCard(() => this.selectGeneratedView(null));
         this.galleryCards.append(this.anchorCard.root);
 
         const header = new Container({ id: 'ai-select-anchor-dock-header' });
@@ -742,7 +828,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         const navigatorTitle = new Label({
             id: 'ai-select-view-navigator-title'
         });
-        i18n.bindText(navigatorTitle, 'ai-select.dock.views');
+        i18n.bindText(navigatorTitle, 'ai-select.dock.navigator');
         const navigatorCollapse = new Button({
             id: 'ai-select-navigator-collapse',
             class: 'ai-select-sidebar-collapse'
@@ -751,6 +837,18 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             id: 'ai-select-navigator-reveal',
             class: 'ai-select-sidebar-reveal'
         });
+        setSvgButtonIcon(
+            navigatorCollapse,
+            collapseSvg,
+            i18n.t('ai-select.dock.hide-navigator'),
+            'ai-select-sidebar-control-icon'
+        );
+        setSvgButtonIcon(
+            navigatorReveal,
+            arrowSvg,
+            i18n.t('ai-select.dock.show-navigator'),
+            'ai-select-sidebar-control-icon'
+        );
         navigatorCollapse.dom.setAttribute(
             'aria-controls',
             'ai-select-view-navigator'
@@ -785,6 +883,18 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             id: 'ai-select-inspector-reveal',
             class: 'ai-select-sidebar-reveal'
         });
+        setSvgButtonIcon(
+            inspectorCollapse,
+            collapseSvg,
+            i18n.t('ai-select.dock.hide-inspector'),
+            'ai-select-sidebar-control-icon'
+        );
+        setSvgButtonIcon(
+            inspectorReveal,
+            arrowSvg,
+            i18n.t('ai-select.dock.show-inspector'),
+            'ai-select-sidebar-control-icon'
+        );
         inspectorCollapse.dom.setAttribute(
             'aria-controls',
             'ai-select-view-inspector'
@@ -795,7 +905,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         );
         inspectorHeader.append(inspectorCollapse);
         inspectorHeader.append(inspectorTitle);
-        const information = new Container({
+        this.inspectorInformation = new Container({
             id: 'ai-select-anchor-dock-information'
         });
         this.selectedViewAssessment = new Label({
@@ -848,9 +958,9 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             class: 'ai-select-inspector-group'
         });
         technicalGroup.dom.appendChild(this.technicalDetails);
-        information.append(assessmentGroup);
-        information.append(maskGroup);
-        information.append(technicalGroup);
+        this.inspectorInformation.append(assessmentGroup);
+        this.inspectorInformation.append(maskGroup);
+        this.inspectorInformation.append(technicalGroup);
         this.primaryActions = new Container({
             id: 'ai-select-anchor-dock-primary-actions',
             hidden: true
@@ -865,66 +975,121 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         });
         this.workCanvasRow.dom.appendChild(this.imageViewport);
         imageResizeObserver.observe(this.workCanvasRow.dom);
+        const resetFitButton = new Button({
+            id: 'ai-select-view-reset-fit'
+        });
+        const resetFitLabel = i18n.t('ai-select.dock.reset-fit');
+        setSvgButtonIcon(resetFitButton, cameraResetSvg, resetFitLabel);
+        resetFitButton.on('click', () => {
+            this.imageZoom = { mode: 'auto' };
+            this.updateImageSurfaceRect();
+        });
         workHeader.append(this.status);
+        workHeader.append(resetFitButton);
         workArea.append(navigatorReveal);
         workArea.append(inspectorReveal);
         workArea.append(workHeader);
         workArea.append(this.workCanvasRow);
         workArea.append(this.primaryActions);
         inspector.append(inspectorHeader);
-        inspector.append(information);
+        inspector.append(this.inspectorInformation);
+        const navigatorResizeHandle = document.createElement('div');
+        navigatorResizeHandle.id = 'ai-select-navigator-resize-handle';
+        navigatorResizeHandle.className = 'ai-select-sidebar-resize-handle';
+        navigatorResizeHandle.setAttribute('role', 'separator');
+        navigatorResizeHandle.setAttribute('aria-orientation', 'vertical');
+        navigatorResizeHandle.setAttribute(
+            'aria-labelledby',
+            'ai-select-view-navigator-title'
+        );
+        navigatorResizeHandle.tabIndex = 0;
+        const inspectorResizeHandle = document.createElement('div');
+        inspectorResizeHandle.id = 'ai-select-inspector-resize-handle';
+        inspectorResizeHandle.className = 'ai-select-sidebar-resize-handle';
+        inspectorResizeHandle.setAttribute('role', 'separator');
+        inspectorResizeHandle.setAttribute('aria-orientation', 'vertical');
+        inspectorResizeHandle.setAttribute(
+            'aria-labelledby',
+            'ai-select-view-inspector-title'
+        );
+        inspectorResizeHandle.tabIndex = 0;
         mainRow.append(navigator);
+        mainRow.dom.appendChild(navigatorResizeHandle);
         mainRow.append(workArea);
+        mainRow.dom.appendChild(inspectorResizeHandle);
         mainRow.append(inspector);
         this.append(mainRow);
 
-        let navigatorPreference: boolean | undefined;
-        let inspectorPreference: boolean | undefined;
+        const dockPreferenceKey = 'supersplat.ai-select.view-dock-layout';
+        let dockPreferences: AIViewDockPreferences;
+        try {
+            dockPreferences = parseAIViewDockPreferences(
+                localStorage.getItem(dockPreferenceKey)
+            );
+        } catch {
+            dockPreferences = AI_VIEW_DOCK_DEFAULT_PREFERENCES;
+        }
+        const writeDockPreferences = (): void => {
+            try {
+                localStorage.setItem(
+                    dockPreferenceKey,
+                    serializeAIViewDockPreferences(dockPreferences)
+                );
+            } catch {
+                // Blocked device storage must not block the editor Dock.
+            }
+        };
         const renderColumns = (): void => {
             const width = mainRow.dom.clientWidth;
             const columns = resolveAIViewDockColumns(width, {
-                ...(navigatorPreference === undefined
-                    ? {}
-                    : { navigator: navigatorPreference }),
-                ...(inspectorPreference === undefined
-                    ? {}
-                    : { inspector: inspectorPreference })
+                navigator: dockPreferences.navigatorExpanded,
+                inspector: dockPreferences.inspectorExpanded
+            });
+            const expandable = resolveAIViewDockColumns(width, {
+                navigator: true,
+                inspector: true
             });
             navigator.hidden = !columns.navigator;
             inspector.hidden = !columns.inspector;
+            navigatorResizeHandle.hidden = !columns.navigator;
+            inspectorResizeHandle.hidden = !columns.inspector;
+            navigator.style.width = `${dockPreferences.navigatorWidth}px`;
+            inspector.style.width = `${dockPreferences.inspectorWidth}px`;
+            navigatorResizeHandle.setAttribute(
+                'aria-valuenow',
+                dockPreferences.navigatorWidth.toString()
+            );
+            inspectorResizeHandle.setAttribute(
+                'aria-valuenow',
+                dockPreferences.inspectorWidth.toString()
+            );
             const renderSidebarControls = (
                 collapseButton: Button,
                 revealButton: Button,
                 expanded: boolean,
+                canExpand: boolean,
                 collapseLabelKey: string,
                 revealLabelKey: string
             ): void => {
                 const expandedValue = expanded.toString();
                 collapseButton.hidden = !expanded;
-                revealButton.hidden = expanded;
+                revealButton.hidden = expanded || !canExpand;
                 collapseButton.dom.setAttribute('aria-expanded', expandedValue);
                 revealButton.dom.setAttribute('aria-expanded', expandedValue);
-                const renderButton = (
+                const renderButtonLabel = (
                     button: Button,
-                    svg: string,
                     labelKey: string
                 ): void => {
-                    const icon = createSvg(svg);
-                    icon.classList.add('ai-select-sidebar-control-icon');
-                    icon.setAttribute('aria-hidden', 'true');
-                    icon.setAttribute('focusable', 'false');
-                    button.dom.replaceChildren(icon);
-                    const label = i18n.t(labelKey);
-                    button.dom.title = label;
-                    button.dom.setAttribute('aria-label', label);
+                    setSvgButtonLabel(button, i18n.t(labelKey));
                 };
-                renderButton(collapseButton, collapseSvg, collapseLabelKey);
-                renderButton(revealButton, arrowSvg, revealLabelKey);
+                renderButtonLabel(collapseButton, collapseLabelKey);
+                renderButtonLabel(revealButton, revealLabelKey);
             };
             renderSidebarControls(
                 navigatorCollapse,
                 navigatorReveal,
                 columns.navigator,
+                expandable.navigator,
                 'ai-select.dock.hide-navigator',
                 'ai-select.dock.show-navigator'
             );
@@ -932,36 +1097,130 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 inspectorCollapse,
                 inspectorReveal,
                 columns.inspector,
+                expandable.inspector,
                 'ai-select.dock.hide-inspector',
                 'ai-select.dock.show-inspector'
             );
+            if (!this.filterPopover.hidden) {
+                this.updateFilterPopoverSize();
+            }
         };
         navigatorCollapse.on('click', () => {
-            navigatorPreference = false;
+            dockPreferences = setAIViewDockSidebarExpanded(
+                dockPreferences,
+                'navigator',
+                false
+            );
+            writeDockPreferences();
             renderColumns();
             navigatorReveal.dom.focus();
         });
         navigatorReveal.on('click', () => {
-            navigatorPreference = true;
-            if (mainRow.dom.clientWidth < 900) {
-                inspectorPreference = false;
-            }
+            dockPreferences = setAIViewDockSidebarExpanded(
+                dockPreferences,
+                'navigator',
+                true
+            );
+            writeDockPreferences();
             renderColumns();
-            navigatorCollapse.dom.focus();
+            (navigator.hidden
+                ? navigatorReveal.dom
+                : navigatorCollapse.dom
+            ).focus();
         });
         inspectorCollapse.on('click', () => {
-            inspectorPreference = false;
+            dockPreferences = setAIViewDockSidebarExpanded(
+                dockPreferences,
+                'inspector',
+                false
+            );
+            writeDockPreferences();
             renderColumns();
             inspectorReveal.dom.focus();
         });
         inspectorReveal.on('click', () => {
-            inspectorPreference = true;
-            if (mainRow.dom.clientWidth < 900) {
-                navigatorPreference = false;
-            }
+            dockPreferences = setAIViewDockSidebarExpanded(
+                dockPreferences,
+                'inspector',
+                true
+            );
+            writeDockPreferences();
             renderColumns();
-            inspectorCollapse.dom.focus();
+            (inspector.hidden
+                ? inspectorReveal.dom
+                : inspectorCollapse.dom
+            ).focus();
         });
+        const bindSidebarResize = (
+            handle: HTMLDivElement,
+            side: 'navigator' | 'inspector'
+        ): void => {
+            const minimum =
+                side === 'navigator'
+                    ? AI_VIEW_NAVIGATOR_MINIMUM_WIDTH_PX
+                    : AI_VIEW_INSPECTOR_MINIMUM_WIDTH_PX;
+            const maximum =
+                side === 'navigator'
+                    ? AI_VIEW_NAVIGATOR_MAXIMUM_WIDTH_PX
+                    : AI_VIEW_INSPECTOR_MAXIMUM_WIDTH_PX;
+            handle.setAttribute('aria-valuemin', minimum.toString());
+            handle.setAttribute('aria-valuemax', maximum.toString());
+            let startX = 0;
+            let startWidth = 0;
+            let resizing = false;
+            const resize = (clientX: number): void => {
+                const delta =
+                    (clientX - startX) * (side === 'navigator' ? 1 : -1);
+                const next = Math.round(
+                    Math.max(minimum, Math.min(maximum, startWidth + delta))
+                );
+                dockPreferences = resizeAIViewDockSidebar(
+                    dockPreferences,
+                    side,
+                    next
+                );
+                renderColumns();
+            };
+            handle.addEventListener('pointerdown', (event) => {
+                if (!event.isPrimary) {
+                    return;
+                }
+                resizing = true;
+                startX = event.clientX;
+                startWidth =
+                    side === 'navigator'
+                        ? dockPreferences.navigatorWidth
+                        : dockPreferences.inspectorWidth;
+                handle.setPointerCapture(event.pointerId);
+                event.preventDefault();
+                event.stopPropagation();
+            });
+            handle.addEventListener('pointermove', (event) => {
+                if (resizing) {
+                    resize(event.clientX);
+                }
+            });
+            handle.addEventListener('lostpointercapture', () => {
+                resizing = false;
+                writeDockPreferences();
+            });
+            handle.addEventListener('keydown', (event) => {
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+                    return;
+                }
+                startX = 0;
+                startWidth =
+                    side === 'navigator'
+                        ? dockPreferences.navigatorWidth
+                        : dockPreferences.inspectorWidth;
+                resize(event.key === 'ArrowLeft' ? -8 : 8);
+                writeDockPreferences();
+                event.preventDefault();
+                event.stopPropagation();
+            });
+        };
+        bindSidebarResize(navigatorResizeHandle, 'navigator');
+        bindSidebarResize(inspectorResizeHandle, 'inspector');
         window.addEventListener(
             'keydown',
             (event) => {
@@ -978,12 +1237,22 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                     return;
                 }
                 if (!inspector.hidden) {
-                    inspectorPreference = false;
+                    dockPreferences = setAIViewDockSidebarExpanded(
+                        dockPreferences,
+                        'inspector',
+                        false
+                    );
+                    writeDockPreferences();
                     renderColumns();
                     inspectorReveal.dom.focus();
                     event.preventDefault();
                 } else if (!navigator.hidden) {
-                    navigatorPreference = false;
+                    dockPreferences = setAIViewDockSidebarExpanded(
+                        dockPreferences,
+                        'navigator',
+                        false
+                    );
+                    writeDockPreferences();
                     renderColumns();
                     navigatorReveal.dom.focus();
                     event.preventDefault();
@@ -1026,6 +1295,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 this.generatedState.selectedViewId
             ) {
                 this.cancelPointerGesture();
+                this.pendingGalleryScrollId =
+                    generatedState.selectedViewId ?? NAVIGATOR_ANCHOR_ID;
             }
             this.generatedState = generatedState;
             this.render();
@@ -1040,6 +1311,26 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.render();
         });
         i18n.onChange(() => {
+            setSvgButtonLabel(
+                this.plannerRetryButton,
+                i18n.t('ai-select.views.planner.retry')
+            );
+            setSvgButtonLabel(
+                resetFitButton,
+                i18n.t('ai-select.dock.reset-fit')
+            );
+            this.filterPopover.dom.setAttribute(
+                'aria-label',
+                i18n.t('ai-select.views.filter-sort')
+            );
+            filterGroup.dom.setAttribute(
+                'aria-label',
+                i18n.t('ai-select.views.filter-group')
+            );
+            sortGroup.dom.setAttribute(
+                'aria-label',
+                i18n.t('ai-select.views.sort-group')
+            );
             renderColumns();
             this.render();
         }, this);
@@ -1280,6 +1571,41 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.state,
             this.maskState
         );
+        if (this.state.context !== null) {
+            const currentId =
+                this.generatedState.selectedViewId === null
+                    ? NAVIGATOR_ANCHOR_ID
+                    : this.generatedState.selectedViewId;
+            const projection = projectNavigatorViews(
+                this.generatedState.views,
+                this.galleryFilter,
+                this.gallerySort,
+                currentId
+            );
+            this.filteredSelectionEmpty = projection.empty;
+            if (projection.selectionChanged && projection.currentId !== null) {
+                this.selectGeneratedView(
+                    projection.currentId === NAVIGATOR_ANCHOR_ID
+                        ? null
+                        : projection.currentId
+                );
+                return;
+            }
+        } else {
+            this.filteredSelectionEmpty = false;
+        }
+        this.inspectorInformation.hidden =
+            this.state.context === null || this.filteredSelectionEmpty;
+        if (this.filteredSelectionEmpty) {
+            this.cancelPointerGesture();
+            this.image.hidden = true;
+            this.imageSurface.hidden = true;
+            this.overlay.hidden = true;
+            this.status.text = i18n.t('ai-select.views.filter-empty');
+            this.primaryActions.hidden = true;
+            this.renderGallery(presentation);
+            return;
+        }
         const inspected = this.inspectedGeneratedView();
         if (inspected !== null) {
             const viewAuthoring = this.authoring();
@@ -1579,85 +1905,27 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.overlay.hidden = false;
     }
 
-    private createCard(
-        onClick: () => void,
-        onRetry: (() => void) | null
-    ): GeneratedCardElements {
+    private createCard(onClick: () => void): GeneratedCardElements {
         const root = new Container({ class: 'ai-select-view-card' });
         root.dom.setAttribute('role', 'option');
         root.dom.tabIndex = -1;
         const image = document.createElement('img');
         image.className = 'ai-select-view-card-image';
         image.alt = '';
-        image.width = 64;
-        image.height = 64;
         image.loading = 'lazy';
         image.hidden = true;
         image.draggable = false;
-        const title = new Label({ class: 'ai-select-view-card-title' });
-        const status = new Label({ class: 'ai-select-view-card-status' });
-        // Raw technical messages stay available but visually subordinate, so
-        // a transport/OOM string can never replace a semantic status line.
-        const detail = new Label({ class: 'ai-select-view-card-detail' });
-        detail.hidden = true;
-        const retryButton = new Button({
-            class: 'ai-select-view-card-retry',
-            hidden: true
-        });
-        const regeneratePromptButton = new Button({
-            class: 'ai-select-view-card-regenerate-prompt',
-            hidden: true
-        });
-        const refreshMaskButton = new Button({
-            class: 'ai-select-view-card-refresh-mask',
-            hidden: true
-        });
-        const confirmReviewButton = new Button({
-            class: 'ai-select-view-card-confirm-review',
-            hidden: true
-        });
-        i18n.bindText(retryButton, 'ai-select.views.retry-render');
-        i18n.bindText(regeneratePromptButton, 'ai-select.views.retry-prompt');
-        i18n.bindText(confirmReviewButton, 'ai-select.review.confirm-as-is');
-        if (onRetry !== null) {
-            retryButton.on('click', (event: Event) => {
-                event.stopPropagation();
-                onRetry();
-            });
-        }
-        regeneratePromptButton.on('click', (event: Event) => {
-            event.stopPropagation();
-            const viewId = root.dom.dataset.viewId;
-            if (viewId !== undefined) {
-                this.regenerateGeneratedViewPrompt(viewId);
-            }
-        });
-        refreshMaskButton.on('click', (event: Event) => {
-            event.stopPropagation();
-            const viewId = root.dom.dataset.viewId;
-            if (viewId !== undefined) {
-                this.refreshGeneratedViewMask(viewId);
-            }
-        });
-        confirmReviewButton.on('click', (event: Event) => {
-            event.stopPropagation();
-            const viewId = root.dom.dataset.viewId;
-            if (viewId !== undefined) {
-                this.confirmGeneratedReview(viewId);
-            }
-        });
+        const anchorPin = document.createElement('span');
+        anchorPin.className = 'ai-select-view-card-anchor-pin';
+        anchorPin.setAttribute('aria-hidden', 'true');
+        anchorPin.hidden = true;
+        anchorPin.appendChild(createSvg(pinSvg));
+        const badge = document.createElement('span');
+        badge.className = 'ai-select-view-card-badge';
+        badge.setAttribute('aria-hidden', 'true');
         root.dom.appendChild(image);
-        root.append(title);
-        root.append(status);
-        root.append(detail);
-        const actions = new Container({
-            class: 'ai-select-view-card-actions'
-        });
-        actions.append(confirmReviewButton);
-        actions.append(regeneratePromptButton);
-        actions.append(refreshMaskButton);
-        actions.append(retryButton);
-        root.append(actions);
+        root.dom.appendChild(anchorPin);
+        root.dom.appendChild(badge);
         root.dom.addEventListener('pointerdown', (event) =>
             event.stopPropagation()
         );
@@ -1685,21 +1953,20 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         return {
             root,
             image,
-            title,
-            status,
-            detail,
-            retryButton,
-            regeneratePromptButton,
-            refreshMaskButton,
-            confirmReviewButton
+            anchorPin,
+            badge
         };
     }
 
     private renderGallery(presentation: AnchorDockPresentation): void {
         const generated = this.generatedState;
-        const showGallery = this.state.context !== null;
-        this.gallery.hidden = !showGallery;
-        if (!showGallery) {
+        this.gallery.hidden = false;
+        if (this.state.context === null) {
+            this.plannerLine.hidden = true;
+            this.filterLine.hidden = true;
+            this.galleryCards.hidden = true;
+            this.galleryEmptyState.text = i18n.t('ai-select.views.no-target');
+            this.galleryEmptyState.hidden = false;
             this.selectedViewPrimaryAction = null;
             this.selectedViewPrimaryButton.hidden = true;
             return;
@@ -1711,20 +1978,12 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 'ai-select.views.planner.planning'
             );
             this.plannerRetryButton.hidden = true;
-            this.plannerStopButton.hidden = true;
-            this.plannerMoreButton.hidden = true;
-            this.plannerOverflowButton.hidden = true;
-            this.plannerRegenerateButton.hidden = true;
         } else if (generated.plannerStatus === 'failed') {
             this.plannerLine.hidden = false;
             this.plannerStatus.text =
                 generated.plannerErrorMessage ??
                 i18n.t('ai-select.views.planner.failed');
             this.plannerRetryButton.hidden = false;
-            this.plannerStopButton.hidden = true;
-            this.plannerMoreButton.hidden = true;
-            this.plannerOverflowButton.hidden = true;
-            this.plannerRegenerateButton.hidden = true;
         } else if (generated.plannerStatus === 'active') {
             const generationInProgress = generated.views.some(
                 (view) =>
@@ -1733,48 +1992,68 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                     view.promptStatus === 'synthesizing' ||
                     view.maskStatus === 'generating'
             );
-            this.plannerLine.hidden = false;
-            this.plannerStatus.text =
-                generated.plannerErrorMessage ??
-                (generated.generationStopped
-                    ? i18n.t('ai-select.views.planner.stopped')
-                    : i18n.t('ai-select.views.planner.active'));
+            this.plannerLine.hidden = !generationInProgress;
+            this.plannerStatus.text = i18n.t(
+                'ai-select.views.planner.planning'
+            );
             this.plannerRetryButton.hidden = true;
-            this.plannerStopButton.hidden =
-                !generationInProgress || generated.generationStopped;
-            this.plannerStopButton.enabled = generationInProgress;
-            this.plannerMoreButton.hidden =
-                generationInProgress && !generated.generationStopped;
-            this.plannerOverflowButton.hidden = false;
-            this.plannerRegenerateButton.hidden = false;
         } else {
             this.plannerLine.hidden = true;
-            this.plannerOverflowButton.hidden = true;
-            this.plannerRegenerateButton.hidden = true;
-        }
-        if (this.plannerOverflowButton.hidden) {
-            this.plannerOverflowMenu.hidden = true;
-            this.plannerOverflowButton.dom.setAttribute(
-                'aria-expanded',
-                'false'
-            );
         }
 
-        // The Anchor card mirrors the Anchor's own render surface.
-        const anchorStatusKey = {
-            idle: 'ai-select.panel.idle',
-            ready: 'ai-select.anchor.ready',
-            previewing: 'ai-select.anchor.previewing',
-            rendering: 'ai-select.anchor.rendering',
-            failed: 'ai-select.anchor.failed'
-        }[presentation.status];
-        this.anchorCard.title.text = i18n.t('ai-select.views.anchor');
-        this.anchorCard.status.text = i18n.t(anchorStatusKey);
-        this.anchorCard.detail.hidden = true;
-        this.anchorCard.retryButton.hidden = true;
-        this.anchorCard.regeneratePromptButton.hidden = true;
-        this.anchorCard.refreshMaskButton.hidden = true;
-        this.anchorCard.confirmReviewButton.hidden = true;
+        const currentId =
+            generated.selectedViewId === null
+                ? NAVIGATOR_ANCHOR_ID
+                : generated.selectedViewId;
+        const projection = projectNavigatorViews(
+            generated.views,
+            this.galleryFilter,
+            this.gallerySort,
+            currentId
+        );
+        this.filteredSelectionEmpty = projection.empty;
+        this.filterLine.hidden = false;
+        const filterLabel = i18n.t(
+            `ai-select.views.filter.${this.galleryFilter === 'all' ? 'all' : 'needs-review'}`
+        );
+        const sortLabel = i18n.t(`ai-select.views.sort.${this.gallerySort}`);
+        this.filterTrigger.text = `${filterLabel} · ${sortLabel}`;
+        this.filterTrigger.dom.title = `${i18n.t('ai-select.views.filter-sort')}: ${this.filterTrigger.text}`;
+        this.filterTrigger.dom.setAttribute(
+            'aria-label',
+            this.filterTrigger.dom.title
+        );
+        for (const [filter, button] of this.filterButtons) {
+            button.text = i18n.t(
+                `ai-select.views.filter.${filter === 'all' ? 'all' : 'needs-review'}`
+            );
+            button.dom.setAttribute(
+                'aria-checked',
+                (filter === this.galleryFilter).toString()
+            );
+            button.dom.tabIndex = filter === this.galleryFilter ? 0 : -1;
+        }
+        for (const [sort, button] of this.sortButtons) {
+            button.text = i18n.t(`ai-select.views.sort.${sort}`);
+            button.dom.setAttribute(
+                'aria-checked',
+                (sort === this.gallerySort).toString()
+            );
+            button.dom.tabIndex = sort === this.gallerySort ? 0 : -1;
+        }
+        this.galleryEmptyState.text = i18n.t('ai-select.views.filter-empty');
+        this.galleryEmptyState.hidden = !projection.empty;
+        this.galleryCards.hidden = projection.empty;
+
+        // The Anchor remains the oldest global item and uses an identity pin.
+        this.anchorCard.anchorPin.hidden = false;
+        const anchorBadge: NavigatorBadge =
+            presentation.status === 'failed'
+                ? 'failure'
+                : presentation.status === 'ready'
+                  ? 'ready'
+                  : 'processing';
+        this.renderCardBadge(this.anchorCard, anchorBadge);
         if (presentation.rgb !== undefined) {
             this.applyCardThumbnail(
                 this.anchorCard,
@@ -1785,46 +2064,27 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.anchorCard.rgbDigest = undefined;
             this.anchorCard.image.hidden = true;
         }
-        this.anchorCard.root.dom.classList.toggle(
-            'selected',
-            this.generatedState.selectedViewId === null
+        const anchorSelected =
+            !projection.empty && generated.selectedViewId === null;
+        this.anchorCard.root.hidden = !projection.items.some(
+            (item) => item.id === NAVIGATOR_ANCHOR_ID
         );
-        this.anchorCard.root.dom.tabIndex =
-            this.generatedState.selectedViewId === null ? 0 : -1;
+        this.anchorCard.root.dom.classList.toggle('selected', anchorSelected);
+        this.anchorCard.root.dom.tabIndex = anchorSelected ? 0 : -1;
         this.anchorCard.root.dom.setAttribute(
             'aria-selected',
-            (this.generatedState.selectedViewId === null).toString()
+            anchorSelected.toString()
         );
         this.anchorCard.root.dom.setAttribute(
             'aria-label',
-            this.anchorCard.title.text
+            `${i18n.t('ai-select.views.anchor')}, ${i18n.t(`ai-select.views.badge.${anchorBadge}`)}`
         );
         this.anchorCard.root.dom.setAttribute(
             'aria-current',
-            this.generatedState.selectedViewId === null ? 'true' : 'false'
+            anchorSelected ? 'true' : 'false'
         );
 
-        // Stable order (Anchor, generated local Views in creation order, then
-        // user-added Views) with per-role title ordinals; the filter only
-        // changes card visibility.
         const ordered = orderGalleryViews(generated.views);
-        const reviewCount = filterGalleryViews(ordered, 'needs-review').length;
-        const visible = new Set(
-            filterGalleryViews(ordered, this.galleryFilter).map(
-                (view) => view.viewId
-            )
-        );
-        this.filterLine.hidden = ordered.length === 0;
-        for (const [filter, button] of this.filterButtons) {
-            button.text =
-                filter === 'needs-review'
-                    ? `${i18n.t('ai-select.views.filter.review')} ${i18n.formatInteger(reviewCount)}`
-                    : i18n.t('ai-select.views.filter.all-views');
-            button.dom.classList.toggle(
-                'active',
-                filter === this.galleryFilter
-            );
-        }
         const ordinals = new Map<string, number>();
         let generatedOrdinal = 0;
         let userAddedOrdinal = 0;
@@ -1840,9 +2100,8 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             seen.add(view.viewId);
             let card = this.generatedCards.get(view.viewId);
             if (card === undefined) {
-                card = this.createCard(
-                    () => this.selectGeneratedView(view.viewId),
-                    () => this.retryGeneratedViewRender(view.viewId)
+                card = this.createCard(() =>
+                    this.selectGeneratedView(view.viewId)
                 );
                 this.generatedCards.set(view.viewId, card);
                 this.galleryCards.append(card.root);
@@ -1852,7 +2111,10 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 galleryCardPresentation(view, ordinals.get(view.viewId) ?? 0),
                 view
             );
-            card.root.hidden = !view.selected && !visible.has(view.viewId);
+            const visible = projection.items.some(
+                (item) => item.id === view.viewId
+            );
+            card.root.hidden = !visible;
             card.root.dom.setAttribute(
                 'aria-current',
                 view.selected ? 'true' : 'false'
@@ -1861,7 +2123,7 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 'aria-selected',
                 view.selected.toString()
             );
-            card.root.dom.tabIndex = view.selected ? 0 : -1;
+            card.root.dom.tabIndex = view.selected && visible ? 0 : -1;
         }
         for (const [viewId, card] of this.generatedCards) {
             if (!seen.has(viewId)) {
@@ -1869,7 +2131,56 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
                 this.generatedCards.delete(viewId);
             }
         }
+        for (const item of projection.items) {
+            const card =
+                item.id === NAVIGATOR_ANCHOR_ID
+                    ? this.anchorCard
+                    : this.generatedCards.get(item.id);
+            if (card !== undefined) {
+                this.galleryCards.dom.appendChild(card.root.dom);
+            }
+        }
+        if (this.pendingGalleryScrollId !== null) {
+            const selectedCard =
+                this.pendingGalleryScrollId === NAVIGATOR_ANCHOR_ID
+                    ? this.anchorCard
+                    : this.generatedCards.get(this.pendingGalleryScrollId);
+            if (selectedCard !== undefined && !selectedCard.root.hidden) {
+                selectedCard.root.dom.scrollIntoView({ block: 'nearest' });
+                this.pendingGalleryScrollId = null;
+            }
+        }
         this.renderSelectedViewActions(ordered, ordinals);
+    }
+
+    private setFilterPopoverOpen(open: boolean, restoreFocus = false): void {
+        this.filterPopover.hidden = !open;
+        this.filterTrigger.dom.setAttribute('aria-expanded', open.toString());
+        if (open) {
+            this.updateFilterPopoverSize();
+            const active = this.filterButtons.get(this.galleryFilter);
+            active?.dom.focus();
+        } else if (restoreFocus) {
+            this.filterTrigger.dom.focus();
+        }
+    }
+
+    private updateFilterPopoverSize(): void {
+        const galleryRect = this.gallery.dom.getBoundingClientRect();
+        const triggerRect = this.filterTrigger.dom.getBoundingClientRect();
+        const availableBelow = Math.max(
+            80,
+            Math.floor(galleryRect.bottom - triggerRect.bottom - 8)
+        );
+        this.filterPopover.style.maxHeight = `${Math.min(240, availableBelow)}px`;
+    }
+
+    private renderCardBadge(
+        card: GeneratedCardElements,
+        badge: NavigatorBadge
+    ): void {
+        card.badge.textContent = i18n.t(`ai-select.views.badge.${badge}`);
+        card.badge.className = `ai-select-view-card-badge badge-${badge}`;
     }
 
     private updateGeneratedCard(
@@ -1881,32 +2192,22 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             presentation.role === 'user-added'
                 ? 'ai-select.views.role.user-added'
                 : 'ai-select.views.generated';
-        card.title.text = `${i18n.t(titleKey)} ${i18n.formatInteger(presentation.titleOrdinal)}`;
-        card.root.dom.setAttribute('aria-label', card.title.text);
+        const title = `${i18n.t(titleKey)} ${i18n.formatInteger(presentation.titleOrdinal)}`;
+        const badge = navigatorBadgePresentation(view);
+        this.renderCardBadge(card, badge);
+        const accessibilityStates = [
+            title,
+            i18n.t(`ai-select.views.badge.${badge}`),
+            ...(view.participation === 'excluded'
+                ? [i18n.t('ai-select.participation.excluded')]
+                : [])
+        ];
+        card.root.dom.setAttribute(
+            'aria-label',
+            accessibilityStates.join(', ')
+        );
         card.root.dom.dataset.viewId = presentation.viewId;
-        const statusLines: string[] = [];
-        const detailLines: string[] = [];
-        for (const line of presentation.lines) {
-            if (line.kind === 'detail') {
-                detailLines.push(line.text);
-            } else {
-                statusLines.push(
-                    line.key.startsWith('ai-select.review.action.')
-                        ? `• ${i18n.t(line.key)}`
-                        : i18n.t(line.key)
-                );
-            }
-        }
-        card.status.text = statusLines.join('\n');
-        card.detail.text = detailLines.join('\n');
-        card.detail.hidden = detailLines.length === 0;
-
-        // Navigator cards are selection/status surfaces only. Current-View
-        // Participation is owned by the Inspector.
-        card.retryButton.hidden = true;
-        card.regeneratePromptButton.hidden = true;
-        card.refreshMaskButton.hidden = true;
-        card.confirmReviewButton.hidden = true;
+        card.anchorPin.hidden = true;
         if (view.rgb !== undefined) {
             this.applyCardThumbnail(card, view.rgb.digest, view.rgb.pngBase64);
         } else {
@@ -1914,12 +2215,20 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             card.image.hidden = true;
         }
         card.root.dom.classList.toggle('selected', presentation.selected);
+        card.root.dom.classList.toggle(
+            'excluded',
+            view.participation === 'excluded'
+        );
     }
 
     private moveGalleryFocus(from: HTMLElement, delta: -1 | 1): void {
-        const visibleCards = this.allCards().filter(
-            (card) => !card.root.hidden
-        );
+        const cards = this.allCards();
+        const visibleCards = Array.from(this.galleryCards.dom.children)
+            .map((element) => cards.find((card) => card.root.dom === element))
+            .filter(
+                (card): card is GeneratedCardElements =>
+                    card !== undefined && !card.root.hidden
+            );
         const currentIndex = visibleCards.findIndex(
             (card) => card.root.dom === from
         );
@@ -2062,22 +2371,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         try {
             this.generatedViews.selectView(viewId);
             this.onInspectCamera(viewId);
-        } catch (error) {
-            console.error(error);
-        }
-    }
-
-    private retryGeneratedViewRender(viewId: string): void {
-        try {
-            this.generatedViews.retryViewRender(viewId);
-        } catch (error) {
-            console.error(error);
-        }
-    }
-
-    private regenerateGeneratedViewPrompt(viewId: string): void {
-        try {
-            this.generatedViews.regenerateViewPrompt(viewId);
         } catch (error) {
             console.error(error);
         }
@@ -2626,11 +2919,14 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
             this.imageViewport.style.width = `${idealWidth}px`;
             this.imageViewport.style.flex = `0 1 ${idealWidth}px`;
         }
-        const fitted = fitImageRect(
-            this.imageViewport.clientWidth,
-            this.imageViewport.clientHeight,
-            imageWidth,
-            imageHeight
+        const fitted = resolveAIViewImageRect(
+            {
+                viewportWidth: this.imageViewport.clientWidth,
+                viewportHeight: this.imageViewport.clientHeight,
+                imageWidth,
+                imageHeight
+            },
+            this.imageZoom
         );
         if (fitted === null) {
             return;

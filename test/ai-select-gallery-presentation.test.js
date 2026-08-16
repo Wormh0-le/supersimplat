@@ -5,6 +5,9 @@ const {
     filterGalleryViews,
     galleryCardPresentation,
     galleryViewRole,
+    nextRadioChoice,
+    navigatorBadgePresentation,
+    projectNavigatorViews,
     orderGalleryViews
 } = require('../.test-dist/src/ai-select/gallery-presentation.js');
 const {
@@ -41,6 +44,7 @@ const assessment = (overrides = {}) => ({
 
 const view = (overrides = {}) => ({
     viewId: 'view-1',
+    creationOrdinal: 1,
     source: 'auto-generated',
     cameraBinding: {},
     renderStatus: 'ready',
@@ -283,23 +287,63 @@ test('role and Participation remain independent', () => {
     );
 });
 
-test('stable order: generated Views in creation order, then user-added Views', () => {
+test('default order preserves strict global creation order across View roles', () => {
     const views = [
-        view({ viewId: 'user-1', source: 'user-added' }),
-        view({ viewId: 'gen-1' }),
-        view({ viewId: 'gen-2', source: 'replacement' }),
-        view({ viewId: 'user-2', source: 'user-added' }),
-        view({ viewId: 'gen-3' })
+        view({ viewId: 'gen-3', creationOrdinal: 5 }),
+        view({ viewId: 'user-1', source: 'user-added', creationOrdinal: 1 }),
+        view({ viewId: 'user-2', source: 'user-added', creationOrdinal: 4 }),
+        view({ viewId: 'gen-1', creationOrdinal: 2 }),
+        view({ viewId: 'gen-2', source: 'replacement', creationOrdinal: 3 })
     ];
     assert.deepEqual(
         orderGalleryViews(views).map((entry) => entry.viewId),
-        ['gen-1', 'gen-2', 'gen-3', 'user-1', 'user-2']
+        ['user-1', 'gen-1', 'gen-2', 'user-2', 'gen-3']
+    );
+});
+
+test('explicit sort modes are stable and selection never changes position', () => {
+    const review = view({
+        viewId: 'review',
+        creationOrdinal: 2,
+        selected: false,
+        maskQuality: 'auto-review',
+        assessment: assessment({ status: 'review' })
+    });
+    const views = [
+        view({
+            viewId: 'last',
+            source: 'user-added',
+            selected: true,
+            creationOrdinal: 3
+        }),
+        review,
+        view({ viewId: 'first', selected: false, creationOrdinal: 1 })
+    ];
+    assert.deepEqual(
+        orderGalleryViews(views, 'newest').map((entry) => entry.viewId),
+        ['last', 'review', 'first']
+    );
+    assert.deepEqual(
+        orderGalleryViews(views, 'needs-review').map((entry) => entry.viewId),
+        ['review', 'first', 'last']
+    );
+    assert.deepEqual(
+        orderGalleryViews(
+            views.map((entry) => ({
+                ...entry,
+                selected: entry.viewId === 'first'
+            }))
+        ).map((entry) => entry.viewId),
+        ['first', 'review', 'last']
     );
 });
 
 test('appending later Views never reorders prior completed Views', () => {
-    const first = [view({ viewId: 'gen-1' }), view({ viewId: 'gen-2' })];
-    const appended = [...first, view({ viewId: 'gen-3' })];
+    const first = [
+        view({ viewId: 'gen-1', creationOrdinal: 1 }),
+        view({ viewId: 'gen-2', creationOrdinal: 2 })
+    ];
+    const appended = [view({ viewId: 'gen-3', creationOrdinal: 3 }), ...first];
     assert.deepEqual(
         orderGalleryViews(appended).map((entry) => entry.viewId),
         ['gen-1', 'gen-2', 'gen-3']
@@ -346,18 +390,123 @@ test('filters project presentation only and never mutate formal state', () => {
         'gen-3',
         'gen-4'
     ]);
-    assert.deepEqual(ids(filterGalleryViews(views, 'included')), [
-        'gen-1',
-        'gen-4'
-    ]);
-    assert.deepEqual(ids(filterGalleryViews(views, 'excluded')), [
-        'gen-2',
-        'gen-3'
-    ]);
     // User Confirmed authority settles the Review; it is no longer pending.
     assert.deepEqual(ids(filterGalleryViews(views, 'needs-review')), ['gen-3']);
     assert.equal(views.length, 4);
     assert.equal(views[0], included);
+});
+
+test('projection selects the first match and represents filter-empty without a hidden current View', () => {
+    const review = view({
+        viewId: 'review',
+        maskQuality: 'auto-review',
+        assessment: assessment({ status: 'review' })
+    });
+    const firstMatch = projectNavigatorViews(
+        [view({ viewId: 'ready' }), review],
+        'needs-review',
+        'creation',
+        'anchor-view'
+    );
+    assert.deepEqual(
+        firstMatch.items.map((item) => item.id),
+        ['review']
+    );
+    assert.equal(firstMatch.currentId, 'review');
+    assert.equal(firstMatch.selectionChanged, true);
+    assert.equal(firstMatch.empty, false);
+
+    const empty = projectNavigatorViews(
+        [view({ viewId: 'ready' })],
+        'needs-review',
+        'creation',
+        'ready'
+    );
+    assert.deepEqual(empty.items, []);
+    assert.equal(empty.currentId, null);
+    assert.equal(empty.selectionChanged, true);
+    assert.equal(empty.empty, true);
+});
+
+test('projection sorts Anchor and all View roles as one global sequence', () => {
+    const review = view({
+        viewId: 'review',
+        creationOrdinal: 1,
+        maskQuality: 'auto-review',
+        assessment: assessment({ status: 'review' })
+    });
+    const user = view({
+        viewId: 'user',
+        source: 'user-added',
+        creationOrdinal: 2
+    });
+    const ids = (sort) =>
+        projectNavigatorViews(
+            [review, user],
+            'all',
+            sort,
+            'anchor-view'
+        ).items.map((item) => item.id);
+    assert.deepEqual(ids('creation'), ['anchor-view', 'review', 'user']);
+    assert.deepEqual(ids('newest'), ['user', 'review', 'anchor-view']);
+    assert.deepEqual(ids('needs-review'), ['review', 'anchor-view', 'user']);
+    assert.deepEqual(
+        projectNavigatorViews(
+            [view({ viewId: 'anchor', creationOrdinal: 1 })],
+            'all',
+            'creation',
+            'anchor-view'
+        ).items.map((item) => item.id),
+        ['anchor-view', 'anchor']
+    );
+});
+
+test('Navigator badge priority is failure, Needs Review, processing, then ready', () => {
+    assert.equal(
+        navigatorBadgePresentation(
+            view({ renderStatus: 'failed', maskQuality: 'auto-review' })
+        ),
+        'failure'
+    );
+    assert.equal(
+        navigatorBadgePresentation(
+            view({
+                maskQuality: 'failed',
+                assessment: assessment({ status: 'failed' })
+            })
+        ),
+        'failure'
+    );
+    assert.equal(
+        navigatorBadgePresentation(
+            view({
+                maskQuality: 'auto-review',
+                assessment: assessment({ status: 'review' })
+            })
+        ),
+        'needs-review'
+    );
+    assert.equal(
+        navigatorBadgePresentation(
+            view({
+                renderStatus: 'rendering',
+                promptStatus: 'none',
+                maskStatus: 'none',
+                assessment: undefined
+            })
+        ),
+        'processing'
+    );
+    assert.equal(navigatorBadgePresentation(view()), 'ready');
+});
+
+test('radio choice navigation wraps and supports Home and End', () => {
+    const entries = ['all', 'needs-review'];
+    assert.equal(nextRadioChoice(entries, 'all', 'ArrowRight'), 'needs-review');
+    assert.equal(nextRadioChoice(entries, 'needs-review', 'ArrowDown'), 'all');
+    assert.equal(nextRadioChoice(entries, 'needs-review', 'Home'), 'all');
+    assert.equal(nextRadioChoice(entries, 'all', 'End'), 'needs-review');
+    assert.equal(nextRadioChoice(entries, 'all', 'Escape'), null);
 });
 
 test('card actions carry no obsolete backend, tracker or prompt-family surface', () => {

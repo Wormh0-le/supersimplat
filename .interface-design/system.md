@@ -60,8 +60,8 @@ Status: current reusable interface guidance
 ### 连续编辑 Dock
 
 - 宽屏采用 `Navigator | Work Area | Inspector` 三栏结构。
-- Navigator 宽度范围：`240–280px`，只满足单列缩略图、名称和状态的可读性；宽屏不按比例继续放大。
-- Inspector 宽度范围：`280–320px`，状态分组始终保持单列；宽屏不为稀疏内容创建第二列。
+- Navigator 默认约 `220px`、宽度范围 `180–280px`，只满足单列缩略图的可读性；宽屏不按比例继续放大。
+- Inspector 默认约 `280px`、宽度范围 `240–360px`，状态分组始终保持单列；宽屏不为稀疏内容创建第二列。
 - Work Area 获得侧栏之外的全部剩余宽度；图像的实际显示尺寸仍由可用高度和权威图像宽高比决定。
 - 图像使用完整、居中、等比的 contain 语义；不为消除空白而 crop 或 stretch。
 - Dock 使用完整容器宽度，不在最大化窗口中保留固定舞台外边距。
@@ -93,6 +93,7 @@ Status: current reusable interface guidance
 - Toolbar、浮动 palette、Dock chrome 和紧凑控制组中的动作按钮，默认只显示可辨识的自定义 SVG 图标，尽量不使用常驻文字按钮。
 - 每个图标按钮必须同时提供项目 tooltip 和可访问名称；tooltip 说明动作结果，不能只重复含糊的图标名。
 - 图标约 `18–20px`，交互命中区域至少 `40×40px`。同一动作在不同表面复用同一图标，不使用 Unicode 字符充当图标。
+- Retry、Reset/Fit 等常见动作优先复用仓库中语义一致的 SVG 资产；即使字符箭头看起来相似，也不能把 `↻`、`↺` 等 Unicode 字符作为最终按钮图标。
 - pressed、selected、disabled、warning 和 focus 状态不能只靠 tooltip 或颜色表达；禁用原因必须可由键盘和辅助技术读取。
 - 当动作概念陌生、多个图标难以区分、菜单需要快速扫读，或破坏性后果必须持续可见时，可以使用“图标 + 短文字”。这属于有理由的例外，不是默认按钮样式。
 
@@ -104,10 +105,10 @@ Status: current reusable interface guidance
 
 ### Navigator Card
 
-- 只显示支持导航和判断的缩略图、名称/来源、Assessment、Participation、草稿和阻塞错误。
-- 卡片始终使用单列列表，最小高度容纳完整缩略图；宽屏不转换为多列网格。
-- 卡片选择与卡片内开关是两个独立焦点和操作。
-- 当前条目固定可见，不在过滤结果中重复。
+- 卡片使用全宽 `16:9` 缩略图。Anchor 通过叠加的图钉标识，工作流状态只显示一个按失败、待检查、处理中、就绪排序的 Badge。
+- Navigator 卡片不显示 Quality、Mask、角色或 Participation 文本；Excluded View 降低视觉权重，但仍可检查。
+- 选中状态使用内描边，不改变卡片顺序。筛选和排序只改变展示投影，不写入 View 状态或项目数据。
+- 卡片始终使用单列列表；宽屏不转换为多列网格。
 
 ### Selected Work Area
 

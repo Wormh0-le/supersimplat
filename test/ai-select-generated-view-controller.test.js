@@ -685,6 +685,36 @@ test('Confirm Anchor derives the Target Geometry Hint and plans the first bounde
     assert.deepEqual(state.views[0].planReasons, []);
 });
 
+test('creation ordinals survive controller source regrouping while initial planning is pending', async () => {
+    const harness = createHarness();
+    await startAnchor(harness);
+    await confirmAnchor(harness);
+    harness.geometryHints.deferreds[0].resolve(
+        hintResponseFor(harness.geometryHints.calls[0])
+    );
+    await flush();
+    assert.equal(harness.planner.calls.length, 1);
+
+    const userViewId = harness.controller.addUserView(cameraBinding());
+    assert.equal(harness.controller.state.views[0].creationOrdinal, 1);
+    harness.planner.deferreds[0].resolve(
+        planResponseFor(harness.planner.calls[0])
+    );
+    await flush();
+
+    const creationOrder = Object.fromEntries(
+        harness.controller.state.views.map((entry) => [
+            entry.viewId,
+            entry.creationOrdinal
+        ])
+    );
+    assert.deepEqual(creationOrder, {
+        'key-view-0-0': 2,
+        'key-view-0-1': 3,
+        [userViewId]: 1
+    });
+});
+
 test('a Generated AIView publishes RGB Ready while its Route B Mask is still Generating', async () => {
     const harness = createHarness();
     await startAnchor(harness);

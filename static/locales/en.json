@@ -547,5 +547,18 @@
   "ai-select.views.filter.review": "Review",
   "ai-select.views.filter.all-views": "All Views",
   "ai-select.views.next-review": "Next Review",
-  "ai-select.views.planner.regenerate-confirm": "Replan Auto Views? Planner-owned Views may be replaced; user-added Views will be kept."
+  "ai-select.views.planner.regenerate-confirm": "Replan Auto Views? Planner-owned Views may be replaced; user-added Views will be kept.",
+  "ai-select.dock.reset-fit": "Reset image fit",
+  "ai-select.views.filter-sort": "Filter and sort Views",
+  "ai-select.views.filter-group": "Filter",
+  "ai-select.views.sort-group": "Sort",
+  "ai-select.views.sort.creation": "Creation order",
+  "ai-select.views.sort.newest": "Newest first",
+  "ai-select.views.sort.needs-review": "Needs Review first",
+  "ai-select.views.filter-empty": "No Views match this filter.",
+  "ai-select.views.no-target": "Choose a Target to begin.",
+  "ai-select.views.badge.failure": "Failed",
+  "ai-select.views.badge.needs-review": "Needs Review",
+  "ai-select.views.badge.processing": "Processing",
+  "ai-select.views.badge.ready": "Ready"
 }

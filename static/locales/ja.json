@@ -547,5 +547,18 @@
   "ai-select.views.filter.review": "確認",
   "ai-select.views.filter.all-views": "すべてのビュー",
   "ai-select.views.next-review": "次を確認",
-  "ai-select.views.planner.regenerate-confirm": "自動ビューを再計画しますか？プランナー所有のビューは置き換えられる場合があります。ユーザー追加のビューは保持されます。"
+  "ai-select.views.planner.regenerate-confirm": "自動ビューを再計画しますか？プランナー所有のビューは置き換えられる場合があります。ユーザー追加のビューは保持されます。",
+  "ai-select.dock.reset-fit": "画像のフィットをリセット",
+  "ai-select.views.filter-sort": "ビューの絞り込みと並べ替え",
+  "ai-select.views.filter-group": "フィルター",
+  "ai-select.views.sort-group": "並べ替え",
+  "ai-select.views.sort.creation": "作成順",
+  "ai-select.views.sort.newest": "新しい順",
+  "ai-select.views.sort.needs-review": "要確認を先頭",
+  "ai-select.views.filter-empty": "このフィルターに一致するビューはありません。",
+  "ai-select.views.no-target": "開始するターゲットを選択してください。",
+  "ai-select.views.badge.failure": "失敗",
+  "ai-select.views.badge.needs-review": "要確認",
+  "ai-select.views.badge.processing": "処理中",
+  "ai-select.views.badge.ready": "準備完了"
 }

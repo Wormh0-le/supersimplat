@@ -547,5 +547,18 @@
   "ai-select.views.filter.review": "검토",
   "ai-select.views.filter.all-views": "모든 뷰",
   "ai-select.views.next-review": "다음 검토",
-  "ai-select.views.planner.regenerate-confirm": "자동 뷰를 다시 계획하시겠습니까? 플래너 소유 뷰는 교체될 수 있으며 사용자 추가 뷰는 유지됩니다."
+  "ai-select.views.planner.regenerate-confirm": "자동 뷰를 다시 계획하시겠습니까? 플래너 소유 뷰는 교체될 수 있으며 사용자 추가 뷰는 유지됩니다.",
+  "ai-select.dock.reset-fit": "이미지 맞춤 재설정",
+  "ai-select.views.filter-sort": "뷰 필터 및 정렬",
+  "ai-select.views.filter-group": "필터",
+  "ai-select.views.sort-group": "정렬",
+  "ai-select.views.sort.creation": "생성 순서",
+  "ai-select.views.sort.newest": "최신순",
+  "ai-select.views.sort.needs-review": "검토 필요 우선",
+  "ai-select.views.filter-empty": "이 필터와 일치하는 뷰가 없습니다.",
+  "ai-select.views.no-target": "시작할 타겟을 선택하세요.",
+  "ai-select.views.badge.failure": "실패",
+  "ai-select.views.badge.needs-review": "검토 필요",
+  "ai-select.views.badge.processing": "처리 중",
+  "ai-select.views.badge.ready": "준비됨"
 }

@@ -117,6 +117,11 @@ export type GeneratedViewMaskQuality =
  */
 export interface GeneratedAIView {
     readonly viewId: string;
+    /**
+     * Target-local monotonic presentation order across every View source.
+     * It is never request, artifact, Evidence, or Candidate identity.
+     */
+    readonly creationOrdinal: number;
     readonly source: AIViewSource;
     readonly cameraBinding: CameraBinding;
     readonly renderStatus: GeneratedViewRenderStatus;
@@ -197,6 +202,7 @@ export interface GeneratedViewImageInstanceRuntimeBinding {
 
 interface GeneratedViewRecord {
     readonly viewId: string;
+    readonly creationOrdinal: number;
     readonly source: AIViewSource;
     readonly cameraBinding: CameraBinding;
     /** The accepted plan identity embedded in this View's generated Prompt. */
@@ -561,6 +567,7 @@ export class AISelectGeneratedViewController {
     private nextReviewAttemptOrdinal = 0;
     private nextPublicationAttemptOrdinal = 0;
     private nextUserViewOrdinal = 0;
+    private nextViewCreationOrdinal = 0;
 
     constructor(options: AISelectGeneratedViewControllerOptions) {
         this.anchor = options.anchor;
@@ -815,6 +822,7 @@ export class AISelectGeneratedViewController {
         const viewId = this.mintUserViewId();
         const view: GeneratedViewRecord = {
             viewId,
+            creationOrdinal: (this.nextViewCreationOrdinal += 1),
             source: 'user-added',
             cameraBinding: copyCameraBinding(cameraBinding),
             renderStatus: 'pending',
@@ -1306,6 +1314,7 @@ export class AISelectGeneratedViewController {
     ): GeneratedViewRecord {
         return {
             viewId: planned.viewId,
+            creationOrdinal: (this.nextViewCreationOrdinal += 1),
             source: 'auto-generated',
             cameraBinding: copyCameraBinding(planned.cameraBinding),
             localKeyViewPlanDigest,
@@ -2119,6 +2128,7 @@ export class AISelectGeneratedViewController {
         this.keyViewPlans = [];
         this.nextBatchOrdinal = 0;
         this.nextUserViewOrdinal = 0;
+        this.nextViewCreationOrdinal = 0;
         this.generationStopped = false;
         this.plannerStatus = 'idle';
         this.plannerErrorMessage = undefined;
@@ -2173,6 +2183,7 @@ export class AISelectGeneratedViewController {
                 : 'excluded';
         return Object.freeze({
             viewId: view.viewId,
+            creationOrdinal: view.creationOrdinal,
             source: view.source,
             cameraBinding: copyCameraBinding(view.cameraBinding),
             renderStatus: view.renderStatus,

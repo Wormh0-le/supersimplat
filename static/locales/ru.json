@@ -547,5 +547,18 @@
   "ai-select.views.filter.review": "Проверить",
   "ai-select.views.filter.all-views": "Все виды",
   "ai-select.views.next-review": "Следующая проверка",
-  "ai-select.views.planner.regenerate-confirm": "Перепланировать автоматические виды? Виды планировщика могут быть заменены; добавленные пользователем виды будут сохранены."
+  "ai-select.views.planner.regenerate-confirm": "Перепланировать автоматические виды? Виды планировщика могут быть заменены; добавленные пользователем виды будут сохранены.",
+  "ai-select.dock.reset-fit": "Сбросить масштаб изображения",
+  "ai-select.views.filter-sort": "Фильтр и сортировка видов",
+  "ai-select.views.filter-group": "Фильтр",
+  "ai-select.views.sort-group": "Сортировка",
+  "ai-select.views.sort.creation": "По времени создания",
+  "ai-select.views.sort.newest": "Сначала новые",
+  "ai-select.views.sort.needs-review": "Сначала требующие проверки",
+  "ai-select.views.filter-empty": "Нет видов, соответствующих фильтру.",
+  "ai-select.views.no-target": "Выберите цель, чтобы начать.",
+  "ai-select.views.badge.failure": "Ошибка",
+  "ai-select.views.badge.needs-review": "Требует проверки",
+  "ai-select.views.badge.processing": "Обработка",
+  "ai-select.views.badge.ready": "Готово"
 }

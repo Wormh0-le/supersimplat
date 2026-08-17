@@ -145,10 +145,6 @@ const promptCapabilities = (overrides = {}) => ({
     positiveInstanceBox: true,
     previousLogitsRefinement: true,
     singlePointMultimask: false,
-    negativeBox: false,
-    promptBrush: false,
-    maskConstraints: false,
-    text: false,
     ...overrides
 });
 const promptCapabilityDigest = () =>
@@ -204,16 +200,6 @@ const capabilities = (overrides = {}) => ({
             '--ptxas-options=-v'
         ]
     },
-    referenceCandidateReLift: {
-        evidencePolicyDigest:
-            'sha256:debcee99d261f28ab373b16016447f056872476a960a1af23599cc6ea1f20efd',
-        aggregationPolicyDigest:
-            'sha256:082dd2a030a21448c16571ce28f741fa50023a831990cae3dd3e7bcc16c02454',
-        rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
-        evidenceBackendKind: 'reference-contributor',
-        evidenceBackendId: 'complete-contributor/reference-v1',
-        runtimeBuildId: runtimeBuildId
-    },
     productionCandidateReLift: {
         status: 'ready',
         evidencePolicyDigest,
@@ -226,7 +212,6 @@ const capabilities = (overrides = {}) => ({
     productionIdentity: productionIdentity(),
     supportedOperations: [
         'aiSelectAnchorRender',
-        'aiSelectReferenceCandidateReLift',
         'aiSelectProductionCandidateReLift',
         'aiSelectProductionDirectEvidence',
         'aiSelectMaskProposals',
@@ -307,30 +292,18 @@ class FakeClock {
     }
 }
 
-class RecordingSelectionServiceAdapter {
+class RecordingAISelectAdapter {
     constructor() {
-        this.openRequests = [];
+        this.anchorRequests = [];
         this.error = null;
     }
 
-    async openSession(start) {
-        this.openRequests.push(start);
+    async renderAnchor(request) {
+        this.anchorRequests.push(request);
         if (this.error) {
             throw this.error;
         }
-        return 'selection-session';
-    }
-
-    async updatePreview() {
-        throw new Error('not used by readiness tests');
-    }
-
-    async cancelUpdate() {
-        throw new Error('not used by readiness tests');
-    }
-
-    async closeSession() {
-        throw new Error('not used by readiness tests');
+        return {};
     }
 }
 
@@ -631,7 +604,7 @@ test('rejects authoritative RGB, opaque refinement, and removed Prompt capabilit
                     promptBrush: true
                 })
             },
-            'imageInstanceCapabilityMismatch'
+            'invalidCapabilities'
         ],
         [
             'single-point multimask',
@@ -696,7 +669,7 @@ test('does not use Companion capacity or task-local failures as Availability', a
         configuration: configuration(),
         logTransition: () => {}
     });
-    const adapter = new RecordingSelectionServiceAdapter();
+    const adapter = new RecordingAISelectAdapter();
     adapter.error = new Error('task-local model OOM');
     const gatedAdapter = new ReadinessGatedSelectionServiceAdapter({
         readiness,
@@ -705,10 +678,7 @@ test('does not use Companion capacity or task-local failures as Availability', a
 
     await readiness.refresh();
     assert.equal(readiness.state.status, 'available');
-    await assert.rejects(
-        gatedAdapter.openSession({ target: {}, prompt: {} }),
-        /task-local model OOM/
-    );
+    await assert.rejects(gatedAdapter.renderAnchor({}), /task-local model OOM/);
     assert.equal(readiness.state.status, 'available');
 });
 
@@ -792,16 +762,13 @@ test('gates AI work while unavailable without blocking native editor state', asy
     const nativeSelection = new Set([7, 9]);
     const gatedAdapter = new ReadinessGatedSelectionServiceAdapter({
         readiness,
-        adapter: new RecordingSelectionServiceAdapter()
+        adapter: new RecordingAISelectAdapter()
     });
 
     await readiness.refresh();
 
     assert.equal(readiness.state.status, 'unavailable');
-    await assert.rejects(
-        gatedAdapter.openSession({ target: {}, prompt: {} }),
-        /cannot start/i
-    );
+    await assert.rejects(gatedAdapter.renderAnchor({}), /cannot start/i);
     assert.deepEqual([...nativeSelection], [7, 9]);
 });
 

@@ -113,8 +113,8 @@ from .image_instance_prompt_synthesis import (
     synthesize_image_instance_prompt,
 )
 from .generated_view_planning import (
-    AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION,
-    synthesize_view_prompts,
+    LEGACY_GENERATED_VIEW_MASK_POLICY_VERSION,
+    synthesize_legacy_view_prompts,
 )
 from .proposal_ranking import (
     RANKING_POLICY_VERSION,
@@ -903,7 +903,7 @@ class SupportProbeAdmission:
 
 @dataclass(frozen=True)
 class GeneratedFrameSetResolution:
-    """The cached one-rebuild result for a Generated View preview session."""
+    """Frozen legacy-fixture Generated View preview resolution."""
 
     source_frame_set_version: str
     frame_set_version: str
@@ -915,7 +915,7 @@ class GeneratedFrameSetResolution:
 
 @dataclass(frozen=True)
 class StagedGeneratedPreview:
-    """Unpublished Generated View state that can be committed or rolled back."""
+    """Unpublished legacy-fixture state that can be committed or rolled back."""
 
     token: str
     resolution: GeneratedFrameSetResolution
@@ -931,7 +931,7 @@ class StagedGeneratedPreview:
 
 @dataclass
 class ActiveMaskSession:
-    """The rollback-safe, service-owned state for one mask-session lifetime."""
+    """Rollback-safe PromptLog/MaskTrack state for frozen reference fixtures."""
 
     frame_set_version: str | None = None
     model_manifest_digest: str | None = None
@@ -952,7 +952,7 @@ class ActiveMaskSession:
 
 @dataclass(frozen=True)
 class PreviewPublication:
-    """The sole atomically published preview result for one request."""
+    """Atomically published legacy fixture preview for one request."""
 
     bindings: dict[str, Any]
     frame_set: dict[str, object]
@@ -963,7 +963,7 @@ class PreviewPublication:
 
 @dataclass(frozen=True)
 class ResolvedPreviewFrameSet:
-    """The version-bound inputs used for one atomic preview publication."""
+    """Version-bound FrameSet inputs for one legacy fixture publication."""
 
     bindings: dict[str, Any]
     frame_set: RegisteredFrameSet
@@ -1625,7 +1625,6 @@ class CompanionState:
             "renderer": renderer,
             "imageInstanceProvider": provider,
             "directEvidence": direct_evidence,
-            "referenceCandidateReLift": self._reference_candidate_re_lift_capability(),
             "productionCandidateReLift": production_candidate,
             "productionIdentity": self._production_identity_capability(
                 model=model,
@@ -1645,7 +1644,6 @@ class CompanionState:
                 "aiSelectGeneratedViewPromptSynthesis",
                 "aiSelectImageInstanceMasks",
                 "aiSelectImageInstanceMaskReview",
-                "aiSelectReferenceCandidateReLift",
                 "aiSelectProductionCandidateReLift",
                 "aiSelectProductionDirectEvidence",
                 "binarySceneSnapshotRegistrationV1",
@@ -1833,10 +1831,6 @@ class CompanionState:
                 "positiveInstanceBox",
                 "previousLogitsRefinement",
                 "singlePointMultimask",
-                "negativeBox",
-                "promptBrush",
-                "maskConstraints",
-                "text",
             )
             if (
                 capability.get("status") not in ("ready", "unavailable")
@@ -1846,6 +1840,7 @@ class CompanionState:
                     for key in ("artifact", "companionReference")
                 )
                 or not isinstance(prompt_capabilities, Mapping)
+                or set(prompt_capabilities) != set(prompt_keys)
                 or not all(
                     isinstance(prompt_capabilities.get(key), bool)
                     for key in prompt_keys
@@ -1908,10 +1903,6 @@ class CompanionState:
                 "positiveInstanceBox": True,
                 "previousLogitsRefinement": False,
                 "singlePointMultimask": False,
-                "negativeBox": False,
-                "promptBrush": False,
-                "maskConstraints": False,
-                "text": False,
             },
             "message": (
                 "The installed static adapter is not the current "
@@ -1926,6 +1917,7 @@ class CompanionState:
         model_manifest_digest: str | None = None,
         open_request_id: str | None = None,
     ) -> str | None:
+        """Open an in-process legacy benchmark fixture; no HTTP route calls this."""
         if (frame_set_version is None) != (model_manifest_digest is None):
             raise MaskSessionError(
                 "invalidMaskSession",
@@ -5227,7 +5219,13 @@ class CompanionState:
             session.cancelled_request_ids.add(request_id)
             return True
 
-    def release_object_selection_sessions(self) -> None:
+    def release_runtime_state(self) -> None:
+        """Release disposable runtime caches when the operator stops the service.
+
+        The legacy fixture session check remains only so an in-process frozen
+        benchmark cannot be torn down while its reference work drains. No
+        product HTTP route can create that session.
+        """
         with self._session_lock:
             session_id = self._active_object_selection_session
             if session_id is None:
@@ -7487,7 +7485,7 @@ class CompanionState:
 
         try:
             try:
-                synthesized = synthesize_view_prompts(
+                synthesized = synthesize_legacy_view_prompts(
                     planes=planes,
                     anchor_camera=mask_request.anchor_probe_camera,
                     view_camera=mask_request.view_probe_camera,
@@ -7600,7 +7598,7 @@ class CompanionState:
                 },
                 'maskSource': 'propagated',
                 'maskPropagation': {
-                    'policyVersion': AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION,
+                    'policyVersion': LEGACY_GENERATED_VIEW_MASK_POLICY_VERSION,
                     'projectedSupportCount': synthesized.projected_support_count,
                     'promptCount': len(synthesized.prompts),
                 },

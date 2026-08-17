@@ -113,10 +113,6 @@ def sam3_image_instance_capabilities() -> dict[str, object]:
         'positiveInstanceBox': True,
         'previousLogitsRefinement': True,
         'singlePointMultimask': False,
-        'negativeBox': False,
-        'promptBrush': False,
-        'maskConstraints': False,
-        'text': False,
         'compilerPolicyVersion': SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION,
     }
     return {**payload, 'capabilityDigest': _prompt_capability_digest(payload)}
@@ -392,7 +388,8 @@ def compile_sam3_image_prompt_program(
     expected_capabilities = sam3_image_instance_capabilities()
     capability_digest = expected_capabilities['capabilityDigest']
     if (
-        capabilities.get('compilerPolicyVersion')
+        set(capabilities) != set(expected_capabilities)
+        or capabilities.get('compilerPolicyVersion')
         != SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION
         or capabilities.get('capabilityDigest') != capability_digest
     ):
@@ -1795,10 +1792,6 @@ class Sam3ImageInstanceAdapter:
                     'positiveInstanceBox',
                     'previousLogitsRefinement',
                     'singlePointMultimask',
-                    'negativeBox',
-                    'promptBrush',
-                    'maskConstraints',
-                    'text',
                 )
             },
             'compilerPolicyVersion': SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION,

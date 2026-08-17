@@ -397,10 +397,6 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         this.status.dom.setAttribute('role', 'status');
         this.status.dom.setAttribute('aria-live', 'polite');
         this.availabilityStatus = options.readiness.state.status;
-        options.readiness.subscribe((readinessState) => {
-            this.availabilityStatus = readinessState.status;
-            this.render();
-        });
 
         this.suspendedSurface = new Container({
             id: 'ai-select-suspended-surface',
@@ -1261,6 +1257,12 @@ export class AISelectAnchorDock<TCandidatePayload = unknown> extends Container {
         dockLayoutObserver.observe(this.workCanvasRow.dom);
         renderColumns();
 
+        // Readiness subscriptions publish their current state immediately.
+        // Register only after every render-owned element above is initialized.
+        options.readiness.subscribe((readinessState) => {
+            this.availabilityStatus = readinessState.status;
+            this.render();
+        });
         controller.subscribe((state) => {
             if (
                 state.context?.targetContextId !==

@@ -1,13 +1,9 @@
-"""Versioned cross-view Mask propagation policy.
+"""Frozen Generated Mask propagation helper for legacy reference fixtures.
 
-The ``generated-view-mask/v1`` policy is pure CPU geometry over immutable mmap
-planes, exactly like the Anchor support probe: it never imports the locked
-renderer runtime (no torch, no gsplat) and never classifies Stable Gaussian
-IDs or ownership. Propagation projects the confirmed Anchor's
-mask-conditioned Gaussian support into a Generated View camera to synthesize
-the point prompts of one single-frame SAM pass. Camera planning itself moved
-to the ticket-08/21 ``target-geometry/v2`` / ``local-key-view-planner/v3``
-policies in ``target_geometry.py``.
+The product server exposes no Generated Mask route and no current product path
+invokes this helper. The ``generated-view-mask/v1`` identity is retained only
+to replay frozen migration fixtures; it cannot validate as a current artifact
+or capability.
 """
 
 from __future__ import annotations
@@ -19,7 +15,7 @@ from typing import Iterable
 from .support_probe import AnchorSupportProbeCamera
 
 
-AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION = "generated-view-mask/v1"
+LEGACY_GENERATED_VIEW_MASK_POLICY_VERSION = "generated-view-mask/v1"
 
 # Opacity gate: alpha >= 0.5 is exactly logitOpacity >= 0 (support probe parity).
 _MIN_LOGIT_OPACITY = 0.0
@@ -94,7 +90,7 @@ def _collect_support_means(
     return support
 
 
-def synthesize_view_prompts(
+def synthesize_legacy_view_prompts(
     *,
     planes: Iterable[tuple[memoryview, memoryview]],
     anchor_camera: AnchorSupportProbeCamera,
@@ -162,7 +158,7 @@ def synthesize_view_prompts(
 
 
 __all__ = [
-    "AI_SELECT_GENERATED_VIEW_MASK_POLICY_VERSION",
+    "LEGACY_GENERATED_VIEW_MASK_POLICY_VERSION",
     "SynthesizedViewPrompts",
-    "synthesize_view_prompts",
+    "synthesize_legacy_view_prompts",
 ]

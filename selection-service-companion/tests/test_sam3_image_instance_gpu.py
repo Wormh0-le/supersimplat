@@ -85,7 +85,7 @@ class Sam3ImageInstanceGpuTests(unittest.TestCase):
         capabilities = sam3_image_instance_capabilities()
         self.assertTrue(capabilities['positiveInstanceBox'])
         self.assertTrue(capabilities['previousLogitsRefinement'])
-        self.assertFalse(capabilities['promptBrush'])
+        self.assertNotIn('promptBrush', capabilities)
         model = {
             'adapterId': SAM3_IMAGE_INSTANCE_ADAPTER_ID,
             'runtimeConfigDigest': SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,

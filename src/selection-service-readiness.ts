@@ -69,7 +69,6 @@ import {
     aiSelectViewAssessmentPolicyDigest,
     aiSelectViewAssessmentPolicyVersion
 } from './ai-select/view-assessment';
-import type { SelectionServiceAdapter } from './object-selection-session';
 import { sha256Digest } from './scene-snapshot-binary';
 
 const selectionServiceProtocolVersion = '2';
@@ -83,6 +82,23 @@ type SelectionServiceReadinessStatus =
     'connecting' | 'available' | 'unavailable';
 type SelectionServiceRendererStatus = 'ready' | 'unavailable';
 type SelectionServiceImageInstanceProviderStatus = 'ready' | 'unavailable';
+interface SelectionServiceAdapter
+    extends
+        Omit<AISelectAnchorRenderer, 'releaseSceneSnapshot'>,
+        AISelectMaskProvider,
+        AISelectSupportProbeProvider,
+        AISelectTargetGeometryProvider,
+        AISelectLocalKeyViewPlanner,
+        Omit<AISelectViewRenderer, 'releaseSceneSnapshot'>,
+        AISelectGeneratedViewPromptSynthesizer,
+        ImageInstanceMaskProvider,
+        AISelectImageInstanceMaskReviewProvider,
+        AISelectCandidateReLiftProvider,
+        AISelectDirectEvidenceProvider {
+    releaseSceneSnapshot?(
+        request: AnchorRenderRequest | AIViewRenderRequest
+    ): Promise<void>;
+}
 type SelectionServiceTransportErrorCode =
     | 'localNetworkPermissionDenied'
     | 'insecureEditorContext'
@@ -160,10 +176,6 @@ interface SelectionServiceImageInstancePromptCapabilities {
     positiveInstanceBox: boolean;
     previousLogitsRefinement: boolean;
     singlePointMultimask: boolean;
-    negativeBox: boolean;
-    promptBrush: boolean;
-    maskConstraints: boolean;
-    text: boolean;
 }
 
 interface SelectionServiceAuthoritativeRgbCapabilities {
@@ -201,7 +213,6 @@ interface SelectionServiceCapabilities {
     renderer: SelectionServiceRendererCapability;
     imageInstanceProvider: SelectionServiceImageInstanceProviderCapability;
     directEvidence: SelectionServiceDirectEvidenceCapability;
-    referenceCandidateReLift: SelectionServiceReferenceCandidateReLiftCapability;
     productionCandidateReLift: SelectionServiceProductionCandidateReLiftCapability;
     productionIdentity: SelectionServiceProductionIdentityCapability;
     supportedOperations: readonly string[];
@@ -225,15 +236,6 @@ interface SelectionServiceDirectEvidenceCapability {
     readonly accumulation: 'global-atomic-baseline';
     readonly buildFlags: readonly string[];
     readonly detectedComputeCapability?: string;
-}
-
-interface SelectionServiceReferenceCandidateReLiftCapability {
-    readonly evidencePolicyDigest: string;
-    readonly aggregationPolicyDigest: string;
-    readonly rasterImplementationId: string;
-    readonly evidenceBackendKind: 'reference-contributor';
-    readonly evidenceBackendId: string;
-    readonly runtimeBuildId: string;
 }
 
 interface SelectionServiceProductionCandidateReLiftCapability {
@@ -512,9 +514,6 @@ const copyCapabilities = (
         supportedComputeCapabilities: [
             ...capabilities.directEvidence.supportedComputeCapabilities
         ]
-    },
-    referenceCandidateReLift: {
-        ...capabilities.referenceCandidateReLift
     },
     productionCandidateReLift: {
         ...capabilities.productionCandidateReLift
@@ -897,7 +896,6 @@ const validateCapabilities = (
     if (
         !isRecord(value.imageInstanceProvider) ||
         !isRecord(value.directEvidence) ||
-        !isRecord(value.referenceCandidateReLift) ||
         !isRecord(value.productionCandidateReLift) ||
         !validateProductionIdentity(value.productionIdentity) ||
         (value.imageInstanceProvider.status !== 'ready' &&
@@ -909,21 +907,6 @@ const validateCapabilities = (
         typeof value.imageInstanceProvider.authoritativeRgb
             .companionReference !== 'boolean' ||
         !isRecord(value.imageInstanceProvider.promptCapabilities)
-    ) {
-        return false;
-    }
-    const candidateReLift = value.referenceCandidateReLift;
-    if (
-        typeof candidateReLift.evidencePolicyDigest !== 'string' ||
-        !/^sha256:[a-f0-9]{64}$/i.test(candidateReLift.evidencePolicyDigest) ||
-        typeof candidateReLift.aggregationPolicyDigest !== 'string' ||
-        !/^sha256:[a-f0-9]{64}$/i.test(
-            candidateReLift.aggregationPolicyDigest
-        ) ||
-        !isNonEmptyString(candidateReLift.rasterImplementationId) ||
-        candidateReLift.evidenceBackendKind !== 'reference-contributor' ||
-        !isNonEmptyString(candidateReLift.evidenceBackendId) ||
-        !isNonEmptyString(candidateReLift.runtimeBuildId)
     ) {
         return false;
     }
@@ -976,13 +959,10 @@ const validateCapabilities = (
         'negativePoints',
         'positiveInstanceBox',
         'previousLogitsRefinement',
-        'singlePointMultimask',
-        'negativeBox',
-        'promptBrush',
-        'maskConstraints',
-        'text'
+        'singlePointMultimask'
     ];
     if (
+        !hasExactKeys(promptCapabilities, promptCapabilityKeys) ||
         !promptCapabilityKeys.every(
             (key) => typeof promptCapabilities[key] === 'boolean'
         )
@@ -1513,11 +1493,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             !prompts.negativePoints ||
             !prompts.positiveInstanceBox ||
             !prompts.previousLogitsRefinement ||
-            prompts.singlePointMultimask ||
-            prompts.negativeBox ||
-            prompts.promptBrush ||
-            prompts.maskConstraints ||
-            prompts.text
+            prompts.singlePointMultimask
         ) {
             return diagnostic(
                 'imageInstanceCapabilityMismatch',
@@ -1829,24 +1805,10 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
     }
 }
 
-// This decorator preserves the ObjectSelectionSession seam: the session still
-// knows only its injected SelectionServiceAdapter, while no New session can
-// bypass the operator-visible readiness decision.
-class ReadinessGatedSelectionServiceAdapter
-    implements
-        SelectionServiceAdapter,
-        AISelectAnchorRenderer,
-        AISelectMaskProvider,
-        AISelectSupportProbeProvider,
-        AISelectTargetGeometryProvider,
-        AISelectLocalKeyViewPlanner,
-        AISelectViewRenderer,
-        AISelectGeneratedViewPromptSynthesizer,
-        ImageInstanceMaskProvider,
-        AISelectImageInstanceMaskReviewProvider,
-        AISelectCandidateReLiftProvider,
-        AISelectDirectEvidenceProvider
-{
+// This decorator is the current AI Select transport boundary. Every product
+// operation passes the operator-visible readiness decision before reaching the
+// Companion adapter.
+class ReadinessGatedSelectionServiceAdapter implements SelectionServiceAdapter {
     private readiness: SelectionServiceReadinessInterface;
     private adapter: SelectionServiceAdapter | null;
 
@@ -1865,27 +1827,6 @@ class ReadinessGatedSelectionServiceAdapter
             );
         }
         this.adapter = adapter;
-    }
-
-    async openSession(
-        ...args: Parameters<SelectionServiceAdapter['openSession']>
-    ) {
-        this.readiness.requireReady();
-        return await this.requireAdapter().openSession(...args);
-    }
-
-    updatePreview(
-        ...args: Parameters<SelectionServiceAdapter['updatePreview']>
-    ) {
-        return this.requireAdapter().updatePreview(...args);
-    }
-
-    cancelUpdate(...args: Parameters<SelectionServiceAdapter['cancelUpdate']>) {
-        return this.requireAdapter().cancelUpdate(...args);
-    }
-
-    closeSession(...args: Parameters<SelectionServiceAdapter['closeSession']>) {
-        return this.requireAdapter().closeSession(...args);
     }
 
     async renderAnchor(
@@ -2123,6 +2064,7 @@ export {
 };
 
 export type {
+    SelectionServiceAdapter,
     SelectionServiceCapabilities,
     SelectionServiceConfiguration,
     SelectionServiceHealth,

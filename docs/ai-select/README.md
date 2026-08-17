@@ -62,7 +62,10 @@ Repository-wide specifications and ADRs remain canonical under `docs/specs/` and
   Working Set hardening.
 - [Ticket 21](tickets/21-failure-calibration-hardening.md) — implemented
   attempt/OOM atomicity, production Candidate publication, calibrated
-  readiness and the checksum-bound production identity; Ticket 22 is current.
+  readiness and the checksum-bound production identity.
+- [Ticket 22](tickets/22-contract-legacy-product-path.md) — implemented final
+  legacy product/session contraction, current Prompt capability contraction,
+  and explicit reference-only Contributor/Multiplex isolation.
 
 ## Scratch policy
 
@@ -76,7 +79,7 @@ This includes repro probes, cross-check scripts, benchmark harnesses and browser
 
 `.scratch/ai-select-v1/` is compatibility-only after the migration. It must not become a second source of truth.
 
-## Current frontier
+## Implemented graph
 
 Parent Ticket 14 is decomposed into:
 
@@ -95,5 +98,6 @@ Execution order is:
 ```
 
 14A through 14D, parent Ticket 14, Tickets 13 through 15, Ticket 16's native
-application core, Tickets 16A–16G and Tickets 17–21 are implemented. Ticket 22
-is current (`next_implementation_ticket = 22`, `next_implementation_subticket = none`).
+application core, Tickets 16A–16G and Tickets 17–22 are implemented. The core
+graph is closed (`next_implementation_ticket = none`,
+`next_implementation_subticket = none`).

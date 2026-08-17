@@ -1,6 +1,6 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.37
+# Current Final Spec v1.3 → Ticket Mapping — v2.38
 
-Status: **current normative ticket mapping — Ticket 21 implemented; Ticket 22 current**
+Status: **current normative ticket mapping — Tickets through 22 implemented; core graph closed**
 
 This file maps every active AI Select parent Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
@@ -114,15 +114,16 @@ implemented prerequisites:
 - 19 — Large SceneSnapshot + authoritative RGB / Render Working Set hardening
 - 20 — Same-decision GPU Evidence + artifact / working-set hardening
 - 21 — Core failure, calibration and release hardening
+- 22 — Legacy product/Contributor/SAM/Prompt contraction
 
 current execution frontier:
-- 22 — Legacy product/Contributor/SAM/Prompt contraction
+- none — the Final Spec v1.3 core graph is implemented
 ```
 
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 22
+next_implementation_ticket = none
 next_implementation_subticket = none
 ```
 
@@ -134,14 +135,16 @@ Native Undo recovery without remapping preserved artifacts. Ticket 19
 implements large-scene render-path hardening and Ticket 20 implements the
 same-decision Evidence path. Ticket 21 implements production Candidate,
 attempt/OOM atomicity, calibration and production-identity hardening. Ticket
-22 now owns final legacy contraction. Ticket 10 remains optional and may execute
+22 completed final legacy contraction. Ticket 10 remains optional and may execute
 after parent Ticket 14 + 09 + 07 without blocking the core release path.
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no
 blocking issue reported. The locked-GPU large-Gallery browser walkthrough for
 Ticket 09 passed on 2026-08-07. Ticket 11 shipped with repository
 test/lint/locales/build green; its locked-GPU browser walkthrough is still
-pending.
+pending. Ticket 22's separate locked browser core-path regression passed on
+2026-08-17 through authoritative RGB, real SAM Mask inference, geometry/plan,
+production Direct Evidence and the calibrated `not-ready` Re-Lift branch.
 
 ## Supersession rules
 
@@ -177,8 +180,8 @@ The mapping passes only when:
 - older spec names appear only under explicit historical/superseded/migration labels;
 - implemented prerequisites through 12 are not reported as current ready work;
 - parent Ticket 14 and stages 14A through 14D are recognized as implemented;
-- Tickets 13 through 21 and Tickets 16A–16G are recognized as implemented, with Ticket 22 as the current execution frontier;
-- `next_implementation_ticket = 22` and `next_implementation_subticket = none` are current;
+- Tickets 13 through 22 and Tickets 16A–16G are recognized as implemented, with no current core execution frontier;
+- `next_implementation_ticket = none` and `next_implementation_subticket = none` are current;
 - Ticket 16B published ADR 0018 and the current Final Spec correction before
   dependent stages;
 - no active closure criterion relies on superseded v1.2 architecture;

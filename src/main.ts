@@ -178,9 +178,9 @@ const main = async () => {
             );
         }
     });
-    // The concrete scene/session transport is attached only through the
-    // readiness gate, so no ObjectSelectionSession can bypass the
-    // operator-visible Companion compatibility decision.
+    // The current AI Select transport is attached only through the readiness
+    // gate, so no product operation can bypass the operator-visible Companion
+    // compatibility decision.
     const selectionServiceAdapter = new ReadinessGatedSelectionServiceAdapter({
         readiness: selectionServiceReadiness
     });
@@ -654,12 +654,6 @@ const main = async () => {
             aiSelectCandidateCorrection.discardPendingUpdate();
         }
     });
-    const referenceCandidateApplicationEnabled =
-        (
-            urlArgs as {
-                aiSelect?: { referenceCandidateApplication?: string };
-            }
-        ).aiSelect?.referenceCandidateApplication === 'development';
     const aiSelectCandidateApplication = new CandidateApplicationController({
         candidates: aiSelectCandidatePublications,
         nativeSelection: new SelectOpCandidateNativeSelection({
@@ -676,14 +670,11 @@ const main = async () => {
                       }
         }),
         beginCorrection: () => aiSelectCandidateCorrection.beginCorrection(),
-        applicationMode: referenceCandidateApplicationEnabled
-            ? 'development-reference'
-            : 'production',
+        applicationMode: 'production',
         getAcceptedRuntime: () => {
             const readiness = selectionServiceReadiness.state;
-            const capability = referenceCandidateApplicationEnabled
-                ? readiness.capabilities?.referenceCandidateReLift
-                : readiness.capabilities?.productionCandidateReLift;
+            const capability =
+                readiness.capabilities?.productionCandidateReLift;
             if (
                 readiness.status !== 'available' ||
                 capability === undefined ||
@@ -698,13 +689,12 @@ const main = async () => {
                 runtimeBuildId: capability.runtimeBuildId,
                 sourceEvidencePolicyDigest: capability.evidencePolicyDigest,
                 aggregationPolicyDigest: capability.aggregationPolicyDigest,
-                productionIdentityDigest: referenceCandidateApplicationEnabled
-                    ? null
-                    : readiness.capabilities?.productionIdentity.status ===
-                        'ready'
-                      ? readiness.capabilities.productionIdentity.record
-                            .identityDigest
-                      : null
+                productionIdentityDigest:
+                    readiness.capabilities?.productionIdentity.status ===
+                    'ready'
+                        ? readiness.capabilities.productionIdentity.record
+                              .identityDigest
+                        : null
             };
         },
         getTarget: () =>

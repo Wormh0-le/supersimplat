@@ -6,13 +6,14 @@ Status: **substantive migration complete; historical scratch paths are compatibi
 
 - Stable AI Select planning root established at `docs/ai-select/`.
 - Full 31-parent-ticket Final Spec v1.3 mapping restored and promoted.
-- Ticket graph and control plane promoted through v2.37 with ADR 0018, the
+- Ticket graph and control plane promoted through v2.38 with ADR 0018, the
   implemented single-result / `4–8` initial automatic-View contract. The
   complete Ticket 16A–16G presentation and obsolete-control closure is
   recorded, followed by Ticket 17 target-lifecycle closure and Ticket 18
   semantic suspension/exact-Undo closure, Ticket 19 large-scene render-path
   hardening, Ticket 20 Direct Evidence closure and Ticket 21 production
-  Candidate/calibration/identity closure. The v2.37
+  Candidate/calibration/identity closure and Ticket 22 legacy product/session,
+  Prompt capability and reference-backend contraction. The v2.38
   eight-pass control-plane audit passes; v2.27 remains
   historical evidence.
 - Parent Ticket 14 decomposed into executable 14A–14D stage contracts without changing normative product scope.
@@ -41,10 +42,10 @@ docs/ai-select/
 
 Old scratch compatibility pointers may be removed in a future cleanup only after any external tooling or local agent configuration that still hardcodes those paths has migrated. They are not authoritative.
 
-## Current execution frontier
+## Implementation closure
 
 ```text
-next_implementation_ticket = 22
+next_implementation_ticket = none
 next_implementation_subticket = none
 
 14A Evidence Contract & Working Set (implemented)
@@ -66,5 +67,5 @@ next_implementation_subticket = none
 → 19 Large SceneSnapshot / authoritative render path hardening (implemented)
 → 20 Same-decision GPU Evidence / artifact hardening (implemented)
 → 21 Core failure / calibration / release hardening (implemented)
-→ 22 Legacy product / Contributor / SAM / Prompt contraction (current)
+→ 22 Legacy product / Contributor / SAM / Prompt contraction (implemented)
 ```

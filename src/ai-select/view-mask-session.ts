@@ -208,10 +208,6 @@ const pointOnlyCapabilities = createPromptAdapterCapabilities({
     positiveInstanceBox: false,
     previousLogitsRefinement: false,
     singlePointMultimask: false,
-    negativeBox: false,
-    promptBrush: false,
-    maskConstraints: false,
-    text: false,
     compilerPolicyVersion: 'point-mask-compiler/v1'
 });
 

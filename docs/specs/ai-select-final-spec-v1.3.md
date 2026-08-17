@@ -3,7 +3,7 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.37 / Ticket 21 implemented / Ticket 22 current
+**规划版本：** Ticket Graph v2.38 / Tickets through 22 implemented / core graph closed
 **日期：** 2026-08-17
 **适用分支：** `ai-select-v1`  
 **决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017、ADR 0018、ADR 0019
@@ -762,7 +762,7 @@ Required validation：
 
 ---
 
-# 26. Ticket ownership and current frontier
+# 26. Ticket ownership and implementation closure
 
 ```text
 04C  SAM 3 Image adapter + Prompt/RGB/refinement contract migration        implemented
@@ -797,14 +797,14 @@ Required validation：
 19   Large SceneSnapshot + authoritative RGB / Render Working Set hardening implemented
 20   Evidence artifact / working-set hardening                               implemented
 21   Failure, calibration and release hardening                              implemented
-22   Legacy product/Contributor/SAM/Prompt contraction                       ready / current
+22   Legacy product/Contributor/SAM/Prompt contraction                       implemented
 10   optional cross-view Evidence-conflict diagnostics                      nonblocking
 ```
 
-Current ready implementation frontier：
+Implementation closure：
 
 ```text
-parent: 22  Legacy product/Contributor/SAM/Prompt contraction
+parent: none
 stage:  none
 
 14A (implemented) → 14B (implemented) → 14C (implemented) → 14D (implemented) → 13 (implemented) → 15 (implemented) → 16 (core implemented) → 16A → 16B → 16C / 16D / 16F → 16E → 16G (all implemented) → 17 (implemented) → 18 (implemented) → 19 (implemented) → 20 (implemented) → 21 (implemented) → 22
@@ -813,13 +813,13 @@ stage:  none
 Compatibility fields：
 
 ```text
-next_implementation_ticket = 22
+next_implementation_ticket = none
 next_implementation_subticket = none
 ```
 
 Parent Ticket 14, Tickets 13 through 15 and Ticket 16's native-application core
 are closed. Tickets 16A through 16G and Tickets 17–19 are implemented; Ticket
-20 and 21 are implemented; Ticket 22 is the current ready frontier. Ticket 10 remains optional
+20 through 22 are implemented; the Final Spec v1.3 core graph is closed. Ticket 10 remains optional
 and off the core release path。
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported。

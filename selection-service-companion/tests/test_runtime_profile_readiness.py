@@ -57,10 +57,6 @@ class ReadySam3ImageInstanceAdapter:
                 "positiveInstanceBox": True,
                 "previousLogitsRefinement": True,
                 "singlePointMultimask": False,
-                "negativeBox": False,
-                "promptBrush": False,
-                "maskConstraints": False,
-                "text": False,
             },
             "compilerPolicyVersion": capabilities["compilerPolicyVersion"],
             "adapterCapabilityDigest": capabilities["capabilityDigest"],
@@ -167,7 +163,7 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
             selected["digest"],
         )
 
-    def test_historical_provider_does_not_advertise_removed_prompts_as_current(
+    def test_historical_provider_has_no_removed_prompt_capability_fields(
         self,
     ) -> None:
         self.install_model("sha256:historical-one")
@@ -181,10 +177,10 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
         self.assertFalse(
             provider["promptCapabilities"]["previousLogitsRefinement"]
         )
-        self.assertFalse(provider["promptCapabilities"]["negativeBox"])
-        self.assertFalse(provider["promptCapabilities"]["promptBrush"])
-        self.assertFalse(provider["promptCapabilities"]["maskConstraints"])
-        self.assertFalse(provider["promptCapabilities"]["text"])
+        self.assertNotIn("negativeBox", provider["promptCapabilities"])
+        self.assertNotIn("promptBrush", provider["promptCapabilities"])
+        self.assertNotIn("maskConstraints", provider["promptCapabilities"])
+        self.assertNotIn("text", provider["promptCapabilities"])
 
     def test_current_adapter_capability_advertises_rgb_and_opaque_refinement(
         self,

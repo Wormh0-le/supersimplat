@@ -19,10 +19,6 @@ const sam3ImageCapabilityInput = {
     positiveInstanceBox: true,
     previousLogitsRefinement: true,
     singlePointMultimask: true,
-    negativeBox: false,
-    promptBrush: false,
-    maskConstraints: false,
-    text: false,
     compilerPolicyVersion: 'sam3-image-instance-compiler/v1'
 };
 
@@ -168,7 +164,7 @@ test('v1 PromptState artifacts fail closed', () => {
     );
 });
 
-test('capability identity binds the 9 flags and compiler policy version', () => {
+test('capability identity binds only current flags and compiler policy version', () => {
     const capability = createPromptAdapterCapabilities(
         sam3ImageCapabilityInput
     );
@@ -180,9 +176,10 @@ test('capability identity binds the 9 flags and compiler policy version', () => 
             .capabilityDigest,
         capability.capabilityDigest
     );
-    // Any flag flip invalidates the advertised digest.
+    // Removed Prompt families cannot re-enter the capability record even as
+    // false placeholders.
     assert.equal(
-        isPromptAdapterCapabilities({ ...capability, negativeBox: true }),
+        isPromptAdapterCapabilities({ ...capability, negativeBox: false }),
         false
     );
     // A compiler policy change rotates the digest.
@@ -203,8 +200,9 @@ test('capability identity binds the 9 flags and compiler policy version', () => 
         false
     );
     // Missing keys fail closed.
-    const { text: _text, ...missingText } = capability;
-    assert.equal(isPromptAdapterCapabilities(missingText), false);
+    const { positivePoints: _positivePoints, ...missingPositivePoints } =
+        capability;
+    assert.equal(isPromptAdapterCapabilities(missingPositivePoints), false);
 });
 
 test('prompt tool support follows the advertised flags', () => {

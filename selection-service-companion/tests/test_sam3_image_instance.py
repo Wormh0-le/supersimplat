@@ -79,10 +79,6 @@ class Sam3ImageCapabilitiesTests(unittest.TestCase):
                 'positiveInstanceBox',
                 'previousLogitsRefinement',
                 'singlePointMultimask',
-                'negativeBox',
-                'promptBrush',
-                'maskConstraints',
-                'text',
                 'compilerPolicyVersion',
                 'capabilityDigest',
             },
@@ -92,16 +88,16 @@ class Sam3ImageCapabilitiesTests(unittest.TestCase):
         self.assertTrue(capabilities['positiveInstanceBox'])
         self.assertTrue(capabilities['previousLogitsRefinement'])
         self.assertFalse(capabilities['singlePointMultimask'])
-        self.assertFalse(capabilities['negativeBox'])
-        self.assertFalse(capabilities['promptBrush'])
-        self.assertFalse(capabilities['maskConstraints'])
-        self.assertFalse(capabilities['text'])
+        self.assertNotIn('negativeBox', capabilities)
+        self.assertNotIn('promptBrush', capabilities)
+        self.assertNotIn('maskConstraints', capabilities)
+        self.assertNotIn('text', capabilities)
         self.assertEqual(
             capabilities['compilerPolicyVersion'],
             SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION,
         )
 
-    def test_capability_digest_recomputes_over_the_ten_bound_fields(self) -> None:
+    def test_capability_digest_recomputes_over_only_current_bound_fields(self) -> None:
         capabilities = sam3_image_instance_capabilities()
         payload = {
             key: value

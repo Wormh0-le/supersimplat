@@ -826,7 +826,7 @@ class TargetGeometryRouteTests(unittest.TestCase):
         self.assertEqual(replay, first)
 
     def test_capabilities_advertise_the_ticket_08_operations(self) -> None:
-        expected = [
+        runtime_expected = [
             'aiSelectAnchorRender',
             'aiSelectAnchorReferenceContributor',
             'aiSelectAnchorSupportProbe',
@@ -837,7 +837,6 @@ class TargetGeometryRouteTests(unittest.TestCase):
             'aiSelectGeneratedViewPromptSynthesis',
             'aiSelectImageInstanceMasks',
             'aiSelectImageInstanceMaskReview',
-            'aiSelectReferenceCandidateReLift',
             'aiSelectProductionCandidateReLift',
             'aiSelectProductionDirectEvidence',
             'binarySceneSnapshotRegistrationV1',
@@ -845,9 +844,16 @@ class TargetGeometryRouteTests(unittest.TestCase):
         ]
 
         runtime_profile = self.request_json('/capabilities', 'GET')
-        self.assertEqual(runtime_profile['supportedOperations'], expected)
+        self.assertEqual(
+            runtime_profile['supportedOperations'], runtime_expected
+        )
         legacy = self.state.capabilities([EDITOR_ORIGIN])
-        self.assertEqual(legacy['supportedOperations'], expected)
+        legacy_expected = [
+            *runtime_expected[:10],
+            'aiSelectReferenceCandidateReLift',
+            *runtime_expected[10:],
+        ]
+        self.assertEqual(legacy['supportedOperations'], legacy_expected)
 
 
 if __name__ == '__main__':

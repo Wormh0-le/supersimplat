@@ -2,9 +2,9 @@
 
 This is the operator-owned control plane for AI Select. It is a separate
 Python 3.12 package and is never bundled into the browser editor or its npm
-distribution. It intentionally contains no model weights. Legacy Object
-Selection PoC routes remain only for migration and controlled fixtures; they
-are not the AI Select v1 product workflow.
+distribution. It intentionally contains no model weights. The product server
+exposes only Final Spec v1.3 routes; frozen Object Selection helpers remain
+in-process for controlled historical benchmarks and have no HTTP surface.
 
 ## Install a locked release
 
@@ -28,18 +28,18 @@ process reports Python 3.12.12, PyTorch 2.11.0+cu128, CUDA 12.8, and gsplat
 1.5.3 installed from source commit
 `77ab983ffe43420b2131669cb35776b883ca4c3c`.
 
-## Render complete Anchor contributor evidence
+## Render authoritative RGB with optional reference Contributor diagnostics
 
-The production Companion registers its locked gsplat Contributor renderer by
-default, but advertises it as ready only after the release lock and current
-process pass the checks above. The renderer accepts only protocol-1 SuperSplat
+The production Companion registers its locked gsplat renderer by default, but
+advertises it as ready only after the release lock and current process pass the
+checks above. The renderer accepts only protocol-1 SuperSplat
 snapshots using `playcanvas-gsplat-classic`, opaque background, right-handed
 world coordinates, XYZW quaternions, the declared effective DC/SH schema, and
 render configuration `supersplat-effective-rgb-v1`.
 Malformed or unsupported values fail before the snapshot enters the immutable
 service cache.
 
-Renderer-owned Frame Set entries bind a pinhole camera with
+Renderer-owned reference View entries bind a pinhole camera with
 `convention: "opencv-world-to-camera"`, a row-major 4x4 `worldToCamera`
 matrix, a row-major 3x3 `intrinsics` matrix, and finite `nearPlane` and
 `farPlane` values. One gsplat call produces service RGB and raster alpha, then
@@ -152,15 +152,12 @@ source Evidence artifacts, raster implementation, trusted reference backend
 and locked runtime. Candidate contains Selected Stable IDs only; Uncertain is a
 separate diagnostic set.
 
-The browser validates the full artifact and current binding before one atomic
-replacement. Failed or stale replacement leaves the previous Candidate
-inspectable. Stable Mask or Participation changes make it stale until an
-explicit Re-Lift succeeds. The browser composition resets this target-local
-store on target rotation, and the AI View Dock shows current/stale status plus
-Selected and Uncertain counts. The publication path never mutates Native
-Selection or EditHistory. Reference Candidate production application remains
-blocked; the browser's explicit development capability may apply it only after
-exact renderer, backend, runtime, and policy identity checks.
+Diagnostics and fixtures validate the full artifact and current binding before
+one atomic replacement. Failed or stale replacement leaves the previous
+reference Candidate inspectable. Stable Mask or Participation changes make it
+stale until an explicit reference Re-Lift succeeds. The product composition
+root neither requests nor applies reference Candidates; Native Selection and
+EditHistory remain production-owned.
 
 Ticket 21 adds the production path. Candidate Re-Lift consumes only exact
 current `production-direct` per-View artifacts, aggregates them atomically and
@@ -205,37 +202,11 @@ Model Manifest digest.
 
 For the legacy `adapterId: "sam3.1"`, `runtimeConfigDigest` must be
 `sha256:6e1475abaee95d1ae97a8986494fba6ac7d3f440625f945b3ca0d258c6934c09`.
-It binds the historical SAM 3.1 multiplex baseline retained for the legacy
-Frame Set flow below; it is not a current static instance adapter and never
+It binds the historical SAM 3.1 multiplex baseline retained for frozen
+benchmark fixtures; it is not a current static instance adapter and never
 advertises Ready for the current Runtime Profile.
 
-## Produce a complete Frame Set Mask Track
-
-The locked `sam3` extra installs the compatible SAM 3.1 runtime into the same
-operator-owned Companion environment. Use a manifest whose `adapterId` is
-`sam3.1`. The browser registers every ordered Frame Set PNG with its SHA-256
-digest; the Companion materializes a temporary sequence, replays the point
-Prompt Log, and gives only the verified external checkpoint path to SAM 3.1.
-Returned masks are converted to generic immutable bitsets before they cross
-the service boundary. The completed Mask Set records generic SAM candidate
-selection diagnostics (candidate index, score where supplied, foreground area,
-point consistency, and the selected candidate); it never exposes raw tensors
-or treats model scores as cross-adapter confidence.
-
-Each logical session admission generates a unique `openRequestId`; browser
-retries reuse that one ID only within the same opening attempt. If the browser
-loses an admission response, it re-registers the immutable Frame Set and
-repeats that ID to recover the same session. If recovery fails, it idempotently
-closes the open request before releasing the Frame Set. A Frame Set claimed by
-a live session is retained until that session has cancelled and drained its
-inference work.
-
-`point-mask-v1` remains a deterministic protocol/reference adapter for local
-contract tests. Production state neither registers nor advertises it. It is
-not image or model inference and must not be selected as a substitute for the
-SAM 3.1 adapter.
-
-## Route B Generated View acquisition
+## Acquire Generated View Masks
 
 Generated Views use three independent endpoints after authoritative RGB is
 Ready:
@@ -263,7 +234,7 @@ It returns one usable bitset Mask at most; an empty valid result is the
 semantic `unavailable` outcome, while transport/model/capacity errors remain
 technical failures. Raw logits never cross the browser boundary.
 
-Only a returned Mask from the current Companion-held Route B inference record
+Only a returned Mask from the current Companion-held inference record
 reaches `local-view-assessment/v2` on the Review endpoint. It emits `good`,
 `review`, or `failed` with evidence-backed Mask quality reasons;
 `propagation-uncertain` and `weak-gaussian-support` are not Review vocabulary.
@@ -328,12 +299,12 @@ official SAM 3 Image instance-interaction path
 `Sam3Processor.set_image` → `predict_inst`). It never instantiates the
 Multiplex video predictor or calls private tracker-head methods. The
 historical SAM 3.1 Multiplex-backed static shim is retired; a `sam3.1`
-manifest stays installable for the legacy Frame Set flow but never advertises
+manifest stays installable for frozen benchmark fixtures but never advertises
 Ready for the current `ai-select-static-image-instance/v1` profile.
 
 The current control plane exposes `/scene-snapshot-uploads/v1`, the AI Select
 Anchor route `/ai-select/anchor-renders`, the Anchor proposal route
-`/ai-select/mask-proposals`, and the three Route B Generated View endpoints
+`/ai-select/mask-proposals`, and the three Generated View endpoints
 above. The Runtime Profile must advertise `aiSelectMaskProposals`,
 `aiSelectGeneratedViewPromptSynthesis`, `aiSelectImageInstanceMasks`,
 `aiSelectImageInstanceMaskReview`, `aiSelectAnchorRender`,
@@ -376,22 +347,20 @@ SUPERSPLAT_SAM3_IMAGE_GPU_CHECKPOINT=/secure/models/sam3.pt \
   -s tests -p test_sam3_image_instance_gpu.py
 ```
 
-`/scene-snapshots/...` remains a legacy fixture
-compatibility endpoint only. It also keeps the legacy
-Object Selection Session admission lease during migration. It verifies the
-locked gsplat/CUDA runtime from the current Companion process only. Whenever
-the release lock or runtime identity does not match, renderer status remains
-unavailable with an operator-facing diagnostic. The legacy control plane
-reserves exactly one Object Selection Session lease at a time and returns
-`busy` to a second opener; closing that lease restores capacity. The Anchor
-route is bound by `targetContextId`, context revision, and dependency token;
-late browser results are discarded editor-side rather than relying on request
-cancellation for correctness.
+`/scene-snapshots/...` remains a JSON fixture-registration compatibility
+endpoint; the product browser uses Binary SceneSnapshot Registration v1.
+Object Selection Session and Frame Set routes are absent. Renderer readiness
+verifies the locked gsplat/CUDA runtime from the current Companion process and
+fails unavailable when the release lock or runtime identity differs. The
+Anchor route is bound by `targetContextId`, context revision, and dependency
+token; late browser results are discarded editor-side rather than relying on
+request cancellation for correctness.
 
-## Run the controlled-overlap production trial
+## Run the historical controlled-overlap reference trial
 
-Run prediction without giving the process a Ground Truth path. The command
-uses the installed locked release and SAM3.1 Model Manifest, executes the real
+This frozen benchmark runs prediction without giving the process a Ground
+Truth path. The command uses the installed locked release and historical SAM3.1
+Model Manifest, executes the real
 gsplat/CUDA Generated View path, and atomically publishes a hashed PoC Run
 Record only after all required artifacts are complete:
 

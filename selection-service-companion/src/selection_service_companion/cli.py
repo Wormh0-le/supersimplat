@@ -84,7 +84,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             except KeyboardInterrupt:
                 print("Selection Service Companion stopped by operator")
             finally:
-                state.release_object_selection_sessions()
+                state.release_runtime_state()
                 server.server_close()
             return 0
     except ValueError as error:

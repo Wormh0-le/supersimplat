@@ -1,4 +1,4 @@
-# Final Spec v1.3 → Ticket Traceability Matrix — v2.37
+# Final Spec v1.3 → Ticket Traceability Matrix — v2.38
 
 A requirement counts as covered only when a mapped parent Ticket or explicitly
 mapped execution stage contains acceptance, failure, validation or migration
@@ -21,11 +21,11 @@ Inspector, shell, Work Area, Toolbar and obsolete-control closure deltas.
 | R008 | cancellation/OOM/model failure publishes no partial current artifact                                                   | 04C, 08B, 12, 20, 21                                           |
 | R009 | User Confirmed Stable Mask cannot be silently replaced                                                                 | 04, 04C, 07, 08B, 12, 21                                       |
 | R010 | static instance segmentation uses official SAM 3 Image interactivity                                                   | 04C, 07A, 08B, 21                                              |
-| R011 | static path does not instantiate Multiplex video predictor/private tracker heads                                       | 04C, 08B, 21                                                   |
-| R012 | historical Multiplex manifest/artifacts are incompatible with current profile                                          | 02C, 04C, 12, 21                                               |
-| R013 | v1 Prompt surface contains Positive Point, Negative Point and Positive Instance Box only                               | 04C, 07A, 07B, 08A, 08B, 11                                    |
-| R014 | Negative Box is absent from current schema, compiler and UI                                                            | 04C, 07A, 07B, 08A, 08B, 21                                    |
-| R015 | Prompt Brush and Mask Constraints are absent from current schema, compiler and UI                                      | 04C, 07B, 08A, 08B, 21                                         |
+| R011 | static path does not instantiate Multiplex video predictor/private tracker heads                                       | 04C, 08B, 21, 22                                               |
+| R012 | historical Multiplex manifest/artifacts are incompatible with current profile                                          | 02C, 04C, 12, 21, 22                                           |
+| R013 | v1 Prompt surface contains Positive Point, Negative Point and Positive Instance Box only                               | 04C, 07A, 07B, 08A, 08B, 11, 22                                |
+| R014 | Negative Box is absent from current schema, compiler, capability record and UI                                         | 04C, 07A, 07B, 08A, 08B, 21, 22                                |
+| R015 | Prompt Brush and Mask Constraints are absent from current schema, compiler, capability record and UI                   | 04C, 07B, 08A, 08B, 21, 22                                     |
 | R016 | Paint/Erase remain Editing Mask operations and never enter inference                                                   | 04C, 07A, 07B, 11, 21                                          |
 | R017 | every inference request includes resolvable authoritative RGB bytes or current Companion RGB ref                       | 04C, 08A, 08B, 11, 12, 21                                      |
 | R018 | RGB digest-only input without resolvable bytes/ref fails before inference                                              | 04C, 08A, 08B, 21                                              |
@@ -50,11 +50,11 @@ Inspector, shell, Work Area, Toolbar and obsolete-control closure deltas.
 | R037 | local Views validate projection, clipping and nonblank RGB                                                             | 08, 21                                                         |
 | R038 | adaptive/free-space/room-scale planner is deferred                                                                     | 08, 21                                                         |
 | R039 | 07B and 08 run in parallel after 07A                                                                                   | 07A, 07B, 08                                                   |
-| R040 | Tickets through 21 are implemented and Ticket 22 is the current ready frontier                                         | 09, 11, 12, 13, 14, 14A, 14B, 14C, 14D, 15, 16, 16A–16G, 17–22 |
+| R040 | Tickets through 22 are implemented and the Final Spec v1.3 core graph is closed                                        | 09, 11, 12, 13, 14, 14A, 14B, 14C, 14D, 15, 16, 16A–16G, 17–22 |
 | R041 | 02C may proceed after 04C; 07A requires both 04C and 07                                                                | 02C, 07A                                                       |
 | R042 | 08A defines compact RGB-bound Image Instance Prompt/Mask contracts                                                     | 08A                                                            |
-| R043 | current contracts require no backend registry, route bundle or sequence extension                                      | 08A, 08B, 12, 21                                               |
-| R044 | current flow has no automatic Route-A fallback                                                                         | 06, 08A, 08B, 09, 12, 21                                       |
+| R043 | current contracts require no backend registry, route bundle or sequence extension                                      | 08A, 08B, 12, 21, 22                                           |
+| R044 | current flow has no automatic Route-A fallback                                                                         | 06, 08A, 08B, 09, 12, 21, 22                                   |
 | R045 | Generated Prompts contain one Positive Box, 1–3 Positive Points and optional local Negative Points                     | 08B                                                            |
 | R046 | Generated per-View inference uses SAM 3 Image single-mask mode                                                         | 08B, 11                                                        |
 | R047 | semantic unavailable differs from technical inference failure                                                          | 08A, 08B, 09, 12, 21                                           |
@@ -73,7 +73,7 @@ Inspector, shell, Work Area, Toolbar and obsolete-control closure deltas.
 | R060 | Dock, Toolbar and Status Bar consume one composed Candidate/Correction/Application presentation state                  | 15, 16A, 16C, 16D, 16E, 16F, 16G, 17                           |
 | R061 | AI View Dock responsively projects Navigator, aspect-preserving selected-View Work Area and current-View Inspector     | 09, 16A, 16D                                                   |
 | R062 | ordinary View navigation preserves per-View drafts/history and each surface owns one non-duplicated control role       | 07, 09, 11, 16A, 16C, 16D, 16E, 16F, 16G                       |
-| R063 | production Candidate publication/application requires exact Direct Evidence and one checksum-bound production identity | 16, 20, 21                                                     |
+| R063 | production Candidate publication/application requires exact Direct Evidence and one checksum-bound production identity | 16, 20, 21, 22                                                 |
 
 ## Accepted post-16A delta coverage
 
@@ -128,7 +128,7 @@ core and does not reintroduce the removed 3D More/Restart control. Ticket 18
 implements its semantic suspension/Undo seam; Ticket 19 implements the
 authoritative render data path, Ticket 20 implements production Direct
 Evidence, Ticket 21 implements production Candidate/calibration/identity
-hardening and Ticket 22 is current.
+hardening and Ticket 22 implements the final legacy/reference contraction.
 
 ## Coverage result
 
@@ -140,12 +140,13 @@ hardening and Ticket 22 is current.
 - Ticket 16 post-closure stage files mapped through parent 16 + Final Spec v1.3: 7/7;
 - Ticket files with v1.1/v1.2 as current mapping authority: 0;
 - older-spec references outside explicit historical/superseded/migration sections: 0;
-- implemented prerequisite chain: through 12, parent Ticket 14 / 14D, Tickets 13 through 18 and Tickets 16A–16G;
+- implemented prerequisite chain: through 12, parent Ticket 14 / 14D, Tickets 13 through 22 and Tickets 16A–16G;
 - Ticket 09 locked-GPU large-Gallery browser walkthrough: passed 2026-08-07;
-- current parent compatibility frontier: 19;
+- Ticket 22 locked-GPU Final Spec core browser regression: passed 2026-08-17;
+- current parent compatibility frontier: none;
 - current Ticket 16 execution stage: none (all implemented);
 - current Ticket 14 execution stage: none (all implemented);
-- next implementation Ticket: 19;
+- next implementation Ticket: none;
 - next implementation subticket: none;
 - optional nonblocking Ticket: 10;
 - current normative spec: Final Spec v1.3.

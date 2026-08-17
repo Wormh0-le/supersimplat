@@ -1,11 +1,11 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.37
+# Eight-Pass Bidirectional Traceability Audit — v2.38
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
 The v2.12–v2.27 sections and detailed pass text below are retained as historical
-audit evidence. The controlling v2.37 result is the post-Ticket-21 closure at
-the end of this document; Ticket 22 now owns final legacy product and reference
-path contraction while the accepted `4–8` automatic-View range remains current.
+audit evidence. The controlling v2.38 result is the post-Ticket-22 closure at
+the end of this document; the accepted `4–8` automatic-View range remains
+current.
 
 ## Independent review findings corrected in v2.12
 
@@ -662,3 +662,32 @@ contraction. Measurements and validation are recorded in
 `docs/ai-select/benchmarks/21-failure-calibration-hardening.md`.
 
 Overall result: **PASS_V2_37**.
+
+## v2.38 Ticket 22 controlling audit result
+
+Ticket 22 is implemented and the Final Spec v1.3 core execution graph is
+closed. This pass supersedes only the v2.37 frontier values and preserves the
+Ticket 21 production identity, calibration and locked-GPU evidence.
+
+| Pass | Current v2.38 check                                                                                                                              | Result |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| 1    | All 31 parent Tickets and the 14A–14D / 16A–16G stages resolve; Tickets through 22 are implemented and no core frontier remains                  | PASS   |
+| 2    | Final Spec v1.3 remains the sole current specification; mapping, manifest, traceability and walkthrough counts agree                             | PASS   |
+| 3    | Browser composition and transport contain no ObjectSelectionSession lifecycle, inference-mode UI, Preview/Commit path or PlayCanvas Anchor input | PASS   |
+| 4    | Companion HTTP exposes no Object Selection Session or Frame Set route; frozen PromptLog/MaskTrack/FrameSet/MaskSet helpers are reference-only    | PASS   |
+| 5    | Current Prompt capabilities contain supported families only; removed families and legacy Generated Mask/provider-route payloads fail closed      | PASS   |
+| 6    | Production readiness, RGB, Direct Evidence, formal Re-Lift and Candidate application require no complete Contributor capability                  | PASS   |
+| 7    | Complete Contributor and Multiplex code remains explicitly reference/fixture-only, while historical benchmark assets remain intact               | PASS   |
+| 8    | Repository, lint, locale, build, locked SAM GPU, locked Direct Evidence GPU, static source and native SuperSplat regressions pass                | PASS   |
+
+The current Runtime Profile publishes only the production Direct Evidence and
+production Candidate identities. Reference Candidate construction remains
+available to explicit diagnostics and fixtures but is neither an Availability
+dependency nor wired into the product application composition root.
+The locked browser regression exercised authoritative RGB, real SAM 3 Image
+Mask inference, Anchor confirmation, geometry/planning and production Direct
+Evidence. The controlled-overlap fixture reached the calibrated `not-ready`
+Re-Lift branch, which correctly published no Candidate and issued no legacy
+session, Frame Set or Generated Mask request.
+
+Overall result: **PASS_V2_38**.

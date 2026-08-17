@@ -38,7 +38,7 @@ export interface PromptState {
 
 /**
  * The SAM 3 Image instance adapter capability record (04C contract §3). The
- * digest binds exactly the 9 capability flags plus the compiler policy
+ * digest binds exactly the five current capability flags plus the compiler policy
  * version; removed prompt families are absent from the record entirely, so
  * old records with `unsupportedPromptReasons` fail closed.
  */
@@ -48,10 +48,6 @@ export interface PromptAdapterCapabilities {
     readonly positiveInstanceBox: boolean;
     readonly previousLogitsRefinement: boolean;
     readonly singlePointMultimask: boolean;
-    readonly negativeBox: boolean;
-    readonly promptBrush: boolean;
-    readonly maskConstraints: boolean;
-    readonly text: boolean;
     readonly compilerPolicyVersion: string;
     readonly capabilityDigest: string;
 }
@@ -248,10 +244,6 @@ const capabilityPayload = (
     positiveInstanceBox: capabilities.positiveInstanceBox,
     previousLogitsRefinement: capabilities.previousLogitsRefinement,
     singlePointMultimask: capabilities.singlePointMultimask,
-    negativeBox: capabilities.negativeBox,
-    promptBrush: capabilities.promptBrush,
-    maskConstraints: capabilities.maskConstraints,
-    text: capabilities.text,
     compilerPolicyVersion: capabilities.compilerPolicyVersion
 });
 
@@ -287,10 +279,6 @@ export const isPromptAdapterCapabilities = (
             'positiveInstanceBox',
             'previousLogitsRefinement',
             'singlePointMultimask',
-            'negativeBox',
-            'promptBrush',
-            'maskConstraints',
-            'text',
             'compilerPolicyVersion',
             'capabilityDigest'
         ])
@@ -302,11 +290,7 @@ export const isPromptAdapterCapabilities = (
         'negativePoints',
         'positiveInstanceBox',
         'previousLogitsRefinement',
-        'singlePointMultimask',
-        'negativeBox',
-        'promptBrush',
-        'maskConstraints',
-        'text'
+        'singlePointMultimask'
     ] as const;
     if (
         !booleanKeys.every((key) => typeof value[key] === 'boolean') ||

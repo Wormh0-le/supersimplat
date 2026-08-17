@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.37
+# AI Select v1 — Implementation Ticket Graph v2.38
 
-Status: **active implementation graph — Ticket 21 implemented; Ticket 22 current**
+Status: **implemented core graph — Tickets through 22 closed**
 
 Branch: `ai-select-v1`
 
@@ -60,6 +60,9 @@ obsolete-control closure.
   the global lifecycle menu, multi-object continuity and tool-switch disposal.
 - Ticket 18 implemented target-scoped semantic suspension, read-only artifact
   retention and exact Native Undo recovery.
+- Ticket 22 removed the browser ObjectSelectionSession lifecycle and public
+  Companion session/Frame Set routes. Current Prompt capabilities contain only
+  supported families; complete Contributor and Multiplex remain reference-only.
 
 ## Dependency graph
 
@@ -159,9 +162,10 @@ implemented prerequisites:
 - 19 — Large SceneSnapshot + authoritative RGB / Render Working Set hardening
 - 20 — Same-decision GPU Evidence + artifact / working-set hardening
 - 21 — Core failure, calibration and release hardening
+- 22 — Legacy product/Contributor/SAM/Prompt contraction
 
 current parent compatibility frontier:
-- 22 — Legacy product/Contributor/SAM/Prompt contraction
+- none — the Final Spec v1.3 core graph is implemented
 
 current execution stage:
 - none
@@ -170,14 +174,14 @@ current execution stage:
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 22
+next_implementation_ticket = none
 next_implementation_subticket = none
 ```
 
 Ticket 17 closes the implemented Ticket 16G Toolbar/presentation seam without
 reintroducing retired 3D More/Restart or identical-input product Retry/planning
-controls. Tickets 18 through 21 consume those lifecycle/render/Evidence seams
-and are implemented; Ticket 22 is now current. Ticket 10 remains optional and off the core release
+controls. Tickets 18 through 22 consume those lifecycle/render/Evidence seams
+and are implemented. Ticket 10 remains optional and off the core release
 path.
 
 ## One valid topological order

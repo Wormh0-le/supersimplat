@@ -1,4 +1,4 @@
-# Final Spec v1.3 Walkthrough Coverage — v2.37
+# Final Spec v1.3 Walkthrough Coverage — v2.38
 
 ## Typical flows
 
@@ -119,7 +119,7 @@ production GPU, Companion model-capability or camera-planner quality claim.
 
 - typical walkthroughs: 21;
 - error walkthroughs: 21;
-- current ready frontier: Ticket 22;
+- current ready frontier: none; Tickets through 22 are implemented;
 - current product recovery contract: changed intent, manual editing, exclusion,
   replacement View, or normal Re-Lift as applicable;
 - obsolete product planning/recovery controls present: no;

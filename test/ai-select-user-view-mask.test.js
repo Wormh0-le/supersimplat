@@ -521,10 +521,6 @@ const createHarness = () => {
         positiveInstanceBox: true,
         previousLogitsRefinement: true,
         singlePointMultimask: false,
-        negativeBox: false,
-        promptBrush: false,
-        maskConstraints: false,
-        text: false,
         compilerPolicyVersion: 'point-mask-compiler/v1'
     });
     const imageInstanceRuntimeBinding = {

@@ -463,10 +463,6 @@ const richPromptCapabilities = createPromptAdapterCapabilities({
     positiveInstanceBox: true,
     previousLogitsRefinement: true,
     singlePointMultimask: false,
-    negativeBox: false,
-    promptBrush: false,
-    maskConstraints: false,
-    text: false,
     compilerPolicyVersion: 'sam3-image-instance-compiler/v1'
 });
 

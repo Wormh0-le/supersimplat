@@ -37,7 +37,6 @@ Current implemented chain and frontier:
 14A through 14D, parent Ticket 14, Tickets 13 through 15, Ticket 16's
 application core and Tickets 16A–16G are implemented. The 16A operator visual
 walkthrough is complete and produced the accepted follow-up contracts in
-16B–16G. Tickets 17–21 are implemented and Ticket 22 is the current execution
-frontier.
+16B–16G. Tickets 17–22 are implemented and the core execution graph is closed.
 
 Do not add active Ticket contracts under `.scratch/ai-select-v1/issues/`.

@@ -6,7 +6,6 @@ import {
     semanticValueFingerprint
 } from './ai-select/target-dependency-fingerprint';
 import { ColorGrade, dcDecode, dcEncode } from './color-grade';
-import type { StableGaussianIdMap } from './object-selection-session-editor';
 import {
     freezeSceneSnapshot,
     type SceneSnapshot,
@@ -25,6 +24,13 @@ import type { Splat } from './splat';
 import { State } from './splat-state';
 
 const stableIdsBySplat = new WeakMap<Splat, Uint32Array>();
+
+interface StableGaussianIdMap {
+    toStableGaussianIds(
+        indices: readonly number[]
+    ): readonly StableGaussianId[];
+    toSplatIndices(stableIds: readonly StableGaussianId[]): Uint32Array;
+}
 
 interface SplatSnapshotSemanticRevision {
     readonly renderStateToken: string;

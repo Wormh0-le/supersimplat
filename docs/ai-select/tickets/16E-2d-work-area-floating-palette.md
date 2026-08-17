@@ -154,6 +154,11 @@ target-level 2D-to-3D action in compact Work Area chrome outside the image.
 - Lifecycle tests prove old-run retention during draft work and failed
   validation, successful cutover ordering, and late-response inertness.
 
+Post-Ticket-21 note: missing or stale readiness still is not presented as
+Ready. The explicit Re-Lift action may now start the production Evidence and
+readiness preflight; the exact returned Not Ready result publishes without a
+Candidate and disables subsequent publication until inputs change.
+
 ## Non-goals
 
 - No Candidate operation in the 2D Work Area

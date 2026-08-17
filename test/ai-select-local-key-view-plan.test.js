@@ -84,7 +84,11 @@ const planFor = (request, overrides = {}) => ({
     orderedViews: [
         plannedKeyView('key-view-0-0', 100),
         plannedKeyView('key-view-0-1', 101),
-        plannedKeyView('key-view-0-2', 102)
+        plannedKeyView('key-view-0-2', 102),
+        plannedKeyView('key-view-0-3', 103, {
+            quality: 'failed',
+            reasons: ['insufficientVisibility']
+        })
     ],
     planAttemptId: request.planAttemptId,
     artifactDigest: digest('8'),
@@ -192,6 +196,14 @@ test('a complete Planned Key View validates; the Anchor view id stays reserved',
             })
         )
     );
+    assert.ok(
+        isPlannedKeyView(
+            plannedKeyView('key-view-0-2', 102, {
+                quality: 'failed',
+                reasons: ['insufficientVisibility']
+            })
+        )
+    );
     const view = plannedKeyView('key-view-0-0', 100);
     assert.ok(!isPlannedKeyView(null));
     assert.ok(!isPlannedKeyView({ ...view, viewId: '' }));
@@ -206,9 +218,9 @@ test('a complete Planned Key View validates; the Anchor view id stays reserved',
 test('a complete local Key-View plan validates', () => {
     const request = planRequest();
     assert.ok(isLocalKeyViewPlan(planFor(request)));
-    // One to eight bounded local Key Views per plan.
+    // Every current plan retains four to eight usable/limited/failed slots.
     assert.ok(
-        isLocalKeyViewPlan(
+        !isLocalKeyViewPlan(
             planFor(request, {
                 orderedViews: [plannedKeyView('key-view-0-0', 100)]
             })
@@ -291,6 +303,14 @@ test('plan response validation fails closed on malformed inputs', () => {
     assert.ok(!isLocalKeyViewPlanResponse({ ...response, planAttemptId: '' }));
     assert.ok(!isLocalKeyViewPlanResponse({ ...response, batchOrdinal: -1 }));
     assert.ok(!isLocalKeyViewPlanResponse({ ...response, batchOrdinal: 0.5 }));
+    assert.ok(
+        !isLocalKeyViewPlanResponse({
+            ...response,
+            plan: planFor(request, {
+                orderedViews: response.plan.orderedViews.slice(0, 3)
+            })
+        })
+    );
     assert.ok(
         !isLocalKeyViewPlanResponse({
             ...response,

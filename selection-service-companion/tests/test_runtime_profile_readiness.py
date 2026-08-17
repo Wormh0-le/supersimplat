@@ -5,11 +5,30 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
+
+import selection_service_companion.state as state_module
+from selection_service_companion.direct_gaussian_evidence import (
+    direct_evidence_capability,
+)
 
 from selection_service_companion.masking import (
     SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
     SAM31_RUNTIME_CONFIG_DIGEST,
     sam3_image_instance_capabilities,
+)
+from selection_service_companion.image_instance_prompt_synthesis import (
+    prompt_synthesis_policy_digest,
+)
+from selection_service_companion.lift_readiness import (
+    default_lift_readiness_policy,
+)
+from selection_service_companion.target_geometry import (
+    local_key_view_policy_digest,
+    target_geometry_policy_digest,
+)
+from selection_service_companion.view_assessment import (
+    view_assessment_policy_digest,
 )
 from selection_service_companion.state import (
     AI_SELECT_READINESS_PROTOCOL_VERSION,
@@ -178,7 +197,25 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
             runtime_config_digest=SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
         )
 
-        result = self.state.runtime_profile_capabilities([EDITOR_ORIGIN])
+        direct = direct_evidence_capability()
+        direct["status"] = "ready"
+        renderer = {
+            "id": "gsplat",
+            "status": "ready",
+            "cudaVersion": "12.8",
+            "rgbRendererVersion": "gsplat-direct-evidence-rgb/v1",
+            "rasterImplementationId": direct["rasterImplementationId"],
+            "runtimeBuildId": direct["runtimeBuildId"],
+        }
+        with (
+            patch.object(
+                state_module,
+                "direct_evidence_capability",
+                return_value=direct,
+            ),
+            patch.object(self.state, "_renderer_capability", return_value=renderer),
+        ):
+            result = self.state.runtime_profile_capabilities([EDITOR_ORIGIN])
         provider = result["imageInstanceProvider"]
 
         self.assertTrue(result["activeModelManifest"]["initialized"])
@@ -198,6 +235,46 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
             provider["adapterCapabilityDigest"],
             expected["capabilityDigest"],
         )
+        production = result["productionIdentity"]
+        self.assertEqual(production["status"], "ready")
+        record = production["record"]
+        self.assertEqual(record["schemaVersion"], 1)
+        self.assertEqual(
+            record["model"]["adapterId"], "sam3-image-instance/v1"
+        )
+        self.assertEqual(
+            record["prompt"]["compilerPolicyVersion"],
+            expected["compilerPolicyVersion"],
+        )
+        self.assertEqual(
+            record["prompt"]["synthesisPolicyDigest"],
+            prompt_synthesis_policy_digest(),
+        )
+        self.assertEqual(
+            record["geometry"]["targetGeometryPolicyDigest"],
+            target_geometry_policy_digest(),
+        )
+        self.assertEqual(
+            record["geometry"]["localViewPolicyDigest"],
+            local_key_view_policy_digest(),
+        )
+        self.assertEqual(
+            record["maskReview"]["policyDigest"],
+            view_assessment_policy_digest(),
+        )
+        self.assertEqual(
+            record["evidence"]["evidenceBackendKind"],
+            "production-direct",
+        )
+        self.assertEqual(
+            record["liftReadiness"]["policyId"],
+            "lift-readiness/production-v1",
+        )
+        self.assertEqual(
+            record["liftReadiness"]["policyDigest"],
+            default_lift_readiness_policy()["readinessPolicyDigest"],
+        )
+        self.assertRegex(record["identityDigest"], r"^sha256:[a-f0-9]{64}$")
 
     def test_unavailable_current_adapter_omits_the_pass_through_digests(
         self,

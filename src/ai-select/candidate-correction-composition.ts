@@ -7,10 +7,7 @@ import {
 } from './candidate-correction';
 import type { CandidatePublicationStore } from './candidate-publication';
 import {
-    referenceContributorEvidenceBackendId,
-    referenceEvidencePolicyDigest,
-    referenceEvidenceRasterImplementationId,
-    referenceEvidenceRuntimeBuildId,
+    productionEvidencePolicyDigest,
     type AISelectCandidateReLiftProvider,
     type CandidateReLiftViewInput
 } from './candidate-re-lift';
@@ -23,10 +20,13 @@ import {
 import {
     createEvidenceWorkingSet,
     isCurrentGaussianEvidenceArtifact,
-    rebindGaussianEvidenceArtifactForExactRestoration,
-    type RenderWorkingSetBinding
+    rebindGaussianEvidenceArtifactForExactRestoration
 } from './gaussian-evidence-contract';
 import type { AISelectGeneratedViewController } from './generated-view-controller';
+import {
+    liftReadinessBindingFromArtifact,
+    type LiftReadinessStore
+} from './lift-readiness';
 import type { AISelectMaskController } from './mask-controller';
 
 export interface AISelectCandidateCorrectionCompositionOptions {
@@ -34,13 +34,13 @@ export interface AISelectCandidateCorrectionCompositionOptions {
     readonly masks: AISelectMaskController;
     readonly generatedViews: AISelectGeneratedViewController;
     readonly candidatePublications: CandidatePublicationStore;
+    readonly liftReadiness: LiftReadinessStore;
+    readonly getProductionIdentityDigest: () => string | null;
     readonly provider: AISelectCandidateReLiftProvider &
         AISelectDirectEvidenceProvider;
 }
 
-interface CandidateCorrectionEvidencePayload extends CandidateReLiftViewInput {
-    readonly directRenderWorkingSet: RenderWorkingSetBinding;
-}
+type CandidateCorrectionEvidencePayload = CandidateReLiftViewInput;
 
 /** Compose the browser side of Ticket 15 outside the editor composition root. */
 export const createAISelectCandidateCorrectionController = (
@@ -114,21 +114,21 @@ export const createAISelectCandidateCorrectionController = (
                         rgbDigest: input.rgbDigest,
                         stableMaskDigest: input.stableMask.digest
                     }),
-                    evidencePolicyDigest: referenceEvidencePolicyDigest,
+                    evidencePolicyDigest: productionEvidencePolicyDigest,
                     renderWorkingSet: Object.freeze({
                         targetSplatId: context.target.splatId,
                         dependencyToken: context.dependencyToken,
                         cameraBindingDigest: bindingDigest,
-                        renderWorkingSetToken: snapshot.contentDigest,
-                        stableGaussianIds: renderStableGaussianIds,
+                        renderWorkingSetToken: input.renderWorkingSetToken,
+                        stableGaussianIds: input.renderStableGaussianIds,
                         completeness: 'complete' as const
                     }),
                     evidenceWorkingSet,
                     rasterImplementationId:
-                        referenceEvidenceRasterImplementationId,
-                    evidenceBackendKind: 'reference-contributor' as const,
-                    evidenceBackendId: referenceContributorEvidenceBackendId,
-                    runtimeBuildId: referenceEvidenceRuntimeBuildId
+                        directEvidenceRasterImplementationId,
+                    evidenceBackendKind: 'production-direct' as const,
+                    evidenceBackendId: directEvidenceBackendId,
+                    runtimeBuildId: directEvidenceRuntimeBuildId
                 });
                 return Object.freeze({
                     viewId: input.viewId,
@@ -139,7 +139,7 @@ export const createAISelectCandidateCorrectionController = (
                         cameraBindingDigest: bindingDigest,
                         rgbDigest: input.rgbDigest,
                         stableMaskDigest: input.stableMask.digest,
-                        evidencePolicyDigest: referenceEvidencePolicyDigest,
+                        evidencePolicyDigest: productionEvidencePolicyDigest,
                         renderWorkingSetToken: input.renderWorkingSetToken,
                         evidenceWorkingSetToken:
                             evidenceWorkingSet.evidenceWorkingSetToken,
@@ -152,12 +152,7 @@ export const createAISelectCandidateCorrectionController = (
                     payload: Object.freeze({
                         currentInput,
                         cameraBinding: input.cameraBinding,
-                        stableMask: input.stableMask,
-                        directRenderWorkingSet: Object.freeze({
-                            ...currentInput.renderWorkingSet,
-                            renderWorkingSetToken: input.renderWorkingSetToken,
-                            stableGaussianIds: input.renderStableGaussianIds
-                        })
+                        stableMask: input.stableMask
                     })
                 });
             };
@@ -220,10 +215,6 @@ export const createAISelectCandidateCorrectionController = (
         };
 
     let nextAttempt = 0;
-    const referenceEvidenceByView = new Map<
-        string,
-        NonNullable<CandidateReLiftViewInput['cachedArtifact']>
-    >();
     const controller = new AISelectCandidateCorrectionController({
         dirtyState: options.masks.dirtyState,
         candidatePublications: options.candidatePublications,
@@ -232,31 +223,33 @@ export const createAISelectCandidateCorrectionController = (
         produceCandidate: async (
             input: CandidateCorrectionProductionInput<CandidateCorrectionEvidencePayload>
         ) => {
-            const views = input.views.map((view) => {
-                const cachedArtifact = referenceEvidenceByView.get(view.viewId);
-                const currentCachedArtifact =
-                    cachedArtifact === undefined
-                        ? undefined
-                        : rebindGaussianEvidenceArtifactForExactRestoration(
-                              cachedArtifact,
-                              view.payload.currentInput.requestBinding
-                          );
-                return Object.freeze({
-                    currentInput: view.payload.currentInput,
-                    cameraBinding: view.payload.cameraBinding,
-                    stableMask: view.payload.stableMask,
-                    ...(currentCachedArtifact === undefined
-                        ? {}
-                        : { cachedArtifact: currentCachedArtifact })
-                });
-            });
-            const first = views[0];
+            const first = input.views[0]?.payload;
             const snapshot = options.anchor.getAnchorSnapshot();
             if (first === undefined || snapshot === null) {
                 throw new Error(
                     'AI Select requires an active Scene Snapshot before Candidate Re-Lift.'
                 );
             }
+            const productionIdentityDigest =
+                options.getProductionIdentityDigest();
+            if (productionIdentityDigest === null) {
+                throw new Error(
+                    'AI Select requires the accepted production identity before Candidate Re-Lift.'
+                );
+            }
+            const generatedState = options.generatedViews.state;
+            const generationState =
+                generatedState.plannerStatus === 'failed'
+                    ? 'unavailable'
+                    : generatedState.views.some(
+                            (view) =>
+                                view.renderStatus === 'pending' ||
+                                view.renderStatus === 'rendering' ||
+                                view.promptStatus === 'synthesizing' ||
+                                view.maskStatus === 'generating'
+                        )
+                      ? 'active'
+                      : 'complete';
             nextAttempt += 1;
             for (const viewId of input.recomputeViewIds) {
                 const identity = input.views.find(
@@ -272,27 +265,11 @@ export const createAISelectCandidateCorrectionController = (
                 NonNullable<CandidateReLiftViewInput['cachedArtifact']>
             >();
             try {
-                const currentViewIds = new Set(
-                    input.views.map((view) => view.viewId)
-                );
-                for (const cachedViewId of referenceEvidenceByView.keys()) {
-                    if (!currentViewIds.has(cachedViewId)) {
-                        referenceEvidenceByView.delete(cachedViewId);
-                    }
-                }
                 for (const view of input.views) {
                     if (view.participation !== 'included') {
                         continue;
                     }
-                    const directInput = Object.freeze({
-                        ...view.payload.currentInput,
-                        renderWorkingSet: view.payload.directRenderWorkingSet,
-                        rasterImplementationId:
-                            directEvidenceRasterImplementationId,
-                        evidenceBackendKind: 'production-direct' as const,
-                        evidenceBackendId: directEvidenceBackendId,
-                        runtimeBuildId: directEvidenceRuntimeBuildId
-                    });
+                    const directInput = view.payload.currentInput;
                     const retained = input.cachedEvidence.get(
                         directInput.view.viewId
                     )?.artifact;
@@ -310,6 +287,7 @@ export const createAISelectCandidateCorrectionController = (
                             : undefined;
                     const direct = await options.provider.produceDirectEvidence(
                         {
+                            evidenceAttemptId: `direct-evidence-${nextAttempt}-${view.viewId}`,
                             snapshot,
                             currentInput: directInput,
                             cameraBinding: view.payload.cameraBinding,
@@ -324,8 +302,21 @@ export const createAISelectCandidateCorrectionController = (
                         direct.artifact
                     );
                 }
+                const candidateViews = input.views.map((view) => {
+                    const artifact = directEvidence.get(view.viewId);
+                    return Object.freeze({
+                        currentInput: view.payload.currentInput,
+                        cameraBinding: view.payload.cameraBinding,
+                        stableMask: view.payload.stableMask,
+                        ...(artifact === undefined
+                            ? {}
+                            : { cachedArtifact: artifact })
+                    });
+                });
                 response = await options.provider.produceCandidateReLift({
                     liftAttemptId: `candidate-re-lift-${nextAttempt}`,
+                    productionIdentityDigest,
+                    generationState,
                     snapshot,
                     requestBinding: first.currentInput.requestBinding,
                     targetSplatId: first.currentInput.targetSplatId,
@@ -336,11 +327,8 @@ export const createAISelectCandidateCorrectionController = (
                     classificationScopeStableGaussianIds:
                         first.currentInput.evidenceWorkingSet.stableGaussianIds,
                     evidenceWorkingSet: first.currentInput.evidenceWorkingSet,
-                    views: Object.freeze(views)
+                    views: Object.freeze(candidateViews)
                 });
-                for (const entry of response.evidence) {
-                    referenceEvidenceByView.set(entry.viewId, entry.artifact);
-                }
             } catch (error) {
                 for (const viewId of input.recomputeViewIds) {
                     const identity = input.views.find(
@@ -362,37 +350,64 @@ export const createAISelectCandidateCorrectionController = (
                     'AI Select discarded a stale Candidate Re-Lift result.'
                 );
             }
-            return {
-                candidate: response.candidate,
-                publicationBinding: response.candidate.publicationBinding,
-                evidence: Object.fromEntries(
-                    [...directEvidence].map(([viewId, artifact]) => [
-                        viewId,
-                        {
-                            identity: {
+            const evidence = Object.fromEntries(
+                [...directEvidence].map(([viewId, artifact]) => [
+                    viewId,
+                    {
+                        identity: {
+                            viewId,
+                            cameraBindingDigest: artifact.cameraBindingDigest,
+                            rgbDigest: artifact.rgbDigest,
+                            stableMaskDigest: artifact.stableMaskDigest,
+                            evidencePolicyDigest: artifact.evidencePolicyDigest,
+                            renderWorkingSetToken:
+                                artifact.renderWorkingSetToken,
+                            evidenceWorkingSetToken:
+                                artifact.evidenceWorkingSetToken,
+                            rasterImplementationId:
+                                artifact.rasterImplementationId,
+                            evidenceBackendKind: artifact.evidenceBackendKind,
+                            evidenceBackendId: artifact.evidenceBackendId,
+                            runtimeBuildId: artifact.runtimeBuildId
+                        },
+                        artifactDigest: artifact.artifactDigest,
+                        artifact
+                    }
+                ])
+            );
+            const publishReadiness = () => {
+                const binding = liftReadinessBindingFromArtifact(
+                    response.liftReadiness
+                );
+                options.masks.dirtyState.markLiftReadinessEvaluated();
+                options.liftReadiness.publish(response.liftReadiness, binding);
+            };
+            if (response.status === 'not-ready') {
+                return {
+                    status: 'not-ready' as const,
+                    evidence,
+                    errorMessage:
+                        'AI Select Lift Readiness is Not Ready for Candidate publication.',
+                    publishPrerequisiteProducts: publishReadiness,
+                    publishRelatedProducts: () => {
+                        for (const [viewId, artifact] of directEvidence) {
+                            options.masks.evidenceRegistry.markReady({
                                 viewId,
-                                cameraBindingDigest:
-                                    artifact.cameraBindingDigest,
                                 rgbDigest: artifact.rgbDigest,
                                 stableMaskDigest: artifact.stableMaskDigest,
                                 evidencePolicyDigest:
-                                    artifact.evidencePolicyDigest,
-                                renderWorkingSetToken:
-                                    artifact.renderWorkingSetToken,
-                                evidenceWorkingSetToken:
-                                    artifact.evidenceWorkingSetToken,
-                                rasterImplementationId:
-                                    artifact.rasterImplementationId,
-                                evidenceBackendKind:
-                                    artifact.evidenceBackendKind,
-                                evidenceBackendId: artifact.evidenceBackendId,
-                                runtimeBuildId: artifact.runtimeBuildId
-                            },
-                            artifactDigest: artifact.artifactDigest,
-                            artifact
+                                    artifact.evidencePolicyDigest
+                            });
                         }
-                    ])
-                ),
+                    }
+                };
+            }
+            return {
+                status: 'complete' as const,
+                candidate: response.candidate,
+                publicationBinding: response.candidate.publicationBinding,
+                evidence,
+                publishPrerequisiteProducts: publishReadiness,
                 publishRelatedProducts: () => {
                     for (const [viewId, artifact] of directEvidence) {
                         options.masks.evidenceRegistry.markReady({
@@ -414,7 +429,6 @@ export const createAISelectCandidateCorrectionController = (
                 : `${state.context.targetContextId}:${state.context.revision}`;
         if (currentKey !== targetRevisionKey) {
             targetRevisionKey = currentKey;
-            referenceEvidenceByView.clear();
             controller.reset();
         }
     });
@@ -423,7 +437,6 @@ export const createAISelectCandidateCorrectionController = (
         const currentViewIds = new Set(state.views.map((view) => view.viewId));
         for (const viewId of generatedViewIds) {
             if (!currentViewIds.has(viewId)) {
-                referenceEvidenceByView.delete(viewId);
                 controller.disposeCachedEvidence(viewId);
             }
         }

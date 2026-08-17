@@ -1,6 +1,6 @@
-# AI Select v1 — Implementation Ticket Graph v2.36
+# AI Select v1 — Implementation Ticket Graph v2.37
 
-Status: **active implementation graph — Ticket 20 implemented; Ticket 21 current**
+Status: **active implementation graph — Ticket 21 implemented; Ticket 22 current**
 
 Branch: `ai-select-v1`
 
@@ -45,7 +45,9 @@ obsolete-control closure.
 - Generic backend registry, Route B/C/D, sequence extensions and automatic Route-A fallback are removed from v1.
 - Tickets 04C, 07, 02C, 07A, 07B, 08, 08A, 08B, 08C, 09, 11 and 12 are implemented prerequisites.
 - Parent Ticket 14 is complete through 14A Evidence Contract & Working Set, 14B Reference Per-View P/N/V Evidence, 14C Multi-view Aggregation & Classification, and 14D Atomic Candidate Publication & Reference Validation.
-- Ticket 13 is complete as the versioned reference/calibration Visible Evidence Coverage, View Diversity and Lift Readiness path.
+- Ticket 13 is complete as the versioned Visible Evidence Coverage, View
+  Diversity and Lift Readiness authority; Ticket 21 promotes its calibrated
+  policy to the production Re-Lift path.
 - Ticket 15 is complete as the pre-apply Candidate correction and explicit Re-Lift path.
 - Ticket 16's fail-closed native Candidate application core is complete.
 - Ticket 16A is implemented as the functional Candidate Overlay, Toolbar,
@@ -156,9 +158,10 @@ implemented prerequisites:
 - 18 — Scene mutation Suspended state + exact Undo recovery
 - 19 — Large SceneSnapshot + authoritative RGB / Render Working Set hardening
 - 20 — Same-decision GPU Evidence + artifact / working-set hardening
+- 21 — Core failure, calibration and release hardening
 
 current parent compatibility frontier:
-- 21 — Core failure, calibration and release hardening
+- 22 — Legacy product/Contributor/SAM/Prompt contraction
 
 current execution stage:
 - none
@@ -167,14 +170,14 @@ current execution stage:
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 21
+next_implementation_ticket = 22
 next_implementation_subticket = none
 ```
 
 Ticket 17 closes the implemented Ticket 16G Toolbar/presentation seam without
 reintroducing retired 3D More/Restart or identical-input product Retry/planning
-controls. Tickets 18 through 20 consume those lifecycle/render/Evidence seams
-and are implemented; Ticket 21 is now current. Ticket 10 remains optional and off the core release
+controls. Tickets 18 through 21 consume those lifecycle/render/Evidence seams
+and are implemented; Ticket 22 is now current. Ticket 10 remains optional and off the core release
 path.
 
 ## One valid topological order

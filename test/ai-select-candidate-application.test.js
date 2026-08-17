@@ -286,7 +286,8 @@ const acceptedReferenceRuntime = () => ({
     evidenceBackendId: 'complete-contributor/reference-v1',
     runtimeBuildId: 'locked-runtime-build-1',
     sourceEvidencePolicyDigest: digest('d'),
-    aggregationPolicyDigest: digest('c')
+    aggregationPolicyDigest: digest('c'),
+    productionIdentityDigest: null
 });
 
 const acceptedProductionRuntime = () => ({
@@ -294,7 +295,8 @@ const acceptedProductionRuntime = () => ({
     rasterImplementationId: 'gsplat-direct-rgb/v1',
     evidenceBackendKind: 'production-direct',
     evidenceBackendId: 'gsplat-direct-pnv/v1',
-    runtimeBuildId: 'production-runtime-build-1'
+    runtimeBuildId: 'production-runtime-build-1',
+    productionIdentityDigest: digest('8')
 });
 
 test('a reference Candidate is blocked by the default production application gate', async () => {
@@ -322,6 +324,7 @@ test('the production gate accepts an exact production-ready Candidate identity',
     } = publicationBinding();
     const binding = Object.freeze({
         ...baseBinding,
+        productionIdentityDigest: digest('8'),
         evidenceBackendIdentity: {
             rasterImplementationId: 'gsplat-direct-rgb/v1',
             evidenceBackendKind: 'production-direct',
@@ -344,6 +347,7 @@ test('the production gate accepts an exact production-ready Candidate identity',
         }
     };
     const nativeHistory = [];
+    let acceptedRuntime = acceptedProductionRuntime();
     const controller = new CandidateApplicationController({
         candidates: source,
         nativeSelection: {
@@ -366,7 +370,7 @@ test('the production gate accepts an exact production-ready Candidate identity',
         },
         beginCorrection: () => {},
         applicationMode: 'production',
-        getAcceptedRuntime: acceptedProductionRuntime,
+        getAcceptedRuntime: () => acceptedRuntime,
         getTarget: () => ({
             context: {
                 targetContextId: 'ai-target-context-1',
@@ -380,10 +384,18 @@ test('the production gate accepts an exact production-ready Candidate identity',
     });
 
     assert.equal(controller.state.status, 'ready');
+    acceptedRuntime = {
+        ...acceptedRuntime,
+        productionIdentityDigest: digest('9')
+    };
+    assert.equal(controller.state.status, 'blocked');
+    assert.equal(controller.state.blockReason, 'identity-unverified');
+    acceptedRuntime = acceptedProductionRuntime();
     const record = await controller.apply('set');
 
     assert.deepEqual(native.selected(), [1, 3]);
     assert.equal(record.evidenceBackendKind, 'production-direct');
+    assert.equal(record.productionIdentityDigest, digest('8'));
     assert.equal(record.nativeHistoryCommand, nativeHistory[0]);
 });
 
@@ -410,6 +422,7 @@ test('an explicit development capability applies Selected-only through native hi
     assert.equal(record.evidenceBackendKind, 'reference-contributor');
     assert.equal(record.evidenceBackendId, 'complete-contributor/reference-v1');
     assert.equal(record.runtimeBuildId, 'locked-runtime-build-1');
+    assert.equal(record.productionIdentityDigest, null);
     assert.deepEqual(record.policyIdentity, {
         sourceEvidencePolicyDigest: digest('d'),
         aggregationPolicyDigest: digest('c')

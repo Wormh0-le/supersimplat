@@ -59,7 +59,10 @@ Repository-wide specifications and ADRs remain canonical under `docs/specs/` and
   validation.
 - [Ticket 20](tickets/20-evidence-artifact-working-set-hardening.md) —
   implemented same-decision Direct Evidence, production artifact identity and
-  Working Set hardening; Ticket 21 is current.
+  Working Set hardening.
+- [Ticket 21](tickets/21-failure-calibration-hardening.md) — implemented
+  attempt/OOM atomicity, production Candidate publication, calibrated
+  readiness and the checksum-bound production identity; Ticket 22 is current.
 
 ## Scratch policy
 
@@ -88,9 +91,9 @@ Execution order is:
 14A → 14B → 14C → 14D → 13 → 15 → 16 → 16A → 16B
                                                        ├→ 16C ─┐
                                                        ├→ 16D ─┴→ 16E ─┐
-                                                       └→ 16F ─────────┴→ 16G → 17 → 18 → 19 → 20 → 21
+                                                       └→ 16F ─────────┴→ 16G → 17 → 18 → 19 → 20 → 21 → 22
 ```
 
 14A through 14D, parent Ticket 14, Tickets 13 through 15, Ticket 16's native
-application core, Tickets 16A–16G and Tickets 17–20 are implemented. Ticket 21
-is current (`next_implementation_ticket = 21`, `next_implementation_subticket = none`).
+application core, Tickets 16A–16G and Tickets 17–21 are implemented. Ticket 22
+is current (`next_implementation_ticket = 22`, `next_implementation_subticket = none`).

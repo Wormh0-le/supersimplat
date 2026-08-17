@@ -1,8 +1,9 @@
 """Visible-Evidence Coverage, View Diversity, and Lift Readiness.
 
-The evaluator consumes an exact current reference aggregation result. It does
+The calibrated evaluator consumes an exact current aggregation result. It does
 not produce P/N/V, classify ownership, publish a Candidate, or mutate editor
-state. Production same-decision Evidence remains Ticket 20 work.
+state. Ticket 21 promotes its versioned thresholds to the production identity;
+Ticket 13 remains the sole owner of visibility/readiness semantics.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from .reference_gaussian_evidence_aggregation import (
 
 LIFT_READINESS_RESULT_SCHEMA_VERSION: Final = 1
 LIFT_READINESS_POLICY_SCHEMA_VERSION: Final = 1
-LIFT_READINESS_POLICY_ID: Final = "lift-readiness/reference-v1"
+LIFT_READINESS_POLICY_ID: Final = "lift-readiness/production-v1"
 _GENERATION_STATES: Final = {"active", "stopped", "complete", "unavailable"}
 _READINESS_STATES: Final = {"not-ready", "limited", "ready"}
 _REASONS: Final = {
@@ -57,7 +58,7 @@ def _policy_payload() -> dict[str, object]:
 
 
 def default_lift_readiness_policy() -> dict[str, object]:
-    """Return the versioned Ticket 13 reference calibration policy."""
+    """Return the calibrated Ticket 13/Ticket 21 production policy."""
 
     payload = _policy_payload()
     return {**payload, "readinessPolicyDigest": route_b_artifact_digest(payload)}
@@ -257,7 +258,7 @@ def is_lift_readiness_result(value: object) -> bool:
     reasons = value["reasons"]
     if (
         value["schemaVersion"] != LIFT_READINESS_RESULT_SCHEMA_VERSION
-        or value["kind"] != "lift-readiness/reference-v1"
+        or value["kind"] != LIFT_READINESS_POLICY_ID
         or not isinstance(target_splat_id, str)
         or not target_splat_id.strip()
         or not _is_request_binding(value["requestBinding"], target_splat_id)
@@ -628,7 +629,7 @@ def evaluate_lift_readiness(
         )
         payload: dict[str, object] = {
             "schemaVersion": LIFT_READINESS_RESULT_SCHEMA_VERSION,
-            "kind": "lift-readiness/reference-v1",
+            "kind": LIFT_READINESS_POLICY_ID,
             "requestBinding": deepcopy(request_binding),
             "targetSplatId": target_splat_id,
             "evidenceWorkingSetToken": working_set["evidenceWorkingSetToken"],
@@ -674,7 +675,7 @@ def evaluate_lift_readiness(
     readiness, reasons = _readiness(coverage, diversity, validated_policy)
     payload: dict[str, object] = {
         "schemaVersion": LIFT_READINESS_RESULT_SCHEMA_VERSION,
-        "kind": "lift-readiness/reference-v1",
+        "kind": LIFT_READINESS_POLICY_ID,
         "requestBinding": deepcopy(readiness_input["requestBinding"]),
         "targetSplatId": readiness_input["targetSplatId"],
         "evidenceWorkingSetToken": working_set["evidenceWorkingSetToken"],

@@ -3,10 +3,10 @@
 ## 产品、交互与工程规格 — Final Spec v1.3
 
 **文档状态：** Current Final Spec / Normative  
-**规划版本：** Ticket Graph v2.35 / Ticket 19 implemented / Ticket 20 current
+**规划版本：** Ticket Graph v2.37 / Ticket 21 implemented / Ticket 22 current
 **日期：** 2026-08-17
 **适用分支：** `ai-select-v1`  
-**决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017、ADR 0018
+**决策依据：** ADR 0013、ADR 0015、ADR 0016、ADR 0017、ADR 0018、ADR 0019
 
 ---
 
@@ -20,12 +20,13 @@
 
 1. Final Spec v1.3；
 2. 当前 Ticket mapping；
-3. ADR 0018；
-4. ADR 0016；
-5. ADR 0017（TargetGeometryHint / Prompt Support 语义）；
-6. ADR 0013、ADR 0015；
-7. 未冲突的 Ticket acceptance criteria；
-8. 当前实现与测试。
+3. ADR 0019；
+4. ADR 0018；
+5. ADR 0016；
+6. ADR 0017（TargetGeometryHint / Prompt Support 语义）；
+7. ADR 0013、ADR 0015；
+8. 未冲突的 Ticket acceptance criteria；
+9. 当前实现与测试。
 
 历史 Ticket 中的 Negative Box、Prompt Brush、Mask Constraint、Multiplex static path、Route fallback、backend registry 和 adaptive planner 文字均不具有当前规范效力，除非本文件明确保留。
 
@@ -669,6 +670,11 @@ Ticket 13 is the sole current authority for：
 
 Ticket 10 optional conflict diagnostics may enrich inspection but cannot emit weak/low-support readiness claims and do not block release。
 
+Explicit Re-Lift resolves exact current production Evidence and evaluates
+Ticket 13 Lift Readiness before Candidate construction. `Not Ready` publishes
+the readiness result but no Candidate；`Limited` publishes with a warning and
+`Ready` publishes normally。
+
 ---
 
 # 22. Candidate and native operations
@@ -689,6 +695,12 @@ Status Bar keeps Native `SPLATS`/`SELECTED` semantics and projects a separate
 AI Candidate count/lifecycle status. All three surfaces consume one composed
 Candidate Publication/Correction/Application presentation state rather than
 maintaining independent lifecycle copies.
+
+Production Candidate publication consumes only exact current
+`production-direct` per-View Evidence and binds the accepted production
+identity record by `productionIdentityDigest`; native application rechecks the
+same accepted digest. A complete-Contributor/reference Candidate remains
+inspectable for diagnostics but is not production-applicable.
 
 ---
 
@@ -743,6 +755,10 @@ Required validation：
 - Mask Review versus Lift Readiness reason separation；
 - core release without Ticket 10 output；
 - stale identity、attempt/replay、OOM and User Confirmed preservation tests。
+- one checksum-bound production identity joining renderer/runtime、SAM 3 Image
+  Model Manifest、Prompt、geometry、Mask Review、Direct Evidence/aggregation and
+  Lift Readiness policies；
+- production Candidate publication/application from exact Direct Evidence；
 
 ---
 
@@ -779,31 +795,37 @@ Required validation：
 17   Applied Undo-and-Fix + Restart + multi-target lifecycle                implemented
 18   Scene mutation Suspended state + exact Undo recovery                   implemented
 19   Large SceneSnapshot + authoritative RGB / Render Working Set hardening implemented
-20   Evidence artifact / working-set hardening                               ready / current
+20   Evidence artifact / working-set hardening                               implemented
+21   Failure, calibration and release hardening                              implemented
+22   Legacy product/Contributor/SAM/Prompt contraction                       ready / current
 10   optional cross-view Evidence-conflict diagnostics                      nonblocking
 ```
 
 Current ready implementation frontier：
 
 ```text
-parent: 20  Evidence artifact / working-set hardening
+parent: 22  Legacy product/Contributor/SAM/Prompt contraction
 stage:  none
 
-14A (implemented) → 14B (implemented) → 14C (implemented) → 14D (implemented) → 13 (implemented) → 15 (implemented) → 16 (core implemented) → 16A → 16B → 16C / 16D / 16F → 16E → 16G (all implemented) → 17 (implemented) → 18 (implemented) → 19 (implemented) → 20
+14A (implemented) → 14B (implemented) → 14C (implemented) → 14D (implemented) → 13 (implemented) → 15 (implemented) → 16 (core implemented) → 16A → 16B → 16C / 16D / 16F → 16E → 16G (all implemented) → 17 (implemented) → 18 (implemented) → 19 (implemented) → 20 (implemented) → 21 (implemented) → 22
 ```
 
 Compatibility fields：
 
 ```text
-next_implementation_ticket = 20
+next_implementation_ticket = 22
 next_implementation_subticket = none
 ```
 
 Parent Ticket 14, Tickets 13 through 15 and Ticket 16's native-application core
 are closed. Tickets 16A through 16G and Tickets 17–19 are implemented; Ticket
-20 is the current ready frontier. Ticket 10 remains optional
+20 and 21 are implemented; Ticket 22 is the current ready frontier. Ticket 10 remains optional
 and off the core release path。
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no blocking issue reported。
 
 Locked-GPU large-Gallery browser walkthrough for Ticket 09 passed on 2026-08-07。
+
+Ticket 21 locked SAM 3 Image OOM fault injection、production Direct Evidence
+GPU gates and the checksum-bound production identity passed on 2026-08-17；
+calibration evidence is recorded under `docs/ai-select/benchmarks/`。

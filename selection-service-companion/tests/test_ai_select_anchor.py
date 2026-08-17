@@ -236,6 +236,7 @@ class AISelectAnchorRouteTests(unittest.TestCase):
                 'aiSelectImageInstanceMasks',
                 'aiSelectImageInstanceMaskReview',
                 'aiSelectReferenceCandidateReLift',
+                'aiSelectProductionCandidateReLift',
                 'aiSelectProductionDirectEvidence',
                 'binarySceneSnapshotRegistrationV1',
                 'cameraAwareSpatialWorkingSetV1',

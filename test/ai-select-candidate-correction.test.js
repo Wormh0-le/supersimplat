@@ -122,6 +122,7 @@ const result = (views, selected = [5], uncertain = [9]) => {
         }
     });
     return {
+        status: 'complete',
         publicationBinding,
         candidate: createReferenceCandidateArtifact({
             publicationBinding,
@@ -286,6 +287,32 @@ test('failed Re-Lift preserves the previous stale Candidate and exact dirty stat
         h.publications.inspectableCandidate.candidate.selectedStableGaussianIds,
         [5]
     );
+});
+
+test('Not Ready publishes readiness prerequisites but no replacement Candidate', async () => {
+    let prerequisitePublications = 0;
+    const h = harness((_input, views) => ({
+        status: 'not-ready',
+        evidence: result(views).evidence,
+        errorMessage: 'Lift Readiness is Not Ready.',
+        publishPrerequisiteProducts: () => {
+            prerequisitePublications += 1;
+        }
+    }));
+    const previousDigest = h.publications.inspectableCandidate.candidateDigest;
+    h.dirty.markParticipationChanged('view-2');
+
+    await assert.rejects(
+        h.controller.updateCandidate(),
+        /Lift Readiness is Not Ready/
+    );
+
+    assert.equal(prerequisitePublications, 1);
+    assert.equal(
+        h.publications.inspectableCandidate.candidateDigest,
+        previousDigest
+    );
+    assert.equal(h.controller.state.status, 'failed');
 });
 
 test('a Stable input race discards the completed replacement before publication', async () => {

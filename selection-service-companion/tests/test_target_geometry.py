@@ -304,7 +304,7 @@ class TargetGeometryPolicyDigestTests(unittest.TestCase):
 
     def test_planner_policy_descriptor_golden_digest(self) -> None:
         expected_descriptor = {
-            "version": "local-key-view-planner/v2",
+            "version": "local-key-view-planner/v3",
             "extentRadiusFloor": 0.05,
             "distanceExtentFactor": 4.0,
             "distanceNearFactor": 4.0,
@@ -325,6 +325,7 @@ class TargetGeometryPolicyDigestTests(unittest.TestCase):
             "visibilityFailFraction": 0.25,
             "visibilityLimitedFraction": 0.5,
             "replacementDistanceFactors": [0.7, 0.45],
+            "retainFailedSlots": True,
         }
         self.assertEqual(
             local_key_view_policy_digest(),

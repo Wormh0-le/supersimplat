@@ -1,6 +1,8 @@
 import type { AIViewParticipation } from './ai-view';
 
 export const aiSelectViewAssessmentPolicyVersion = 'local-view-assessment/v2';
+export const aiSelectViewAssessmentPolicyDigest =
+    'sha256:411ab66e44fb491fe966c77e46aa0ff161b24c759118508796e328f6f1a96ccb';
 
 export type ViewAssessmentStatus = 'good' | 'review' | 'failed';
 

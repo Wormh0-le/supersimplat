@@ -5,7 +5,10 @@ const test = require('node:test');
 const {
     CandidatePublicationStore,
     createCandidatePublicationBinding,
+    createProductionCandidateArtifact,
+    createProductionCandidatePublicationBinding,
     createReferenceCandidateArtifact,
+    isProductionCandidateArtifact,
     isReferenceCandidateArtifact
 } = require('../.test-dist/src/ai-select/candidate-publication.js');
 const {
@@ -91,6 +94,35 @@ const artifact = (publicationBinding = binding(), overrides = {}) =>
         ...overrides
     });
 
+const productionBinding = () =>
+    createProductionCandidatePublicationBinding({
+        requestBinding: {
+            targetContextId: 'ai-target-context-1',
+            contextRevision: 3,
+            dependencyToken: dependency()
+        },
+        targetSplatId: 'editor-splat:1',
+        stableInputs: [
+            {
+                viewId: 'view-1',
+                participation: 'included',
+                stableMaskDigest: digest('a'),
+                evidenceArtifactDigest: digest('b')
+            }
+        ],
+        aggregationPolicyDigest: digest('d'),
+        sourceEvidencePolicyDigest: digest('e'),
+        evidenceWorkingSetToken: digest('f'),
+        evidenceArtifactSetDigest: digest('1'),
+        productionIdentityDigest: digest('3'),
+        evidenceBackendIdentity: {
+            rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
+            evidenceBackendKind: 'production-direct',
+            evidenceBackendId: 'global-atomic/direct-v1',
+            runtimeBuildId: 'locked-runtime-build-1'
+        }
+    });
+
 test('browser validation matches the Companion reference Candidate golden vector', () => {
     const publicationBinding = createCandidatePublicationBinding(
         contractVector.bindingInput
@@ -128,6 +160,29 @@ test('a complete reference Candidate publishes Selected-only with separate Uncer
     assert.deepEqual(Object.keys(candidate.candidate), [
         'selectedStableGaussianIds'
     ]);
+});
+
+test('a complete production Candidate is current and eligible for native application', () => {
+    const dirty = new AISelectDirtyStateTracker();
+    dirty.markStableMaskPublished('view-1');
+    const store = new CandidatePublicationStore(dirty);
+    const currentBinding = productionBinding();
+    const candidate = createProductionCandidateArtifact({
+        publicationBinding: currentBinding,
+        sourceAggregationResultDigest: digest('2'),
+        selectedStableGaussianIds: [5, 9],
+        uncertainStableGaussianIds: [11]
+    });
+
+    store.publish(candidate, currentBinding);
+
+    assert.ok(isProductionCandidateArtifact(candidate));
+    assert.equal(store.presentationState.status, 'current');
+    assert.equal(store.presentationState.applicationStatus, 'ready');
+    assert.equal(
+        store.inspectableCandidate.productionReadiness,
+        'production-ready'
+    );
 });
 
 test('the product presentation seam reports current and stale Candidate counts', () => {

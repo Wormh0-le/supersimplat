@@ -403,6 +403,7 @@ export class AISelectAnchorController {
     }
 
     exit(): void {
+        const disposedTargetContextId = this.contexts.current?.targetContextId;
         this.contexts.dispose();
         this.getCurrentDependencyToken = null;
         this.anchor = null;
@@ -410,6 +411,9 @@ export class AISelectAnchorController {
         this.activeRender = null;
         this.initialAnchorCameraBinding = null;
         this.releaseIdleSnapshots();
+        if (disposedTargetContextId !== undefined) {
+            this.disposeCompanionTargetContext(disposedTargetContextId);
+        }
         this.publish();
     }
 
@@ -928,6 +932,15 @@ export class AISelectAnchorController {
                 'The Target Splat changed while its Anchor SceneSnapshot was being prepared.'
             );
         }
+        const disposedTargetContextId = restart
+            ? this.contexts.current?.targetContextId
+            : undefined;
+        if (
+            disposedTargetContextId !== undefined &&
+            this.renderer.disposeTargetContext !== undefined
+        ) {
+            await this.disposeCompanionTargetContext(disposedTargetContextId);
+        }
         const context = restart
             ? this.contexts.restart({
                   target: input.target,
@@ -1153,6 +1166,21 @@ export class AISelectAnchorController {
             this.pendingSnapshotRenders.delete(key);
         }
         this.releaseIdleSnapshots();
+    }
+
+    private async disposeCompanionTargetContext(
+        targetContextId: string
+    ): Promise<void> {
+        if (this.renderer.disposeTargetContext === undefined) {
+            return;
+        }
+        try {
+            await this.renderer.disposeTargetContext(targetContextId);
+        } catch {
+            // Companion cleanup is best-effort for local lifecycle progress;
+            // stale browser identity remains the correctness backstop while a
+            // reachable Companion removes replay authority synchronously.
+        }
     }
 
     private releaseIdleSnapshots(): void {

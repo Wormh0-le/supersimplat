@@ -1099,6 +1099,22 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.FORBIDDEN)
             return
 
+        target_prefix = "/ai-select/targets/"
+        if self.path.startswith(target_prefix):
+            target_context_id = unquote(self.path[len(target_prefix):])
+            try:
+                self._state.dispose_ai_select_target(target_context_id)
+            except ValueError as error:
+                self._send_json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"status": "invalidRequest", "message": str(error)},
+                )
+                return
+            self.send_response(HTTPStatus.NO_CONTENT)
+            self._send_cors_headers()
+            self.end_headers()
+            return
+
         binary_upload_id = self._binary_snapshot_upload_id()
         if binary_upload_id is not None:
             self._state.abort_binary_scene_snapshot_upload(binary_upload_id)

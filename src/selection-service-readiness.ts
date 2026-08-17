@@ -7,11 +7,11 @@ import {
     type AnchorRenderResponse
 } from './ai-select/anchor-render-service';
 import {
-    referenceAggregationPolicyDigest,
-    referenceContributorEvidenceBackendId,
-    referenceEvidencePolicyDigest,
-    referenceEvidenceRasterImplementationId,
-    referenceEvidenceRuntimeBuildId,
+    productionAggregationPolicyDigest,
+    productionDirectEvidenceBackendId,
+    productionEvidencePolicyDigest,
+    productionEvidenceRasterImplementationId,
+    productionEvidenceRuntimeBuildId,
     type AISelectCandidateReLiftProvider,
     type CandidateReLiftRequest,
     type CandidateReLiftResponse
@@ -21,48 +21,62 @@ import type {
     DirectEvidenceRequest,
     DirectEvidenceResponse
 } from './ai-select/direct-evidence-service';
-import type {
-    AIViewRenderRequest,
-    AIViewRenderResponse,
-    AISelectGeneratedViewPromptSynthesizer,
-    AISelectImageInstanceMaskReviewProvider,
-    AISelectViewRenderer,
-    GeneratedViewPromptSynthesisRequest,
-    GeneratedViewPromptSynthesisResponse,
-    ImageInstanceMaskReviewRequest,
-    ImageInstanceMaskReviewResponse
+import {
+    aiSelectImageInstancePromptSynthesisPolicyDigest,
+    aiSelectImageInstancePromptSynthesisPolicyVersion,
+    type AIViewRenderRequest,
+    type AIViewRenderResponse,
+    type AISelectGeneratedViewPromptSynthesizer,
+    type AISelectImageInstanceMaskReviewProvider,
+    type AISelectViewRenderer,
+    type GeneratedViewPromptSynthesisRequest,
+    type GeneratedViewPromptSynthesisResponse,
+    type ImageInstanceMaskReviewRequest,
+    type ImageInstanceMaskReviewResponse
 } from './ai-select/generated-view-service';
 import type {
     ImageInstanceMaskProvider,
     ImageInstanceMaskRequest,
     ImageInstanceMaskResult
 } from './ai-select/image-instance-mask';
-import type {
-    AISelectLocalKeyViewPlanner,
-    LocalKeyViewPlanRequest,
-    LocalKeyViewPlanResponse
+import { defaultLiftReadinessPolicy } from './ai-select/lift-readiness';
+import {
+    aiSelectLocalKeyViewPlannerVersion,
+    aiSelectLocalKeyViewPolicyDigest,
+    type AISelectLocalKeyViewPlanner,
+    type LocalKeyViewPlanRequest,
+    type LocalKeyViewPlanResponse
 } from './ai-select/local-key-view-plan';
 import type {
     AISelectMaskProvider,
     AIViewMaskRequest,
     MaskResultResponse
 } from './ai-select/mask-service';
+import { createPromptAdapterCapabilities } from './ai-select/prompt-state';
 import type {
     AISelectSupportProbeProvider,
     AnchorSupportProbeRequest,
     AnchorSupportProbeResponse
 } from './ai-select/support-probe';
-import type {
-    AISelectTargetGeometryProvider,
-    TargetGeometryHintRequest,
-    TargetGeometryHintResponse
+import {
+    aiSelectTargetGeometryPolicyDigest,
+    aiSelectTargetGeometryPolicyVersion,
+    type AISelectTargetGeometryProvider,
+    type TargetGeometryHintRequest,
+    type TargetGeometryHintResponse
 } from './ai-select/target-geometry-hint';
+import {
+    aiSelectViewAssessmentPolicyDigest,
+    aiSelectViewAssessmentPolicyVersion
+} from './ai-select/view-assessment';
 import type { SelectionServiceAdapter } from './object-selection-session';
+import { sha256Digest } from './scene-snapshot-binary';
 
 const selectionServiceProtocolVersion = '2';
 const defaultSelectionServiceEndpoint = 'http://127.0.0.1:8787';
 const currentRuntimeProfileId = 'ai-select-static-image-instance/v1';
 const currentImageInstanceAdapterId = 'sam3-image-instance/v1';
+const currentPromptCompilerPolicyVersion = 'sam3-image-instance-compiler/v1';
 
 type SelectionServiceTransportProfile = 'loopback' | 'trustedLan';
 type SelectionServiceReadinessStatus =
@@ -188,6 +202,8 @@ interface SelectionServiceCapabilities {
     imageInstanceProvider: SelectionServiceImageInstanceProviderCapability;
     directEvidence: SelectionServiceDirectEvidenceCapability;
     referenceCandidateReLift: SelectionServiceReferenceCandidateReLiftCapability;
+    productionCandidateReLift: SelectionServiceProductionCandidateReLiftCapability;
+    productionIdentity: SelectionServiceProductionIdentityCapability;
     supportedOperations: readonly string[];
     activeModelManifest: SelectionServiceModelManifest;
     allowedEditorOrigins: readonly string[];
@@ -219,6 +235,68 @@ interface SelectionServiceReferenceCandidateReLiftCapability {
     readonly evidenceBackendId: string;
     readonly runtimeBuildId: string;
 }
+
+interface SelectionServiceProductionCandidateReLiftCapability {
+    readonly status: 'ready' | 'unavailable';
+    readonly evidencePolicyDigest: string;
+    readonly aggregationPolicyDigest: string;
+    readonly rasterImplementationId: string;
+    readonly evidenceBackendKind: 'production-direct';
+    readonly evidenceBackendId: string;
+    readonly runtimeBuildId: string;
+}
+
+interface SelectionServiceProductionIdentityRecord {
+    readonly schemaVersion: 1;
+    readonly renderer: Readonly<{
+        rgbRendererVersion: string;
+        rasterImplementationId: string;
+        runtimeBuildId: string;
+    }>;
+    readonly model: Readonly<{
+        adapterId: string;
+        manifestId: string;
+        manifestRecordDigest: string;
+        checkpointDigest: string;
+        runtimeConfigDigest: string;
+    }>;
+    readonly prompt: Readonly<{
+        compilerPolicyVersion: string;
+        adapterCapabilityDigest: string;
+        synthesisPolicyVersion: string;
+        synthesisPolicyDigest: string;
+    }>;
+    readonly geometry: Readonly<{
+        targetGeometryPolicyVersion: string;
+        targetGeometryPolicyDigest: string;
+        localViewPolicyVersion: string;
+        localViewPolicyDigest: string;
+    }>;
+    readonly maskReview: Readonly<{
+        policyVersion: string;
+        policyDigest: string;
+    }>;
+    readonly evidence: Readonly<{
+        policyDigest: string;
+        aggregationPolicyDigest: string;
+        rasterImplementationId: string;
+        evidenceBackendKind: 'production-direct';
+        evidenceBackendId: string;
+        runtimeBuildId: string;
+    }>;
+    readonly liftReadiness: Readonly<{
+        policyId: string;
+        policyDigest: string;
+    }>;
+    readonly identityDigest: string;
+}
+
+type SelectionServiceProductionIdentityCapability =
+    | Readonly<{ status: 'unavailable' }>
+    | Readonly<{
+          status: 'ready';
+          record: SelectionServiceProductionIdentityRecord;
+      }>;
 
 interface SelectionServiceReadinessProbe {
     checkHealth(
@@ -358,7 +436,7 @@ const defaultRequirements: SelectionServiceReadinessRequirements = {
     runtimeBuildId: aiSelectRuntimeBuildId,
     modelAdapterId: currentImageInstanceAdapterId,
     aiSelectAnchorOperation: 'aiSelectAnchorRender',
-    candidateReLiftOperation: 'aiSelectReferenceCandidateReLift',
+    candidateReLiftOperation: 'aiSelectProductionCandidateReLift',
     directEvidenceOperation: 'aiSelectProductionDirectEvidence',
     maskProposalOperation: 'aiSelectMaskProposals',
     maskProposalSetSchemaOperation: 'autoMaskProposalSetSchemaV3',
@@ -438,6 +516,40 @@ const copyCapabilities = (
     referenceCandidateReLift: {
         ...capabilities.referenceCandidateReLift
     },
+    productionCandidateReLift: {
+        ...capabilities.productionCandidateReLift
+    },
+    productionIdentity:
+        capabilities.productionIdentity.status === 'unavailable'
+            ? { status: 'unavailable' }
+            : {
+                  status: 'ready',
+                  record: {
+                      ...capabilities.productionIdentity.record,
+                      renderer: {
+                          ...capabilities.productionIdentity.record.renderer
+                      },
+                      model: {
+                          ...capabilities.productionIdentity.record.model
+                      },
+                      prompt: {
+                          ...capabilities.productionIdentity.record.prompt
+                      },
+                      geometry: {
+                          ...capabilities.productionIdentity.record.geometry
+                      },
+                      maskReview: {
+                          ...capabilities.productionIdentity.record.maskReview
+                      },
+                      evidence: {
+                          ...capabilities.productionIdentity.record.evidence
+                      },
+                      liftReadiness: {
+                          ...capabilities.productionIdentity.record
+                              .liftReadiness
+                      }
+                  }
+              },
     supportedOperations: [...capabilities.supportedOperations],
     activeModelManifest: {
         digest: capabilities.activeModelManifest.digest,
@@ -577,6 +689,182 @@ const isNonEmptyString = (value: unknown): value is string => {
     return typeof value === 'string' && value.length > 0;
 };
 
+const hasExactKeys = (
+    value: Record<string, unknown>,
+    keys: readonly string[]
+): boolean =>
+    Object.keys(value).length === keys.length &&
+    keys.every((key) => Object.hasOwn(value, key));
+
+const isDigest = (value: unknown): value is string =>
+    typeof value === 'string' && /^sha256:[a-f0-9]{64}$/i.test(value);
+
+const canonicalIdentityJson = (value: unknown): string => {
+    if (value === null || typeof value !== 'object') {
+        return JSON.stringify(value);
+    }
+    if (Array.isArray(value)) {
+        return `[${value.map(canonicalIdentityJson).join(',')}]`;
+    }
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+        .sort()
+        .map(
+            (key) =>
+                `${JSON.stringify(key)}:${canonicalIdentityJson(record[key])}`
+        )
+        .join(',')}}`;
+};
+
+const modelManifestIdentityDigest = (
+    manifest: SelectionServiceModelManifest
+): string =>
+    sha256Digest(
+        new TextEncoder().encode(
+            canonicalIdentityJson({
+                adapterId: manifest.adapterId,
+                digest: manifest.digest,
+                modelName: manifest.modelName,
+                checkpointDigest: manifest.checkpointDigest,
+                sourceCommit: manifest.sourceCommit,
+                runtimeConfigDigest: manifest.runtimeConfigDigest,
+                weightsBundled: manifest.weightsBundled
+            })
+        )
+    );
+
+const validateProductionIdentity = (
+    value: unknown
+): value is SelectionServiceProductionIdentityCapability => {
+    if (
+        !isRecord(value) ||
+        (value.status !== 'ready' && value.status !== 'unavailable')
+    ) {
+        return false;
+    }
+    if (value.status === 'unavailable') {
+        return Object.keys(value).length === 1;
+    }
+    if (!hasExactKeys(value, ['status', 'record'])) {
+        return false;
+    }
+    const record = value.record;
+    if (
+        !isRecord(record) ||
+        !hasExactKeys(record, [
+            'schemaVersion',
+            'renderer',
+            'model',
+            'prompt',
+            'geometry',
+            'maskReview',
+            'evidence',
+            'liftReadiness',
+            'identityDigest'
+        ]) ||
+        record.schemaVersion !== 1 ||
+        !isRecord(record.renderer) ||
+        !hasExactKeys(record.renderer, [
+            'rgbRendererVersion',
+            'rasterImplementationId',
+            'runtimeBuildId'
+        ]) ||
+        !isRecord(record.model) ||
+        !hasExactKeys(record.model, [
+            'adapterId',
+            'manifestId',
+            'manifestRecordDigest',
+            'checkpointDigest',
+            'runtimeConfigDigest'
+        ]) ||
+        !isRecord(record.prompt) ||
+        !hasExactKeys(record.prompt, [
+            'compilerPolicyVersion',
+            'adapterCapabilityDigest',
+            'synthesisPolicyVersion',
+            'synthesisPolicyDigest'
+        ]) ||
+        !isRecord(record.geometry) ||
+        !hasExactKeys(record.geometry, [
+            'targetGeometryPolicyVersion',
+            'targetGeometryPolicyDigest',
+            'localViewPolicyVersion',
+            'localViewPolicyDigest'
+        ]) ||
+        !isRecord(record.maskReview) ||
+        !hasExactKeys(record.maskReview, ['policyVersion', 'policyDigest']) ||
+        !isRecord(record.evidence) ||
+        !hasExactKeys(record.evidence, [
+            'policyDigest',
+            'aggregationPolicyDigest',
+            'rasterImplementationId',
+            'evidenceBackendKind',
+            'evidenceBackendId',
+            'runtimeBuildId'
+        ]) ||
+        !isRecord(record.liftReadiness) ||
+        !hasExactKeys(record.liftReadiness, ['policyId', 'policyDigest']) ||
+        !isDigest(record.identityDigest)
+    ) {
+        return false;
+    }
+    const requiredStrings = [
+        record.renderer.rgbRendererVersion,
+        record.renderer.rasterImplementationId,
+        record.renderer.runtimeBuildId,
+        record.model.adapterId,
+        record.model.manifestId,
+        record.model.manifestRecordDigest,
+        record.model.checkpointDigest,
+        record.model.runtimeConfigDigest,
+        record.prompt.compilerPolicyVersion,
+        record.prompt.adapterCapabilityDigest,
+        record.prompt.synthesisPolicyVersion,
+        record.prompt.synthesisPolicyDigest,
+        record.geometry.targetGeometryPolicyVersion,
+        record.geometry.targetGeometryPolicyDigest,
+        record.geometry.localViewPolicyVersion,
+        record.geometry.localViewPolicyDigest,
+        record.maskReview.policyVersion,
+        record.maskReview.policyDigest,
+        record.evidence.policyDigest,
+        record.evidence.aggregationPolicyDigest,
+        record.evidence.rasterImplementationId,
+        record.evidence.evidenceBackendId,
+        record.evidence.runtimeBuildId,
+        record.liftReadiness.policyId,
+        record.liftReadiness.policyDigest
+    ];
+    if (
+        !requiredStrings.every(isNonEmptyString) ||
+        ![
+            record.prompt.adapterCapabilityDigest,
+            record.model.manifestRecordDigest,
+            record.model.checkpointDigest,
+            record.model.runtimeConfigDigest,
+            record.renderer.runtimeBuildId,
+            record.prompt.synthesisPolicyDigest,
+            record.geometry.targetGeometryPolicyDigest,
+            record.geometry.localViewPolicyDigest,
+            record.maskReview.policyDigest,
+            record.evidence.policyDigest,
+            record.evidence.aggregationPolicyDigest,
+            record.evidence.runtimeBuildId,
+            record.liftReadiness.policyDigest
+        ].every(isDigest) ||
+        record.evidence.evidenceBackendKind !== 'production-direct'
+    ) {
+        return false;
+    }
+    const payload = Object.fromEntries(
+        Object.entries(record).filter(([key]) => key !== 'identityDigest')
+    );
+    return (
+        record.identityDigest ===
+        sha256Digest(new TextEncoder().encode(canonicalIdentityJson(payload)))
+    );
+};
+
 const validateHealth = (value: unknown): value is SelectionServiceHealth => {
     return (
         isRecord(value) &&
@@ -610,6 +898,8 @@ const validateCapabilities = (
         !isRecord(value.imageInstanceProvider) ||
         !isRecord(value.directEvidence) ||
         !isRecord(value.referenceCandidateReLift) ||
+        !isRecord(value.productionCandidateReLift) ||
+        !validateProductionIdentity(value.productionIdentity) ||
         (value.imageInstanceProvider.status !== 'ready' &&
             value.imageInstanceProvider.status !== 'unavailable') ||
         !isNonEmptyString(value.imageInstanceProvider.adapterId) ||
@@ -634,6 +924,19 @@ const validateCapabilities = (
         candidateReLift.evidenceBackendKind !== 'reference-contributor' ||
         !isNonEmptyString(candidateReLift.evidenceBackendId) ||
         !isNonEmptyString(candidateReLift.runtimeBuildId)
+    ) {
+        return false;
+    }
+    const productionCandidate = value.productionCandidateReLift;
+    if (
+        (productionCandidate.status !== 'ready' &&
+            productionCandidate.status !== 'unavailable') ||
+        !isDigest(productionCandidate.evidencePolicyDigest) ||
+        !isDigest(productionCandidate.aggregationPolicyDigest) ||
+        !isNonEmptyString(productionCandidate.rasterImplementationId) ||
+        productionCandidate.evidenceBackendKind !== 'production-direct' ||
+        !isNonEmptyString(productionCandidate.evidenceBackendId) ||
+        !isNonEmptyString(productionCandidate.runtimeBuildId)
     ) {
         return false;
     }
@@ -712,9 +1015,9 @@ const validateCapabilities = (
         !isNonEmptyString(value.activeModelManifest.digest) ||
         !isNonEmptyString(value.activeModelManifest.adapterId) ||
         !isNonEmptyString(value.activeModelManifest.modelName) ||
-        !isNonEmptyString(value.activeModelManifest.checkpointDigest) ||
+        !isDigest(value.activeModelManifest.checkpointDigest) ||
         !isNonEmptyString(value.activeModelManifest.sourceCommit) ||
-        !isNonEmptyString(value.activeModelManifest.runtimeConfigDigest) ||
+        !isDigest(value.activeModelManifest.runtimeConfigDigest) ||
         typeof value.activeModelManifest.weightsBundled !== 'boolean' ||
         typeof value.activeModelManifest.initialized !== 'boolean'
     ) {
@@ -1277,23 +1580,95 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             !capabilities.supportedOperations.includes(
                 this.requirements.candidateReLiftOperation
             ) ||
-            capabilities.referenceCandidateReLift.evidencePolicyDigest !==
-                referenceEvidencePolicyDigest ||
-            capabilities.referenceCandidateReLift.aggregationPolicyDigest !==
-                referenceAggregationPolicyDigest ||
-            capabilities.referenceCandidateReLift.rasterImplementationId !==
-                referenceEvidenceRasterImplementationId ||
-            capabilities.referenceCandidateReLift.evidenceBackendKind !==
-                'reference-contributor' ||
-            capabilities.referenceCandidateReLift.evidenceBackendId !==
-                referenceContributorEvidenceBackendId ||
-            capabilities.referenceCandidateReLift.runtimeBuildId !==
-                referenceEvidenceRuntimeBuildId
+            capabilities.productionCandidateReLift.status !== 'ready' ||
+            capabilities.productionCandidateReLift.evidencePolicyDigest !==
+                productionEvidencePolicyDigest ||
+            capabilities.productionCandidateReLift.aggregationPolicyDigest !==
+                productionAggregationPolicyDigest ||
+            capabilities.productionCandidateReLift.rasterImplementationId !==
+                productionEvidenceRasterImplementationId ||
+            capabilities.productionCandidateReLift.evidenceBackendKind !==
+                'production-direct' ||
+            capabilities.productionCandidateReLift.evidenceBackendId !==
+                productionDirectEvidenceBackendId ||
+            capabilities.productionCandidateReLift.runtimeBuildId !==
+                productionEvidenceRuntimeBuildId
         ) {
             return diagnostic(
                 'candidateReLiftUnsupported',
                 'Evidence-aware Candidate Re-Lift is unavailable.',
                 'Use the compatible locked Companion release.'
+            );
+        }
+        const productionIdentity = capabilities.productionIdentity;
+        if (productionIdentity.status !== 'ready') {
+            return diagnostic(
+                'candidateReLiftUnsupported',
+                'The production AI Select identity is unavailable.',
+                'Use the fully calibrated locked Companion release.'
+            );
+        }
+        const record = productionIdentity.record;
+        const expectedPromptCapabilities = createPromptAdapterCapabilities({
+            ...provider.promptCapabilities,
+            compilerPolicyVersion: currentPromptCompilerPolicyVersion
+        });
+        if (
+            record.renderer.rgbRendererVersion !==
+                capabilities.renderer.rgbRendererVersion ||
+            record.renderer.rasterImplementationId !==
+                capabilities.directEvidence.rasterImplementationId ||
+            record.renderer.runtimeBuildId !==
+                capabilities.directEvidence.runtimeBuildId ||
+            record.model.adapterId !== modelManifest.adapterId ||
+            record.model.manifestId !== modelManifest.digest ||
+            record.model.manifestRecordDigest !==
+                modelManifestIdentityDigest(modelManifest) ||
+            record.model.checkpointDigest !== modelManifest.checkpointDigest ||
+            record.model.runtimeConfigDigest !==
+                modelManifest.runtimeConfigDigest ||
+            record.prompt.compilerPolicyVersion !==
+                currentPromptCompilerPolicyVersion ||
+            provider.compilerPolicyVersion !==
+                currentPromptCompilerPolicyVersion ||
+            record.prompt.adapterCapabilityDigest !==
+                expectedPromptCapabilities.capabilityDigest ||
+            provider.adapterCapabilityDigest !==
+                expectedPromptCapabilities.capabilityDigest ||
+            record.prompt.synthesisPolicyVersion !==
+                aiSelectImageInstancePromptSynthesisPolicyVersion ||
+            record.prompt.synthesisPolicyDigest !==
+                aiSelectImageInstancePromptSynthesisPolicyDigest ||
+            record.geometry.targetGeometryPolicyVersion !==
+                aiSelectTargetGeometryPolicyVersion ||
+            record.geometry.targetGeometryPolicyDigest !==
+                aiSelectTargetGeometryPolicyDigest ||
+            record.geometry.localViewPolicyVersion !==
+                aiSelectLocalKeyViewPlannerVersion ||
+            record.geometry.localViewPolicyDigest !==
+                aiSelectLocalKeyViewPolicyDigest ||
+            record.maskReview.policyVersion !==
+                aiSelectViewAssessmentPolicyVersion ||
+            record.maskReview.policyDigest !==
+                aiSelectViewAssessmentPolicyDigest ||
+            record.evidence.policyDigest !== productionEvidencePolicyDigest ||
+            record.evidence.aggregationPolicyDigest !==
+                productionAggregationPolicyDigest ||
+            record.evidence.rasterImplementationId !==
+                productionEvidenceRasterImplementationId ||
+            record.evidence.evidenceBackendKind !== 'production-direct' ||
+            record.evidence.evidenceBackendId !==
+                productionDirectEvidenceBackendId ||
+            record.evidence.runtimeBuildId !==
+                productionEvidenceRuntimeBuildId ||
+            record.liftReadiness.policyId !== 'lift-readiness/production-v1' ||
+            record.liftReadiness.policyDigest !==
+                defaultLiftReadinessPolicy().readinessPolicyDigest
+        ) {
+            return diagnostic(
+                'candidateReLiftUnsupported',
+                'The production AI Select identity is incompatible.',
+                'Use the fully calibrated locked Companion release.'
             );
         }
         if (

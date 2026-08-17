@@ -9,10 +9,12 @@ import { type AISelectDirtyStateTracker } from './dirty-state';
 export const referenceCandidateSchemaVersion = 2;
 export const referenceCandidatePublicationKind =
     'reference-pre-production' as const;
+export const productionCandidateSchemaVersion = 1;
+export const productionCandidatePublicationKind = 'production-direct' as const;
 
 export type CandidateParticipation = 'included' | 'excluded';
-export type ReferenceEvidenceBackendKind =
-    'reference-contributor' | 'reference-autograd';
+export type CandidateEvidenceBackendKind =
+    'reference-contributor' | 'reference-autograd' | 'production-direct';
 
 export interface CandidateStableInput {
     readonly viewId: string;
@@ -21,12 +23,21 @@ export interface CandidateStableInput {
     readonly evidenceArtifactDigest: string | null;
 }
 
-export interface ReferenceBackendIdentity {
+export interface CandidateEvidenceBackendIdentity {
     readonly rasterImplementationId: string;
-    readonly evidenceBackendKind: ReferenceEvidenceBackendKind;
+    readonly evidenceBackendKind: CandidateEvidenceBackendKind;
     readonly evidenceBackendId: string;
     readonly runtimeBuildId: string;
 }
+
+export type ReferenceBackendIdentity = CandidateEvidenceBackendIdentity &
+    Readonly<{
+        evidenceBackendKind: 'reference-contributor' | 'reference-autograd';
+    }>;
+
+export type ProductionEvidenceBackendIdentity =
+    CandidateEvidenceBackendIdentity &
+        Readonly<{ evidenceBackendKind: 'production-direct' }>;
 
 export interface CandidatePublicationBindingInput {
     readonly requestBinding: AIRequestBinding;
@@ -37,6 +48,14 @@ export interface CandidatePublicationBindingInput {
     readonly evidenceWorkingSetToken: string;
     readonly evidenceArtifactSetDigest: string;
     readonly referenceBackendIdentity: ReferenceBackendIdentity;
+}
+
+export interface ProductionCandidatePublicationBindingInput extends Omit<
+    CandidatePublicationBindingInput,
+    'referenceBackendIdentity'
+> {
+    readonly productionIdentityDigest: string;
+    readonly evidenceBackendIdentity: ProductionEvidenceBackendIdentity;
 }
 
 export interface CandidatePublicationBinding {
@@ -50,8 +69,26 @@ export interface CandidatePublicationBinding {
     readonly referenceBackendIdentity: ReferenceBackendIdentity;
 }
 
+export interface ProductionCandidatePublicationBinding extends Omit<
+    CandidatePublicationBinding,
+    'referenceBackendIdentity'
+> {
+    readonly productionIdentityDigest: string;
+    readonly evidenceBackendIdentity: ProductionEvidenceBackendIdentity;
+}
+
+export type AnyCandidatePublicationBinding =
+    CandidatePublicationBinding | ProductionCandidatePublicationBinding;
+
 export interface CreateReferenceCandidateArtifactInput {
     readonly publicationBinding: CandidatePublicationBinding;
+    readonly sourceAggregationResultDigest: string;
+    readonly selectedStableGaussianIds: readonly number[];
+    readonly uncertainStableGaussianIds: readonly number[];
+}
+
+export interface CreateProductionCandidateArtifactInput {
+    readonly publicationBinding: ProductionCandidatePublicationBinding;
     readonly sourceAggregationResultDigest: string;
     readonly selectedStableGaussianIds: readonly number[];
     readonly uncertainStableGaussianIds: readonly number[];
@@ -72,8 +109,29 @@ export interface ReferenceCandidateArtifact {
     readonly candidateDigest: string;
 }
 
+export interface ProductionCandidateArtifact {
+    readonly schemaVersion: typeof productionCandidateSchemaVersion;
+    readonly publicationKind: typeof productionCandidatePublicationKind;
+    readonly productionReadiness: 'production-ready';
+    readonly publicationBinding: ProductionCandidatePublicationBinding;
+    readonly sourceAggregationResultDigest: string;
+    readonly candidate: Readonly<{
+        selectedStableGaussianIds: readonly number[];
+    }>;
+    readonly uncertain: Readonly<{
+        stableGaussianIds: readonly number[];
+    }>;
+    readonly candidateDigest: string;
+}
+
+export type CandidateArtifact =
+    ReferenceCandidateArtifact | ProductionCandidateArtifact;
+
 export type CandidateApplicationStatus =
-    'unavailable' | 'blocked-stale' | 'blocked-reference-pre-production';
+    | 'unavailable'
+    | 'ready'
+    | 'blocked-stale'
+    | 'blocked-reference-pre-production';
 
 export type CandidatePublicationState =
     | Readonly<{
@@ -85,14 +143,14 @@ export type CandidatePublicationState =
       }>
     | Readonly<{
           status: 'current' | 'stale';
-          candidate: ReferenceCandidateArtifact['candidate'];
-          uncertain: ReferenceCandidateArtifact['uncertain'];
+          candidate: CandidateArtifact['candidate'];
+          uncertain: CandidateArtifact['uncertain'];
           overlay: Readonly<{
               selectedStableGaussianIds: readonly number[];
               uncertainStableGaussianIds: readonly number[];
           }>;
           applicationStatus:
-              'blocked-stale' | 'blocked-reference-pre-production';
+              'ready' | 'blocked-stale' | 'blocked-reference-pre-production';
       }>;
 
 export type CandidatePublicationListener = (
@@ -220,14 +278,15 @@ const copyRequestBinding = (value: AIRequestBinding): AIRequestBinding => {
 };
 
 const copyBackendIdentity = (
-    value: ReferenceBackendIdentity
-): ReferenceBackendIdentity => {
+    value: CandidateEvidenceBackendIdentity
+): CandidateEvidenceBackendIdentity => {
     return Object.freeze({ ...value });
 };
 
 const isBackendIdentity = (
-    value: unknown
-): value is ReferenceBackendIdentity => {
+    value: unknown,
+    expectedKind?: CandidateEvidenceBackendKind
+): value is CandidateEvidenceBackendIdentity => {
     return (
         isRecord(value) &&
         hasExactKeys(value, [
@@ -238,11 +297,21 @@ const isBackendIdentity = (
         ]) &&
         isNonEmptyString(value.rasterImplementationId) &&
         (value.evidenceBackendKind === 'reference-contributor' ||
-            value.evidenceBackendKind === 'reference-autograd') &&
+            value.evidenceBackendKind === 'reference-autograd' ||
+            value.evidenceBackendKind === 'production-direct') &&
+        (expectedKind === undefined ||
+            value.evidenceBackendKind === expectedKind) &&
         isNonEmptyString(value.evidenceBackendId) &&
         isNonEmptyString(value.runtimeBuildId)
     );
 };
+
+const isReferenceBackendIdentity = (
+    value: unknown
+): value is ReferenceBackendIdentity =>
+    isBackendIdentity(value) &&
+    (value.evidenceBackendKind === 'reference-contributor' ||
+        value.evidenceBackendKind === 'reference-autograd');
 
 const copyStableInputs = (
     value: readonly CandidateStableInput[]
@@ -300,7 +369,7 @@ export const createCandidatePublicationBinding = (
         !isDigest(input.sourceEvidencePolicyDigest) ||
         !isDigest(input.evidenceWorkingSetToken) ||
         !isDigest(input.evidenceArtifactSetDigest) ||
-        !isBackendIdentity(input.referenceBackendIdentity)
+        !isReferenceBackendIdentity(input.referenceBackendIdentity)
     ) {
         throw new Error('AI Select Candidate publication binding is invalid.');
     }
@@ -315,7 +384,40 @@ export const createCandidatePublicationBinding = (
         evidenceArtifactSetDigest: input.evidenceArtifactSetDigest,
         referenceBackendIdentity: copyBackendIdentity(
             input.referenceBackendIdentity
-        )
+        ) as ReferenceBackendIdentity
+    });
+};
+
+export const createProductionCandidatePublicationBinding = (
+    input: ProductionCandidatePublicationBindingInput
+): ProductionCandidatePublicationBinding => {
+    if (
+        !isAIRequestBinding(input.requestBinding) ||
+        !isNonEmptyString(input.targetSplatId) ||
+        !isDigest(input.aggregationPolicyDigest) ||
+        !isDigest(input.sourceEvidencePolicyDigest) ||
+        !isDigest(input.evidenceWorkingSetToken) ||
+        !isDigest(input.evidenceArtifactSetDigest) ||
+        !isDigest(input.productionIdentityDigest) ||
+        !isBackendIdentity(input.evidenceBackendIdentity, 'production-direct')
+    ) {
+        throw new Error(
+            'AI Select production Candidate publication binding is invalid.'
+        );
+    }
+    const stableInputs = copyStableInputs(input.stableInputs);
+    return Object.freeze({
+        requestBinding: copyRequestBinding(input.requestBinding),
+        targetSplatId: input.targetSplatId,
+        stableInputSetDigest: candidateDigest({ stableInputs }),
+        aggregationPolicyDigest: input.aggregationPolicyDigest,
+        sourceEvidencePolicyDigest: input.sourceEvidencePolicyDigest,
+        evidenceWorkingSetToken: input.evidenceWorkingSetToken,
+        evidenceArtifactSetDigest: input.evidenceArtifactSetDigest,
+        productionIdentityDigest: input.productionIdentityDigest,
+        evidenceBackendIdentity: copyBackendIdentity(
+            input.evidenceBackendIdentity
+        ) as ProductionEvidenceBackendIdentity
     });
 };
 
@@ -341,7 +443,35 @@ const isCandidatePublicationBinding = (
         isDigest(value.sourceEvidencePolicyDigest) &&
         isDigest(value.evidenceWorkingSetToken) &&
         isDigest(value.evidenceArtifactSetDigest) &&
-        isBackendIdentity(value.referenceBackendIdentity)
+        isReferenceBackendIdentity(value.referenceBackendIdentity)
+    );
+};
+
+const isProductionCandidatePublicationBinding = (
+    value: unknown
+): value is ProductionCandidatePublicationBinding => {
+    return (
+        isRecord(value) &&
+        hasExactKeys(value, [
+            'requestBinding',
+            'targetSplatId',
+            'stableInputSetDigest',
+            'aggregationPolicyDigest',
+            'sourceEvidencePolicyDigest',
+            'evidenceWorkingSetToken',
+            'evidenceArtifactSetDigest',
+            'productionIdentityDigest',
+            'evidenceBackendIdentity'
+        ]) &&
+        isAIRequestBinding(value.requestBinding) &&
+        isNonEmptyString(value.targetSplatId) &&
+        isDigest(value.stableInputSetDigest) &&
+        isDigest(value.aggregationPolicyDigest) &&
+        isDigest(value.sourceEvidencePolicyDigest) &&
+        isDigest(value.evidenceWorkingSetToken) &&
+        isDigest(value.evidenceArtifactSetDigest) &&
+        isDigest(value.productionIdentityDigest) &&
+        isBackendIdentity(value.evidenceBackendIdentity, 'production-direct')
     );
 };
 
@@ -358,13 +488,44 @@ const copyPublicationBinding = (
         evidenceArtifactSetDigest: value.evidenceArtifactSetDigest,
         referenceBackendIdentity: copyBackendIdentity(
             value.referenceBackendIdentity
-        )
+        ) as ReferenceBackendIdentity
     });
 };
 
+const copyProductionPublicationBinding = (
+    value: ProductionCandidatePublicationBinding
+): ProductionCandidatePublicationBinding => {
+    return Object.freeze({
+        requestBinding: copyRequestBinding(value.requestBinding),
+        targetSplatId: value.targetSplatId,
+        stableInputSetDigest: value.stableInputSetDigest,
+        aggregationPolicyDigest: value.aggregationPolicyDigest,
+        sourceEvidencePolicyDigest: value.sourceEvidencePolicyDigest,
+        evidenceWorkingSetToken: value.evidenceWorkingSetToken,
+        evidenceArtifactSetDigest: value.evidenceArtifactSetDigest,
+        productionIdentityDigest: value.productionIdentityDigest,
+        evidenceBackendIdentity: copyBackendIdentity(
+            value.evidenceBackendIdentity
+        ) as ProductionEvidenceBackendIdentity
+    });
+};
+
+const isAnyCandidatePublicationBinding = (
+    value: unknown
+): value is AnyCandidatePublicationBinding =>
+    isCandidatePublicationBinding(value) ||
+    isProductionCandidatePublicationBinding(value);
+
+const copyAnyPublicationBinding = (
+    value: AnyCandidatePublicationBinding
+): AnyCandidatePublicationBinding =>
+    'referenceBackendIdentity' in value
+        ? copyPublicationBinding(value)
+        : copyProductionPublicationBinding(value);
+
 const bindingsEqual = (
-    left: CandidatePublicationBinding,
-    right: CandidatePublicationBinding
+    left: AnyCandidatePublicationBinding,
+    right: AnyCandidatePublicationBinding
 ): boolean => {
     return candidateCanonicalJson(left) === candidateCanonicalJson(right);
 };
@@ -470,6 +631,102 @@ export const isReferenceCandidateArtifact = (
     }
 };
 
+export const createProductionCandidateArtifact = (
+    input: CreateProductionCandidateArtifactInput
+): ProductionCandidateArtifact => {
+    if (
+        !isProductionCandidatePublicationBinding(input.publicationBinding) ||
+        !isDigest(input.sourceAggregationResultDigest)
+    ) {
+        throw new Error(
+            'AI Select production Candidate artifact input is invalid.'
+        );
+    }
+    const selectedStableGaussianIds = copyStableIds(
+        input.selectedStableGaussianIds
+    );
+    const uncertainStableGaussianIds = copyStableIds(
+        input.uncertainStableGaussianIds
+    );
+    if (
+        selectedStableGaussianIds.some((stableId) =>
+            uncertainStableGaussianIds.includes(stableId)
+        )
+    ) {
+        throw new Error(
+            'AI Select Candidate Selected and Uncertain IDs must be disjoint.'
+        );
+    }
+    const payload = {
+        schemaVersion: productionCandidateSchemaVersion as 1,
+        publicationKind: productionCandidatePublicationKind,
+        productionReadiness: 'production-ready' as const,
+        publicationBinding: copyProductionPublicationBinding(
+            input.publicationBinding
+        ),
+        sourceAggregationResultDigest: input.sourceAggregationResultDigest,
+        candidate: Object.freeze({ selectedStableGaussianIds }),
+        uncertain: Object.freeze({
+            stableGaussianIds: uncertainStableGaussianIds
+        })
+    };
+    return Object.freeze({
+        ...payload,
+        candidateDigest: candidateDigest(payload)
+    });
+};
+
+export const isProductionCandidateArtifact = (
+    value: unknown
+): value is ProductionCandidateArtifact => {
+    if (
+        !isRecord(value) ||
+        !hasExactKeys(value, [
+            'schemaVersion',
+            'publicationKind',
+            'productionReadiness',
+            'publicationBinding',
+            'sourceAggregationResultDigest',
+            'candidate',
+            'uncertain',
+            'candidateDigest'
+        ]) ||
+        value.schemaVersion !== productionCandidateSchemaVersion ||
+        value.publicationKind !== productionCandidatePublicationKind ||
+        value.productionReadiness !== 'production-ready' ||
+        !isProductionCandidatePublicationBinding(value.publicationBinding) ||
+        !isDigest(value.sourceAggregationResultDigest) ||
+        !isDigest(value.candidateDigest) ||
+        !isRecord(value.candidate) ||
+        !hasExactKeys(value.candidate, ['selectedStableGaussianIds']) ||
+        !isSortedStableGaussianIds(value.candidate.selectedStableGaussianIds) ||
+        !isRecord(value.uncertain) ||
+        !hasExactKeys(value.uncertain, ['stableGaussianIds']) ||
+        !isSortedStableGaussianIds(value.uncertain.stableGaussianIds)
+    ) {
+        return false;
+    }
+    const selectedStableGaussianIds = value.candidate
+        .selectedStableGaussianIds as readonly number[];
+    const uncertainStableGaussianIds = value.uncertain
+        .stableGaussianIds as readonly number[];
+    if (
+        selectedStableGaussianIds.some((stableId) =>
+            uncertainStableGaussianIds.includes(stableId)
+        )
+    ) {
+        return false;
+    }
+    const payload = Object.fromEntries(
+        Object.entries(value).filter(([key]) => key !== 'candidateDigest')
+    );
+    try {
+        return value.candidateDigest === candidateDigest(payload);
+    } catch {
+        return false;
+    }
+};
+
 const copyArtifact = (
     value: ReferenceCandidateArtifact
 ): ReferenceCandidateArtifact => {
@@ -481,18 +738,38 @@ const copyArtifact = (
     });
 };
 
+const copyProductionArtifact = (
+    value: ProductionCandidateArtifact
+): ProductionCandidateArtifact =>
+    createProductionCandidateArtifact({
+        publicationBinding: value.publicationBinding,
+        sourceAggregationResultDigest: value.sourceAggregationResultDigest,
+        selectedStableGaussianIds: value.candidate.selectedStableGaussianIds,
+        uncertainStableGaussianIds: value.uncertain.stableGaussianIds
+    });
+
+const isCandidateArtifact = (value: unknown): value is CandidateArtifact =>
+    isReferenceCandidateArtifact(value) || isProductionCandidateArtifact(value);
+
+const copyCandidateArtifact = (value: CandidateArtifact): CandidateArtifact =>
+    value.productionReadiness === 'reference-only'
+        ? copyArtifact(value)
+        : copyProductionArtifact(value);
+
 /** Browser-owned atomic Candidate/Uncertain publication and overlay state. */
 export class CandidatePublicationStore {
-    private published: ReferenceCandidateArtifact | null = null;
-    private currentBinding: CandidatePublicationBinding | null = null;
+    private published: CandidateArtifact | null = null;
+    private currentBinding: AnyCandidatePublicationBinding | null = null;
     private readonly listeners = new Set<CandidatePublicationListener>();
 
     constructor(private readonly dirtyState: AISelectDirtyStateTracker) {
         this.dirtyState.subscribe(() => this.notify());
     }
 
-    get inspectableCandidate(): ReferenceCandidateArtifact | null {
-        return this.published === null ? null : copyArtifact(this.published);
+    get inspectableCandidate(): CandidateArtifact | null {
+        return this.published === null
+            ? null
+            : copyCandidateArtifact(this.published);
     }
 
     get presentationState(): CandidatePublicationState {
@@ -507,13 +784,13 @@ export class CandidatePublicationStore {
         return () => this.listeners.delete(listener);
     }
 
-    synchronizeCurrentBinding(value: CandidatePublicationBinding): void {
-        if (!isCandidatePublicationBinding(value)) {
+    synchronizeCurrentBinding(value: AnyCandidatePublicationBinding): void {
+        if (!isAnyCandidatePublicationBinding(value)) {
             throw new Error(
                 'AI Select Candidate publication binding is invalid.'
             );
         }
-        const replacement = copyPublicationBinding(value);
+        const replacement = copyAnyPublicationBinding(value);
         const previous = this.currentBinding;
         this.currentBinding = replacement;
         try {
@@ -524,12 +801,15 @@ export class CandidatePublicationStore {
         }
     }
 
-    publish(value: unknown, currentBinding: CandidatePublicationBinding): void {
-        if (!isReferenceCandidateArtifact(value)) {
+    publish(
+        value: unknown,
+        currentBinding: AnyCandidatePublicationBinding
+    ): void {
+        if (!isCandidateArtifact(value)) {
             throw new Error('AI Select Candidate artifact is invalid.');
         }
         if (
-            !isCandidatePublicationBinding(currentBinding) ||
+            !isAnyCandidatePublicationBinding(currentBinding) ||
             !bindingsEqual(value.publicationBinding, currentBinding)
         ) {
             throw new Error(
@@ -540,15 +820,15 @@ export class CandidatePublicationStore {
         // Complete validation and copying happen before the transaction. The
         // dirty-state notification is part of the same rollback boundary so
         // a failing observer cannot leave a half-published replacement.
-        const replacement = copyArtifact(value);
+        const replacement = copyCandidateArtifact(value);
         this.dirtyState.markCandidatePublished(() => {
             this.published = replacement;
-            this.currentBinding = copyPublicationBinding(currentBinding);
+            this.currentBinding = copyAnyPublicationBinding(currentBinding);
         });
     }
 
     state(
-        currentBinding: CandidatePublicationBinding
+        currentBinding: AnyCandidatePublicationBinding
     ): CandidatePublicationState {
         if (this.published === null) {
             return Object.freeze({
@@ -560,7 +840,7 @@ export class CandidatePublicationStore {
             });
         }
         const isCurrent =
-            isCandidatePublicationBinding(currentBinding) &&
+            isAnyCandidatePublicationBinding(currentBinding) &&
             bindingsEqual(this.published.publicationBinding, currentBinding) &&
             !this.dirtyState.state.candidateStale;
         const selectedStableGaussianIds = Object.freeze([
@@ -579,9 +859,11 @@ export class CandidatePublicationStore {
                 selectedStableGaussianIds,
                 uncertainStableGaussianIds
             }),
-            applicationStatus: isCurrent
-                ? 'blocked-reference-pre-production'
-                : 'blocked-stale'
+            applicationStatus: !isCurrent
+                ? 'blocked-stale'
+                : this.published.productionReadiness === 'production-ready'
+                  ? 'ready'
+                  : 'blocked-reference-pre-production'
         });
     }
 

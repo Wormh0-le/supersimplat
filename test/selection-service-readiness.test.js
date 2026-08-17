@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
@@ -8,9 +9,121 @@ const {
     SelectionServiceReadiness,
     SelectionServiceTransportError
 } = require('../.test-dist/src/selection-service-readiness.js');
+const {
+    aiSelectImageInstancePromptSynthesisPolicyDigest,
+    aiSelectImageInstancePromptSynthesisPolicyVersion
+} = require('../.test-dist/src/ai-select/generated-view-service.js');
+const {
+    aiSelectLocalKeyViewPlannerVersion,
+    aiSelectLocalKeyViewPolicyDigest
+} = require('../.test-dist/src/ai-select/local-key-view-plan.js');
+const {
+    aiSelectTargetGeometryPolicyDigest,
+    aiSelectTargetGeometryPolicyVersion
+} = require('../.test-dist/src/ai-select/target-geometry-hint.js');
+const {
+    aiSelectViewAssessmentPolicyDigest,
+    aiSelectViewAssessmentPolicyVersion
+} = require('../.test-dist/src/ai-select/view-assessment.js');
+const {
+    defaultLiftReadinessPolicy
+} = require('../.test-dist/src/ai-select/lift-readiness.js');
+const {
+    createPromptAdapterCapabilities
+} = require('../.test-dist/src/ai-select/prompt-state.js');
 
 const editorOrigin = 'https://editor.example';
 const activeModelDigest = 'sha256:model-v1';
+const checkpointDigest = `sha256:${'4'.repeat(64)}`;
+const runtimeConfigDigest = `sha256:${'5'.repeat(64)}`;
+const runtimeBuildId =
+    'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4';
+const evidencePolicyDigest =
+    'sha256:debcee99d261f28ab373b16016447f056872476a960a1af23599cc6ea1f20efd';
+const aggregationPolicyDigest =
+    'sha256:082dd2a030a21448c16571ce28f741fa50023a831990cae3dd3e7bcc16c02454';
+
+const canonicalJson = (value) => {
+    if (value === null || typeof value !== 'object') {
+        return JSON.stringify(value);
+    }
+    if (Array.isArray(value)) {
+        return `[${value.map(canonicalJson).join(',')}]`;
+    }
+    return `{${Object.keys(value)
+        .sort()
+        .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+        .join(',')}}`;
+};
+
+const productionIdentity = () => {
+    const payload = {
+        schemaVersion: 1,
+        renderer: {
+            rgbRendererVersion: 'gsplat-direct-evidence-rgb/v1',
+            rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
+            runtimeBuildId
+        },
+        model: {
+            adapterId: 'sam3-image-instance/v1',
+            manifestId: activeModelDigest,
+            manifestRecordDigest: `sha256:${createHash('sha256')
+                .update(
+                    canonicalJson({
+                        adapterId: 'sam3-image-instance/v1',
+                        digest: activeModelDigest,
+                        modelName: 'SAM 3 Image Instance',
+                        checkpointDigest,
+                        sourceCommit: 'sam3-source-commit',
+                        runtimeConfigDigest,
+                        weightsBundled: false
+                    })
+                )
+                .digest('hex')}`,
+            checkpointDigest,
+            runtimeConfigDigest
+        },
+        prompt: {
+            compilerPolicyVersion: 'sam3-image-instance-compiler/v1',
+            adapterCapabilityDigest: promptCapabilityDigest(),
+            synthesisPolicyVersion:
+                aiSelectImageInstancePromptSynthesisPolicyVersion,
+            synthesisPolicyDigest:
+                aiSelectImageInstancePromptSynthesisPolicyDigest
+        },
+        geometry: {
+            targetGeometryPolicyVersion: aiSelectTargetGeometryPolicyVersion,
+            targetGeometryPolicyDigest: aiSelectTargetGeometryPolicyDigest,
+            localViewPolicyVersion: aiSelectLocalKeyViewPlannerVersion,
+            localViewPolicyDigest: aiSelectLocalKeyViewPolicyDigest
+        },
+        maskReview: {
+            policyVersion: aiSelectViewAssessmentPolicyVersion,
+            policyDigest: aiSelectViewAssessmentPolicyDigest
+        },
+        evidence: {
+            policyDigest: evidencePolicyDigest,
+            aggregationPolicyDigest,
+            rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
+            evidenceBackendKind: 'production-direct',
+            evidenceBackendId: 'global-atomic/direct-v1',
+            runtimeBuildId
+        },
+        liftReadiness: {
+            policyId: defaultLiftReadinessPolicy().policyId,
+            policyDigest: defaultLiftReadinessPolicy().readinessPolicyDigest
+        }
+    };
+    return {
+        status: 'ready',
+        record: {
+            ...payload,
+            identityDigest: `sha256:${createHash('sha256')
+                .update(canonicalJson(payload))
+                .digest('hex')}`
+        }
+    };
+};
 
 const configuration = (overrides = {}) => ({
     endpoint: 'http://127.0.0.1:8787',
@@ -38,6 +151,11 @@ const promptCapabilities = (overrides = {}) => ({
     text: false,
     ...overrides
 });
+const promptCapabilityDigest = () =>
+    createPromptAdapterCapabilities({
+        ...promptCapabilities(),
+        compilerPolicyVersion: 'sam3-image-instance-compiler/v1'
+    }).capabilityDigest;
 
 const capabilities = (overrides = {}) => ({
     protocolVersion: '2',
@@ -50,8 +168,7 @@ const capabilities = (overrides = {}) => ({
         cudaVersion: '12.8',
         rgbRendererVersion: 'gsplat-direct-evidence-rgb/v1',
         rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
-        runtimeBuildId:
-            'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4'
+        runtimeBuildId: runtimeBuildId
     },
     imageInstanceProvider: {
         status: 'ready',
@@ -62,7 +179,7 @@ const capabilities = (overrides = {}) => ({
         },
         promptCapabilities: promptCapabilities(),
         compilerPolicyVersion: 'sam3-image-instance-compiler/v1',
-        adapterCapabilityDigest: `sha256:${'c'.repeat(64)}`
+        adapterCapabilityDigest: promptCapabilityDigest()
     },
     directEvidence: {
         status: 'ready',
@@ -74,8 +191,7 @@ const capabilities = (overrides = {}) => ({
         expectedSourceRevision:
             'sha256:d5568856951be511573c6c766d225f8b95c3ac5850eb965805c2aa632c01976a',
         abiVersion: 'supersimplat-direct-evidence-abi/v1',
-        runtimeBuildId:
-            'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4',
+        runtimeBuildId: runtimeBuildId,
         torchVersion: '2.11.0+cu128',
         cudaVersion: '12.8',
         gsplatSourceCommit: '77ab983ffe43420b2131669cb35776b883ca4c3c',
@@ -96,12 +212,22 @@ const capabilities = (overrides = {}) => ({
         rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
         evidenceBackendKind: 'reference-contributor',
         evidenceBackendId: 'complete-contributor/reference-v1',
-        runtimeBuildId:
-            'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4'
+        runtimeBuildId: runtimeBuildId
     },
+    productionCandidateReLift: {
+        status: 'ready',
+        evidencePolicyDigest,
+        aggregationPolicyDigest,
+        rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
+        evidenceBackendKind: 'production-direct',
+        evidenceBackendId: 'global-atomic/direct-v1',
+        runtimeBuildId
+    },
+    productionIdentity: productionIdentity(),
     supportedOperations: [
         'aiSelectAnchorRender',
         'aiSelectReferenceCandidateReLift',
+        'aiSelectProductionCandidateReLift',
         'aiSelectProductionDirectEvidence',
         'aiSelectMaskProposals',
         'autoMaskProposalSetSchemaV3',
@@ -111,9 +237,9 @@ const capabilities = (overrides = {}) => ({
         digest: activeModelDigest,
         adapterId: 'sam3-image-instance/v1',
         modelName: 'SAM 3 Image Instance',
-        checkpointDigest: 'sha256:checkpoint',
+        checkpointDigest,
         sourceCommit: 'sam3-source-commit',
-        runtimeConfigDigest: 'sha256:runtime',
+        runtimeConfigDigest,
         weightsBundled: false,
         initialized: true
     },
@@ -245,7 +371,7 @@ test('starts automatic readiness as a single flight and binds the Companion Acti
         provider.compilerPolicyVersion,
         'sam3-image-instance-compiler/v1'
     );
-    assert.equal(provider.adapterCapabilityDigest, `sha256:${'c'.repeat(64)}`);
+    assert.equal(provider.adapterCapabilityDigest, promptCapabilityDigest());
     readiness.stop();
 });
 
@@ -376,14 +502,68 @@ test('accepts only the current SAM 3 Image instance Runtime Profile', async () =
 });
 
 test('rejects a Candidate Re-Lift policy, backend, or runtime identity mismatch', async () => {
-    const current = capabilities().referenceCandidateReLift;
+    const current = capabilities().productionCandidateReLift;
     const readiness = new SelectionServiceReadiness({
         probe: new DeterministicReadinessProbe({
             capabilitiesResult: capabilities({
-                referenceCandidateReLift: {
+                productionCandidateReLift: {
                     ...current,
                     runtimeBuildId: `sha256:${'0'.repeat(64)}`
                 }
+            })
+        }),
+        configuration: configuration(),
+        logTransition: () => {}
+    });
+
+    await readiness.refresh();
+
+    assert.equal(readiness.state.status, 'unavailable');
+    assert.equal(readiness.state.diagnostic.code, 'candidateReLiftUnsupported');
+});
+
+test('rejects a correctly checksummed production identity with an extra field', async () => {
+    const identity = productionIdentity();
+    identity.record.unexpected = true;
+    const payload = Object.fromEntries(
+        Object.entries(identity.record).filter(
+            ([key]) => key !== 'identityDigest'
+        )
+    );
+    identity.record.identityDigest = `sha256:${createHash('sha256')
+        .update(canonicalJson(payload))
+        .digest('hex')}`;
+    const readiness = new SelectionServiceReadiness({
+        probe: new DeterministicReadinessProbe({
+            capabilitiesResult: capabilities({
+                productionIdentity: identity
+            })
+        }),
+        configuration: configuration(),
+        logTransition: () => {}
+    });
+
+    await readiness.refresh();
+
+    assert.equal(readiness.state.status, 'unavailable');
+    assert.equal(readiness.state.diagnostic.code, 'invalidCapabilities');
+});
+
+test('rejects a checksummed production identity with a foreign Evidence raster', async () => {
+    const identity = productionIdentity();
+    identity.record.evidence.rasterImplementationId = 'foreign-raster/v1';
+    const payload = Object.fromEntries(
+        Object.entries(identity.record).filter(
+            ([key]) => key !== 'identityDigest'
+        )
+    );
+    identity.record.identityDigest = `sha256:${createHash('sha256')
+        .update(canonicalJson(payload))
+        .digest('hex')}`;
+    const readiness = new SelectionServiceReadiness({
+        probe: new DeterministicReadinessProbe({
+            capabilitiesResult: capabilities({
+                productionIdentity: identity
             })
         }),
         configuration: configuration(),

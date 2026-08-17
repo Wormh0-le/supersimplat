@@ -1,11 +1,11 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.36
+# Eight-Pass Bidirectional Traceability Audit — v2.37
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
 The v2.12–v2.27 sections and detailed pass text below are retained as historical
-audit evidence. The controlling v2.36 result is the post-Ticket-20 closure at
-the end of this document; Ticket 21 still owns calibration of the accepted
-`4–8` initial automatic-View range.
+audit evidence. The controlling v2.37 result is the post-Ticket-21 closure at
+the end of this document; Ticket 22 now owns final legacy product and reference
+path contraction while the accepted `4–8` automatic-View range remains current.
 
 ## Independent review findings corrected in v2.12
 
@@ -637,3 +637,28 @@ owns calibration and release readiness, and the existing reference Candidate
 Re-Lift path is not relabeled as production-ready.
 
 Overall result: **PASS_V2_36**.
+
+## v2.37 Ticket 21 controlling audit result
+
+Ticket 21 is implemented and Ticket 22 is the sole current execution frontier.
+This pass supersedes only the v2.36 frontier values and preserves Ticket 20's
+same-decision GPU evidence.
+
+| Pass | Current v2.37 check                                                                                                                                    | Result |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| 1    | All 31 parent Tickets and the 14A–14D / 16A–16G stage graph resolve; Ticket 22 is the only current frontier                                            | PASS   |
+| 2    | Final Spec v1.3 remains the sole current specification; mapping, manifest, traceability and walkthrough counts agree                                   | PASS   |
+| 3    | The current Runtime Profile admits only SAM 3 Image and publishes one checksum-bound renderer/model/Prompt/geometry/review/Evidence/readiness identity | PASS   |
+| 4    | Render, geometry, plan, Prompt, Mask, Evidence and Lift attempts retain distinct new-intent identity, replay and stale-result boundaries               | PASS   |
+| 5    | SAM, Direct Evidence and Lift OOM/failure paths publish no partial Mask, ref, Evidence or Candidate and preserve User Confirmed authority              | PASS   |
+| 6    | Local planning retains a bounded four-slot initial batch, exposes partial Failed slots without Ready fabrication and meets measured CPU resource gates | PASS   |
+| 7    | Mask Review and `lift-readiness/production-v1` keep quality and visible-support reasons separate; Ticket 10 remains absent and optional                | PASS   |
+| 8    | Repository, lint, locale, build, locked SAM GPU fault injection, locked Direct Evidence GPU and interaction/source audits pass                         | PASS   |
+
+The production Candidate path consumes exact current `production-direct`
+artifacts and is applicable only under the accepted production identity. The
+complete-Contributor Candidate remains reference-only for the Ticket 22
+contraction. Measurements and validation are recorded in
+`docs/ai-select/benchmarks/21-failure-calibration-hardening.md`.
+
+Overall result: **PASS_V2_37**.

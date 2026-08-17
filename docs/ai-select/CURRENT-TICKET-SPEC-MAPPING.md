@@ -1,10 +1,12 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.36
+# Current Final Spec v1.3 → Ticket Mapping — v2.37
 
-Status: **current normative ticket mapping — Ticket 20 implemented; Ticket 21 current**
+Status: **current normative ticket mapping — Ticket 21 implemented; Ticket 22 current**
 
 This file maps every active AI Select parent Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
 
 Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical. ADR 0016 supersedes conflicting route/backend/planner details in ADR 0014 and DG-24 through DG-26. ADR 0017 is current where TargetGeometryHint Geometry Quality and Prompt Support semantics are involved. ADR 0018 supersedes current-facing multi-result authoring and `2–4` / Generate More clauses in ADR 0016.
+ADR 0019 binds the production Direct Evidence Candidate, calibrated readiness
+and checksum-bound release identity implemented by Ticket 21.
 
 All 31 parent Ticket files carry a direct current mapping to Final Spec v1.3.
 Ticket 14A–14D and post-closure Ticket 16A–16G are implementation stages
@@ -111,15 +113,16 @@ implemented prerequisites:
 - 18 — Scene mutation Suspended state + exact Undo recovery
 - 19 — Large SceneSnapshot + authoritative RGB / Render Working Set hardening
 - 20 — Same-decision GPU Evidence + artifact / working-set hardening
+- 21 — Core failure, calibration and release hardening
 
 current execution frontier:
-- 21 — Core failure, calibration and release hardening
+- 22 — Legacy product/Contributor/SAM/Prompt contraction
 ```
 
 Compatibility fields:
 
 ```text
-next_implementation_ticket = 21
+next_implementation_ticket = 22
 next_implementation_subticket = none
 ```
 
@@ -129,8 +132,9 @@ contextual 3D Toolbar retains no More/Restart or retired product Retry/planning
 commands. Ticket 18 implements semantic target-dependency suspension and exact
 Native Undo recovery without remapping preserved artifacts. Ticket 19
 implements large-scene render-path hardening and Ticket 20 implements the
-same-decision Evidence path. Ticket 21 now owns calibration and release
-hardening. Ticket 10 remains optional and may execute
+same-decision Evidence path. Ticket 21 implements production Candidate,
+attempt/OOM atomicity, calibration and production-identity hardening. Ticket
+22 now owns final legacy contraction. Ticket 10 remains optional and may execute
 after parent Ticket 14 + 09 + 07 without blocking the core release path.
 
 Locked-GPU browser E2E for Tickets 08B and 08C completed on 2026-08-07 with no
@@ -173,8 +177,8 @@ The mapping passes only when:
 - older spec names appear only under explicit historical/superseded/migration labels;
 - implemented prerequisites through 12 are not reported as current ready work;
 - parent Ticket 14 and stages 14A through 14D are recognized as implemented;
-- Tickets 13 through 20 and Tickets 16A–16G are recognized as implemented, with Ticket 21 as the current execution frontier;
-- `next_implementation_ticket = 21` and `next_implementation_subticket = none` are current;
+- Tickets 13 through 21 and Tickets 16A–16G are recognized as implemented, with Ticket 22 as the current execution frontier;
+- `next_implementation_ticket = 22` and `next_implementation_subticket = none` are current;
 - Ticket 16B published ADR 0018 and the current Final Spec correction before
   dependent stages;
 - no active closure criterion relies on superseded v1.2 architecture;

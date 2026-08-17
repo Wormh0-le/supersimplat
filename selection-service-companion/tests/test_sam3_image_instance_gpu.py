@@ -213,6 +213,62 @@ class Sam3ImageInstanceGpuTests(unittest.TestCase):
 
             torch.cuda.empty_cache()
 
+    def test_locked_model_oom_fault_publishes_no_candidate_batch(self) -> None:
+        import torch
+
+        checkpoint = Path(os.environ[CHECKPOINT_ENV])
+        repository = Path(__file__).resolve().parents[2]
+        rgb_png = (
+            repository
+            / 'docs/benchmarks/fixtures/office/targets/clothes_rack/frame-set-v1/frames/001-anchor.png'
+        ).read_bytes()
+        with Image.open(io.BytesIO(rgb_png)) as image:
+            width, height = image.size
+        rgb_digest = f'sha256:{hashlib.sha256(rgb_png).hexdigest()}'
+        capabilities = sam3_image_instance_capabilities()
+        model = {
+            'adapterId': SAM3_IMAGE_INSTANCE_ADAPTER_ID,
+            'runtimeConfigDigest': SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
+            'weightsPath': str(checkpoint),
+        }
+        adapter = Sam3ImageInstanceAdapter()
+        runtime = adapter._require_runtime(model)
+
+        class OomRuntime:
+            def set_image(self, value: bytes) -> object:
+                return runtime.set_image(value)
+
+            def predict_inst(self, *_args: object, **_kwargs: object) -> object:
+                raise torch.OutOfMemoryError('injected locked-model OOM')
+
+        adapter._runtime_cache = OomRuntime()
+        try:
+            with self.assertRaises(torch.OutOfMemoryError):
+                adapter.produce_proposals(
+                    model=model,
+                    rgb_png=rgb_png,
+                    width=width,
+                    height=height,
+                    program=self._program(
+                        rgb_digest=rgb_digest,
+                        width=width,
+                        height=height,
+                        capabilities=capabilities,
+                        points=[{
+                            'promptId': 'rack-positive',
+                            'polarity': 'include',
+                            'xPx': 548,
+                            'yPx': 410,
+                        }],
+                        boxes=[],
+                    ),
+                    refinement=None,
+                    cancelled=lambda: False,
+                )
+        finally:
+            del adapter
+            torch.cuda.empty_cache()
+
     @staticmethod
     def _program(
         *,

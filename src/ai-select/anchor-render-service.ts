@@ -63,6 +63,7 @@ export interface AnchorRenderResponse {
 
 export interface AISelectAnchorRenderer {
     renderAnchor(request: AnchorRenderRequest): Promise<AnchorRenderResponse>;
+    disposeTargetContext?(targetContextId: string): Promise<void>;
     // Snapshot residency is Companion-local and disposable. Implementations
     // without the additive 02B protocol deliberately omit this hook.
     releaseSceneSnapshot?(request: AnchorRenderRequest): Promise<void>;

@@ -7,7 +7,7 @@ import {
 import type { AISelectDirtyStateTracker } from './dirty-state';
 
 export const liftReadinessSchemaVersion = 1;
-export const liftReadinessKind = 'lift-readiness/reference-v1' as const;
+export const liftReadinessKind = 'lift-readiness/production-v1' as const;
 
 export type LiftReadinessLevel = 'not-ready' | 'limited' | 'ready';
 export type LiftReadinessSource =
@@ -24,7 +24,7 @@ export type LiftReadinessGenerationState =
 
 export interface LiftReadinessPolicy {
     readonly schemaVersion: 1;
-    readonly policyId: 'lift-readiness/reference-v1';
+    readonly policyId: typeof liftReadinessKind;
     readonly minimumPerGaussianVisibleMass: number;
     readonly minimumLimitedCoverageRatio: number;
     readonly minimumReadyCoverageRatio: number;
@@ -254,7 +254,7 @@ const readinessDigest = (value: unknown): string => {
 export const defaultLiftReadinessPolicy = (): LiftReadinessPolicy => {
     const payload = Object.freeze({
         schemaVersion: 1 as const,
-        policyId: 'lift-readiness/reference-v1' as const,
+        policyId: liftReadinessKind,
         minimumPerGaussianVisibleMass: 0.1,
         minimumLimitedCoverageRatio: 0.25,
         minimumReadyCoverageRatio: 0.75,

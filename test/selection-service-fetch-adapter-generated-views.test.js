@@ -212,6 +212,18 @@ const keyViewPlanResponse = (request, overrides = {}) => ({
                 cameraBinding: { ...generatedCameraBinding, revision: 101 },
                 quality: 'limited',
                 reasons: ['reducedVisibility']
+            },
+            {
+                viewId: 'key-view-0-2',
+                cameraBinding: { ...generatedCameraBinding, revision: 102 },
+                quality: 'failed',
+                reasons: ['insufficientVisibility']
+            },
+            {
+                viewId: 'key-view-0-3',
+                cameraBinding: { ...generatedCameraBinding, revision: 103 },
+                quality: 'failed',
+                reasons: ['projectedSizeTooSmall']
             }
         ],
         planAttemptId: request.planAttemptId,

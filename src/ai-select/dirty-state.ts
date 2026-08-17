@@ -162,6 +162,14 @@ export class AISelectDirtyStateTracker {
         this.publish();
     }
 
+    /** Exact current Evidence/readiness was evaluated without a Candidate. */
+    markLiftReadinessEvaluated(): void {
+        this.evidenceDirtyViewIds.clear();
+        this.liftDirty = false;
+        this.candidateStale = true;
+        this.publish();
+    }
+
     /**
      * A complete, exact-current Re-Lift atomically replaced Candidate and
      * Uncertain. Upstream Prompt/Mask work remains independently dirty.

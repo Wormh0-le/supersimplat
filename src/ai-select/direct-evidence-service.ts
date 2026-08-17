@@ -31,6 +31,8 @@ export const directEvidenceRuntimeBuildId =
     'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4';
 
 export interface DirectEvidenceRequest {
+    /** Execution identity: replay is idempotent, new intent mints a new ID. */
+    readonly evidenceAttemptId: string;
     readonly snapshot: PackedSceneSnapshot;
     readonly currentInput: GaussianEvidenceAdmissionInput;
     readonly cameraBinding: CameraBinding;
@@ -47,6 +49,7 @@ export interface DirectEvidenceTelemetry {
 
 export interface DirectEvidenceResponse {
     readonly status: 'complete';
+    readonly evidenceAttemptId: string;
     readonly requestBinding: AIRequestBinding;
     readonly targetSplatId: string;
     readonly viewId: string;
@@ -115,6 +118,8 @@ export const isDirectEvidenceRequest = (
 ): value is DirectEvidenceRequest => {
     if (
         !isRecord(value) ||
+        typeof value.evidenceAttemptId !== 'string' ||
+        value.evidenceAttemptId.trim().length === 0 ||
         !isPackedSceneSnapshot(value.snapshot) ||
         !isGaussianEvidenceAdmissionInput(value.currentInput) ||
         !isCameraBinding(value.cameraBinding) ||
@@ -174,6 +179,7 @@ export const isDirectEvidenceResponseForRequest = (
 ): value is DirectEvidenceResponse =>
     isRecord(value) &&
     value.status === 'complete' &&
+    value.evidenceAttemptId === request.evidenceAttemptId &&
     isAIRequestBinding(value.requestBinding) &&
     equalBinding(value.requestBinding, request.currentInput.requestBinding) &&
     value.targetSplatId === request.currentInput.targetSplatId &&

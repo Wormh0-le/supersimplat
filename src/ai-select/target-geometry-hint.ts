@@ -18,6 +18,8 @@ import { isMaskArtifact, type MaskArtifact } from './mask-annotation';
  * ownership classification, and it never bounds the Evidence Working Set.
  */
 export const aiSelectTargetGeometryPolicyVersion = 'target-geometry/v2';
+export const aiSelectTargetGeometryPolicyDigest =
+    'sha256:7272aa7cda6d8da9a0916488d91f46e70bdabdb42417351e78bfd485fe10174f';
 
 export const targetGeometryHintSchemaVersion = 2;
 

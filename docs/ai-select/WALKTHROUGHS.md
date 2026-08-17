@@ -1,4 +1,4 @@
-# Final Spec v1.3 Walkthrough Coverage — v2.36
+# Final Spec v1.3 Walkthrough Coverage — v2.37
 
 ## Typical flows
 
@@ -24,6 +24,7 @@
 | WF-18 | Multi-object target lifecycle     | `16G → 17 → 18`                             | Exact Undo-and-Fix, explicit A/B/C Add operations, rotated target identity and durable Native Selection/history        |
 | WF-19 | Scene mutation suspension         | `17 → 18 → 19`                              | Target-scoped mutation preserves artifacts read-only; exact semantic Native Undo resumes with a fresh request revision |
 | WF-20 | Production Direct Evidence        | `19 → 20 → 21`                              | Same-decision RGB-bound P/N/V publishes per Included Stable View without complete Contributor or target-only occlusion |
+| WF-21 | Production Candidate release      | `20 → 21 → 22`                              | Exact Direct Evidence publishes a production-ready Candidate under one checksum-bound production identity              |
 
 ## Error and recovery flows
 
@@ -49,6 +50,18 @@
 | EF-18 | unsafe Undo-and-Fix or late restarted work           | `01/12/17`      | Disable exact-command Undo-and-Fix without traversal; rotated target identity rejects late Mask/Evidence/Lift publication         |
 | EF-19 | target mutation, non-exact Undo or late work         | `01/12/18`      | Remain Suspended until exact dependency restoration; preserve artifacts and discard obsolete request revisions                    |
 | EF-20 | Direct Evidence identity, boundary or kernel failure | `19/20/21`      | Preserve RGB, Stable Mask and prior Candidate; publish no partial Evidence and require expansion, recomputation or normal Re-Lift |
+| EF-21 | Prompt/Mask/Evidence/Lift OOM or stale completion    | `04C/08B/20/21` | Replay the same terminal attempt outcome, publish no partial artifact and let stale browser identity reject late work             |
+
+## Ticket 21 release evidence
+
+The current Runtime Profile validates the production identity joining the
+renderer, active SAM 3 Image adapter/manifest, Prompt, geometry, Mask Review,
+Direct Evidence/aggregation and Lift Readiness policies. Locked SAM GPU tests
+cover Point, Box, refinement and OOM fault injection; locked Direct Evidence
+tests cover same-decision RGB/P/N/V and Working Set semantics. The complete
+calibration and failure record is
+`benchmarks/21-failure-calibration-hardening.md`. Ticket 10 output is absent
+from these gates.
 
 ## Ticket 20 Direct Evidence evidence
 
@@ -59,8 +72,8 @@ full/spatial parity, the known Contributor-alpha mismatch camera and repeated
 atomic results. Browser/Companion contract tests cover exact identity,
 reference/production cache separation and fail-closed response validation.
 Measured numeric, memory, latency, contention and compiler-resource evidence is
-recorded in `benchmarks/20-direct-evidence-hardening.md`. Ticket 21 retains
-calibration and release-readiness ownership.
+recorded in `benchmarks/20-direct-evidence-hardening.md`. Ticket 21 closes the
+calibration and release-readiness handoff.
 
 ## Ticket 18 suspension evidence
 
@@ -104,9 +117,9 @@ production GPU, Companion model-capability or camera-planner quality claim.
 
 ## Coverage result
 
-- typical walkthroughs: 20;
-- error walkthroughs: 20;
-- current ready frontier: Ticket 21;
+- typical walkthroughs: 21;
+- error walkthroughs: 21;
+- current ready frontier: Ticket 22;
 - current product recovery contract: changed intent, manual editing, exclusion,
   replacement View, or normal Re-Lift as applicable;
 - obsolete product planning/recovery controls present: no;

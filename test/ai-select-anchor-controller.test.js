@@ -273,6 +273,33 @@ test('releases Companion-local snapshot residency only after an exited Anchor re
     );
 });
 
+test('exit disposes the exact old target while a new target may start before cleanup returns', async () => {
+    const cleanup = deferred();
+    const disposed = [];
+    const controller = new AISelectAnchorController({
+        renderer: {
+            async renderAnchor(request) {
+                return responseFor(request);
+            },
+            disposeTargetContext(targetContextId) {
+                disposed.push(targetContextId);
+                return cleanup.promise;
+            }
+        }
+    });
+    await controller.start(input());
+    const targetA = controller.state.context.targetContextId;
+
+    controller.exit();
+    await controller.start(input());
+    const targetB = controller.state.context.targetContextId;
+
+    assert.deepEqual(disposed, [targetA]);
+    assert.notEqual(targetB, targetA);
+    cleanup.resolve();
+    await Promise.resolve();
+});
+
 test('releases an idle superseded snapshot when Restart Current Target binds a new scene version', async () => {
     const released = [];
     const controller = new AISelectAnchorController({

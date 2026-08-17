@@ -1,6 +1,6 @@
 # 21 — Attempt / Cancellation / OOM / Atomic Publication + Calibration Hardening
 
-Status: current — ready after implemented Ticket 20
+Status: closed — 2026-08-17; Ticket 22 is current
 
 Blocked by: 20, 18, 02C, 07B, 08B, 13
 
@@ -12,6 +12,7 @@ Optional input, not blocker: 10
 - ADR 0013
 - ADR 0015
 - ADR 0016
+- ADR 0019
 - Tickets 16B and 16G for current product recovery/planning-control retirement
 
 ## Purpose
@@ -102,27 +103,27 @@ Existing User Confirmed Stable Masks survive when their own exact RGB/Mask ident
 
 ## Acceptance criteria
 
-- [ ] full current Runtime Profile admits only the 04C static adapter.
-- [ ] all async artifact families pass distinct-attempt, idempotent replay,
+- [x] full current Runtime Profile admits only the 04C static adapter.
+- [x] all async artifact families pass distinct-attempt, idempotent replay,
       stale-result, cancellation and OOM atomicity tests.
-- [ ] static Multiplex/private-head call audit is clean.
-- [ ] provider request always contains resolvable authoritative RGB.
-- [ ] opaque logits refs never expose raw tensors and invalidate on Companion replacement.
-- [ ] multimask/single-mask/refinement policies are repeatable.
-- [ ] removed Prompt schemas and old cache/manifests fail closed.
-- [ ] TargetGeometryHint/local View resource envelope is calibrated.
-- [ ] The `4–8` initial automatic Generated-View range passes latency, memory,
+- [x] static Multiplex/private-head call audit is clean.
+- [x] provider request always contains resolvable authoritative RGB.
+- [x] opaque logits refs never expose raw tensors and invalidate on Companion replacement.
+- [x] multimask/single-mask/refinement policies are repeatable.
+- [x] removed Prompt schemas and old cache/manifests fail closed.
+- [x] TargetGeometryHint/local View resource envelope is calibrated.
+- [x] The `4–8` initial automatic Generated-View range passes latency, memory,
       failure and partial-usable-output calibration without fabricating Ready
       Views.
-- [ ] Mask Review and Lift Readiness reasons are correctly separated.
-- [ ] core release passes with Ticket 10 absent.
-- [ ] semantic unavailable and technical failure are separately presented.
-- [ ] User Confirmed authority survives refresh/migration.
-- [ ] Evidence/Lift failure preserves Views and Stable Masks.
-- [ ] current Gallery/palette interaction release checks pass.
-- [ ] obsolete product retry/planning commands remain absent and initial
+- [x] Mask Review and Lift Readiness reasons are correctly separated.
+- [x] core release passes with Ticket 10 absent.
+- [x] semantic unavailable and technical failure are separately presented.
+- [x] User Confirmed authority survives refresh/migration.
+- [x] Evidence/Lift failure preserves Views and Stable Masks.
+- [x] current Gallery/palette interaction release checks pass.
+- [x] obsolete product retry/planning commands remain absent and initial
       planning failure recovery is the only retry exception.
-- [ ] production identity record binds renderer, SAM image adapter, Prompt, geometry, review and Evidence policies.
+- [x] production identity record binds renderer, SAM image adapter, Prompt, geometry, review and Evidence policies.
 
 ## Validation
 
@@ -148,3 +149,42 @@ Existing User Confirmed Stable Masks survive when their own exact RGB/Mask ident
 - No automatic Route-A fallback.
 - No new Prompt family.
 - No Candidate provenance UI.
+
+## Implementation record — 2026-08-17
+
+- Runtime readiness now publishes one fail-closed production identity record
+  that binds the locked renderer/runtime, current SAM 3 Image Model Manifest,
+  Prompt compiler/synthesis, TargetGeometryHint/local-View, Mask Review,
+  production Direct Evidence/aggregation and Lift Readiness identities. The
+  browser validates its checksum and all cross-capability bindings before
+  reporting Available.
+- ADR 0019 records the production Candidate, identity and bounded replay
+  decision without changing Ticket 22's legacy-contraction ownership.
+- Candidate Re-Lift now consumes exact current `production-direct` Evidence
+  artifacts, evaluates and publishes Ticket 13 Lift Readiness from that exact
+  aggregation, and publishes a `production-ready` Candidate only for Limited
+  or Ready. Native application
+  remains gated by the exact accepted `productionIdentityDigest` carried by
+  the Candidate publication/application record. The
+  complete-Contributor Candidate path remains reference-only for Ticket 22.
+- Direct Evidence, Prompt synthesis and Candidate Re-Lift gained replayable
+  execution admissions. Same-attempt success/failure is idempotent, normal
+  new intents use distinct IDs, and OOM/failure cannot publish a partial
+  artifact. Existing browser stale-result rejection remains the cancellation
+  correctness boundary.
+- Browser exit/restart sends exact target disposal to the Companion. Admission,
+  Prompt/result and logits cleanup is target-identity-safe, so delayed Target-A
+  cleanup cannot erase a newer Target-B attempt or reusable runtime caches.
+- Partial local plans retain failed slots as inspectable Excluded Views without
+  rendering or fabricating RGB Ready. All-failed initial plans still fail and
+  keep the sole failure-only fresh planning attempt.
+- Mask Review thresholds now have a digest-bound descriptor. Ticket 13
+  readiness thresholds are promoted to `lift-readiness/production-v1`; weak
+  Visible Mass remains outside Mask Review and Ticket 10 remains optional.
+- Calibration measurements, locked GPU results and release checks are recorded
+  in [Ticket 21 failure and calibration hardening](../benchmarks/21-failure-calibration-hardening.md).
+- Final validation passed: `rtk npm test` (650 browser/editor tests and 483
+  Companion tests, with two expected environment-gated skips), `rtk npm run
+lint`, `rtk npm run lint:locales`, `rtk npm run build`, four locked SAM 3
+  Image GPU tests including OOM fault injection, seven locked Direct Evidence
+  GPU tests, JSON/diff checks, and clean Standards/Spec review axes.

@@ -20,6 +20,8 @@ from .reference_gaussian_evidence_aggregation import (
 
 REFERENCE_CANDIDATE_SCHEMA_VERSION: Final = 2
 REFERENCE_CANDIDATE_PUBLICATION_KIND: Final = "reference-pre-production"
+PRODUCTION_CANDIDATE_SCHEMA_VERSION: Final = 1
+PRODUCTION_CANDIDATE_PUBLICATION_KIND: Final = "production-direct"
 _DIGEST_PREFIX: Final = "sha256:"
 _DIGEST_LENGTH: Final = len(_DIGEST_PREFIX) + 64
 _MAX_STABLE_GAUSSIAN_ID: Final = (1 << 32) - 1
@@ -227,6 +229,28 @@ def _is_backend_identity(value: object) -> bool:
     )
 
 
+def _is_production_backend_identity(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and set(value)
+        == {
+            "rasterImplementationId",
+            "evidenceBackendKind",
+            "evidenceBackendId",
+            "runtimeBuildId",
+        }
+        and value.get("evidenceBackendKind") == "production-direct"
+        and all(
+            _is_non_empty_string(value.get(key))
+            for key in (
+                "rasterImplementationId",
+                "evidenceBackendId",
+                "runtimeBuildId",
+            )
+        )
+    )
+
+
 def _is_publication_binding(value: object) -> bool:
     return (
         isinstance(value, dict)
@@ -254,6 +278,78 @@ def _is_publication_binding(value: object) -> bool:
             )
         )
         and _is_backend_identity(value.get("referenceBackendIdentity"))
+    )
+
+
+def _production_publication_binding(
+    aggregation_input: Mapping[str, object],
+    aggregation_result: Mapping[str, object],
+    production_identity_digest: str,
+) -> dict[str, object]:
+    stable_inputs = _stable_input_set(aggregation_input)
+    backend_identities = aggregation_result.get("referenceBackendIdentities")
+    if not isinstance(backend_identities, list) or len(backend_identities) != 1:
+        raise ReferenceCandidatePublicationError(
+            "AI Select production Candidate requires one compatible Evidence backend identity."
+        )
+    backend_identity = backend_identities[0]
+    binding = {
+        "requestBinding": deepcopy(aggregation_result["requestBinding"]),
+        "targetSplatId": aggregation_result["targetSplatId"],
+        "stableInputSetDigest": canonical_json_digest(
+            {"stableInputs": stable_inputs}
+        ),
+        "aggregationPolicyDigest": aggregation_result[
+            "aggregationPolicyDigest"
+        ],
+        "sourceEvidencePolicyDigest": aggregation_result[
+            "sourceEvidencePolicyDigest"
+        ],
+        "evidenceWorkingSetToken": aggregation_result[
+            "evidenceWorkingSetToken"
+        ],
+        "evidenceArtifactSetDigest": aggregation_result[
+            "evidenceArtifactSetDigest"
+        ],
+        "productionIdentityDigest": production_identity_digest,
+        "evidenceBackendIdentity": deepcopy(backend_identity),
+    }
+    if not _is_production_publication_binding(binding):
+        raise ReferenceCandidatePublicationError(
+            "AI Select production Candidate publication binding is invalid."
+        )
+    return binding
+
+
+def _is_production_publication_binding(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and set(value)
+        == {
+            "requestBinding",
+            "targetSplatId",
+            "stableInputSetDigest",
+            "aggregationPolicyDigest",
+            "sourceEvidencePolicyDigest",
+            "evidenceWorkingSetToken",
+            "evidenceArtifactSetDigest",
+            "productionIdentityDigest",
+            "evidenceBackendIdentity",
+        }
+        and _is_request_binding(value.get("requestBinding"))
+        and _is_non_empty_string(value.get("targetSplatId"))
+        and all(
+            _is_digest(value.get(key))
+            for key in (
+                "stableInputSetDigest",
+                "aggregationPolicyDigest",
+                "sourceEvidencePolicyDigest",
+                "evidenceWorkingSetToken",
+                "evidenceArtifactSetDigest",
+            )
+        )
+        and _is_production_backend_identity(value.get("evidenceBackendIdentity"))
+        and _is_digest(value.get("productionIdentityDigest"))
     )
 
 
@@ -361,10 +457,120 @@ def is_reference_candidate_artifact(value: object) -> bool:
         return False
 
 
+def create_production_candidate_artifact(
+    aggregation_input: object,
+    aggregation_result: object,
+    *,
+    production_identity_digest: str,
+) -> dict[str, object]:
+    """Build the production-ready Candidate from exact Direct Evidence."""
+
+    if (
+        not isinstance(aggregation_input, dict)
+        or not isinstance(aggregation_result, dict)
+        or not is_reference_gaussian_evidence_aggregation_result(
+            aggregation_result
+        )
+    ):
+        raise ReferenceCandidatePublicationError(
+            "AI Select production Candidate requires a complete compatible aggregation result."
+        )
+    try:
+        expected_result = aggregate_reference_gaussian_evidence(
+            aggregation_input,
+            aggregation_result["aggregationPolicy"],
+        )
+    except (ReferenceGaussianEvidenceAggregationError, TypeError, ValueError) as error:
+        raise ReferenceCandidatePublicationError(
+            "AI Select production Candidate does not match current aggregation inputs."
+        ) from error
+    if expected_result != aggregation_result:
+        raise ReferenceCandidatePublicationError(
+            "AI Select production Candidate does not match current aggregation inputs."
+        )
+
+    binding = _production_publication_binding(
+        aggregation_input,
+        aggregation_result,
+        production_identity_digest,
+    )
+    payload: dict[str, object] = {
+        "schemaVersion": PRODUCTION_CANDIDATE_SCHEMA_VERSION,
+        "publicationKind": PRODUCTION_CANDIDATE_PUBLICATION_KIND,
+        "productionReadiness": "production-ready",
+        "publicationBinding": binding,
+        "sourceAggregationResultDigest": aggregation_result["resultDigest"],
+        "candidate": {
+            "selectedStableGaussianIds": list(
+                aggregation_result["candidateInputStableGaussianIds"]
+            )
+        },
+        "uncertain": {
+            "stableGaussianIds": list(
+                aggregation_result["uncertainStableGaussianIds"]
+            )
+        },
+    }
+    result = {**payload, "candidateDigest": canonical_json_digest(payload)}
+    if not is_production_candidate_artifact(result):
+        raise ReferenceCandidatePublicationError(
+            "AI Select production Candidate construction did not produce a complete artifact."
+        )
+    return result
+
+
+def is_production_candidate_artifact(value: object) -> bool:
+    if (
+        not isinstance(value, dict)
+        or set(value)
+        != {
+            "schemaVersion",
+            "publicationKind",
+            "productionReadiness",
+            "publicationBinding",
+            "sourceAggregationResultDigest",
+            "candidate",
+            "uncertain",
+            "candidateDigest",
+        }
+        or value.get("schemaVersion") != PRODUCTION_CANDIDATE_SCHEMA_VERSION
+        or value.get("publicationKind") != PRODUCTION_CANDIDATE_PUBLICATION_KIND
+        or value.get("productionReadiness") != "production-ready"
+        or not _is_production_publication_binding(
+            value.get("publicationBinding")
+        )
+        or not _is_digest(value.get("sourceAggregationResultDigest"))
+        or not _is_digest(value.get("candidateDigest"))
+    ):
+        return False
+    candidate = value.get("candidate")
+    uncertain = value.get("uncertain")
+    if (
+        not isinstance(candidate, dict)
+        or set(candidate) != {"selectedStableGaussianIds"}
+        or not isinstance(uncertain, dict)
+        or set(uncertain) != {"stableGaussianIds"}
+        or not _is_stable_id_array(candidate["selectedStableGaussianIds"])
+        or not _is_stable_id_array(uncertain["stableGaussianIds"])
+        or set(candidate["selectedStableGaussianIds"])
+        & set(uncertain["stableGaussianIds"])
+    ):
+        return False
+    payload = {key: item for key, item in value.items() if key != "candidateDigest"}
+    try:
+        return value["candidateDigest"] == canonical_json_digest(payload)
+    except (TypeError, ValueError):
+        return False
+
+
 __all__ = [
+    "PRODUCTION_CANDIDATE_PUBLICATION_KIND",
+    "PRODUCTION_CANDIDATE_SCHEMA_VERSION",
     "REFERENCE_CANDIDATE_PUBLICATION_KIND",
     "REFERENCE_CANDIDATE_SCHEMA_VERSION",
     "ReferenceCandidatePublicationError",
     "create_reference_candidate_artifact",
+    "create_production_candidate_artifact",
+    "is_production_candidate_artifact",
     "is_reference_candidate_artifact",
 ]

@@ -83,11 +83,14 @@ const unavailableReason = (
     if (input.correctionStatus === 'updating') {
         return 'candidate-updating';
     }
-    if (input.liftReadiness.status === 'empty') {
-        return 'readiness-missing';
-    }
-    if (input.liftReadiness.status === 'stale') {
-        return 'readiness-stale';
+    // Empty/stale readiness is resolved by the explicit Re-Lift preflight:
+    // production Direct Evidence is evaluated by Ticket 13 before Candidate
+    // publication. Only an exact current Not Ready artifact blocks the action.
+    if (
+        input.liftReadiness.status === 'empty' ||
+        input.liftReadiness.status === 'stale'
+    ) {
+        return null;
     }
     if (input.liftReadiness.readiness === 'not-ready') {
         return 'readiness-not-ready';

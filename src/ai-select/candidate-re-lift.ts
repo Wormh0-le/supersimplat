@@ -4,9 +4,9 @@ import {
     type CameraBinding
 } from './camera-binding';
 import {
-    createCandidatePublicationBinding,
-    isReferenceCandidateArtifact,
-    type ReferenceCandidateArtifact
+    createProductionCandidatePublicationBinding,
+    isProductionCandidateArtifact,
+    type ProductionCandidateArtifact
 } from './candidate-publication';
 import {
     areTargetDependencyTokensEqual,
@@ -22,6 +22,10 @@ import {
     type GaussianEvidenceAdmissionInput,
     type GaussianEvidenceArtifact
 } from './gaussian-evidence-contract';
+import {
+    isLiftReadinessArtifact,
+    type LiftReadinessArtifact
+} from './lift-readiness';
 import { isMaskArtifact, type MaskArtifact } from './mask-annotation';
 import {
     isPackedSceneSnapshot,
@@ -39,6 +43,13 @@ export const referenceContributorEvidenceBackendId =
     'complete-contributor/reference-v1';
 export const referenceEvidenceRuntimeBuildId =
     'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4';
+export const productionEvidencePolicyDigest = referenceEvidencePolicyDigest;
+export const productionAggregationPolicyDigest =
+    referenceAggregationPolicyDigest;
+export const productionEvidenceRasterImplementationId =
+    'supersimplat-gsplat-direct-evidence/v1';
+export const productionDirectEvidenceBackendId = 'global-atomic/direct-v1';
+export const productionEvidenceRuntimeBuildId = referenceEvidenceRuntimeBuildId;
 
 export interface CandidateReLiftViewInput {
     readonly currentInput: GaussianEvidenceAdmissionInput;
@@ -49,6 +60,8 @@ export interface CandidateReLiftViewInput {
 
 export interface CandidateReLiftRequest {
     readonly liftAttemptId: string;
+    readonly productionIdentityDigest: string;
+    readonly generationState: 'active' | 'stopped' | 'complete' | 'unavailable';
     readonly snapshot: PackedSceneSnapshot;
     readonly requestBinding: AIRequestBinding;
     readonly targetSplatId: string;
@@ -64,14 +77,25 @@ export interface CandidateReLiftEvidenceResult {
     readonly artifact: GaussianEvidenceArtifact;
 }
 
-export interface CandidateReLiftResponse {
-    readonly status: 'complete';
+interface CandidateReLiftResponseBase {
     readonly liftAttemptId: string;
     readonly requestBinding: AIRequestBinding;
     readonly targetSplatId: string;
     readonly evidence: readonly CandidateReLiftEvidenceResult[];
-    readonly candidate: ReferenceCandidateArtifact;
+    readonly liftReadiness: LiftReadinessArtifact;
 }
+
+export interface CandidateReLiftCompleteResponse extends CandidateReLiftResponseBase {
+    readonly status: 'complete';
+    readonly candidate: ProductionCandidateArtifact;
+}
+
+export interface CandidateReLiftNotReadyResponse extends CandidateReLiftResponseBase {
+    readonly status: 'not-ready';
+}
+
+export type CandidateReLiftResponse =
+    CandidateReLiftCompleteResponse | CandidateReLiftNotReadyResponse;
 
 export interface AISelectCandidateReLiftProvider {
     produceCandidateReLift(
@@ -131,6 +155,28 @@ const stableIdsAreSubsetOf = (
     return subsetIndex === subset.length;
 };
 
+const targetStableIds = (
+    snapshot: PackedSceneSnapshot,
+    targetSplatId: string
+): readonly number[] => {
+    const scope = snapshot.authoritativeRenderScope;
+    const target = scope?.entries.find(
+        (entry) => entry.role === 'target' && entry.splatId === targetSplatId
+    );
+    if (
+        scope?.targetSplatId !== targetSplatId ||
+        target === undefined ||
+        target.rowOffset < 0 ||
+        target.rowCount <= 0 ||
+        target.rowOffset + target.rowCount > snapshot.stableIds.length
+    ) {
+        return [];
+    }
+    return [...snapshot.stableIds]
+        .slice(target.rowOffset, target.rowOffset + target.rowCount)
+        .sort((left, right) => left - right);
+};
+
 export const isCandidateReLiftRequest = (
     value: unknown
 ): value is CandidateReLiftRequest => {
@@ -138,6 +184,12 @@ export const isCandidateReLiftRequest = (
         !isRecord(value) ||
         typeof value.liftAttemptId !== 'string' ||
         value.liftAttemptId.length === 0 ||
+        typeof value.productionIdentityDigest !== 'string' ||
+        !/^sha256:[a-f0-9]{64}$/i.test(value.productionIdentityDigest) ||
+        (value.generationState !== 'active' &&
+            value.generationState !== 'stopped' &&
+            value.generationState !== 'complete' &&
+            value.generationState !== 'unavailable') ||
         !isPackedSceneSnapshot(value.snapshot) ||
         !isAIRequestBinding(value.requestBinding) ||
         typeof value.targetSplatId !== 'string' ||
@@ -156,13 +208,15 @@ export const isCandidateReLiftRequest = (
     const snapshotStableIds = [...snapshot.stableIds].sort(
         (left, right) => left - right
     );
+    const targetIds = targetStableIds(snapshot, targetSplatId);
     const universe = value.classificationUniverseStableGaussianIds;
     const scope = value.classificationScopeStableGaussianIds;
     return (
         requestBinding.dependencyToken.splatId === targetSplatId &&
         snapshot.sceneId === targetSplatId &&
         evidenceWorkingSet.targetSplatId === targetSplatId &&
-        stableIdsEqual(universe, snapshotStableIds) &&
+        targetIds.length > 0 &&
+        stableIdsEqual(universe, targetIds) &&
         stableIdsAreSubsetOf(scope, universe) &&
         stableIdsAreSubsetOf(evidenceWorkingSet.stableGaussianIds, universe) &&
         value.views.every((entry) => {
@@ -183,30 +237,34 @@ export const isCandidateReLiftRequest = (
                 currentInput.evidenceWorkingSet.evidenceWorkingSetToken ===
                     evidenceWorkingSet.evidenceWorkingSetToken &&
                 currentInput.evidencePolicyDigest ===
-                    referenceEvidencePolicyDigest &&
+                    productionEvidencePolicyDigest &&
                 currentInput.rasterImplementationId ===
-                    referenceEvidenceRasterImplementationId &&
-                currentInput.evidenceBackendKind === 'reference-contributor' &&
+                    productionEvidenceRasterImplementationId &&
+                currentInput.evidenceBackendKind === 'production-direct' &&
                 currentInput.evidenceBackendId ===
-                    referenceContributorEvidenceBackendId &&
+                    productionDirectEvidenceBackendId &&
                 currentInput.runtimeBuildId ===
-                    referenceEvidenceRuntimeBuildId &&
-                currentInput.renderWorkingSet.renderWorkingSetToken ===
-                    snapshot.contentDigest &&
+                    productionEvidenceRuntimeBuildId &&
                 currentInput.renderWorkingSet.targetSplatId === targetSplatId &&
                 currentInput.renderWorkingSet.completeness === 'complete' &&
                 areTargetDependencyTokensEqual(
                     currentInput.renderWorkingSet.dependencyToken,
                     requestBinding.dependencyToken
                 ) &&
-                stableIdsEqual(
+                stableIdsAreSubsetOf(
                     currentInput.renderWorkingSet.stableGaussianIds,
                     snapshotStableIds
                 ) &&
                 currentInput.view.cameraBindingDigest ===
                     cameraBindingDigest(entry.cameraBinding) &&
                 currentInput.view.rgbDigest !== undefined &&
-                currentInput.view.stableMaskDigest === entry.stableMask.digest
+                currentInput.view.stableMaskDigest ===
+                    entry.stableMask.digest &&
+                (currentInput.view.participation === 'excluded' ||
+                    isCurrentGaussianEvidenceArtifact(
+                        entry.cachedArtifact,
+                        currentInput
+                    ))
             );
         }) &&
         new Set(value.views.map((entry) => entry.currentInput.view.viewId))
@@ -220,13 +278,16 @@ export const isCandidateReLiftResponseForRequest = (
 ): value is CandidateReLiftResponse => {
     if (
         !isRecord(value) ||
-        value.status !== 'complete' ||
+        (value.status !== 'complete' && value.status !== 'not-ready') ||
         value.liftAttemptId !== request.liftAttemptId ||
         value.targetSplatId !== request.targetSplatId ||
         !isAIRequestBinding(value.requestBinding) ||
         !bindingMatches(value.requestBinding, request.requestBinding) ||
         !Array.isArray(value.evidence) ||
-        !isReferenceCandidateArtifact(value.candidate)
+        !isLiftReadinessArtifact(value.liftReadiness) ||
+        (value.status === 'complete'
+            ? !isProductionCandidateArtifact(value.candidate)
+            : value.candidate !== undefined)
     ) {
         return false;
     }
@@ -262,39 +323,24 @@ export const isCandidateReLiftResponseForRequest = (
     ) {
         return false;
     }
-    const candidate = value.candidate;
-    const publicationBinding = candidate.publicationBinding;
+    const readiness = value.liftReadiness;
+    if (
+        !bindingMatches(readiness.requestBinding, request.requestBinding) ||
+        readiness.targetSplatId !== request.targetSplatId ||
+        readiness.evidenceWorkingSetToken !==
+            request.evidenceWorkingSet.evidenceWorkingSetToken ||
+        readiness.generationState !== request.generationState ||
+        readiness.source !== 'formal-evidence' ||
+        (value.status === 'not-ready') !== (readiness.readiness === 'not-ready')
+    ) {
+        return false;
+    }
     const evidenceByView = new Map(
         evidence.map((entry) => [
             (entry as CandidateReLiftEvidenceResult).viewId,
             (entry as CandidateReLiftEvidenceResult).artifact
         ])
     );
-    const expectedBinding = createCandidatePublicationBinding({
-        requestBinding: request.requestBinding,
-        targetSplatId: request.targetSplatId,
-        stableInputs: request.views.map((entry) => ({
-            viewId: entry.currentInput.view.viewId,
-            participation: entry.currentInput.view.participation,
-            stableMaskDigest: entry.currentInput.view.stableMaskDigest ?? null,
-            evidenceArtifactDigest:
-                entry.currentInput.view.participation === 'included'
-                    ? (evidenceByView.get(entry.currentInput.view.viewId)
-                          ?.artifactDigest ?? null)
-                    : null
-        })),
-        aggregationPolicyDigest: referenceAggregationPolicyDigest,
-        sourceEvidencePolicyDigest: referenceEvidencePolicyDigest,
-        evidenceWorkingSetToken:
-            request.evidenceWorkingSet.evidenceWorkingSetToken,
-        evidenceArtifactSetDigest: publicationBinding.evidenceArtifactSetDigest,
-        referenceBackendIdentity: {
-            rasterImplementationId: referenceEvidenceRasterImplementationId,
-            evidenceBackendKind: 'reference-contributor',
-            evidenceBackendId: referenceContributorEvidenceBackendId,
-            runtimeBuildId: referenceEvidenceRuntimeBuildId
-        }
-    });
     const artifactSetDigest = sha256Digest(
         new TextEncoder().encode(
             JSON.stringify({
@@ -309,6 +355,40 @@ export const isCandidateReLiftResponseForRequest = (
             })
         )
     );
+    if (readiness.evidenceArtifactSetDigest !== artifactSetDigest) {
+        return false;
+    }
+    if (value.status === 'not-ready') {
+        return true;
+    }
+    const candidate = value.candidate as ProductionCandidateArtifact;
+    const publicationBinding = candidate.publicationBinding;
+    const expectedBinding = createProductionCandidatePublicationBinding({
+        requestBinding: request.requestBinding,
+        targetSplatId: request.targetSplatId,
+        stableInputs: request.views.map((entry) => ({
+            viewId: entry.currentInput.view.viewId,
+            participation: entry.currentInput.view.participation,
+            stableMaskDigest: entry.currentInput.view.stableMaskDigest ?? null,
+            evidenceArtifactDigest:
+                entry.currentInput.view.participation === 'included'
+                    ? (evidenceByView.get(entry.currentInput.view.viewId)
+                          ?.artifactDigest ?? null)
+                    : null
+        })),
+        aggregationPolicyDigest: productionAggregationPolicyDigest,
+        sourceEvidencePolicyDigest: productionEvidencePolicyDigest,
+        evidenceWorkingSetToken:
+            request.evidenceWorkingSet.evidenceWorkingSetToken,
+        evidenceArtifactSetDigest: publicationBinding.evidenceArtifactSetDigest,
+        productionIdentityDigest: request.productionIdentityDigest,
+        evidenceBackendIdentity: {
+            rasterImplementationId: productionEvidenceRasterImplementationId,
+            evidenceBackendKind: 'production-direct',
+            evidenceBackendId: productionDirectEvidenceBackendId,
+            runtimeBuildId: productionEvidenceRuntimeBuildId
+        }
+    });
     return (
         bindingMatches(
             publicationBinding.requestBinding,
@@ -324,6 +404,10 @@ export const isCandidateReLiftResponseForRequest = (
         publicationBinding.evidenceWorkingSetToken ===
             expectedBinding.evidenceWorkingSetToken &&
         publicationBinding.evidenceArtifactSetDigest === artifactSetDigest &&
+        publicationBinding.productionIdentityDigest ===
+            request.productionIdentityDigest &&
+        candidate.sourceAggregationResultDigest ===
+            readiness.aggregationResultDigest &&
         stableIdsAreSubsetOf(
             candidate.candidate.selectedStableGaussianIds,
             request.classificationScopeStableGaussianIds
@@ -332,7 +416,7 @@ export const isCandidateReLiftResponseForRequest = (
             candidate.uncertain.stableGaussianIds,
             request.classificationScopeStableGaussianIds
         ) &&
-        JSON.stringify(publicationBinding.referenceBackendIdentity) ===
-            JSON.stringify(expectedBinding.referenceBackendIdentity)
+        JSON.stringify(publicationBinding.evidenceBackendIdentity) ===
+            JSON.stringify(expectedBinding.evidenceBackendIdentity)
     );
 };

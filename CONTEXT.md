@@ -2,7 +2,7 @@
 
 This context defines the current **AI Select Final Spec v1.3** vocabulary for turning a user's object-level intent into a native SuperSplat Gaussian Selection.
 
-Final Spec v1.3 retains the mask-conditioned direct-Evidence product/lifecycle model while standardizing the official SAM 3 Image static instance workflow, single-result Mask authoring, retained-support TargetGeometryHint semantics, and bounded local Key-View acquisition. ADR 0018 is current for single-result authoring and the `4–8` initial automatic-View range. Final Spec v1.1, its Amendments, and Final Spec v1.2 are historical where superseded. Historical v1.0 Contributor terminology remains valid only for migration, reference fixtures, diagnostics, and the explicit debug/reference backend.
+Final Spec v1.3 retains the mask-conditioned direct-Evidence product/lifecycle model while standardizing the official SAM 3 Image static instance workflow, single-result Mask authoring, retained-support TargetGeometryHint semantics, and bounded local Key-View acquisition. ADR 0018 is current for single-result authoring and the `4–8` initial automatic-View range; ADR 0019 is current for production Candidate publication, calibrated readiness and production identity. Final Spec v1.1, its Amendments, and Final Spec v1.2 are historical where superseded. Historical v1.0 Contributor terminology remains valid only for migration, reference fixtures, diagnostics, and the explicit debug/reference backend.
 
 ## Current Product Vocabulary
 
@@ -15,7 +15,7 @@ The editor-owned native set of Gaussian IDs/indices targeted by existing SuperSp
 _Avoid_: 3D mask, semantic object
 
 **AI Candidate**  
-The transient Selected Gaussian set produced by Gaussian Lifting from the current Included Stable View Annotations and their valid Evidence. It does not modify Native Selection until the user explicitly chooses Set, Add, Remove, or Intersect.  
+The transient Selected Gaussian set produced by Gaussian Lifting from the current Included Stable View Annotations and their valid production Direct Evidence. A complete current Lift publishes a `production-ready` Candidate bound to the exact accepted `productionIdentityDigest`; native application rechecks that identity and does not modify Native Selection until the user explicitly chooses Set, Add, Remove, or Intersect.  
 _Avoid_: committed selection, editable 3D mask
 
 **AITarget / Target Splat**  
@@ -284,7 +284,7 @@ A separate measure of useful directional/viewpoint diversity. The current refere
 _Avoid_: View count
 
 **Lift Readiness**  
-The versioned, target-local derived state Not Ready, Limited, or Ready based on exact Included Evidence, Observation Coverage, useful directional diversity, generation state, and required identities/artifacts rather than a universal fixed View count. `lift-readiness/reference-v1` is the current reference/calibration policy; its thresholds do not claim production calibration until Ticket 21 closes. Stable input changes keep the last result inspectable but stale.  
+The versioned, target-local derived state Not Ready, Limited, or Ready based on exact Included Evidence, Observation Coverage, useful directional diversity, generation state, and required identities/artifacts rather than a universal fixed View count. `lift-readiness/production-v1` is the calibrated current policy. Explicit Re-Lift evaluates missing/stale readiness from exact current production Evidence before Candidate construction; Not Ready publishes readiness but no Candidate. Stable input changes keep the last result inspectable but stale.  
 _Avoid_: fixed N-view gate
 
 **Adaptive View Planner**  
@@ -377,6 +377,10 @@ _Avoid_: Ping status, model picker, task progress
 **AI Select Runtime Profile**
 The versioned set of protocol, renderer, Active Model, backend, and policy capabilities required by one editor build before AI Select Availability may become Available. Optional future capabilities do not enter the Profile until the product workflow requires them.
 _Avoid_: process reachability, unversioned feature checklist
+
+**Production Identity Record**
+The checksum-bound Runtime Profile record that joins the exact authoritative renderer/runtime, active SAM 3 Image Model Manifest, Prompt compiler/synthesis, TargetGeometryHint/local-View, Mask Review, production Direct Evidence/aggregation, and Lift Readiness identities. It is Ready only when every bound production component is Ready and mutually consistent. A changed component rotates the identity and blocks stale Candidate publication or native application.
+_Avoid_: unversioned release label, browser-selected model, reference Candidate identity
 
 **Selection Service Readiness**  
 The technical condition in which a reachable Companion has satisfied the current AI Select Runtime Profile, including successful initialization of its Active Model and required locked runtime. Readiness is distinct from user-facing Availability, task outcome, and execution capacity.

@@ -98,17 +98,17 @@ test('Re-Lift maps absent-input, current, stale, updating and failed Candidate s
     );
 });
 
-test('current exact-bound Lift Readiness gates Re-Lift without changing evaluation', () => {
+test('Re-Lift evaluates missing/stale readiness before Candidate publication', () => {
     assert.equal(
         mapWorkAreaActions(input({ liftReadiness: emptyReadiness })).reLift
-            .reason,
-        'readiness-missing'
+            .enabled,
+        true
     );
     assert.equal(
         mapWorkAreaActions(
             input({ liftReadiness: readiness('ready', 'stale') })
-        ).reLift.reason,
-        'readiness-stale'
+        ).reLift.enabled,
+        true
     );
     assert.equal(
         mapWorkAreaActions(input({ liftReadiness: readiness('not-ready') }))

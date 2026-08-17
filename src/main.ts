@@ -638,6 +638,15 @@ const main = async () => {
         masks: aiSelectMaskController,
         generatedViews: aiSelectGeneratedViews,
         candidatePublications: aiSelectCandidatePublications,
+        liftReadiness: aiSelectLiftReadiness,
+        getProductionIdentityDigest: () => {
+            const identity =
+                selectionServiceReadiness.state.capabilities
+                    ?.productionIdentity;
+            return identity?.status === 'ready'
+                ? identity.record.identityDigest
+                : null;
+        },
         provider: selectionServiceAdapter
     });
     aiSelectController.subscribe((state) => {
@@ -671,12 +680,15 @@ const main = async () => {
             ? 'development-reference'
             : 'production',
         getAcceptedRuntime: () => {
-            if (!referenceCandidateApplicationEnabled) {
-                return null;
-            }
             const readiness = selectionServiceReadiness.state;
-            const capability = readiness.capabilities?.referenceCandidateReLift;
-            if (readiness.status !== 'available' || capability === undefined) {
+            const capability = referenceCandidateApplicationEnabled
+                ? readiness.capabilities?.referenceCandidateReLift
+                : readiness.capabilities?.productionCandidateReLift;
+            if (
+                readiness.status !== 'available' ||
+                capability === undefined ||
+                ('status' in capability && capability.status !== 'ready')
+            ) {
                 return null;
             }
             return {
@@ -685,7 +697,14 @@ const main = async () => {
                 evidenceBackendId: capability.evidenceBackendId,
                 runtimeBuildId: capability.runtimeBuildId,
                 sourceEvidencePolicyDigest: capability.evidencePolicyDigest,
-                aggregationPolicyDigest: capability.aggregationPolicyDigest
+                aggregationPolicyDigest: capability.aggregationPolicyDigest,
+                productionIdentityDigest: referenceCandidateApplicationEnabled
+                    ? null
+                    : readiness.capabilities?.productionIdentity.status ===
+                        'ready'
+                      ? readiness.capabilities.productionIdentity.record
+                            .identityDigest
+                      : null
             };
         },
         getTarget: () =>

@@ -118,6 +118,10 @@ production Evidence/Re-Lift vertical slice must invoke the evaluator and
 publish its exact binding before a user-facing readiness row is shipped.
 Ticket 20/21 retain those responsibilities.
 
+Ticket 21 subsequently calibrated and promoted this policy to
+`lift-readiness/production-v1` without moving weak/low Visible Mass into Mask
+Review or making Ticket 10 a release dependency.
+
 ## Post-16A product gate
 
 The checked `Generate More` item above records the implemented evaluator-era

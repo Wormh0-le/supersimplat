@@ -2,7 +2,7 @@
 
 The ``target-geometry/v2`` policy compresses the exact confirmed Anchor Stable
 Mask into one compact visible-surface geometry hint, and the
-``local-key-view-planner/v2`` policy turns that hint into a small bounded local
+``local-key-view-planner/v3`` policy turns that hint into a small bounded local
 Key-View batch. Both policies are pure CPU geometry over immutable mmap planes
 and plain mappings, exactly like the Anchor support probe: they never import
 the locked renderer runtime (no torch, no gsplat), never run SAM inference,
@@ -27,7 +27,7 @@ from .support_probe import AnchorSupportProbeCamera
 
 
 AI_SELECT_TARGET_GEOMETRY_POLICY_VERSION = "target-geometry/v2"
-AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION = "local-key-view-planner/v2"
+AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION = "local-key-view-planner/v3"
 TARGET_GEOMETRY_HINT_SCHEMA_VERSION = 2
 LOCAL_KEY_VIEW_PLAN_SCHEMA_VERSION = 1
 
@@ -167,6 +167,7 @@ def local_key_view_policy_descriptor() -> dict[str, object]:
         "visibilityFailFraction": _VISIBILITY_FAIL_FRACTION,
         "visibilityLimitedFraction": _VISIBILITY_LIMITED_FRACTION,
         "replacementDistanceFactors": list(_REPLACEMENT_DISTANCE_FACTORS),
+        "retainFailedSlots": True,
     }
 
 
@@ -566,8 +567,9 @@ def plan_local_key_views(
     Every candidate is a bounded local displacement from the Anchor around the
     hint center — left/right azimuth offsets plus modest elevation, never a
     room-scale orbit. Candidates that fail conservative validation trigger a
-    bounded closer replacement; a candidate that still fails is dropped, and a
-    batch with zero accepted views fails closed.
+    bounded closer replacement. A candidate that still fails remains an
+    explicit Failed, Excluded, non-rendered slot so the plan retains its strict
+    4–8-slot envelope; a batch with zero accepted views fails closed.
     """
 
     camera_to_world = anchor_camera_binding.get("cameraToWorld")
@@ -605,12 +607,15 @@ def plan_local_key_views(
     elevation_axis = _normalise(_cross(base_direction, azimuth_axis))
 
     views: list[PlannedLocalKeyView] = []
+    accepted_count = 0
     for slot, (azimuth_degrees, elevation_degrees) in enumerate(offsets):
         direction = _rotate_about(base_direction, azimuth_axis, azimuth_degrees)
         # A positive elevation rotates around the elevation axis so the camera
         # rises along the azimuth axis (the world-up-ish direction).
         direction = _rotate_about(direction, elevation_axis, elevation_degrees)
         accepted: tuple[Mapping[str, object], tuple[str, ...]] | None = None
+        last_candidate: Mapping[str, object] | None = None
+        last_reasons: tuple[str, ...] = ("plannerFailure",)
         for factor in (1.0, *_REPLACEMENT_DISTANCE_FACTORS):
             position = tuple(
                 float(center[axis]) + distance * factor * direction[axis]
@@ -627,12 +632,27 @@ def plan_local_key_views(
                 extent_radius=extent_radius,
                 visible_points=visible_points,
             )
+            last_candidate = candidate
+            last_reasons = reasons
             if passed:
                 accepted = (candidate, reasons)
                 break
         if accepted is None:
+            if last_candidate is None:
+                raise PlannerFailureError(
+                    "The bounded local Key-View candidate was not constructed."
+                )
+            views.append(
+                PlannedLocalKeyView(
+                    view_id=f"key-view-{batch_ordinal}-{slot}",
+                    camera_binding=last_candidate,
+                    quality="failed",
+                    reasons=last_reasons,
+                )
+            )
             continue
         candidate, reasons = accepted
+        accepted_count += 1
         views.append(
             PlannedLocalKeyView(
                 view_id=f"key-view-{batch_ordinal}-{slot}",
@@ -641,7 +661,7 @@ def plan_local_key_views(
                 reasons=reasons,
             )
         )
-    if not views:
+    if accepted_count == 0:
         raise PlannerFailureError(
             "Every bounded local Key-View candidate failed validation."
         )

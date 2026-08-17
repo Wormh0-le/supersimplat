@@ -595,7 +595,14 @@ const planResponseFor = (request, views) => ({
         anchorStableMaskDigest: request.anchorStableMaskDigest,
         targetGeometryHintDigest: request.targetGeometryHint.artifactDigest,
         localViewPolicyDigest: rgbDigest('9'),
-        orderedViews: views ?? [plannedKeyView('key-view-0-0', 100)],
+        orderedViews: views ?? [
+            plannedKeyView('key-view-0-0', 100),
+            ...[1, 2, 3].map((index) => ({
+                ...plannedKeyView(`key-view-0-${index}`, 100 + index),
+                quality: 'failed',
+                reasons: ['insufficientVisibility']
+            }))
+        ],
         planAttemptId: request.planAttemptId,
         artifactDigest: sha256Digest(
             new TextEncoder().encode(request.planAttemptId)

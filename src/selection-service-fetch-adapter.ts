@@ -447,6 +447,8 @@ class FetchSelectionServiceAdapter
         await this.registerPackedSnapshot(request.snapshot);
         const payload = {
             liftAttemptId: request.liftAttemptId,
+            productionIdentityDigest: request.productionIdentityDigest,
+            generationState: request.generationState,
             sceneId: request.snapshot.sceneId,
             sceneVersion: request.snapshot.sceneVersion,
             renderConfigVersion: request.snapshot.renderConfiguration.version,
@@ -535,6 +537,7 @@ class FetchSelectionServiceAdapter
             await this.registerPackedSnapshot(request.snapshot);
         }
         const payload = {
+            evidenceAttemptId: request.evidenceAttemptId,
             sceneId: request.snapshot.sceneId,
             sceneVersion: request.snapshot.sceneVersion,
             renderConfigVersion: request.snapshot.renderConfiguration.version,
@@ -629,6 +632,16 @@ class FetchSelectionServiceAdapter
         );
         this.spatialManifestRegistrationIds.delete(key);
         this.spatialSnapshots.delete(key);
+    }
+
+    async disposeTargetContext(targetContextId: string): Promise<void> {
+        if (targetContextId.trim().length === 0) {
+            return;
+        }
+        await this.requestNoContent(
+            `/ai-select/targets/${encodeURIComponent(targetContextId)}`,
+            'DELETE'
+        );
     }
 
     async cancelUpdate(sessionId: string, requestId: string) {

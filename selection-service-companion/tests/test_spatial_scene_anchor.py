@@ -357,6 +357,7 @@ class SpatialSceneAnchorTests(unittest.TestCase):
 
         with self.assertRaises(MaskSessionError) as raised:
             self.state.produce_ai_select_direct_evidence({
+                "evidenceAttemptId": "direct-evidence-attempt-1",
                 "sceneId": registered.scene_id,
                 "sceneVersion": registered.scene_version,
                 "renderConfigVersion": registered.render_configuration["version"],

@@ -6,6 +6,7 @@ import unittest
 
 from selection_service_companion.candidate_re_lift import (
     CandidateReLiftError,
+    produce_production_candidate_re_lift,
     produce_reference_candidate_re_lift,
     validate_candidate_re_lift_snapshot_binding,
 )
@@ -155,7 +156,86 @@ def request(views: list[dict[str, object]]) -> dict[str, object]:
     }
 
 
+def production_record(view_id: str) -> dict[str, object]:
+    current = current_input(view_id)
+    current["evidenceBackendKind"] = "production-direct"
+    current["evidenceBackendId"] = "global-atomic/direct-v1"
+    return view_record(view_id, cached=artifact(current)) | {
+        "currentInput": current
+    }
+
+
+def production_request(views: list[dict[str, object]]) -> dict[str, object]:
+    value = request(views)
+    value["productionIdentityDigest"] = digest("a")
+    value["generationState"] = "complete"
+    value["classificationUniverseStableGaussianIds"] = [5, 9, 11, 13]
+    value["classificationScopeStableGaussianIds"] = [5, 9, 11, 13]
+    return value
+
+
 class CandidateReLiftTests(unittest.TestCase):
+    def test_production_re_lift_publishes_only_from_complete_direct_evidence(self) -> None:
+        response = produce_production_candidate_re_lift(
+            production_request(
+                [production_record("view-1"), production_record("view-2")]
+            )
+        )
+
+        self.assertEqual(response["candidate"]["productionReadiness"], "production-ready")
+        self.assertEqual(response["liftReadiness"]["readiness"], "ready")
+        self.assertEqual(
+            response["candidate"]["publicationBinding"]["evidenceBackendIdentity"][
+                "evidenceBackendKind"
+            ],
+            "production-direct",
+        )
+        self.assertEqual(
+            response["candidate"]["publicationBinding"][
+                "productionIdentityDigest"
+            ],
+            digest("a"),
+        )
+        self.assertEqual(
+            response["candidate"]["candidate"]["selectedStableGaussianIds"],
+            [5],
+        )
+
+    def test_production_re_lift_rejects_missing_evidence_without_partial_candidate(self) -> None:
+        missing = production_record("view-1")
+        missing.pop("cachedArtifact")
+        with self.assertRaisesRegex(CandidateReLiftError, "incomplete or stale"):
+            produce_production_candidate_re_lift(
+                production_request([missing])
+            )
+
+    def test_production_re_lift_publishes_not_ready_without_a_candidate(self) -> None:
+        current = current_input("view-1")
+        current["evidenceBackendKind"] = "production-direct"
+        current["evidenceBackendId"] = "global-atomic/direct-v1"
+        admitted = admit_gaussian_evidence(current)
+        self.assertEqual(admitted["status"], "admitted")
+        weak = create_gaussian_evidence_artifact(
+            admitted["admission"],
+            {
+                "positiveMass": [0.01, 0.01, 0.01, 0.0],
+                "negativeMass": [0.0, 0.0, 0.0, 0.0],
+                "visibleMass": [0.01, 0.01, 0.01, 0.0],
+            },
+        )
+        record = view_record("view-1") | {
+            "currentInput": current,
+            "cachedArtifact": weak,
+        }
+
+        response = produce_production_candidate_re_lift(
+            production_request([record])
+        )
+
+        self.assertEqual(response["status"], "not-ready")
+        self.assertEqual(response["liftReadiness"]["readiness"], "not-ready")
+        self.assertNotIn("candidate", response)
+
     def test_reuses_only_exact_current_included_evidence(self) -> None:
         first_input = current_input("view-1")
         cached = artifact(first_input)

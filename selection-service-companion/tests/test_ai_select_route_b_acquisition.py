@@ -37,7 +37,10 @@ from selection_service_companion.state import (
     _route_b_camera_binding_digest,
     _route_b_review_box_xyxy,
 )
-from selection_service_companion.target_geometry import target_geometry_policy_digest
+from selection_service_companion.target_geometry import (
+    local_key_view_policy_digest,
+    target_geometry_policy_digest,
+)
 
 
 EDITOR_ORIGIN = 'https://editor.example'
@@ -134,6 +137,7 @@ class FakeSam3ImageRuntime:
         self.predict_calls: list[dict[str, object]] = []
         self.return_empty = False
         self.raise_error = False
+        self.raise_oom = False
 
     def set_image(self, rgb_png: bytes) -> object:
         self.set_image_calls.append(rgb_png)
@@ -141,6 +145,10 @@ class FakeSam3ImageRuntime:
 
     def predict_inst(self, inference_state: object, **kwargs: object) -> tuple[object, object, object]:
         self.predict_calls.append(dict(kwargs))
+        if self.raise_oom:
+            import torch
+
+            raise torch.OutOfMemoryError('injected Route B CUDA OOM')
         if self.raise_error:
             raise RuntimeError('fake image runtime failure')
         if self.return_empty:
@@ -253,13 +261,24 @@ class RouteBAcquisitionTests(unittest.TestCase):
             'targetContextId': self.binding['targetContextId'],
             'anchorStableMaskDigest': self.hint['anchorStableMaskDigest'],
             'targetGeometryHintDigest': self.hint['artifactDigest'],
-            'localViewPolicyDigest': _digest('local-key-view-planner/v1'),
-            'orderedViews': [{
-                'viewId': 'key-view-0-0',
-                'cameraBinding': CAMERA,
-                'quality': 'usable',
-                'reasons': [],
-            }],
+            'localViewPolicyDigest': local_key_view_policy_digest(),
+            'orderedViews': [
+                {
+                    'viewId': 'key-view-0-0',
+                    'cameraBinding': CAMERA,
+                    'quality': 'usable',
+                    'reasons': [],
+                },
+                *[
+                    {
+                        'viewId': f'key-view-0-{index}',
+                        'cameraBinding': CAMERA,
+                        'quality': 'failed',
+                        'reasons': ['insufficientVisibility'],
+                    }
+                    for index in range(1, 4)
+                ],
+            ],
             'planAttemptId': 'local-key-view-plan-attempt-1',
         }
         return {**payload, 'artifactDigest': _digest(payload)}
@@ -370,6 +389,12 @@ class RouteBAcquisitionTests(unittest.TestCase):
         self.assertEqual(prompt['targetGeometryHintDigest'], self.hint['artifactDigest'])
         self.assertEqual(prompt['localKeyViewPlanDigest'], self.plan['artifactDigest'])
         self.assertEqual(prompt['promptSynthesisPolicyDigest'], prompt_synthesis_policy_digest())
+
+        new_intent = self._prompt_request()
+        new_intent['promptSynthesisAttemptId'] = 'prompt-attempt-2'
+        distinct = self.request_json('/ai-select/generated-view-prompts', new_intent)
+        self.assertEqual(distinct['promptSynthesisAttemptId'], 'prompt-attempt-2')
+        self.assertEqual(distinct['prompt']['artifactDigest'], prompt['artifactDigest'])
 
     def test_prompt_synthesis_reports_limited_support_and_rejects_legacy_payloads(self) -> None:
         unavailable_hint = {
@@ -623,6 +648,21 @@ class RouteBAcquisitionTests(unittest.TestCase):
         )
         self.assertEqual(failure['status'], 'imageInstanceMaskError')
         self.assertEqual(failure['code'], 'modelFailure')
+
+        self.runtime.raise_error = False
+        self.runtime.raise_oom = True
+        oom_request = self._inference_request(
+            prompt,
+            identity={
+                **self._inference_request(prompt)['identity'],
+                'inferenceAttemptId': 'inference-attempt-3',
+            },
+        )
+        oom = self.post_error(
+            '/ai-select/image-instance-masks', oom_request, HTTPStatus.CONFLICT
+        )
+        self.assertEqual(oom['code'], 'modelOutOfMemory')
+        self.assertNotIn('masks', oom)
 
     def test_capabilities_advertise_route_b_and_not_the_retired_generated_mask_route(self) -> None:
         capabilities = self.state.capabilities([EDITOR_ORIGIN])

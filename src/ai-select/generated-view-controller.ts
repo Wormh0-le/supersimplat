@@ -143,7 +143,7 @@ export interface GeneratedAIView {
     readonly assessment?: ViewAssessmentResult;
     readonly evidenceStatus: EvidenceStatus;
     readonly selected: boolean;
-    readonly planQuality?: 'usable' | 'limited';
+    readonly planQuality?: 'usable' | 'limited' | 'failed';
     readonly planReasons?: readonly string[];
 }
 
@@ -206,7 +206,7 @@ interface GeneratedViewRecord {
     readonly cameraBinding: CameraBinding;
     /** The accepted plan identity embedded in this View's generated Prompt. */
     localKeyViewPlanDigest?: string;
-    planQuality?: 'usable' | 'limited';
+    planQuality?: 'usable' | 'limited' | 'failed';
     planReasons?: readonly string[];
     renderStatus: GeneratedViewRenderStatus;
     rgb?: AnchorRgbArtifact;
@@ -1016,7 +1016,9 @@ export class AISelectGeneratedViewController {
         this.plannerStatus = 'active';
         this.dirtyState.markTargetGeometryReady();
         this.dirtyState.markLocalKeyViewPlanReady(
-            planned.orderedViews.map((view) => view.viewId)
+            planned.orderedViews
+                .filter((view) => view.quality !== 'failed')
+                .map((view) => view.viewId)
         );
         this.publish();
         this.enqueuePendingViewRenders();
@@ -1119,7 +1121,14 @@ export class AISelectGeneratedViewController {
             localKeyViewPlanDigest,
             planQuality: planned.quality,
             planReasons: planned.reasons,
-            renderStatus: 'pending',
+            renderStatus: planned.quality === 'failed' ? 'failed' : 'pending',
+            ...(planned.quality === 'failed'
+                ? {
+                      renderErrorMessage:
+                          planned.reasons.join(', ') ||
+                          'The planned View failed conservative validation.'
+                  }
+                : {}),
             promptStatus: 'none',
             maskStatus: 'none',
             participation: 'excluded'

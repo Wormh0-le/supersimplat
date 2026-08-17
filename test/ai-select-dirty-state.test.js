@@ -119,6 +119,17 @@ test('an atomic Candidate publication clears only Evidence/Lift/Candidate dirtin
     });
 });
 
+test('a Not Ready evaluation clears computed Evidence dirtiness but preserves stale Candidate', () => {
+    const tracker = new AISelectDirtyStateTracker();
+    tracker.markStableMaskPublished('view-a');
+
+    tracker.markLiftReadinessEvaluated();
+
+    assert.deepEqual(state(tracker).evidenceDirtyViewIds, []);
+    assert.equal(tracker.state.liftDirty, false);
+    assert.equal(tracker.state.candidateStale, true);
+});
+
 test('a Prompt replacement failure leaves only Prompt and Mask work dirty', () => {
     const tracker = new AISelectDirtyStateTracker();
     tracker.markPromptDirty('view-a');

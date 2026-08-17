@@ -6,7 +6,7 @@ renderer runtime (no torch, no gsplat) and never classifies Stable Gaussian
 IDs or ownership. Propagation projects the confirmed Anchor's
 mask-conditioned Gaussian support into a Generated View camera to synthesize
 the point prompts of one single-frame SAM pass. Camera planning itself moved
-to the ticket-08 ``target-geometry/v2`` / ``local-key-view-planner/v2``
+to the ticket-08/21 ``target-geometry/v2`` / ``local-key-view-planner/v3``
 policies in ``target_geometry.py``.
 """
 

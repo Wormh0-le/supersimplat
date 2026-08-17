@@ -199,7 +199,13 @@ const localPlan = (binding, viewCamera, hint) => ({
             cameraBinding: viewCamera,
             quality: 'usable',
             reasons: []
-        }
+        },
+        ...[1, 2, 3].map((index) => ({
+            viewId: `generated-failed-${index}`,
+            cameraBinding: { ...viewCamera, revision: index },
+            quality: 'failed',
+            reasons: ['insufficientVisibility']
+        }))
     ],
     planAttemptId: 'local-key-view-plan-attempt-1',
     artifactDigest: digest('1')

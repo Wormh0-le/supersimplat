@@ -1410,8 +1410,49 @@ const candidateReLiftRequest = () => {
     });
     const stableMask = maskBitset(64, 48, [[0, 0]]);
     const bindingDigest = cameraBindingDigest(anchorCameraBinding);
+    const currentInput = {
+        requestBinding: anchorRequest.requestBinding,
+        targetSplatId: 'scene-1',
+        view: {
+            viewId: 'view-1',
+            renderStatus: 'ready',
+            participation: 'included',
+            cameraBindingDigest: bindingDigest,
+            rgbDigest: `sha256:${'b'.repeat(64)}`,
+            stableMaskDigest: stableMask.digest
+        },
+        evidencePolicyDigest:
+            'sha256:debcee99d261f28ab373b16016447f056872476a960a1af23599cc6ea1f20efd',
+        renderWorkingSet: {
+            targetSplatId: 'scene-1',
+            dependencyToken: anchorRequest.requestBinding.dependencyToken,
+            cameraBindingDigest: bindingDigest,
+            renderWorkingSetToken: anchorSnapshot.contentDigest,
+            stableGaussianIds: [3],
+            completeness: 'complete'
+        },
+        evidenceWorkingSet,
+        rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
+        evidenceBackendKind: 'production-direct',
+        evidenceBackendId: 'global-atomic/direct-v1',
+        runtimeBuildId:
+            'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4'
+    };
+    const evidenceAdmission = admitGaussianEvidence(currentInput);
+    assert.equal(evidenceAdmission.status, 'admitted');
+    const cachedArtifact = createGaussianEvidenceArtifact(
+        evidenceAdmission.admission,
+        {
+            positiveMass: [0.5],
+            negativeMass: [0.25],
+            visibleMass: [0.75],
+            boundaryMass: [0]
+        }
+    );
     return {
         liftAttemptId: 'candidate-re-lift-1',
+        productionIdentityDigest: `sha256:${'8'.repeat(64)}`,
+        generationState: 'complete',
         snapshot: anchorSnapshot,
         requestBinding: anchorRequest.requestBinding,
         targetSplatId: 'scene-1',
@@ -1420,38 +1461,10 @@ const candidateReLiftRequest = () => {
         evidenceWorkingSet,
         views: [
             {
-                currentInput: {
-                    requestBinding: anchorRequest.requestBinding,
-                    targetSplatId: 'scene-1',
-                    view: {
-                        viewId: 'view-1',
-                        renderStatus: 'ready',
-                        participation: 'included',
-                        cameraBindingDigest: bindingDigest,
-                        rgbDigest: `sha256:${'b'.repeat(64)}`,
-                        stableMaskDigest: stableMask.digest
-                    },
-                    evidencePolicyDigest:
-                        'sha256:debcee99d261f28ab373b16016447f056872476a960a1af23599cc6ea1f20efd',
-                    renderWorkingSet: {
-                        targetSplatId: 'scene-1',
-                        dependencyToken:
-                            anchorRequest.requestBinding.dependencyToken,
-                        cameraBindingDigest: bindingDigest,
-                        renderWorkingSetToken: anchorSnapshot.contentDigest,
-                        stableGaussianIds: [3],
-                        completeness: 'complete'
-                    },
-                    evidenceWorkingSet,
-                    rasterImplementationId:
-                        'supersimplat-gsplat-direct-evidence/v1',
-                    evidenceBackendKind: 'reference-contributor',
-                    evidenceBackendId: 'complete-contributor/reference-v1',
-                    runtimeBuildId:
-                        'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4'
-                },
+                currentInput,
                 cameraBinding: anchorCameraBinding,
-                stableMask
+                stableMask,
+                cachedArtifact
             }
         ]
     };
@@ -1460,6 +1473,7 @@ const candidateReLiftRequest = () => {
 const directEvidenceRequest = () => {
     const reference = candidateReLiftRequest().views[0];
     return {
+        evidenceAttemptId: 'direct-evidence-attempt-1',
         snapshot: anchorSnapshot,
         cameraBinding: reference.cameraBinding,
         stableMask: reference.stableMask,
@@ -1816,6 +1830,25 @@ test('bounds a Candidate Re-Lift transport that never completes', async () => {
     assert.match(calls.at(-1).url, /\/ai-select\/candidate-re-lifts$/);
 });
 
+test('disposes exact Companion target replay authority', async () => {
+    const calls = [];
+    const adapter = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:model-v1'
+        }),
+        fetch: async (url, init) => {
+            calls.push({ url, init });
+            return new Response(null, { status: 204 });
+        }
+    });
+
+    await adapter.disposeTargetContext('target/context-a');
+
+    assert.ok(calls[0].url.endsWith('/ai-select/targets/target%2Fcontext-a'));
+    assert.equal(calls[0].init.method, 'DELETE');
+});
+
 test('registers the exact Scene Snapshot before producing bound Direct Evidence', async () => {
     const request = directEvidenceRequest();
     const admission = admitGaussianEvidence(request.currentInput);
@@ -1831,6 +1864,7 @@ test('registers the exact Scene Snapshot before producing bound Direct Evidence'
         ...stagedBinaryRegistrationReplies(anchorSnapshot),
         {
             status: 'complete',
+            evidenceAttemptId: request.evidenceAttemptId,
             requestBinding: request.currentInput.requestBinding,
             targetSplatId: request.currentInput.targetSplatId,
             viewId: request.currentInput.view.viewId,
@@ -1966,6 +2000,7 @@ test('uploads spatial chunks for both the Render and Direct Evidence Working Set
         },
         {
             status: 'complete',
+            evidenceAttemptId: request.evidenceAttemptId,
             requestBinding: request.currentInput.requestBinding,
             targetSplatId: request.currentInput.targetSplatId,
             viewId: request.currentInput.view.viewId,

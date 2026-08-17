@@ -126,10 +126,20 @@ const currentInput = {
     runtimeBuildId:
         'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4'
 };
-const request = { snapshot, currentInput, cameraBinding, stableMask };
+const request = {
+    evidenceAttemptId: 'direct-evidence-attempt-1',
+    snapshot,
+    currentInput,
+    cameraBinding,
+    stableMask
+};
 
 test('Direct Evidence request separates the target write set from render occluders', () => {
     assert.equal(isDirectEvidenceRequest(request), true);
+    assert.equal(
+        isDirectEvidenceRequest({ ...request, evidenceAttemptId: '' }),
+        false
+    );
     assert.equal(
         isDirectEvidenceRequest({
             ...request,
@@ -157,6 +167,7 @@ test('Direct Evidence response must contain one current production artifact', ()
     });
     const response = {
         status: 'complete',
+        evidenceAttemptId: request.evidenceAttemptId,
         requestBinding: currentInput.requestBinding,
         targetSplatId: 'target-splat',
         viewId: 'view-1',
@@ -170,6 +181,13 @@ test('Direct Evidence response must contain one current production artifact', ()
         }
     };
     assert.equal(isDirectEvidenceResponseForRequest(response, request), true);
+    assert.equal(
+        isDirectEvidenceResponseForRequest(
+            { ...response, evidenceAttemptId: 'stale-attempt' },
+            request
+        ),
+        false
+    );
     assert.equal(
         isDirectEvidenceResponseForRequest(
             { ...response, artifact: { ...artifact, rgbDigest: digest('e') } },

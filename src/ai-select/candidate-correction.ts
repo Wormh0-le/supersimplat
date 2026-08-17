@@ -1,8 +1,8 @@
 import type {
+    AnyCandidatePublicationBinding,
+    CandidateArtifact,
     CandidatePublicationState,
-    CandidatePublicationStore,
-    CandidatePublicationBinding,
-    ReferenceCandidateArtifact
+    CandidatePublicationStore
 } from './candidate-publication';
 import type { AISelectDirtyStateTracker } from './dirty-state';
 import {
@@ -47,13 +47,27 @@ export interface CandidateCorrectionProductionInput<TPayload = unknown> {
     readonly cachedEvidence: ReadonlyMap<string, CachedCandidateEvidence>;
 }
 
-export interface CandidateCorrectionProductionResult {
-    readonly candidate: ReferenceCandidateArtifact;
-    readonly publicationBinding: CandidatePublicationBinding;
+interface CandidateCorrectionProductionResultBase {
     readonly evidence: Readonly<Record<string, CachedCandidateEvidence>>;
-    /** Publishes independently atomic per-View products after the race check. */
+    /** Publishes exact upstream diagnostics after the stable-input race check. */
+    readonly publishPrerequisiteProducts?: () => void;
+    /** Publishes independently atomic per-View products after Candidate commit. */
     readonly publishRelatedProducts?: () => void;
 }
+
+export interface CandidateCorrectionCompleteResult extends CandidateCorrectionProductionResultBase {
+    readonly status: 'complete';
+    readonly candidate: CandidateArtifact;
+    readonly publicationBinding: AnyCandidatePublicationBinding;
+}
+
+export interface CandidateCorrectionNotReadyResult extends CandidateCorrectionProductionResultBase {
+    readonly status: 'not-ready';
+    readonly errorMessage: string;
+}
+
+export type CandidateCorrectionProductionResult =
+    CandidateCorrectionCompleteResult | CandidateCorrectionNotReadyResult;
 
 export interface CandidateCorrectionState {
     readonly mode: 'candidate' | 'correcting';
@@ -316,6 +330,12 @@ export class AISelectCandidateCorrectionController<TPayload = unknown> {
                     copyEvidence(value)
                 ])
             );
+            result.publishPrerequisiteProducts?.();
+            if (result.status === 'not-ready') {
+                this.rememberPublishedEvidence(evidence);
+                result.publishRelatedProducts?.();
+                throw new Error(result.errorMessage);
+            }
             this.candidatePublications.publish(
                 result.candidate,
                 result.publicationBinding

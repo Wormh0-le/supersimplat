@@ -1,6 +1,6 @@
 # 20 — FlashSplat-style same-decision GPU Evidence + artifact / working-set hardening
 
-Status: closed — 2026-08-17; Final Spec v1.3 mapped; Ticket 21 is current
+Status: closed — 2026-08-17; Final Spec v1.3 mapped; Ticket 21 implemented
 
 Blocked by: 19, 14, 09
 

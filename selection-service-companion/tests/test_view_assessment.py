@@ -8,6 +8,8 @@ from selection_service_companion.view_assessment import (
     MaskReviewPrompt,
     ReviewReason,
     assess_local_view,
+    view_assessment_policy_descriptor,
+    view_assessment_policy_digest,
 )
 
 
@@ -44,6 +46,11 @@ class LocalMaskReviewPolicyTests(unittest.TestCase):
         )
         self.assertNotIn("propagation-uncertain", vocabulary)
         self.assertNotIn("weak-gaussian-support", vocabulary)
+        descriptor = view_assessment_policy_descriptor()
+        self.assertEqual(descriptor["clippedMinimumBoundaryRatio"], 0.2)
+        self.assertEqual(descriptor["fragmentMinimumDisconnectedRatio"], 0.1)
+        self.assertEqual(descriptor["boxSpillMinimumRatio"], 0.2)
+        self.assertRegex(view_assessment_policy_digest(), r"^sha256:[a-f0-9]{64}$")
 
     def test_good_interior_mask_without_a_prompt_family(self) -> None:
         result = assess_local_view(

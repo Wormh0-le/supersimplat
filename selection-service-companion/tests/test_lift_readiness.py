@@ -178,6 +178,12 @@ def formal_readiness_input(
 
 
 class LiftReadinessTests(unittest.TestCase):
+    def test_ticket_21_promotes_the_calibrated_policy_identity(self) -> None:
+        policy = default_lift_readiness_policy()
+
+        self.assertEqual(policy["policyId"], "lift-readiness/production-v1")
+        self.assertRegex(policy["readinessPolicyDigest"], r"^sha256:[a-f0-9]{64}$")
+
     def test_formal_evidence_overrides_a_low_cost_support_diagnostic(self) -> None:
         value = formal_readiness_input(
             yaws=[-15.0, 15.0],

@@ -13,6 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from .digests import canonical_json_digest
+
 
 AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION = "local-view-assessment/v2"
 
@@ -52,6 +54,29 @@ _REASON_ORDER: tuple[ReviewReason, ...] = (
     "box-spill-or-neighbour-leak",
     "empty-or-degenerate-mask",
 )
+
+
+def view_assessment_policy_descriptor() -> dict[str, object]:
+    """Bind every calibrated Mask Review threshold into release identity."""
+
+    return {
+        "version": AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
+        "minimumForegroundPixels": _MIN_FOREGROUND_PIXELS,
+        "fullFrameRatio": _FULL_FRAME_RATIO,
+        "clippedMinimumBoundaryPixels": _CLIPPED_MIN_BOUNDARY_PIXELS,
+        "clippedMinimumBoundaryRatio": _CLIPPED_MIN_BOUNDARY_RATIO,
+        "fragmentMinimumDisconnectedPixels": _FRAGMENT_MIN_DISCONNECTED_PIXELS,
+        "fragmentMinimumDisconnectedRatio": _FRAGMENT_MIN_DISCONNECTED_RATIO,
+        "boxSpillMarginPixels": _BOX_SPILL_MARGIN_PIXELS,
+        "boxSpillMinimumPixels": _BOX_SPILL_MIN_PIXELS,
+        "boxSpillMinimumRatio": _BOX_SPILL_MIN_RATIO,
+        "maximumActionableReasons": _MAX_ACTIONABLE_REASONS,
+        "reasonOrder": list(_REASON_ORDER),
+    }
+
+
+def view_assessment_policy_digest() -> str:
+    return canonical_json_digest(view_assessment_policy_descriptor())
 
 
 @dataclass(frozen=True)
@@ -341,4 +366,6 @@ __all__ = [
     "ReviewReason",
     "assess_local_view",
     "local_view_assessment_payload",
+    "view_assessment_policy_descriptor",
+    "view_assessment_policy_digest",
 ]

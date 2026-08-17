@@ -4,7 +4,7 @@
     "evidenceArtifactSetDigest": "sha256:2d2a4151b1956ebe90e27ca3b2690eac7fb539ca05dc366b1ef3479cc01731d6",
     "evidenceWorkingSetToken": "sha256:5cb48f61483e994eee981aeaa072502cac291aa58be814e1066297ce39a92478",
     "generationState": "complete",
-    "kind": "lift-readiness/reference-v1",
+    "kind": "lift-readiness/production-v1",
     "lowCostSupportDiagnosticDigest": null,
     "observationCoverage": {
       "coverageRatio": 1.0,
@@ -20,12 +20,12 @@
       "minimumReadyCoverageRatio": 0.75,
       "minimumReadyViewDiversityDegrees": 20.0,
       "minimumUsefulViewCoverageRatio": 0.1,
-      "policyId": "lift-readiness/reference-v1",
-      "readinessPolicyDigest": "sha256:73f913a8f4d45b70a5542062177c422b11768cde282ee9e5d92e938853674d66",
+      "policyId": "lift-readiness/production-v1",
+      "readinessPolicyDigest": "sha256:5c8fe60c75ff889b6fd71c09901970c0229d681e1eb193d54b63a9d4bff7b904",
       "schemaVersion": 1,
       "viewDirectionMode": "opencv-camera-forward/v1"
     },
-    "readinessPolicyDigest": "sha256:73f913a8f4d45b70a5542062177c422b11768cde282ee9e5d92e938853674d66",
+    "readinessPolicyDigest": "sha256:5c8fe60c75ff889b6fd71c09901970c0229d681e1eb193d54b63a9d4bff7b904",
     "reasons": [],
     "recommendation": "none",
     "requestBinding": {
@@ -39,7 +39,7 @@
       },
       "targetContextId": "ai-target-context-1"
     },
-    "resultDigest": "sha256:ddeafe83eeac3bb87815a06853cb09aa8c8479e58905749e8e2ee6387016f0c6",
+    "resultDigest": "sha256:587be0010a9023db02f704d30885012def61c8e9e22f178324c5ef07794d9d52",
     "schemaVersion": 1,
     "source": "formal-evidence",
     "targetSplatId": "editor-splat:1",
@@ -55,7 +55,7 @@
     "evidenceWorkingSetToken": "sha256:5cb48f61483e994eee981aeaa072502cac291aa58be814e1066297ce39a92478",
     "generationState": "complete",
     "lowCostSupportDiagnosticDigest": null,
-    "readinessPolicyDigest": "sha256:73f913a8f4d45b70a5542062177c422b11768cde282ee9e5d92e938853674d66",
+    "readinessPolicyDigest": "sha256:5c8fe60c75ff889b6fd71c09901970c0229d681e1eb193d54b63a9d4bff7b904",
     "requestBinding": {
       "contextRevision": 3,
       "dependencyToken": {

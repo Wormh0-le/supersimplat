@@ -427,7 +427,15 @@ const plannedKeyView = (viewId, revision, overrides = {}) => ({
 
 const defaultViewsForBatch = (batchOrdinal) => [
     plannedKeyView(`key-view-${batchOrdinal}-0`, 100 + batchOrdinal * 10),
-    plannedKeyView(`key-view-${batchOrdinal}-1`, 101 + batchOrdinal * 10)
+    plannedKeyView(`key-view-${batchOrdinal}-1`, 101 + batchOrdinal * 10),
+    plannedKeyView(`key-view-${batchOrdinal}-2`, 102 + batchOrdinal * 10, {
+        quality: 'failed',
+        reasons: ['insufficientVisibility']
+    }),
+    plannedKeyView(`key-view-${batchOrdinal}-3`, 103 + batchOrdinal * 10, {
+        quality: 'failed',
+        reasons: ['projectedSizeTooSmall']
+    })
 ];
 
 const planResponseFor = (request, views) => ({
@@ -699,8 +707,8 @@ test('Confirm Anchor derives the Target Geometry Hint and plans the first bounde
         state.keyViewPlans[0].planAttemptId,
         'local-key-view-plan-attempt-1'
     );
-    assert.equal(state.keyViewPlans[0].orderedViews.length, 2);
-    assert.equal(state.views.length, 2);
+    assert.equal(state.keyViewPlans[0].orderedViews.length, 4);
+    assert.equal(state.views.length, 4);
     assert.equal(state.views[0].viewId, 'key-view-0-0');
     assert.equal(state.views[0].source, 'auto-generated');
     assert.equal(state.views[0].planQuality, 'usable');
@@ -733,8 +741,43 @@ test('creation ordinals survive controller source regrouping while initial plann
     assert.deepEqual(creationOrder, {
         'key-view-0-0': 2,
         'key-view-0-1': 3,
+        'key-view-0-2': 4,
+        'key-view-0-3': 5,
         [userViewId]: 1
     });
+});
+
+test('a partial plan keeps failed slots inspectable without rendering them Ready', async () => {
+    const harness = createHarness();
+    await startAnchor(harness);
+    await confirmAnchor(harness);
+    await driveToActive(harness, [
+        plannedKeyView('key-view-0-0', 100),
+        plannedKeyView('key-view-0-1', 101, {
+            quality: 'failed',
+            reasons: ['insufficientVisibility']
+        }),
+        plannedKeyView('key-view-0-2', 102, {
+            quality: 'failed',
+            reasons: ['projectedSizeTooSmall']
+        }),
+        plannedKeyView('key-view-0-3', 103, {
+            quality: 'failed',
+            reasons: ['targetOutsideClipping']
+        })
+    ]);
+
+    const failed = harness.controller.state.views.find(
+        (view) => view.viewId === 'key-view-0-1'
+    );
+    assert.equal(failed.renderStatus, 'failed');
+    assert.equal(failed.rgb, undefined);
+    assert.equal(failed.participation, 'excluded');
+    assert.deepEqual(failed.planReasons, ['insufficientVisibility']);
+    assert.deepEqual(
+        harness.viewRenderer.calls.map((request) => request.viewId),
+        ['key-view-0-0']
+    );
 });
 
 test('a Generated AIView publishes RGB Ready while its Route B Mask is still Generating', async () => {
@@ -746,11 +789,19 @@ test('a Generated AIView publishes RGB Ready while its Route B Mask is still Gen
         plannedKeyView('key-view-0-1', 101, {
             quality: 'limited',
             reasons: ['reducedVisibility']
+        }),
+        plannedKeyView('key-view-0-2', 102, {
+            quality: 'failed',
+            reasons: ['insufficientVisibility']
+        }),
+        plannedKeyView('key-view-0-3', 103, {
+            quality: 'failed',
+            reasons: ['projectedSizeTooSmall']
         })
     ]);
 
     let views = harness.controller.state.views;
-    assert.equal(views.length, 2);
+    assert.equal(views.length, 4);
     assert.equal(views[0].renderStatus, 'rendering');
     assert.equal(views[1].renderStatus, 'pending');
     // Planner diagnostics are per-View hints, never Mask or Evidence state.
@@ -801,10 +852,10 @@ test('a successful automatic Mask atomically publishes an auto Stable Mask bound
     await completeTwoViews(harness);
 
     const views = harness.controller.state.views;
-    assert.equal(views.length, 2);
-    assert.ok(views.every((view) => view.renderStatus === 'ready'));
+    assert.equal(views.length, 4);
+    assert.ok(views.slice(0, 2).every((view) => view.renderStatus === 'ready'));
     assert.ok(
-        views.every((view) => view.maskStatus === 'ready'),
+        views.slice(0, 2).every((view) => view.maskStatus === 'ready'),
         JSON.stringify(
             views.map((view) => ({
                 viewId: view.viewId,
@@ -1083,7 +1134,7 @@ test('a hint failure fails planning closed, preserves the Anchor, and exposes a 
     );
     await flush();
     assert.equal(harness.controller.state.plannerStatus, 'active');
-    assert.equal(harness.controller.state.views.length, 2);
+    assert.equal(harness.controller.state.views.length, 4);
 });
 
 test('an invalid or stale hint response fails planning closed', async () => {
@@ -1152,7 +1203,7 @@ test('an initial plan failure fails planning closed and preserves the Anchor', a
     );
     await flush();
     assert.equal(harness.controller.state.plannerStatus, 'active');
-    assert.equal(harness.controller.state.views.length, 2);
+    assert.equal(harness.controller.state.views.length, 4);
 });
 
 test('an invalid or stale initial plan response fails planning closed', async () => {
@@ -1234,7 +1285,7 @@ test('a late hint or plan response with an obsolete Anchor identity is discarded
     );
     await flush();
     assert.equal(harness.controller.state.plannerStatus, 'active');
-    assert.equal(harness.controller.state.views.length, 2);
+    assert.equal(harness.controller.state.views.length, 4);
 });
 
 test('suspension preserves Generated View state, rejects late work, and resumes with a fresh binding', async () => {
@@ -1281,7 +1332,7 @@ test('Restart disposes target-local Generated View and Mask state', async () => 
     await startAnchor(harness);
     await confirmAnchor(harness);
     await completeTwoViews(harness);
-    assert.equal(harness.controller.state.views.length, 2);
+    assert.equal(harness.controller.state.views.length, 4);
 
     harness.confirmation.adjust();
     await harness.anchorController.restart({

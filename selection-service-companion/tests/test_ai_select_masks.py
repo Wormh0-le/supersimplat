@@ -964,16 +964,20 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(self.state._logits_store, {})
 
     def test_adapter_oom_publishes_no_partial_proposal_set_or_refinement_ref(self) -> None:
-        self.runtime.predict_error = RuntimeError('CUDA out of memory')
+        import torch
 
-        payload = self.assert_mask_error(self.request_body(), 'modelFailure')
+        self.runtime.predict_error = torch.OutOfMemoryError('injected CUDA OOM')
+
+        payload = self.assert_mask_error(
+            self.request_body(), 'modelOutOfMemory'
+        )
 
         # The failed attempt contains no proposalSet and replays atomically
         # without a second adapter execution.
         self.assertNotIn('proposalSet', payload)
         status, replay = self.post_proposal_error(self.request_body())
         self.assertEqual(status, HTTPStatus.CONFLICT)
-        self.assertEqual(replay['code'], 'modelFailure')
+        self.assertEqual(replay['code'], 'modelOutOfMemory')
         self.assertNotIn('proposalSet', replay)
         self.assertEqual(len(self.runtime.predict_calls), 1)
         self.assertEqual(self.state._logits_store, {})

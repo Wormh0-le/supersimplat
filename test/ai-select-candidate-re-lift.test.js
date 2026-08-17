@@ -9,6 +9,8 @@ const {
     captureEditorCameraBinding
 } = require('../.test-dist/src/ai-select/camera-binding.js');
 const {
+    admitGaussianEvidence,
+    createGaussianEvidenceArtifact,
     createEvidenceWorkingSet
 } = require('../.test-dist/src/ai-select/gaussian-evidence-contract.js');
 const {
@@ -43,7 +45,22 @@ const snapshot = buildPackedSceneSnapshot({
     logitOpacities: new Float32Array(2),
     dc: new Float32Array(6),
     sh: new Float32Array(),
-    shFloatCountPerGaussian: 0
+    shFloatCountPerGaussian: 0,
+    authoritativeRenderScope: {
+        policyId: 'visible-editor-splats-conservative/v1',
+        targetSplatId: 'editor-splat:1',
+        identityDigest: `sha256:${'a'.repeat(64)}`,
+        entries: [
+            {
+                splatId: 'editor-splat:1',
+                role: 'target',
+                sourceContentDigest: `sha256:${'b'.repeat(64)}`,
+                rowOffset: 0,
+                rowCount: 2,
+                renderIdStart: 5
+            }
+        ]
+    }
 });
 
 const cameraBinding = captureEditorCameraBinding({
@@ -96,23 +113,40 @@ const currentInput = {
     },
     evidenceWorkingSet,
     rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
-    evidenceBackendKind: 'reference-contributor',
-    evidenceBackendId: 'complete-contributor/reference-v1',
+    evidenceBackendKind: 'production-direct',
+    evidenceBackendId: 'global-atomic/direct-v1',
     runtimeBuildId:
         'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4'
 };
+const admission = admitGaussianEvidence(currentInput);
+assert.equal(admission.status, 'admitted');
+const cachedArtifact = createGaussianEvidenceArtifact(admission.admission, {
+    positiveMass: [0.5, 0],
+    negativeMass: [0, 0.5],
+    visibleMass: [0.5, 0.5],
+    boundaryMass: [0, 0]
+});
 const validRequest = () => ({
     liftAttemptId: 're-lift-1',
+    productionIdentityDigest: `sha256:${'c'.repeat(64)}`,
+    generationState: 'complete',
     snapshot,
     requestBinding,
     targetSplatId: snapshot.sceneId,
     classificationUniverseStableGaussianIds: [5, 9],
     classificationScopeStableGaussianIds: [5, 9],
     evidenceWorkingSet,
-    views: [{ currentInput, cameraBinding, stableMask: mask }]
+    views: [
+        {
+            currentInput,
+            cameraBinding,
+            stableMask: mask,
+            cachedArtifact
+        }
+    ]
 });
 
-test('Candidate Re-Lift request is bound to the exact full Scene Snapshot', () => {
+test('Candidate Re-Lift request binds target identity without requiring every render occluder', () => {
     assert.equal(isCandidateReLiftRequest(validRequest()), true);
     const mismatched = validRequest();
     mismatched.views = [
@@ -122,7 +156,7 @@ test('Candidate Re-Lift request is bound to the exact full Scene Snapshot', () =
                 ...currentInput,
                 renderWorkingSet: {
                     ...currentInput.renderWorkingSet,
-                    stableGaussianIds: [5]
+                    stableGaussianIds: [42]
                 }
             }
         }

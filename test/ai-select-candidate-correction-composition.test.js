@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
 const test = require('node:test');
 
 const {
@@ -6,15 +7,12 @@ const {
 } = require('../.test-dist/src/ai-select/candidate-correction-composition.js');
 const {
     CandidatePublicationStore,
-    createCandidatePublicationBinding,
-    createReferenceCandidateArtifact
+    createProductionCandidateArtifact,
+    createProductionCandidatePublicationBinding
 } = require('../.test-dist/src/ai-select/candidate-publication.js');
 const {
-    referenceAggregationPolicyDigest,
-    referenceContributorEvidenceBackendId,
-    referenceEvidencePolicyDigest,
-    referenceEvidenceRasterImplementationId,
-    referenceEvidenceRuntimeBuildId
+    productionAggregationPolicyDigest,
+    productionEvidencePolicyDigest
 } = require('../.test-dist/src/ai-select/candidate-re-lift.js');
 const {
     directEvidenceBackendId,
@@ -30,6 +28,12 @@ const {
 } = require('../.test-dist/src/ai-select/gaussian-evidence-contract.js');
 
 const digest = (letter) => `sha256:${letter.repeat(64)}`;
+const liftReadinessArtifact = JSON.parse(
+    readFileSync(
+        'test/fixtures/ai-select-lift-readiness-contract-vector.json',
+        'utf8'
+    )
+).artifact;
 const dependencyToken = {
     splatId: 'scene-1',
     renderStateToken: 'render-v1',
@@ -89,7 +93,7 @@ const artifactFor = (currentInput) => {
     });
 };
 
-test('composition publishes production Direct Evidence while retaining reference Candidate isolation', async () => {
+test('composition atomically publishes a production Candidate from Direct Evidence', async () => {
     const requestBinding = {
         targetContextId: 'context-1',
         contextRevision: 3,
@@ -159,13 +163,14 @@ test('composition publishes production Direct Evidence while retaining reference
         }
     };
     const directCalls = [];
-    const referenceCalls = [];
+    const candidateCalls = [];
     const provider = {
         async produceDirectEvidence(request) {
             directCalls.push(request);
             const artifact = artifactFor(request.currentInput);
             return {
                 status: 'complete',
+                evidenceAttemptId: request.evidenceAttemptId,
                 requestBinding: request.currentInput.requestBinding,
                 targetSplatId: request.currentInput.targetSplatId,
                 viewId: request.currentInput.view.viewId,
@@ -174,40 +179,44 @@ test('composition publishes production Direct Evidence while retaining reference
             };
         },
         async produceCandidateReLift(request) {
-            referenceCalls.push(request);
+            candidateCalls.push(request);
             const evidence = request.views.map((view) => ({
                 viewId: view.currentInput.view.viewId,
                 reused: view.cachedArtifact !== undefined,
                 artifact: artifactFor(view.currentInput)
             }));
-            const publicationBinding = createCandidatePublicationBinding({
-                requestBinding,
-                targetSplatId: 'scene-1',
-                stableInputs: evidence.map((entry) => ({
-                    viewId: entry.viewId,
-                    participation: 'included',
-                    stableMaskDigest: digest('3'),
-                    evidenceArtifactDigest: entry.artifact.artifactDigest
-                })),
-                aggregationPolicyDigest: referenceAggregationPolicyDigest,
-                sourceEvidencePolicyDigest: referenceEvidencePolicyDigest,
-                evidenceWorkingSetToken:
-                    request.evidenceWorkingSet.evidenceWorkingSetToken,
-                evidenceArtifactSetDigest: digest('e'),
-                referenceBackendIdentity: {
-                    rasterImplementationId:
-                        referenceEvidenceRasterImplementationId,
-                    evidenceBackendKind: 'reference-contributor',
-                    evidenceBackendId: referenceContributorEvidenceBackendId,
-                    runtimeBuildId: referenceEvidenceRuntimeBuildId
-                }
-            });
+            const publicationBinding =
+                createProductionCandidatePublicationBinding({
+                    requestBinding,
+                    targetSplatId: 'scene-1',
+                    stableInputs: evidence.map((entry) => ({
+                        viewId: entry.viewId,
+                        participation: 'included',
+                        stableMaskDigest: digest('3'),
+                        evidenceArtifactDigest: entry.artifact.artifactDigest
+                    })),
+                    aggregationPolicyDigest: productionAggregationPolicyDigest,
+                    sourceEvidencePolicyDigest: productionEvidencePolicyDigest,
+                    evidenceWorkingSetToken:
+                        request.evidenceWorkingSet.evidenceWorkingSetToken,
+                    evidenceArtifactSetDigest: digest('e'),
+                    productionIdentityDigest: digest('8'),
+                    evidenceBackendIdentity: {
+                        rasterImplementationId:
+                            directEvidenceRasterImplementationId,
+                        evidenceBackendKind: 'production-direct',
+                        evidenceBackendId: directEvidenceBackendId,
+                        runtimeBuildId: directEvidenceRuntimeBuildId
+                    }
+                });
             return {
                 status: 'complete',
+                liftAttemptId: request.liftAttemptId,
                 requestBinding,
                 targetSplatId: 'scene-1',
                 evidence,
-                candidate: createReferenceCandidateArtifact({
+                liftReadiness: liftReadinessArtifact,
+                candidate: createProductionCandidateArtifact({
                     publicationBinding,
                     sourceAggregationResultDigest: digest('f'),
                     selectedStableGaussianIds: [5],
@@ -217,11 +226,18 @@ test('composition publishes production Direct Evidence while retaining reference
         }
     };
     const candidatePublications = new CandidatePublicationStore(dirtyState);
+    const readinessPublications = [];
     const controller = createAISelectCandidateCorrectionController({
         anchor,
         masks,
         generatedViews,
         candidatePublications,
+        liftReadiness: {
+            publish(artifact, binding) {
+                readinessPublications.push({ artifact, binding });
+            }
+        },
+        getProductionIdentityDigest: () => digest('8'),
         provider
     });
 
@@ -229,6 +245,8 @@ test('composition publishes production Direct Evidence while retaining reference
     await controller.updateCandidate();
 
     assert.deepEqual(controller.cachedEvidenceViewIds, ['anchor-view']);
+    assert.equal(readinessPublications.length, 2);
+    assert.equal(candidateCalls[0].productionIdentityDigest, digest('8'));
     assert.equal(
         directCalls[0].currentInput.evidenceBackendKind,
         'production-direct'
@@ -250,14 +268,14 @@ test('composition publishes production Direct Evidence while retaining reference
         'production-direct'
     );
     assert.equal(
-        referenceCalls[1].views[0].cachedArtifact.evidenceBackendKind,
-        'reference-contributor'
+        candidateCalls[1].views[0].cachedArtifact.evidenceBackendKind,
+        'production-direct'
     );
     assert.equal(evidenceReady.length, 2);
     assert.equal(
         candidatePublications.inspectableCandidate.publicationBinding
-            .referenceBackendIdentity.evidenceBackendKind,
-        'reference-contributor'
+            .evidenceBackendIdentity.evidenceBackendKind,
+        'production-direct'
     );
 
     anchorState = {

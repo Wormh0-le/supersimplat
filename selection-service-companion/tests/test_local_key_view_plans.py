@@ -88,11 +88,12 @@ class LocalKeyViewPlannerTests(unittest.TestCase):
 
         self.assertEqual(
             AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION,
-            "local-key-view-planner/v2",
+            "local-key-view-planner/v3",
         )
         self.assertEqual(descriptor["version"], AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION)
         self.assertEqual(descriptor["initialAutomaticViewCountRange"], [4, 8])
         self.assertEqual(descriptor["initialAutomaticViewCount"], 4)
+        self.assertTrue(descriptor["retainFailedSlots"])
         self.assertRegex(local_key_view_policy_digest(), r"^sha256:[a-f0-9]{64}$")
 
     def test_default_batch_is_left_right_elevated(self) -> None:
@@ -239,6 +240,39 @@ class LocalKeyViewPlannerTests(unittest.TestCase):
                 visible_points=visible,
                 batch_ordinal=0,
             )
+
+    def test_partial_plan_retains_failed_slots_without_fabricating_ready_views(self) -> None:
+        visible = (
+            (-8.77525814130237, 8.338409686493584, 1.0550984759064561),
+            (-5.878343382253879, -0.10955790979341629, -0.2020357408450475),
+            (3.638231345346311, 6.929360427252316, -1.6245616529030604),
+            (-11.31966056347185, 8.058362494076874, -0.2689317283797865),
+            (6.294721978990609, -11.949454719573342, -0.2184512237807943),
+            (5.316960776178782, -6.5097066895091364, 1.7810827822156892),
+            (9.634258982675604, -11.265840407194716, -1.8982165560261568),
+            (0.9938993470439179, 10.539579906684253, -0.47518304924715027),
+            (-6.801614468865279, -1.8692021860147854, -1.8838368497005282),
+            (-6.679400009447159, -1.4906977523862714, -0.016751034472597404),
+            (-6.405973193818257, -6.459203003016377, -1.1248758506492456),
+            (-0.9695168222943948, -5.045241249828346, -1.9140411789363645),
+        )
+
+        views = plan_local_key_views(
+            anchor_camera_binding=ANCHOR_CAMERA,
+            center=CENTER,
+            extent=EXTENT,
+            visible_points=visible,
+            batch_ordinal=0,
+        )
+
+        self.assertEqual(len(views), 4)
+        failed = [view for view in views if view.quality == "failed"]
+        self.assertEqual([view.view_id for view in failed], ["key-view-0-1"])
+        self.assertEqual(failed[0].reasons, ("insufficientVisibility",))
+        self.assertEqual(
+            len([view for view in views if view.quality != "failed"]),
+            3,
+        )
 
     def test_tiny_target_beyond_replacement_bounds_fails_closed(self) -> None:
         # 800 * 0.05 / depth is below the 38.4px useful-size floor even at the

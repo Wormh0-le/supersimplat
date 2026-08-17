@@ -19,14 +19,16 @@ import {
  * fails closed on any other policy version. Batch ordinals remain in the
  * Companion contract for future planner evolution, not as product controls.
  */
-export const aiSelectLocalKeyViewPlannerVersion = 'local-key-view-planner/v2';
+export const aiSelectLocalKeyViewPlannerVersion = 'local-key-view-planner/v3';
+export const aiSelectLocalKeyViewPolicyDigest =
+    'sha256:c1e4a20cb20ac08dba8c9fed2d94e0dd7ad0b50d45b4dff2d11aed874df2749e';
 
 export const localKeyViewPlanSchemaVersion = 1;
 
 export interface PlannedKeyView {
     readonly viewId: string;
     readonly cameraBinding: CameraBinding;
-    readonly quality: 'usable' | 'limited';
+    readonly quality: 'usable' | 'limited' | 'failed';
     readonly reasons: readonly string[];
 }
 
@@ -107,7 +109,9 @@ export const isPlannedKeyView = (value: unknown): value is PlannedKeyView => {
         isNonEmptyString(value.viewId) &&
         value.viewId !== 'anchor-view' &&
         isCameraBinding(value.cameraBinding) &&
-        (value.quality === 'usable' || value.quality === 'limited') &&
+        (value.quality === 'usable' ||
+            value.quality === 'limited' ||
+            value.quality === 'failed') &&
         Array.isArray(value.reasons) &&
         value.reasons.every(
             (reason) => typeof reason === 'string' && reason.length > 0
@@ -126,7 +130,7 @@ export const isLocalKeyViewPlan = (
         !isDigest(value.targetGeometryHintDigest) ||
         !isDigest(value.localViewPolicyDigest) ||
         !Array.isArray(value.orderedViews) ||
-        value.orderedViews.length === 0 ||
+        value.orderedViews.length < 4 ||
         value.orderedViews.length > 8 ||
         !value.orderedViews.every(isPlannedKeyView) ||
         !isNonEmptyString(value.planAttemptId) ||

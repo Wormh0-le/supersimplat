@@ -36,14 +36,16 @@ from .camera_binding import (
 )
 from .candidate_re_lift import (
     CandidateReLiftError,
-    produce_reference_candidate_re_lift,
-    validate_candidate_re_lift_snapshot_binding,
+    produce_production_candidate_re_lift,
+    validate_production_candidate_re_lift_snapshot_binding,
 )
 from .direct_gaussian_evidence import (
+    DIRECT_EVIDENCE_BACKEND_ID,
     DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
     DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
     direct_evidence_capability,
 )
+from .lift_readiness import default_lift_readiness_policy
 from .evidence import ContributorRenderer, build_evidence_snapshot
 from .gaussian_evidence_contract import (
     is_current_gaussian_evidence_artifact,
@@ -144,6 +146,7 @@ from .view_assessment import (
     MaskReviewPrompt,
     assess_local_view,
     local_view_assessment_payload,
+    view_assessment_policy_digest,
 )
 from .digests import (
     canonical_json_digest as _canonical_json_digest,
@@ -173,6 +176,7 @@ AI_SELECT_RGB_CACHE_LIMIT = 16
 AI_SELECT_LOGITS_STORE_LIMIT = 8
 AI_SELECT_ROUTE_B_PROMPT_CACHE_LIMIT = 64
 AI_SELECT_ROUTE_B_INFERENCE_RESULT_CACHE_LIMIT = 64
+AI_SELECT_ASYNC_ARTIFACT_ADMISSION_LIMIT = 64
 # A planned Key View whose authoritative raster alpha covers less than this
 # fraction of the frame is blank and fails closed (view-renders only).
 _BLANK_RENDER_MIN_ALPHA_COVERAGE = 0.001
@@ -726,6 +730,17 @@ class ImageInstanceMaskAdmission:
     failure: tuple[str, str] | None = None
 
 
+@dataclass
+class AsyncArtifactAdmission:
+    """One replayable all-or-nothing artifact attempt."""
+
+    request_key: str
+    target_context_id: str | None
+    completed: Event = field(default_factory=Event)
+    publication: str | None = None
+    failure: tuple[str, str] | None = None
+
+
 @dataclass(frozen=True)
 class RouteBPromptRecord:
     """One Companion-produced Prompt eligible for Route B inference only."""
@@ -1224,6 +1239,21 @@ class CompanionState:
         init=False,
         repr=False,
     )
+    _direct_evidence_admissions: dict[str, AsyncArtifactAdmission] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _candidate_re_lift_admissions: dict[str, AsyncArtifactAdmission] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _generated_view_prompt_admissions: dict[str, AsyncArtifactAdmission] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
     _image_instance_mask_admissions: dict[str, ImageInstanceMaskAdmission] = field(
         default_factory=dict,
         init=False,
@@ -1579,6 +1609,11 @@ class CompanionState:
         release = self._process_release()
         model = self.resolve_active_model_manifest()
         provider = self._image_instance_provider_capability(model)
+        renderer = self._renderer_capability(release)
+        direct_evidence = direct_evidence_capability()
+        production_candidate = self._production_candidate_re_lift_capability(
+            direct_evidence
+        )
         return {
             "protocolVersion": AI_SELECT_READINESS_PROTOCOL_VERSION,
             "serviceBuild": (
@@ -1587,10 +1622,18 @@ class CompanionState:
             ),
             "companionInstanceId": self._companion_instance_id,
             "runtimeProfileId": AI_SELECT_RUNTIME_PROFILE_ID,
-            "renderer": self._renderer_capability(release),
+            "renderer": renderer,
             "imageInstanceProvider": provider,
-            "directEvidence": direct_evidence_capability(),
+            "directEvidence": direct_evidence,
             "referenceCandidateReLift": self._reference_candidate_re_lift_capability(),
+            "productionCandidateReLift": production_candidate,
+            "productionIdentity": self._production_identity_capability(
+                model=model,
+                provider=provider,
+                renderer=renderer,
+                direct_evidence=direct_evidence,
+                production_candidate=production_candidate,
+            ),
             "supportedOperations": [
                 "aiSelectAnchorRender",
                 "aiSelectAnchorReferenceContributor",
@@ -1603,6 +1646,7 @@ class CompanionState:
                 "aiSelectImageInstanceMasks",
                 "aiSelectImageInstanceMaskReview",
                 "aiSelectReferenceCandidateReLift",
+                "aiSelectProductionCandidateReLift",
                 "aiSelectProductionDirectEvidence",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",
@@ -1619,6 +1663,147 @@ class CompanionState:
             },
             "allowedEditorOrigins": allowed_editor_origins,
         }
+
+    @staticmethod
+    def _production_candidate_re_lift_capability(
+        direct_evidence: Mapping[str, object],
+    ) -> dict[str, object]:
+        policy = default_reference_evidence_policy()
+        aggregation = default_reference_aggregation_policy()
+        return {
+            "status": direct_evidence.get("status", "unavailable"),
+            "evidencePolicyDigest": policy["evidencePolicyDigest"],
+            "aggregationPolicyDigest": aggregation[
+                "aggregationPolicyDigest"
+            ],
+            "rasterImplementationId": DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+            "evidenceBackendKind": "production-direct",
+            "evidenceBackendId": DIRECT_EVIDENCE_BACKEND_ID,
+            "runtimeBuildId": DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+        }
+
+    @staticmethod
+    def _production_identity_capability(
+        *,
+        model: Mapping[str, object],
+        provider: Mapping[str, object],
+        renderer: Mapping[str, object],
+        direct_evidence: Mapping[str, object],
+        production_candidate: Mapping[str, object],
+    ) -> dict[str, object]:
+        if (
+            model.get("adapterId") != SAM3_IMAGE_INSTANCE_ADAPTER_ID
+            or provider.get("status") != "ready"
+            or renderer.get("status") != "ready"
+            or direct_evidence.get("status") != "ready"
+            or production_candidate.get("status") != "ready"
+        ):
+            return {"status": "unavailable"}
+        prompt_capability_digest = provider.get("adapterCapabilityDigest")
+        compiler_policy_version = provider.get("compilerPolicyVersion")
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (prompt_capability_digest, compiler_policy_version)
+        ):
+            return {"status": "unavailable"}
+        lift_policy = default_lift_readiness_policy()
+        payload: dict[str, object] = {
+            "schemaVersion": 1,
+            "renderer": {
+                "rgbRendererVersion": renderer.get("rgbRendererVersion"),
+                "rasterImplementationId": renderer.get(
+                    "rasterImplementationId"
+                ),
+                "runtimeBuildId": renderer.get("runtimeBuildId"),
+            },
+            "model": {
+                "adapterId": model["adapterId"],
+                "manifestId": model["digest"],
+                "manifestRecordDigest": _canonical_json_digest({
+                    "adapterId": model["adapterId"],
+                    "digest": model["digest"],
+                    "modelName": model["modelName"],
+                    "checkpointDigest": model["checkpointDigest"],
+                    "sourceCommit": model["sourceCommit"],
+                    "runtimeConfigDigest": model["runtimeConfigDigest"],
+                    "weightsBundled": False,
+                }),
+                "checkpointDigest": model["checkpointDigest"],
+                "runtimeConfigDigest": model["runtimeConfigDigest"],
+            },
+            "prompt": {
+                "compilerPolicyVersion": compiler_policy_version,
+                "adapterCapabilityDigest": prompt_capability_digest,
+                "synthesisPolicyVersion": (
+                    AI_SELECT_IMAGE_INSTANCE_PROMPT_SYNTHESIS_POLICY_VERSION
+                ),
+                "synthesisPolicyDigest": prompt_synthesis_policy_digest(),
+            },
+            "geometry": {
+                "targetGeometryPolicyVersion": (
+                    AI_SELECT_TARGET_GEOMETRY_POLICY_VERSION
+                ),
+                "targetGeometryPolicyDigest": target_geometry_policy_digest(),
+                "localViewPolicyVersion": (
+                    AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION
+                ),
+                "localViewPolicyDigest": local_key_view_policy_digest(),
+            },
+            "maskReview": {
+                "policyVersion": AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
+                "policyDigest": view_assessment_policy_digest(),
+            },
+            "evidence": {
+                "policyDigest": production_candidate["evidencePolicyDigest"],
+                "aggregationPolicyDigest": production_candidate[
+                    "aggregationPolicyDigest"
+                ],
+                "rasterImplementationId": direct_evidence[
+                    "rasterImplementationId"
+                ],
+                "evidenceBackendKind": direct_evidence[
+                    "evidenceBackendKind"
+                ],
+                "evidenceBackendId": direct_evidence["evidenceBackendId"],
+                "runtimeBuildId": direct_evidence["runtimeBuildId"],
+            },
+            "liftReadiness": {
+                "policyId": lift_policy["policyId"],
+                "policyDigest": lift_policy["readinessPolicyDigest"],
+            },
+        }
+        return {
+            "status": "ready",
+            "record": {
+                **payload,
+                "identityDigest": _canonical_json_digest(payload),
+            },
+        }
+
+    def _current_production_identity_digest(self) -> str:
+        release = self._process_release()
+        model = self.resolve_active_model_manifest()
+        provider = self._image_instance_provider_capability(model)
+        renderer = self._renderer_capability(release)
+        direct_evidence = direct_evidence_capability()
+        production_candidate = self._production_candidate_re_lift_capability(
+            direct_evidence
+        )
+        identity = self._production_identity_capability(
+            model=model,
+            provider=provider,
+            renderer=renderer,
+            direct_evidence=direct_evidence,
+            production_candidate=production_candidate,
+        )
+        record = identity.get("record")
+        digest = record.get("identityDigest") if isinstance(record, Mapping) else None
+        if identity.get("status") != "ready" or not isinstance(digest, str):
+            raise MaskSessionError(
+                "productionIdentityUnavailable",
+                "The calibrated AI Select production identity is unavailable.",
+            )
+        return digest
 
     def _image_instance_provider_capability(
         self,
@@ -1973,11 +2158,135 @@ class CompanionState:
             request, expected_view_id=None, timing=timing
         )
 
+    @staticmethod
+    def _async_artifact_request_key(request: Mapping[str, object]) -> str:
+        return json.dumps(
+            dict(request), separators=(",", ":"), sort_keys=True, allow_nan=False
+        )
+
+    @staticmethod
+    def _async_artifact_target_context_id(
+        request: Mapping[str, object],
+    ) -> str | None:
+        request_binding = request.get('requestBinding')
+        if not isinstance(request_binding, Mapping):
+            current_input = request.get('currentInput')
+            request_binding = (
+                current_input.get('requestBinding')
+                if isinstance(current_input, Mapping)
+                else None
+            )
+        target_context_id = (
+            request_binding.get('targetContextId')
+            if isinstance(request_binding, Mapping)
+            else None
+        )
+        return (
+            target_context_id
+            if isinstance(target_context_id, str) and target_context_id
+            else None
+        )
+
+    def _admit_async_artifact(
+        self,
+        request: Mapping[str, object],
+        admissions: dict[str, AsyncArtifactAdmission],
+        operation_id: str,
+    ) -> tuple[str, AsyncArtifactAdmission, bool]:
+        request_key = self._async_artifact_request_key(request)
+        key = operation_id
+        with self._session_lock:
+            admission = admissions.get(key)
+            if admission is not None:
+                if admission.request_key != request_key:
+                    raise MaskSessionError(
+                        "attemptIdentityConflict",
+                        "The artifact attempt ID was reused with different bound inputs.",
+                    )
+                return key, admission, False
+            if self._operation_slot_in_use_locked():
+                raise MaskSessionError(
+                    "capacityFull",
+                    "The Companion is already serving another AI or Object Selection operation.",
+                )
+            pending = [
+                item
+                for item in admissions.items()
+                if not item[1].completed.is_set()
+            ]
+            completed = [
+                item
+                for item in admissions.items()
+                if item[1].completed.is_set()
+            ][-(AI_SELECT_ASYNC_ARTIFACT_ADMISSION_LIMIT - 1):]
+            admissions.clear()
+            admissions.update(completed)
+            admissions.update(pending)
+            admission = AsyncArtifactAdmission(
+                request_key=request_key,
+                target_context_id=self._async_artifact_target_context_id(request),
+            )
+            admissions[key] = admission
+            self._active_evidence_operation = operation_id
+        return key, admission, True
+
+    @staticmethod
+    def _replay_async_artifact(
+        admission: AsyncArtifactAdmission,
+        *,
+        failure_code: str,
+        failure_message: str,
+    ) -> dict[str, object]:
+        admission.completed.wait()
+        if admission.publication is not None:
+            return json.loads(admission.publication)
+        if admission.failure is not None:
+            raise MaskSessionError(*admission.failure)
+        raise MaskSessionError(failure_code, failure_message)
+
+    def _complete_async_artifact(
+        self,
+        *,
+        key: str,
+        admission: AsyncArtifactAdmission,
+        admissions: dict[str, AsyncArtifactAdmission],
+        operation_id: str,
+        response: dict[str, object] | None = None,
+        failure: MaskSessionError | None = None,
+    ) -> None:
+        if (response is None) == (failure is None):
+            raise ValueError("Async artifact completion requires one outcome")
+        publication = (
+            None
+            if response is None
+            else json.dumps(
+                response, separators=(",", ":"), sort_keys=True, allow_nan=False
+            )
+        )
+        with self._session_lock:
+            if admissions.get(key) is not admission:
+                if self._active_evidence_operation == operation_id:
+                    self._active_evidence_operation = None
+                admission.failure = (
+                    "staleAttempt",
+                    "The artifact attempt completed after its target state was disposed.",
+                )
+                admission.completed.set()
+                return
+            if publication is not None:
+                admission.publication = publication
+            else:
+                assert failure is not None
+                admission.failure = (failure.code, str(failure))
+            if self._active_evidence_operation == operation_id:
+                self._active_evidence_operation = None
+            admission.completed.set()
+
     def produce_ai_select_candidate_re_lift(
         self,
         request: Mapping[str, object],
     ) -> dict[str, object]:
-        """Run the packed-scene Ticket 15 reference Re-Lift transaction."""
+        """Publish one atomic production Candidate from Direct Evidence."""
 
         scene_id = request.get('sceneId')
         scene_version = request.get('sceneVersion')
@@ -1992,6 +2301,14 @@ class CompanionState:
         assert isinstance(scene_id, str)
         assert isinstance(scene_version, str)
         assert isinstance(render_config_version, str)
+        if (
+            request.get('productionIdentityDigest')
+            != self._current_production_identity_digest()
+        ):
+            raise MaskSessionError(
+                'productionIdentityMismatch',
+                'Candidate Re-Lift does not bind the current production identity.',
+            )
         snapshot = self.scene_snapshot(scene_id, scene_version)
         if snapshot is None:
             raise MaskSessionError(
@@ -2008,49 +2325,67 @@ class CompanionState:
                 'Candidate Re-Lift requires a packed binary Scene Snapshot.',
             )
         snapshot_stable_ids = sorted(int(value) for value in snapshot.stable_ids)
-        validate_candidate_re_lift_snapshot_binding(
-            request,
-            scene_content_digest=snapshot.scene.content_digest,
-            scene_stable_ids=snapshot_stable_ids,
+        target_start, target_count = _authoritative_target_row_range(
+            snapshot.scene, str(request.get('targetSplatId', ''))
         )
-        operation_id = str(request.get('liftAttemptId', ''))
-        with self._session_lock:
-            if self._operation_slot_in_use_locked():
-                raise MaskSessionError(
-                    'capacityFull',
-                    'The Companion is already serving another AI or Object Selection operation.',
-                )
-            self._active_evidence_operation = operation_id
-
+        target_stable_ids = sorted(
+            int(value)
+            for value in snapshot.stable_ids[
+                target_start:target_start + target_count
+            ]
+        )
+        validate_production_candidate_re_lift_snapshot_binding(
+            request,
+            scene_stable_ids=snapshot_stable_ids,
+            target_stable_ids=target_stable_ids,
+        )
+        operation_id = f"candidate-re-lift:{request.get('liftAttemptId', '')}"
+        key, admission, owns_admission = self._admit_async_artifact(
+            request,
+            self._candidate_re_lift_admissions,
+            operation_id,
+        )
+        if not owns_admission:
+            return self._replay_async_artifact(
+                admission,
+                failure_code='candidateReLiftFailure',
+                failure_message='The Companion lost a Candidate Re-Lift publication before it completed.',
+            )
         try:
-            renderer = self._require_contributor_renderer()
-            if not isinstance(renderer, GsplatContributorRenderer):
-                raise MaskSessionError(
-                    'rendererUnavailable',
-                    'Candidate Re-Lift requires the locked gsplat Contributor renderer.',
-                )
-
-            def produce(
-                current_input: Mapping[str, object],
-                stable_mask: Mapping[str, object],
-                camera_binding: Mapping[str, object],
-            ) -> dict[str, object]:
-                return renderer.compute_reference_evidence(
-                    admission_input=current_input,
-                    stable_mask_artifact=stable_mask,
-                    policy=default_reference_evidence_policy(),
-                    scene_snapshot=snapshot.scene,
-                    camera_binding=camera_binding,
-                )
-
             try:
-                return produce_reference_candidate_re_lift(request, produce)
+                response = produce_production_candidate_re_lift(request)
             except CandidateReLiftError as error:
                 raise MaskSessionError(error.code, str(error)) from error
-        finally:
-            with self._session_lock:
-                if self._active_evidence_operation == operation_id:
-                    self._active_evidence_operation = None
+        except MaskSessionError as error:
+            self._complete_async_artifact(
+                key=key,
+                admission=admission,
+                admissions=self._candidate_re_lift_admissions,
+                operation_id=operation_id,
+                failure=error,
+            )
+            raise
+        except Exception as error:
+            failure = MaskSessionError(
+                'candidateReLiftFailure',
+                'The Companion failed while publishing the production Candidate.',
+            )
+            self._complete_async_artifact(
+                key=key,
+                admission=admission,
+                admissions=self._candidate_re_lift_admissions,
+                operation_id=operation_id,
+                failure=failure,
+            )
+            raise failure from error
+        self._complete_async_artifact(
+            key=key,
+            admission=admission,
+            admissions=self._candidate_re_lift_admissions,
+            operation_id=operation_id,
+            response=response,
+        )
+        return response
 
     def produce_ai_select_direct_evidence(
         self,
@@ -2059,6 +2394,7 @@ class CompanionState:
         """Produce or reuse one bound production Direct Evidence artifact."""
 
         required = {
+            "evidenceAttemptId",
             "sceneId",
             "sceneVersion",
             "renderConfigVersion",
@@ -2072,7 +2408,12 @@ class CompanionState:
             or set(request) - (required | {"cachedArtifact", "sceneTransport"})
             or not all(
                 isinstance(request.get(key), str) and str(request[key]).strip()
-                for key in ("sceneId", "sceneVersion", "renderConfigVersion")
+                for key in (
+                    "evidenceAttemptId",
+                    "sceneId",
+                    "sceneVersion",
+                    "renderConfigVersion",
+                )
             )
             or not is_gaussian_evidence_admission_input(
                 request.get("currentInput")
@@ -2235,32 +2576,45 @@ class CompanionState:
                     "The Direct Evidence Working Set contains a non-target Stable Gaussian ID.",
                 )
         cached = request.get("cachedArtifact")
+        operation_id = f"direct-evidence:{request['evidenceAttemptId']}"
+        key, admission, owns_admission = self._admit_async_artifact(
+            request,
+            self._direct_evidence_admissions,
+            operation_id,
+        )
+        if not owns_admission:
+            return self._replay_async_artifact(
+                admission,
+                failure_code="directEvidenceFailure",
+                failure_message="The Companion lost a Direct Evidence publication before it completed.",
+            )
         if is_current_gaussian_evidence_artifact(cached, current_input):
             assert isinstance(cached, dict)
-            return {
+            response = {
                 "status": "complete",
+                "evidenceAttemptId": request["evidenceAttemptId"],
                 "requestBinding": request_binding,
                 "targetSplatId": target_splat_id,
                 "viewId": current_input["view"]["viewId"],
                 "reused": True,
                 "artifact": cached,
             }
-        operation_id = f"direct-evidence:{current_input['view']['viewId']}"
-        with self._session_lock:
-            if self._operation_slot_in_use_locked():
-                raise MaskSessionError(
-                    "capacityFull",
-                    "The Companion is already serving another AI or Object Selection operation.",
-                )
-            self._active_evidence_operation = operation_id
+            self._complete_async_artifact(
+                key=key,
+                admission=admission,
+                admissions=self._direct_evidence_admissions,
+                operation_id=operation_id,
+                response=response,
+            )
+            return response
         try:
-            renderer = self._require_contributor_renderer()
-            if not isinstance(renderer, GsplatContributorRenderer):
-                raise MaskSessionError(
-                    "rendererUnavailable",
-                    "Direct Evidence requires the locked gsplat renderer.",
-                )
             try:
+                renderer = self._require_contributor_renderer()
+                if not isinstance(renderer, GsplatContributorRenderer):
+                    raise MaskSessionError(
+                        "rendererUnavailable",
+                        "Direct Evidence requires the locked gsplat renderer.",
+                    )
                 artifact = renderer.compute_direct_evidence(
                     admission_input=current_input,
                     stable_mask_artifact=request["stableMask"],
@@ -2269,11 +2623,14 @@ class CompanionState:
                     camera_binding=request["cameraBinding"],
                     target_stable_ids=target_stable_ids,
                 )
+            except MaskSessionError:
+                raise
             except ValueError as error:
                 code = getattr(error, "code", "directEvidenceFailure")
                 raise MaskSessionError(str(code), str(error)) from error
             response: dict[str, object] = {
                 "status": "complete",
+                "evidenceAttemptId": request["evidenceAttemptId"],
                 "requestBinding": request_binding,
                 "targetSplatId": target_splat_id,
                 "viewId": current_input["view"]["viewId"],
@@ -2284,11 +2641,49 @@ class CompanionState:
                 response["telemetry"] = dict(
                     renderer.last_direct_evidence_telemetry
                 )
-            return response
-        finally:
-            with self._session_lock:
-                if self._active_evidence_operation == operation_id:
-                    self._active_evidence_operation = None
+        except MaskSessionError as error:
+            self._complete_async_artifact(
+                key=key,
+                admission=admission,
+                admissions=self._direct_evidence_admissions,
+                operation_id=operation_id,
+                failure=error,
+            )
+            raise
+        except Exception as error:
+            if _is_torch_out_of_memory(error):
+                failure = MaskSessionError(
+                    "evidenceOutOfMemory",
+                    "The Direct Evidence attempt exhausted CUDA memory.",
+                )
+                self._complete_async_artifact(
+                    key=key,
+                    admission=admission,
+                    admissions=self._direct_evidence_admissions,
+                    operation_id=operation_id,
+                    failure=failure,
+                )
+                raise failure from error
+            failure = MaskSessionError(
+                "directEvidenceFailure",
+                "The Companion failed while publishing Direct Evidence.",
+            )
+            self._complete_async_artifact(
+                key=key,
+                admission=admission,
+                admissions=self._direct_evidence_admissions,
+                operation_id=operation_id,
+                failure=failure,
+            )
+            raise failure from error
+        self._complete_async_artifact(
+            key=key,
+            admission=admission,
+            admissions=self._direct_evidence_admissions,
+            operation_id=operation_id,
+            response=response,
+        )
+        return response
 
     def _render_ai_select_view(
         self,
@@ -3068,6 +3463,11 @@ class CompanionState:
                 _logger.exception(
                     "promptable-mask adapter failed during instance inference"
                 )
+                if _is_torch_out_of_memory(error):
+                    raise MaskSessionError(
+                        'modelOutOfMemory',
+                        'The SAM 3 Image inference attempt exhausted CUDA memory.',
+                    ) from error
                 raise MaskSessionError(
                     'modelFailure',
                     'The promptable-mask adapter failed; verify the installed model runtime and retry.',
@@ -5165,6 +5565,9 @@ class CompanionState:
         self._local_key_view_plan_admissions.clear()
         self._generated_view_mask_admissions.clear()
         self._image_instance_mask_admissions.clear()
+        self._direct_evidence_admissions.clear()
+        self._candidate_re_lift_admissions.clear()
+        self._generated_view_prompt_admissions.clear()
         self._route_b_prompt_records.clear()
         self._route_b_inference_result_records.clear()
         # Target disposal invalidates every Companion-held RGB reference and
@@ -5177,6 +5580,43 @@ class CompanionState:
             self._frame_sets.clear()
         with self._scene_lock:
             self._scene_snapshots.clear()
+
+    def dispose_ai_select_target(self, target_context_id: str) -> None:
+        """Remove target-local replay/ref authority while preserving runtime caches."""
+
+        if not isinstance(target_context_id, str) or not target_context_id.strip():
+            raise ValueError("AI Select targetContextId must not be empty")
+        with self._session_lock:
+            # A delayed Target-A cleanup may arrive after Target B starts.
+            # Remove exact Target-A replay authority only; foreign/stale IDs
+            # cannot erase Target B admissions or reusable runtime caches.
+            for admissions in (
+                self._direct_evidence_admissions,
+                self._candidate_re_lift_admissions,
+                self._generated_view_prompt_admissions,
+            ):
+                retained = {
+                    key: admission
+                    for key, admission in admissions.items()
+                    if admission.target_context_id != target_context_id
+                }
+                admissions.clear()
+                admissions.update(retained)
+            self._route_b_prompt_records = {
+                key: value
+                for key, value in self._route_b_prompt_records.items()
+                if value.target_context_id != target_context_id
+            }
+            self._route_b_inference_result_records = {
+                key: value
+                for key, value in self._route_b_inference_result_records.items()
+                if value.target_context_id != target_context_id
+            }
+            self._logits_store = {
+                key: value
+                for key, value in self._logits_store.items()
+                if value.get('targetContextId') != target_context_id
+            }
 
     def produce_ai_select_target_geometry_hint(
         self, request: Mapping[str, object]
@@ -5485,6 +5925,11 @@ class CompanionState:
                     visible_points=plan_request.target_geometry_hint['visiblePoints'],  # type: ignore[arg-type]
                     batch_ordinal=plan_request.batch_ordinal,
                 )
+                if plan_request.batch_ordinal == 0 and not 4 <= len(views) <= 8:
+                    raise MaskSessionError(
+                        'plannerFailure',
+                        'The initial local Key-View plan must retain 4–8 usable, limited, or failed slots.',
+                    )
             except PlanExhaustedError as error:
                 raise MaskSessionError('planExhausted', str(error)) from error
             except PlannerFailureError as error:
@@ -6025,10 +6470,10 @@ class CompanionState:
         ordered_views = value.get('orderedViews')
         if (
             not isinstance(ordered_views, list)
-            or len(ordered_views) < 1
+            or len(ordered_views) < 4
             or len(ordered_views) > 8
         ):
-            raise ValueError('Route B localKeyViewPlan must contain 1..8 Views')
+            raise ValueError('Route B localKeyViewPlan must retain 4..8 View slots')
         matching_view = None
         seen_view_ids: set[str] = set()
         for index, planned in enumerate(ordered_views):
@@ -6047,13 +6492,13 @@ class CompanionState:
             planned_camera, _, _, _ = self._parse_ai_select_anchor_camera(
                 planned.get('cameraBinding')
             )
-            if planned.get('quality') not in ('usable', 'limited'):
+            if planned.get('quality') not in ('usable', 'limited', 'failed'):
                 raise ValueError('Route B localKeyViewPlan View quality is invalid')
             if not isinstance(planned.get('reasons'), list) or any(
                 not isinstance(reason, str) or not reason for reason in planned['reasons']
             ):
                 raise ValueError('Route B localKeyViewPlan View reasons are invalid')
-            if planned_view_id == view_id:
+            if planned_view_id == view_id and planned.get('quality') != 'failed':
                 matching_view = planned_camera
         if matching_view is None or matching_view != dict(view_camera_binding):
             raise ValueError(
@@ -6444,70 +6889,122 @@ class CompanionState:
             if geometry_quality == 'limited'
             else []
         )
-        if prompt_support == 'limited':
-            # Prompt Support is an independent, fail-closed eligibility state.
-            # Geometry may be diagnostically limited while a separated-support
-            # filter still leaves enough retained support for Prompt synthesis.
-            return {
-                **prompt_request.response_fields(),
-                'status': 'limited',
-                'diagnostics': [
-                    *geometry_diagnostics,
-                    'prompt-support-limited',
-                ],
-            }
-        synthesized = synthesize_image_instance_prompt(
-            visible_points=visible_points,
-            camera_binding=prompt_request.view_camera_binding,
-            width=prompt_request.width,
-            height=prompt_request.height,
+        request_value = dict(request)
+        operation_id = (
+            f"prompt-synthesis:{prompt_request.prompt_synthesis_attempt_id}"
         )
-        if isinstance(synthesized, LimitedImageInstancePrompt):
-            return {
-                **prompt_request.response_fields(),
-                'status': 'limited',
-                'diagnostics': [*geometry_diagnostics, *synthesized.diagnostics],
-            }
-        prompt = create_image_instance_prompt_artifact(
-            {
-                'schemaVersion': 1,
-                'targetContextId': prompt_request.request_binding['targetContextId'],
-                'contextRevision': prompt_request.request_binding['contextRevision'],
-                'viewId': prompt_request.view_id,
-                'rgbDigest': prompt_request.rgb_digest,
-                'cameraBindingDigest': prompt_request.view_camera_binding_digest,
-                'targetGeometryHintDigest': prompt_request.target_geometry_hint[
-                    'artifactDigest'
-                ],
-                'localKeyViewPlanDigest': prompt_request.local_key_view_plan[
-                    'artifactDigest'
-                ],
-                'adapterCapabilityDigest': prompt_request.adapter_capability_digest,
-                'promptSynthesisPolicyDigest': prompt_synthesis_policy_digest(),
-                'positivePoints': [
-                    {'xPx': x_px, 'yPx': y_px}
-                    for x_px, y_px in synthesized.positive_points
-                ],
-                'negativePoints': [
-                    {'xPx': x_px, 'yPx': y_px}
-                    for x_px, y_px in synthesized.negative_points
-                ],
-                'positiveBox': {
-                    'x0Px': synthesized.positive_box[0],
-                    'y0Px': synthesized.positive_box[1],
-                    'x1Px': synthesized.positive_box[2],
-                    'y1Px': synthesized.positive_box[3],
-                },
-                'multimaskOutput': False,
-            }
+        key, admission, owns_admission = self._admit_async_artifact(
+            request_value,
+            self._generated_view_prompt_admissions,
+            operation_id,
         )
-        self._remember_route_b_prompt(prompt_request, prompt)
-        return {
-            **prompt_request.response_fields(),
-            'status': 'ready',
-            'diagnostics': [*geometry_diagnostics, *synthesized.diagnostics],
-            'prompt': prompt,
-        }
+        if not owns_admission:
+            return self._replay_async_artifact(
+                admission,
+                failure_code='promptSynthesisFailure',
+                failure_message='The Companion lost a Prompt publication before it completed.',
+            )
+        try:
+            if prompt_support == 'limited':
+                # Prompt Support is an independent, fail-closed eligibility state.
+                response = {
+                    **prompt_request.response_fields(),
+                    'status': 'limited',
+                    'diagnostics': [
+                        *geometry_diagnostics,
+                        'prompt-support-limited',
+                    ],
+                }
+            else:
+                synthesized = synthesize_image_instance_prompt(
+                    visible_points=visible_points,
+                    camera_binding=prompt_request.view_camera_binding,
+                    width=prompt_request.width,
+                    height=prompt_request.height,
+                )
+                if isinstance(synthesized, LimitedImageInstancePrompt):
+                    response = {
+                        **prompt_request.response_fields(),
+                        'status': 'limited',
+                        'diagnostics': [
+                            *geometry_diagnostics,
+                            *synthesized.diagnostics,
+                        ],
+                    }
+                else:
+                    prompt = create_image_instance_prompt_artifact(
+                        {
+                            'schemaVersion': 1,
+                            'targetContextId': prompt_request.request_binding['targetContextId'],
+                            'contextRevision': prompt_request.request_binding['contextRevision'],
+                            'viewId': prompt_request.view_id,
+                            'rgbDigest': prompt_request.rgb_digest,
+                            'cameraBindingDigest': prompt_request.view_camera_binding_digest,
+                            'targetGeometryHintDigest': prompt_request.target_geometry_hint[
+                                'artifactDigest'
+                            ],
+                            'localKeyViewPlanDigest': prompt_request.local_key_view_plan[
+                                'artifactDigest'
+                            ],
+                            'adapterCapabilityDigest': prompt_request.adapter_capability_digest,
+                            'promptSynthesisPolicyDigest': prompt_synthesis_policy_digest(),
+                            'positivePoints': [
+                                {'xPx': x_px, 'yPx': y_px}
+                                for x_px, y_px in synthesized.positive_points
+                            ],
+                            'negativePoints': [
+                                {'xPx': x_px, 'yPx': y_px}
+                                for x_px, y_px in synthesized.negative_points
+                            ],
+                            'positiveBox': {
+                                'x0Px': synthesized.positive_box[0],
+                                'y0Px': synthesized.positive_box[1],
+                                'x1Px': synthesized.positive_box[2],
+                                'y1Px': synthesized.positive_box[3],
+                            },
+                            'multimaskOutput': False,
+                        }
+                    )
+                    self._remember_route_b_prompt(prompt_request, prompt)
+                    response = {
+                        **prompt_request.response_fields(),
+                        'status': 'ready',
+                        'diagnostics': [
+                            *geometry_diagnostics,
+                            *synthesized.diagnostics,
+                        ],
+                        'prompt': prompt,
+                    }
+        except MaskSessionError as error:
+            self._complete_async_artifact(
+                key=key,
+                admission=admission,
+                admissions=self._generated_view_prompt_admissions,
+                operation_id=operation_id,
+                failure=error,
+            )
+            raise
+        except Exception as error:
+            failure = MaskSessionError(
+                'promptSynthesisFailure',
+                'The Companion failed while publishing the generated View Prompt.',
+            )
+            self._complete_async_artifact(
+                key=key,
+                admission=admission,
+                admissions=self._generated_view_prompt_admissions,
+                operation_id=operation_id,
+                failure=failure,
+            )
+            raise failure from error
+        self._complete_async_artifact(
+            key=key,
+            admission=admission,
+            admissions=self._generated_view_prompt_admissions,
+            operation_id=operation_id,
+            response=response,
+        )
+        return response
 
     @staticmethod
     def _route_b_prompt_state(prompt: Mapping[str, object]) -> dict[str, object]:
@@ -6699,6 +7196,15 @@ class CompanionState:
             raise failure from error
         except Exception as error:
             _logger.exception('SAM 3 Image Route B inference failed')
+            if _is_torch_out_of_memory(error):
+                failure = MaskSessionError(
+                    'modelOutOfMemory',
+                    'The SAM 3 Image inference attempt exhausted CUDA memory.',
+                )
+                self._complete_image_instance_mask(
+                    key, admission, failure=failure
+                )
+                raise failure from error
             failure = MaskSessionError(
                 'modelFailure',
                 'The locked SAM 3 Image adapter failed during Route B inference.',
@@ -7861,6 +8367,7 @@ class CompanionState:
                 "aiSelectImageInstanceMasks",
                 "aiSelectImageInstanceMaskReview",
                 "aiSelectReferenceCandidateReLift",
+                "aiSelectProductionCandidateReLift",
                 "aiSelectProductionDirectEvidence",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",

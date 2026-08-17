@@ -1,7 +1,4 @@
-import type {
-    CandidatePublicationBinding,
-    ReferenceCandidateArtifact
-} from './candidate-publication';
+import type { CandidateArtifact } from './candidate-publication';
 import {
     areTargetDependencyTokensEqual,
     type CurrentTargetContext,
@@ -37,25 +34,8 @@ export interface CandidateApplicationBackendIdentity {
     readonly runtimeBuildId: string;
 }
 
-export interface ProductionCandidateApplicationArtifact {
-    readonly productionReadiness: 'production-ready';
-    readonly publicationBinding: Omit<
-        CandidatePublicationBinding,
-        'referenceBackendIdentity'
-    > &
-        Readonly<{
-            evidenceBackendIdentity: CandidateApplicationBackendIdentity &
-                Readonly<{ evidenceBackendKind: 'production-direct' }>;
-        }>;
-    readonly candidate: Readonly<{
-        selectedStableGaussianIds: readonly number[];
-    }>;
-    readonly candidateDigest: string;
-}
-
-/** Validated reference or future production publisher handoff. */
-export type CandidateApplicationArtifact =
-    ReferenceCandidateArtifact | ProductionCandidateApplicationArtifact;
+/** Validated reference or production publisher handoff. */
+export type CandidateApplicationArtifact = CandidateArtifact;
 
 export interface CandidateApplicationSource {
     readonly presentationState: Readonly<{
@@ -76,6 +56,7 @@ export interface CandidateApplicationRuntimeIdentity {
     readonly runtimeBuildId: string;
     readonly sourceEvidencePolicyDigest: string;
     readonly aggregationPolicyDigest: string;
+    readonly productionIdentityDigest: string | null;
 }
 
 export interface CandidateNativeHistoryCommand {
@@ -127,6 +108,7 @@ export interface CandidateApplicationRecord {
     readonly evidenceBackendKind: CandidateEvidenceBackendKind;
     readonly evidenceBackendId: string;
     readonly runtimeBuildId: string;
+    readonly productionIdentityDigest: string | null;
     readonly policyIdentity: Readonly<{
         sourceEvidencePolicyDigest: string;
         aggregationPolicyDigest: string;
@@ -311,6 +293,10 @@ export class CandidateApplicationController {
                 evidenceBackendKind: backend.evidenceBackendKind,
                 evidenceBackendId: backend.evidenceBackendId,
                 runtimeBuildId: backend.runtimeBuildId,
+                productionIdentityDigest:
+                    candidate.productionReadiness === 'production-ready'
+                        ? candidate.publicationBinding.productionIdentityDigest
+                        : null,
                 policyIdentity: Object.freeze({
                     sourceEvidencePolicyDigest:
                         candidate.publicationBinding.sourceEvidencePolicyDigest,
@@ -469,6 +455,13 @@ export class CandidateApplicationController {
                 publication.aggregationPolicyDigest
         ) {
             return 'policy-incompatible';
+        }
+        if (
+            candidate.productionReadiness === 'production-ready' &&
+            accepted.productionIdentityDigest !==
+                candidate.publicationBinding.productionIdentityDigest
+        ) {
+            return 'identity-unverified';
         }
         return null;
     }

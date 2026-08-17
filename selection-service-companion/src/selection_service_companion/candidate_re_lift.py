@@ -11,6 +11,10 @@ from copy import deepcopy
 from typing import Callable, Mapping
 
 from .camera_binding import camera_binding_digest
+from .direct_gaussian_evidence import (
+    DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+    DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+)
 
 from .gaussian_evidence_contract import (
     is_current_gaussian_evidence_artifact,
@@ -20,7 +24,6 @@ from .gaussian_evidence_contract import (
 )
 from .reference_candidate_publication import create_reference_candidate_artifact
 from .reference_gaussian_evidence import default_reference_evidence_policy
-from .renderer_runtime import EXPECTED_RENDERER_LOCK_DIGEST
 from .reference_gaussian_evidence_aggregation import (
     aggregate_reference_gaussian_evidence,
     default_reference_aggregation_policy,
@@ -166,13 +169,13 @@ def produce_reference_candidate_re_lift(
             current_input["evidencePolicyDigest"]
             != policy["evidencePolicyDigest"]
             or current_input["rasterImplementationId"]
-            != "gsplat-reference-rgb/v1"
+            != DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID
             or current_input["evidenceBackendKind"]
             != "reference-contributor"
             or current_input["evidenceBackendId"]
             != "complete-contributor/reference-v1"
             or current_input["runtimeBuildId"]
-            != EXPECTED_RENDERER_LOCK_DIGEST
+            != DIRECT_EVIDENCE_RUNTIME_BUILD_ID
         ):
             raise CandidateReLiftError(
                 f"AI Select Candidate Re-Lift View {view_id} has an unsupported reference Evidence identity."

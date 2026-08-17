@@ -214,6 +214,10 @@ export class AISelectCandidateCorrectionController<TPayload = unknown> {
         }
     }
 
+    disposeCachedEvidence(viewId: string): void {
+        this.cachedEvidence.delete(viewId);
+    }
+
     beginCorrection(): void {
         this.requireTargetActive();
         if (this.candidatePublications.presentationState.status !== 'current') {

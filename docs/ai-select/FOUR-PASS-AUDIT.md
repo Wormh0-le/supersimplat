@@ -1,9 +1,9 @@
-# Eight-Pass Bidirectional Traceability Audit — v2.35
+# Eight-Pass Bidirectional Traceability Audit — v2.36
 
 The filename is retained for compatibility. Final Spec v1.3 is the sole current normative specification.
 
 The v2.12–v2.27 sections and detailed pass text below are retained as historical
-audit evidence. The controlling v2.35 result is the post-Ticket-19 closure at
+audit evidence. The controlling v2.36 result is the post-Ticket-20 closure at
 the end of this document; Ticket 21 still owns calibration of the accepted
 `4–8` initial automatic-View range.
 
@@ -603,3 +603,37 @@ and cached authoritative RGB without inheriting reference Contributor as a
 production dependency.
 
 Overall result: **PASS_V2_35**.
+
+## v2.36 Ticket 20 controlling audit result
+
+Ticket 20 is implemented and Ticket 21 is the sole current execution frontier.
+This pass supersedes the v2.35 frontier values while preserving Ticket 19's
+authoritative render-path evidence.
+
+| Pass | Current v2.36 check                                                                                                                          | Result |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 1    | All 31 parent Tickets and the 14A–14D / 16A–16G stage graph resolve; Ticket 21 is the only current frontier                                  | PASS   |
+| 2    | Final Spec v1.3 remains the sole current specification and all parent Ticket mappings resolve directly to it                                 | PASS   |
+| 3    | Project-owned source/ABI/build/runtime identity and compute-capability policy are exposed and fail closed                                    | PASS   |
+| 4    | Authoritative RGB and Direct P/N/V share one accepted front-to-back contribution decision; RGB digest remains exact with writes enabled      | PASS   |
+| 5    | Render scope retains non-target occluders while strict target-local Evidence mapping and boundary diagnostics prevent truncation             | PASS   |
+| 6    | Production artifacts bind every Camera/RGB/Mask/policy/Working Set/backend dependency and remain cache-distinct from reference artifacts     | PASS   |
+| 7    | Locked-GPU reference parity, known mismatch, repeat stability, SH0–SH3 full/spatial parity, memory, latency and compiler-resource gates pass | PASS   |
+| 8    | Integrated tests, Companion tests, lint, locale lint and build pass; Ticket 21 calibration remains downstream                                | PASS   |
+
+Current critical scan: normal RGB and Direct Evidence neither allocate nor wait
+for complete Contributor data. Duplicate/missing/colliding/out-of-range mapping,
+Working Set boundary contact, overflow, kernel failure, RGB mismatch and stale
+raster/backend/runtime identity publish no partial Evidence. Exact artifacts
+may be reused; changed identities recompute without relabeling prior RGB as a
+render failure.
+
+Measured evidence is recorded in
+`docs/ai-select/benchmarks/20-direct-evidence-hardening.md`. The current global
+atomic baseline is retained because measured latency, memory, numeric and
+compiler-resource gates pass; hardware performance counters were unavailable
+and this evidence gap is recorded without inventing a counter result. Ticket 21
+owns calibration and release readiness, and the existing reference Candidate
+Re-Lift path is not relabeled as production-ready.
+
+Overall result: **PASS_V2_36**.

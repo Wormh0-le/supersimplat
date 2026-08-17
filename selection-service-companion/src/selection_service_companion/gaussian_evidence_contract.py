@@ -1,8 +1,8 @@
-"""Ticket 14A fail-closed Evidence admission and Working Set contracts.
+"""Fail-closed reference and production Evidence artifact contracts.
 
-This module deliberately defines only the reference-artifact boundary. It
-does not calculate P/N/V (Ticket 14B), aggregate them (14C), publish a
-Candidate (14D), or represent Ticket 20's production same-decision path.
+Ticket 14 introduced the Stable-ID-indexed reference artifact. Ticket 20
+extends the same lifecycle envelope to production Direct Evidence while the
+backend identity keeps reference and production products non-interchangeable.
 """
 
 from __future__ import annotations
@@ -586,14 +586,14 @@ def _is_admitted_evidence_input(value: object) -> bool:
         ))
         and _is_sorted_stable_gaussian_ids(value['stableGaussianIds'])
         and _is_non_empty_string(value['rasterImplementationId'])
-        and value['evidenceBackendKind'] in _REFERENCE_EVIDENCE_BACKEND_KINDS
+        and value['evidenceBackendKind'] in _KNOWN_EVIDENCE_BACKEND_KINDS
         and _is_non_empty_string(value['evidenceBackendId'])
         and _is_non_empty_string(value['runtimeBuildId'])
     )
 
 
 def admit_gaussian_evidence(value: object) -> dict[str, object]:
-    """Admit only a current Included Stable RGB Ready View for Ticket 14B."""
+    """Admit a current Included Stable RGB Ready View for Evidence."""
 
     if not is_gaussian_evidence_admission_input(value):
         return {'status': 'rejected', 'reason': 'invalid-input'}
@@ -623,13 +623,14 @@ def admit_gaussian_evidence(value: object) -> dict[str, object]:
         return {'status': 'rejected', 'reason': 'render-working-set-mismatch'}
     if evidence_working_set['targetSplatId'] != value['targetSplatId']:
         return {'status': 'rejected', 'reason': 'evidence-working-set-mismatch'}
-    if not _stable_gaussian_ids_are_subset_of(
-        list(evidence_working_set['stableGaussianIds']),
-        list(render_working_set['stableGaussianIds']),
+    if (
+        value['evidenceBackendKind'] != 'production-direct'
+        and not _stable_gaussian_ids_are_subset_of(
+            list(evidence_working_set['stableGaussianIds']),
+            list(render_working_set['stableGaussianIds']),
+        )
     ):
         return {'status': 'rejected', 'reason': 'stable-id-mapping-invalid'}
-    if value['evidenceBackendKind'] not in _REFERENCE_EVIDENCE_BACKEND_KINDS:
-        return {'status': 'rejected', 'reason': 'unsupported-evidence-backend'}
     return {
         'status': 'admitted',
         'admission': _copy_admission({
@@ -791,7 +792,7 @@ def create_gaussian_evidence_artifact(
     admission: Mapping[str, object],
     masses: Mapping[str, object],
 ) -> dict[str, object]:
-    """Validate and atomically construct one reference-only P/N/V artifact."""
+    """Validate and atomically construct one reference or Direct P/N/V artifact."""
 
     if not _is_admitted_evidence_input(admission):
         raise GaussianEvidenceContractError('AI Select Gaussian Evidence admission is invalid.')

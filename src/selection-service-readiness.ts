@@ -1,7 +1,10 @@
-import type {
-    AISelectAnchorRenderer,
-    AnchorRenderRequest,
-    AnchorRenderResponse
+import {
+    aiSelectRasterImplementationId,
+    aiSelectRuntimeBuildId,
+    aiSelectRgbRendererVersion,
+    type AISelectAnchorRenderer,
+    type AnchorRenderRequest,
+    type AnchorRenderResponse
 } from './ai-select/anchor-render-service';
 import {
     referenceAggregationPolicyDigest,
@@ -13,6 +16,11 @@ import {
     type CandidateReLiftRequest,
     type CandidateReLiftResponse
 } from './ai-select/candidate-re-lift';
+import type {
+    AISelectDirectEvidenceProvider,
+    DirectEvidenceRequest,
+    DirectEvidenceResponse
+} from './ai-select/direct-evidence-service';
 import type {
     AIViewRenderRequest,
     AIViewRenderResponse,
@@ -92,6 +100,7 @@ type SelectionServiceReadinessDiagnosticCode =
     | 'imageInstanceCapabilityMismatch'
     | 'aiSelectAnchorUnsupported'
     | 'candidateReLiftUnsupported'
+    | 'directEvidenceUnsupported'
     | 'maskProposalUnsupported'
     | 'binarySceneSnapshotRegistrationUnsupported'
     | 'modelUnavailable'
@@ -177,10 +186,29 @@ interface SelectionServiceCapabilities {
     runtimeProfileId: string;
     renderer: SelectionServiceRendererCapability;
     imageInstanceProvider: SelectionServiceImageInstanceProviderCapability;
+    directEvidence: SelectionServiceDirectEvidenceCapability;
     referenceCandidateReLift: SelectionServiceReferenceCandidateReLiftCapability;
     supportedOperations: readonly string[];
     activeModelManifest: SelectionServiceModelManifest;
     allowedEditorOrigins: readonly string[];
+}
+
+interface SelectionServiceDirectEvidenceCapability {
+    readonly status: 'ready' | 'unavailable';
+    readonly rasterImplementationId: string;
+    readonly evidenceBackendKind: 'production-direct';
+    readonly evidenceBackendId: string;
+    readonly sourceRevision: string;
+    readonly expectedSourceRevision: string;
+    readonly abiVersion: string;
+    readonly runtimeBuildId: string;
+    readonly torchVersion: string;
+    readonly cudaVersion: string;
+    readonly gsplatSourceCommit: string;
+    readonly supportedComputeCapabilities: readonly string[];
+    readonly accumulation: 'global-atomic-baseline';
+    readonly buildFlags: readonly string[];
+    readonly detectedComputeCapability?: string;
 }
 
 interface SelectionServiceReferenceCandidateReLiftCapability {
@@ -211,6 +239,7 @@ interface SelectionServiceReadinessRequirements {
     modelAdapterId: string;
     aiSelectAnchorOperation: string;
     candidateReLiftOperation: string;
+    directEvidenceOperation: string;
     maskProposalOperation: string;
     maskProposalSetSchemaOperation: string;
     binarySceneSnapshotRegistrationOperation: string;
@@ -324,12 +353,13 @@ const defaultRequirements: SelectionServiceReadinessRequirements = {
     protocolVersion: selectionServiceProtocolVersion,
     runtimeProfileId: currentRuntimeProfileId,
     rendererId: 'gsplat',
-    rgbRendererVersion: 'gsplat-rgb/v1',
-    rasterImplementationId: referenceEvidenceRasterImplementationId,
-    runtimeBuildId: referenceEvidenceRuntimeBuildId,
+    rgbRendererVersion: aiSelectRgbRendererVersion,
+    rasterImplementationId: aiSelectRasterImplementationId,
+    runtimeBuildId: aiSelectRuntimeBuildId,
     modelAdapterId: currentImageInstanceAdapterId,
     aiSelectAnchorOperation: 'aiSelectAnchorRender',
     candidateReLiftOperation: 'aiSelectReferenceCandidateReLift',
+    directEvidenceOperation: 'aiSelectProductionDirectEvidence',
     maskProposalOperation: 'aiSelectMaskProposals',
     maskProposalSetSchemaOperation: 'autoMaskProposalSetSchemaV3',
     binarySceneSnapshotRegistrationOperation:
@@ -397,6 +427,13 @@ const copyCapabilities = (
         adapterCapabilityDigest:
             capabilities.imageInstanceProvider.adapterCapabilityDigest,
         message: capabilities.imageInstanceProvider.message
+    },
+    directEvidence: {
+        ...capabilities.directEvidence,
+        buildFlags: [...capabilities.directEvidence.buildFlags],
+        supportedComputeCapabilities: [
+            ...capabilities.directEvidence.supportedComputeCapabilities
+        ]
     },
     referenceCandidateReLift: {
         ...capabilities.referenceCandidateReLift
@@ -571,6 +608,7 @@ const validateCapabilities = (
     }
     if (
         !isRecord(value.imageInstanceProvider) ||
+        !isRecord(value.directEvidence) ||
         !isRecord(value.referenceCandidateReLift) ||
         (value.imageInstanceProvider.status !== 'ready' &&
             value.imageInstanceProvider.status !== 'unavailable') ||
@@ -596,6 +634,36 @@ const validateCapabilities = (
         candidateReLift.evidenceBackendKind !== 'reference-contributor' ||
         !isNonEmptyString(candidateReLift.evidenceBackendId) ||
         !isNonEmptyString(candidateReLift.runtimeBuildId)
+    ) {
+        return false;
+    }
+    const directEvidence = value.directEvidence;
+    if (
+        (directEvidence.status !== 'ready' &&
+            directEvidence.status !== 'unavailable') ||
+        !isNonEmptyString(directEvidence.rasterImplementationId) ||
+        directEvidence.evidenceBackendKind !== 'production-direct' ||
+        !isNonEmptyString(directEvidence.evidenceBackendId) ||
+        typeof directEvidence.sourceRevision !== 'string' ||
+        !/^sha256:[a-f0-9]{64}$/i.test(directEvidence.sourceRevision) ||
+        directEvidence.expectedSourceRevision !==
+            directEvidence.sourceRevision ||
+        !isNonEmptyString(directEvidence.abiVersion) ||
+        !isNonEmptyString(directEvidence.runtimeBuildId) ||
+        directEvidence.torchVersion !== '2.11.0+cu128' ||
+        directEvidence.cudaVersion !== '12.8' ||
+        directEvidence.gsplatSourceCommit !==
+            '77ab983ffe43420b2131669cb35776b883ca4c3c' ||
+        !Array.isArray(directEvidence.supportedComputeCapabilities) ||
+        !directEvidence.supportedComputeCapabilities.every(
+            (value) => typeof value === 'string' && /^\d+\.\d+$/.test(value)
+        ) ||
+        directEvidence.accumulation !== 'global-atomic-baseline' ||
+        !Array.isArray(directEvidence.buildFlags) ||
+        directEvidence.buildFlags.length === 0 ||
+        !directEvidence.buildFlags.every(
+            (value) => typeof value === 'string' && value.length > 0
+        )
     ) {
         return false;
     }
@@ -1181,6 +1249,31 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             );
         }
         if (
+            capabilities.directEvidence.status !== 'ready' ||
+            capabilities.directEvidence.rasterImplementationId !==
+                this.requirements.rasterImplementationId ||
+            capabilities.directEvidence.evidenceBackendKind !==
+                'production-direct' ||
+            capabilities.directEvidence.evidenceBackendId !==
+                'global-atomic/direct-v1' ||
+            capabilities.directEvidence.abiVersion !==
+                'supersimplat-direct-evidence-abi/v1' ||
+            capabilities.directEvidence.runtimeBuildId !==
+                this.requirements.runtimeBuildId ||
+            !capabilities.directEvidence.supportedComputeCapabilities.includes(
+                '8.9'
+            ) ||
+            !capabilities.supportedOperations.includes(
+                this.requirements.directEvidenceOperation
+            )
+        ) {
+            return diagnostic(
+                'directEvidenceUnsupported',
+                'Production Direct Evidence is unavailable.',
+                'Use the locked compatible Companion release.'
+            );
+        }
+        if (
             !capabilities.supportedOperations.includes(
                 this.requirements.candidateReLiftOperation
             ) ||
@@ -1376,7 +1469,8 @@ class ReadinessGatedSelectionServiceAdapter
         AISelectGeneratedViewPromptSynthesizer,
         ImageInstanceMaskProvider,
         AISelectImageInstanceMaskReviewProvider,
-        AISelectCandidateReLiftProvider
+        AISelectCandidateReLiftProvider,
+        AISelectDirectEvidenceProvider
 {
     private readiness: SelectionServiceReadinessInterface;
     private adapter: SelectionServiceAdapter | null;
@@ -1495,6 +1589,15 @@ class ReadinessGatedSelectionServiceAdapter
     ): Promise<CandidateReLiftResponse> {
         this.readiness.requireReady();
         return await this.requireCandidateReLiftProvider().produceCandidateReLift(
+            request
+        );
+    }
+
+    async produceDirectEvidence(
+        request: DirectEvidenceRequest
+    ): Promise<DirectEvidenceResponse> {
+        this.readiness.requireReady();
+        return await this.requireDirectEvidenceProvider().produceDirectEvidence(
             request
         );
     }
@@ -1619,6 +1722,18 @@ class ReadinessGatedSelectionServiceAdapter
         }
         return adapter as SelectionServiceAdapter &
             AISelectCandidateReLiftProvider;
+    }
+
+    private requireDirectEvidenceProvider(): AISelectDirectEvidenceProvider {
+        const adapter = this.requireAdapter();
+        if (
+            typeof (adapter as Partial<AISelectDirectEvidenceProvider>)
+                .produceDirectEvidence !== 'function'
+        ) {
+            throw new SelectionServiceAdapterNotConfiguredError();
+        }
+        return adapter as SelectionServiceAdapter &
+            AISelectDirectEvidenceProvider;
     }
 }
 

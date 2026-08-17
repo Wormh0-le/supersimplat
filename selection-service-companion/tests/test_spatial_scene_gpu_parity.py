@@ -18,6 +18,10 @@ from selection_service_companion.gsplat_renderer import (
     GsplatContributorRenderer,
     LockedGsplatBackend,
 )
+from selection_service_companion.reference_gaussian_evidence import (
+    PixelEvidenceWeight,
+    PixelEvidenceWeights,
+)
 from selection_service_companion.spatial_scene_working_set import (
     SpatialChunkDescriptor,
     SpatialSceneManifest,
@@ -499,6 +503,66 @@ class SpatialSceneLockedGpuParityTests(unittest.TestCase):
                     _global_contributors(full, full_working_set),
                 )
                 self.assertEqual(selective.contributor_weights, full.contributor_weights)
+                direct_weights = PixelEvidenceWeights(
+                    width=64,
+                    height=64,
+                    values=tuple(
+                        PixelEvidenceWeight(
+                            region="strong-positive-interior",
+                            positive=1.0,
+                            negative=0.25,
+                            visible=0.75,
+                            boundary=0.5,
+                        )
+                        for _ in range(64 * 64)
+                    ),
+                )
+                selective_direct = backend.rasterize_direct_evidence_typed(
+                    snapshot=selective_working_set,
+                    camera=renderer_camera,
+                    width=64,
+                    height=64,
+                    render_stable_ids=selective_working_set.ordered_tensors()["stableIds"],
+                    evidence_stable_ids=[101, 305],
+                    target_stable_ids=[101, 305],
+                    pixel_weights=direct_weights,
+                )
+                full_direct = backend.rasterize_direct_evidence_typed(
+                    snapshot=full_working_set,
+                    camera=renderer_camera,
+                    width=64,
+                    height=64,
+                    render_stable_ids=full_working_set.ordered_tensors()["stableIds"],
+                    evidence_stable_ids=[101, 305],
+                    target_stable_ids=[101, 305],
+                    pixel_weights=direct_weights,
+                )
+                self.assertEqual(
+                    selective_direct.service_rgb_digest,
+                    full_direct.service_rgb_digest,
+                )
+                for selective_mass, full_mass in zip(
+                    (
+                        selective_direct.positive_mass,
+                        selective_direct.negative_mass,
+                        selective_direct.visible_mass,
+                        selective_direct.boundary_mass,
+                    ),
+                    (
+                        full_direct.positive_mass,
+                        full_direct.negative_mass,
+                        full_direct.visible_mass,
+                        full_direct.boundary_mass,
+                    ),
+                    strict=True,
+                ):
+                    difference = float(
+                        (selective_mass - full_mass).abs().max().item()
+                    )
+                    self.assertLessEqual(difference, 1e-4)
+                self.assertEqual(
+                    full_direct.boundary_contact_stable_gaussian_ids, ()
+                )
                 self.assertNotIn(999, full_working_set.ordered_tensors()["stableIds"].tolist())
                 # This is the production contributor publication seam: it
                 # consumes working-set tensor IDs and proves their global

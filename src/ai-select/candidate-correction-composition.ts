@@ -15,8 +15,16 @@ import {
     type CandidateReLiftViewInput
 } from './candidate-re-lift';
 import {
+    directEvidenceBackendId,
+    directEvidenceRasterImplementationId,
+    directEvidenceRuntimeBuildId,
+    type AISelectDirectEvidenceProvider
+} from './direct-evidence-service';
+import {
     createEvidenceWorkingSet,
-    rebindGaussianEvidenceArtifactForExactRestoration
+    isCurrentGaussianEvidenceArtifact,
+    rebindGaussianEvidenceArtifactForExactRestoration,
+    type RenderWorkingSetBinding
 } from './gaussian-evidence-contract';
 import type { AISelectGeneratedViewController } from './generated-view-controller';
 import type { AISelectMaskController } from './mask-controller';
@@ -26,15 +34,20 @@ export interface AISelectCandidateCorrectionCompositionOptions {
     readonly masks: AISelectMaskController;
     readonly generatedViews: AISelectGeneratedViewController;
     readonly candidatePublications: CandidatePublicationStore;
-    readonly provider: AISelectCandidateReLiftProvider;
+    readonly provider: AISelectCandidateReLiftProvider &
+        AISelectDirectEvidenceProvider;
+}
+
+interface CandidateCorrectionEvidencePayload extends CandidateReLiftViewInput {
+    readonly directRenderWorkingSet: RenderWorkingSetBinding;
 }
 
 /** Compose the browser side of Ticket 15 outside the editor composition root. */
 export const createAISelectCandidateCorrectionController = (
     options: AISelectCandidateCorrectionCompositionOptions
-): AISelectCandidateCorrectionController<CandidateReLiftViewInput> => {
+): AISelectCandidateCorrectionController<CandidateCorrectionEvidencePayload> => {
     const resolveViews =
-        (): readonly CandidateCorrectionView<CandidateReLiftViewInput>[] => {
+        (): readonly CandidateCorrectionView<CandidateCorrectionEvidencePayload>[] => {
             const anchorState = options.anchor.state;
             const context = anchorState.context;
             const anchor = anchorState.anchor;
@@ -47,15 +60,32 @@ export const createAISelectCandidateCorrectionController = (
             ) {
                 return [];
             }
-            const stableGaussianIds = [...snapshot.stableIds].sort(
+            const renderStableGaussianIds = [...snapshot.stableIds].sort(
                 (left, right) => left - right
             );
+            const targetScope = snapshot.authoritativeRenderScope?.entries.find(
+                (entry) => entry.role === 'target'
+            );
+            if (
+                targetScope === undefined ||
+                snapshot.authoritativeRenderScope?.targetSplatId !==
+                    context.target.splatId
+            ) {
+                return [];
+            }
+            const targetStableGaussianIds = [...snapshot.stableIds]
+                .slice(
+                    targetScope.rowOffset,
+                    targetScope.rowOffset + targetScope.rowCount
+                )
+                .sort((left, right) => left - right);
             const evidenceWorkingSet = createEvidenceWorkingSet({
                 targetSplatId: context.target.splatId,
-                // This reference slice conservatively classifies the complete
-                // Active Splat. It deliberately withholds formal Coverage until
-                // a true target-local Core Target builder exists.
-                coreTargetStableIds: stableGaussianIds,
+                // Every target row is initially eligible for Evidence writes;
+                // visible non-target Splats remain render-only occluders. A
+                // narrower hint-seeded set may use the same boundary expansion
+                // contract without changing global render identity.
+                coreTargetStableIds: targetStableGaussianIds,
                 contextStableGaussianIds: []
             });
             const requestBinding = Object.freeze({
@@ -69,7 +99,9 @@ export const createAISelectCandidateCorrectionController = (
                 readonly rgbDigest: string;
                 readonly participation: 'included' | 'excluded';
                 readonly stableMask: CandidateReLiftViewInput['stableMask'];
-            }): CandidateCorrectionView<CandidateReLiftViewInput> => {
+                readonly renderWorkingSetToken: string;
+                readonly renderStableGaussianIds: readonly number[];
+            }): CandidateCorrectionView<CandidateCorrectionEvidencePayload> => {
                 const bindingDigest = cameraBindingDigest(input.cameraBinding);
                 const currentInput = Object.freeze({
                     requestBinding,
@@ -88,7 +120,7 @@ export const createAISelectCandidateCorrectionController = (
                         dependencyToken: context.dependencyToken,
                         cameraBindingDigest: bindingDigest,
                         renderWorkingSetToken: snapshot.contentDigest,
-                        stableGaussianIds,
+                        stableGaussianIds: renderStableGaussianIds,
                         completeness: 'complete' as const
                     }),
                     evidenceWorkingSet,
@@ -108,29 +140,35 @@ export const createAISelectCandidateCorrectionController = (
                         rgbDigest: input.rgbDigest,
                         stableMaskDigest: input.stableMask.digest,
                         evidencePolicyDigest: referenceEvidencePolicyDigest,
-                        renderWorkingSetToken: snapshot.contentDigest,
+                        renderWorkingSetToken: input.renderWorkingSetToken,
                         evidenceWorkingSetToken:
                             evidenceWorkingSet.evidenceWorkingSetToken,
                         rasterImplementationId:
-                            referenceEvidenceRasterImplementationId,
-                        evidenceBackendKind: 'reference-contributor',
-                        evidenceBackendId:
-                            referenceContributorEvidenceBackendId,
-                        runtimeBuildId: referenceEvidenceRuntimeBuildId
+                            directEvidenceRasterImplementationId,
+                        evidenceBackendKind: 'production-direct',
+                        evidenceBackendId: directEvidenceBackendId,
+                        runtimeBuildId: directEvidenceRuntimeBuildId
                     }),
                     payload: Object.freeze({
                         currentInput,
                         cameraBinding: input.cameraBinding,
-                        stableMask: input.stableMask
+                        stableMask: input.stableMask,
+                        directRenderWorkingSet: Object.freeze({
+                            ...currentInput.renderWorkingSet,
+                            renderWorkingSetToken: input.renderWorkingSetToken,
+                            stableGaussianIds: input.renderStableGaussianIds
+                        })
                     })
                 });
             };
-            const views: CandidateCorrectionView<CandidateReLiftViewInput>[] =
+            const views: CandidateCorrectionView<CandidateCorrectionEvidencePayload>[] =
                 [];
             const anchorMask = options.masks.state.stableMask;
             if (
                 anchor.renderStatus === 'ready' &&
                 anchor.rgb !== undefined &&
+                anchor.renderWorkingSetToken !== undefined &&
+                anchor.renderStableGaussianIds !== undefined &&
                 anchorMask !== null
             ) {
                 views.push(
@@ -139,7 +177,9 @@ export const createAISelectCandidateCorrectionController = (
                         cameraBinding: anchor.cameraBinding,
                         rgbDigest: anchor.rgb.digest,
                         participation: 'included',
-                        stableMask: anchorMask.artifact
+                        stableMask: anchorMask.artifact,
+                        renderWorkingSetToken: anchor.renderWorkingSetToken,
+                        renderStableGaussianIds: anchor.renderStableGaussianIds
                     })
                 );
             }
@@ -147,6 +187,8 @@ export const createAISelectCandidateCorrectionController = (
                 if (
                     view.renderStatus !== 'ready' ||
                     view.rgb === undefined ||
+                    view.renderWorkingSetToken === undefined ||
+                    view.renderStableGaussianIds === undefined ||
                     view.stableMaskDigest === undefined
                 ) {
                     continue;
@@ -162,7 +204,10 @@ export const createAISelectCandidateCorrectionController = (
                             cameraBinding: view.cameraBinding,
                             rgbDigest: view.rgb.digest,
                             participation: view.participation,
-                            stableMask: stableMask.artifact
+                            stableMask: stableMask.artifact,
+                            renderWorkingSetToken: view.renderWorkingSetToken,
+                            renderStableGaussianIds:
+                                view.renderStableGaussianIds
                         })
                     );
                 }
@@ -175,18 +220,20 @@ export const createAISelectCandidateCorrectionController = (
         };
 
     let nextAttempt = 0;
+    const referenceEvidenceByView = new Map<
+        string,
+        NonNullable<CandidateReLiftViewInput['cachedArtifact']>
+    >();
     const controller = new AISelectCandidateCorrectionController({
         dirtyState: options.masks.dirtyState,
         candidatePublications: options.candidatePublications,
         isTargetActive: () => options.anchor.isTargetActive(),
         resolveCurrentViews: resolveViews,
         produceCandidate: async (
-            input: CandidateCorrectionProductionInput<CandidateReLiftViewInput>
+            input: CandidateCorrectionProductionInput<CandidateCorrectionEvidencePayload>
         ) => {
             const views = input.views.map((view) => {
-                const cachedArtifact = input.cachedEvidence.get(
-                    view.viewId
-                )?.artifact;
+                const cachedArtifact = referenceEvidenceByView.get(view.viewId);
                 const currentCachedArtifact =
                     cachedArtifact === undefined
                         ? undefined
@@ -195,7 +242,9 @@ export const createAISelectCandidateCorrectionController = (
                               view.payload.currentInput.requestBinding
                           );
                 return Object.freeze({
-                    ...view.payload,
+                    currentInput: view.payload.currentInput,
+                    cameraBinding: view.payload.cameraBinding,
+                    stableMask: view.payload.stableMask,
                     ...(currentCachedArtifact === undefined
                         ? {}
                         : { cachedArtifact: currentCachedArtifact })
@@ -218,22 +267,80 @@ export const createAISelectCandidateCorrectionController = (
                 }
             }
             let response;
+            const directEvidence = new Map<
+                string,
+                NonNullable<CandidateReLiftViewInput['cachedArtifact']>
+            >();
             try {
+                const currentViewIds = new Set(
+                    input.views.map((view) => view.viewId)
+                );
+                for (const cachedViewId of referenceEvidenceByView.keys()) {
+                    if (!currentViewIds.has(cachedViewId)) {
+                        referenceEvidenceByView.delete(cachedViewId);
+                    }
+                }
+                for (const view of input.views) {
+                    if (view.participation !== 'included') {
+                        continue;
+                    }
+                    const directInput = Object.freeze({
+                        ...view.payload.currentInput,
+                        renderWorkingSet: view.payload.directRenderWorkingSet,
+                        rasterImplementationId:
+                            directEvidenceRasterImplementationId,
+                        evidenceBackendKind: 'production-direct' as const,
+                        evidenceBackendId: directEvidenceBackendId,
+                        runtimeBuildId: directEvidenceRuntimeBuildId
+                    });
+                    const retained = input.cachedEvidence.get(
+                        directInput.view.viewId
+                    )?.artifact;
+                    const rebound =
+                        retained === undefined
+                            ? undefined
+                            : rebindGaussianEvidenceArtifactForExactRestoration(
+                                  retained,
+                                  directInput.requestBinding
+                              );
+                    const cachedArtifact =
+                        rebound !== undefined &&
+                        isCurrentGaussianEvidenceArtifact(rebound, directInput)
+                            ? rebound
+                            : undefined;
+                    const direct = await options.provider.produceDirectEvidence(
+                        {
+                            snapshot,
+                            currentInput: directInput,
+                            cameraBinding: view.payload.cameraBinding,
+                            stableMask: view.payload.stableMask,
+                            ...(cachedArtifact === undefined
+                                ? {}
+                                : { cachedArtifact })
+                        }
+                    );
+                    directEvidence.set(
+                        directInput.view.viewId,
+                        direct.artifact
+                    );
+                }
                 response = await options.provider.produceCandidateReLift({
                     liftAttemptId: `candidate-re-lift-${nextAttempt}`,
                     snapshot,
                     requestBinding: first.currentInput.requestBinding,
                     targetSplatId: first.currentInput.targetSplatId,
-                    classificationUniverseStableGaussianIds: Object.freeze(
-                        [...snapshot.stableIds].sort(
-                            (left, right) => left - right
-                        )
-                    ),
+                    classificationUniverseStableGaussianIds: Object.freeze([
+                        ...first.currentInput.evidenceWorkingSet
+                            .stableGaussianIds
+                    ]),
                     classificationScopeStableGaussianIds:
                         first.currentInput.evidenceWorkingSet.stableGaussianIds,
                     evidenceWorkingSet: first.currentInput.evidenceWorkingSet,
                     views: Object.freeze(views)
                 });
+                for (const entry of response.evidence) {
+                    referenceEvidenceByView.set(entry.viewId, entry.artifact);
+                }
             } catch (error) {
                 for (const viewId of input.recomputeViewIds) {
                     const identity = input.views.find(
@@ -259,56 +366,68 @@ export const createAISelectCandidateCorrectionController = (
                 candidate: response.candidate,
                 publicationBinding: response.candidate.publicationBinding,
                 evidence: Object.fromEntries(
-                    response.evidence.map((entry) => [
-                        entry.viewId,
+                    [...directEvidence].map(([viewId, artifact]) => [
+                        viewId,
                         {
                             identity: {
-                                viewId: entry.viewId,
+                                viewId,
                                 cameraBindingDigest:
-                                    entry.artifact.cameraBindingDigest,
-                                rgbDigest: entry.artifact.rgbDigest,
-                                stableMaskDigest:
-                                    entry.artifact.stableMaskDigest,
+                                    artifact.cameraBindingDigest,
+                                rgbDigest: artifact.rgbDigest,
+                                stableMaskDigest: artifact.stableMaskDigest,
                                 evidencePolicyDigest:
-                                    entry.artifact.evidencePolicyDigest,
+                                    artifact.evidencePolicyDigest,
                                 renderWorkingSetToken:
-                                    entry.artifact.renderWorkingSetToken,
+                                    artifact.renderWorkingSetToken,
                                 evidenceWorkingSetToken:
-                                    entry.artifact.evidenceWorkingSetToken,
+                                    artifact.evidenceWorkingSetToken,
                                 rasterImplementationId:
-                                    entry.artifact.rasterImplementationId,
+                                    artifact.rasterImplementationId,
                                 evidenceBackendKind:
-                                    entry.artifact.evidenceBackendKind,
-                                evidenceBackendId:
-                                    entry.artifact.evidenceBackendId,
-                                runtimeBuildId: entry.artifact.runtimeBuildId
+                                    artifact.evidenceBackendKind,
+                                evidenceBackendId: artifact.evidenceBackendId,
+                                runtimeBuildId: artifact.runtimeBuildId
                             },
-                            artifactDigest: entry.artifact.artifactDigest,
-                            artifact: entry.artifact
+                            artifactDigest: artifact.artifactDigest,
+                            artifact
                         }
                     ])
                 ),
                 publishRelatedProducts: () => {
-                    for (const entry of response.evidence) {
+                    for (const [viewId, artifact] of directEvidence) {
                         options.masks.evidenceRegistry.markReady({
-                            viewId: entry.viewId,
-                            rgbDigest: entry.artifact.rgbDigest,
-                            stableMaskDigest: entry.artifact.stableMaskDigest,
-                            evidencePolicyDigest:
-                                entry.artifact.evidencePolicyDigest
+                            viewId,
+                            rgbDigest: artifact.rgbDigest,
+                            stableMaskDigest: artifact.stableMaskDigest,
+                            evidencePolicyDigest: artifact.evidencePolicyDigest
                         });
                     }
                 }
             };
         }
     });
-    let targetContextId: string | null = null;
+    let targetRevisionKey: string | null = null;
     options.anchor.subscribe((state) => {
-        const currentId = state.context?.targetContextId ?? null;
-        if (currentId !== targetContextId) {
-            targetContextId = currentId;
+        const currentKey =
+            state.context === null
+                ? null
+                : `${state.context.targetContextId}:${state.context.revision}`;
+        if (currentKey !== targetRevisionKey) {
+            targetRevisionKey = currentKey;
+            referenceEvidenceByView.clear();
             controller.reset();
         }
+    });
+    let generatedViewIds = new Set<string>();
+    options.generatedViews.subscribe((state) => {
+        const currentViewIds = new Set(state.views.map((view) => view.viewId));
+        for (const viewId of generatedViewIds) {
+            if (!currentViewIds.has(viewId)) {
+                referenceEvidenceByView.delete(viewId);
+                controller.disposeCachedEvidence(viewId);
+            }
+        }
+        generatedViewIds = currentViewIds;
     });
     return controller;
 };

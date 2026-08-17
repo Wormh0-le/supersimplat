@@ -163,6 +163,23 @@ class GaussianEvidenceContractTests(unittest.TestCase):
             {'status': 'rejected', 'reason': 'stable-mask-unavailable'},
         )
 
+    def test_spatial_direct_admits_target_evidence_ids_absent_from_render_set(
+        self,
+    ) -> None:
+        expanded = evidence_working_set({
+            'contextStableGaussianIds': [99],
+        })
+        direct = admission_input({
+            'evidenceWorkingSet': expanded,
+            'evidenceBackendKind': 'production-direct',
+            'evidenceBackendId': 'global-atomic/direct-v1',
+        })
+
+        result = admit_gaussian_evidence(direct)
+
+        self.assertEqual(result['status'], 'admitted')
+        self.assertEqual(result['admission']['stableGaussianIds'], [5, 99])
+
     def test_out_of_scope_occluders_stay_in_render_without_pnv_writes(self) -> None:
         current = admitted()
         artifact = create_gaussian_evidence_artifact(current, masses())
@@ -257,13 +274,34 @@ class GaussianEvidenceContractTests(unittest.TestCase):
             is_current_gaussian_evidence_artifact(artifact, changed_mask)
         )
 
-    def test_reference_contract_rejects_production_direct_and_partial_artifacts(self) -> None:
-        self.assertEqual(
-            admit_gaussian_evidence(admission_input({
-                'evidenceBackendKind': 'production-direct',
-            })),
-            {'status': 'rejected', 'reason': 'unsupported-evidence-backend'},
+    def test_reference_and_production_direct_artifacts_are_admitted_but_cannot_collide(self) -> None:
+        reference_admission = admitted()
+        production_admission = admitted(admission_input({
+            'rasterImplementationId': 'supersimplat-direct-evidence/v1',
+            'evidenceBackendKind': 'production-direct',
+            'evidenceBackendId': 'global-atomic/direct-v1',
+            'runtimeBuildId': 'direct-runtime-build-1',
+        }))
+        reference_artifact = create_gaussian_evidence_artifact(
+            reference_admission, masses()
         )
+        production_artifact = create_gaussian_evidence_artifact(
+            production_admission, masses()
+        )
+
+        self.assertTrue(is_gaussian_evidence_artifact(reference_artifact))
+        self.assertTrue(is_gaussian_evidence_artifact(production_artifact))
+        self.assertNotEqual(
+            reference_artifact['artifactDigest'],
+            production_artifact['artifactDigest'],
+        )
+        self.assertFalse(
+            gaussian_evidence_artifact_matches_admission(
+                reference_artifact, production_admission
+            )
+        )
+
+    def test_contract_rejects_partial_artifacts(self) -> None:
         artifact = create_gaussian_evidence_artifact(admitted(), masses())
         with self.assertRaisesRegex(
             GaussianEvidenceContractError,

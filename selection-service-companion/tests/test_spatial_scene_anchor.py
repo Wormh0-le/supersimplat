@@ -12,7 +12,22 @@ from threading import Thread
 import unittest
 from urllib.request import Request, urlopen
 
+from selection_service_companion.camera_binding import camera_binding_digest
+from selection_service_companion.direct_gaussian_evidence import (
+    DIRECT_EVIDENCE_BACKEND_ID,
+    DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+    DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+)
+from selection_service_companion.gaussian_evidence_contract import (
+    admit_gaussian_evidence,
+    create_evidence_working_set,
+    create_gaussian_evidence_artifact,
+)
 from selection_service_companion.gsplat_renderer import AnchorRenderArtifact
+from selection_service_companion.masking import MaskSessionError
+from selection_service_companion.reference_gaussian_evidence import (
+    default_reference_evidence_policy,
+)
 from selection_service_companion.spatial_scene_working_set import (
     SpatialChunkDescriptor,
     SpatialSceneManifest,
@@ -239,6 +254,122 @@ class SpatialSceneAnchorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "visible-Splat render scope"):
             self.state.render_ai_select_anchor(request(registered.scene_version))
         self.assertEqual(self.renderer.scene_snapshots, [])
+
+    def test_replay_identity_binds_transport_and_resolved_working_set(self) -> None:
+        parsed = self.state._parse_ai_select_anchor_request(
+            request(manifest().scene_version)
+        )
+        spatial_fields = {
+            "renderWorkingSetToken": "sha256:" + "1" * 64,
+            "renderStableGaussianIds": [7],
+        }
+        packed = replace(parsed, scene_transport="packed-v1")
+
+        spatial_key = self.state._anchor_render_request_key(
+            parsed, spatial_fields
+        )
+        packed_key = self.state._anchor_render_request_key(
+            packed, spatial_fields
+        )
+        changed_membership_key = self.state._anchor_render_request_key(
+            parsed,
+            {
+                "renderWorkingSetToken": "sha256:" + "2" * 64,
+                "renderStableGaussianIds": [7, 9],
+            },
+        )
+
+        self.assertNotEqual(spatial_key, packed_key)
+        self.assertNotEqual(spatial_key, changed_membership_key)
+
+    def test_direct_cached_artifact_cannot_bypass_spatial_target_membership(self) -> None:
+        registered = manifest()
+        self.state.register_spatial_scene_manifest(registered)
+        admission = self.state.begin_spatial_scene_chunk_upload(
+            registered.scene_id, registered.scene_version, ("chunk-a",)
+        )
+        chunk = payload()
+        self.state.accept_spatial_scene_chunk(
+            admission.upload_id or "",
+            "chunk-a",
+            chunk,
+            "sha256:" + hashlib.sha256(chunk).hexdigest(),
+        )
+        self.state.commit_spatial_scene_chunk_upload(admission.upload_id or "")
+        anchor_request = request(registered.scene_version)
+        rendered = self.state.render_ai_select_anchor(anchor_request)
+        camera = anchor_request["cameraBinding"]
+        assert isinstance(camera, dict)
+        mask_bytes = bytes([1]) + bytes((10 * 10 + 7) // 8 - 1)
+        stable_mask = {
+            "encoding": "bitset-lsb-v1",
+            "width": 10,
+            "height": 10,
+            "data": base64.b64encode(mask_bytes).decode("ascii"),
+            "digest": "sha256:" + hashlib.sha256(mask_bytes).hexdigest(),
+        }
+        evidence_working_set = create_evidence_working_set({
+            "targetSplatId": registered.target_splat_id,
+            "coreTargetStableIds": [9],
+            "contextStableGaussianIds": [],
+        })
+        camera_digest = camera_binding_digest(camera)
+        current_input = {
+            "requestBinding": anchor_request["requestBinding"],
+            "targetSplatId": registered.target_splat_id,
+            "view": {
+                "viewId": "anchor-view",
+                "renderStatus": "ready",
+                "participation": "included",
+                "cameraBindingDigest": camera_digest,
+                "rgbDigest": "sha256:" + "b" * 64,
+                "stableMaskDigest": stable_mask["digest"],
+            },
+            "evidencePolicyDigest": default_reference_evidence_policy()[
+                "evidencePolicyDigest"
+            ],
+            "renderWorkingSet": {
+                "targetSplatId": registered.target_splat_id,
+                "dependencyToken": anchor_request["requestBinding"][
+                    "dependencyToken"
+                ],
+                "cameraBindingDigest": camera_digest,
+                "renderWorkingSetToken": rendered["renderWorkingSetToken"],
+                "stableGaussianIds": rendered["renderStableGaussianIds"],
+                "completeness": "complete",
+            },
+            "evidenceWorkingSet": evidence_working_set,
+            "rasterImplementationId": DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+            "evidenceBackendKind": "production-direct",
+            "evidenceBackendId": DIRECT_EVIDENCE_BACKEND_ID,
+            "runtimeBuildId": DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+        }
+        evidence_admission = admit_gaussian_evidence(current_input)
+        self.assertEqual(evidence_admission["status"], "admitted")
+        cached_artifact = create_gaussian_evidence_artifact(
+            evidence_admission["admission"],
+            {
+                "positiveMass": [0.5],
+                "negativeMass": [0.25],
+                "visibleMass": [0.75],
+            },
+        )
+
+        with self.assertRaises(MaskSessionError) as raised:
+            self.state.produce_ai_select_direct_evidence({
+                "sceneId": registered.scene_id,
+                "sceneVersion": registered.scene_version,
+                "renderConfigVersion": registered.render_configuration["version"],
+                "currentInput": current_input,
+                "cameraBinding": camera,
+                "stableMask": stable_mask,
+                "cachedArtifact": cached_artifact,
+                "sceneTransport": "spatial-v1",
+            })
+
+        self.assertEqual(
+            raised.exception.code, "directEvidenceRenderWorkingSetMismatch"
+        )
 
 
 class SpatialSceneAnchorRouteTests(unittest.TestCase):

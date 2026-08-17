@@ -41,7 +41,7 @@ test('changed-Anchor cutover publishes confirmation before releasing real Candid
         evidencePolicyDigest: digest('4'),
         renderWorkingSetToken: digest('5'),
         evidenceWorkingSetToken: digest('6'),
-        rasterImplementationId: 'gsplat-reference-rgb/v1',
+        rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
         evidenceBackendKind: 'reference-contributor',
         evidenceBackendId: 'complete-contributor/reference-v1',
         runtimeBuildId: 'locked-runtime-build-1'

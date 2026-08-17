@@ -34,11 +34,11 @@ export const referenceEvidencePolicyDigest =
 export const referenceAggregationPolicyDigest =
     'sha256:082dd2a030a21448c16571ce28f741fa50023a831990cae3dd3e7bcc16c02454';
 export const referenceEvidenceRasterImplementationId =
-    'gsplat-reference-rgb/v1';
+    'supersimplat-gsplat-direct-evidence/v1';
 export const referenceContributorEvidenceBackendId =
     'complete-contributor/reference-v1';
 export const referenceEvidenceRuntimeBuildId =
-    'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40';
+    'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4';
 
 export interface CandidateReLiftViewInput {
     readonly currentInput: GaussianEvidenceAdmissionInput;
@@ -91,10 +91,7 @@ const bindingMatches = (
 ): boolean =>
     left.targetContextId === right.targetContextId &&
     left.contextRevision === right.contextRevision &&
-    areTargetDependencyTokensEqual(
-        left.dependencyToken,
-        right.dependencyToken
-    );
+    areTargetDependencyTokensEqual(left.dependencyToken, right.dependencyToken);
 
 const compareUtf8 = (left: string, right: string): number => {
     const leftBytes = encoder.encode(left);
@@ -189,16 +186,14 @@ export const isCandidateReLiftRequest = (
                     referenceEvidencePolicyDigest &&
                 currentInput.rasterImplementationId ===
                     referenceEvidenceRasterImplementationId &&
-                currentInput.evidenceBackendKind ===
-                    'reference-contributor' &&
+                currentInput.evidenceBackendKind === 'reference-contributor' &&
                 currentInput.evidenceBackendId ===
                     referenceContributorEvidenceBackendId &&
                 currentInput.runtimeBuildId ===
                     referenceEvidenceRuntimeBuildId &&
                 currentInput.renderWorkingSet.renderWorkingSetToken ===
                     snapshot.contentDigest &&
-                currentInput.renderWorkingSet.targetSplatId ===
-                    targetSplatId &&
+                currentInput.renderWorkingSet.targetSplatId === targetSplatId &&
                 currentInput.renderWorkingSet.completeness === 'complete' &&
                 areTargetDependencyTokensEqual(
                     currentInput.renderWorkingSet.dependencyToken,
@@ -211,13 +206,11 @@ export const isCandidateReLiftRequest = (
                 currentInput.view.cameraBindingDigest ===
                     cameraBindingDigest(entry.cameraBinding) &&
                 currentInput.view.rgbDigest !== undefined &&
-                currentInput.view.stableMaskDigest ===
-                    entry.stableMask.digest
+                currentInput.view.stableMaskDigest === entry.stableMask.digest
             );
         }) &&
-        new Set(
-            value.views.map((entry) => entry.currentInput.view.viewId)
-        ).size === value.views.length
+        new Set(value.views.map((entry) => entry.currentInput.view.viewId))
+            .size === value.views.length
     );
 };
 
@@ -231,19 +224,14 @@ export const isCandidateReLiftResponseForRequest = (
         value.liftAttemptId !== request.liftAttemptId ||
         value.targetSplatId !== request.targetSplatId ||
         !isAIRequestBinding(value.requestBinding) ||
-        !bindingMatches(
-            value.requestBinding,
-            request.requestBinding
-        ) ||
+        !bindingMatches(value.requestBinding, request.requestBinding) ||
         !Array.isArray(value.evidence) ||
         !isReferenceCandidateArtifact(value.candidate)
     ) {
         return false;
     }
     const included = request.views
-        .filter(
-            (entry) => entry.currentInput.view.participation === 'included'
-        )
+        .filter((entry) => entry.currentInput.view.participation === 'included')
         .sort((left, right) =>
             compareUtf8(
                 left.currentInput.view.viewId,
@@ -288,8 +276,7 @@ export const isCandidateReLiftResponseForRequest = (
         stableInputs: request.views.map((entry) => ({
             viewId: entry.currentInput.view.viewId,
             participation: entry.currentInput.view.participation,
-            stableMaskDigest:
-                entry.currentInput.view.stableMaskDigest ?? null,
+            stableMaskDigest: entry.currentInput.view.stableMaskDigest ?? null,
             evidenceArtifactDigest:
                 entry.currentInput.view.participation === 'included'
                     ? (evidenceByView.get(entry.currentInput.view.viewId)
@@ -300,11 +287,9 @@ export const isCandidateReLiftResponseForRequest = (
         sourceEvidencePolicyDigest: referenceEvidencePolicyDigest,
         evidenceWorkingSetToken:
             request.evidenceWorkingSet.evidenceWorkingSetToken,
-        evidenceArtifactSetDigest:
-            publicationBinding.evidenceArtifactSetDigest,
+        evidenceArtifactSetDigest: publicationBinding.evidenceArtifactSetDigest,
         referenceBackendIdentity: {
-            rasterImplementationId:
-                referenceEvidenceRasterImplementationId,
+            rasterImplementationId: referenceEvidenceRasterImplementationId,
             evidenceBackendKind: 'reference-contributor',
             evidenceBackendId: referenceContributorEvidenceBackendId,
             runtimeBuildId: referenceEvidenceRuntimeBuildId
@@ -338,8 +323,7 @@ export const isCandidateReLiftResponseForRequest = (
             expectedBinding.sourceEvidencePolicyDigest &&
         publicationBinding.evidenceWorkingSetToken ===
             expectedBinding.evidenceWorkingSetToken &&
-        publicationBinding.evidenceArtifactSetDigest ===
-            artifactSetDigest &&
+        publicationBinding.evidenceArtifactSetDigest === artifactSetDigest &&
         stableIdsAreSubsetOf(
             candidate.candidate.selectedStableGaussianIds,
             request.classificationScopeStableGaussianIds

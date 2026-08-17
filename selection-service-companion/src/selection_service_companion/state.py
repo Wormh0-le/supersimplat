@@ -39,7 +39,16 @@ from .candidate_re_lift import (
     produce_reference_candidate_re_lift,
     validate_candidate_re_lift_snapshot_binding,
 )
+from .direct_gaussian_evidence import (
+    DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+    DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+    direct_evidence_capability,
+)
 from .evidence import ContributorRenderer, build_evidence_snapshot
+from .gaussian_evidence_contract import (
+    is_current_gaussian_evidence_artifact,
+    is_gaussian_evidence_admission_input,
+)
 from .generated_views import (
     GENERATED_VIEW_RESOLUTIONS,
     GeneratedViewPolicy,
@@ -56,7 +65,11 @@ from .gsplat_renderer import (
     production_gsplat_renderer,
     validate_supported_snapshot,
 )
-from .reference_gaussian_evidence import default_reference_evidence_policy
+from .reference_gaussian_evidence import (
+    ReferenceGaussianEvidenceError,
+    default_reference_evidence_policy,
+    validate_stable_mask_artifact,
+)
 from .reference_gaussian_evidence_aggregation import (
     default_reference_aggregation_policy,
 )
@@ -275,9 +288,9 @@ MODEL_MANIFEST_IDENTITY_FIELDS = (
 # The versioned identity of the authoritative RGB implementation. Ticket 20
 # replaces this seam with the FlashSplat-style same-decision kernel; the
 # browser fails closed on any version it does not explicitly support.
-AI_SELECT_RGB_RENDERER_VERSION = 'gsplat-rgb/v1'
-AI_SELECT_RASTER_IMPLEMENTATION_ID = REFERENCE_EVIDENCE_RASTER_IMPLEMENTATION_ID
-AI_SELECT_RUNTIME_BUILD_ID = REFERENCE_EVIDENCE_RUNTIME_BUILD_ID
+AI_SELECT_RGB_RENDERER_VERSION = 'gsplat-direct-evidence-rgb/v1'
+AI_SELECT_RASTER_IMPLEMENTATION_ID = DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID
+AI_SELECT_RUNTIME_BUILD_ID = DIRECT_EVIDENCE_RUNTIME_BUILD_ID
 
 
 @dataclass(frozen=True)
@@ -318,6 +331,21 @@ class AISelectAnchorRequest:
             'renderAttemptId': self.render_attempt_id,
             'viewId': self.view_id,
             'cameraBinding': self.camera_binding,
+        }
+
+    def operation_identity_fields(
+        self,
+        render_working_set: Mapping[str, object],
+    ) -> dict[str, object]:
+        return {
+            **self.response_fields(),
+            'sceneTransport': self.scene_transport,
+            'renderWorkingSetToken': render_working_set[
+                'renderWorkingSetToken'
+            ],
+            'renderStableGaussianIds': render_working_set[
+                'renderStableGaussianIds'
+            ],
         }
 
 
@@ -409,6 +437,26 @@ def _authoritative_target_row_range(
     ):
         raise ValueError('AI Select authoritative render scope target rows are invalid')
     return row_offset, row_count
+
+
+def _render_working_set_response_fields(
+    scene_snapshot: Mapping[str, Any] | PackedBinarySceneSnapshot | SpatialWorkingSet,
+) -> dict[str, object]:
+    if isinstance(scene_snapshot, SpatialWorkingSet):
+        token = scene_snapshot.working_set_token
+    elif isinstance(scene_snapshot, PackedBinarySceneSnapshot):
+        token = scene_snapshot.content_digest
+    else:
+        token = scene_snapshot.get("sceneVersion")
+    if not isinstance(token, str) or not token.strip():
+        raise ValueError("AI Select Render Working Set token is invalid")
+    stable_ids = sorted(
+        int(value) for value in validate_supported_snapshot(scene_snapshot)
+    )
+    return {
+        "renderWorkingSetToken": token,
+        "renderStableGaussianIds": stable_ids,
+    }
 
 
 def _target_planes_from_packed_snapshot(
@@ -1171,7 +1219,7 @@ class CompanionState:
         init=False,
         repr=False,
     )
-    _active_candidate_re_lift: str | None = field(
+    _active_evidence_operation: str | None = field(
         default=None,
         init=False,
         repr=False,
@@ -1541,6 +1589,7 @@ class CompanionState:
             "runtimeProfileId": AI_SELECT_RUNTIME_PROFILE_ID,
             "renderer": self._renderer_capability(release),
             "imageInstanceProvider": provider,
+            "directEvidence": direct_evidence_capability(),
             "referenceCandidateReLift": self._reference_candidate_re_lift_capability(),
             "supportedOperations": [
                 "aiSelectAnchorRender",
@@ -1554,6 +1603,7 @@ class CompanionState:
                 "aiSelectImageInstanceMasks",
                 "aiSelectImageInstanceMaskReview",
                 "aiSelectReferenceCandidateReLift",
+                "aiSelectProductionDirectEvidence",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",
             ],
@@ -1970,7 +2020,7 @@ class CompanionState:
                     'capacityFull',
                     'The Companion is already serving another AI or Object Selection operation.',
                 )
-            self._active_candidate_re_lift = operation_id
+            self._active_evidence_operation = operation_id
 
         try:
             renderer = self._require_contributor_renderer()
@@ -1999,8 +2049,246 @@ class CompanionState:
                 raise MaskSessionError(error.code, str(error)) from error
         finally:
             with self._session_lock:
-                if self._active_candidate_re_lift == operation_id:
-                    self._active_candidate_re_lift = None
+                if self._active_evidence_operation == operation_id:
+                    self._active_evidence_operation = None
+
+    def produce_ai_select_direct_evidence(
+        self,
+        request: Mapping[str, object],
+    ) -> dict[str, object]:
+        """Produce or reuse one bound production Direct Evidence artifact."""
+
+        required = {
+            "sceneId",
+            "sceneVersion",
+            "renderConfigVersion",
+            "currentInput",
+            "cameraBinding",
+            "stableMask",
+        }
+        if (
+            not isinstance(request, Mapping)
+            or not required.issubset(request)
+            or set(request) - (required | {"cachedArtifact", "sceneTransport"})
+            or not all(
+                isinstance(request.get(key), str) and str(request[key]).strip()
+                for key in ("sceneId", "sceneVersion", "renderConfigVersion")
+            )
+            or not is_gaussian_evidence_admission_input(
+                request.get("currentInput")
+            )
+            or not isinstance(request.get("cameraBinding"), Mapping)
+            or not isinstance(request.get("stableMask"), Mapping)
+        ):
+            raise ValueError("AI Select Direct Evidence request is invalid.")
+        scene_id = str(request["sceneId"])
+        scene_version = str(request["sceneVersion"])
+        scene_transport = request.get("sceneTransport", "packed-v1")
+        if scene_transport not in ("packed-v1", "spatial-v1"):
+            raise ValueError("AI Select Direct Evidence sceneTransport is invalid.")
+        current_input = request["currentInput"]
+        assert isinstance(current_input, Mapping)
+        render_working_set = current_input.get("renderWorkingSet")
+        request_binding = current_input.get("requestBinding")
+        target_splat_id = current_input.get("targetSplatId")
+        view = current_input.get("view")
+        try:
+            immutable_camera_binding, _, width, height = parse_camera_binding(
+                request["cameraBinding"]
+            )
+            mask_width, mask_height = validate_stable_mask_artifact(
+                request["stableMask"]
+            )
+        except (
+            KeyError,
+            OverflowError,
+            ReferenceGaussianEvidenceError,
+            TypeError,
+            ValueError,
+        ) as error:
+            raise MaskSessionError(
+                "directEvidenceDependencyMismatch",
+                "The Direct Evidence CameraBinding or Stable Mask is invalid.",
+            ) from error
+        if (
+            not isinstance(view, Mapping)
+            or _route_b_camera_binding_digest(immutable_camera_binding)
+            != view.get("cameraBindingDigest")
+            or request["stableMask"].get("digest")
+            != view.get("stableMaskDigest")
+            or mask_width != width
+            or mask_height != height
+        ):
+            raise MaskSessionError(
+                "directEvidenceDependencyMismatch",
+                "The Direct Evidence CameraBinding or Stable Mask binding is stale.",
+            )
+        scene_snapshot: PackedBinarySceneSnapshot | SpatialWorkingSet
+        if scene_transport == "spatial-v1":
+            try:
+                resolution = self._spatial_scene_store.resolve_working_set(
+                    scene_id,
+                    scene_version,
+                    immutable_camera_binding,
+                )
+            except SnapshotUploadError as error:
+                raise MaskSessionError(
+                    "sceneCacheMiss",
+                    "The Spatial Scene is unavailable for Direct Evidence.",
+                ) from error
+            if resolution.missing_chunk_ids or resolution.working_set is None:
+                raise MaskSessionError(
+                    "sceneChunkMiss",
+                    "The Spatial Render Working Set is incomplete for Direct Evidence.",
+                )
+            scene_snapshot = resolution.working_set
+            render_config_version = scene_snapshot.manifest.render_configuration.get(
+                "version"
+            )
+        else:
+            snapshot = self.scene_snapshot(scene_id, scene_version)
+            if snapshot is None:
+                raise MaskSessionError(
+                    "sceneCacheMiss",
+                    "The Scene Snapshot is unavailable for Direct Evidence.",
+                )
+            if not isinstance(snapshot.scene, PackedBinarySceneSnapshot):
+                raise MaskSessionError(
+                    "directEvidenceRenderWorkingSetMismatch",
+                    "Direct Evidence requires a binary Scene Snapshot.",
+                )
+            scene_snapshot = snapshot.scene
+            render_config_version = snapshot.render_config_version
+        if render_config_version != request["renderConfigVersion"]:
+            raise MaskSessionError(
+                "directEvidenceRenderWorkingSetMismatch",
+                "The Direct Evidence render configuration is stale.",
+            )
+        render_identity = _render_working_set_response_fields(scene_snapshot)
+        snapshot_stable_ids = render_identity["renderStableGaussianIds"]
+        if (
+            not isinstance(render_working_set, Mapping)
+            or not isinstance(request_binding, Mapping)
+            or not isinstance(target_splat_id, str)
+            or render_working_set.get("renderWorkingSetToken")
+            != render_identity["renderWorkingSetToken"]
+            or render_working_set.get("stableGaussianIds")
+            != snapshot_stable_ids
+            or render_working_set.get("completeness") != "complete"
+            or render_working_set.get("targetSplatId") != target_splat_id
+            or render_working_set.get("dependencyToken")
+            != request_binding.get("dependencyToken")
+        ):
+            raise MaskSessionError(
+                "directEvidenceRenderWorkingSetMismatch",
+                "The Direct Evidence Render Working Set binding is stale.",
+            )
+        evidence_working_set = current_input["evidenceWorkingSet"]
+        assert isinstance(evidence_working_set, Mapping)
+        evidence_stable_ids = evidence_working_set["stableGaussianIds"]
+        assert isinstance(evidence_stable_ids, Sequence)
+        requested_evidence_stable_ids = tuple(
+            int(value) for value in evidence_stable_ids
+        )
+        target_start, target_count = _authoritative_target_row_range(
+            scene_snapshot, target_splat_id
+        )
+        target_end = target_start + target_count
+        render_row_stable_ids = [
+            int(value) for value in validate_supported_snapshot(scene_snapshot)
+        ]
+        if isinstance(scene_snapshot, SpatialWorkingSet):
+            try:
+                proven_evidence_stable_ids = (
+                    self._spatial_scene_store.validate_target_stable_ids(
+                        scene_id,
+                        scene_version,
+                        requested_evidence_stable_ids,
+                    )
+                )
+            except SnapshotUploadError as error:
+                raise MaskSessionError(
+                    "directEvidenceRenderWorkingSetMismatch",
+                    "The Direct Evidence Working Set contains an unproven target Stable Gaussian ID.",
+                ) from error
+            ordered = scene_snapshot.ordered_tensors()
+            global_ordinals = ordered["globalOrdinals"].detach().cpu().tolist()
+            target_stable_ids = sorted(
+                {
+                    stable_id
+                    for stable_id, ordinal in zip(
+                        render_row_stable_ids, global_ordinals, strict=True
+                    )
+                    if target_start <= int(ordinal) < target_end
+                }
+                | set(proven_evidence_stable_ids)
+            )
+        else:
+            target_stable_ids = sorted(
+                render_row_stable_ids[target_start:target_end]
+            )
+            if not set(requested_evidence_stable_ids).issubset(
+                target_stable_ids
+            ):
+                raise MaskSessionError(
+                    "directEvidenceRenderWorkingSetMismatch",
+                    "The Direct Evidence Working Set contains a non-target Stable Gaussian ID.",
+                )
+        cached = request.get("cachedArtifact")
+        if is_current_gaussian_evidence_artifact(cached, current_input):
+            assert isinstance(cached, dict)
+            return {
+                "status": "complete",
+                "requestBinding": request_binding,
+                "targetSplatId": target_splat_id,
+                "viewId": current_input["view"]["viewId"],
+                "reused": True,
+                "artifact": cached,
+            }
+        operation_id = f"direct-evidence:{current_input['view']['viewId']}"
+        with self._session_lock:
+            if self._operation_slot_in_use_locked():
+                raise MaskSessionError(
+                    "capacityFull",
+                    "The Companion is already serving another AI or Object Selection operation.",
+                )
+            self._active_evidence_operation = operation_id
+        try:
+            renderer = self._require_contributor_renderer()
+            if not isinstance(renderer, GsplatContributorRenderer):
+                raise MaskSessionError(
+                    "rendererUnavailable",
+                    "Direct Evidence requires the locked gsplat renderer.",
+                )
+            try:
+                artifact = renderer.compute_direct_evidence(
+                    admission_input=current_input,
+                    stable_mask_artifact=request["stableMask"],
+                    policy=default_reference_evidence_policy(),
+                    scene_snapshot=scene_snapshot,
+                    camera_binding=request["cameraBinding"],
+                    target_stable_ids=target_stable_ids,
+                )
+            except ValueError as error:
+                code = getattr(error, "code", "directEvidenceFailure")
+                raise MaskSessionError(str(code), str(error)) from error
+            response: dict[str, object] = {
+                "status": "complete",
+                "requestBinding": request_binding,
+                "targetSplatId": target_splat_id,
+                "viewId": current_input["view"]["viewId"],
+                "reused": False,
+                "artifact": artifact,
+            }
+            if renderer.last_direct_evidence_telemetry is not None:
+                response["telemetry"] = dict(
+                    renderer.last_direct_evidence_telemetry
+                )
+            return response
+        finally:
+            with self._session_lock:
+                if self._active_evidence_operation == operation_id:
+                    self._active_evidence_operation = None
 
     def _render_ai_select_view(
         self,
@@ -2089,9 +2377,13 @@ class CompanionState:
                 'The gsplat/CUDA Contributor renderer cannot render an AI Select Anchor.',
             )
 
+        render_working_set_fields = _render_working_set_response_fields(
+            scene_snapshot
+        )
         with anchor_timing.measure('gpu-queue'):
             anchor_key, admission, owns_admission = self._admit_anchor_render(
-                anchor_request
+                anchor_request,
+                render_working_set_fields,
             )
             if not owns_admission:
                 return self._replay_anchor_render(admission)
@@ -2135,6 +2427,7 @@ class CompanionState:
                     if anchor_request.reference_contributor
                     else None,
                 )
+                response.update(render_working_set_fields)
             self._cache_rgb(
                 cached_rgb.rgb_digest,
                 cached_rgb.image_png,
@@ -2250,6 +2543,7 @@ class CompanionState:
                 response = self._anchor_response_from_artifact(
                     anchor_request, authoritative_artifact, reference_record
                 )
+                response.update(render_working_set_fields)
         except MaskSessionError as error:
             self._complete_anchor_render(
                 anchor_key, admission, failure=error, timing=anchor_timing
@@ -4600,22 +4894,27 @@ class CompanionState:
         self._active_object_selection_session = None
 
     @staticmethod
-    def _anchor_render_request_key(request: AISelectAnchorRequest) -> str:
+    def _anchor_render_request_key(
+        request: AISelectAnchorRequest,
+        render_working_set: Mapping[str, object],
+    ) -> str:
         """Canonicalize every immutable input that can affect one Anchor RGB."""
 
         return json.dumps(
-            request.response_fields(),
+            request.operation_identity_fields(render_working_set),
             separators=(',', ':'),
             sort_keys=True,
             allow_nan=False,
         )
 
     def _admit_anchor_render(
-        self, request: AISelectAnchorRequest
+        self,
+        request: AISelectAnchorRequest,
+        render_working_set: Mapping[str, object],
     ) -> tuple[str, AnchorRenderAdmission, bool]:
         """Reserve or join one bound GPU publication without holding locks for it."""
 
-        key = self._anchor_render_request_key(request)
+        key = self._anchor_render_request_key(request, render_working_set)
         with self._session_lock:
             admission = self._anchor_render_admissions.get(key)
             if admission is not None:
@@ -7507,7 +7806,7 @@ class CompanionState:
             or self._active_local_key_view_plan is not None
             or self._active_generated_view_mask is not None
             or self._active_image_instance_mask is not None
-            or self._active_candidate_re_lift is not None
+            or self._active_evidence_operation is not None
         )
 
     def _capacity(self) -> dict[str, int]:
@@ -7547,6 +7846,7 @@ class CompanionState:
             "protocolVersion": PROTOCOL_VERSION,
             "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}+{release['release']}",
             "renderer": renderer_capability,
+            "directEvidence": direct_evidence_capability(),
             "referenceCandidateReLift": self._reference_candidate_re_lift_capability(),
             "supportedPromptKinds": ["point", "box"],
             "supportedOperations": [
@@ -7561,6 +7861,7 @@ class CompanionState:
                 "aiSelectImageInstanceMasks",
                 "aiSelectImageInstanceMaskReview",
                 "aiSelectReferenceCandidateReLift",
+                "aiSelectProductionDirectEvidence",
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",
             ],
@@ -7578,10 +7879,10 @@ class CompanionState:
             'aggregationPolicyDigest': str(
                 default_reference_aggregation_policy()['aggregationPolicyDigest']
             ),
-            'rasterImplementationId': 'gsplat-reference-rgb/v1',
+            'rasterImplementationId': REFERENCE_EVIDENCE_RASTER_IMPLEMENTATION_ID,
             'evidenceBackendKind': 'reference-contributor',
             'evidenceBackendId': 'complete-contributor/reference-v1',
-            'runtimeBuildId': EXPECTED_RENDERER_LOCK_DIGEST,
+            'runtimeBuildId': REFERENCE_EVIDENCE_RUNTIME_BUILD_ID,
         }
 
     def _renderer_capability(self, release: dict[str, str]) -> dict[str, Any]:

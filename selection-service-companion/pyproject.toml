@@ -33,6 +33,9 @@ selection-service = "selection_service_companion.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/selection_service_companion"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/selection_service_companion/cuda/direct_evidence.cu" = "selection_service_companion/cuda/direct_evidence.cu"
+
 [tool.uv.sources]
 gsplat = { git = "https://github.com/nerfstudio-project/gsplat.git", rev = "77ab983ffe43420b2131669cb35776b883ca4c3c" }
 sam3 = { git = "https://github.com/facebookresearch/sam3.git", rev = "5dd401d1c5c1d5c3eedff06d41b77af824517619" }

@@ -9,6 +9,10 @@ import unittest
 from unittest.mock import patch
 
 from selection_service_companion.evidence import StaticContributorRenderer
+from selection_service_companion.direct_gaussian_evidence import (
+    DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+    DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+)
 from selection_service_companion.renderer_runtime import (
     EXPECTED_RENDERER_LOCK_DIGEST,
     GsplatRuntime,
@@ -68,9 +72,9 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                     "id": "gsplat",
                     "status": "ready",
                     "cudaVersion": "12.8",
-                    "rgbRendererVersion": "gsplat-rgb/v1",
-                    "rasterImplementationId": "gsplat-reference-rgb/v1",
-                    "runtimeBuildId": EXPECTED_RENDERER_LOCK_DIGEST,
+                    "rgbRendererVersion": "gsplat-direct-evidence-rgb/v1",
+                    "rasterImplementationId": DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+                    "runtimeBuildId": DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
                 },
             )
 
@@ -93,9 +97,9 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                     "id": "gsplat",
                     "status": "ready",
                     "cudaVersion": "12.8",
-                    "rgbRendererVersion": "gsplat-rgb/v1",
-                    "rasterImplementationId": "gsplat-reference-rgb/v1",
-                    "runtimeBuildId": EXPECTED_RENDERER_LOCK_DIGEST,
+                    "rgbRendererVersion": "gsplat-direct-evidence-rgb/v1",
+                    "rasterImplementationId": DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+                    "runtimeBuildId": DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
                 },
             )
 
@@ -220,9 +224,9 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                     "id": "gsplat",
                     "status": "ready",
                     "cudaVersion": "12.8",
-                    "rgbRendererVersion": "gsplat-rgb/v1",
-                    "rasterImplementationId": "gsplat-reference-rgb/v1",
-                    "runtimeBuildId": EXPECTED_RENDERER_LOCK_DIGEST,
+                    "rgbRendererVersion": "gsplat-direct-evidence-rgb/v1",
+                    "rasterImplementationId": DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+                    "runtimeBuildId": DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
                 },
             )
 

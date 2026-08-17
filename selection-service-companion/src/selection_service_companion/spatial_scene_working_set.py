@@ -1075,6 +1075,140 @@ class SpatialSceneStore:
                 working_set,
             )
 
+    def validate_target_stable_ids(
+        self,
+        scene_id: str,
+        scene_version: str,
+        stable_ids: Sequence[int],
+    ) -> tuple[int, ...]:
+        """Prove requested Stable IDs are target rows in immutable resident chunks.
+
+        Spatial Direct Evidence may intentionally evaluate target Gaussians that
+        are outside the camera Render Working Set. Those IDs therefore cannot be
+        validated against that subset. Validate them against typed planes from
+        the registered immutable Scene instead; callers must make the chunks
+        containing the requested IDs resident before invoking this method.
+        """
+
+        requested = tuple(stable_ids)
+        if (
+            not requested
+            or requested != tuple(sorted(requested))
+            or len(set(requested)) != len(requested)
+            or any(
+                isinstance(stable_id, bool)
+                or not isinstance(stable_id, int)
+                or stable_id < 0
+                or stable_id > 0xFFFFFFFF
+                for stable_id in requested
+            )
+        ):
+            raise SnapshotUploadError(
+                "Spatial Scene target Stable Gaussian IDs are invalid"
+            )
+
+        try:
+            import torch
+        except ImportError as error:
+            raise SnapshotUploadError(
+                "Spatial Scene target membership requires the locked renderer runtime"
+            ) from error
+
+        key = (scene_id, scene_version)
+        with self._lock:
+            registered = self._manifests.get(key)
+            if registered is None:
+                raise SnapshotUploadError(
+                    "Spatial Scene manifest is absent or has the wrong scene version"
+                )
+            scope = registered.manifest.authoritative_render_scope
+            entries = scope.get("entries") if isinstance(scope, Mapping) else None
+            target_entries = (
+                [
+                    entry
+                    for entry in entries
+                    if isinstance(entry, Mapping) and entry.get("role") == "target"
+                ]
+                if isinstance(entries, Sequence)
+                and not isinstance(entries, (str, bytes))
+                else []
+            )
+            if len(target_entries) != 1:
+                raise SnapshotUploadError(
+                    "Spatial Scene authoritative target rows are absent"
+                )
+            target_start = target_entries[0].get("rowOffset")
+            target_count = target_entries[0].get("rowCount")
+            if (
+                isinstance(target_start, bool)
+                or not isinstance(target_start, int)
+                or isinstance(target_count, bool)
+                or not isinstance(target_count, int)
+            ):
+                raise SnapshotUploadError(
+                    "Spatial Scene authoritative target rows are invalid"
+                )
+            target_end = target_start + target_count
+            resident_planes = tuple(
+                (
+                    bytes(chunk.field("stableIds")),
+                    bytes(chunk.field("globalOrdinals")),
+                )
+                for resident_key, chunk in self._resident.items()
+                if resident_key[:2] == key
+            )
+            if not resident_planes:
+                raise SnapshotUploadError(
+                    "Spatial Scene target membership has no resident chunks"
+                )
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="The given buffer is not writable.*",
+                category=UserWarning,
+            )
+            resident_stable_ids = torch.cat(
+                [
+                    torch.frombuffer(stable_plane, dtype=torch.int32)
+                    for stable_plane, _ in resident_planes
+                ]
+            ).to(torch.int64)
+            resident_stable_ids = torch.bitwise_and(
+                resident_stable_ids, 0xFFFFFFFF
+            )
+            resident_ordinals = torch.cat(
+                [
+                    torch.frombuffer(ordinal_plane, dtype=torch.int32)
+                    for _, ordinal_plane in resident_planes
+                ]
+            ).to(torch.int64)
+
+        order = torch.argsort(resident_stable_ids, stable=True)
+        sorted_stable_ids = resident_stable_ids[order]
+        requested_tensor = torch.tensor(requested, dtype=torch.int64)
+        left = torch.searchsorted(
+            sorted_stable_ids, requested_tensor, right=False
+        )
+        right = torch.searchsorted(
+            sorted_stable_ids, requested_tensor, right=True
+        )
+        if bool(((right - left) != 1).any().item()):
+            raise SnapshotUploadError(
+                "Spatial Scene Evidence Working Set membership is not resident and unique"
+            )
+        requested_ordinals = resident_ordinals[order[left]]
+        if bool(
+            (
+                (requested_ordinals < target_start)
+                | (requested_ordinals >= target_end)
+            ).any().item()
+        ):
+            raise SnapshotUploadError(
+                "Spatial Scene Evidence Working Set contains a non-target Stable Gaussian ID"
+            )
+        return requested
+
     def full_working_set(
         self,
         scene_id: str,

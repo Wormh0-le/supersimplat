@@ -259,6 +259,14 @@ test('Excluded View Evidence may stay cached but never contributes to Re-Lift', 
     assert.ok(h.controller.cachedEvidenceViewIds.includes('view-2'));
 });
 
+test('explicit View disposal releases only that cached Evidence artifact', () => {
+    const h = harness(async () => result(h.currentViews));
+
+    h.controller.disposeCachedEvidence('view-2');
+
+    assert.deepEqual(h.controller.cachedEvidenceViewIds, ['view-1']);
+});
+
 test('failed Re-Lift preserves the previous stale Candidate and exact dirty state', async () => {
     const h = harness(async () => {
         throw new Error('Evidence recomputation failed.');

@@ -48,6 +48,7 @@ const target = () => ({ splatId: 'editor-splat:1' });
 const snapshot = {
     sceneId: 'editor-splat:1',
     sceneVersion: 'snapshot-v1',
+    stableIds: new Uint32Array([1]),
     contentDigest: `sha256:${'c'.repeat(64)}`,
     renderConfiguration: {
         version: 'supersplat-effective-rgb-v1'
@@ -151,11 +152,17 @@ const renderResponseFor = (request, overrides = {}) => ({
         request.cameraBinding.projection.height,
         7
     ),
-    rgbRendererVersion: 'gsplat-rgb/v1',
+    rgbRendererVersion: 'gsplat-direct-evidence-rgb/v1',
     rendererId: 'gsplat',
-    rasterImplementationId: 'gsplat-reference-rgb/v1',
+    rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
     runtimeBuildId:
-        'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40',
+        'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4',
+    renderWorkingSetToken:
+        request.snapshot.contentDigest ?? `sha256:${'f'.repeat(64)}`,
+    renderStableGaussianIds: Array.from(
+        request.snapshot.stableIds ?? [1],
+        Number
+    ).sort((left, right) => left - right),
     ...overrides
 });
 
@@ -333,6 +340,12 @@ test('render response validates only when its binding and PNG dimensions match',
     assert.ok(
         !viewRenderResponseMatchesRequest(
             renderResponseFor(request, { viewId: 'generated-01' }),
+            request
+        )
+    );
+    assert.ok(
+        !viewRenderResponseMatchesRequest(
+            renderResponseFor(request, { renderStableGaussianIds: [2] }),
             request
         )
     );

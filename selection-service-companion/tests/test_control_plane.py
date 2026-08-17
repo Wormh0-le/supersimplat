@@ -101,7 +101,7 @@ class CompanionControlPlaneTests(unittest.TestCase):
         )
         self.assertEqual(
             capabilities["referenceCandidateReLift"]["runtimeBuildId"],
-            "sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40",
+            "sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4",
         )
         self.assertEqual(capabilities["renderer"]["status"], "unavailable")
 
@@ -115,7 +115,7 @@ class CompanionControlPlaneTests(unittest.TestCase):
 
     def test_candidate_re_lift_occupies_the_single_global_operation_slot(self) -> None:
         with self.state._session_lock:
-            self.state._active_candidate_re_lift = "re-lift-1"
+            self.state._active_evidence_operation = "re-lift-1"
         try:
             self.assertEqual(
                 self.state.capabilities([EDITOR_ORIGIN])["capacity"],
@@ -123,7 +123,7 @@ class CompanionControlPlaneTests(unittest.TestCase):
             )
         finally:
             with self.state._session_lock:
-                self.state._active_candidate_re_lift = None
+                self.state._active_evidence_operation = None
 
     def test_rejects_a_sam31_manifest_with_an_unpinned_runtime_configuration(self) -> None:
         with self.assertRaisesRegex(ValueError, "runtimeConfigDigest"):

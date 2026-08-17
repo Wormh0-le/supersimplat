@@ -72,6 +72,8 @@ export interface AIViewRenderResponse {
     readonly rendererId: 'gsplat';
     readonly rasterImplementationId: typeof aiSelectRasterImplementationId;
     readonly runtimeBuildId: typeof aiSelectRuntimeBuildId;
+    readonly renderWorkingSetToken: string;
+    readonly renderStableGaussianIds: readonly number[];
 }
 
 export interface AISelectViewRenderer {
@@ -650,7 +652,19 @@ export const isAIViewRenderResponse = (
         value.rgbRendererVersion === aiSelectRgbRendererVersion &&
         value.rendererId === 'gsplat' &&
         value.rasterImplementationId === aiSelectRasterImplementationId &&
-        value.runtimeBuildId === aiSelectRuntimeBuildId
+        value.runtimeBuildId === aiSelectRuntimeBuildId &&
+        isDigest(value.renderWorkingSetToken) &&
+        Array.isArray(value.renderStableGaussianIds) &&
+        value.renderStableGaussianIds.length > 0 &&
+        value.renderStableGaussianIds.every(
+            (stableId, index) =>
+                Number.isSafeInteger(stableId) &&
+                (stableId as number) >= 0 &&
+                (stableId as number) <= 0xffffffff &&
+                (index === 0 ||
+                    (value.renderStableGaussianIds as number[])[index - 1] <
+                        (stableId as number))
+        )
     );
 };
 
@@ -664,6 +678,7 @@ export const viewRenderResponseMatchesRequest = (
     request: AIViewRenderRequest
 ): boolean => {
     const actualDimensions = actualPngDimensions(response.rgb.pngBase64);
+    const snapshotStableIds = new Set(request.snapshot.stableIds);
     return (
         actualDimensions !== null &&
         response.requestBinding.targetContextId ===
@@ -685,6 +700,9 @@ export const viewRenderResponseMatchesRequest = (
         actualDimensions.width === response.rgb.width &&
         actualDimensions.height === response.rgb.height &&
         response.rgb.width === request.cameraBinding.projection.width &&
-        response.rgb.height === request.cameraBinding.projection.height
+        response.rgb.height === request.cameraBinding.projection.height &&
+        response.renderStableGaussianIds.every((stableId) =>
+            snapshotStableIds.has(stableId)
+        )
     );
 };

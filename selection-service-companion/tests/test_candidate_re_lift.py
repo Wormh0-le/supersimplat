@@ -15,12 +15,13 @@ from selection_service_companion.gaussian_evidence_contract import (
     create_gaussian_evidence_artifact,
 )
 from selection_service_companion.camera_binding import camera_binding_digest
+from selection_service_companion.direct_gaussian_evidence import (
+    DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+    DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+)
 from selection_service_companion.reference_gaussian_evidence import (
     ReferenceGaussianEvidenceError,
     default_reference_evidence_policy,
-)
-from selection_service_companion.renderer_runtime import (
-    EXPECTED_RENDERER_LOCK_DIGEST,
 )
 
 
@@ -75,10 +76,10 @@ def current_input(view_id: str, participation: str = "included") -> dict[str, ob
             "completeness": "complete",
         },
         "evidenceWorkingSet": working_set,
-        "rasterImplementationId": "gsplat-reference-rgb/v1",
+        "rasterImplementationId": DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
         "evidenceBackendKind": "reference-contributor",
         "evidenceBackendId": "complete-contributor/reference-v1",
-        "runtimeBuildId": EXPECTED_RENDERER_LOCK_DIGEST,
+        "runtimeBuildId": DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
     }
 
 

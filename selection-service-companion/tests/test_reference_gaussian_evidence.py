@@ -28,6 +28,7 @@ from selection_service_companion.gsplat_renderer import (
     GsplatContributorRenderer,
     GsplatRasterization,
     LockedGsplatBackend,
+    REFERENCE_EVIDENCE_RASTER_IMPLEMENTATION_ID,
     REFERENCE_EVIDENCE_RUNTIME_BUILD_ID,
 )
 from selection_service_companion.masking import MaskSessionError
@@ -277,6 +278,9 @@ def locked_admission_input(
 ) -> dict[str, object]:
     result = admission_input(mask, policy)
     binding_digest = camera_binding_digest(binding)
+    result["rasterImplementationId"] = (
+        REFERENCE_EVIDENCE_RASTER_IMPLEMENTATION_ID
+    )
     result["runtimeBuildId"] = REFERENCE_EVIDENCE_RUNTIME_BUILD_ID
     result["view"] = {
         **result["view"],

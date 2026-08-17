@@ -95,11 +95,11 @@ const currentInput = {
         completeness: 'complete'
     },
     evidenceWorkingSet,
-    rasterImplementationId: 'gsplat-reference-rgb/v1',
+    rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
     evidenceBackendKind: 'reference-contributor',
     evidenceBackendId: 'complete-contributor/reference-v1',
     runtimeBuildId:
-        'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40'
+        'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4'
 };
 const validRequest = () => ({
     liftAttemptId: 're-lift-1',

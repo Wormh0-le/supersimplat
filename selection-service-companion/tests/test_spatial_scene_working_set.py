@@ -61,6 +61,64 @@ def scoped_manifest(value: SpatialSceneManifest) -> SpatialSceneManifest:
     )
 
 
+def target_and_occluder_manifest(
+    value: SpatialSceneManifest,
+    *,
+    target_count: int,
+) -> SpatialSceneManifest:
+    target_digest = "sha256:" + "b" * 64
+    occluder_digest = "sha256:" + "c" * 64
+    sources = [
+        {
+            "splatId": value.target_splat_id,
+            "sourceContentDigest": target_digest,
+            "gaussianCount": target_count,
+        },
+        {
+            "splatId": "editor-splat:occluder",
+            "sourceContentDigest": occluder_digest,
+            "gaussianCount": value.total_gaussian_count - target_count,
+        },
+    ]
+    identity = "sha256:" + hashlib.sha256(
+        json.dumps(
+            {
+                "policyId": "visible-editor-splats-conservative/v1",
+                "targetSplatId": value.target_splat_id,
+                "sources": sources,
+            },
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    return replace(
+        value,
+        authoritative_render_scope={
+            "policyId": "visible-editor-splats-conservative/v1",
+            "targetSplatId": value.target_splat_id,
+            "identityDigest": identity,
+            "entries": [
+                {
+                    "splatId": value.target_splat_id,
+                    "role": "target",
+                    "sourceContentDigest": target_digest,
+                    "rowOffset": 0,
+                    "rowCount": target_count,
+                    "renderIdStart": 0,
+                },
+                {
+                    "splatId": "editor-splat:occluder",
+                    "role": "occluder",
+                    "sourceContentDigest": occluder_digest,
+                    "rowOffset": target_count,
+                    "rowCount": value.total_gaussian_count - target_count,
+                    "renderIdStart": target_count,
+                },
+            ],
+        },
+    )
+
+
 def camera() -> dict[str, object]:
     return {
         "revision": 0,
@@ -315,6 +373,81 @@ class SpatialSceneWorkingSetTests(unittest.TestCase):
         self.assertEqual(
             full.ordered_tensors()["stableIds"].tolist(), [101, 102]
         )
+
+    def test_proves_spatial_evidence_ids_are_unique_resident_target_rows(self) -> None:
+        target_payload = chunk_payload(0, 101, (0.0, 0.0, 5.0))
+        unresident_target_payload = chunk_payload(1, 102, (100.0, 0.0, 5.0))
+        duplicate_target_payload = chunk_payload(2, 101, (2.0, 0.0, 5.0))
+        occluder_payload = chunk_payload(3, 202, (1.0, 0.0, 5.0))
+        broad_bounds = SpatialSupportBounds.finite(
+            (-10.0, -10.0, 1.0), (10.0, 10.0, 9.0)
+        )
+        outside_bounds = SpatialSupportBounds.finite(
+            (99.0, -1.0, 4.0), (101.0, 1.0, 6.0)
+        )
+        registered = target_and_occluder_manifest(
+            manifest(
+                descriptor("chunk-a", target_payload, 0, broad_bounds),
+                descriptor(
+                    "chunk-b", unresident_target_payload, 1, outside_bounds
+                ),
+                descriptor(
+                    "chunk-c", duplicate_target_payload, 2, broad_bounds
+                ),
+                descriptor("chunk-d", occluder_payload, 3, broad_bounds),
+            ),
+            target_count=3,
+        )
+        self.store.register_manifest(registered)
+        admission = self.store.begin_chunk_upload(
+            registered.scene_id,
+            registered.scene_version,
+            ("chunk-a", "chunk-d"),
+        )
+        self.store.accept_chunk(
+            admission.upload_id or "",
+            "chunk-a",
+            target_payload,
+            "sha256:" + hashlib.sha256(target_payload).hexdigest(),
+        )
+        self.store.accept_chunk(
+            admission.upload_id or "",
+            "chunk-d",
+            occluder_payload,
+            "sha256:" + hashlib.sha256(occluder_payload).hexdigest(),
+        )
+        self.store.commit_chunk_upload(admission.upload_id or "")
+
+        self.assertEqual(
+            self.store.validate_target_stable_ids(
+                registered.scene_id, registered.scene_version, (101,)
+            ),
+            (101,),
+        )
+        with self.assertRaises(SnapshotUploadError):
+            self.store.validate_target_stable_ids(
+                registered.scene_id, registered.scene_version, (102,)
+            )
+        with self.assertRaises(SnapshotUploadError):
+            self.store.validate_target_stable_ids(
+                registered.scene_id, registered.scene_version, (202,)
+            )
+        duplicate_admission = self.store.begin_chunk_upload(
+            registered.scene_id,
+            registered.scene_version,
+            ("chunk-c",),
+        )
+        self.store.accept_chunk(
+            duplicate_admission.upload_id or "",
+            "chunk-c",
+            duplicate_target_payload,
+            "sha256:" + hashlib.sha256(duplicate_target_payload).hexdigest(),
+        )
+        self.store.commit_chunk_upload(duplicate_admission.upload_id or "")
+        with self.assertRaises(SnapshotUploadError):
+            self.store.validate_target_stable_ids(
+                registered.scene_id, registered.scene_version, (101,)
+            )
 
     def test_falls_back_to_all_chunks_when_one_support_bound_cannot_prove_culling(self) -> None:
         first_payload = chunk_payload(0, 101, (100.0, 0.0, 5.0))

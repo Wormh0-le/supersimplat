@@ -127,6 +127,8 @@ export interface GeneratedAIView {
     readonly rgb?: AnchorRgbArtifact;
     readonly rgbDigest?: string;
     readonly rendererId?: 'gsplat';
+    readonly renderWorkingSetToken?: string;
+    readonly renderStableGaussianIds?: readonly number[];
     readonly renderErrorMessage?: string;
     readonly participation: AIViewParticipation;
     readonly promptStatus: GeneratedViewPromptStatus;
@@ -209,6 +211,8 @@ interface GeneratedViewRecord {
     renderStatus: GeneratedViewRenderStatus;
     rgb?: AnchorRgbArtifact;
     rendererId?: 'gsplat';
+    renderWorkingSetToken?: string;
+    renderStableGaussianIds?: readonly number[];
     renderErrorMessage?: string;
     promptStatus: GeneratedViewPromptStatus;
     promptDiagnostics?: readonly string[];
@@ -1223,6 +1227,10 @@ export class AISelectGeneratedViewController {
         view.renderStatus = 'ready';
         view.rgb = copyRgb(response.rgb);
         view.rendererId = response.rendererId;
+        view.renderWorkingSetToken = response.renderWorkingSetToken;
+        view.renderStableGaussianIds = Object.freeze([
+            ...response.renderStableGaussianIds
+        ]);
         if (
             previousRgbDigest !== undefined &&
             previousRgbDigest !== view.rgb.digest
@@ -1814,6 +1822,16 @@ export class AISelectGeneratedViewController {
             ...(view.rendererId === undefined
                 ? {}
                 : { rendererId: view.rendererId }),
+            ...(view.renderWorkingSetToken === undefined
+                ? {}
+                : { renderWorkingSetToken: view.renderWorkingSetToken }),
+            ...(view.renderStableGaussianIds === undefined
+                ? {}
+                : {
+                      renderStableGaussianIds: Object.freeze([
+                          ...view.renderStableGaussianIds
+                      ])
+                  }),
             ...(view.renderErrorMessage === undefined
                 ? {}
                 : { renderErrorMessage: view.renderErrorMessage }),

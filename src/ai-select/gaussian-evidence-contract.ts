@@ -9,17 +9,15 @@ import {
 } from './current-target-context';
 
 /**
- * Ticket 14A's reference-only per-view P/N/V artifact schema. Ticket 20
- * deliberately receives a distinct production Direct Evidence contract: a
- * reference artifact must never be mistaken for same-decision Evidence.
+ * Stable-ID-indexed per-view P/N/V artifact schema. Backend identity makes
+ * Ticket 14 reference artifacts and Ticket 20 Direct Evidence artifacts
+ * non-interchangeable even though they share the lifecycle envelope.
  */
 export const gaussianEvidenceArtifactSchemaVersion = 1;
 export const evidenceWorkingSetSchemaVersion = 1;
 
 export type EvidenceBackendKind =
-    'reference-contributor' | 'reference-autograd';
-
-type KnownEvidenceBackendKind = EvidenceBackendKind | 'production-direct';
+    'reference-contributor' | 'reference-autograd' | 'production-direct';
 type UnknownRecord = Record<string, unknown>;
 
 const encoder = new TextEncoder();
@@ -617,14 +615,14 @@ export interface GaussianEvidenceAdmissionInput {
     readonly renderWorkingSet: RenderWorkingSetBinding;
     readonly evidenceWorkingSet: EvidenceWorkingSet;
     readonly rasterImplementationId: string;
-    readonly evidenceBackendKind: KnownEvidenceBackendKind;
+    readonly evidenceBackendKind: EvidenceBackendKind;
     readonly evidenceBackendId: string;
     readonly runtimeBuildId: string;
 }
 
 const isKnownEvidenceBackendKind = (
     value: unknown
-): value is KnownEvidenceBackendKind => {
+): value is EvidenceBackendKind => {
     return (
         value === 'reference-contributor' ||
         value === 'reference-autograd' ||
@@ -767,8 +765,7 @@ const isAdmittedGaussianEvidenceInput = (
         isDigest(value.evidenceWorkingSetToken) &&
         isStrictlyAscendingStableGaussianIds(value.stableGaussianIds) &&
         isNonEmptyString(value.rasterImplementationId) &&
-        (value.evidenceBackendKind === 'reference-contributor' ||
-            value.evidenceBackendKind === 'reference-autograd') &&
+        isKnownEvidenceBackendKind(value.evidenceBackendKind) &&
         isNonEmptyString(value.evidenceBackendId) &&
         isNonEmptyString(value.runtimeBuildId)
     );
@@ -815,18 +812,13 @@ export const admitGaussianEvidence = (
         return rejectedAdmission('evidence-working-set-mismatch');
     }
     if (
+        input.evidenceBackendKind !== 'production-direct' &&
         !stableGaussianIdsAreSubsetOf(
             input.evidenceWorkingSet.stableGaussianIds,
             input.renderWorkingSet.stableGaussianIds
         )
     ) {
         return rejectedAdmission('stable-id-mapping-invalid');
-    }
-    if (
-        input.evidenceBackendKind !== 'reference-contributor' &&
-        input.evidenceBackendKind !== 'reference-autograd'
-    ) {
-        return rejectedAdmission('unsupported-evidence-backend');
     }
     return Object.freeze({
         status: 'admitted',
@@ -899,9 +891,8 @@ const copyMassArray = (value: readonly number[]): readonly number[] => {
 };
 
 /**
- * A raw reference P/N/V product. Ticket 14A only validates this schema; 14B
- * owns population of its numerical channels and Ticket 20 owns production
- * same-decision Direct Evidence.
+ * A raw reference or production P/N/V product. The backend identity is part
+ * of the artifact digest and every cache/publication binding.
  */
 export interface GaussianEvidenceArtifact extends AdmittedGaussianEvidenceInput {
     readonly schemaVersion: typeof gaussianEvidenceArtifactSchemaVersion;

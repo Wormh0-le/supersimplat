@@ -56,7 +56,10 @@ Repository-wide specifications and ADRs remain canonical under `docs/specs/` and
   target-scoped suspension, preserved read-only artifacts and exact Undo;
 - [Ticket 19](tickets/19-scene-render-data-path-hardening.md) — implemented
   visible-Splat render scope, immutable tensor/RGB reuse and large-scene
-  validation; Ticket 20 is current.
+  validation.
+- [Ticket 20](tickets/20-evidence-artifact-working-set-hardening.md) —
+  implemented same-decision Direct Evidence, production artifact identity and
+  Working Set hardening; Ticket 21 is current.
 
 ## Scratch policy
 
@@ -85,9 +88,9 @@ Execution order is:
 14A → 14B → 14C → 14D → 13 → 15 → 16 → 16A → 16B
                                                        ├→ 16C ─┐
                                                        ├→ 16D ─┴→ 16E ─┐
-                                                       └→ 16F ─────────┴→ 16G → 17 → 18 → 19 → 20
+                                                       └→ 16F ─────────┴→ 16G → 17 → 18 → 19 → 20 → 21
 ```
 
 14A through 14D, parent Ticket 14, Tickets 13 through 15, Ticket 16's native
-application core, Tickets 16A–16G and Tickets 17–19 are implemented. Ticket 20
-is current (`next_implementation_ticket = 20`, `next_implementation_subticket = none`).
+application core, Tickets 16A–16G and Tickets 17–20 are implemented. Ticket 21
+is current (`next_implementation_ticket = 21`, `next_implementation_subticket = none`).

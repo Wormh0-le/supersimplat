@@ -17,7 +17,9 @@ const {
     revisePromptState
 } = require('../.test-dist/src/ai-select/prompt-state.js');
 const {
-    createEvidenceWorkingSet
+    admitGaussianEvidence,
+    createEvidenceWorkingSet,
+    createGaussianEvidenceArtifact
 } = require('../.test-dist/src/ai-select/gaussian-evidence-contract.js');
 const {
     cameraBindingDigest
@@ -252,7 +254,22 @@ const anchorSnapshot = buildPackedSceneSnapshot({
     logitOpacities: new Float32Array([0]),
     dc: new Float32Array([0, 0, 0]),
     sh: new Float32Array(),
-    shFloatCountPerGaussian: 0
+    shFloatCountPerGaussian: 0,
+    authoritativeRenderScope: {
+        policyId: 'visible-editor-splats-conservative/v1',
+        targetSplatId: 'scene-1',
+        identityDigest: `sha256:${'e'.repeat(64)}`,
+        entries: [
+            {
+                splatId: 'scene-1',
+                role: 'target',
+                sourceContentDigest: `sha256:${'f'.repeat(64)}`,
+                rowOffset: 0,
+                rowCount: 1,
+                renderIdStart: 3
+            }
+        ]
+    }
 });
 
 const anchorRequest = {
@@ -353,11 +370,16 @@ const anchorResponse = (request) => ({
         width: request.cameraBinding.projection.width,
         height: request.cameraBinding.projection.height
     },
-    rgbRendererVersion: 'gsplat-rgb/v1',
+    rgbRendererVersion: 'gsplat-direct-evidence-rgb/v1',
     rendererId: 'gsplat',
-    rasterImplementationId: 'gsplat-reference-rgb/v1',
+    rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
     runtimeBuildId:
-        'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40'
+        'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4',
+    renderWorkingSetToken: request.snapshot.contentDigest,
+    renderStableGaussianIds: Array.from(
+        request.snapshot.stableIds,
+        Number
+    ).sort((left, right) => left - right)
 });
 
 test('registers the editor-owned Scene Snapshot then renders a bound authoritative Anchor through the Companion', async () => {
@@ -408,6 +430,29 @@ test('registers the editor-owned Scene Snapshot then renders a bound authoritati
         anchorRequest.requestBinding
     );
     assert.deepEqual(calls[3].body.cameraBinding, anchorRequest.cameraBinding);
+});
+
+test('rejects packed RGB whose Render Working Set token is not the packed snapshot', async () => {
+    const replies = [
+        ...stagedBinaryRegistrationReplies(anchorSnapshot),
+        {
+            ...anchorResponse(anchorRequest),
+            renderWorkingSetToken: `sha256:${'f'.repeat(64)}`
+        }
+    ];
+    const adapter = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:model-v1'
+        }),
+        fetch: async () =>
+            new Response(JSON.stringify(replies.shift()), { status: 200 })
+    });
+
+    await assert.rejects(
+        adapter.renderAnchor(anchorRequest),
+        /Render Working Set outside the requested transport/
+    );
 });
 
 test('registers one global spatial manifest, uploads only the missing Anchor chunk, and retries a lost acknowledgement', async () => {
@@ -1398,16 +1443,34 @@ const candidateReLiftRequest = () => {
                         completeness: 'complete'
                     },
                     evidenceWorkingSet,
-                    rasterImplementationId: 'gsplat-reference-rgb/v1',
+                    rasterImplementationId:
+                        'supersimplat-gsplat-direct-evidence/v1',
                     evidenceBackendKind: 'reference-contributor',
                     evidenceBackendId: 'complete-contributor/reference-v1',
                     runtimeBuildId:
-                        'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40'
+                        'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4'
                 },
                 cameraBinding: anchorCameraBinding,
                 stableMask
             }
         ]
+    };
+};
+
+const directEvidenceRequest = () => {
+    const reference = candidateReLiftRequest().views[0];
+    return {
+        snapshot: anchorSnapshot,
+        cameraBinding: reference.cameraBinding,
+        stableMask: reference.stableMask,
+        currentInput: {
+            ...reference.currentInput,
+            rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
+            evidenceBackendKind: 'production-direct',
+            evidenceBackendId: 'global-atomic/direct-v1',
+            runtimeBuildId:
+                'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4'
+        }
     };
 };
 
@@ -1751,6 +1814,190 @@ test('bounds a Candidate Re-Lift transport that never completes', async () => {
 
     await assert.rejects(adapter.produceCandidateReLift(request), /timed out/);
     assert.match(calls.at(-1).url, /\/ai-select\/candidate-re-lifts$/);
+});
+
+test('registers the exact Scene Snapshot before producing bound Direct Evidence', async () => {
+    const request = directEvidenceRequest();
+    const admission = admitGaussianEvidence(request.currentInput);
+    assert.equal(admission.status, 'admitted');
+    const artifact = createGaussianEvidenceArtifact(admission.admission, {
+        positiveMass: [0.5],
+        negativeMass: [0.25],
+        visibleMass: [0.75],
+        boundaryMass: [0]
+    });
+    const calls = [];
+    const replies = [
+        ...stagedBinaryRegistrationReplies(anchorSnapshot),
+        {
+            status: 'complete',
+            requestBinding: request.currentInput.requestBinding,
+            targetSplatId: request.currentInput.targetSplatId,
+            viewId: request.currentInput.view.viewId,
+            reused: false,
+            artifact,
+            telemetry: {
+                evidenceBufferBytes: 16,
+                pixelWeightBufferBytes: 64 * 48 * 16,
+                boundaryBufferBytes: 16392,
+                peakVramBytes: 1024
+            }
+        }
+    ];
+    const adapter = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:model-v1'
+        }),
+        fetch: async (url, init) => {
+            calls.push({ url, init, body: responseBody(init.body) });
+            return new Response(JSON.stringify(replies.shift()), {
+                status: 200
+            });
+        }
+    });
+
+    const response = await adapter.produceDirectEvidence(request);
+
+    assert.equal(response.artifact.artifactDigest, artifact.artifactDigest);
+    assert.ok(calls.at(-1).url.endsWith('/ai-select/direct-evidence'));
+    assert.equal('snapshot' in calls.at(-1).body, false);
+    assert.deepEqual(calls.at(-1).body.currentInput, request.currentInput);
+});
+
+test('uploads spatial chunks for both the Render and Direct Evidence Working Sets', async () => {
+    const gaussianCount = 16_385;
+    const stableIds = new Uint32Array(gaussianCount);
+    const means = new Float32Array(gaussianCount * 3);
+    const rotationsXyzw = new Float32Array(gaussianCount * 4);
+    for (let index = 0; index < gaussianCount; index += 1) {
+        stableIds[index] = index + 1;
+        means[index * 3] = index * 0.001;
+        means[index * 3 + 2] = 5;
+        rotationsXyzw[index * 4 + 3] = 1;
+    }
+    const multiChunkSnapshot = buildPackedSceneSnapshot({
+        sceneId: 'scene-1',
+        coordinateConvention: 'right-handed world coordinates; quaternion xyzw',
+        stableIdSchema: 'uint32',
+        appearancePolicy: 'effective-editor-dc-sh-bands-0',
+        renderConfiguration: anchorSnapshot.renderConfiguration,
+        stableIds,
+        means,
+        rotationsXyzw,
+        logScales: new Float32Array(gaussianCount * 3),
+        logitOpacities: new Float32Array(gaussianCount),
+        dc: new Float32Array(gaussianCount * 3),
+        sh: new Float32Array(),
+        shFloatCountPerGaussian: 0,
+        authoritativeRenderScope: {
+            policyId: 'visible-editor-splats-conservative/v1',
+            targetSplatId: 'scene-1',
+            identityDigest: `sha256:${'d'.repeat(64)}`,
+            entries: [
+                {
+                    splatId: 'scene-1',
+                    role: 'target',
+                    sourceContentDigest: `sha256:${'f'.repeat(64)}`,
+                    rowOffset: 0,
+                    rowCount: gaussianCount,
+                    renderIdStart: 1
+                }
+            ]
+        }
+    });
+    const spatialSnapshot = buildSpatialSceneSnapshot(multiChunkSnapshot, {
+        targetSplatId: anchorRequest.target.splatId
+    });
+    assert.equal(spatialSnapshot.manifest.chunks.length, 2);
+    const [renderChunk, evidenceOnlyChunk] = spatialSnapshot.manifest.chunks;
+    const request = directEvidenceRequest();
+    const evidenceWorkingSet = createEvidenceWorkingSet({
+        targetSplatId: 'scene-1',
+        coreTargetStableIds: [1],
+        contextStableGaussianIds: [gaussianCount]
+    });
+    request.snapshot = multiChunkSnapshot;
+    request.currentInput = {
+        ...request.currentInput,
+        renderWorkingSet: {
+            ...request.currentInput.renderWorkingSet,
+            renderWorkingSetToken: `sha256:${'c'.repeat(64)}`,
+            stableGaussianIds: [1]
+        },
+        evidenceWorkingSet
+    };
+    const admission = admitGaussianEvidence(request.currentInput);
+    assert.equal(admission.status, 'admitted');
+    const artifact = createGaussianEvidenceArtifact(admission.admission, {
+        positiveMass: [0.5, 0.25],
+        negativeMass: [0.25, 0.5],
+        visibleMass: [0.75, 0.75],
+        boundaryMass: [0, 0]
+    });
+    const replies = [
+        {
+            status: 'registered',
+            registrationId: 'spatial-registration-direct',
+            sceneId: multiChunkSnapshot.sceneId,
+            sceneVersion: multiChunkSnapshot.sceneVersion,
+            contentDigest: multiChunkSnapshot.contentDigest
+        },
+        {
+            status: 'staged',
+            uploadId: 'spatial-upload-direct',
+            missingChunkIds: [renderChunk.chunkId, evidenceOnlyChunk.chunkId]
+        },
+        {
+            status: 'stored',
+            uploadId: 'spatial-upload-direct',
+            chunkId: renderChunk.chunkId
+        },
+        {
+            status: 'stored',
+            uploadId: 'spatial-upload-direct',
+            chunkId: evidenceOnlyChunk.chunkId
+        },
+        {
+            status: 'committed',
+            sceneId: multiChunkSnapshot.sceneId,
+            sceneVersion: multiChunkSnapshot.sceneVersion,
+            committedChunkIds: [renderChunk.chunkId, evidenceOnlyChunk.chunkId]
+        },
+        {
+            status: 'complete',
+            requestBinding: request.currentInput.requestBinding,
+            targetSplatId: request.currentInput.targetSplatId,
+            viewId: request.currentInput.view.viewId,
+            reused: false,
+            artifact
+        }
+    ];
+    const calls = [];
+    const adapter = new FetchSelectionServiceAdapter({
+        getConfiguration: () => ({
+            endpoint: 'https://companion.example:8787',
+            modelManifestDigest: 'sha256:model-v1'
+        }),
+        fetch: async (url, init) => {
+            calls.push({ url, init, body: responseBody(init.body) });
+            return new Response(JSON.stringify(replies.shift()), {
+                status: 200
+            });
+        }
+    });
+
+    const response = await adapter.produceDirectEvidence(request);
+
+    assert.equal(response.artifact.artifactDigest, artifact.artifactDigest);
+    assert.match(calls[0].url, /\/spatial-scene-manifests\/v1$/);
+    assert.match(calls[1].url, /\/spatial-scene-chunk-uploads\/v1$/);
+    assert.match(calls[2].url, /\/chunks\/spatial-00000000$/);
+    assert.match(calls[3].url, /\/chunks\/spatial-00000001$/);
+    assert.match(calls[4].url, /\/commit$/);
+    assert.ok(calls[5].url.endsWith('/ai-select/direct-evidence'));
+    assert.equal(calls[5].body.sceneTransport, 'spatial-v1');
+    assert.deepEqual(calls[5].body.currentInput, request.currentInput);
 });
 
 test('re-registers the Candidate Scene Snapshot once after a Companion cache-loss 409', async () => {

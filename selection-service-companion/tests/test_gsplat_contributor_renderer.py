@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import base64
 import hashlib
 from io import BytesIO
 import math
@@ -13,6 +14,12 @@ from unittest import mock
 from PIL import Image
 
 from selection_service_companion.anchor_timing import AnchorServerTiming
+from selection_service_companion.camera_binding import camera_binding_digest
+from selection_service_companion.direct_gaussian_evidence import (
+    DIRECT_EVIDENCE_BACKEND_ID,
+    DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+    DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+)
 from selection_service_companion.evidence import ContributorSample
 from selection_service_companion.gsplat_renderer import (
     GsplatContributorRenderer,
@@ -24,12 +31,24 @@ from selection_service_companion.gsplat_renderer import (
     TileGaussian,
     TypedAnchorRasterization,
     reconcile_boundary_contributors,
+    validate_supported_snapshot,
 )
 from selection_service_companion.generated_views import (
     PlannedGeneratedViewCandidate,
     SeedRegion,
 )
 from selection_service_companion.masking import MaskSessionError, RegisteredFrame
+from selection_service_companion.gaussian_evidence_contract import (
+    create_evidence_working_set,
+)
+from selection_service_companion.reference_gaussian_evidence import (
+    default_reference_evidence_policy,
+    typed_pixel_evidence_weights,
+)
+from selection_service_companion.reference_gaussian_evidence_aggregation import (
+    aggregate_reference_gaussian_evidence,
+    default_reference_aggregation_policy,
+)
 from selection_service_companion.state import CompanionState
 
 
@@ -1441,6 +1460,249 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
         with Image.open(BytesIO(artifact.image_png)) as image:
             self.assertEqual(image.size, (frame.width, frame.height))
 
+    def test_direct_evidence_matches_reference_without_allocating_contributor(self) -> None:
+        self.require_cuda()
+
+        width = height = 8
+        binding = {
+            "revision": 1,
+            "cameraToWorld": [
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ],
+            "projection": {
+                "model": "pinhole",
+                "fx": 20.0,
+                "fy": 20.0,
+                "cx": width / 2,
+                "cy": height / 2,
+                "width": width,
+                "height": height,
+                "near": 0.01,
+                "far": 100.0,
+            },
+            "conventionVersion": "opencv-camera-to-world/v1",
+        }
+        frame = anchor_frame(width=width, height=height)
+        assert frame.camera is not None
+        renderer = GsplatContributorRenderer(backend=LockedGsplatBackend())
+        scene = supported_snapshot()
+        scene["sceneVersion"] = "sha256:" + ("d" * 64)
+        scene["gaussians"][0]["logScale"] = [0.0, 0.0, 0.0]
+        scene["gaussianCount"] = 3
+        scene["gaussians"].append({
+            "stableId": 123,
+            "mean": [100.0, 100.0, 2.0],
+            "rotation": [0.0, 0.0, 0.0, 1.0],
+            "logScale": [-1.6, -1.6, -1.6],
+            "logitOpacity": 0.0,
+            "dc": [0.0, 0.0, 0.0],
+            "sh": [],
+        })
+        rgb = renderer.render_anchor(
+            scene_snapshot=scene,
+            view_id="anchor-view",
+            camera=frame.camera,
+            width=width,
+            height=height,
+        )
+        mask_bits = bytes([0xFF] * ((width * height + 7) // 8))
+        mask = {
+            "encoding": "bitset-lsb-v1",
+            "width": width,
+            "height": height,
+            "data": base64.b64encode(mask_bits).decode("ascii"),
+            "digest": f"sha256:{hashlib.sha256(mask_bits).hexdigest()}",
+        }
+        dependency = {
+            "splatId": "scene-1",
+            "renderStateToken": "render-v1",
+            "geometryToken": "geometry-v1",
+            "gaussianIdentityToken": "gaussians-v1",
+            "worldTransformToken": "transform-v1",
+        }
+        evidence_working_set = create_evidence_working_set({
+            "targetSplatId": "scene-1",
+            "coreTargetStableIds": [41, 99, 123],
+            "contextStableGaussianIds": [],
+        })
+        policy = default_reference_evidence_policy()
+        direct_input = {
+            "requestBinding": {
+                "targetContextId": "context-1",
+                "contextRevision": 1,
+                "dependencyToken": dependency,
+            },
+            "targetSplatId": "scene-1",
+            "view": {
+                "viewId": "anchor-view",
+                "renderStatus": "ready",
+                "participation": "included",
+                "cameraBindingDigest": camera_binding_digest(binding),
+                "rgbDigest": rgb.rgb_digest,
+                "stableMaskDigest": mask["digest"],
+            },
+            "evidencePolicyDigest": policy["evidencePolicyDigest"],
+            "renderWorkingSet": {
+                "targetSplatId": "scene-1",
+                "dependencyToken": dependency,
+                "cameraBindingDigest": camera_binding_digest(binding),
+                "renderWorkingSetToken": scene["sceneVersion"],
+                "stableGaussianIds": [41, 99, 123],
+                "completeness": "complete",
+            },
+            "evidenceWorkingSet": evidence_working_set,
+            "rasterImplementationId": DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+            "evidenceBackendKind": "production-direct",
+            "evidenceBackendId": DIRECT_EVIDENCE_BACKEND_ID,
+            "runtimeBuildId": DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+        }
+
+        direct = renderer.compute_direct_evidence(
+            admission_input=direct_input,
+            stable_mask_artifact=mask,
+            policy=policy,
+            scene_snapshot=scene,
+            camera_binding=binding,
+            target_stable_ids=[41, 99, 123],
+        )
+        reference_input = {
+            **direct_input,
+            "rasterImplementationId": DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+            "evidenceBackendKind": "reference-contributor",
+            "evidenceBackendId": "complete-contributor/reference-v1",
+            "runtimeBuildId": DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+        }
+        reference = renderer.compute_reference_evidence(
+            admission_input=reference_input,
+            stable_mask_artifact=mask,
+            policy=policy,
+            scene_snapshot=scene,
+            camera_binding=binding,
+        )
+
+        for channel in ("positiveMass", "negativeMass", "visibleMass", "boundaryMass"):
+            for observed, expected in zip(direct[channel], reference[channel], strict=True):
+                self.assertAlmostEqual(observed, expected, delta=2e-5)
+        self.assertNotEqual(direct["artifactDigest"], reference["artifactDigest"])
+        self.assertEqual(direct["evidenceBackendKind"], "production-direct")
+        self.assertIsNotNone(renderer.last_direct_evidence_telemetry)
+        assert renderer.last_direct_evidence_telemetry is not None
+        self.assertEqual(
+            renderer.last_direct_evidence_telemetry["evidenceBufferBytes"],
+            3 * 4 * 4,
+        )
+        repeats = [direct]
+        for _ in range(4):
+            repeats.append(renderer.compute_direct_evidence(
+                admission_input=direct_input,
+                stable_mask_artifact=mask,
+                policy=policy,
+                scene_snapshot=scene,
+                camera_binding=binding,
+                target_stable_ids=[41, 99, 123],
+            ))
+        for channel in ("positiveMass", "negativeMass", "visibleMass", "boundaryMass"):
+            for stable_index in range(3):
+                values = [artifact[channel][stable_index] for artifact in repeats]
+                self.assertLessEqual(max(values) - min(values), 2e-5)
+
+        def classify(current_input, artifact):
+            return aggregate_reference_gaussian_evidence(
+                {
+                    "requestBinding": current_input["requestBinding"],
+                    "targetSplatId": "scene-1",
+                    "classificationUniverseStableGaussianIds": [41, 99, 123],
+                    "classificationScopeStableGaussianIds": [41, 99, 123],
+                    "evidenceWorkingSet": evidence_working_set,
+                    "views": [{"currentInput": current_input, "artifact": artifact}],
+                },
+                default_reference_aggregation_policy(),
+            )
+
+        reference_classification = classify(reference_input, reference)
+        self.assertIn(123, reference_classification["uncertainStableGaussianIds"])
+        for artifact in repeats:
+            production_classification = classify(direct_input, artifact)
+            for key in (
+                "selectedStableGaussianIds",
+                "rejectedStableGaussianIds",
+                "uncertainStableGaussianIds",
+            ):
+                self.assertEqual(
+                    production_classification[key], reference_classification[key]
+                )
+
+        mixed_bits = bytearray((width * height + 7) // 8)
+        for y_px in range(2, 6):
+            for x_px in range(2, 6):
+                pixel = y_px * width + x_px
+                mixed_bits[pixel // 8] |= 1 << (pixel % 8)
+        mixed_mask = {
+            "encoding": "bitset-lsb-v1",
+            "width": width,
+            "height": height,
+            "data": base64.b64encode(mixed_bits).decode("ascii"),
+            "digest": f"sha256:{hashlib.sha256(mixed_bits).hexdigest()}",
+        }
+        mixed_direct_input = {
+            **direct_input,
+            "view": {
+                **direct_input["view"],
+                "stableMaskDigest": mixed_mask["digest"],
+            },
+        }
+        mixed_reference_input = {
+            **mixed_direct_input,
+            "evidenceBackendKind": "reference-contributor",
+            "evidenceBackendId": "complete-contributor/reference-v1",
+        }
+        mixed_direct = renderer.compute_direct_evidence(
+            admission_input=mixed_direct_input,
+            stable_mask_artifact=mixed_mask,
+            policy=policy,
+            scene_snapshot=scene,
+            camera_binding=binding,
+            target_stable_ids=[41, 99, 123],
+        )
+        mixed_reference = renderer.compute_reference_evidence(
+            admission_input=mixed_reference_input,
+            stable_mask_artifact=mixed_mask,
+            policy=policy,
+            scene_snapshot=scene,
+            camera_binding=binding,
+        )
+        for channel in (
+            "positiveMass",
+            "negativeMass",
+            "visibleMass",
+            "boundaryMass",
+        ):
+            for observed, expected in zip(
+                mixed_direct[channel], mixed_reference[channel], strict=True
+            ):
+                self.assertAlmostEqual(observed, expected, delta=2e-5)
+        mixed_reference_classification = classify(
+            mixed_reference_input, mixed_reference
+        )
+        mixed_direct_classification = classify(mixed_direct_input, mixed_direct)
+        self.assertIn(
+            41,
+            mixed_reference_classification["uncertainStableGaussianIds"],
+            mixed_reference_classification,
+        )
+        for key in (
+            "selectedStableGaussianIds",
+            "rejectedStableGaussianIds",
+            "uncertainStableGaussianIds",
+        ):
+            self.assertEqual(
+                mixed_direct_classification[key],
+                mixed_reference_classification[key],
+            )
+
     def test_anchor_uses_the_typed_gpu_contributor_publication_path(self) -> None:
         self.require_cuda()
 
@@ -1550,6 +1812,64 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
         self.assertLessEqual(
             abs(mass - alpha),
             MASS_CONSERVATION_ATOL + MASS_CONSERVATION_RTOL * abs(alpha),
+        )
+
+    def test_controlled_overlap_direct_evidence_does_not_reconcile_contributors(self) -> None:
+        self.require_cuda()
+        import torch
+
+        fixture = (
+            Path(__file__).resolve().parents[2]
+            / "docs/benchmarks/fixtures/controlled-overlap/controlled_front_back_overlap.ply"
+        )
+        if not fixture.exists():
+            self.skipTest("controlled-overlap fixture is unavailable")
+        from selection_service_companion.controlled_overlap_benchmark import (
+            _anchor_camera,
+            build_controlled_overlap_snapshot,
+        )
+
+        snapshot = build_controlled_overlap_snapshot(fixture)
+        stable_ids = [int(value) for value in validate_supported_snapshot(snapshot)]
+        sorted_stable_ids = sorted(stable_ids)
+        mask_bits = bytearray((1008 * 1008 + 7) // 8)
+        mismatch_pixel = 664 * 1008 + 794
+        mask_bits[mismatch_pixel // 8] |= 1 << (mismatch_pixel % 8)
+        mask = {
+            "encoding": "bitset-lsb-v1",
+            "width": 1008,
+            "height": 1008,
+            "data": base64.b64encode(mask_bits).decode("ascii"),
+            "digest": f"sha256:{hashlib.sha256(mask_bits).hexdigest()}",
+        }
+        policy = default_reference_evidence_policy()
+        pixel_weights = typed_pixel_evidence_weights(mask, policy, torch)
+        backend = LockedGsplatBackend()
+
+        with mock.patch.object(
+            backend,
+            "_reference_contributor_tensors",
+            side_effect=AssertionError(
+                "Direct Evidence must not reconcile complete Contributors"
+            ),
+        ):
+            direct = backend.rasterize_direct_evidence_typed(
+                snapshot=snapshot,
+                camera=_anchor_camera(1008),
+                width=1008,
+                height=1008,
+                render_stable_ids=stable_ids,
+                evidence_stable_ids=sorted_stable_ids,
+                target_stable_ids=sorted_stable_ids,
+                pixel_weights=pixel_weights,
+            )
+
+        self.assertEqual(direct.boundary_contact_stable_gaussian_ids, ())
+        self.assertTrue(bool(torch.isfinite(direct.positive_mass).all().item()))
+        self.assertTrue(bool(torch.isfinite(direct.visible_mass).all().item()))
+        self.assertEqual(
+            direct.telemetry.evidence_buffer_bytes,
+            len(stable_ids) * 4 * 4,
         )
 
 

@@ -164,6 +164,18 @@ test('admission rejects partial Render Working Sets and invalid Stable ID mappin
         status: 'rejected',
         reason: 'stable-id-mapping-invalid'
     });
+
+    const spatialDirect = admitGaussianEvidence(
+        input({
+            evidenceWorkingSet: evidenceWorkingSet({
+                contextStableGaussianIds: [99]
+            }),
+            evidenceBackendKind: 'production-direct',
+            evidenceBackendId: 'global-atomic/direct-v1'
+        })
+    );
+    assert.equal(spatialDirect.status, 'admitted');
+    assert.deepEqual(spatialDirect.admission.stableGaussianIds, [5, 99]);
 });
 
 test('Evidence Working Set writes exclude a Render Working Set occluder', () => {
@@ -325,14 +337,38 @@ test('a formal artifact invalidates on every material identity change', () => {
     }
 });
 
-test('reference artifacts cannot be represented as Ticket 20 production Evidence', () => {
-    const result = admitGaussianEvidence(
-        input({ evidenceBackendKind: 'production-direct' })
+test('reference and production Direct Evidence artifacts are admitted but cannot collide', () => {
+    const referenceAdmission = admitted();
+    const productionAdmission = admitted(
+        input({
+            rasterImplementationId: 'supersimplat-direct-evidence/v1',
+            evidenceBackendKind: 'production-direct',
+            evidenceBackendId: 'global-atomic/direct-v1',
+            runtimeBuildId: 'direct-runtime-build-1'
+        })
     );
-    assert.deepEqual(result, {
-        status: 'rejected',
-        reason: 'unsupported-evidence-backend'
-    });
+    const referenceArtifact = createGaussianEvidenceArtifact(
+        referenceAdmission,
+        masses()
+    );
+    const productionArtifact = createGaussianEvidenceArtifact(
+        productionAdmission,
+        masses()
+    );
+
+    assert.ok(isGaussianEvidenceArtifact(referenceArtifact));
+    assert.ok(isGaussianEvidenceArtifact(productionArtifact));
+    assert.notEqual(
+        referenceArtifact.artifactDigest,
+        productionArtifact.artifactDigest
+    );
+    assert.equal(
+        gaussianEvidenceArtifactMatchesAdmission(
+            referenceArtifact,
+            productionAdmission
+        ),
+        false
+    );
 });
 
 test('artifact validation rejects incomplete, non-finite, and tampered P/N/V arrays', () => {

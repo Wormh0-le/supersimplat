@@ -236,6 +236,7 @@ class AISelectAnchorRouteTests(unittest.TestCase):
                 'aiSelectImageInstanceMasks',
                 'aiSelectImageInstanceMaskReview',
                 'aiSelectReferenceCandidateReLift',
+                'aiSelectProductionDirectEvidence',
                 'binarySceneSnapshotRegistrationV1',
                 'cameraAwareSpatialWorkingSetV1',
             ],
@@ -249,9 +250,9 @@ class AISelectAnchorRouteTests(unittest.TestCase):
         self.assertEqual(response['requestBinding'], self.request_body()['requestBinding'])
         self.assertEqual(response['renderAttemptId'], 'attempt-1')
         self.assertEqual(response['cameraBinding'], self.request_body()['cameraBinding'])
-        self.assertEqual(response['rgbRendererVersion'], 'gsplat-rgb/v1')
+        self.assertEqual(response['rgbRendererVersion'], 'gsplat-direct-evidence-rgb/v1')
         self.assertEqual(
-            response['rasterImplementationId'], 'gsplat-reference-rgb/v1'
+            response['rasterImplementationId'], 'supersimplat-gsplat-direct-evidence/v1'
         )
         self.assertRegex(response['runtimeBuildId'], r'^sha256:[0-9a-f]{64}$')
         # RGB Ready stands alone: the production response carries no complete

@@ -838,6 +838,7 @@ class TargetGeometryRouteTests(unittest.TestCase):
             'aiSelectImageInstanceMasks',
             'aiSelectImageInstanceMaskReview',
             'aiSelectReferenceCandidateReLift',
+            'aiSelectProductionDirectEvidence',
             'binarySceneSnapshotRegistrationV1',
             'cameraAwareSpatialWorkingSetV1',
         ]

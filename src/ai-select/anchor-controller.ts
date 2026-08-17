@@ -62,6 +62,8 @@ export interface AnchorAdjustmentRenderArtifact {
     readonly cameraBinding: CameraBinding;
     readonly rgb: AnchorRgbArtifact;
     readonly rendererId: 'gsplat';
+    readonly renderWorkingSetToken: string;
+    readonly renderStableGaussianIds: readonly number[];
 }
 
 export interface AnchorPreview {
@@ -83,6 +85,8 @@ export interface AnchorAIView {
     /** Present only when this exact full-resolution binding is ready. */
     readonly rgb?: AnchorRgbArtifact;
     readonly rendererId?: 'gsplat';
+    readonly renderWorkingSetToken?: string;
+    readonly renderStableGaussianIds?: readonly number[];
     readonly errorMessage?: string;
     readonly preview?: AnchorPreview;
     /** Retained for display and adjustment recovery only, never for inference. */
@@ -114,6 +118,8 @@ interface PendingAnchorRender {
 interface AnchorViewDetails {
     readonly rgb?: AnchorRgbArtifact;
     readonly rendererId?: 'gsplat';
+    readonly renderWorkingSetToken?: string;
+    readonly renderStableGaussianIds?: readonly number[];
     readonly errorMessage?: string;
     readonly preview?: AnchorPreview;
     readonly lastValidPreview?: AnchorPreviewArtifact;
@@ -176,6 +182,16 @@ const copyAnchor = (anchor: AnchorAIView): AnchorAIView => {
         ...(anchor.rendererId === undefined
             ? {}
             : { rendererId: anchor.rendererId }),
+        ...(anchor.renderWorkingSetToken === undefined
+            ? {}
+            : { renderWorkingSetToken: anchor.renderWorkingSetToken }),
+        ...(anchor.renderStableGaussianIds === undefined
+            ? {}
+            : {
+                  renderStableGaussianIds: Object.freeze([
+                      ...anchor.renderStableGaussianIds
+                  ])
+              }),
         ...(anchor.errorMessage === undefined
             ? {}
             : { errorMessage: anchor.errorMessage }),
@@ -236,7 +252,15 @@ const formalDetails = (anchor: AnchorAIView): AnchorViewDetails => {
         rgb: anchor.rgb,
         ...(anchor.rendererId === undefined
             ? {}
-            : { rendererId: anchor.rendererId })
+            : { rendererId: anchor.rendererId }),
+        ...(anchor.renderWorkingSetToken === undefined
+            ? {}
+            : { renderWorkingSetToken: anchor.renderWorkingSetToken }),
+        ...(anchor.renderStableGaussianIds === undefined
+            ? {}
+            : {
+                  renderStableGaussianIds: anchor.renderStableGaussianIds
+              })
     };
 };
 
@@ -496,7 +520,11 @@ export class AISelectAnchorController {
                 requestBinding: copyRequestBinding(response.requestBinding),
                 cameraBinding: copyCameraBinding(response.cameraBinding),
                 rgb: copyRgb(response.rgb),
-                rendererId: response.rendererId
+                rendererId: response.rendererId,
+                renderWorkingSetToken: response.renderWorkingSetToken,
+                renderStableGaussianIds: Object.freeze([
+                    ...response.renderStableGaussianIds
+                ])
             });
         } finally {
             this.completeSnapshotRender(request);
@@ -681,7 +709,12 @@ export class AISelectAnchorController {
             draft.cameraBinding,
             requestBinding,
             'ready',
-            { rgb: draft.rgb, rendererId: draft.rendererId }
+            {
+                rgb: draft.rgb,
+                rendererId: draft.rendererId,
+                renderWorkingSetToken: draft.renderWorkingSetToken,
+                renderStableGaussianIds: draft.renderStableGaussianIds
+            }
         );
         this.publish();
         return this.state;
@@ -1075,6 +1108,8 @@ export class AISelectAnchorController {
                 {
                     rgb: response.rgb,
                     rendererId: response.rendererId,
+                    renderWorkingSetToken: response.renderWorkingSetToken,
+                    renderStableGaussianIds: response.renderStableGaussianIds,
                     lastValidPreview
                 }
             );

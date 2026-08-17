@@ -1,6 +1,6 @@
 # 21 — Attempt / Cancellation / OOM / Atomic Publication + Calibration Hardening
 
-Status: blocked — waits for complete core v1.3 flow
+Status: current — ready after implemented Ticket 20
 
 Blocked by: 20, 18, 02C, 07B, 08B, 13
 

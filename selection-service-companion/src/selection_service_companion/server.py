@@ -274,6 +274,9 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/ai-select/candidate-re-lifts":
             self._produce_ai_select_candidate_re_lift()
             return
+        if self.path == "/ai-select/direct-evidence":
+            self._produce_ai_select_direct_evidence()
+            return
         if self.path == "/object-selection-sessions":
             self._open_object_selection_session()
             return
@@ -335,6 +338,35 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
                 HTTPStatus.CONFLICT,
                 {
                     "status": "candidateReLiftError",
+                    "code": error.code,
+                    "message": str(error),
+                },
+            )
+            return
+        except ValueError as error:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"status": "invalidRequest", "message": str(error)},
+            )
+            return
+        self._send_json(HTTPStatus.OK, response)
+
+    def _produce_ai_select_direct_evidence(self) -> None:
+        """Produce one compact production same-decision P/N/V artifact."""
+
+        try:
+            self._state.require_release()
+        except ValueError as error:
+            self._send_unavailable(str(error))
+            return
+        try:
+            request = self._read_json_body()
+            response = self._state.produce_ai_select_direct_evidence(request)
+        except MaskSessionError as error:
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {
+                    "status": "directEvidenceError",
                     "code": error.code,
                     "message": str(error),
                 },

@@ -48,10 +48,10 @@ const capabilities = (overrides = {}) => ({
         id: 'gsplat',
         status: 'ready',
         cudaVersion: '12.8',
-        rgbRendererVersion: 'gsplat-rgb/v1',
-        rasterImplementationId: 'gsplat-reference-rgb/v1',
+        rgbRendererVersion: 'gsplat-direct-evidence-rgb/v1',
+        rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
         runtimeBuildId:
-            'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40'
+            'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4'
     },
     imageInstanceProvider: {
         status: 'ready',
@@ -64,20 +64,45 @@ const capabilities = (overrides = {}) => ({
         compilerPolicyVersion: 'sam3-image-instance-compiler/v1',
         adapterCapabilityDigest: `sha256:${'c'.repeat(64)}`
     },
+    directEvidence: {
+        status: 'ready',
+        rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
+        evidenceBackendKind: 'production-direct',
+        evidenceBackendId: 'global-atomic/direct-v1',
+        sourceRevision:
+            'sha256:d5568856951be511573c6c766d225f8b95c3ac5850eb965805c2aa632c01976a',
+        expectedSourceRevision:
+            'sha256:d5568856951be511573c6c766d225f8b95c3ac5850eb965805c2aa632c01976a',
+        abiVersion: 'supersimplat-direct-evidence-abi/v1',
+        runtimeBuildId:
+            'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4',
+        torchVersion: '2.11.0+cu128',
+        cudaVersion: '12.8',
+        gsplatSourceCommit: '77ab983ffe43420b2131669cb35776b883ca4c3c',
+        supportedComputeCapabilities: ['8.9'],
+        accumulation: 'global-atomic-baseline',
+        buildFlags: [
+            '-O3',
+            '--use_fast_math',
+            '--generate-line-info',
+            '--ptxas-options=-v'
+        ]
+    },
     referenceCandidateReLift: {
         evidencePolicyDigest:
             'sha256:debcee99d261f28ab373b16016447f056872476a960a1af23599cc6ea1f20efd',
         aggregationPolicyDigest:
             'sha256:082dd2a030a21448c16571ce28f741fa50023a831990cae3dd3e7bcc16c02454',
-        rasterImplementationId: 'gsplat-reference-rgb/v1',
+        rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
         evidenceBackendKind: 'reference-contributor',
         evidenceBackendId: 'complete-contributor/reference-v1',
         runtimeBuildId:
-            'sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40'
+            'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4'
     },
     supportedOperations: [
         'aiSelectAnchorRender',
         'aiSelectReferenceCandidateReLift',
+        'aiSelectProductionDirectEvidence',
         'aiSelectMaskProposals',
         'autoMaskProposalSetSchemaV3',
         'binarySceneSnapshotRegistrationV1'

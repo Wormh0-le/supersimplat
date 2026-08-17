@@ -439,6 +439,23 @@ def _typed_pixel_evidence_weights(
     return width, height, (positive, negative, visible, boundary)
 
 
+def typed_pixel_evidence_weights(
+    mask_artifact: object,
+    policy: dict[str, object],
+    torch: object,
+) -> tuple[int, int, tuple[object, object, object, object]]:
+    """Public tensor-backed policy derivation shared by Direct Evidence."""
+
+    return _typed_pixel_evidence_weights(mask_artifact, policy, torch)
+
+
+def validate_stable_mask_artifact(mask_artifact: object) -> tuple[int, int]:
+    """Validate Stable Mask bytes/digest without allocating policy tensors."""
+
+    width, height, _ = _decoded_mask_bits(mask_artifact)
+    return width, height
+
+
 def _validated_stable_id_mapping(value: object) -> list[int]:
     if (
         not isinstance(value, list)
@@ -1235,4 +1252,6 @@ __all__ = [
     "compute_reference_contributor_evidence",
     "default_reference_evidence_policy",
     "derive_pixel_evidence_weights",
+    "typed_pixel_evidence_weights",
+    "validate_stable_mask_artifact",
 ]

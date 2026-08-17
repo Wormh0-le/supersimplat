@@ -25,6 +25,13 @@ import {
     isAIRequestBinding
 } from './ai-select/current-target-context';
 import {
+    isDirectEvidenceRequest,
+    isDirectEvidenceResponseForRequest,
+    type AISelectDirectEvidenceProvider,
+    type DirectEvidenceRequest,
+    type DirectEvidenceResponse
+} from './ai-select/direct-evidence-service';
+import {
     generatedViewPromptSynthesisResponseMatchesRequest,
     imageInstanceMaskReviewResponseMatchesRequest,
     isAIViewRenderRequest,
@@ -313,7 +320,8 @@ class FetchSelectionServiceAdapter
         AISelectGeneratedViewPromptSynthesizer,
         ImageInstanceMaskProvider,
         AISelectImageInstanceMaskReviewProvider,
-        AISelectCandidateReLiftProvider
+        AISelectCandidateReLiftProvider,
+        AISelectDirectEvidenceProvider
 {
     private getConfiguration: () => SelectionServiceTransportConfiguration;
     private supportsCameraAwareSpatialWorkingSet: () => boolean;
@@ -486,6 +494,97 @@ class FetchSelectionServiceAdapter
             throw transportError(
                 'invalidResponse',
                 'The Selection Service Companion returned an incomplete or stale Candidate Re-Lift result.'
+            );
+        }
+        return result;
+    }
+
+    async produceDirectEvidence(
+        request: DirectEvidenceRequest
+    ): Promise<DirectEvidenceResponse> {
+        if (!isDirectEvidenceRequest(request)) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select requires a complete bound Direct Evidence request.'
+            );
+        }
+        const usesSpatialWorkingSet =
+            request.currentInput.renderWorkingSet.renderWorkingSetToken !==
+            request.snapshot.contentDigest;
+        let spatialSnapshot: SpatialSceneSnapshot | undefined;
+        let spatialChunkIds: readonly string[] = [];
+        if (usesSpatialWorkingSet) {
+            spatialSnapshot = this.spatialSnapshotFor(request);
+            const validationStableIds = Array.from(
+                new Set([
+                    ...request.currentInput.renderWorkingSet.stableGaussianIds,
+                    ...request.currentInput.evidenceWorkingSet.stableGaussianIds
+                ])
+            ).sort((left, right) => left - right);
+            spatialChunkIds = this.spatialChunkIdsForStableIds(
+                request.snapshot,
+                spatialSnapshot,
+                validationStableIds
+            );
+            await this.registerSpatialSceneManifest(spatialSnapshot);
+            await this.uploadSpatialSceneChunks(
+                spatialSnapshot,
+                spatialChunkIds
+            );
+        } else {
+            await this.registerPackedSnapshot(request.snapshot);
+        }
+        const payload = {
+            sceneId: request.snapshot.sceneId,
+            sceneVersion: request.snapshot.sceneVersion,
+            renderConfigVersion: request.snapshot.renderConfiguration.version,
+            currentInput: request.currentInput,
+            cameraBinding: request.cameraBinding,
+            stableMask: request.stableMask,
+            sceneTransport: usesSpatialWorkingSet ? 'spatial-v1' : 'packed-v1',
+            ...(request.cachedArtifact === undefined
+                ? {}
+                : { cachedArtifact: request.cachedArtifact })
+        };
+        let result;
+        try {
+            result = await this.requestJson(
+                '/ai-select/direct-evidence',
+                'POST',
+                payload
+            );
+        } catch (error) {
+            if (!(error instanceof SelectionServiceTransportError)) {
+                throw error;
+            }
+            if (usesSpatialWorkingSet && spatialSnapshot !== undefined) {
+                if (
+                    error.serviceCode !== 'sceneCacheMiss' &&
+                    error.serviceCode !== 'sceneChunkMiss'
+                ) {
+                    throw error;
+                }
+                await this.registerSpatialSceneManifest(spatialSnapshot, true);
+                await this.uploadSpatialSceneChunks(
+                    spatialSnapshot,
+                    spatialChunkIds
+                );
+            } else {
+                if (error.serviceCode !== 'sceneCacheMiss') {
+                    throw error;
+                }
+                await this.registerPackedSnapshot(request.snapshot, true);
+            }
+            result = await this.requestJson(
+                '/ai-select/direct-evidence',
+                'POST',
+                payload
+            );
+        }
+        if (!isDirectEvidenceResponseForRequest(result, request)) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned incomplete or stale Direct Evidence.'
             );
         }
         return result;
@@ -749,17 +848,49 @@ class FetchSelectionServiceAdapter
         );
     }
 
+    private renderWorkingSetMatchesTransport(
+        response: {
+            readonly renderWorkingSetToken: string;
+            readonly renderStableGaussianIds: readonly number[];
+        },
+        snapshot: PackedSceneSnapshot,
+        sceneTransport: 'packed-v1' | 'spatial-v1'
+    ): boolean {
+        const packedStableIds = [...snapshot.stableIds].sort(
+            (left, right) => left - right
+        );
+        const packedMembership = new Set(packedStableIds);
+        if (
+            !response.renderStableGaussianIds.every((stableId) =>
+                packedMembership.has(stableId)
+            )
+        ) {
+            return false;
+        }
+        return (
+            sceneTransport === 'spatial-v1' ||
+            (response.renderWorkingSetToken === snapshot.contentDigest &&
+                response.renderStableGaussianIds.length ===
+                    packedStableIds.length &&
+                response.renderStableGaussianIds.every(
+                    (stableId, index) => stableId === packedStableIds[index]
+                ))
+        );
+    }
+
     private spatialSnapshotFor(
         request:
             | AnchorRenderRequest
             | Pick<AnchorSupportProbeRequest, 'snapshot' | 'target'>
             | Pick<TargetGeometryHintRequest, 'snapshot' | 'target'>
             | Pick<AIViewRenderRequest, 'snapshot' | 'target'>
+            | DirectEvidenceRequest
     ): SpatialSceneSnapshot {
-        const key = this.spatialSnapshotKey(
-            request.snapshot,
-            request.target.splatId
-        );
+        const targetSplatId =
+            'target' in request
+                ? request.target.splatId
+                : request.currentInput.targetSplatId;
+        const key = this.spatialSnapshotKey(request.snapshot, targetSplatId);
         const existing = this.spatialSnapshots.get(key);
         if (existing) {
             return existing;
@@ -767,7 +898,7 @@ class FetchSelectionServiceAdapter
         let spatialSnapshot: SpatialSceneSnapshot;
         try {
             spatialSnapshot = buildSpatialSceneSnapshot(request.snapshot, {
-                targetSplatId: request.target.splatId
+                targetSplatId
             });
         } catch {
             throw transportError(
@@ -781,7 +912,7 @@ class FetchSelectionServiceAdapter
                 request.snapshot.sceneVersion ||
             spatialSnapshot.manifest.contentDigest !==
                 request.snapshot.contentDigest ||
-            spatialSnapshot.manifest.targetSplatId !== request.target.splatId
+            spatialSnapshot.manifest.targetSplatId !== targetSplatId
         ) {
             throw transportError(
                 'invalidResponse',
@@ -790,6 +921,50 @@ class FetchSelectionServiceAdapter
         }
         this.spatialSnapshots.set(key, spatialSnapshot);
         return spatialSnapshot;
+    }
+
+    private spatialChunkIdsForStableIds(
+        packed: PackedSceneSnapshot,
+        spatial: SpatialSceneSnapshot,
+        stableIds: readonly number[]
+    ): readonly string[] {
+        const ordinalsByStableId = new Map<number, number>();
+        packed.stableIds.forEach((stableId, ordinal) => {
+            ordinalsByStableId.set(stableId, ordinal);
+        });
+        const ordinals = stableIds
+            .map((stableId) => ordinalsByStableId.get(stableId))
+            .filter((ordinal): ordinal is number => ordinal !== undefined)
+            .sort((left, right) => left - right);
+        if (ordinals.length !== stableIds.length) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select Direct Evidence Render Working Set contains an unknown Stable Gaussian ID.'
+            );
+        }
+        let ordinalIndex = 0;
+        const chunkIds: string[] = [];
+        for (const chunk of spatial.manifest.chunks) {
+            while (
+                ordinalIndex < ordinals.length &&
+                ordinals[ordinalIndex] < chunk.globalOrdinalMin
+            ) {
+                ordinalIndex += 1;
+            }
+            if (
+                ordinalIndex < ordinals.length &&
+                ordinals[ordinalIndex] <= chunk.globalOrdinalMax
+            ) {
+                chunkIds.push(chunk.chunkId);
+            }
+        }
+        if (chunkIds.length === 0) {
+            throw transportError(
+                'invalidResponse',
+                'AI Select Direct Evidence Render Working Set resolves to no Spatial Scene chunks.'
+            );
+        }
+        return Object.freeze(chunkIds);
     }
 
     private async registerSpatialSceneManifest(
@@ -1246,6 +1421,18 @@ class FetchSelectionServiceAdapter
             throw transportError(
                 'invalidResponse',
                 'The Selection Service Companion returned an incomplete or stale Anchor render.'
+            );
+        }
+        if (
+            !this.renderWorkingSetMatchesTransport(
+                result,
+                request.snapshot,
+                sceneTransport
+            )
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned an Anchor Render Working Set outside the requested transport.'
             );
         }
         return {
@@ -1801,6 +1988,18 @@ class FetchSelectionServiceAdapter
             throw transportError(
                 'invalidResponse',
                 'The Selection Service Companion returned an incomplete or stale Generated View render.'
+            );
+        }
+        if (
+            !this.renderWorkingSetMatchesTransport(
+                result,
+                request.snapshot,
+                sceneTransport
+            )
+        ) {
+            throw transportError(
+                'invalidResponse',
+                'The Selection Service Companion returned a Generated View Render Working Set outside the requested transport.'
             );
         }
         return {

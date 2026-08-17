@@ -1,12 +1,10 @@
-"""Locked gsplat RGB and complete contributor-ID rasterization.
+"""Locked gsplat orchestration for authoritative RGB and Gaussian Evidence.
 
-The production boundary deliberately makes one backend call return the RGB,
-alpha, and contributor stream.  Evidence never reconstructs attribution from
-visibility, distance, or a bounded top-k diagnostic.  When gsplat's separate
-CUDA translation units disagree on a contributor exactly at a float32
-validity/termination boundary, the contributor stream is reconciled against
-the RGB rasterization's own alpha from the same projection/tile preparation;
-any other mismatch fails closed.
+The project-owned Direct kernel consumes pinned gsplat projection and tile
+metadata, then owns the production RGB/P/N/V decision loop. Complete
+Contributor data remains an explicit reference/debug path; its separate CUDA
+translation units are reconciled only for proven float32 boundary flips and
+fail closed on any other mismatch.
 """
 
 from __future__ import annotations
@@ -26,6 +24,14 @@ from typing import Any, ClassVar, Mapping, Protocol, Sequence
 from .anchor_timing import AnchorServerTiming
 from .binary_scene_snapshot import PackedBinarySceneSnapshot
 from .camera_binding import camera_binding_digest, parse_camera_binding
+from .direct_gaussian_evidence import (
+    DIRECT_EVIDENCE_BACKEND_ID,
+    DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
+    DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+    DirectEvidenceRasterization,
+    rasterize_projected_authoritative_rgb,
+    rasterize_projected_direct_evidence,
+)
 from .evidence import ContributorSample, RenderedContributorView
 from .generated_views import (
     CameraPreflightResult,
@@ -101,9 +107,11 @@ ANCHOR_PARITY_SEVERE_MAE = 0.25
 _TYPED_CONTRIBUTOR_MAGIC = b"SSPAICTR"
 _TYPED_CONTRIBUTOR_VERSION = 1
 _TYPED_CONTRIBUTOR_TRANSFER_MAX_BYTES = 16 * 1024 * 1024
-REFERENCE_EVIDENCE_RASTER_IMPLEMENTATION_ID = 'gsplat-reference-rgb/v1'
+REFERENCE_EVIDENCE_RASTER_IMPLEMENTATION_ID = (
+    DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID
+)
 REFERENCE_CONTRIBUTOR_EVIDENCE_BACKEND_ID = 'complete-contributor/reference-v1'
-REFERENCE_EVIDENCE_RUNTIME_BUILD_ID = EXPECTED_RENDERER_LOCK_DIGEST
+REFERENCE_EVIDENCE_RUNTIME_BUILD_ID = DIRECT_EVIDENCE_RUNTIME_BUILD_ID
 
 
 SceneSnapshotInput = Mapping[str, Any] | PackedBinarySceneSnapshot | SpatialWorkingSet
@@ -578,6 +586,53 @@ class LockedGsplatBackend:
             peak_vram_bytes=rasterized.peak_vram_bytes,
         )
 
+    def _projected_direct_inputs(
+        self,
+        *,
+        snapshot: SceneSnapshotInput,
+        camera: Mapping[str, Any],
+        width: int,
+        height: int,
+    ) -> tuple[dict[str, Any], dict[str, Any], Any]:
+        """Prepare the one pinned projection/intersection/SH input contract."""
+
+        import torch
+        from gsplat.rendering import _maybe_evaluate_sh, rasterization
+
+        device = torch.device("cuda")
+        inputs = self._locked_inputs(snapshot, camera, device)
+        _, _, meta = rasterization(
+            inputs["means"],
+            inputs["quats"],
+            inputs["scales"],
+            inputs["opacities"],
+            inputs["colors"],
+            inputs["viewmats"],
+            inputs["intrinsics"],
+            width,
+            height,
+            near_plane=camera["nearPlane"],
+            far_plane=camera["farPlane"],
+            sh_degree=inputs["sh_degree"],
+            packed=False,
+            tile_size=16,
+            backgrounds=inputs["background"],
+            render_mode="RGB",
+            rasterize_mode="classic",
+        )
+        evaluated_colors = _maybe_evaluate_sh(
+            inputs["sh_degree"],
+            inputs["colors"],
+            inputs["means"],
+            meta["radii"],
+            inputs["viewmats"],
+            (),
+            1,
+            int(inputs["means"].shape[0]),
+            True,
+        )
+        return inputs, meta, evaluated_colors
+
     def _rasterize_tensors(
         self,
         *,
@@ -599,35 +654,24 @@ class LockedGsplatBackend:
         """
 
         import torch
-        from gsplat.rendering import rasterization
 
         device = torch.device("cuda")
         torch.cuda.reset_peak_memory_stats(device)
-        inputs = self._locked_inputs(snapshot, camera, device)
-
-        service_rgb, raster_alpha, meta = rasterization(
-            inputs["means"],
-            inputs["quats"],
-            inputs["scales"],
-            inputs["opacities"],
-            inputs["colors"],
-            inputs["viewmats"],
-            inputs["intrinsics"],
-            width,
-            height,
-            near_plane=camera["nearPlane"],
-            far_plane=camera["farPlane"],
-            sh_degree=inputs["sh_degree"],
-            packed=False,
-            tile_size=16,
-            backgrounds=inputs["background"],
-            render_mode="RGB",
-            rasterize_mode="classic",
+        inputs, meta, evaluated_colors = self._projected_direct_inputs(
+            snapshot=snapshot,
+            camera=camera,
+            width=width,
+            height=height,
         )
-        if not bool(torch.isfinite(service_rgb).all().item()):
-            raise MaskSessionError(
-                "rendererFailure", "gsplat returned non-finite service RGB."
-            )
+        direct_rgb = rasterize_projected_authoritative_rgb(
+            meta=meta,
+            evaluated_colors=evaluated_colors,
+            background=inputs["background"],
+            width=width,
+            height=height,
+        )
+        service_rgb = direct_rgb.rgb.unsqueeze(0)
+        raster_alpha = direct_rgb.alpha.unsqueeze(0)
 
         contributor_ids: Any | None = None
         contributor_weights: Any | None = None
@@ -654,25 +698,52 @@ class LockedGsplatBackend:
                     "gsplat failed while producing the reference Contributor stream.",
                 )
 
-        rgb_bytes = (
-            service_rgb.detach()
-            .clamp(0.0, 1.0)
-            .mul(255.0)
-            .round()
-            .to(torch.uint8)
-            .cpu()
-            .contiguous()
-            .numpy()
-            .tobytes()
-        )
+        rgb_bytes = direct_rgb.service_rgb_bytes
         return _LockedTensorRasterization(
             service_rgb_digest=f"sha256:{hashlib.sha256(rgb_bytes).hexdigest()}",
             service_rgb_bytes=rgb_bytes,
             alpha=raster_alpha,
             contributor_ids=contributor_ids,
             contributor_weights=contributor_weights,
-            peak_vram_bytes=int(torch.cuda.max_memory_allocated(device)),
+            peak_vram_bytes=max(
+                int(torch.cuda.max_memory_allocated(device)),
+                direct_rgb.telemetry.peak_vram_bytes,
+            ),
             contributor_error=contributor_error,
+        )
+
+    def rasterize_direct_evidence_typed(
+        self,
+        *,
+        snapshot: SceneSnapshotInput,
+        camera: Mapping[str, Any],
+        width: int,
+        height: int,
+        render_stable_ids: StableGaussianIds,
+        evidence_stable_ids: Sequence[int],
+        target_stable_ids: Sequence[int],
+        pixel_weights: object,
+    ) -> DirectEvidenceRasterization:
+        """Produce compact P/N/V in the authoritative RGB decision traversal."""
+
+        inputs, meta, evaluated_colors = self._projected_direct_inputs(
+            snapshot=snapshot,
+            camera=camera,
+            width=width,
+            height=height,
+        )
+        return rasterize_projected_direct_evidence(
+            meta=meta,
+            evaluated_colors=evaluated_colors,
+            background=inputs["background"],
+            render_stable_gaussian_ids=_stable_ids_as_uint32_list(
+                render_stable_ids
+            ),
+            evidence_stable_gaussian_ids=evidence_stable_ids,
+            target_stable_gaussian_ids=target_stable_ids,
+            pixel_weights=pixel_weights,
+            width=width,
+            height=height,
         )
 
     @staticmethod
@@ -1610,6 +1681,9 @@ class GsplatContributorRenderer:
     )
     last_peak_vram_bytes: int | None = field(default=None, init=False)
     peak_vram_bytes: int = field(default=0, init=False)
+    last_direct_evidence_telemetry: Mapping[str, int] | None = field(
+        default=None, init=False
+    )
 
     def render(
         self,
@@ -1790,6 +1864,158 @@ class GsplatContributorRenderer:
             },
             dict(policy),
         )
+
+    def compute_direct_evidence(
+        self,
+        *,
+        admission_input: Mapping[str, object],
+        stable_mask_artifact: Mapping[str, object],
+        policy: Mapping[str, object],
+        scene_snapshot: SceneSnapshotInput,
+        camera_binding: Mapping[str, object],
+        target_stable_ids: Sequence[int],
+    ) -> dict[str, object]:
+        """Atomically produce one production same-decision P/N/V artifact."""
+
+        from .gaussian_evidence_contract import (
+            GaussianEvidenceContractError,
+            admit_gaussian_evidence,
+            create_gaussian_evidence_artifact,
+        )
+        from .reference_gaussian_evidence import (
+            ReferenceGaussianEvidenceError,
+            default_reference_evidence_policy,
+            typed_pixel_evidence_weights,
+        )
+
+        result = admit_gaussian_evidence(admission_input)
+        if result["status"] != "admitted":
+            raise ReferenceGaussianEvidenceError(
+                "AI Select Direct Evidence admission failed closed: "
+                f"{result['reason']}.",
+                code="directEvidenceAdmissionRejected",
+                cause_code=str(result["reason"]),
+            )
+        admission = result["admission"]
+        assert isinstance(admission, dict)
+        expected_policy = default_reference_evidence_policy()
+        if (
+            admission["rasterImplementationId"]
+            != DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID
+            or admission["evidenceBackendKind"] != "production-direct"
+            or admission["evidenceBackendId"] != DIRECT_EVIDENCE_BACKEND_ID
+            or admission["runtimeBuildId"] != DIRECT_EVIDENCE_RUNTIME_BUILD_ID
+            or policy != expected_policy
+            or admission["evidencePolicyDigest"]
+            != expected_policy["evidencePolicyDigest"]
+            or type(self.backend) is not LockedGsplatBackend
+        ):
+            raise ReferenceGaussianEvidenceError(
+                "AI Select Direct Evidence backend identity is incompatible.",
+                code="directEvidenceBackendIncompatible",
+            )
+        if stable_mask_artifact.get("digest") != admission["stableMaskDigest"]:
+            raise ReferenceGaussianEvidenceError(
+                "AI Select Direct Evidence Stable Mask does not match admission.",
+                code="directEvidenceStableMaskMismatch",
+            )
+        try:
+            immutable_binding, immutable_camera, width, height = parse_camera_binding(
+                dict(camera_binding)
+            )
+        except (KeyError, OverflowError, TypeError, ValueError) as error:
+            raise ReferenceGaussianEvidenceError(
+                "AI Select Direct Evidence CameraBinding is invalid.",
+                code="directEvidenceCameraBindingMismatch",
+            ) from error
+        if camera_binding_digest(immutable_binding) != admission["cameraBindingDigest"]:
+            raise ReferenceGaussianEvidenceError(
+                "AI Select Direct Evidence CameraBinding digest does not match admission.",
+                code="directEvidenceCameraBindingMismatch",
+            )
+        if current_renderer_runtime().status().status != "ready":
+            raise ReferenceGaussianEvidenceError(
+                "AI Select Direct Evidence requires the verified locked runtime.",
+                code="directEvidenceRuntimeUnavailable",
+            )
+        render_working_set = admission_input.get("renderWorkingSet")
+        if (
+            not isinstance(render_working_set, Mapping)
+            or _render_working_set_token(scene_snapshot)
+            != render_working_set.get("renderWorkingSetToken")
+        ):
+            raise ReferenceGaussianEvidenceError(
+                "AI Select Direct Evidence Render Working Set token is stale.",
+                code="directEvidenceRenderWorkingSetMismatch",
+            )
+        try:
+            import torch
+
+            stable_ids = validate_supported_snapshot(scene_snapshot)
+            pixel_weights = typed_pixel_evidence_weights(
+                dict(stable_mask_artifact), dict(policy), torch
+            )
+            rasterized = self.backend.rasterize_direct_evidence_typed(
+                snapshot=scene_snapshot,
+                camera=immutable_camera,
+                width=width,
+                height=height,
+                render_stable_ids=stable_ids,
+                evidence_stable_ids=admission["stableGaussianIds"],
+                target_stable_ids=target_stable_ids,
+                pixel_weights=pixel_weights,
+            )
+        except ReferenceGaussianEvidenceError:
+            raise
+        except Exception as error:
+            failure_code = getattr(error, "code", type(error).__name__)
+            raise ReferenceGaussianEvidenceError(
+                f"AI Select Direct Evidence rendering failed ({failure_code}).",
+                code="directEvidenceRenderFailed",
+                cause_code=str(failure_code),
+            ) from error
+        image_png = _rgb_png(rasterized.service_rgb_bytes, width, height)
+        rgb_digest = f"sha256:{hashlib.sha256(image_png).hexdigest()}"
+        if rgb_digest != admission["rgbDigest"]:
+            raise ReferenceGaussianEvidenceError(
+                "AI Select Direct Evidence RGB digest does not match the Stable Mask binding.",
+                code="directEvidenceRgbMismatch",
+            )
+        if rasterized.boundary_contact_stable_gaussian_ids:
+            contacts = ",".join(
+                str(value)
+                for value in rasterized.boundary_contact_stable_gaussian_ids[:32]
+            )
+            raise ReferenceGaussianEvidenceError(
+                "AI Select Direct Evidence touched the Evidence Working Set boundary "
+                f"({contacts}); expand and retry.",
+                code="evidenceWorkingSetBoundaryContact",
+            )
+        self.last_peak_vram_bytes = rasterized.telemetry.peak_vram_bytes
+        self.peak_vram_bytes = max(
+            self.peak_vram_bytes, rasterized.telemetry.peak_vram_bytes
+        )
+        self.last_direct_evidence_telemetry = {
+            "evidenceBufferBytes": rasterized.telemetry.evidence_buffer_bytes,
+            "pixelWeightBufferBytes": rasterized.telemetry.pixel_weight_buffer_bytes,
+            "boundaryBufferBytes": rasterized.telemetry.boundary_buffer_bytes,
+            "peakVramBytes": rasterized.telemetry.peak_vram_bytes,
+        }
+        try:
+            return create_gaussian_evidence_artifact(
+                admission,
+                {
+                    "positiveMass": rasterized.positive_mass.detach().cpu().tolist(),
+                    "negativeMass": rasterized.negative_mass.detach().cpu().tolist(),
+                    "visibleMass": rasterized.visible_mass.detach().cpu().tolist(),
+                    "boundaryMass": rasterized.boundary_mass.detach().cpu().tolist(),
+                },
+            )
+        except GaussianEvidenceContractError as error:
+            raise ReferenceGaussianEvidenceError(
+                "AI Select Direct Evidence produced incomplete P/N/V.",
+                code="directEvidenceArtifactInvalid",
+            ) from error
 
     def render_anchor(
         self,

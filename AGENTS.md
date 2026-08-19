@@ -17,7 +17,7 @@ Read only the guidance relevant to the task:
 - **Browser editor or TypeScript implementation:** [Editor and TypeScript](docs/agents/editor-typescript.md)
 - **Selection Service Companion or Python implementation:** [Companion and Python](docs/agents/companion-python.md)
 - **gsplat, CUDA, P/N/V Evidence, working sets, lifting, or reference Contributor:** [Renderer and Evidence](docs/agents/renderer-and-evidence.md)
-- **Tests, builds, validation, or completion reporting:** [Verification](docs/agents/verification.md)
+- **Tests, builds, validation, or completion reporting:** [Execution and verification](docs/agents/execution-and-verification.md)
 - **Comments, domain documentation, ADRs, specs, tickets, or traceability:** [Documentation](docs/agents/documentation.md)
 - **Structural code discovery, call chains, dependencies, or impact analysis:** [Codebase Memory](.codex/codebase-memory-mcp.md)
 - **RTK command forms or output filtering:** [RTK reference](.codex/RTK.md)

@@ -89,4 +89,4 @@ reference P/N/V PoC
 - Treat atomic FP32 accumulation as numerically non-associative; validate classification stability rather than claiming bit-exact sums.
 - Do not call a separate kernel production-equivalent merely because it uses the same formula as authoritative RGB.
 
-Production claims require the locked runtime and GPU validation described in [Verification](verification.md).
+Production claims require the locked runtime and GPU validation described in [Execution and verification](execution-and-verification.md).

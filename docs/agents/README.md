@@ -14,7 +14,7 @@ docs/agents/
 ├── editor-typescript.md
 ├── companion-python.md
 ├── renderer-and-evidence.md
-├── verification.md
+├── execution-and-verification.md
 ├── documentation.md
 ├── issue-tracker.md
 └── triage-labels.md

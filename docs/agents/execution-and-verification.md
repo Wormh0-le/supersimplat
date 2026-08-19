@@ -1,4 +1,4 @@
-# Verification
+# Execution and Verification
 
 Read this file for installation, development, testing, builds, validation scope, or completion reporting. Prefix every shell command with `rtk`.
 

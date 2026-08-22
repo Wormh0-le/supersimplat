@@ -20,4 +20,5 @@ Read only the branch relevant to the task:
 - [Renderer and Evidence](docs/agents/renderer-and-evidence.md) — gsplat, CUDA, authoritative RGB, P/N/V Evidence, working sets, lifting, or reference Contributor.
 - [Project verification](docs/agents/execution-and-verification.md) — project commands, validation scope, builds, GPU evidence, or completion claims.
 - [Documentation and traceability](docs/agents/documentation.md) — `CONTEXT.md`, specs, ADRs, feature documents, tickets, comments, or traceability.
+- [Chinese product and technical writing](<docs/agents/[chinese-writing.md](http://chinese-writing.md)>) — read when drafting, revising, proofreading, or reviewing Chinese UI copy, product documentation, release notes, runbooks, or issue/PR prose.
 - [GitHub workflow](docs/agents/issue-tracker.md) — issues, triage labels, PR identification, or Wayfinder operations.

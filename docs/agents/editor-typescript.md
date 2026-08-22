@@ -9,6 +9,6 @@ Read this file when changing browser state, UI, TypeScript domain models, transp
 - Keep lifecycle transitions explicit.
 - Use the shared `CommandQueue` for work ordered with GPU readbacks or edit-history mutations.
 - Route history-changing selection operations through native `EditHistory`.
-- Localize user-visible text.
+- For Chinese user-visible copy, follow [Chinese product and technical writing](<[chinese-writing.md](chinese-writing.md)>). Use labels defined by the current product authority rather than inventing local synonyms.
 
 For identity, publication, Candidate application, or stale-result behavior, also read [Lifecycle and protocol](lifecycle-and-protocol.md). For browser/Companion contract changes, follow [Architecture](architecture.md).

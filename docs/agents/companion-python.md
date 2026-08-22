@@ -1,36 +1,26 @@
 # Selection Service Companion and Python
 
-Read this file for Selection Service Companion, Python, runtime ownership, installation, readiness, capacity, or model/runtime changes.
+Read this file for Companion runtime, readiness, capacity, models, dependencies, installation, or Python implementation.
 
 ## Operator-owned runtime
 
-The Companion is operator-owned. The browser does not install, start, stop, upgrade, discover, or silently substitute the Companion or its model weights. The browser connects only to an explicitly configured loopback or trusted-LAN endpoint.
+The Companion is operator-owned. The browser does not install, start, stop, upgrade, discover, or silently substitute the service or its model weights. It connects only to an explicitly configured loopback or trusted-LAN endpoint.
 
-Do not expand the Companion into a public backend, multi-user platform, reconstruction pipeline, or persistent semantic-object database without an explicit architectural decision.
+Do not expand the Companion into a public backend, multi-user platform, reconstruction pipeline, or persistent semantic-object database without an architectural decision.
 
-Reachability alone is not readiness. Readiness requires compatible transport, protocol, renderer, Evidence implementation and policy, model adapter and checkpoint, Model Manifest, and locked runtime.
+Reachability is not readiness. Readiness requires compatible transport, protocol, renderer, Evidence implementation/policy, model adapter/checkpoint, Model Manifest, and locked runtime.
 
-The runtime contract includes:
+The runtime authority is the Companion's `pyproject.toml`, `uv.lock`, relevant source/submodule pins, validation constants, capability/readiness output, installation documentation, and GPU fixtures. Use the declared CUDA/PyTorch environment. Fail closed on incompatibility rather than weakening checks to fit the current machine. `thirdparty/sam3/.venv` is not the production environment. Never commit model weights or operator-local state.
 
-- `selection-service-companion/pyproject.toml`;
-- `selection-service-companion/uv.lock`;
-- relevant submodule and source pins;
-- renderer and Evidence runtime validation constants;
-- capability and readiness output;
-- installation documentation;
-- GPU and integration fixtures.
+Reference or autograd implementations must remain identified as such; they do not establish production same-decision behavior.
 
-Use pinned upstream sources and the exact declared CUDA/PyTorch environment. Runtime checks must fail closed rather than being weakened to fit the current machine. `thirdparty/sam3/.venv` is not the production Companion environment. Model weights and operator-local state are never committed.
+## Python boundaries
 
-A reference or autograd implementation must be identified as such; it is not the production same-decision path.
-
-## Python conventions
-
-- Use the Python and dependency versions declared by the Companion project.
-- Use four-space indentation, type annotations, focused validation helpers, and immutable dataclasses for registered or published records where appropriate.
-- Use `snake_case` internally and established `camelCase` protocol fields.
+- Follow the declared Python version and configured project tooling.
+- Use established `camelCase` wire fields and `snake_case` internally.
+- Keep validation helpers focused and published/registered records immutable where practical.
 - Replace operator state atomically.
-- Keep locks narrowly scoped and release state locks before expensive GPU, render, or model work.
-- Keep invalid request, incompatibility, unavailable runtime, missing model, capacity, cancellation, render, Evidence, and Lift failures distinguishable.
+- Keep locks narrow; release state locks before expensive GPU, rendering, or model work.
+- Preserve distinct failure categories for invalid requests, incompatibility, unavailable runtime, missing model, capacity, cancellation, rendering, Evidence, and lifting.
 
-For renderer, Evidence, or GPU work, also read [Renderer and Evidence](renderer-and-evidence.md). For contract changes, follow [Architecture and change routing](architecture.md).
+For GPU or renderer work, also read [Renderer and Evidence](renderer-and-evidence.md). For contract changes, follow [Architecture](architecture.md).

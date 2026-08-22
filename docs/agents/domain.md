@@ -1,99 +1,35 @@
-# AI Select Domain and Sources of Truth
+# AI Select Domain Authority
 
-Read this file for AI Select behavior, terminology, product scope, current specification authority, or legacy semantics.
+Read this file when work changes AI Select behavior, terminology, product scope, current specification authority, or legacy semantics.
 
-## Current baseline
+## Authority
 
-The implementation target is **AI Select Final Spec v1.3** plus accepted ADRs
-0018 and 0019. It uses the official SAM 3 Image instance-interaction path for
-static Anchor and Key-View segmentation and exposes one usable
-operator-authored Mask or unavailable. Target geometry is compact
-Prompt/framing context without Gaussian ownership; Included Stable Masks drive
-production P/N/V Gaussian Evidence and lifting under one bound production
-identity.
+Use `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md` as the current entry point. Follow it to the authoritative Final Spec, active non-superseded ADRs, implementation ticket, and traceability artifacts for the affected scope.
 
-Final Spec v1.1, its Amendments, Final Spec v1.2, ADR 0014, and DG-24 through DG-26 are historical where they conflict with Final Spec v1.3, ADR 0016, ADR 0017, or ADR 0018. Old implementation, fixtures, issues, and tests do not restore superseded behavior.
+Then inspect, as relevant:
 
-## Sources of truth
+1. `CONTEXT.md` for stable domain vocabulary;
+2. the nearest implementation and tests;
+3. dependency and runtime declarations when rendering, inference, CUDA, installation, calibration, or model identity is affected.
 
-Before changing non-trivial AI Select behavior, inspect these sources in order:
+Current specifications and active ADRs govern product behavior. Old implementations, fixtures, tests, tickets, and historical specifications do not restore superseded semantics. Frozen benchmark artifacts are authoritative only for the benchmark data they record.
 
-1. `docs/specs/ai-select-final-spec-v1.3.md`
-2. `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`
-3. `docs/adr/0019-promote-direct-evidence-candidate-and-bind-production-identity.md`
-4. `docs/adr/0018-adopt-single-result-authoring-and-retire-explicit-recovery-planning-controls.md`
-5. `docs/adr/0016-adopt-sam3-image-instance-workflow-and-minimal-multiview.md`
-6. `docs/adr/0017-separate-geometry-quality-from-route-b-prompt-support.md` when TargetGeometryHint or Prompt Support is involved
-7. `docs/adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md` and `docs/adr/0015-automate-readiness-and-keep-model-resolution-operator-owned.md` where not superseded
-8. `CONTEXT.md`
-9. The associated implementation ticket under `docs/ai-select/tickets/` and its audit or traceability artifacts under `docs/ai-select/`
-10. The nearest implementation and tests
-11. Dependency and runtime declarations when installation, rendering, inference, CUDA, or calibration is affected
+Surface conflicts among the mapping, current spec, active ADRs, and implementation instead of silently choosing one.
 
-For domain work outside non-trivial AI Select behavior, read `CONTEXT.md` and the ADRs that touch the area being changed. Use the terms defined in `CONTEXT.md`; surface conflicts with an ADR explicitly.
-
-Final Spec v1.3 is authoritative for current product, interaction, lifecycle, acquisition, geometry, lifting semantics, and engineering boundaries. Frozen benchmark fixtures, manifests, and records are authoritative only for the benchmark data they describe.
-
-## Product model
-
-```text
-Camera View
-    ↓
-Authoritative gsplat RGB
-    ↓
-One usable Mask or unavailable
-    ↓
-Independent Versioned Stable Mask
-    ↓
-Included Stable View Annotations
-    ↓
-Mask-Conditioned Gaussian Evidence (P / N / V)
-    ↓
-Multi-view Evidence Aggregation
-    ↓
-Gaussian Lifting
-    ↓
-AI Candidate + Uncertain
-    ↓
-Set / Add / Remove / Intersect
-    ↓
-Native SuperSplat Selection
-```
-
-The following boundaries define the product:
+## Product boundaries
 
 - AI Select is a SuperSplat Selection Tool, not a separate semantic-object workspace.
-- AI Candidate is derived state, not a second editable 3D model.
-- Structural corrections use Views, Stable Masks, Participation, and explicit Re-Lift.
-- Small final corrections use native SuperSplat selection tools after Candidate application.
-- Cross-target persistent truth is Native Selection and Native EditHistory, not an AI target-session stack.
+- The browser owns one user-visible Current Target Context; Companion-computed artifacts do not transfer product-state ownership.
+- Authoritative AI observation RGB comes from locked gsplat, not a PlayCanvas or framebuffer capture.
+- Operator interaction produces one usable Mask or semantic unavailable; Included Stable Masks drive production P/N/V Evidence and lifting.
+- AI Candidate is derived state. It mutates Native Selection only through explicit Set, Add, Remove, or Intersect operations backed by native edit history.
+- Cross-target persistent truth is Native Selection and Native EditHistory, not a restorable AI target-session stack.
 - RGB Ready, Mask Ready, Evidence Ready, and Candidate Ready are distinct states.
-- Complete per-pixel Contributor is a debug/reference capability, not the production lifting contract.
+- Complete per-pixel Contributor is a reference/debug capability, not the production lifting contract.
+- Do not add user-facing Candidate provenance, Gaussian-level Evidence inspection, persistent Candidate history, or restoration of previous target contexts without a new specification decision.
 
-## Deferred product scope
+## Legacy semantics
 
-DG-14 remains deferred. Do not add the following without a later specification decision:
+Treat ObjectSelectionSession, Prompt Log, Mask Track/Mask Set, New/Add/Remove/Refine inference modes, ordered video-tracker orchestration, PlayCanvas-captured Anchor RGB, and preview-confirm-close session flow as legacy or reference concepts.
 
-- user-facing Candidate provenance or source inspection;
-- Gaussian-level Evidence inspection;
-- persistent Candidate history;
-- reopening or restoring previous target AI contexts.
-
-Minimal internal revision and fingerprint metadata required for correctness remains required.
-
-## Legacy vocabulary
-
-Treat these as migration or reference concepts rather than current product architecture:
-
-- ObjectSelectionSession as the user-visible lifecycle;
-- Prompt Log as product source of truth;
-- Mask Track or Mask Set as the top-level Mask model;
-- New, Add, Remove, or Refine as AI inference modes;
-- Frame Set or ordered video-tracker orchestration;
-- PlayCanvas-captured Anchor RGB;
-- complete Contributor on the normal RGB, Anchor, or lifting critical path;
-- one-shot Preview → Confirm → Close;
-- fixed Correction Round UX;
-- whole-scene raw-count coverage.
-
-Use `legacy`, `reference`, or `debug` when a historical term could be mistaken for current behavior. `Add` and `Remove` are reserved for native Candidate application operations.
+Reuse validated primitives only when they satisfy the current contract. Qualify historical terms as `legacy`, `reference`, or `debug` when ambiguity is possible. `Add` and `Remove` in current product language refer to native Candidate application operations.

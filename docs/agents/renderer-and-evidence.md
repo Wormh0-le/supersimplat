@@ -2,91 +2,55 @@
 
 Read this file for gsplat, CUDA, authoritative RGB, P/N/V Evidence, working sets, Gaussian Lifting, or the reference Contributor backend.
 
-## Same-decision Direct Evidence
+## Same-decision production Evidence
 
-Production Evidence uses actual alpha-compositing contribution:
+Production Evidence uses the actual alpha-compositing contribution:
 
 ```text
 w = alpha × incoming transmittance
 ```
 
-RGB and production Evidence share the same authoritative decision source for:
+Authoritative RGB and production Evidence must share the decisions that determine projected data, front-to-back order, sigma/alpha evaluation, validity thresholds, incoming transmittance, contribution weight, and early termination.
 
-- projected Gaussian data;
-- front-to-back ordering;
-- sigma and alpha evaluation;
-- validity thresholds;
-- incoming transmittance;
-- `alpha × T` weight;
-- early termination.
-
-One CUDA launch is not required. Multiple passes are valid only when later passes reuse authoritative decisions instead of independently re-deciding boundary-sensitive acceptance or termination. Identical formulas in separate kernels do not prove same-decision behavior.
+Multiple passes are valid only when later passes reuse those authoritative decisions. Identical formulas in independently deciding kernels do not establish same-decision behavior.
 
 ## Evidence semantics
 
-- Production channels are per-view, per-Gaussian Positive Mass (P), Negative Mass (N), and Visible Mass (V).
-- Positive Evidence comes from strong target regions.
-- Negative Evidence comes from explicit local background or context regions, not the entire image exterior by default.
-- Boundary and ignore regions are neutral or low-weight and may produce a separate diagnostic channel.
+- Per-view, per-Gaussian production channels are Positive Mass (P), Negative Mass (N), and Visible Mass (V).
+- Positive Evidence comes from strong target regions; Negative Evidence comes from explicit local background/context, not the entire exterior by default.
+- Boundary/ignore regions are neutral or low-weight and may have a diagnostic channel.
 - Missing, unusable, excluded, or unobserved Evidence is not negative.
-- Material positive and negative support classifies a Gaussian as Uncertain or Mixed rather than forcing a binary result.
-- `Uncertain` is diagnostic and excluded from native Candidate application.
+- Material positive and negative support yields Uncertain/Mixed rather than a forced binary result.
+- Uncertain is diagnostic and excluded from native Candidate application.
 - Evidence Policy is versioned, replayable, and benchmark-calibrated.
 
-## Render and Evidence working sets
+## Working sets
 
 - Render Working Set contains every Gaussian or chunk required to reproduce complete-scene RGB, occlusion, transmittance, and termination for a CameraBinding.
-- Evidence Working Set contains only Stable Gaussian IDs receiving P/N/V writes, normally Core Target plus Context.
-- Gaussians outside Evidence Working Set may still be required Render Working Set occluders.
-- Never rasterize only Evidence Working Set when it changes visibility or transmittance.
-- Spatial reduction must be conservative and validated against a full-scene or reference path.
-- Scene Chunk Miss fails closed; a partial Render Working Set never publishes a Ready View.
+- Evidence Working Set contains only Stable IDs receiving P/N/V writes, normally Core Target plus Context.
+- Gaussians outside the Evidence Working Set may still be required render occluders.
+- Never rasterize only the Evidence Working Set when it changes visibility or transmittance.
+- Validate spatial reduction against a full-scene or reference path. Scene Chunk Miss fails closed; partial rendering never publishes a Ready View.
 
 ## Per-view Evidence artifact
 
-A formal per-view Evidence artifact binds at least:
-
-```text
-target/context/dependency identity
-CameraBinding digest
-authoritative RGB digest
-Stable Mask digest
-Evidence Policy digest
-Render Working Set token
-Evidence Working Set token
-Stable Gaussian IDs
-P / N / V arrays
-raster/evidence implementation identity
-```
+A formal artifact binds all material identity, including target/context/dependency, CameraBinding, authoritative RGB, Stable Mask, Evidence Policy, render/evidence working sets, Stable IDs, P/N/V arrays, and raster/Evidence implementation identity.
 
 Any material dependency change invalidates the artifact. Editing an unpublished Mask does not invalidate current Evidence; publishing a new Stable Mask does.
 
 ## Reference Contributor backend
 
-- Complete per-pixel Contributor IDs and weights exist only for diagnostics, fixtures, and reference comparison.
-- Contributor alpha reconciliation and mass-conservation checks remain valid for the reference backend.
-- Reference Contributor failure never turns valid RGB into Render Failed.
-- Production never silently falls back to nearest-Gaussian, top-k, distance, center projection, or visibility-only attribution.
-- Keep the reference backend and its fixtures until the production path passes declared equivalence and quality gates.
+Complete per-pixel Contributor IDs/weights are for diagnostics, fixtures, and reference comparison. Reference failure never converts valid RGB into Render Failed. Production must not silently fall back to nearest-Gaussian, top-k, distance, center-projection, or visibility-only attribution.
 
-## Implementation sequence
+Keep reference fixtures until the production path passes declared equivalence and quality gates.
 
-```text
-reference P/N/V PoC
-→ policy and quality validation
-→ same-decision production Evidence path
-→ artifact/cache integration
-→ calibration and OOM/cancellation hardening
-```
+## CUDA and production claims
 
-## CUDA and renderer conventions
-
-- Pin source, compiler and runtime assumptions, and supported GPU architecture.
-- Preserve front-to-back order and Stable ID mapping.
-- Never silently truncate Evidence or Contributor output.
+- Pin source, compiler/runtime assumptions, and supported GPU architecture.
+- Preserve front-to-back order and Stable ID mapping; never silently truncate output.
 - Detect overflow and capacity failure explicitly.
-- Measure register pressure, global writes, atomic contention, latency, and VRAM.
-- Treat atomic FP32 accumulation as numerically non-associative; validate classification stability rather than claiming bit-exact sums.
-- Do not call a separate kernel production-equivalent merely because it uses the same formula as authoritative RGB.
+- Measure register pressure, global writes, atomic contention, latency, VRAM, and OOM behavior where material.
+- Treat FP32 atomic accumulation as non-associative; validate classification stability rather than claiming bit-exact sums.
+- Do not call a separate kernel production-equivalent merely because it uses the same formula.
 
-Production claims require the locked runtime and GPU validation described in [Execution and verification](execution-and-verification.md).
+Production claims require the locked runtime and GPU evidence defined in [Project verification](execution-and-verification.md).

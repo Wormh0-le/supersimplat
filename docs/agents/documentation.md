@@ -1,28 +1,29 @@
-# Documentation, ADRs, and Traceability
+# Project Documentation and Traceability
 
-Read this file when changing comments, domain vocabulary, specifications, architectural decisions, tickets, or traceability.
+Read this file when changing `CONTEXT.md`, current specifications, ADRs, feature documents, tickets, comments, or traceability.
 
-## Durable project knowledge
+## Artifact ownership
 
-- Update `CONTEXT.md` when a durable domain concept or project term changes.
-- Add or supersede an ADR when an architectural decision changes; do not silently diverge from the recorded decision.
-- Update the local issue graph when a specification change affects implementation scope, then rerun the relevant traceability or audit before declaring the work agent-ready.
-- Keep Final Spec v1.3 terminology consistent with [Domain and sources of truth](domain.md).
-- Preserve legacy vocabulary only in historical or benchmark records, qualified where ambiguity is possible.
+- `CONTEXT.md` owns stable domain vocabulary, not implementation status, counts, paths, constants, or feature scratch notes.
+- `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md` points to the current product authority and implementation scope.
+- The current Final Spec owns product behavior; active ADRs own durable architectural decisions and trade-offs.
+- Implementation tickets and traceability artifacts own active work decomposition and coverage.
+- Historical specs, ADRs, audits, and benchmarks remain history; qualify them so they cannot be mistaken for current authority.
 
-## Comments
+Update only the artifact whose owned claim changed. Do not edit current specs, ADRs, or traceability for a code-only implementation detail that leaves their contract unchanged.
 
-Use comments to explain authority, ownership, trust boundaries, identity, atomicity, and non-obvious failure behavior. Omit comments that only narrate straightforward implementation.
+## Feature-document lifecycle
 
-Use ADRs for durable architectural trade-offs and `CONTEXT.md` for stable domain vocabulary rather than implementation diaries.
+Planning and feature documents are temporary unless they contain durable authority. At feature closeout, classify each affected artifact:
 
-## Documentation validation
+- promote stable terminology to `CONTEXT.md`;
+- update current behavior in the Final Spec;
+- accept or supersede a qualifying ADR rather than rewriting history;
+- reconcile ticket mapping and traceability when implementation scope changed;
+- archive only material historical evidence; delete intermediate implementation narratives by default.
 
-For documentation-only changes:
+For local comments, follow the global durable-comment rule. Use comments for non-obvious authority, identity, atomicity, fail-closed behavior, or trust boundaries; link to the owning spec/ADR instead of duplicating broad rationale.
 
-- check terminology against `CONTEXT.md`;
-- check compatibility with Final Spec v1.3, ADR 0016 and ADR 0017 where applicable, and non-superseded ADR 0013 and ADR 0015 rules;
-- check issue graph and traceability consistency when scope changes;
-- verify executable commands, schemas, links, and examples.
+## Validation
 
-Use [Issue tracker](issue-tracker.md) for GitHub operations and [triage labels](triage-labels.md) for repository label vocabulary.
+Check affected terminology against `CONTEXT.md` and the current mapping, then verify changed links, commands, schemas, examples, ticket relationships, and traceability. Do not hard-code a separate list of current ADR numbers in this guide.

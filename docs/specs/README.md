@@ -2,104 +2,48 @@
 
 ## Current normative specification
 
-1. [`ai-select-final-spec-v1.3.md`](./ai-select-final-spec-v1.3.md)
-2. [`../adr/0016-adopt-sam3-image-instance-workflow-and-minimal-multiview.md`](../adr/0016-adopt-sam3-image-instance-workflow-and-minimal-multiview.md)
-3. [`../adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md`](../adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md), where not superseded
-4. [`../adr/0015-automate-readiness-and-keep-model-resolution-operator-owned.md`](../adr/0015-automate-readiness-and-keep-model-resolution-operator-owned.md), where not superseded
-5. [`../../.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md`](../../.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md)
+1. [`ai-select-final-spec-v2.0.md`](./ai-select-final-spec-v2.0.md)
+2. [`../adr/0021-kernel-internal-depth-readouts-and-depth-classified-negative-mass.md`](../adr/0021-kernel-internal-depth-readouts-and-depth-classified-negative-mass.md)
+3. [`../adr/0020-auto-publish-candidate-at-ready-low-gain-terminal.md`](../adr/0020-auto-publish-candidate-at-ready-low-gain-terminal.md)
+4. [`../adr/0019-promote-direct-evidence-candidate-and-bind-production-identity.md`](../adr/0019-promote-direct-evidence-candidate-and-bind-production-identity.md) — carried over, extended
+5. [`../ai-select/TICKET-GRAPH-V2.md`](../ai-select/TICKET-GRAPH-V2.md) — active implementation planning surface
 6. current Ticket acceptance criteria and tests
 
-`ai-select-final-spec-v1.3.md` is the only current product and engineering specification. Ticket Graph v2.12 closes the RGB-input, opaque previous-logits state, current-frontier and optional cross-view diagnostic boundaries without adding a new product feature.
+Final Spec v2.0 (accepted 2026-08-22) supersedes Final Spec v1.3 as a whole
+version with an explicit carry-over list (draft §0.2): SAM 3 Image
+single-result Mask authoring, Anchor/hint semantics, Stable Mask /
+Participation lifecycle, authoritative RGB and same-decision invariants,
+exact-key identity, atomic Candidate replacement and Native operation
+boundaries carry over unchanged. Superseded: the fixed initial View plan
+(fixed-four / ADR 0018's `4–8` range → dual budget), manual-only Candidate
+publication at the normal terminal (→ auto-publish per ADR 0020), User-added
+View capability (removed; runtime removal lands with V2J), single-channel
+Negative Mass (→ depth-classified per ADR 0021).
 
-## Current product decisions
-
-- Static Anchor and Key-View segmentation use official SAM 3 Image instance interactivity.
-- SAM 3.1 Multiplex is not a current static-image production dependency.
-- v1 Prompt tools are Positive Point, Negative Point and one Positive Instance Box.
-- Negative Box, Prompt Brush, Mask Constraints and Text Prompt are removed.
-- Paint/Erase remain Editing Mask operations.
-- Initial planning schedules `4–8` automatic Generated Views, excluding the
-  Anchor and User-added Views; validity failures may leave fewer usable Views.
-- A SAM provider request contains resolvable authoritative RGB, not only a digest.
-- Actual previous-prediction logits remain Companion-local; the browser receives only an opaque same-Instance reference.
-- One Positive Point may return up to three candidates; Box, multiple Points or refinement return one.
-- Anchor ambiguity is resolved directly by user choice/refinement before Accept.
-- Anchor-visible geometry is one compact `TargetGeometryHintArtifact`.
-- v1 schedules `4–8` bounded automatic Generated Views, not a general
-  adaptive/free-space planner.
-- Generated Views use projected Box/Points and SAM 3 Image single-mask inference.
-- Mask Review is separate from Lift Readiness.
-- Ticket 13 is the sole visibility/readiness authority; Ticket 10 cross-view conflict diagnostics are optional and do not block release.
-- No current generic backend registry, Route B/C/D bundle, sequence extension or automatic Route-A fallback is required.
-
-## Current product chain
-
-```text
-Camera View
-→ authoritative gsplat RGB
-→ Positive/Negative Points + optional Positive Instance Box
-→ SAM 3 Image instance prediction
-→ candidate choice/refinement where needed
-→ Accept / Edit / Confirm
-→ Anchor Stable Mask
-→ TargetGeometryHintArtifact
-→ bounded local Key Views
-→ projected Box + Points
-→ per-View SAM 3 Image single-mask prediction
-→ Mask Review / Stable Mask / Participation
-→ Included Stable Masks
-→ P/N/V Gaussian Evidence
-→ Candidate + Uncertain
-→ Native Set / Add / Remove / Intersect
-```
-
-## Current implementation graph
-
-```text
-04B historical Multiplex baseline
-→ 04C SAM 3 Image + Prompt/RGB/refinement migration ──→ 02C readiness
-
-06 implemented progressive RGB tracer
-→ 07 MaskReview correction
-
-04C + 07
-→ 07A simplified Anchor acquisition
-   ├→ 07B Point/Box + Paint/Erase palette
-   └→ 08 TargetGeometryHint + local Key Views
-       → 08A compact image instance contracts
-       → 08B per-View SAM 3 Image acquisition
-       → 09 Gallery
-       → 11 / 12
-       → 14 / 13 Lift and Readiness
-```
-
-Current ready frontier:
-
-```text
-04C — critical model migration gate
-07  — parallel MaskReview policy correction
-```
-
-Ticket 10 is an optional post-Evidence enhancement and is not a Ticket 21 core release blocker.
+Runtime behavior transitions to v2.0 as the V2x tickets land; until then
+shipped behavior remains v1.3.
 
 ## Historical specifications and rationale
 
 The following are retained for history only:
 
+- Final Spec v1.3 (superseded 2026-08-22; provenance record for the
+  implemented Tickets through 22 via
+  [`../ai-select/CURRENT-TICKET-SPEC-MAPPING.md`](../ai-select/CURRENT-TICKET-SPEC-MAPPING.md));
 - Final Spec v1.1 and Amendments 001–005;
 - Final Spec v1.2;
 - ADR 0014;
-- DG-20 through DG-26 where superseded by ADR 0016 / Final Spec v1.3;
+- DG-20 through DG-26 where superseded by ADR 0016 / later specs;
 - Ticket 04A generic Prompt surface;
 - Ticket 06 projected-support/Multiplex Mask and production-fallback handoff.
 
 They must not be reconstructed as current requirements.
 
-## Planning artifacts
+## Durable control plane
 
-- [`../../.scratch/ai-select-v1/README.md`](../../.scratch/ai-select-v1/README.md)
-- [`../../.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md`](../../.scratch/ai-select-v1/CURRENT-TICKET-SPEC-MAPPING.md)
-- [`../../.scratch/ai-select-v1/manifest.json`](../../.scratch/ai-select-v1/manifest.json)
-- [`../../.scratch/ai-select-v1/TRACEABILITY.md`](../../.scratch/ai-select-v1/TRACEABILITY.md)
-- [`../../.scratch/ai-select-v1/FOUR-PASS-AUDIT.md`](../../.scratch/ai-select-v1/FOUR-PASS-AUDIT.md)
-- [`../../.scratch/ai-select-v1/WALKTHROUGHS.md`](../../.scratch/ai-select-v1/WALKTHROUGHS.md)
+- [`CONTEXT.md`](../../CONTEXT.md) — stable domain vocabulary;
+- [`../ai-select/TICKET-GRAPH-V2.md`](../ai-select/TICKET-GRAPH-V2.md) — active v2 ticket graph;
+- [`../ai-select/tickets/v2/`](../ai-select/tickets/v2/) — V2A–V2J ticket contracts;
+- [`../ai-select/TICKET-GRAPH.md`](../ai-select/TICKET-GRAPH.md),
+  [`../ai-select/manifest.json`](../ai-select/manifest.json) — implemented v1
+  closure record (historical).

@@ -24,6 +24,14 @@ Status: **substantive migration complete; historical scratch paths are compatibi
 - `AGENTS.md` source routing updated to stable docs/Ticket locations.
 - Historical `.scratch/ai-select-v1` planning paths reduced to compatibility pointers/readmes rather than duplicate normative content.
 - CI is configured for `ai-select-v1` pushes with integrated `npm test`, build, lint and locale-lint jobs; locked-GPU validation remains a separate environment-specific gate.
+- Final Spec v2.0 accepted 2026-08-22 as a whole-version supersession of
+  Final Spec v1.3, with accepted ADRs 0020 (auto-publication at the
+  `ready-and-low-marginal-gain` terminal) and 0021 (kernel-internal depth
+  readouts + depth-classified Negative Mass). CONTEXT.md migrated to v2.0
+  vocabulary; v1.3 mapping/traceability retained as historical provenance;
+  active implementation planning promoted to
+  `docs/ai-select/TICKET-GRAPH-V2.md` with ticket contracts V2A–V2J under
+  `docs/ai-select/tickets/v2/`.
 
 ## Directory ownership
 

@@ -2,7 +2,11 @@
 
 ## 产品、交互与工程规格 — Final Spec v1.3
 
-**文档状态：** Current Final Spec / Normative  
+**文档状态：Historical — superseded by [Final Spec v2.0](./ai-select-final-spec-v2.0.md) on 2026-08-22.**
+本文件保留为已实现 Tickets through 22 的历史映射/溯源依据（见
+`docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`），不再是当前规范，不得作为
+当前实现或收口依据。
+
 **规划版本：** Ticket Graph v2.38 / Tickets through 22 implemented / core graph closed
 **日期：** 2026-08-17
 **适用分支：** `ai-select-v1`  

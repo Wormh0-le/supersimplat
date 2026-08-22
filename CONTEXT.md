@@ -1,8 +1,8 @@
 # SuperSimPlat AI Select — Domain Context
 
-This context defines the current **AI Select Final Spec v1.3** vocabulary for turning a user's object-level intent into a native SuperSplat Gaussian Selection.
+This context defines the current **AI Select Final Spec v2.0** vocabulary for turning a user's object-level intent into a native SuperSplat Gaussian Selection.
 
-Final Spec v1.3 retains the mask-conditioned direct-Evidence product/lifecycle model while standardizing the official SAM 3 Image static instance workflow, single-result Mask authoring, retained-support TargetGeometryHint semantics, and bounded local Key-View acquisition. ADR 0018 is current for single-result authoring and the `4–8` initial automatic-View range; ADR 0019 is current for production Candidate publication, calibrated readiness and production identity. Final Spec v1.1, its Amendments, and Final Spec v1.2 are historical where superseded. Historical v1.0 Contributor terminology remains valid only for migration, reference fixtures, diagnostics, and the explicit debug/reference backend.
+Final Spec v2.0 (accepted 2026-08-22) supersedes Final Spec v1.3 as a whole version and replaces the fixed initial View plan with the bounded utility-driven acquisition loop: Conservative Seed Support, Evidence-Internal Depth with depth-classified Negative Mass (ADR 0021), Provisional 3D Consensus, Observation Reliability, weighted aggregation, dual budgets, and automatic atomic Candidate publication at the `ready-and-low-marginal-gain` terminal (ADR 0020). User-added View is removed: the Anchor is the only user-placed camera. ADR 0018's single-result authoring carries over; its `4–8` range is superseded by the dual budget. ADR 0019's production Candidate publication and identity system carry over extended. Final Spec v1.3, v1.1 and its Amendments, and v1.2 are historical where superseded. Runtime behavior transitions to v2.0 as the V2x tickets (`docs/ai-select/TICKET-GRAPH-V2.md`) land; until then shipped behavior remains v1.3. Historical v1.0 Contributor terminology remains valid only for migration, reference fixtures, diagnostics, and the explicit debug/reference backend.
 
 ## Current Product Vocabulary
 
@@ -19,7 +19,7 @@ The transient Selected Gaussian set produced by Gaussian Lifting from the curren
 _Avoid_: committed selection, editable 3D mask
 
 **AITarget / Target Splat**  
-The one Active Splat currently targeted by AI Select, bound to the scene/splat dependency state required by rendering and lifting. AI Select Final Spec v1.3 does not combine Candidate IDs across multiple Target Splats in one Current Target Context.  
+The one Active Splat currently targeted by AI Select, bound to the scene/splat dependency state required by rendering and lifting. AI Select Final Spec v2.0 does not combine Candidate IDs across multiple Target Splats in one Current Target Context.  
 _Avoid_: whole scene, persistent semantic instance
 
 **Stable Gaussian ID**  
@@ -103,12 +103,12 @@ The independent eligibility state for turning a TargetGeometryHint's retained vi
 _Avoid_: geometry quality, model confidence, Participation
 
 **Local Key View**  
-A planner-owned Generated View from the bounded local Key-View policy: left/right azimuth and modest elevation offsets around the TargetGeometryHint center with framing from its extent, validated for projection size, clipping, visibility, and nonblank authoritative RGB. Initial planning schedules `4–8` automatic Generated Views, excluding the Anchor and User-added Views, and preserves every completed valid View. Candidate validity failures may leave fewer usable Views. Current product surfaces expose no persistent Stop, Generate More or Regenerate command; initial planning failure has one failure-only retry, and users may add or replace observations through user-chosen Views.<br>
-_Avoid_: room-scale orbit, adaptive marginal-gain schedule
+A planner-owned Generated View from the bounded local offset policy: left/right azimuth and modest elevation offsets around the TargetGeometryHint center with framing from its extent, validated for projection size, clipping, visibility, and nonblank authoritative RGB. Under Final Spec v2.0 the fixed initial schedule (`4–8`, fixed-four) is superseded by the dual-budget utility-driven acquisition loop; the hint-offset machinery survives as one layer of the layered candidate pool. Candidate validity failures may leave fewer usable Views. Current product surfaces expose no persistent Stop, Generate More or Regenerate command; loop termination follows stop reasons, and a dedicated Cancel control preserves completed artifacts.<br>
+_Avoid_: room-scale orbit, fixed-four as product path
 
-**User-added View**  
-An AI View created from a user-chosen CameraBinding. It remains target-local and is discarded on Restart Current Target.  
-_Avoid_: persistent project camera
+**User-added View (superseded)**  
+The v1.3 capability of creating an AI View from a user-chosen CameraBinding. Final Spec v2.0 removes it: after Anchor confirmation acquisition is purely automatic and the Anchor is the only user-placed camera; manual Mask edits on Generated Views keep the User Confirmed reliability exemption. The capability remains in shipped behavior until the V2J cutover lands.<br>
+_Avoid_: reintroducing user camera placement after cutover
 
 **AI View**  
 A target-local authoritative observation record containing CameraBinding, gsplat RGB identity, source, render status, Participation, Mask versions, and optional derived Evidence reference. A View may be Render Ready without a Mask or Evidence.  
@@ -213,7 +213,7 @@ The automatic quality state attached to an automatic Mask/View, typically Auto G
 _Avoid_: participation flag, unified confidence percentage
 
 **Review Reason**  
-A structured evidence-backed reason explaining why an automatic Mask/View needs inspection. The Final Spec v1.3 vocabulary is `prompt-inconsistent`, `target-materially-clipped`, `severely-fragmented`, `box-spill-or-neighbour-leak`, and `empty-or-degenerate-mask`, each supported by measurable Mask geometry or, when the Prompt family exists, Point/Box consistency. Tracker propagation and Gaussian visibility/support are not Mask-quality inputs: `propagation-uncertain` is deleted, and `weak-gaussian-support` belongs to Lift Readiness.  
+A structured evidence-backed reason explaining why an automatic Mask/View needs inspection. The Final Spec v2.0 vocabulary is `prompt-inconsistent`, `target-materially-clipped`, `severely-fragmented`, `box-spill-or-neighbour-leak`, and `empty-or-degenerate-mask`, each supported by measurable Mask geometry or, when the Prompt family exists, Point/Box consistency. Tracker propagation and Gaussian visibility/support are not Mask-quality inputs: `propagation-uncertain` is deleted, and `weak-gaussian-support` belongs to Lift Readiness.  
 _Avoid_: free-form AI guess
 
 **ViewAssessmentPolicy**  
@@ -238,7 +238,7 @@ _Avoid_: binary membership vote, screen-space overlap only
 The Gaussian's alpha-composited contribution inside strong target-positive Mask regions.
 
 **Negative Mass (N)**  
-The Gaussian's alpha-composited contribution inside explicit local background/context regions. Far-away Mask-exterior pixels are not automatically negative.
+The Gaussian's alpha-composited contribution inside explicit local background/context regions. Far-away Mask-exterior pixels are not automatically negative. Final Spec v2.0 revises N in place (ADR 0021): counter-evidence contributions are depth-classified by Evidence-Internal Depth into in-front-of-local-surface (leakage/floater Gaussians) versus behind-it (true background visible at object edges). The classification must not turn mask distrust into "not observed".
 
 **Visible Mass (V)**  
 The Gaussian's valid visible contribution inside the Evidence observation region, independent of whether that region is positive, negative, or boundary/ignore.
@@ -276,7 +276,7 @@ The complete per-pixel Contributor IDs/weights path retained only for diagnostic
 _Avoid_: production View readiness requirement
 
 **Observation Coverage**  
-The measured extent of relevant Core Target Gaussian evidence actually observed through valid Visible Mass from Included Stable Views. The current reference policy uses each Core Target Gaussian's maximum normalized effective Visible Mass across exact Included Evidence Views, then averages over the Core Target; duplicating a View therefore cannot manufacture coverage. Low-cost support diagnostics may report formal Evidence pending but never a numeric Observation Coverage. It is not raw View count, frustum inclusion, or whole-scene Gaussian count.  
+The measured extent of relevant Core Target Gaussian evidence actually observed through valid Visible Mass from Included Stable Views. The current reference policy uses each Core Target Gaussian's maximum normalized effective Visible Mass across exact Included Evidence Views, then averages over the Core Target; duplicating a View therefore cannot manufacture coverage. Under Final Spec v2.0 the Core Target denominator starts from Conservative Seed Support and expands monotonically; during shadow evaluation seed-based and whole-Target-Splat coverage are reported side by side. Low-cost support diagnostics may report formal Evidence pending but never a numeric Observation Coverage. It is not raw View count, frustum inclusion, or whole-scene Gaussian count.  
 _Avoid_: cameras generated, whole-scene coverage
 
 **View Diversity**  
@@ -284,12 +284,12 @@ A separate measure of useful directional/viewpoint diversity. The current refere
 _Avoid_: View count
 
 **Lift Readiness**  
-The versioned, target-local derived state Not Ready, Limited, or Ready based on exact Included Evidence, Observation Coverage, useful directional diversity, generation state, and required identities/artifacts rather than a universal fixed View count. `lift-readiness/production-v1` is the calibrated current policy. Explicit Re-Lift evaluates missing/stale readiness from exact current production Evidence before Candidate construction; Not Ready publishes readiness but no Candidate. Stable input changes keep the last result inspectable but stale.  
+The versioned, target-local derived state Not Ready, Limited, or Ready based on exact Included Evidence, Observation Coverage, useful directional diversity, generation state, and required identities/artifacts rather than a universal fixed View count. `lift-readiness/production-v1` is the calibrated current policy. Explicit Re-Lift evaluates missing/stale readiness from exact current production Evidence before Candidate construction; Not Ready publishes readiness but no Candidate. At Ready, acquisition continues until marginal gain falls below the tightened threshold, where the Candidate publishes automatically and atomically (`ready-and-low-marginal-gain` terminal); Limited plus exhausted budgets publishes readiness with structured reasons but no Candidate. Stable input changes keep the last result inspectable but stale.  
 _Avoid_: fixed N-view gate
 
 **Adaptive View Planner**  
-Deferred v1 concept: a planner that incrementally generates useful CameraBindings based on target observation, directional diversity, and marginal gain under bounded budgets. v1 instead uses the bounded local Key-View policy (see Local Key View); adaptive marginal-gain optimization remains explicitly out of scope.  
-_Avoid_: fixed 4/8 view schedule
+Deferred in v1 as out of scope; realized by Final Spec v2.0 as the bounded utility-driven acquisition loop (View Utility over a layered candidate pool under dual budgets — see Acquisition Loop Vocabulary). The v1 bounded local Key-View plan survives only as the frozen regression/ablation baseline.  
+_Avoid_: fixed 4/8 view schedule as product path
 
 **Gaussian Lifting**  
 The explicit operation that resolves/reuses per-view Evidence, recomputes stale/missing Evidence, aggregates across Included Stable Views, applies the Evidence Policy, and atomically publishes Candidate plus Uncertain.  
@@ -355,7 +355,7 @@ _Avoid_: AI Result; Native Selection preview; temporary Native Selection mutatio
 **Intersect** — `S' = S ∩ C`
 
 **Transient AI Selection State**  
-Anchor/Views/Masks/Evidence/Candidate state that exists only for the Current Target Context/runtime. Final Spec v1.3 does not persist or reopen previous target contexts as semantic project data.  
+Anchor/Views/Masks/Evidence/Candidate state that exists only for the Current Target Context/runtime. Final Spec v2.0 does not persist or reopen previous target contexts as semantic project data.  
 _Avoid_: object annotation database, persistent AI session
 
 ## Selection Service and Runtime Vocabulary
@@ -421,10 +421,10 @@ An already reconstructed Gaussian scene used as the sole scene input to AI Selec
 
 ## Legacy / Reference Vocabulary
 
-The following terms may appear in old implementation, fixtures, issues, or benchmarks. They are not the target Final Spec v1.3 product architecture.
+The following terms may appear in old implementation, fixtures, issues, or benchmarks. They are not the current Final Spec v2.0 product architecture.
 
 **Complete Contributor Production Path (v1.0 legacy)**  
-The former normal path that published complete per-pixel Contributor IDs/weights and required mass alignment with RGB raster alpha before View readiness/lifting. In the current Final Spec v1.3 architecture it is retained only as the Reference Contributor Backend.
+The former normal path that published complete per-pixel Contributor IDs/weights and required mass alignment with RGB raster alpha before View readiness/lifting. In the Final Spec v2.0 architecture it is retained only as the Reference Contributor Backend.
 
 **Contributor Alpha Reconciliation (reference/debug)**  
 The bounded fail-closed logic that attempts to explain boundary differences between separately executed RGB and complete Contributor kernels. It remains useful for diagnosing the reference backend but is not a production Direct Evidence requirement.
@@ -483,11 +483,11 @@ A frozen method-independent Selected/Rejected/Ambiguous Gaussian classification 
 
 ## Naming Rules
 
-Use the Current Product Vocabulary for Final Spec v1.3 code and documentation.
+Use the Current Product Vocabulary for Final Spec v2.0 code and documentation.
 
 Qualify historical concepts with `legacy`, `reference`, or `debug` when ambiguity is possible.
 
-Do not use `Contributor` as a generic synonym for production Evidence. In Final Spec v1.3:
+Do not use `Contributor` as a generic synonym for production Evidence. In Final Spec v2.0:
 
 ```text
 Contributor = complete per-pixel reference/debug attribution
@@ -506,3 +506,45 @@ Candidate Ready
 ```
 
 Do not conflate Render Working Set with Evidence Working Set.
+
+## Acquisition Loop Vocabulary
+
+The following terms are Final Spec v2.0 normative vocabulary for the bounded
+acquisition loop that runs after Anchor confirmation. Runtime behavior ships
+with the V2x tickets (`docs/ai-select/TICKET-GRAPH-V2.md`).
+
+**Acquisition Loop**  
+The bounded, adaptive observation-acquisition loop that runs after the user confirms the Anchor Stable Mask: it acquires Stable Mask + Direct P/N/V Evidence per View, revises consensus/reliability/readiness, and terminates on a structured stop reason. The whole loop is one attempt with exact same-attempt replay; Cancel takes effect immediately and preserves all completed Views/Stable Masks/raw Evidence/the prior Candidate; suspend/resume only at View boundaries (dependency changes stale a suspended attempt instead of silently resuming); stage failures follow bounded replacement. The Browser owns loop orchestration as a state machine driving per-View requests over the existing validated transport (candidate selection → render → mask/evidence → rescore); the Companion holds loop-scoped derived state keyed by target+dependency identity — alive across requests, disposable by policy. No autonomous Companion session. Native Selection never changes with internal consensus revisions.  
+_Avoid_: Companion-autonomous session, new transport, Re-Lift as loop restart
+
+**Stop Reason**  
+The structured terminal outcome emitted by the acquisition loop: `ready-and-low-marginal-gain`, `marginal-gain-exhausted`, `view-budget-exhausted`, `cost-budget-exhausted`, `no-feasible-view`, `stage-failure`, or `stale/cancelled/suspended`. Canonical naming is finalized by the domain-modeling naming pass; exact budgets and thresholds are calibration outputs.  
+_Avoid_: free-form termination text, planner-owned publication decisions
+
+**Conservative Seed Support**  
+The high-precision, deliberately incomplete 3D support set derived from Anchor production Direct Evidence — the same-decision `alpha × T` source — immediately after Anchor confirmation. It carries Stable Gaussian IDs plus per-seed diagnostics (support ratio, visible mass, filtering reasons) and is a Companion-internal artifact that does not cross the Browser/Companion boundary. Construction is precision-first: precision filters (high positive ratio, sufficient visible mass, low conflicting mass), depth-consistency filtering against Evidence-Internal Depth, then connectivity filtering over scale-aware adjacency (pair distance within k × the larger Gaussian scale, gated by depth consistency). Non-primary connected components above size/quality thresholds enter the seed marked `satellite`; below-threshold components are recorded `filtered` with reasons; no component disappears without a diagnosable reason. Quality states `usable / limited / unavailable` are recorded as diagnostics and never block the user flow; an unavailable seed falls back to broad-denominator coverage while the loop proceeds on per-View Evidence. It is not TargetGeometryHint ownership, not Gaussian ownership, not an AI Candidate, and never a hard bound on Evidence expansion. Policy runs under an explicitly versioned experimental identity (`seed-policy/experimental-v*`) promoted to production identity by explicit key change after calibration.  
+_Avoid_: second membership authority, published depth artifact, hard planning gate, Native Selection or Candidate publication by the seed
+
+**Evidence-Internal Depth**  
+The expected-depth channel accumulated inside the production Direct Evidence kernel from the same accepted Gaussian sequence and `alpha × T` weights. It is kernel-internal and is never published as a standalone artifact. Authoritative whole-frame geometric visibility (rendered depth as a protocol artifact) stays out of scope unless separately gated by a future decision. The consensus soft mask is the sibling readout: a consensus-state-weighted color pass from the same-decision raster family, consumed Companion-side for residual computation — never an independent approximate re-rasterization.  
+_Avoid_: new depth/back-projection seam, standalone depth image, second visibility tolerance, independent re-rasterization of consensus
+
+**Provisional 3D Consensus**  
+The Companion-local disposable derived state revised once per Included publication inside the acquisition loop. It feeds planner utility, reliability estimation, and weighted aggregation only. It can never execute Native Set/Add/Remove/Intersect, forms no cross-target persistent history, and is never an AI Candidate. It does not cross the Browser/Companion boundary as a formal artifact; replay relies on Companion-side digests/journals. New Views, Stable Mask revisions, or Participation changes make dependent consensus/reliability/readiness stale.  
+_Avoid_: second editable 3D model, browser-held consensus authority, silent Native Selection drift
+
+**Observation Reliability**  
+Per-Included-observation versioned weight derived from comparing the provisional-consensus soft mask against the View's Stable Mask, applied ONLY to P/N semantic mass; raw `V` stays unweighted for realized Observation Coverage — Mask distrust never becomes "not observed". Reliability never silently modifies a Stable Mask, never equals Participation, and never alone triggers Excluded. Residuals are visibility-gated pixel BCE plus a separate boundary-band component (IoU diagnostic-only); weight scope is view level (region/per-pixel scope requires benchmark evidence). User Confirmed / manually edited Stable Masks are exempt from automatic downweighting — user intent outranks internal consensus; Review-state Views follow standard reliability. Anti-self-confirmation guardrails are structural constraints with calibrated parameters: lagged consensus (revision-k weights from consensus k−1), warm-up uniform weighting, non-zero `r_min` floor, frontier protection for newly-seen foreground, stronger penalty for contradiction in well-observed high-confidence regions, and a maximum-revisions cap. Policy runs under `experimental-v*` identity until promoted by explicit key change.  
+_Avoid_: V downweighting, silent Stable Mask modification, Participation equivalence
+
+**Core Target Denominator**  
+Observation Coverage's Core Target denominator starting from Conservative Seed Support and expanding monotonically — consensus/evidence-driven growth, never shrink within a target lifecycle. During shadow evaluation, seed-based and whole-Target-Splat coverage are reported side by side for calibration.  
+_Avoid_: self-shrinking denominator, whole-Splat-only denominator as end state
+
+**View Utility**  
+The prospective measure that scores candidate CameraBindings by expected marginal value for the next acquisition step. Realized measures (`Observation Coverage`, `View Diversity`) describe obtained observations; View Utility only evaluates candidates; `Lift Readiness` alone gates Candidate publication — the planner may consume readiness reasons but never takes over publication authority. Calibration scope: predicted marginal Visible Mass gain over the Core Target denominator, directional-diversity increment, duplication penalty, and feasibility/cost; semantic-disambiguation terms wait until Reliability establishes Uncertain states. The policy is versioned and deterministically replayable with a deterministic tie-break. The first post-Anchor View is chosen by a deterministic hint-based rule (no consensus exists to score against); every later View is utility-driven. Candidates come from a layered pool (existing hint-offset machinery plus local sphere sampling around the hint center, filtered through existing feasibility checks). Rescoring runs incrementally after each Included publication. Budget structure is a dual cap (view-count hard maximum + latency/cost ceiling); failed Views never consume view budget and trigger bounded replacement with a stage-failure circuit breaker.  
+_Avoid_: merged single score across realized/prospective/readiness, planner-owned Candidate publication, hardcoded trajectory family
+
+**Acquisition UI**  
+During the loop the Browser shows a minimal status surface only: current phase (View k / evaluating), normal existing View inspector entries, terminal stop reason, and readiness state. Live coverage/utility numbers stay out of the default presentation (diagnostics mode may expose them during calibration). A dedicated Cancel control terminates the running loop immediately (preserving all completed artifacts per attempt semantics); it is not a revival of retired planning controls — persistent Stop/Generate More controls remain retired, and post-stop continuation remains an unset product decision. Manual Mask edits on Generated Views keep the User Confirmed reliability exemption.  
+_Avoid_: live numeric dashboards, retired planning-control revival

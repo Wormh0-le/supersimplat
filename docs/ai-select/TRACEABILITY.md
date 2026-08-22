@@ -1,4 +1,9 @@
-# Final Spec v1.3 → Ticket Traceability Matrix — v2.38
+# Final Spec v1.3 → Ticket Traceability Matrix (historical coverage record) — v2.38
+
+Status: **historical coverage record — the v1 core graph is implemented and
+closed against Final Spec v1.3; the current normative specification is Final
+Spec v2.0 (accepted 2026-08-22) and the active planning surface is
+`docs/ai-select/TICKET-GRAPH-V2.md`**
 
 A requirement counts as covered only when a mapped parent Ticket or explicitly
 mapped execution stage contains acceptance, failure, validation or migration
@@ -8,6 +13,15 @@ Ticket 16A–16G are execution stages under their parent Tickets and preserve th
 parent requirement mapping. Ticket 16B owns and has completed the accepted
 current-spec and ADR correction; Tickets 16C–16G completed the accepted
 Inspector, shell, Work Area, Toolbar and obsolete-control closure deltas.
+
+## Supersession status
+
+Final Spec v2.0 was accepted on 2026-08-22 and supersedes Final Spec v1.3;
+ADRs 0020/0021 are accepted with it. The R001–R063 matrix below is retained
+as the historical coverage record of the implemented v1 core graph and is not
+the current requirement set. v2.0 requirements enter this matrix when mapped
+to the V2x tickets in `docs/ai-select/TICKET-GRAPH-V2.md`. Runtime behavior
+remains v1.3 until each corresponding V2x ticket lands.
 
 | ID   | Requirement                                                                                                            | Ticket(s)                                                      |
 | ---- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -149,4 +163,5 @@ hardening and Ticket 22 implements the final legacy/reference contraction.
 - next implementation Ticket: none;
 - next implementation subticket: none;
 - optional nonblocking Ticket: 10;
-- current normative spec: Final Spec v1.3.
+- current normative spec: Final Spec v2.0 (accepted 2026-08-22); the rows
+  above are historical coverage of Final Spec v1.3.

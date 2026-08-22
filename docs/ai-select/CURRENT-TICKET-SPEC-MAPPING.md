@@ -1,12 +1,28 @@
-# Current Final Spec v1.3 → Ticket Mapping — v2.38
+# Final Spec v1.3 → Ticket Mapping (historical provenance) — v2.38
 
-Status: **current normative ticket mapping — Tickets through 22 implemented; core graph closed**
+Status: **historical provenance — the v1 core graph (Tickets through 22) is
+implemented and closed; the current normative specification is Final Spec
+v2.0; the active planning surface is `docs/ai-select/TICKET-GRAPH-V2.md`**
 
-This file maps every active AI Select parent Ticket to `docs/specs/ai-select-final-spec-v1.3.md`.
+This file maps every implemented AI Select v1 parent Ticket to its authority
+at implementation time, `docs/specs/ai-select-final-spec-v1.3.md`.
 
 Final Spec v1.1, Amendments 001–005 and Final Spec v1.2 are historical. ADR 0016 supersedes conflicting route/backend/planner details in ADR 0014 and DG-24 through DG-26. ADR 0017 is current where TargetGeometryHint Geometry Quality and Prompt Support semantics are involved. ADR 0018 supersedes current-facing multi-result authoring and `2–4` / Generate More clauses in ADR 0016.
 ADR 0019 binds the production Direct Evidence Candidate, calibrated readiness
 and checksum-bound release identity implemented by Ticket 21.
+
+## Supersession status
+
+Final Spec v2.0 (`docs/specs/ai-select-final-spec-v2.0.md`) was accepted on
+2026-08-22 and supersedes Final Spec v1.3 as the normative specification;
+ADR 0020 (auto-publication consent change at the `ready-and-low-marginal-gain`
+terminal) and ADR 0021 (kernel-internal depth readouts + depth-classified
+Negative Mass) are accepted with it. The table below is retained as the
+historical provenance record of the implemented v1 core graph against Final
+Spec v1.3 — it must not be read as the current requirement set. Runtime
+behavior transitions to v2.0 only as the V2x tickets in
+`docs/ai-select/TICKET-GRAPH-V2.md` are implemented; until each behavior
+lands, shipped behavior remains v1.3.
 
 All 31 parent Ticket files carry a direct current mapping to Final Spec v1.3.
 Ticket 14A–14D and post-closure Ticket 16A–16G are implementation stages

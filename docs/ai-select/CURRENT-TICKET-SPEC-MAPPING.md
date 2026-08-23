@@ -6,36 +6,38 @@ Branch: `ai-select-v1`
 
 ## Authority
 
-1. `docs/specs/ai-select-final-spec-v2.0-amendment-003-deterministic-bounded-consensus-recurrence.md`
-2. `docs/specs/ai-select-final-spec-v2.0-amendment-002-seed-discovery-depth-staging.md`
-3. `docs/specs/ai-select-final-spec-v2.0-amendment-001-expert-recovery.md`
-4. `docs/specs/ai-select-final-spec-v2.0.md`, except where amended
-5. this mapping
-6. ADR 0024
-7. ADR 0023
-8. ADR 0022
-9. residual ADR 0021
-10. ADR 0020
-11. carried-over ADR 0019, residual ADR 0018, and unconflicted ADRs 0016/0017/0013/0015
-12. context amendments 003/002/001, then root `CONTEXT.md`
-13. `docs/ai-select/TICKET-GRAPH-V2.md`
-14. `docs/ai-select/V2-REVIEW-STATUS.md`
-15. affected ticket, implementation, tests, runtime declarations, and benchmark evidence
+1. `docs/specs/ai-select-final-spec-v2.0-amendment-004-consensus-readout-regional-reliability.md`
+2. `docs/specs/ai-select-final-spec-v2.0-amendment-003-deterministic-bounded-consensus-recurrence.md`
+3. `docs/specs/ai-select-final-spec-v2.0-amendment-002-seed-discovery-depth-staging.md`
+4. `docs/specs/ai-select-final-spec-v2.0-amendment-001-expert-recovery.md`
+5. `docs/specs/ai-select-final-spec-v2.0.md`, except where amended
+6. this mapping
+7. ADR 0025
+8. ADR 0024
+9. ADR 0023
+10. ADR 0022
+11. residual ADR 0021
+12. ADR 0020
+13. carried-over ADR 0019, residual ADR 0018, and unconflicted ADRs 0016/0017/0013/0015
+14. context amendments 004/003/002/001, then root `CONTEXT.md`
+15. `docs/ai-select/TICKET-GRAPH-V2.md`
+16. `docs/ai-select/V2-REVIEW-STATUS.md`
+17. affected ticket, implementation, tests, runtime declarations, and benchmark evidence
 
 Final Spec v1.3 remains historical provenance for the shipped baseline under `docs/ai-select/history/v1/`.
 
 ## Runtime and planning status
 
 ```text
-normative target          = Final Spec v2.0 + Amendments 001/002/003
+normative target          = Final Spec v2.0 + Amendments 001–004
 shipped runtime baseline  = implemented Final Spec v1.3
 v2 implementation status  = not started
 planning phase            = pre-implementation review
 ticket in flight          = none
 agent-ready V2 stages     = none
 reviewed parent direction = V2A, V2B
-accepted recurrence model = Q4-B for V2C/V2D/V2E
-next review item          = Q5 consensus readout + reliability residual
+accepted cross-ticket     = Q4-B recurrence; Q5-D readout/residual
+next review item          = Q6 q/s update + Reliability normalization + convergence
 ```
 
 Accepted scope or a reviewed cross-ticket decision does not make an implementation stage agent-ready.
@@ -70,10 +72,22 @@ Accepted scope or a reviewed cross-ticket decision does not make an implementati
 - Reliability iteration `r` consumes only q/s from iteration `r-1`;
 - one public atomic Consensus Revision may contain multiple private Solver Iterations;
 - View arrival order and cache history cannot define canonical output;
-- Core/Envelope/Frontier are frozen during the solve;
-- Scope Delta commits only after the solve and affects a subsequent solve;
-- warm/incremental solve is an optimization and must agree with a cold canonical solve;
+- Core/Envelope/Frontier/Context are frozen during the solve;
+- Scope Delta commits only after the solve and affects a later solve;
+- warm/incremental solve must agree with a cold canonical solve;
 - non-convergence is Limited/fail-closed and cannot publish Candidate.
+
+### Consensus readout and Reliability
+
+- production uses a multi-channel same-decision readout, not a single whole-frame soft mask;
+- support-aware membership is `q̃=0.5+s(q-0.5)`;
+- readout moments derive soft foreground, knownness, Core fraction, and Frontier fraction under valid semantic-scope mass;
+- render-only/out-of-scope Gaussians continue to occlude but do not write semantic moments;
+- Reliability uses separately normalized Strong Positive Interior and Local Negative Ring residuals; Boundary is low-weight/diagnostic and Far Neutral is excluded;
+- positive disagreement receives bounded asymmetric Frontier/unknown protection; negative-ring conflict does not receive a symmetric exemption;
+- insufficient comparison support yields neutral weight with a diagnostic reason;
+- User Confirmed/manual observations retain semantic weight `1.0`;
+- leave-one-out consensus is a nonblocking offline reference benchmark, not the production path.
 
 ## Current v2 mapping
 
@@ -81,9 +95,9 @@ Accepted scope or a reviewed cross-ticket decision does not make an implementati
 |---|---|---|---|
 | V2A | projected depth + CWED moments + V2AX sidecar | reviewed-awaiting-decomposition | split A1/A2/AX; thresholds and GPU gates remain calibration-owned |
 | V2B | S0/S1 Seed + Core/Envelope/Frontier | reviewed-awaiting-decomposition | split Seed, scope state, promotion, and shadow validation stages |
-| V2C | q+s Consensus + bounded canonical solve | review-required / Q4 accepted | Q5 readout; q/s transforms; convergence; memory/identity |
-| V2D | lagged Observation Reliability | review-required / Q4 accepted | Q5 residual/gating; warm-up; robust normalization; exemptions |
-| V2E | weighted aggregation + two-phase scope revision | review-required / Q4 accepted | q/s update; Frontier Debt; convergence tolerance; scope thresholds |
+| V2C | q+s Consensus + bounded solve + multi-channel readout | review-required / Q4+Q5 accepted | Q6 q/s transforms; convergence; channel layout/performance; identity |
+| V2D | lagged regional Observation Reliability + LOO reference | review-required / Q4+Q5 accepted | robust normalization; warm-up/floor; degenerate scale; calibration |
+| V2E | weighted aggregation + two-phase scope revision | review-required / Q4+Q5 accepted | q/s update; Frontier Debt; convergence tolerance; scope thresholds |
 | V2F | View Utility | review-required | prediction probe, approximation, cost, exploration schedule |
 | V2G | Budgets + termination | review-required | outcome taxonomy, deterministic cost, continuation budget |
 | V2H | Terminal publication | review-required | Readiness × StopReason matrix and Limited consent |
@@ -107,10 +121,10 @@ The following v1.3 foundations remain implemented and must stay green:
 
 ### Current
 
-- Final Spec v2.0 with Amendments 001/002/003;
-- ADRs 0024/0023/0022, residual ADR 0021, ADR 0020, and carried-over nonconflicting ADRs;
+- Final Spec v2.0 with Amendments 001–004;
+- ADRs 0025/0024/0023/0022, residual ADR 0021, ADR 0020, and carried-over nonconflicting ADRs;
 - current mapping, traceability, manifest, review status, graph, and V2 ticket envelopes;
-- context amendments 003/002/001 over root `CONTEXT.md`.
+- context amendments 004/003/002/001 over root `CONTEXT.md`.
 
 ### Historical
 

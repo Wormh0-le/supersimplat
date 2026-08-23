@@ -6,17 +6,18 @@ Read this file when work changes AI Select behavior, terminology, product scope,
 
 Read sources in this order:
 
-1. Final Spec v2.0 Amendment 003
-2. Final Spec v2.0 Amendment 002
-3. Final Spec v2.0 Amendment 001
-4. Final Spec v2.0 where not amended
-5. `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`
-6. ADR 0024, ADR 0023, ADR 0022, residual ADR 0021, ADR 0020
-7. carried-over nonconflicting ADRs
-8. context amendments 003/002/001, then root `CONTEXT.md`
-9. `docs/ai-select/TICKET-GRAPH-V2.md`
-10. `docs/ai-select/V2-REVIEW-STATUS.md`
-11. affected ticket, implementation, tests, runtime declarations, and benchmark records
+1. Final Spec v2.0 Amendment 004
+2. Amendment 003
+3. Amendment 002
+4. Amendment 001
+5. Final Spec v2.0 where not amended
+6. `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`
+7. ADR 0025, ADR 0024, ADR 0023, ADR 0022, residual ADR 0021, ADR 0020
+8. carried-over nonconflicting ADRs
+9. context amendments 004/003/002/001, then root `CONTEXT.md`
+10. `docs/ai-select/TICKET-GRAPH-V2.md`
+11. `docs/ai-select/V2-REVIEW-STATUS.md`
+12. affected ticket, implementation, tests, runtime declarations, and benchmark records
 
 Surface conflicts rather than silently choosing one source.
 
@@ -29,9 +30,9 @@ Surface conflicts rather than silently choosing one source.
 ## Product orientation
 
 - Automatic acquisition is default.
-- Expert Recovery is secondary and available only when no loop runs and the target is active.
+- Expert Recovery is secondary after the loop stops.
 - Recovery retains Add Observation and Continue Acquisition.
-- Recovery never bypasses Stable Mask, Participation, Direct Evidence, Candidate identity, or explicit Native operations.
+- Recovery never bypasses Stable Mask, Participation, Direct Evidence, Candidate identity, or Native operations.
 
 ## Seed and discovery vocabulary
 
@@ -41,21 +42,25 @@ Surface conflicts rather than silently choosing one source.
 - Discovery Envelope is seed-independent potential support.
 - Discovery Frontier is reversible and cannot directly become Candidate.
 - Frontier Debt is distinct from Core Observation Coverage.
-- CWED is an internal statistic, not authoritative surface depth.
-- Depth-classified Negative Evidence is experimental; current production has one N channel.
+- CWED is internal, not authoritative surface depth.
+- Classified Negative Evidence is experimental.
 
-## Consensus vocabulary
+## Consensus and Reliability vocabulary
 
-- `q` is continuous membership tendency, not a calibrated probability or Candidate membership.
-- `s` is support/knownness and distinguishes unknown from high-support conflict.
-- A Solver Iteration is private; a Consensus Revision is one atomic canonical result.
-- The canonical full solve is deterministic, bounded, and independent of View arrival order.
-- Scope is frozen during a solve; Scope Delta commits only afterward.
-- Non-converged consensus cannot establish Ready or publish Candidate.
+- `q` is membership tendency, not calibrated probability or Candidate membership.
+- `s` is support/knownness and separates unknown from high-support conflict.
+- a Solver Iteration is private; a Consensus Revision is one atomic canonical result.
+- Support-aware Membership is `q̃=0.5+s(q-0.5)`.
+- Consensus Readout is Companion-internal same-decision semantic projection, not visibility truth.
+- Trusted Comparison Support requires valid semantic-scope mass and knownness.
+- Positive Frontier Protection is bounded and asymmetric.
+- Regional Reliability excludes Far Neutral and normalizes positive/negative/boundary regions separately.
+- leave-one-out Reliability is reference-only unless later promoted.
+- non-converged consensus cannot establish Ready or Candidate.
 
 ## Product boundaries
 
-AI Select remains a native SuperSplat Selection Tool. Browser owns user-visible target state and Native Selection. Seed, Frontier, consensus, reliability, View Utility, and Candidate are derived state and do not mutate Native Selection by themselves. Complete Contributor remains reference/debug only.
+AI Select remains a native SuperSplat Selection Tool. Browser owns user-visible target state and Native Selection. Seed, Frontier, consensus, Reliability, View Utility, and Candidate are derived state and do not mutate Native Selection by themselves. Complete Contributor remains reference/debug only.
 
 ## Historical material
 

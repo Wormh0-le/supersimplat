@@ -3,11 +3,10 @@
 ## Current control plane
 
 ```text
-Final Spec v2.0 Amendment 003
-→ Amendment 002
-→ Amendment 001
+Final Spec v2.0 Amendment 004
+→ Amendment 003 → Amendment 002 → Amendment 001
 → Final Spec v2.0
-→ ADR 0024 / 0023 / 0022 / residual 0021 / 0020
+→ ADR 0025 / 0024 / 0023 / 0022 / residual 0021 / 0020
 → CURRENT-TICKET-SPEC-MAPPING.md
 → V2-REVIEW-STATUS.md
 → TICKET-GRAPH-V2.md
@@ -24,27 +23,15 @@ Anchor
 → Expert Recovery when needed
 
 Conservative Seed
-→ Core Target
-+
-seed-independent Discovery Envelope / reversible Frontier
-→ Core Coverage + Frontier Debt
-→ deterministic bounded q+s Consensus recurrence
+→ Core + seed-independent Envelope/Frontier
+→ deterministic bounded q+s Consensus
+→ same-decision P/K/C/F readout
+→ trusted regional Reliability
+→ weighted P/N + raw V
 → View Utility and bounded acquisition
 ```
 
-Current production keeps one Negative Mass channel. Depth-classified N is a nonblocking V2AX experiment.
-
-The accepted consensus recurrence uses:
-
-```text
-finite Seed prior + uniform aggregate
-→ q^(0), s^(0)
-→ lagged Reliability
-→ weighted P/N + raw V
-→ bounded q/s update
-→ one atomic Consensus Revision
-→ post-solve Scope Delta
-```
+Production keeps one Negative Mass channel. Classified N and leave-one-out Reliability are nonblocking experiment/reference paths.
 
 ## Current documents
 
@@ -53,22 +40,23 @@ finite Seed prior + uniform aggregate
 - `TRACEABILITY.md` — amended v2 requirement coverage;
 - `manifest.json` — machine-readable control plane;
 - `TICKET-GRAPH-V2.md` — provisional parent graph;
-- context amendments 003/002/001 — temporary vocabulary overlays;
+- context amendments 004/003/002/001 — temporary vocabulary overlays;
 - `tickets/v2/` — reviewed/review-required parent envelopes.
 
 ## Documentation lifecycle
 
 - Amendments and later ADRs supersede conflicting clauses without rewriting accepted history.
 - ADR 0021 is retained and marked partially superseded.
-- Old V2A/V2B envelope files were deleted because they were unimplemented temporary planning artifacts.
-- Implemented v1 control-plane snapshots remain under `history/v1/`.
+- Old unimplemented V2A/V2B envelopes were deleted because they were temporary planning artifacts.
+- Implemented v1 snapshots remain under `history/v1/`.
 - Research lives under `docs/research/`; disposable probes under `.scratch/experiments/`.
 - Context overlays must eventually be folded into root `CONTEXT.md` in one controlled cleanup, then deleted with superseded definitions.
 
 ## Next review
 
 ```text
-Q5
-Consensus readout + Reliability residual:
-soft foreground, support/trust, Frontier protection, and pixel gating
+Q6
+q/s initialization and update
++ residual-to-Reliability normalization
++ convergence contract
 ```

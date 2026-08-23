@@ -34,7 +34,7 @@ rtk npm run test:companion
 
 The following paths are alternatives unless a change spans multiple seams; they are not a cumulative checklist for every edit.
 
-- **Documentation:** validate affected terminology, links, commands, mapping, and traceability. Do not run code suites for content-only changes unless executable behavior or generated artifacts changed.
+- **Documentation/Issues:** validate affected terminology, immutable snapshot links, Issue bodies/comments, dependencies, labels, commands, and acceptance evidence. Do not run code suites for content-only changes unless executable behavior or generated artifacts changed.
 - **Browser TypeScript:** run the nearest existing check that exercises the changed state or boundary. Use repository-level `rtk npm test` for broad type/domain/protocol changes or when repository-level confidence is required.
 - **Transport/protocol:** exercise both TypeScript and Python validation for the changed contract, including malformed input and applicable identity, replay, cancellation, or stale-result cases. Build when bundling or serialized browser behavior is affected.
 - **UI/localization:** run lint/locales/build only as relevant, then inspect the affected user-visible states in the browser. Do not replay every lifecycle state for a local visual change.
@@ -62,9 +62,10 @@ Mocked, CPU-only, autograd/reference, or structural validation does not establis
 In addition to the global change report, state when material:
 
 - which runtime or contract seam changed;
+- which exact child Issue authorized the work and whether its acceptance criteria are satisfied;
 - whether production GPU validation actually ran;
-- whether current spec, ADR, runtime lock, protocol, policy, or calibration changed;
-- whether the result is a reference PoC, production same-decision path, or debug backend change;
+- whether runtime lock, protocol, policy, calibration, production identity, or current Issue authority changed;
+- whether the result is a reference PoC, shadow/experimental path, production same-decision path, or debug backend change;
 - which project invariant remains unverified.
 
-Never describe mocked, partial, approximate, reference-only, or unverified GPU work as production-complete.
+Never describe mocked, partial, approximate, reference-only, shadow-only, or unverified GPU work as production-complete.

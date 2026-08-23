@@ -6,7 +6,7 @@ SuperSimPlat extends the upstream SuperSplat browser editor with AI Select, an o
 
 - Prefix every agent-run external shell command with `rtk`, including each command in a chain.
 - `rtk npm test` is the integrated TypeScript typecheck and repository test entry point, including Companion tests; there is no standalone typecheck script.
-- Before implementing any Final Spec v2.0 ticket, read `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md` and `docs/ai-select/V2-REVIEW-STATUS.md`. A V2 ticket is not agent-ready unless both documents explicitly say so.
+- AI Select v2.0 planning authority lives in [Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37). Parent capability Issues #38–#47 are reviewed envelopes, not agent-ready implementation tickets. Before implementation, read #37 plus the exact child stage Issue, its comments, dependencies, and validation contract. Implement only a child Issue explicitly linked from #37 and labeled `ready-for-agent`.
 
 ## Progressive guidance
 
@@ -20,6 +20,6 @@ Read only the branch relevant to the task:
 - [Companion and Python](docs/agents/companion-python.md) — service runtime, readiness, capacity, models, dependencies, or Python implementation.
 - [Renderer and Evidence](docs/agents/renderer-and-evidence.md) — gsplat, CUDA, authoritative RGB, P/N/V Evidence, working sets, lifting, or reference Contributor.
 - [Project verification](docs/agents/execution-and-verification.md) — project commands, validation scope, builds, GPU evidence, or completion claims.
-- [Documentation and traceability](docs/agents/documentation.md) — `CONTEXT.md`, specs, ADRs, feature documents, tickets, comments, or traceability.
+- [Documentation and traceability](docs/agents/documentation.md) — `CONTEXT.md`, GitHub Issue authority, immutable historical snapshots, comments, or traceability.
 - [Chinese product and technical writing](docs/agents/chinese-writing.md) — Chinese UI copy, product documentation, release notes, runbooks, or issue/PR prose.
 - [GitHub workflow](docs/agents/issue-tracker.md) — issues, triage labels, PR identification, or Wayfinder operations.

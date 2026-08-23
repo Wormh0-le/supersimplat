@@ -2,7 +2,7 @@
 
 Status: current reusable interface guidance
 
-本文沉淀 SuperSimPlat 编辑器中可跨功能复用的界面规则。领域语义、生命周期和 Ticket 验收仍以 `CONTEXT.md`、Final Spec 和功能设计文档为准；本文件不复制产品状态机。
+本文沉淀 SuperSimPlat 编辑器中可跨功能复用的界面规则。领域语义、生命周期和功能验收以 [AI Select v2.0 Wayfinder #37](https://github.com/Wormh0-le/supersimplat/issues/37)、对应功能 Issue 和根 `CONTEXT.md` 为准；本文件不复制产品状态机。
 
 ## 方向与感受
 
@@ -88,7 +88,7 @@ Status: current reusable interface guidance
 - 调整 Anchor/View 时可以显示靠近活动视锥体的透明 Spatial Edit HUD。HUD 只反馈当前任务、模式、草稿/渲染状态和已有数据可可靠计算的构图信息；它不承载按钮、菜单或独立状态机。
 - 3D 草稿可以高频本地更新；Dock 只在稳定渲染/发布边界更新 RGB/Mask，不追逐逐帧姿态。
 - Navigator 与 3D Camera Frustum 应共享同一 View identity、active/hover presentation 和双向选择语义；不要建立第二套空间选择模型。
-- 具体 Pause、Resume/Continue、Anchor/Observation 提交边界和验收矩阵见 [V2J Q11 合同](../docs/ai-select/tickets/v2/V2J-acquisition-ui-expert-recovery.md)。
+- 具体 Pause、Resume/Continue、Anchor/Observation 提交边界和验收矩阵见 [V2J Issue #47](https://github.com/Wormh0-le/supersimplat/issues/47)。
 
 ### 状态栏
 
@@ -187,12 +187,10 @@ Status: current reusable interface guidance
 
 ## 当前参考
 
-- [AI View Dock 布局设计](../docs/ai-select/ai-view-dock-layout.md)
-- [AI Select Toolbar 布局与交互设计](../docs/ai-select/ai-select-toolbar-layout.md)
-- [V2J Q11 Progressive Acquisition UI + Expert Recovery](../docs/ai-select/tickets/v2/V2J-acquisition-ui-expert-recovery.md)
-- [Ticket 16A 实现合同](../docs/ai-select/tickets/16A-candidate-viewport-presentation.md)
-- [Tickets 16B–16G 视觉走查修正](../docs/ai-select/tickets/README.md)
-- [Ticket 17 目标生命周期合同](../docs/ai-select/tickets/17-applied-undo-fix-restart-multitarget.md)
-- [Ticket 18 Suspended 与精确撤销合同](../docs/ai-select/tickets/18-scene-mutation-suspended-undo.md)
+- [AI Select v2.0 Wayfinder #37](https://github.com/Wormh0-le/supersimplat/issues/37)
+- [V2J Progressive Acquisition UI + Expert Recovery #47](https://github.com/Wormh0-le/supersimplat/issues/47)
+- [v1.3 AI View Dock immutable snapshot](https://github.com/Wormh0-le/supersimplat/blob/aacad57fc534acc43522ca4d51d41149b5ee9692/docs/ai-select/ai-view-dock-layout.md)
+- [v1.3 AI Select Toolbar immutable snapshot](https://github.com/Wormh0-le/supersimplat/blob/aacad57fc534acc43522ca4d51d41149b5ee9692/docs/ai-select/ai-select-toolbar-layout.md)
+- [v1 implementation-ticket history snapshot](https://github.com/Wormh0-le/supersimplat/blob/aacad57fc534acc43522ca4d51d41149b5ee9692/docs/ai-select/tickets/README.md)
 
-当功能设计与本文存在表达差异时，以当前 Final Spec、`CONTEXT.md` 和对应功能设计/验收合同为准，再回写本文中可复用的新规则。
+当功能设计与本文存在表达差异时，以 #37、当前 owning Issue、根 `CONTEXT.md` 的非冲突稳定词汇和已实现代码合同为准，再回写本文中可复用的新规则。

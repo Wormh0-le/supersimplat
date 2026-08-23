@@ -1,42 +1,19 @@
-# AI Select Ticket Contracts
+# AI Select Ticket Lifecycle
 
-This directory is the durable Ticket control plane for AI Select v1.
+## Current v2 planning
 
-- Parent Ticket count remains 31 as tracked by `../manifest.json`.
-- `14A`–`14D` are execution stages under parent Ticket 14. `16A` is the
-  implemented post-closure presentation baseline under parent Ticket 16, and
-  `16B`–`16G` are its operator-visual-review follow-up stages. They do not
-  create a separate normative product graph or increase the parent Ticket
-  count.
-- Final Spec v1.3 remains the top authority.
-- Completed Tickets retain historical implementation evidence. Their
-  user-facing Retry/Generate More/Regenerate/Stop/3D Restart controls and the
-  universal "automatic result becomes Editing" wording are superseded where
-  Tickets 16B–16G and 17 state the accepted current product contract; retained
-  attempt/replay, planner protocol and automatic Generated-View publication
-  infrastructure is not removed by that supersession.
+`tickets/v2/` contains accepted v2.0 capability umbrellas V2A–V2J. They are **review-required and not agent-ready**. Read:
 
-Current implemented chain and frontier:
+1. `../CURRENT-TICKET-SPEC-MAPPING.md`
+2. `../V2-REVIEW-STATUS.md`
+3. `../TICKET-GRAPH-V2.md`
 
-```text
-14A → 14B → 14C → 14D → 13 → 15 → 16 → 16A
-                                             │
-                                             ▼
-                                            16B
-                                  ┌──────────┼──────────┐
-                                  ▼          ▼          ▼
-                                 16C        16D        16F
-                                  └────┬─────┘          │
-                                       ▼                │
-                                      16E───────────────┘
-                                       │
-                                       ▼
-                                      16G → 17 → 18 → 19 → 20 → 21 → 22
-```
+before using any V2 ticket.
 
-14A through 14D, parent Ticket 14, Tickets 13 through 15, Ticket 16's
-application core and Tickets 16A–16G are implemented. The 16A operator visual
-walkthrough is complete and produced the accepted follow-up contracts in
-16B–16G. Tickets 17–22 are implemented and the core execution graph is closed.
+A V2 parent ticket must be split into small TDD stages after its review gate closes.
 
-Do not add active Ticket contracts under `.scratch/ai-select-v1/issues/`.
+## Historical v1 implementation records
+
+The numbered and lettered ticket files directly under `tickets/` are implemented Final Spec v1.3 history. They remain for provenance, regression and code archaeology. They do not define the current implementation frontier and must not override Final Spec v2.0.
+
+Do not add new v2 work to root-level v1 ticket files.

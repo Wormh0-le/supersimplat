@@ -2,34 +2,39 @@
 
 Read this file when work changes AI Select behavior, terminology, product scope, current specification authority, or legacy semantics.
 
-## Authority
+## Current authority
 
-Use `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md` as the current entry point. Follow it to the authoritative Final Spec, active non-superseded ADRs, implementation ticket, and traceability artifacts for the affected scope.
+The current normative target is **Final Spec v2.0**. The shipped runtime remains the implemented v1.3 baseline until each V2 cutover ticket lands.
 
-Then inspect, as relevant:
+Read sources in this order:
 
-1. `CONTEXT.md` for stable domain vocabulary;
-2. the nearest implementation and tests;
-3. dependency and runtime declarations when rendering, inference, CUDA, installation, calibration, or model identity is affected.
+1. `docs/specs/ai-select-final-spec-v2.0.md`
+2. `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`
+3. `docs/adr/0021-kernel-internal-depth-readouts-and-depth-classified-negative-mass.md`
+4. `docs/adr/0020-auto-publish-candidate-at-ready-low-gain-terminal.md`
+5. carried-over ADR 0019, then residual ADR 0018 and unconflicted ADRs 0016/0017/0013/0015
+6. `CONTEXT.md` for stable vocabulary only
+7. `docs/ai-select/TICKET-GRAPH-V2.md`
+8. `docs/ai-select/V2-REVIEW-STATUS.md`
+9. the affected V2 ticket, implementation, tests, runtime declarations, and benchmark records
 
-Current specifications and active ADRs govern product behavior. Old implementations, fixtures, tests, tickets, and historical specifications do not restore superseded semantics. Frozen benchmark artifacts are authoritative only for the benchmark data they record.
+Surface conflicts instead of silently choosing one source.
 
-Surface conflicts among the mapping, current spec, active ADRs, and implementation instead of silently choosing one.
+## Implementation gate
 
-## Product boundaries
+V2A–V2J are accepted product scope but are under pre-implementation review. Do not implement a V2 ticket merely because its file exists. It becomes agent-ready only when the current mapping and review-status document both say so.
 
-- AI Select is a SuperSplat Selection Tool, not a separate semantic-object workspace.
-- The browser owns one user-visible Current Target Context; Companion-computed artifacts do not transfer product-state ownership.
-- Authoritative AI observation RGB comes from locked gsplat, not a PlayCanvas or framebuffer capture.
-- Operator interaction produces one usable Mask or semantic unavailable; Included Stable Masks drive production P/N/V Evidence and lifting.
-- AI Candidate is derived state. It mutates Native Selection only through explicit Set, Add, Remove, or Intersect operations backed by native edit history.
-- Cross-target persistent truth is Native Selection and Native EditHistory, not a restorable AI target-session stack.
-- RGB Ready, Mask Ready, Evidence Ready, and Candidate Ready are distinct states.
-- Complete per-pixel Contributor is a reference/debug capability, not the production lifting contract.
-- Do not add user-facing Candidate provenance, Gaussian-level Evidence inspection, persistent Candidate history, or restoration of previous target contexts without a new specification decision.
+## Product boundaries carried into v2.0
 
-## Legacy semantics
+- AI Select is a native SuperSplat Selection Tool, not a separate semantic-object workspace.
+- The browser owns one user-visible Current Target Context and all user-visible product state.
+- Authoritative AI observation RGB comes from locked gsplat.
+- Stable Masks and Participation remain distinct from P/N/V Evidence, provisional consensus, Candidate, and Native Selection.
+- AI Candidate is derived state. It changes Native Selection only through explicit Set, Add, Remove, or Intersect backed by native EditHistory.
+- Complete per-pixel Contributor remains reference/debug only.
+- RGB Ready, Mask Ready, Evidence Ready, and Candidate Ready remain distinct.
+- Provisional consensus, reliability, and View Utility are not ownership authorities and cannot mutate Native Selection.
 
-Treat ObjectSelectionSession, Prompt Log, Mask Track/Mask Set, New/Add/Remove/Refine inference modes, ordered video-tracker orchestration, PlayCanvas-captured Anchor RGB, and preview-confirm-close session flow as legacy or reference concepts.
+## Historical material
 
-Reuse validated primitives only when they satisfy the current contract. Qualify historical terms as `legacy`, `reference`, or `debug` when ambiguity is possible. `Add` and `Remove` in current product language refer to native Candidate application operations.
+Final Spec v1.3 and its implemented ticket graph remain historical provenance for the shipped baseline. Historical mapping, traceability, manifest, and graph live under `docs/ai-select/history/v1/`. Root-level v1 ticket files and old acceptance evidence are retained only as implemented-history records unless a current document explicitly references them.

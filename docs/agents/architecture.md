@@ -2,57 +2,65 @@
 
 Read this file for runtime ownership, cross-runtime contracts, repository seams, vendored code, or migration work.
 
+## Runtime baseline
+
+Final Spec v2.0 is the target architecture. The code remains the implemented v1.3 runtime until V2 tickets land through explicit capability, schema, policy, and production-identity cutovers.
+
 ## Runtime ownership
 
 ### Browser editor
 
-The browser owns user-visible product state:
+The Browser owns user-visible product state and orchestration:
 
-- scene and splat state, Stable Gaussian IDs, and current-index mapping;
-- editor-authored CameraBindings and validation/registration of planned bindings;
+- scene/splat state, Stable Gaussian IDs, and current-index mapping;
 - Current Target Context, AI Views, Mask versions, Participation, Candidate, and Uncertain presentation;
-- native Selection, EditHistory, and explicit Candidate application.
+- editor-authored CameraBindings and validation/registration of planner-produced bindings;
+- the future acquisition-loop state machine, progress/cancel presentation, and per-step request driving;
+- Native Selection, EditHistory, and explicit Candidate application.
 
-The browser remains the product-state authority even when the Companion computes an artifact.
+The Browser may consume Companion-computed readiness and stop reasons, but it does not compute or publish a Candidate independently.
 
 ### Selection Service Companion
 
 The Companion owns computation and disposable runtime state:
 
-- locked authoritative gsplat rendering and same-decision P/N/V Evidence;
+- locked authoritative gsplat rendering and same-decision Direct Evidence;
 - SAM inference, TargetGeometryHint, Generated-View planning/rendering, and assessment;
-- Evidence aggregation, Gaussian Lifting, readiness, capacity, caches, and cleanup;
-- complete Contributor only as an explicit reference/debug backend.
+- v2 seed, provisional consensus, reliability, weighted aggregation, View Utility, and Lift Readiness computation after their tickets land;
+- loop-scoped caches/journals keyed by exact target/dependency/policy identity;
+- capacity, cleanup, and reference Contributor diagnostics.
 
-Companion caches never become user-visible View or target-context persistence. Legacy multiplex or video-tracker behavior may remain only behind historical benchmark or compatibility seams unless a later ADR adopts it.
+Companion caches never become user-visible target persistence. No V2 ticket may introduce a Companion-autonomous product session without a new accepted decision.
 
 ## Repository seams
 
-- New current-product browser work converges under `src/ai-select/`.
-- `src/ai-select/mask-service.ts` is the only compatibility boundary allowed to consume the retained internal proposal wire envelope.
-- Native mutations remain owned by existing selection, tool, and edit-history paths.
+- New browser product work converges under `src/ai-select/`.
+- Existing generated-view control is a migration source, not proof that the v2 loop contract is already implemented.
+- `src/ai-select/mask-service.ts` remains the only compatibility boundary for the retained proposal wire envelope.
+- Native mutation remains in existing selection/tool/edit-history paths.
 - Companion implementation and tests live under `selection-service-companion/`.
-- `thirdparty/sam3`, `thirdparty/gsplat`, and `thirdparty/splat_analyzer` are pinned upstream sources. Modify vendored code only when the task explicitly requires it, and account for source pin, build/runtime identity, licensing, validation, and maintenance consequences.
+- `thirdparty/sam3`, `thirdparty/gsplat`, and `thirdparty/splat_analyzer` are pinned upstream sources.
 
-Use code discovery rather than extending this file with a path inventory that can be derived from the repository.
+Use code discovery before writing paths into durable guidance.
 
-## Change routing
+## Cross-runtime changes
 
-For editor-only or Companion-only work, preserve the other runtime's contract unless the requested slice requires a contract change.
+When a Browser/Companion contract changes, inspect and update the complete vertical slice:
 
-For a browser/Companion contract change, inspect and update every affected layer of the vertical slice:
-
-1. TypeScript domain and wire types;
-2. editor-side runtime validation and browser transport;
+1. TypeScript domain/wire types;
+2. editor-side runtime validation and transport;
 3. Python route parsing and validation;
-4. Companion orchestration, state, and artifact construction;
-5. affected tests;
-6. current specifications, ADRs, tickets, and traceability only when their owned semantics change.
+4. Companion orchestration/state/artifact construction;
+5. schema and production-identity migration;
+6. TypeScript, Python, replay, and failure tests;
+7. current spec/ADR/ticket/traceability only when their owned semantics change.
 
-Both sides must enforce the same fail-closed contract. Do not make one side permissive to compensate for the other.
+Both sides must fail closed. Do not make one side permissive to compensate for the other.
 
 ## Migration discipline
 
-Port tracer-bullet slices, not wholesale legacy workflows or large historical commits. Reuse compatible foundations such as Stable ID mapping, SceneSnapshot serialization, locked gsplat RGB, model adapters, Generated-View primitives, Evidence mathematics, native selection/history integration, and benchmark infrastructure only after validating them against the current contract.
-
-Legacy object-selection modules may supply primitives and trust-boundary checks, but their product lifecycle is superseded. Replace tests that assert obsolete behavior rather than preserving obsolete abstractions to keep them green.
+- Use tracer-bullet stages; do not implement an umbrella V2 ticket as one large change.
+- Preserve v1.3 production behavior behind explicit gates until the replacement stage is calibrated and promoted.
+- Experimental policy IDs do not satisfy production readiness.
+- Calibration, policy freeze, production-identity rotation, and final cutover require explicit ownership in the reviewed graph.
+- Reuse Stable IDs, SceneSnapshot, authoritative RGB, Direct Evidence, model adapters, generated-view primitives, native selection/history, and benchmark infrastructure only after checking the current code contract.

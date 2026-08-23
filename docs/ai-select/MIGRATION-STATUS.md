@@ -1,79 +1,38 @@
 # AI Select Documentation Migration Status
 
-Status: **substantive migration complete; historical scratch paths are compatibility-only**
+Status: **v2 current/historical control-plane separation complete**  
+Updated: 2026-08-23
 
 ## Completed
 
-- Stable AI Select planning root established at `docs/ai-select/`.
-- Full 31-parent-ticket Final Spec v1.3 mapping restored and promoted.
-- Ticket graph and control plane promoted through v2.38 with ADR 0018, the
-  implemented single-result / `4–8` initial automatic-View contract. The
-  complete Ticket 16A–16G presentation and obsolete-control closure is
-  recorded, followed by Ticket 17 target-lifecycle closure and Ticket 18
-  semantic suspension/exact-Undo closure, Ticket 19 large-scene render-path
-  hardening, Ticket 20 Direct Evidence closure and Ticket 21 production
-  Candidate/calibration/identity closure and Ticket 22 legacy product/session,
-  Prompt capability and reference-backend contraction. The v2.38
-  eight-pass control-plane audit passes; v2.27 remains
-  historical evidence.
-- Parent Ticket 14 decomposed into executable 14A–14D stage contracts without changing normative product scope.
-- Active Ticket control plane promoted to `docs/ai-select/tickets/`.
-- Planning manifest promoted to `docs/ai-select/manifest.json` and updated with parent/stage frontier fields.
-- Durable traceability, walkthrough, audit, protocol-contract, benchmark-result and browser-walkthrough evidence promoted to `docs/ai-select/`.
-- Executable cross-check/repro, benchmark and browser/GPU harnesses moved to `.scratch/experiments/ai-select-v1/`.
-- `AGENTS.md` source routing updated to stable docs/Ticket locations.
-- Historical `.scratch/ai-select-v1` planning paths reduced to compatibility pointers/readmes rather than duplicate normative content.
-- CI is configured for `ai-select-v1` pushes with integrated `npm test`, build, lint and locale-lint jobs; locked-GPU validation remains a separate environment-specific gate.
-- Final Spec v2.0 accepted 2026-08-22 as a whole-version supersession of
-  Final Spec v1.3, with accepted ADRs 0020 (auto-publication at the
-  `ready-and-low-marginal-gain` terminal) and 0021 (kernel-internal depth
-  readouts + depth-classified Negative Mass). CONTEXT.md migrated to v2.0
-  vocabulary; v1.3 mapping/traceability retained as historical provenance;
-  active implementation planning promoted to
-  `docs/ai-select/TICKET-GRAPH-V2.md` with ticket contracts V2A–V2J under
-  `docs/ai-select/tickets/v2/`.
+- Final Spec v2.0 is the current normative target.
+- The shipped v1.3 runtime is explicitly distinguished from the v2 target.
+- `CURRENT-TICKET-SPEC-MAPPING.md`, `TRACEABILITY.md`, and `manifest.json` now describe v2 planning rather than v1 closure.
+- Exact v1 mapping, traceability, manifest and ticket graph snapshots are preserved under `history/v1/`.
+- `TICKET-GRAPH.md` is now a compatibility redirect instead of a competing authority.
+- `TICKET-GRAPH-V2.md` is marked provisional and review-required.
+- `V2-REVIEW-STATUS.md` blocks implementation until ticket-specific review closes.
+- agent guidance distinguishes accepted v2 scope, shipped v1 behavior, and explicit cutovers.
+- root-level v1 tickets and old audits/evidence are classified as historical.
+- temporary executable work remains under `.scratch/experiments/ai-select-v1/`.
 
-## Directory ownership
+## Current state
 
 ```text
-docs/ai-select/
-  durable planning, Tickets, mappings, manifest, traceability and acceptance evidence
-
-.scratch/experiments/ai-select-v1/
-  executable/disposable experiments, repros and validation harnesses
-
-.scratch/ai-select-v1/
-  compatibility redirects only; no new normative content
+normative target = Final Spec v2.0
+shipped runtime  = Final Spec v1.3 implementation
+review frontier  = V2A, then V2C
+agent-ready      = none
+in flight        = none
 ```
 
-## Remaining compatibility cleanup
+## Remaining work
 
-Old scratch compatibility pointers may be removed in a future cleanup only after any external tooling or local agent configuration that still hardcodes those paths has migrated. They are not authoritative.
+This migration does not resolve the substantive V2 design blockers. The next work is the guided review sequence in `V2-REVIEW-STATUS.md`, followed by ticket decomposition, calibration ownership, production-identity promotion and release qualification.
 
-## Implementation closure
+## Deprecation policy
 
-```text
-next_implementation_ticket = none
-next_implementation_subticket = none
-
-14A Evidence Contract & Working Set (implemented)
-→ 14B Reference Per-View P/N/V Evidence (implemented)
-→ 14C Multi-view Aggregation & Classification (implemented)
-→ 14D Atomic Candidate Publication & Reference Validation (implemented)
-→ 13 Lift Readiness (implemented)
-→ 15 Candidate correction / Re-Lift (implemented)
-→ 16 Native Candidate operations core (implemented)
-→ 16A AI View Dock + Candidate viewport presentation (implemented; operator visual review complete)
-→ 16B single-result product contract (implemented)
-→ 16C Mask state truth + compact Inspector (implemented)
-→ 16D canvas-first shell + stable Navigator (implemented)
-→ 16F compact 3D Toolbar surface (implemented)
-→ 16E 2D Work Area integration (implemented)
-→ 16G obsolete-control removal and visual closure (implemented)
-→ 17 Applied Undo-and-Fix / Restart / multi-target lifecycle (implemented)
-→ 18 Scene mutation suspension / exact Undo recovery (implemented)
-→ 19 Large SceneSnapshot / authoritative render path hardening (implemented)
-→ 20 Same-decision GPU Evidence / artifact hardening (implemented)
-→ 21 Core failure / calibration / release hardening (implemented)
-→ 22 Legacy product / Contributor / SAM / Prompt contraction (implemented)
-```
+- Historical files are retained only when they preserve implementation or decision provenance.
+- Compatibility redirects may remain while external tooling still references them.
+- Redundant intermediate narratives should be deleted rather than maintained as a second source of truth.
+- A deprecated file must say what replaced it and must not advertise a current frontier.

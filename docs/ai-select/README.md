@@ -1,103 +1,61 @@
 # AI Select Documentation
 
-Stable, long-lived AI Select planning and validation documentation lives here.
+This directory separates the current v2.0 target control plane from implemented v1.3 history.
 
-## Control plane
+## Current control plane
 
 ```text
 docs/ai-select/
-├── README.md
-├── manifest.json
 ├── CURRENT-TICKET-SPEC-MAPPING.md
-├── TICKET-GRAPH.md
-├── TICKET-14-SPLIT.md
-├── tickets/
-│   ├── 01-...md
-│   ├── ...
-│   ├── 14-gaussian-lifting-candidate.md
-│   ├── 14A-evidence-contract-working-set.md
-│   ├── 14B-reference-per-view-pnv-evidence.md
-│   ├── 14C-multiview-aggregation-classification.md
-│   ├── 14D-atomic-candidate-publication-validation.md
-│   ├── 16A-candidate-viewport-presentation.md
-│   ├── 16B-single-result-product-contract.md
-│   ├── 16C-mask-inspector-state-truth.md
-│   ├── 16D-canvas-first-navigator-shell.md
-│   ├── 16E-2d-work-area-floating-palette.md
-│   ├── 16F-viewport-toolbar-anchor-adjustment.md
-│   └── 16G-obsolete-controls-integration-closure.md
+├── TICKET-GRAPH-V2.md
 ├── TRACEABILITY.md
-├── WALKTHROUGHS.md
-├── FOUR-PASS-AUDIT.md
-├── MIGRATION-STATUS.md
-├── contracts/
-├── benchmarks/
-└── walkthroughs/
+├── manifest.json
+├── V2-REVIEW-STATUS.md
+├── tickets/
+│   ├── README.md
+│   ├── v2/                 # accepted v2 capability umbrellas; review-required
+│   └── *.md                # implemented v1 ticket records; historical
+└── history/
+    └── v1/                 # exact v1 mapping/traceability/manifest/graph snapshots
 ```
 
-Repository-wide specifications and ADRs remain canonical under `docs/specs/` and `docs/adr/`.
+The normative product target is `docs/specs/ai-select-final-spec-v2.0.md`. The shipped runtime remains the implemented v1.3 baseline until reviewed V2 cutovers land.
 
-## Accepted designs
+## Start here
 
-- [AI View Dock layout](ai-view-dock-layout.md) — current implemented
-  Tickets 16D/16E/16G contract.
-- [AI View Dock visual](show-me-ai-view-dock-layout.html) — visual companion for the accepted layout.
-- [AI Select Toolbar layout](ai-select-toolbar-layout.md) — current implemented
-  Tickets 16F/16G/17 contract.
-- [Ticket 16A](tickets/16A-candidate-viewport-presentation.md) — implemented
-  presentation baseline and completed operator visual-review record.
-- [Ticket 16B](tickets/16B-single-result-product-contract.md) — implemented
-  single-result product-contract stage.
-- [Ticket 16G](tickets/16G-obsolete-controls-integration-closure.md) —
-  implemented obsolete-control and integrated visual closure.
-- [Ticket 17](tickets/17-applied-undo-fix-restart-multitarget.md) — implemented
-  exact Undo-and-Fix, target Restart, lifecycle menu and tool-switch disposal;
-- [Ticket 18](tickets/18-scene-mutation-suspended-undo.md) — implemented
-  target-scoped suspension, preserved read-only artifacts and exact Undo;
-- [Ticket 19](tickets/19-scene-render-data-path-hardening.md) — implemented
-  visible-Splat render scope, immutable tensor/RGB reuse and large-scene
-  validation.
-- [Ticket 20](tickets/20-evidence-artifact-working-set-hardening.md) —
-  implemented same-decision Direct Evidence, production artifact identity and
-  Working Set hardening.
-- [Ticket 21](tickets/21-failure-calibration-hardening.md) — implemented
-  attempt/OOM atomicity, production Candidate publication, calibrated
-  readiness and the checksum-bound production identity.
-- [Ticket 22](tickets/22-contract-legacy-product-path.md) — implemented final
-  legacy product/session contraction, current Prompt capability contraction,
-  and explicit reference-only Contributor/Multiplex isolation.
+1. [`CURRENT-TICKET-SPEC-MAPPING.md`](CURRENT-TICKET-SPEC-MAPPING.md)
+2. [`V2-REVIEW-STATUS.md`](V2-REVIEW-STATUS.md)
+3. [`TICKET-GRAPH-V2.md`](TICKET-GRAPH-V2.md)
+4. [`TRACEABILITY.md`](TRACEABILITY.md)
+5. [`manifest.json`](manifest.json)
 
-## Scratch policy
+No V2 ticket is currently agent-ready.
 
-Executable and disposable investigation material lives under:
+## Document lifecycle
 
-```text
-.scratch/experiments/ai-select-v1/
-```
+### Current
 
-This includes repro probes, cross-check scripts, benchmark harnesses and browser/GPU validation harnesses.
+Current spec, ADRs, mapping, review gate, graph, traceability, manifest, and V2 ticket contracts may direct future work.
 
-`.scratch/ai-select-v1/` is compatibility-only after the migration. It must not become a second source of truth.
+### Historical
 
-## Implemented graph
+- Final Spec v1.3;
+- exact v1 control-plane snapshots under `history/v1/`;
+- root-level implemented v1 ticket files;
+- `TICKET-14-SPLIT.md`, v1 audits, walkthroughs, protocol records, and v1 benchmark evidence.
 
-Parent Ticket 14 is decomposed into:
+Historical files remain useful for provenance and regression but cannot override v2.0.
 
-- 14A — Evidence Contract & Working Set;
-- 14B — Reference Per-View P/N/V Evidence;
-- 14C — Multi-view Aggregation & Classification;
-- 14D — Atomic Candidate Publication & Reference Validation.
+### Deprecated compatibility entry points
 
-Execution order is:
+- `TICKET-GRAPH.md` redirects to current v2 and historical v1 graphs.
+- `.scratch/ai-select-v1/` is compatibility-only.
+- Old external links may be retained as redirects; do not add new normative content there.
 
-```text
-14A → 14B → 14C → 14D → 13 → 15 → 16 → 16A → 16B
-                                                       ├→ 16C ─┐
-                                                       ├→ 16D ─┴→ 16E ─┐
-                                                       └→ 16F ─────────┴→ 16G → 17 → 18 → 19 → 20 → 21 → 22
-```
+### Disposable
 
-14A through 14D, parent Ticket 14, Tickets 13 through 15, Ticket 16's native
-application core, Tickets 16A–16G and Tickets 17–22 are implemented. The core
-graph is closed (`next_implementation_ticket = none`,
-`next_implementation_subticket = none`).
+Executable experiments, repros and temporary validation harnesses belong under `.scratch/experiments/ai-select-v1/`. Delete them when no longer needed unless promoted to durable benchmark evidence.
+
+## Review before implementation
+
+The immediate work is not coding. Follow the ordered review in `V2-REVIEW-STATUS.md`, amend the design where needed, split capability umbrellas into small stages, and assign calibration/promotion/release ownership before marking a ticket agent-ready.

@@ -1,39 +1,46 @@
-# V2H — Terminal Candidate publication and explicit consent
+# V2H — Two-gate terminal Candidate publication and explicit consent
 
-Status: **review-required parent envelope — current review frontier; not agent-ready**
+Status: **reviewed parent envelope — awaiting stage decomposition; not agent-ready**
 
-Blocked by: V2E, V2G  
+Blocked by: V2E, V2G, V2I  
 Blocks: V2J
 
 ## Authority
 
-Final Spec v2.0, Amendments 003–008, ADR 0020, and carried-over atomic production Candidate publication.
+Final Spec Amendment 009; ADR 0030; Amendments 003–008; carried-over atomic production Candidate publication.
 
 ## Goal
 
-Define a complete, fail-closed mapping from current Readiness plus terminal outcome to Candidate publication, prior-Candidate preservation, explicit Limited consent, and available recovery actions.
+Implement a complete fail-closed mapping from Candidate Publication Snapshot eligibility plus Readiness and terminal outcome to automatic publication, explicit Ready/Limited consent, prior-Candidate preservation, and recovery.
 
-## Inputs
+## Accepted contract
 
-- current converged, scope-stable Consensus/aggregate and exact identity;
-- Lift Readiness and Frontier Debt;
-- terminal outcome from V2G;
-- Attempt/Series/Journal terminal state from V2I;
-- prior Candidate current/stale state.
+- A hard Publication Eligibility Gate binds exact current Stable observations, production Evidence, converged Consensus, current Scope with no pending material delta, readiness, terminal outcome, and production identity.
+- Only eligible `Ready + ready-low-gain` auto-publishes.
+- Eligible Ready at budget/no-feasible/failure/Cancel terminals requires `Use Ready Candidate`.
+- Eligible Limited requires `Use Limited Candidate`.
+- Not Ready never publishes.
+- scope-advanced, unresolved Scope-budget exhaustion, non-converged, oscillating, stale, Suspended, incomplete, and late results never publish.
+- Explicit Use actions publish the frozen snapshot through a new idempotent Candidate Publication Attempt and do not recompute.
+- Re-Lift recomputes exact current inputs; Ready may publish from the explicit recomputation, Limited still requires explicit Use.
+- Prior Candidate is preserved until atomic replacement or staleness.
+- Running acquisition temporarily blocks Candidate application but does not itself stale the prior Candidate.
+- Candidate never self-applies Native Selection.
 
-## Q10 review gates
+## Later decomposition must own
 
-- behavior for Ready/Limited/Not Ready across low-gain, budget exhaustion, no-feasible, failure, cancel, suspend, stale, and non-convergence outcomes;
-- whether Ready at a non-low-gain forced terminal auto-publishes or requires consent;
-- explicit `Use Limited Candidate` versus Re-Lift semantics;
-- prior Candidate preservation and application eligibility while a fresh continuation runs;
-- no Candidate from scope-advanced, non-converged, oscillating, cancelled, suspended, or stale results;
-- recovery recommendations and atomic publication identity.
-
-## Invariants already accepted
-
-Candidate never self-applies Native Selection. Partial/non-current publication is forbidden. Ready-low-gain may auto-publish under ADR 0020. Limited never auto-publishes without an explicit consent decision. Re-Lift re-evaluates exact current stable inputs and does not restart acquisition.
+- Publication Snapshot and CandidatePublicationAttempt schemas/digests;
+- complete matrix evaluator;
+- automatic and explicit publication orchestration;
+- Re-Lift compatibility migration;
+- Cancel/pre-Cancel snapshot handling;
+- prior-Candidate application gate integration;
+- exact status/reason payload consumed by V2J.
 
 ## Validation families
 
-Complete Readiness × terminal-outcome table; atomicity; stale/cancel/suspend; prior Candidate; explicit Limited consent; Re-Lift regression; Continue interaction.
+Complete matrix; eligibility rejection; auto Ready-low-gain; explicit Ready/Limited without recompute; Not Ready/incompatible refusal; Cancel snapshots; Re-Lift Ready/Limited; idempotent publication replay; atomic replacement; prior Candidate and running application gate.
+
+## Non-goals
+
+No UI layout, Native Selection automation, quality threshold calibration, or acquisition restart.

@@ -2,7 +2,7 @@
 
 Status: **accepted amended scope, pre-implementation review; no stage is agent-ready**
 
-Sources: Final Spec v2.0 with Amendments 001–008, ADRs 0020–0029 where current, and carried-over nonconflicting v1.3 contracts.
+Sources: Final Spec v2.0 with Amendments 001–009, ADRs 0020–0030 where current, and carried-over nonconflicting v1.3 contracts.
 
 ## Parent capabilities
 
@@ -15,28 +15,24 @@ Sources: Final Spec v2.0 with Amendments 001–008, ADRs 0020–0029 where curre
 | V2E | weighted update/convergence/Scope Delta | V2B, V2D | V2F, V2H |
 | V2F | hybrid View Utility/candidate pool | V2B, V2E | V2G, V2I |
 | V2G | deterministic budgets/outcomes/termination | V2F | V2H, V2I |
-| V2H | terminal publication/consent | V2E, V2G | V2J |
-| V2I | Browser Journal/identity/replay/orchestration | V2F, V2G | V2J |
+| V2H | two-gate terminal publication/consent | V2E, V2G, V2I | V2J |
+| V2I | Browser Journal/identity/replay/orchestration | V2F, V2G | V2H, V2J |
 | V2J | acquisition UI + Expert Recovery | V2H, V2I | — |
 
-## Reviewed acquisition lifecycle
+## Reviewed publication lifecycle
 
 ```text
-Acquisition Series
-├── initial bounded Attempt
-└── optional fresh Continue Attempts
-
-Attempt
-├── Browser append-only Decision Journal
-├── deterministic multi-budget ledger
-└── Iterations
-    ├── committed Utility ranking
-    ├── probe/full-acquisition endpoint attempts
-    ├── one usable observation or structured failure
-    └── Consensus/Scope revisions
+complete terminal snapshot
+        ↓
+Publication Eligibility Gate
+        ↓
+Ready + ready-low-gain       → automatic Candidate
+Ready + forced terminal      → Use Ready Candidate
+Limited + eligible terminal  → Use Limited Candidate
+Not Ready / incompatible     → no Candidate
 ```
 
-Same-attempt replay reuses committed decisions and results. Fresh retry/replacement consumes declared budgets. Cancel/Suspend are fail-closed; Continue is a new Attempt under a cumulative Series cap.
+Re-Lift recomputes exact current inputs; it does not accept an existing snapshot. A running Acquisition Attempt keeps the prior Candidate inspectable but temporarily blocks applying it.
 
 ## Experimental/reference sidecars
 
@@ -49,7 +45,7 @@ They do not block the critical path unless a later promotion decision creates an
 ## Agent readiness
 
 ```text
-reviewed parent direction = V2A–V2G, V2I
+reviewed parent direction = V2A–V2I
 agent-ready stages        = none
-next review item          = V2H publication matrix
+next review item          = V2J UI + Expert Recovery presentation
 ```

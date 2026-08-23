@@ -8,7 +8,8 @@ Updated: 2026-08-23
 - Amendments 001–002: Expert Recovery, Seed/depth staging, seed-independent discovery.
 - Amendments 003–006: deterministic q+s recurrence, regional Reliability, pseudo-mass/convergence, component Scope/Frontier Debt.
 - Amendment 007: layered candidates + geometric pruning + shortlist ViewUtilityProbe.
-- Amendment 008 / ADR 0029: hierarchical Series/Attempt/Iteration identities, Browser Decision Journal, deterministic budgets, exact replay/retry, Cancel/Suspend, and fresh Continue Attempt.
+- Amendment 008 / ADR 0029: hierarchical identities, Browser Decision Journal, deterministic budgets, exact replay/retry, Cancel/Suspend, and fresh Continue Attempt.
+- Amendment 009 / ADR 0030: Publication Eligibility plus Readiness/terminal/consent matrix, explicit Ready/Limited actions, Re-Lift separation, and running-attempt Candidate application gate.
 
 ## Review order
 
@@ -17,38 +18,37 @@ Updated: 2026-08-23
 | 0–2.4 | control plane through Scope Delta/Frontier Debt | complete |
 | 3 | V2F hybrid View Utility | complete at parent-decision level |
 | 4 | V2G/V2I identity, budgets, Journal, replay, continuation | complete at parent-decision level |
-| 5 | V2H terminal publication | **next** |
-| 6 | V2J UI + Expert Recovery presentation | pending |
+| 5 | V2H terminal publication | complete at parent-decision level |
+| 6 | V2J UI + Expert Recovery presentation | **next** |
 | 7 | parent-ticket decomposition | pending |
 | 8 | calibration/promotion/release ownership | pending |
 
 ## Current frontier
 
 ```text
-next review item          = Q10 Readiness × Terminal Outcome publication matrix
-reviewed parent direction = V2A–V2G, V2I
-accepted cross-ticket     = Q4-B through Q9-B
+next review item          = Q11 V2J progressive UI + Expert Recovery availability
+reviewed parent direction = V2A–V2I
+accepted cross-ticket     = Q4-B through Q10-C
 agent-ready stages        = none
 ticket in flight          = none
 ```
 
-## Q9 invariants
+## Q10 invariants
 
-- Do not collapse existing endpoint attempts into one loop ID.
-- Browser owns the append-only Decision Journal and product action sequence.
-- Same-attempt replay never reranks or debits budget again.
-- Fresh retry uses a new endpoint attempt ID and consumes declared budgets.
-- Failed work is free only for Successful Observation Budget.
-- Wall-clock/cache state cannot change canonical candidate ranking.
-- Cancel closes publication authority immediately; late results are discarded.
-- Exact resume uses the same Attempt only from a compatible journal boundary.
-- Continue Acquisition is a fresh Attempt with new per-Attempt allowances and shared Series caps.
-- No Companion-autonomous acquisition session.
+- Publication requires an exact current converged scope-stable snapshot and complete production identity.
+- Only `Ready + ready-low-gain` auto-publishes.
+- Eligible forced-terminal Ready requires `Use Ready Candidate`.
+- Eligible Limited requires `Use Limited Candidate`.
+- Not Ready, scope-advanced, unresolved Scope-budget exhaustion, non-converged, oscillating, stale, Suspended, incomplete, and late results cannot publish.
+- Cancel never auto-publishes; a committed eligible pre-Cancel snapshot may be explicitly used afterward through a new Candidate Publication Attempt.
+- Re-Lift recomputes and is not an alias for accepting an existing snapshot.
+- Running acquisition temporarily blocks AI Candidate application but does not itself stale the prior Candidate.
+- Candidate never self-applies Native Selection.
 
 ## Known blockers
 
-1. Readiness × terminal outcome → Candidate publication and explicit Limited consent are not closed.
-2. V2J labels, availability, Candidate-while-running presentation, and recovery affordances remain open.
-3. Numeric budget/cost/threshold values and GPU performance budgets need calibration owners.
-4. Reviewed parent envelopes still require small TDD stage decomposition.
-5. Calibration, policy freeze, production promotion, cutover, and release qualification require explicit graph owners.
+1. V2J action priority, labels, placement, availability matrix, Candidate/current/stale presentation, and advanced diagnostics are not closed.
+2. Numeric budget/cost/quality/Scope thresholds and GPU performance budgets need calibration owners.
+3. Reviewed parent envelopes still require small TDD stage decomposition.
+4. Calibration, policy freeze, production promotion, cutover, and release qualification require explicit graph owners.
+5. Context Amendments 001–009 require one controlled glossary consolidation before v2 closeout.

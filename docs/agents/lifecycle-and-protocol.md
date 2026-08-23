@@ -4,25 +4,28 @@ Amended v2.0 is target; implemented v1.3 remains runtime until explicit reviewed
 
 ## Acquisition identities and Journal
 
-- Preserve existing endpoint attempt IDs; never collapse them into one loop ID.
-- Series → Attempt → Iteration sits above Utility/probe/endpoint attempts and Consensus/Scope revisions.
-- Browser owns the append-only digest-chained Decision Journal and commits ranking/selection/budget transitions before dependent work.
-- Companion owns validated endpoints and disposable caches, not an autonomous product session.
+- Preserve endpoint attempt IDs under Series → Attempt → Iteration.
+- Browser owns the append-only Decision Journal and deterministic budget transitions.
+- Same-attempt replay never reranks or debits again; fresh retry uses new identity and budget.
+- Cancel closes the Acquisition Attempt publication gate immediately; late results are discarded.
+- Continue Acquisition is a fresh Attempt under the current Series cap.
 
-## Budget/replay
+## Candidate publication
 
-- Successful observations, selected candidate attempts, deterministic cost, failure/replacement, Scope Revisions, and Series caps are separate finite ledgers.
-- Failed/Excluded work does not consume a successful-observation slot but consumes applicable work/failure budgets.
-- Same-attempt replay does not rerank or debit again.
-- Fresh retry uses a new endpoint attempt ID and budget debit.
-- Replacement follows the committed ranking.
-- Wall-clock/cache state cannot change canonical ranking.
+- Candidate publication consumes one immutable Candidate Publication Snapshot.
+- Eligibility requires exact current Stable observations/Evidence, converged non-oscillating Consensus, current scope with no material delta, current readiness/policies, and complete production identity.
+- Only eligible `Ready + ready-low-gain` auto-publishes.
+- Forced-terminal Ready requires `Use Ready Candidate`; eligible Limited requires `Use Limited Candidate`.
+- Not Ready, scope-advanced, unresolved Scope-budget exhaustion, non-converged, oscillating, stale, Suspended, incomplete, and late results cannot publish.
+- Explicit Use actions are idempotent Candidate Publication Attempts and do not recompute.
+- Re-Lift recomputes exact current Stable inputs and never restarts acquisition.
+- Candidate publication is atomic and never self-applies Native Selection.
 
-## Cancel, Suspend, Continue
+## Prior Candidate and application
 
-- Cancel closes the Attempt publication gate immediately; late results are discarded while complete artifacts remain.
-- Suspend resumes the same Attempt only from an exact compatible journal boundary with remaining budget; otherwise it becomes stale.
-- Continue Acquisition is a fresh Attempt with reset per-Attempt allowances and preserved Series caps/current stable artifacts.
-- Starting Continue alone does not stale Candidate; a bound input change applies existing stale rules.
+- Starting acquisition alone does not stale a prior Candidate.
+- While an Attempt runs, the Candidate remains inspectable but Set/Add/Remove/Intersect from it are temporarily blocked.
+- A bound Stable observation, Participation, Scope, dependency, or policy change applies normal staleness.
+- Cancel may restore application of a still-current prior Candidate.
 
-Stable Mask, Participation, raw Evidence, Scope, Consensus, Candidate, and Native Selection remain distinct. Candidate changes Native Selection only through explicit native EditHistory operations.
+Stable Mask, Participation, raw Evidence, Scope, Consensus, Candidate, and Native Selection remain distinct authorities.

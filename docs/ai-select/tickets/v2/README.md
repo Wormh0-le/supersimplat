@@ -2,7 +2,7 @@
 
 Status: **pre-implementation review; no stage is agent-ready**
 
-Parent envelopes remain V2A–V2J. Reviewed parent direction now covers V2A–V2G and V2I. V2H is the current review frontier; V2J follows.
+Parent envelopes remain V2A–V2J. Reviewed parent direction now covers V2A–V2I. V2J is the current review frontier.
 
 Accepted cross-ticket decisions:
 
@@ -13,6 +13,7 @@ Q6-B finite pseudo-mass + robust Reliability + convergence
 Q7-B component Scope + structured Frontier Debt
 Q8-C hybrid ViewUtilityProbe
 Q9-B hierarchical identity + Browser Journal + deterministic budgets
+Q10-C two-gate Candidate publication + explicit Ready/Limited consent
 ```
 
 V2AX, leave-one-out Reliability, fixed-four, and full-render-all-candidates remain nonblocking experiments/reference baselines.

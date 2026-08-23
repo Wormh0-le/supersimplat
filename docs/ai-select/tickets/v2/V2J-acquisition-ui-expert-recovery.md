@@ -1,31 +1,63 @@
-# V2J — Acquisition UI + Expert Recovery
+# V2J — Progressive acquisition UI + Expert Recovery
 
-Status: **review-required — product direction accepted; awaits Q10 publication matrix; not agent-ready**
+Status: **review-required parent envelope — current review frontier; not agent-ready**
 
-Blocked by: V2H, V2I
+Blocked by: V2H, V2I  
+Blocks: none
+
+## Authority
+
+Final Spec Amendments 001, 008, and 009; ADRs 0022, 0029, and 0030; existing AI Select Dock/toolbar/status patterns.
 
 ## Goal
 
-Present minimal automatic-acquisition state and secondary Expert Recovery without exposing persistent camera planning.
+Present automatic acquisition, Candidate publication/consent, and secondary Expert Recovery with progressive disclosure. Preserve a canvas-first selection workflow without exposing persistent planner management or internal algorithm dashboards.
 
-## Accepted lifecycle inputs
+## Accepted behavior from earlier reviews
 
-- running UI binds one Acquisition Series/Attempt and current Iteration phase;
-- Cancel terminates the current Attempt and rejects late publication;
-- Add Observation is available only after termination and creates a normal User-added View;
-- Continue Acquisition creates a fresh Attempt, resets per-Attempt allowances, and preserves Series cumulative caps/current artifacts;
-- Continue is not replay, resume, retry, or Generate More;
-- Suspended/stale targets must satisfy exact compatibility or recovery rules before new work;
-- new Stable observations/scope inputs apply existing Candidate stale rules.
+### While acquisition runs
 
-## Remaining review gates
+- show current phase/progress and a dedicated Cancel;
+- keep any prior Candidate inspectable;
+- temporarily disable Set/Add/Remove/Intersect from the AI Candidate;
+- do not expose Add Observation, Continue Acquisition, or camera management;
+- do not display live Utility/Coverage/Frontier internals by default.
 
-- Q10-dependent availability and wording for Ready/Limited/Not Ready and each terminal outcome;
-- `Use Limited Candidate` versus Re-Lift labels and consent;
-- whether a prior current Candidate remains applicable while a new Attempt is running;
-- progress/budget presentation without exposing debug accounting;
-- stale Candidate presentation, accessibility, responsive layout, and migration of existing User-added View actions.
+### At terminal
+
+- eligible Ready-low-gain Candidate appears automatically;
+- forced-terminal Ready may offer `Use Ready Candidate`;
+- eligible Limited may offer `Use Limited Candidate`;
+- Not Ready or publication-ineligible results offer no Candidate-use action;
+- stale/scope-advanced/non-converged/Suspended reasons remain explicit;
+- prior Candidate remains inspectable and current/stale/application-blocked states are distinct.
+
+### Expert Recovery
+
+When no Attempt runs and the target is active, secondary recovery may include:
+
+- Add Observation / Use Current View;
+- Continue Acquisition as a fresh bounded Attempt;
+- Re-Lift after changed Stable inputs;
+- Restart when the current target workflow should be discarded.
+
+Recovery never patches Candidate or Native Selection directly.
+
+## Q11 review gates
+
+- progressive-disclosure hierarchy: primary action, secondary recovery menu, and advanced diagnostics;
+- exact terminal-state action availability and priority;
+- labels and descriptions for Use Ready, Use Limited, Continue, Add Observation, Re-Lift, Cancel, and Restart;
+- prior Candidate current/stale/temporarily-blocked presentation;
+- whether Expert Recovery appears inline, in an overflow menu, or in a dedicated terminal panel;
+- status language for normal success, forced terminal, Limited, Not Ready, Cancel, stale, non-converged, and Suspended;
+- accessibility, keyboard/focus, locale length, and 1024×720 / 1280×720 behavior;
+- optional advanced diagnostics without a default live metrics dashboard.
 
 ## Validation families
 
-Running/cancelled/suspended/stale/terminal UI; fresh Continue Attempt and Series-cap display; User-added View identity; Candidate stale/application blocking; 1280×720 and 1024×720 walkthroughs; tests/lint/locales/build.
+State/action availability matrix; focus/keyboard/ARIA; locale expansion; responsive visual walkthrough; Candidate application blocking; explicit Ready/Limited consent; Add Observation and Continue identity; stale/prior Candidate; full repository test/lint/locales/build gates.
+
+## Non-goals
+
+No user-authored trajectory, camera intervention during a running Attempt, persistent Generate More/Regenerate controls, default algorithm dashboard, Candidate provenance browser, or automatic Native operation.

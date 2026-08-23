@@ -7,35 +7,32 @@ Implemented v1.3 traceability remains under `docs/ai-select/history/v1/TRACEABIL
 
 ## Coverage summary
 
-C001–C012 remain implemented v1.3 foundations. Existing v2 requirements N001–N043 remain owned as previously mapped.
+C001–C012 remain implemented v1.3 foundations. Existing v2 requirements N001–N055 remain owned as previously mapped.
 
-## Acquisition identity and budget requirements
+## Publication and consent requirements
 
 | ID | Requirement | Owner | Status |
 |---|---|---|---|
-| N044 | Acquisition Series contains the initial and fresh Continue Attempts under cumulative caps | V2G/V2I/V2J | accepted / review-decomposition pending |
-| N045 | Attempt, Iteration, Utility, probe, endpoint, Consensus, and Scope identities remain hierarchical and distinct | V2I | accepted / decomposition pending |
-| N046 | Browser owns an append-only digest-chained Decision Journal and product action sequence | V2I | accepted / decomposition pending |
-| N047 | successful observations, selected candidates, deterministic cost, failures/replacements, and Scope Revisions use separate finite ledgers | V2G/V2I | accepted / decomposition pending |
-| N048 | failed or Excluded work is free only for Successful Observation Budget and still consumes applicable cost/failure ledgers | V2G | accepted / decomposition pending |
-| N049 | same-attempt replay reuses committed decisions/results without reranking or budget debit | V2I | accepted / decomposition pending |
-| N050 | fresh retry/replacement uses new identities and declared budget debit; replacement follows committed ranking | V2G/V2I | accepted / decomposition pending |
-| N051 | wall-clock/cache state does not alter canonical ranking or deterministic budget decisions | V2F/V2G/V2I | accepted / decomposition pending |
-| N052 | Cancel closes publication authority immediately and discards late results while preserving completed artifacts | V2I/V2J | accepted / decomposition pending |
-| N053 | exact Suspend/Resume continues only from a compatible journal boundary; otherwise the Attempt is stale | V2I | accepted / decomposition pending |
-| N054 | Continue Acquisition creates a fresh Attempt with new per-Attempt allowances and preserved Series caps/artifacts | V2G/V2I/V2J | accepted / decomposition pending |
-| N055 | Companion remains endpoint/derived-state owner, not an autonomous product-session authority | V2I | accepted / decomposition pending |
-| N056 | Readiness × terminal outcome Candidate publication and explicit Limited consent are completely mapped | V2H | review-required / next |
+| N056 | Readiness × terminal outcome Candidate publication and explicit consent are completely mapped | V2H | accepted / decomposition pending |
 | N057 | calibration, policy freeze, production promotion, cutover, and release qualification have explicit owners | unassigned | blocker |
+| N058 | Candidate publication requires an exact current converged scope-stable production-identity snapshot | V2H/V2I | accepted / decomposition pending |
+| N059 | only eligible Ready-low-gain normal success auto-publishes Candidate | V2H | accepted / decomposition pending |
+| N060 | eligible Ready forced terminals require explicit `Use Ready Candidate` without recomputation | V2H/V2J | accepted / review-decomposition pending |
+| N061 | eligible Limited terminals require explicit `Use Limited Candidate`; Not Ready never publishes | V2H/V2J | accepted / review-decomposition pending |
+| N062 | scope-advanced, unresolved Scope-budget exhaustion, non-converged, oscillating, stale, Suspended, incomplete, and late results cannot publish | V2H/V2I | accepted / decomposition pending |
+| N063 | Re-Lift recomputes exact current Stable inputs and is not an alias for accepting an existing snapshot | V2H/V2J | accepted / review-decomposition pending |
+| N064 | automatic and explicit terminal publication use idempotent Candidate Publication Attempt identity and atomic replacement | V2H/V2I | accepted / decomposition pending |
+| N065 | running acquisition preserves prior Candidate inspection but temporarily blocks Candidate application without itself causing staleness | V2I/V2J | accepted / review-decomposition pending |
+| N066 | Cancel never auto-publishes; an eligible pre-Cancel snapshot may be explicitly used through fresh publication identity | V2H/V2I/V2J | accepted / review-decomposition pending |
 
 ## Result
 
 ```text
 carried-over implemented requirements = 12
-new v2 requirements                 = 57
-mapped new requirements             = 56
+new v2 requirements                 = 66
+mapped new requirements             = 65
 unassigned release requirement      = N057
-accepted cross-ticket decisions     = Q4-B through Q9-B
+accepted cross-ticket decisions     = Q4-B through Q10-C
 agent-ready stages                  = 0
-next review item                    = V2H publication matrix
+next review item                    = V2J UI + Expert Recovery presentation
 ```

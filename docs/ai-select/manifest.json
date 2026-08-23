@@ -1,11 +1,12 @@
 {
   "schema_version": 1,
-  "control_plane_version": "ai-select-v2-preimplementation-review-9",
+  "control_plane_version": "ai-select-v2-preimplementation-review-10",
   "feature": "ai-select",
   "branch": "ai-select-v1",
   "normative_target": {
     "spec": "docs/specs/ai-select-final-spec-v2.0.md",
     "amendments": [
+      "docs/specs/ai-select-final-spec-v2.0-amendment-009-terminal-candidate-publication-consent.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-008-hierarchical-acquisition-journal-budgets.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-007-hybrid-view-utility-probe.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-006-component-scope-frontier-debt.md",
@@ -15,55 +16,44 @@
       "docs/specs/ai-select-final-spec-v2.0-amendment-002-seed-discovery-depth-staging.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-001-expert-recovery.md"
     ],
-    "latest_adr": "docs/adr/0029-adopt-browser-journal-and-layered-acquisition-identities.md",
-    "context_overlay": "docs/ai-select/CONTEXT-AMENDMENT-008-ACQUISITION-JOURNAL-BUDGETS.md"
+    "latest_adr": "docs/adr/0030-adopt-two-gate-candidate-publication.md",
+    "context_overlay": "docs/ai-select/CONTEXT-AMENDMENT-009-CANDIDATE-PUBLICATION-CONSENT.md"
   },
   "runtime_baseline": {
     "spec": "docs/specs/ai-select-final-spec-v1.3.md",
     "status": "implemented"
   },
-  "reviewed_acquisition_lifecycle": {
-    "authority": "browser-driven-existing-transport",
-    "identity_hierarchy": [
-      "acquisition-series",
-      "acquisition-attempt",
-      "acquisition-iteration",
-      "utility-decision",
-      "probe-and-endpoint-attempts",
-      "consensus-revision",
-      "scope-revision"
-    ],
-    "journal": "browser-owned-append-only-digest-chain",
-    "budgets": [
-      "successful-observation",
-      "selected-candidate-attempt",
-      "deterministic-cost",
-      "replacement-failure",
-      "scope-revision",
-      "series-cumulative-cap"
-    ],
-    "failed_work_free_only_for": "successful-observation-budget",
-    "same_attempt_replay": "no-rerank-no-redebit",
-    "fresh_retry": "new-endpoint-attempt-and-budget-debit",
-    "replacement_ranking": "already-committed",
-    "wall_clock_changes_canonical_ranking": false,
-    "cancel": "terminal-publication-gate-closed-late-results-discarded",
-    "exact_resume": "same-attempt-from-compatible-journal-boundary",
-    "continue_acquisition": "fresh-attempt-new-per-attempt-budgets-shared-series-cap",
-    "companion_autonomous_session": false
+  "reviewed_terminal_publication": {
+    "architecture": "publication-eligibility-plus-readiness-terminal-consent",
+    "normal_ready_low_gain": "auto-publish-atomic",
+    "forced_terminal_ready": "explicit-use-ready-candidate",
+    "eligible_limited": "explicit-use-limited-candidate",
+    "not_ready": "forbidden",
+    "scope_advanced": "forbidden-mandatory-resolve",
+    "scope_revision_budget_with_pending_delta": "forbidden",
+    "non_converged_or_oscillating": "forbidden",
+    "stale_or_suspended": "forbidden",
+    "cancel_auto_publish": false,
+    "eligible_pre_cancel_snapshot": "explicit-publication-after-terminal",
+    "re_lift": "recompute-not-existing-snapshot-consent",
+    "candidate_publication_attempt": "idempotent-atomic",
+    "candidate_application_while_acquiring": "temporarily-blocked",
+    "acquisition_start_stales_prior_candidate": false,
+    "native_selection_auto_apply": false
   },
   "planning_status": "pre-implementation-review",
-  "reviewed_parent_envelopes": ["V2A", "V2B", "V2C", "V2D", "V2E", "V2F", "V2G", "V2I"],
+  "reviewed_parent_envelopes": ["V2A", "V2B", "V2C", "V2D", "V2E", "V2F", "V2G", "V2H", "V2I"],
   "reviewed_cross_ticket_decisions": [
     "Q4-B-deterministic-bounded-q-s-recurrence",
     "Q5-D-multichannel-readout-regional-residual-loo-reference",
     "Q6-B-finite-pseudomass-robust-reliability-bounded-convergence",
     "Q7-B-component-scope-state-structured-frontier-debt",
     "Q8-C-layered-candidate-hybrid-view-utility-probe",
-    "Q9-B-hierarchical-identity-browser-journal-deterministic-budgets"
+    "Q9-B-hierarchical-identity-browser-journal-deterministic-budgets",
+    "Q10-C-two-gate-terminal-candidate-publication"
   ],
-  "review_frontier": ["V2H"],
-  "next_review_item": "Q10-readiness-terminal-outcome-publication-matrix",
+  "review_frontier": ["V2J"],
+  "next_review_item": "Q11-progressive-ui-expert-recovery-availability",
   "agent_ready_tickets": [],
   "ticket_in_flight": null,
   "next_implementation_ticket": null,

@@ -3,9 +3,9 @@
 ## Current control plane
 
 ```text
-Final Spec v2.0 Amendments 008 → 001
+Final Spec v2.0 Amendments 009 → 001
 → Final Spec v2.0
-→ ADR 0029 → 0020
+→ ADR 0030 → 0020
 → CURRENT-TICKET-SPEC-MAPPING.md
 → V2-REVIEW-STATUS.md
 → TICKET-GRAPH-V2.md
@@ -22,10 +22,11 @@ Seed / component Scope / Frontier Debt
 → hybrid ViewUtilityProbe
 → Browser-owned Acquisition Series/Attempts/Iterations
 → append-only Decision Journal + deterministic budgets
-→ terminal publication matrix (next review)
-→ Expert Recovery
+→ Publication Eligibility
+→ normal Ready auto-publication or explicit Ready/Limited consent
+→ progressive UI + Expert Recovery (next review)
 ```
 
-Same-attempt replay, fresh retry, exact resume, and Continue Acquisition are distinct. Failed work is free only for the usable-observation allowance. Wall-clock never redefines canonical candidate ranking.
+Re-Lift recomputes; it does not accept an existing terminal snapshot. A running Attempt keeps the prior Candidate inspectable but temporarily blocks applying it. Not Ready, stale, scope-advanced, non-converged, Suspended, and incomplete results cannot publish.
 
-Implemented v1 history remains under `history/v1/`. Context overlays 008–001 must eventually be consolidated into root `CONTEXT.md` in one controlled cleanup.
+Implemented v1 history remains under `history/v1/`. ADR 0020 is retained and marked partially superseded. Context overlays 009–001 must eventually be consolidated into root `CONTEXT.md` in one controlled cleanup.

@@ -1,6 +1,6 @@
 # ADR 0020: Auto-publish the Candidate at the ready-and-low-marginal-gain terminal
 
-Status: accepted (companion to Final Spec v2.0; accepted 2026-08-22)
+Status: partially superseded by ADR 0030 (accepted 2026-08-22; partial supersession accepted 2026-08-23)
 
 Date: 2026-08-22
 
@@ -20,7 +20,7 @@ This is a deliberate consent-structure change and must be recorded as such:
 v1.3 users implicitly consented to Limited-quality publication by clicking;
 automation must not silently inherit that consent for lower-quality outcomes.
 
-## Decision
+## Decision at acceptance
 
 1. At the `ready-and-low-marginal-gain` terminal the loop publishes the
    Candidate automatically and atomically. Replacement stays atomic; the prior
@@ -40,7 +40,7 @@ automation must not silently inherit that consent for lower-quality outcomes.
    publication authority; readiness alone gates publication exactly as in
    ADR 0019.
 
-## Consequences
+## Consequences recorded at acceptance
 
 - Users will see Candidates appear without asking for them; the UI status
   surface must present terminal state and stop reasons so this is legible.
@@ -52,3 +52,16 @@ automation must not silently inherit that consent for lower-quality outcomes.
 - This decision is hard to reverse quietly once users build workflows around
   auto-published Candidates; reverting requires a spec change and identity
   rotation, which is why it warrants an ADR.
+
+## Partial supersession by ADR 0030
+
+ADR 0030 preserves Decisions 1, 2, and 5 and preserves Re-Lift as an explicit recomputation path.
+
+It supersedes the following narrower clauses:
+
+- Decision 3 no longer makes Re-Lift the only way to accept an already-computed Limited result. An eligible Limited snapshot uses `Use Limited Candidate`.
+- Eligible Ready snapshots produced at forced terminals use explicit `Use Ready Candidate` rather than being discarded or automatically published.
+- The consequence that every non-normal terminal publishes nothing/readiness-only is replaced by the two-gate publication matrix.
+- Re-Lift remains recomputation and is no longer an alias for accepting an existing terminal snapshot.
+
+Not Ready, stale, scope-advanced, non-converged, Suspended, incomplete, and otherwise publication-ineligible results remain forbidden.

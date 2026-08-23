@@ -1,8 +1,8 @@
 # AI Select v2 Ticket Envelopes
 
-Status: **pre-implementation review; no stage is agent-ready**
+Status: **parent-envelope review complete; decomposition pending; no stage is agent-ready**
 
-Parent envelopes remain V2A–V2J. Reviewed parent direction now covers V2A–V2I. V2J is the current review frontier.
+Parent envelopes remain V2A–V2J. Reviewed parent direction now covers V2A–V2J. Parent-ticket decomposition is the current planning frontier.
 
 Accepted cross-ticket decisions:
 
@@ -14,6 +14,7 @@ Q7-B component Scope + structured Frontier Debt
 Q8-C hybrid ViewUtilityProbe
 Q9-B hierarchical identity + Browser Journal + deterministic budgets
 Q10-C two-gate Candidate publication + explicit Ready/Limited consent
+Q11 accepted V2J progressive UI + Session Strip + safe auto-pause + spatial-authoring ownership
 ```
 
 V2AX, leave-one-out Reliability, fixed-four, and full-render-all-candidates remain nonblocking experiments/reference baselines.

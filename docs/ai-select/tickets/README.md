@@ -2,7 +2,7 @@
 
 ## Current v2 planning
 
-`tickets/v2/` contains accepted v2.0 capability umbrellas V2A–V2J. They are **review-required and not agent-ready**. Read:
+`tickets/v2/` contains accepted v2.0 capability umbrellas V2A–V2J. Parent-direction review is complete, but the umbrellas are **not agent-ready**. The current frontier is small TDD stage decomposition. Read:
 
 1. `../CURRENT-TICKET-SPEC-MAPPING.md`
 2. `../V2-REVIEW-STATUS.md`
@@ -10,7 +10,7 @@
 
 before using any V2 ticket.
 
-A V2 parent ticket must be split into small TDD stages after its review gate closes.
+A V2 parent ticket must be split into small TDD stages, and an exact stage must be jointly marked `agent-ready` by the mapping and review status before implementation.
 
 ## Historical v1 implementation records
 

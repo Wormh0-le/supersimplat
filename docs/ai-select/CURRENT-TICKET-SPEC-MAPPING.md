@@ -1,6 +1,6 @@
 # Final Spec v2.0 → Current Planning Mapping
 
-Status: **current control-plane entry point — pre-implementation review**  
+Status: **current control-plane entry point — parent review complete; decomposition pending**  
 Updated: 2026-08-23  
 Branch: `ai-select-v1`
 
@@ -15,11 +15,11 @@ Runtime remains implemented v1.3. Accepted design is not implementation readines
 ```text
 normative target          = Final Spec v2.0 + Amendments 001–009
 shipped runtime baseline  = implemented Final Spec v1.3
-planning phase            = pre-implementation review
-reviewed parent direction = V2A–V2I
-accepted cross-ticket     = Q4-B, Q5-D, Q6-B, Q7-B, Q8-C, Q9-B, Q10-C
+planning phase            = parent review complete; decomposition pending
+reviewed parent direction = V2A–V2J
+accepted cross-ticket     = Q4-B, Q5-D, Q6-B, Q7-B, Q8-C, Q9-B, Q10-C, Q11
 agent-ready V2 stages     = none
-next review item          = Q11 V2J UI + Expert Recovery presentation
+next review item          = parent-ticket decomposition
 ```
 
 ## Accepted architecture summary
@@ -35,7 +35,8 @@ next review item          = Q11 V2J UI + Expert Recovery presentation
 - exact replay/fresh retry distinction, fail-closed Cancel/Suspend, and fresh Continue Attempt under a Series cap;
 - two-gate Candidate publication: normal Ready auto-publishes, forced Ready/Limited requires explicit state-specific consent, incompatible results never publish;
 - Re-Lift recomputes and does not accept an existing snapshot;
-- Candidate application is temporarily blocked while acquisition runs without automatically staling the prior Candidate.
+- Candidate application is temporarily blocked while acquisition runs without automatically staling the prior Candidate;
+- Q11 progressive UI: one compact Session Strip, explicit surface ownership, one-click safe auto-pause before authoritative editing, viewport-owned spatial authoring, read-only Spatial Edit HUD, preserved Navigator/frustum linkage, and stable-boundary Dock publication.
 
 ## Current ticket lifecycle
 
@@ -50,11 +51,13 @@ next review item          = Q11 V2J UI + Expert Recovery presentation
 | V2G | deterministic budgets/outcomes/termination | reviewed-awaiting-decomposition | numeric policy calibration and stage split |
 | V2H | terminal Candidate publication/consent | reviewed-awaiting-decomposition | stage split, CandidatePublicationAttempt schema, tests |
 | V2I | Browser Journal/identity/replay/orchestration | reviewed-awaiting-decomposition | stage split, endpoint schemas, persistence boundary |
-| V2J | acquisition UI + Expert Recovery | review-required / next | progressive disclosure, availability matrix, labels, Candidate presentation |
+| V2J | acquisition UI + Expert Recovery | reviewed-awaiting-decomposition | stage split, state/action tests, responsive/locale visual gates |
 
 ## Documentation lifecycle
 
 Current authority is Amendments 001–009 and ADRs through 0030. ADR 0020 is retained and marked partially superseded. Implemented v1 snapshots remain under `history/v1/`. Superseded unimplemented planning files are deleted rather than archived. Context overlays remain temporary until one controlled glossary consolidation.
+
+The accepted Q11 interface contract is recorded in `tickets/v2/V2J-acquisition-ui-expert-recovery.md`; reusable, non-domain surface rules are mirrored in `.interface-design/system.md`.
 
 ## Implementation gate
 

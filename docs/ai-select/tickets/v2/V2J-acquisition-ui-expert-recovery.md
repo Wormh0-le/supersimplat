@@ -17,6 +17,8 @@ Q11 treats Evidence/Workflow, Spatial Authoring, and Selection Application as re
 
 ## Accepted Q11 design contract
 
+Numbering preserves the reviewed draft: clause 8 is an existing-behavior regression guard; draft clauses 9, 11, and 12 are removed rather than renumbered into new requirements.
+
 1. **Responsibility layers are not new surfaces.** The design coordinates existing editor surfaces instead of adding a planner page, wizard, or second spatial toolbar.
 2. **Surface ownership is explicit.**
    - AI View Dock + Session Strip own rendered Evidence, 2D Prompt/Mask authoring, workflow state, publication consent, and explanations.
@@ -28,7 +30,7 @@ Q11 treats Evidence/Workflow, Spatial Authoring, and Selection Application as re
 6. **Navigator ↔ camera-frustum linkage remains the signature cross-surface interaction.** Selection, hover, camera jump, and Dock View switching share one View identity and one presentation state.
 7. **Anchor/Observation adjustment adds a transparent Spatial Edit HUD.** The HUD keeps attention in the 3D viewport and presents immediate, non-interactive feedback; it does not become another command surface.
 8. **Existing behavior is a regression baseline, not new implementation scope.** The draft camera frustum already updates continuously while it is translated or rotated, and the Dock does not re-render for every manipulation frame. Preserve both behaviors.
-9. **Rendered Evidence changes only at stable boundaries.** Draft motion never replaces the Dock image. A successful staged Anchor render or completed Observation render may update the Dock atomically; authoritative Anchor/Candidate identity changes only through the corresponding commit gate.
+10. **Rendered Evidence changes only at stable boundaries.** Draft motion never replaces the Dock image. A successful staged Anchor render or completed Observation render may update the Dock atomically; authoritative Anchor/Candidate identity changes only through the corresponding commit gate.
 
 ## Surface ownership
 

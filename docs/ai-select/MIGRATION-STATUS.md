@@ -7,26 +7,28 @@ Status: **v2 control plane current; pre-implementation review active**
 - Final Spec v2.0 is the target architecture; v1.3 remains the shipped baseline.
 - Amendment 001 / ADR 0022 adopt automation-default Expert Recovery.
 - Amendment 002 / ADR 0023 adopt CWED terminology, S0/S1 shadow Seeds, seed-independent Discovery Envelope/Frontier, separate Core Coverage/Frontier Debt, and nonblocking classified-N experimentation.
+- Amendment 003 / ADR 0024 adopt continuous q+s consensus, deterministic bounded canonical recurrence, lagged Reliability, frozen-scope solve, and post-solve Scope Delta.
 - ADR 0021 is retained and marked partially superseded rather than rewritten or deleted.
 - Current mapping, traceability, manifest, review gate, graph, and agent guidance point to the amended target.
 - Exact implemented v1 control-plane snapshots remain under `docs/ai-select/history/v1/`.
 - Obsolete unimplemented V2A/V2B envelopes were deleted and replaced; obsolete V2J removal documentation remains deleted.
-- Context amendments 002/001 explicitly override stale root glossary definitions until controlled consolidation.
+- Context amendments 003/002/001 explicitly override stale root glossary definitions until controlled consolidation.
 
 ## Current planning state
 
 ```text
 runtime baseline       = implemented v1.3
-normative target       = v2.0 + Amendments 001/002
+normative target       = v2.0 + Amendments 001/002/003
 planning phase         = pre-implementation review
 reviewed parent scope  = V2A, V2B
+accepted recurrence    = Q4-B across V2C/V2D/V2E
 agent-ready stages     = none
-next review item       = V2C/V2D/V2E recurrence
+next review item       = Q5 consensus readout + reliability residual
 ```
 
 ## Remaining work
 
-- close consensus/reliability/aggregation recurrence and scope-revision ordering;
+- close consensus readout, Reliability residual/gating, q/s transforms, convergence, and Scope Delta thresholds;
 - review View Utility probe, candidate pool, cost, and exploration schedule;
 - close loop identity/budgets, terminal matrix, and Expert Recovery lifecycle;
 - split parent envelopes into small TDD stages;

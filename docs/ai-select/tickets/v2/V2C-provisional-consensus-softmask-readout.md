@@ -1,63 +1,72 @@
-# V2C — Provisional Consensus state + soft-mask readout
+# V2C — Provisional Consensus state + canonical bounded solve
 
-Status: **planned — accepted v2.0 scope; not implemented** (see `docs/ai-select/TICKET-GRAPH-V2.md`)
+Status: **review-required parent envelope — Q4 recurrence model accepted; Q5 readout/residual pending; not agent-ready**
 
-Blocked by: none
+Blocked by: none  
 Blocks: V2D
 
-## Final Spec v2.0 mapping
+## Authority
 
-- Final Spec v2.0 §5 (soft-mask readout), §7.1, §3 (Companion ownership);
-  `CONTEXT.md` non-normative "Provisional 3D Consensus" / "Evidence-Internal
-  Depth"
+- Final Spec v2.0 Amendment 003;
+- ADR 0024;
+- Amendments 002/001 and Final Spec v2.0 where not superseded;
+- current immutable P/N/V and target-scope contracts.
 
 ## Goal
 
-Introduce the Companion-local disposable Provisional 3D Consensus state,
-revised once per Included publication, plus its kernel-side consensus
-soft-mask readout for residual computation.
+Introduce a Companion-local Provisional Consensus represented by continuous membership tendency `q`, independent support/knownness `s`, and an exact frozen scope binding. Compute the canonical state through a deterministic bounded batch recurrence over the exact current Included Stable observation set.
 
 ## Inputs / preconditions
 
-- Included Stable Masks + Participation (v1.3 semantics carried over);
-- same-decision raster family (Ticket 20);
-- loop-scoped cache seam keyed by target + dependency identity.
+- current exact Included Stable Views, Participation, and immutable P/N/V;
+- finite Conservative Seed prior and current stable input revision;
+- frozen Core / Discovery Envelope / Frontier revision;
+- same-decision raster family for the later reviewed consensus readout;
+- exact target, dependency, artifact, and policy identities.
 
 ## Outputs / handoff
 
-- Per-Gaussian consensus state maintained in the Companion, alive across
-  requests, disposable by policy;
-- consensus-state-weighted colored pass inside the same-decision kernel
-  family, producing the soft mask readout consumed Companion-side only;
-- revision entry point invoked exactly once per Included publication;
-- staleness propagation: new Views, Stable Mask revisions or Participation
-  changes make dependent consensus/reliability/readiness stale;
-- replay support via Companion-side digest/journal.
+- per-Stable-ID q/s state plus frozen scope binding;
+- deterministic canonical input/output digests;
+- one atomic public Consensus Revision per current input-set change;
+- bounded private Solver Iterations;
+- convergence or non-convergence status;
+- proposed post-solve Scope Delta;
+- cache/journal seam whose warm/incremental result is equivalent to a cold canonical full solve.
 
-## Acceptance criteria
+## Accepted recurrence invariants
 
-- [ ] Soft-mask readout is computed inside the same-decision raster family;
-      no independent approximate re-rasterization exists.
-- [ ] Consensus is Companion-local disposable derived state: feeds planner
-      utility, reliability and weighted aggregation ONLY.
-- [ ] It can never execute Native Set/Add/Remove/Intersect, forms no
-      cross-target persistent history, and is never an AI Candidate.
-- [ ] It does not cross the Browser/Companion boundary as a formal artifact.
-- [ ] Cache is keyed by target + dependency identity; incompatible identity
-      invalidates deterministically.
-- [ ] Exactly one revision per Included publication; replay reconstructs
-      equivalent state from digests/journal.
-- [ ] Dependency changes stale downstream reliability/readiness rather than
-      silently reusing prior state.
+- `q` is continuous membership tendency, not a calibrated probability or Candidate.
+- `s` distinguishes weakly observed unknown support from high-support conflict.
+- q/s initialize from a finite Seed prior plus a uniform aggregate over all current Included Evidence.
+- View arrival order and cache history do not define canonical output.
+- Reliability iteration `r` consumes q/s from iteration `r-1` only.
+- Core/Envelope/Frontier remain frozen during the solve.
+- Scope Delta commits only after the solve and affects a later solve.
+- One public revision may contain multiple private iterations.
+- Non-convergence cannot establish Ready or publish Candidate.
+- Consensus stays Companion-local and never mutates Native Selection or Stable observation authority.
 
-## Validation
+## Remaining review gates before decomposition
 
-- Companion consensus revision tests (new View / Mask revision /
-  Participation change staleness);
-- soft-mask readout kernel/reference parity tests;
-- replay/digest round-trip tests.
+- Q5: exact same-decision soft foreground / support / Frontier readout;
+- visibility and trust gating for residual computation;
+- exact q0/s0 transform and finite Seed-prior strength;
+- q/s update transform from weighted P/N and raw V;
+- convergence metric, tolerance, and maximum iterations;
+- output representation, memory layout, and GPU/reference parity;
+- journal lifetime and identity fields shared with V2I.
+
+## Validation families
+
+- arrival-order permutation equivalence;
+- warm/incremental versus cold canonical full solve;
+- unknown (`q≈0.5,s low`) versus conflict (`q≈0.5,s high`);
+- same-round feedback prohibition;
+- scope freeze and two-phase Scope Delta;
+- non-convergence preserves prior Candidate and blocks Ready;
+- identity invalidation and deterministic replay.
 
 ## Non-goals
 
-- No reliability weighting math (V2D), no aggregation change (V2E), no browser
-  protocol artifact, no Candidate publication change.
+- No final residual equation (Q5/V2D), calibration numbers, Candidate publication, Browser consensus artifact, or Native Selection mutation.

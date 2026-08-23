@@ -1,23 +1,26 @@
 {
   "schema_version": 1,
-  "control_plane_version": "ai-select-v2-preimplementation-review-3",
+  "control_plane_version": "ai-select-v2-preimplementation-review-4",
   "feature": "ai-select",
   "branch": "ai-select-v1",
   "normative_target": {
     "spec": "docs/specs/ai-select-final-spec-v2.0.md",
     "amendments": [
+      "docs/specs/ai-select-final-spec-v2.0-amendment-003-deterministic-bounded-consensus-recurrence.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-002-seed-discovery-depth-staging.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-001-expert-recovery.md"
     ],
     "accepted_date": "2026-08-22",
     "latest_amendment_accepted_date": "2026-08-23",
     "active_adrs": [
+      "docs/adr/0024-deterministic-bounded-consensus-recurrence.md",
       "docs/adr/0023-stage-depth-support-and-require-seed-independent-discovery.md",
       "docs/adr/0022-automation-default-with-expert-recovery.md",
       "docs/adr/0021-kernel-internal-depth-readouts-and-depth-classified-negative-mass.md",
       "docs/adr/0020-auto-publish-candidate-at-ready-low-gain-terminal.md"
     ],
     "context_overlays": [
+      "docs/ai-select/CONTEXT-AMENDMENT-003-CONSENSUS-RECURRENCE.md",
       "docs/ai-select/CONTEXT-AMENDMENT-002-SEED-DISCOVERY-DEPTH.md",
       "docs/ai-select/CONTEXT-AMENDMENT-001-EXPERT-RECOVERY.md"
     ],
@@ -45,18 +48,51 @@
   },
   "reviewed_seed_discovery_decisions": {
     "depth_term": "contribution-weighted-expected-depth",
-    "depth_moments": ["M0", "M1", "M2", "variance"],
+    "depth_moments": [
+      "M0",
+      "M1",
+      "M2",
+      "variance"
+    ],
     "cwed_is_authoritative_surface_depth": false,
-    "seed_variants": ["S0-pnv-connectivity", "S1-soft-center-depth"],
+    "seed_variants": [
+      "S0-pnv-connectivity",
+      "S1-soft-center-depth"
+    ],
     "seed_variants_shadow_parallel": true,
     "seed_hard_bounds_discovery": false,
     "core_monotonic_scope": "stable-input-revision",
     "discovery_envelope_seed_independent": true,
     "frontier_reversible": true,
     "core_coverage_separate_from_frontier_debt": true,
-    "utility_terms": ["core", "frontier", "uncertain", "diversity", "duplication", "cost"],
+    "utility_terms": [
+      "core",
+      "frontier",
+      "uncertain",
+      "diversity",
+      "duplication",
+      "cost"
+    ],
     "classified_negative_mass": "nonblocking-v2ax-experiment",
     "production_negative_mass": "single-channel"
+  },
+  "reviewed_consensus_recurrence_decisions": {
+    "model": "continuous-q-plus-support-s",
+    "q_is_calibrated_probability": false,
+    "canonical_solve": "deterministic-bounded-batch",
+    "canonical_input": "exact-current-included-stable-observation-set",
+    "arrival_order_independent": true,
+    "initialization": "finite-seed-prior-plus-uniform-aggregate",
+    "reliability_lag": "one-solver-iteration",
+    "same_round_feedback": false,
+    "public_revision_per_input_change": 1,
+    "private_solver_iterations": "bounded",
+    "scope_frozen_during_solve": true,
+    "scope_commit": "two-phase-after-solve",
+    "incremental_cache_authority": false,
+    "cold_full_solve_equivalence_required": true,
+    "non_convergence": "limited-fail-closed-no-candidate",
+    "q5_readout_and_residual_pending": true
   },
   "current_control_plane": {
     "mapping": "docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md",
@@ -66,17 +102,32 @@
     "tickets_directory": "docs/ai-select/tickets/v2",
     "v2a_ticket": "docs/ai-select/tickets/v2/V2A-depth-moments-and-depth-evidence-experiment.md",
     "v2b_ticket": "docs/ai-select/tickets/v2/V2B-conservative-seed-discovery-frontier.md",
+    "v2c_ticket": "docs/ai-select/tickets/v2/V2C-provisional-consensus-softmask-readout.md",
+    "v2d_ticket": "docs/ai-select/tickets/v2/V2D-observation-reliability.md",
+    "v2e_ticket": "docs/ai-select/tickets/v2/V2E-weighted-aggregation-revision.md",
     "v2j_ticket": "docs/ai-select/tickets/v2/V2J-acquisition-ui-expert-recovery.md"
   },
   "planning_status": "pre-implementation-review",
-  "reviewed_parent_envelopes": ["V2A", "V2B"],
-  "review_frontier": ["V2C", "V2D", "V2E"],
-  "next_review_item": "V2C/V2D/V2E-recurrence",
+  "reviewed_parent_envelopes": [
+    "V2A",
+    "V2B"
+  ],
+  "reviewed_cross_ticket_decisions": [
+    "Q4-B-deterministic-bounded-q-s-recurrence"
+  ],
+  "review_frontier": [
+    "V2C",
+    "V2D",
+    "V2E"
+  ],
+  "next_review_item": "Q5-consensus-readout-and-reliability-residual",
   "agent_ready_tickets": [],
   "ticket_in_flight": null,
   "next_implementation_ticket": null,
   "next_implementation_subticket": null,
-  "experimental_sidecars": ["V2AX-depth-classified-negative-evidence"],
+  "experimental_sidecars": [
+    "V2AX-depth-classified-negative-evidence"
+  ],
   "provisional_topological_order": [
     "V2A",
     "V2C",
@@ -91,6 +142,7 @@
   ],
   "release_ownership_blocker": "Calibration, policy freeze, production identity promotion, cutover, and release qualification are not yet owned by reviewed tickets.",
   "deprecated": [
+    "CONTEXT.md terms superseded by CONTEXT-AMENDMENT-003-CONSENSUS-RECURRENCE.md",
     "CONTEXT.md terms superseded by CONTEXT-AMENDMENT-002-SEED-DISCOVERY-DEPTH.md",
     "CONTEXT.md term User-added View (superseded)",
     "ADR 0021 mandatory classified-N production clause",

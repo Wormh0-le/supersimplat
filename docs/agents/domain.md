@@ -6,16 +6,17 @@ Read this file when work changes AI Select behavior, terminology, product scope,
 
 Read sources in this order:
 
-1. Final Spec v2.0 Amendment 002
-2. Final Spec v2.0 Amendment 001
-3. Final Spec v2.0 where not amended
-4. `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`
-5. ADR 0023, ADR 0022, residual ADR 0021, ADR 0020
-6. carried-over nonconflicting ADRs
-7. context amendments 002/001, then root `CONTEXT.md`
-8. `docs/ai-select/TICKET-GRAPH-V2.md`
-9. `docs/ai-select/V2-REVIEW-STATUS.md`
-10. affected ticket, implementation, tests, runtime declarations, and benchmark records
+1. Final Spec v2.0 Amendment 003
+2. Final Spec v2.0 Amendment 002
+3. Final Spec v2.0 Amendment 001
+4. Final Spec v2.0 where not amended
+5. `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`
+6. ADR 0024, ADR 0023, ADR 0022, residual ADR 0021, ADR 0020
+7. carried-over nonconflicting ADRs
+8. context amendments 003/002/001, then root `CONTEXT.md`
+9. `docs/ai-select/TICKET-GRAPH-V2.md`
+10. `docs/ai-select/V2-REVIEW-STATUS.md`
+11. affected ticket, implementation, tests, runtime declarations, and benchmark records
 
 Surface conflicts rather than silently choosing one source.
 
@@ -23,7 +24,7 @@ Surface conflicts rather than silently choosing one source.
 
 - Amended Final Spec v2.0 is the target.
 - Shipped behavior remains implemented v1.3 until explicit reviewed cutovers.
-- Parent envelopes are not agent-ready implementation tasks.
+- Parent envelopes and accepted cross-ticket decisions are not agent-ready implementation tasks.
 
 ## Product orientation
 
@@ -43,9 +44,18 @@ Surface conflicts rather than silently choosing one source.
 - CWED is an internal statistic, not authoritative surface depth.
 - Depth-classified Negative Evidence is experimental; current production has one N channel.
 
+## Consensus vocabulary
+
+- `q` is continuous membership tendency, not a calibrated probability or Candidate membership.
+- `s` is support/knownness and distinguishes unknown from high-support conflict.
+- A Solver Iteration is private; a Consensus Revision is one atomic canonical result.
+- The canonical full solve is deterministic, bounded, and independent of View arrival order.
+- Scope is frozen during a solve; Scope Delta commits only afterward.
+- Non-converged consensus cannot establish Ready or publish Candidate.
+
 ## Product boundaries
 
-AI Select remains a native SuperSplat Selection Tool. Browser owns user-visible target state and Native Selection. Seed, Frontier, provisional consensus, reliability, View Utility, and Candidate are derived state and do not mutate Native Selection by themselves. Complete Contributor remains reference/debug only.
+AI Select remains a native SuperSplat Selection Tool. Browser owns user-visible target state and Native Selection. Seed, Frontier, consensus, reliability, View Utility, and Candidate are derived state and do not mutate Native Selection by themselves. Complete Contributor remains reference/debug only.
 
 ## Historical material
 

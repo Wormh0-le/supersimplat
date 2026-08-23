@@ -4,11 +4,12 @@ Status: **accepted amended scope, pre-implementation review; no ticket is agent-
 
 ## Current sources
 
-1. Final Spec v2.0 Amendment 002;
-2. Final Spec v2.0 Amendment 001;
-3. Final Spec v2.0 where not amended;
-4. ADR 0023, ADR 0022, residual ADR 0021, ADR 0020;
-5. carried-over non-conflicting v1.3 decisions.
+1. Final Spec v2.0 Amendment 003;
+2. Final Spec v2.0 Amendment 002;
+3. Final Spec v2.0 Amendment 001;
+4. Final Spec v2.0 where not amended;
+5. ADR 0024, ADR 0023, ADR 0022, residual ADR 0021, ADR 0020;
+6. carried-over non-conflicting v1.3 decisions.
 
 ## Execution rules
 
@@ -24,9 +25,9 @@ Status: **accepted amended scope, pre-implementation review; no ticket is agent-
 |---|---|---|---|
 | V2A | Projected depth + CWED moments; V2AX experiment sidecar | — | V2B S1 path |
 | V2B | Conservative Seed + Core/Envelope/Frontier | V2A for S1 only | V2E, V2F |
-| V2C | Provisional Consensus + soft-mask readout | — | V2D |
-| V2D | Observation Reliability over current P/N/V | V2C | V2E |
-| V2E | Weighted aggregation + target-scope revision | V2B, V2D | V2F, V2H |
+| V2C | q+s Provisional Consensus + deterministic bounded solve | — | V2D |
+| V2D | lagged Observation Reliability over current P/N/V | V2C | V2E |
+| V2E | weighted aggregation + q/s update + two-phase scope revision | V2B, V2D | V2F, V2H |
 | V2F | View Utility + exploration + candidate pool | V2B, V2E | V2G, V2I |
 | V2G | Dual budget, outcomes, termination, continuation policy | V2F | V2H, V2I |
 | V2H | Terminal publication semantics | V2E, V2G | V2J |
@@ -73,6 +74,36 @@ Core Coverage + Frontier Debt + Uncertain + Diversity
 - high Core Coverage cannot hide material Frontier Debt;
 - Expert Recovery is an independent discovery source.
 
+## Accepted consensus recurrence
+
+```text
+canonical exact Included Stable observation set
+        ↓
+finite Seed prior + uniform aggregate
+        ↓
+q^(0), s^(0)
+        ↓
+┌──────────────────────────────────────┐
+│ lagged consensus readout             │
+│ → Reliability ω^(r)                  │
+│ → weighted P/N aggregate, raw V      │
+│ → q^(r), s^(r)                       │
+└──────── deterministic + bounded ─────┘
+        ↓
+one atomic Consensus Revision
+        ↓
+post-solve Scope Delta
+        ↓
+next solve / next acquisition
+```
+
+- q is continuous membership tendency; s is support/knownness;
+- one public revision may contain multiple private iterations;
+- same-round Reliability feedback is forbidden;
+- arrival order and cache history do not define canonical output;
+- scope is frozen during the solve and commits only afterward;
+- non-convergence cannot establish Ready or publish Candidate.
+
 ## Product cutover intent
 
 Default:
@@ -97,13 +128,14 @@ Continue Acquisition as a fresh bounded attempt
 - no Companion-autonomous product session or new transport;
 - no automatic Native Selection application;
 - no persistent Stop/Generate More/Regenerate controls;
-- no standalone Browser depth artifact;
+- no standalone Browser depth or consensus artifact;
 - no V2 policy enters production identity while still experimental.
 
 ## Agent-readiness
 
 ```text
 reviewed parent direction = V2A, V2B
+accepted cross-ticket     = Q4-B recurrence for V2C/V2D/V2E
 agent-ready stages        = none
-next review item          = V2C/V2D/V2E recurrence
+next review item          = Q5 consensus readout + reliability residual
 ```

@@ -7,7 +7,7 @@ Final Spec v1.3 implementation traceability is preserved under `docs/ai-select/h
 
 ## Authority
 
-Traceability covers Final Spec v2.0 with Amendments 001/002 and ADRs 0023/0022, residual ADR 0021, and ADR 0020.
+Traceability covers Final Spec v2.0 with Amendments 001/002/003 and ADRs 0024/0023/0022, residual ADR 0021, and ADR 0020.
 
 ## Carried-over implemented foundations
 
@@ -44,11 +44,11 @@ Traceability covers Final Spec v2.0 with Amendments 001/002 and ADRs 0023/0022, 
 | N012 | boundary contact, new Stable Views, cross-view support, and Expert Recovery can discover outside Seed | V2B/V2E/V2J | accepted-scope / review-required |
 | N013 | Core Observation Coverage and Frontier Debt remain separate | V2B/V2E | accepted-scope / review-required |
 | N014 | readiness considers Core Coverage, Diversity, Frontier Debt, remaining Utility, and identity completeness | V2E/V2G | accepted-scope / review-required |
-| N015 | provisional consensus is Companion-local, bounded, and non-executable | V2C | review-required |
-| N016 | consensus soft-mask readout does not create an independent visibility authority | V2C | review-required |
-| N017 | reliability uses lagged 3D consistency with anti-confirmation-bias guards | V2D | review-required |
-| N018 | reliability affects semantic P/N but not raw V | V2D/V2E | review-required |
-| N019 | weighted aggregation uses current single-N P/N/V and equals full recomputation incrementally | V2E | review-required |
+| N015 | Provisional Consensus stores continuous q and independent support/knownness s | V2C | accepted-scope / review-required |
+| N016 | canonical consensus is a deterministic bounded batch solve over exact current Included Stable Evidence | V2C | accepted-scope / review-required |
+| N017 | one public Consensus Revision may contain bounded private Solver Iterations | V2C | accepted-scope / review-required |
+| N018 | Reliability uses only lagged q/s; same-round feedback is forbidden | V2C/V2D | accepted-scope / review-required |
+| N019 | weighted aggregation applies Reliability to semantic P/N while raw V remains unchanged | V2D/V2E | accepted-scope / review-required |
 | N020 | View Utility is prospective and separate from realized Coverage and Readiness | V2F | accepted-scope / review-required |
 | N021 | Utility balances Core, Frontier, Uncertain, diversity, duplication, and cost with bounded exploration | V2F | accepted-scope / review-required |
 | N022 | candidate pool, scoring, tie-break, and replay are deterministic | V2F | review-required |
@@ -66,17 +66,20 @@ Traceability covers Final Spec v2.0 with Amendments 001/002 and ADRs 0023/0022, 
 | N034 | User Confirmed/manual observations retain reliability exemption | V2D/V2J | accepted-scope / review-required |
 | N035 | persistent planning controls remain retired | V2J | accepted-scope |
 | N036 | calibration, policy freeze, production identity promotion, cutover, and qualification have explicit owners | unassigned | blocker |
+| N037 | Core/Envelope/Frontier are frozen during a solve and Scope Delta commits only afterward | V2C/V2E | accepted-scope / review-required |
+| N038 | non-converged consensus cannot establish Ready or publish Candidate | V2C/V2E/V2H | accepted-scope / review-required |
 
 ## Coverage result
 
 ```text
 carried-over implemented requirements = 12
-new v2 requirements                 = 36
-mapped new requirements             = 35
+new v2 requirements                 = 38
+mapped new requirements             = 37
 unassigned release requirement      = N036
 reviewed parent direction           = V2A, V2B
+accepted cross-ticket decision      = Q4-B
 agent-ready stages                  = 0
-next review item                    = V2C/V2D/V2E recurrence
+next review item                    = Q5 consensus readout + reliability residual
 ```
 
 No implementation closure may be claimed while N036 is unassigned or while relevant stages remain review-required/decomposition-pending.

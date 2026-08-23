@@ -1,17 +1,17 @@
 # Lifecycle and Protocol Invariants
 
-Read this file for target, View, Mask, Evidence, Seed, Core/Frontier, Candidate, acquisition-loop, Expert Recovery, identity, replay, cancellation, suspension, or native-selection behavior.
+Read this file for target, View, Mask, Evidence, Seed, Core/Frontier, consensus, Candidate, acquisition-loop, Expert Recovery, identity, replay, cancellation, suspension, or native-selection behavior.
 
 ## Baseline and implementation gate
 
-- Final Spec v2.0 with Amendments 001/002 is the target.
+- Final Spec v2.0 with Amendments 001/002/003 is the target.
 - Runtime remains v1.3 until an explicit reviewed cutover.
 - No parent envelope is implementation-ready; both mapping and review status must mark an exact stage agent-ready.
 
 ## Stable authority
 
 - The editor owns Stable Gaussian IDs and one Current Target Context.
-- Stable Mask, Participation, raw Evidence, Seed/Core/Frontier, provisional consensus, Candidate, and Native Selection remain distinct.
+- Stable Mask, Participation, raw Evidence, Seed/Core/Frontier, Provisional Consensus, Candidate, and Native Selection remain distinct.
 - User Confirmed/manual Stable Masks cannot be silently replaced or automatically downweighted.
 - Candidate changes Native Selection only through explicit Set/Add/Remove/Intersect backed by native EditHistory.
 
@@ -23,17 +23,28 @@ Read this file for target, View, Mask, Evidence, Seed, Core/Frontier, Candidate,
 - An authoritative Stable input revision may rotate/rebuild Core through a new identity.
 - Discovery Envelope must have sources independent of the Seed.
 - Discovery Frontier is reversible and never directly Candidate membership.
-- Boundary contact, Core-external Stable observation support, coherent multi-view support, and User Confirmed recovery observations may enter Frontier.
-- Core Observation Coverage and Frontier Debt are distinct; high Core Coverage alone cannot establish completeness.
+- Core Observation Coverage and Frontier Debt are distinct.
+
+## Consensus recurrence
+
+- Consensus stores continuous q plus support/knownness s under an exact frozen scope revision.
+- Canonical output is computed from the exact current Included Stable observation set, not arrival order.
+- Reliability iteration `r` consumes only q/s from iteration `r-1`.
+- One public Consensus Revision may contain multiple bounded private Solver Iterations.
+- Partial iterations never become current state.
+- Core/Envelope/Frontier remain frozen during the solve.
+- Scope Delta commits only after the solve and affects a later solve.
+- Warm/incremental caches must remain equivalent to a cold canonical solve.
+- Non-convergence is Limited/fail-closed and cannot establish Ready or publish Candidate.
 
 ## Rendering and Evidence
 
 - All AI observation RGB uses locked gsplat and exact CameraBinding.
 - `RGB Ready != Mask Ready != Evidence Ready != Candidate Ready`.
 - Current production Evidence remains immutable single-N P/N/V.
+- Reliability may weight P/N only; raw V remains realized observation truth.
 - CWED/depth moments are internal features and not Browser depth truth.
 - Classified N is experimental and cannot block Reliability/Aggregation.
-- Stable Mask, per-view Evidence, and Candidate replacement publish atomically.
 - Failed/stale work preserves independently valid products and the prior inspectable Candidate.
 
 ## Automatic acquisition
@@ -54,4 +65,4 @@ Read this file for target, View, Mask, Evidence, Seed, Core/Frontier, Candidate,
 
 ## Replay and identity
 
-Loop, iteration, revision, and endpoint-attempt hierarchy remains a V2I review gate. Do not collapse existing attempts or claim deterministic wall-clock replay prematurely.
+Loop, iteration, Consensus Revision, scope revision, and endpoint-attempt hierarchy remains a V2I review gate. Do not collapse existing attempts or claim deterministic wall-clock replay prematurely.

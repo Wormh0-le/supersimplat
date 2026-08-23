@@ -7,7 +7,7 @@ Read this file for AI Select behavior, terminology, scope, or current authority.
 1. Final Spec v2.0 Amendments 009→001 and the unamended v2.0 baseline, preserved through the immutable links in [Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37).
 2. #37 for current decision status, dependency frontier, implementation gates, and cutover state.
 3. The relevant parent capability Issue #38–#47 and any exact child stage Issue; an explicitly accepted decision comment may refine that Issue without silently rewriting history.
-4. Non-conflicting historical ADR decisions referenced by those Issues at migration snapshot [`aacad57`](https://github.com/Wormh0-le/supersimplat/tree/aacad57fc534acc43522ca4d51d41149b5ee9692).
+4. Non-conflicting historical ADR decisions referenced by those Issues at migration snapshot [`504e888`](https://github.com/Wormh0-le/supersimplat/tree/504e8885b87575761dc2e367e520b7dfba46884b).
 5. Root `CONTEXT.md` for stable vocabulary where it does not conflict with #37 or the relevant current Issue.
 6. Affected code, tests, runtime locks, and benchmark evidence.
 

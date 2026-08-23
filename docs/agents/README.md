@@ -32,5 +32,5 @@ docs/agents/
 - Prefer repository configuration and `--help` output over copied command catalogs unless the copy records a project-specific constraint.
 - Put stable domain vocabulary in root `CONTEXT.md`.
 - Put current AI Select v2.0 authority, status, dependencies, decomposition, and readiness in GitHub [Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37) and its exact child Issues.
-- Treat the pre-migration specifications, ADRs, feature documents, tickets, reviews, benchmarks, and `.scratch` records as immutable Git history at commit [`aacad57`](https://github.com/Wormh0-le/supersimplat/tree/aacad57fc534acc43522ca4d51d41149b5ee9692), reached through links in #37. Do not restore them as a second current control plane.
+- Treat the pre-migration specifications, ADRs, feature documents, tickets, reviews, benchmarks, and `.scratch` records as immutable Git history at merge commit [`504e888`](https://github.com/Wormh0-le/supersimplat/tree/504e8885b87575761dc2e367e520b7dfba46884b), reached through links in #37. Do not restore them as a second current control plane.
 - `docs/agents/**` is the only retained `docs/**` subtree. Add a new guidance file only when a distinct task branch cannot be routed clearly to an existing file.

@@ -1,63 +1,64 @@
-# V2E — Weighted aggregation revision
+# V2E — Weighted aggregation and target-scope revision
 
-Status: **planned — accepted v2.0 scope; not implemented** (see `docs/ai-select/TICKET-GRAPH-V2.md`)
+Status: **review-required parent envelope; not agent-ready**
 
-Blocked by: V2A, V2B, V2D
-Blocks: V2H
+Blocked by: V2B, V2D  
+Blocks: V2F, V2H
 
-## Final Spec v2.0 mapping
+## Authority
 
-- Final Spec v2.0 §7.3, §4 (Core Target denominator), §5 (classified N)
-- Carry-over: existing aggregation policy seam
-  (`reference_gaussian_evidence_aggregation.py` — today one-shot at Re-Lift)
+- Final Spec v2.0 §7.3 as amended by Amendment 002;
+- ADR 0023;
+- current immutable P/N/V and existing aggregation/Lift Readiness seams.
 
 ## Goal
 
-Revise aggregation to consume depth-classified N and view-level reliability
-weights over the seed-based Core Target denominator, revising incrementally
-after each Included publication.
+Generalize the current one-shot aggregation into a bounded incremental revision over immutable single-N P/N/V Evidence, reliability weights, Core Target state, and reversible Discovery Frontier state.
 
 ## Inputs / preconditions
 
-- Immutable per-View Direct P/N/V including depth-classified N (V2A);
-- view-level reliability weights (V2D);
-- Core Target denominator state (V2B);
-- existing aggregation policy + readiness consumption (Tickets 13/14C/20/21).
+- current per-View `positiveMass`, `negativeMass`, `visibleMass` artifacts;
+- view-level Reliability from V2D;
+- Core/Envelope/Frontier state from V2B;
+- consensus recurrence decisions from the joint V2C/D/E review.
 
 ## Outputs / handoff
 
-- Revised versioned aggregation policy consuming classified N + reliability
-  weights, identity `experimental-v*` staged;
-- incremental revision path invoked after each Included publication (today's
-  one-shot Re-Lift aggregation generalizes into loop-scoped revision);
-- readiness revision consumption: Lift Readiness recomputed over the revised
-  aggregate without taking over publication authority;
-- Missing/unusable observation semantics preserved as unobserved.
+- versioned weighted aggregate with P/N weighting only and raw V preserved;
+- incremental revision equivalent to full recomputation for identical inputs;
+- Selected/Rejected/Uncertain inputs for provisional consensus and eventual Candidate publication;
+- Core Observation Coverage input and a separate Frontier Debt/readiness input;
+- reviewed Core-promotion / Frontier-rejection handoff without direct Candidate mutation;
+- exact policy and revision identities.
 
-## Acceptance criteria
+## Required invariants
 
-- [ ] Aggregation consumes immutable per-View P/N/V with depth-classified N
-      and view-level reliability weights; P/N weighting only — raw V remains
-      unweighted.
-- [ ] Missing/unusable observations remain unobserved, never negative
-      evidence.
-- [ ] Incremental revision after every Included publication produces the same
-      result as full recomputation (equivalence test).
-- [ ] Denominator is the seed-based monotonic Core Target; shadow-phase dual
-      coverage (seed vs whole-Splat) remains reportable.
-- [ ] Revised policy identity is exact-key validated and checksum bound,
-      staged `experimental-v*`.
-- [ ] v1.3 Re-Lift-time aggregation behavior is preserved until supersession
-      cutover (no silent semantic drift).
+- Missing, unusable, or excluded observations remain unobserved, never negative.
+- Current single Negative Mass remains the production input; V2AX is optional diagnostics only.
+- Core and Frontier are not collapsed into one denominator or one binary classification.
+- Frontier membership is reversible; Core does not shrink inside one stable input revision.
+- An authoritative Stable input revision may rotate/rebuild Core through a new identity rather than preserving an early error forever.
+- Weighted incremental output equals full recomputation within the declared numerical tolerance.
+- Lift Readiness remains the publication authority.
+- v1.3 runtime behavior remains unchanged until an explicit production cutover.
 
-## Validation
+## Review gates before decomposition
 
-- Incremental-vs-full recomputation equivalence tests;
-- classified-N consumption tests (front/behind classes weighted distinctly);
-- reliability-weight application tests including V-unweighted assertion;
-- identity fail-closed tests.
+- exact recurrence among aggregate, consensus, reliability, and scope revision;
+- whether Core promotion occurs before or after one consensus revision;
+- Frontier Debt representation and aggregation inputs;
+- convergence and maximum-revision semantics;
+- numerical tolerance and deterministic journal/replay behavior.
+
+## Validation families
+
+- incremental/full equivalence;
+- raw-V unchanged under reliability weighting;
+- Core promotion and Frontier rejection ordering;
+- revision rotation and stale dependency handling;
+- confirmation-bias and seed-lock adversarial fixtures;
+- production identity fail-closed tests.
 
 ## Non-goals
 
-- No readiness threshold change (V2G/calibration), no publication semantics
-  (V2H), no consensus computation (V2C).
+- No classified-N production migration, View Utility scoring, terminal publication, or Native Selection mutation.

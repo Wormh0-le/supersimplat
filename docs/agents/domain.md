@@ -6,36 +6,47 @@ Read this file when work changes AI Select behavior, terminology, product scope,
 
 Read sources in this order:
 
-1. `docs/specs/ai-select-final-spec-v2.0-amendment-001-expert-recovery.md`
-2. `docs/specs/ai-select-final-spec-v2.0.md`, except where amended
-3. `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`
-4. ADR 0022, ADR 0021, ADR 0020
-5. carried-over ADR 0019, residual ADR 0018, and unconflicted ADRs 0016/0017/0013/0015
-6. `docs/ai-select/CONTEXT-AMENDMENT-001-EXPERT-RECOVERY.md`, then root `CONTEXT.md`
-7. `docs/ai-select/TICKET-GRAPH-V2.md`
-8. `docs/ai-select/V2-REVIEW-STATUS.md`
-9. the affected ticket, implementation, tests, runtime declarations, and benchmark records
+1. Final Spec v2.0 Amendment 002
+2. Final Spec v2.0 Amendment 001
+3. Final Spec v2.0 where not amended
+4. `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`
+5. ADR 0023, ADR 0022, residual ADR 0021, ADR 0020
+6. carried-over nonconflicting ADRs
+7. context amendments 002/001, then root `CONTEXT.md`
+8. `docs/ai-select/TICKET-GRAPH-V2.md`
+9. `docs/ai-select/V2-REVIEW-STATUS.md`
+10. affected ticket, implementation, tests, runtime declarations, and benchmark records
 
-Surface conflicts instead of silently choosing one source.
+Surface conflicts rather than silently choosing one source.
 
 ## Runtime versus target
 
-- Final Spec v2.0 as amended is the normative target.
-- Shipped behavior remains the implemented v1.3 baseline until explicit V2 cutovers land.
-- V2A–V2J are accepted scope but are not agent-ready unless both current mapping and review status say so.
+- Amended Final Spec v2.0 is the target.
+- Shipped behavior remains implemented v1.3 until explicit reviewed cutovers.
+- Parent envelopes are not agent-ready implementation tasks.
 
 ## Product orientation
 
-- Automatic acquisition is the default post-Anchor workflow.
-- Expert Recovery is secondary and available only when no loop is running and the target is active.
-- Expert Recovery retains User-added View as `Add Observation / Use Current View` and adds `Continue Acquisition`.
-- Expert recovery never bypasses Stable Mask, Participation, Direct Evidence, Candidate identity, or explicit Native Set/Add/Remove/Intersect.
-- Persistent planning controls and camera management during a running loop remain out of scope.
+- Automatic acquisition is default.
+- Expert Recovery is secondary and available only when no loop runs and the target is active.
+- Recovery retains Add Observation and Continue Acquisition.
+- Recovery never bypasses Stable Mask, Participation, Direct Evidence, Candidate identity, or explicit Native operations.
+
+## Seed and discovery vocabulary
+
+- Conservative Seed is a high-precision bootstrap prior, not ownership.
+- S0 and S1 are shadow variants; no production winner is assumed.
+- Core Target is high-confidence support for Core Coverage.
+- Discovery Envelope is seed-independent potential support.
+- Discovery Frontier is reversible and cannot directly become Candidate.
+- Frontier Debt is distinct from Core Observation Coverage.
+- CWED is an internal statistic, not authoritative surface depth.
+- Depth-classified Negative Evidence is experimental; current production has one N channel.
 
 ## Product boundaries
 
-AI Select is a native SuperSplat Selection Tool, not a semantic-object workspace. The Browser owns user-visible target state and Native Selection. Provisional consensus, reliability, View Utility, and Candidate are derived state and never mutate Native Selection by themselves. Complete per-pixel Contributor remains reference/debug only.
+AI Select remains a native SuperSplat Selection Tool. Browser owns user-visible target state and Native Selection. Seed, Frontier, provisional consensus, reliability, View Utility, and Candidate are derived state and do not mutate Native Selection by themselves. Complete Contributor remains reference/debug only.
 
 ## Historical material
 
-Final Spec v1.3 and its ticket graph remain provenance for the shipped baseline under `docs/ai-select/history/v1/`. The old root glossary definition `User-added View (superseded)` is deprecated by the current context amendment.
+Implemented v1 history lives under `docs/ai-select/history/v1/`. Root glossary terms conflicting with current context amendments are deprecated pending consolidation.

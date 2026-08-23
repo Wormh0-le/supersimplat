@@ -3,61 +3,58 @@
 ## Current control plane
 
 ```text
-Final Spec v2.0 Amendment 001
+Final Spec v2.0 Amendment 002
+→ Amendment 001
 → Final Spec v2.0
-→ ADR 0022 / 0021 / 0020
+→ ADR 0023 / 0022 / residual 0021 / 0020
 → CURRENT-TICKET-SPEC-MAPPING.md
 → V2-REVIEW-STATUS.md
 → TICKET-GRAPH-V2.md
 → tickets/v2/
 ```
 
-No V2 ticket is agent-ready. Runtime remains the implemented v1.3 baseline.
+No V2 stage is agent-ready. Runtime remains the implemented v1.3 baseline.
 
-## Product orientation
+## Accepted product architecture
 
 ```text
-default:
-Anchor → automatic acquisition → terminal Candidate/readiness
+Anchor
+→ automatic acquisition by default
+→ Expert Recovery when needed
 
-secondary Expert Recovery:
-Add Observation / Use Current View
-or Continue Acquisition
+Conservative Seed
+→ Core Target
++
+seed-independent Discovery Envelope / reversible Frontier
+→ Core Coverage + Frontier Debt
+→ iterative Consensus/Reliability/Aggregation
+→ View Utility and bounded acquisition
 ```
 
-User-added View is retained as recovery and is not exposed as camera management during a running loop.
+Current production keeps one Negative Mass channel. Depth-classified N is a nonblocking V2AX experiment.
 
 ## Current documents
 
-- `CURRENT-TICKET-SPEC-MAPPING.md` — current authority and ticket lifecycle;
-- `V2-REVIEW-STATUS.md` — human-readable implementation gate;
-- `TRACEABILITY.md` — amended v2 target coverage;
+- `CURRENT-TICKET-SPEC-MAPPING.md` — authority and lifecycle;
+- `V2-REVIEW-STATUS.md` — human implementation gate;
+- `TRACEABILITY.md` — amended v2 requirement coverage;
 - `manifest.json` — machine-readable control plane;
-- `TICKET-GRAPH-V2.md` — provisional parent capability graph;
-- `CONTEXT-AMENDMENT-001-EXPERT-RECOVERY.md` — current recovery vocabulary override;
-- `tickets/v2/` — review-required V2 capability envelopes.
-
-## Historical documents
-
-Implemented v1 control-plane snapshots live under:
-
-```text
-docs/ai-select/history/v1/
-```
-
-Root v1 graph/audit/walkthrough files are compatibility pointers only. Closed v1 ticket files remain implementation provenance, not current planning.
+- `TICKET-GRAPH-V2.md` — provisional parent graph;
+- context amendments 002/001 — temporary vocabulary overlays;
+- `tickets/v2/` — reviewed/review-required parent envelopes.
 
 ## Documentation lifecycle
 
-- Current amendments supersede conflicting clauses without rewriting accepted history.
-- Deprecated terms and paths are named explicitly.
-- Obsolete deletion-oriented V2J documentation has been removed.
-- Research remains under `docs/research/`.
-- Executable disposable probes remain under `.scratch/experiments/`.
-- Calibration and production promotion must gain explicit ticket ownership before v2 closure.
+- Amendments and later ADRs supersede conflicting clauses without rewriting accepted history.
+- ADR 0021 is retained and marked partially superseded.
+- Old V2A/V2B envelope files were deleted because they were unimplemented temporary planning artifacts; their replacements contain the reviewed direction.
+- Implemented v1 control-plane snapshots remain under `history/v1/`.
+- Research lives under `docs/research/`; disposable probes under `.scratch/experiments/`.
+- Context overlays must eventually be folded into root `CONTEXT.md` in one controlled cleanup, then deleted with superseded definitions.
 
 ## Next review
 
 ```text
-V2A — depth data path, expected-depth traversal, classified-N schema and identity
+V2C / V2D / V2E
+Provisional Consensus ↔ Reliability ↔ Weighted Aggregation recurrence
 ```

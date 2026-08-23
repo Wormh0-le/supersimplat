@@ -1,69 +1,62 @@
-# V2F — View Utility + layered candidate pool
+# V2F — View Utility, exploration, and layered candidate pool
 
-Status: **planned — accepted v2.0 scope; not implemented** (see `docs/ai-select/TICKET-GRAPH-V2.md`)
+Status: **review-required parent envelope; objective reviewed, prediction seam unresolved; not agent-ready**
 
-Blocked by: V2B
+Blocked by: V2B, V2E  
 Blocks: V2G, V2I
 
-## Final Spec v2.0 mapping
+## Authority
 
-- Final Spec v2.0 §6.1–6.2; `CONTEXT.md` non-normative "View Utility"
+- Final Spec v2.0 §6.1–§6.2 as amended by Amendment 002;
+- ADR 0023;
+- Observation Coverage, View Diversity, TargetGeometryHint, and feasibility carry-over contracts.
 
 ## Goal
 
-Implement the prospective View Utility scorer and the layered candidate pool,
-with the deterministic hint-based first View, replacing the fixed-four /
-`4–8` initial plan as the product acquisition path.
+Select the next feasible CameraBinding by prospective value while balancing exploitation of known Core support with seed-independent Frontier discovery and Uncertain resolution.
 
-## Inputs / preconditions
+## Reviewed utility structure
 
-- Core Target denominator + dual coverage (V2B);
-- existing hint-offset machinery, feasibility gates and generated-view
-  controller pattern (`src/ai-select/generated-view-controller.ts`);
-- Observation Coverage / View Diversity realized measures (v1.3 carry-over).
+The policy must be able to express separately calibrated terms for:
 
-## Outputs / handoff
+```text
+Core Observation Coverage gain
+Frontier discovery / Frontier Debt reduction
+Uncertain-resolution gain
+View-direction diversity
+re-observation / duplication penalty
+render + SAM + Evidence + revision cost
+```
 
-- Deterministic first-View rule: hint-projection-largest feasible candidate
-  (consensus does not exist yet — a technical boundary, not a special
-  channel);
-- layered candidate pool: existing hint offsets + local sphere sampling
-  around the hint center, unified through existing feasibility gates
-  (clipping, projection size, hint visibility, nonblank RGB); layer
-  combination ablatable;
-- View Utility scorer: predicted marginal Visible Mass gain over the Core
-  Target denominator, directional-diversity increment, duplication penalty,
-  feasibility/cost;
-- incremental rescoring triggered by every Included publication (per-View
-  delta where possible);
-- policy identity `view-utility-policy/experimental-v*`.
+No single term is the publication authority. Lift Readiness remains separate.
 
-## Acceptance criteria
+## Required behavior
 
-- [ ] Realized / prospective / readiness separation of concerns holds: View
-      Utility only scores candidates; it never publishes or gates readiness.
-- [ ] Planner consumes readiness reasons but never takes over Candidate
-      publication.
-- [ ] First post-Anchor View is deterministic and hint-based; later Views are
-      utility-driven.
-- [ ] Candidate pool layers pass the existing feasibility gates; no new
-      feasibility semantics invented.
-- [ ] Utility terms limited to the calibration scope; semantic-disambiguation
-      terms are deferred until reliability establishes Uncertain states.
-- [ ] Utility policy is versioned, deterministically replayable with a
-      deterministic tie-break; same inputs → same choice, tested.
-- [ ] Rescoring fires after every Included publication; incremental result
-      equals full rescore (equivalence test).
-- [ ] Policy staged `experimental-v*`; promotion by explicit key change.
+- the first post-Anchor View may use a deterministic TargetGeometryHint/Seed framing rule because iterative state does not yet exist;
+- later Views consume Core, Frontier, aggregate/Uncertain, diversity, feasibility, and cost state;
+- Seed influence is strongest early and declines as iterative evidence becomes available;
+- a bounded exploration floor prevents the planner from only re-observing already-covered Seed/Core;
+- candidate layers include existing hint offsets and reviewed local sampling, all passing existing feasibility gates;
+- selection and tie-breaks are deterministic and replayable;
+- predicted gain is recorded against realized Core gain and Frontier discovery for calibration.
 
-## Validation
+## Review gates before decomposition
 
-- Determinism/replay tests (fixed seed + inputs → identical sequence);
-- layered-pool feasibility gate tests;
-- incremental-vs-full rescoring equivalence tests;
-- first-View determinism test.
+- the ViewUtilityProbe data source and approximation contract;
+- candidate-pool generation and bounds;
+- cost units and whether wall-clock can affect deterministic decisions;
+- seed-influence decay and exploration-floor schedule;
+- normalization across Core, Frontier, Uncertain, diversity, and cost;
+- incremental versus full rescore equivalence.
+
+## Validation families
+
+- deterministic candidate sequence and tie-break;
+- no-seed-lock scenarios where a Frontier View outranks Core re-observation;
+- predicted versus realized gain calibration;
+- simple-object early stopping and difficult-object continued exploration;
+- candidate feasibility, latency, VRAM, and failure behavior.
 
 ## Non-goals
 
-- No budget/stop logic (V2G), no loop state machine (V2I), no readiness
-  policy change, no fixed-four product path (frozen baseline only).
+- No budget/termination implementation, Candidate publication, or fixed-four product fallback.

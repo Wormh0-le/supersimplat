@@ -1,65 +1,63 @@
 # V2D — Observation Reliability
 
-Status: **planned — accepted v2.0 scope; not implemented** (see `docs/ai-select/TICKET-GRAPH-V2.md`)
+Status: **review-required parent envelope; not agent-ready**
 
-Blocked by: V2A, V2C
+Blocked by: V2C  
 Blocks: V2E
 
-## Final Spec v2.0 mapping
+## Authority
 
-- Final Spec v2.0 §7.2, §5 (consumes depth-classified N);
-  `CONTEXT.md` non-normative "Observation Reliability"
+- Final Spec v2.0 §7.2 as amended by Amendment 002;
+- ADR 0023;
+- Stable Mask, Participation, User Confirmed, and raw P/N/V carry-over contracts.
 
 ## Goal
 
-Compute versioned view-level Observation Reliability weights from the residual
-between the consensus soft mask and each View's Stable Mask, scoped strictly to
-P/N semantic mass, with the adopted anti-self-confirmation guardrails.
+Compute versioned view-level semantic reliability from the residual between a lagged provisional-consensus soft mask and each Included Stable Mask, without requiring depth-classified Negative Evidence.
 
 ## Inputs / preconditions
 
-- V2C consensus soft-mask readout under the View's CameraBinding;
-- V2A depth-classified N;
-- Stable Mask identity + User Confirmed / manual-edit provenance flags;
-- visibility/transmittance trust information from the same-decision raster.
+- V2C consensus state and reviewed soft-mask readout;
+- current immutable per-View P/N/V artifact with one production `negativeMass`;
+- Stable Mask identity and provenance;
+- same-decision visibility/transmittance trust information;
+- Discovery Frontier context sufficient to distinguish newly revealed support from contradiction in well-observed Core.
 
 ## Outputs / handoff
 
-- Versioned view-level reliability weight per Included observation;
-- residual record per View: visibility-gated pixel BCE (trusted-transmittance
-  pixels only) + separate boundary-band component; IoU diagnostic-only;
-- guardrail implementation with calibration-parameterized parameters:
-  lagged consensus (revision-k weights from consensus k−1), warm-up uniform
-  weights, non-zero `r_min` floor, frontier protection for newly seen
-  foreground, stronger penalty for contradiction in well-observed
-  high-confidence regions, maximum-revisions cap;
-- policy identity `reliability-weight-policy/experimental-v*`.
+- versioned view-level weight per Included observation;
+- visibility-gated residual diagnostics;
+- lag/warm-up/floor/frontier-protection revision state;
+- policy identity staged under `experimental-v*` until calibration.
 
-## Acceptance criteria
+## Required invariants
 
-- [ ] Weights apply ONLY to P/N semantic mass; raw V stays unweighted and
-      faithful for realized Observation Coverage; Mask distrust never becomes
-      "not observed".
-- [ ] Residual = visibility-gated BCE + independent boundary-band term;
-      IoU appears in diagnostics only, never in weight computation.
-- [ ] Weight scope is view level; region/per-pixel scope is out of scope.
-- [ ] Reliability never silently modifies a Stable Mask, never equals
-      Participation, and never alone triggers Excluded.
-- [ ] Low-weight Views remain inspectable and carry concrete residual/reason.
-- [ ] User Confirmed / manually edited Stable Masks are exempt from automatic
-      downweighting; Review-state Views follow standard reliability.
-- [ ] All guardrail parameters are named calibration inputs (spec §12),
-      structurally enforced (e.g. `r_min > 0`, finite max revisions).
-- [ ] Policy runs under `experimental-v*`; promotion by explicit key change.
+- Reliability weights semantic P/N only; raw V remains the realized-visibility source.
+- Reliability never mutates a Stable Mask, equals Participation, or triggers Excluded by itself.
+- User Confirmed/manual Stable Masks are exempt from automatic downweighting.
+- Newly revealed Frontier foreground is protected from confirmation-bias punishment.
+- Contradiction in well-observed high-confidence Core may receive normal penalty.
+- Low-weight Views remain inspectable with concrete reasons.
+- Depth-classified N may be observed by V2AX diagnostics later but is not a prerequisite or product input.
 
-## Validation
+## Review gates before decomposition
 
-- Companion residual-computation tests (gated pixels, boundary band);
-- exemption tests (User Confirmed, manual edit);
-- lagged-consensus ordering test (weights never see same-round consensus);
-- r_min/floor and max-revisions enforcement tests.
+- exact consensus state consumed at revision `k-1`;
+- residual equation and visibility/boundary support;
+- initialization/warm-up and no-prior-consensus behavior;
+- Frontier protection definition;
+- robust center/scale and degenerate-view handling;
+- bounded revision/convergence ownership shared with V2C/V2E.
+
+## Validation families
+
+- lag ordering and same-round feedback prohibition;
+- User Confirmed/manual exemption;
+- new-Frontier true-positive adversarial fixture;
+- high-confidence-Core contradiction fixture;
+- P/N-only weighting and raw-V invariant;
+- deterministic replay and identity invalidation.
 
 ## Non-goals
 
-- No aggregation change (V2E); no readiness policy change; no Stable Mask
-  mutation; no region/per-pixel weights.
+- No Stable Mask mutation, Participation automation, region/per-pixel weight, or production classified-N dependency.

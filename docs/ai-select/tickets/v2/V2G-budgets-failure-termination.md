@@ -1,39 +1,36 @@
-# V2G — View, cost, and scope-revision budgets; failure and termination
+# V2G — Deterministic budgets, failures, termination, and continuation
 
-Status: **review-required parent envelope; not agent-ready**
+Status: **review-required parent envelope — next joint review with V2I; not agent-ready**
 
 Blocked by: V2F  
 Blocks: V2H, V2I
 
 ## Goal
 
-Define bounded acquisition over three distinct resources: successful View count, deterministic acquisition cost, and Scope Revision churn, plus failure/replacement and stop semantics.
+Define finite acquisition, probe, replacement, Scope Revision, and cost budgets; structured outcomes; and deterministic terminal rules without allowing transient wall-clock to change canonical camera decisions.
 
 ## Accepted inputs
 
-- View Utility and candidate pool;
-- Lift Readiness and structured Frontier Debt;
-- Q7 finite `maximumScopeRevisions` requirement;
-- failure and stop-reason families.
+- V2F deterministic candidate/probe/utility result;
+- Core Coverage, structured Frontier Debt, View Diversity, remaining Utility, and Consensus/Scope status;
+- measured operational telemetry separated from canonical cost units;
+- Expert Recovery intent for Continue Acquisition.
 
-## Required behavior
+## Q9 review gates
 
-- Solver Iterations, Scope Revisions, and View acquisitions are distinct counters;
-- either View or cost budget exhaustion stops new acquisition;
-- material Scope Delta may trigger re-solve only while the scope-revision budget remains;
-- exhaustion with material scope churn produces Limited `scope-revision-budget-exhausted` and forbids automatic Candidate publication;
-- failed Views do not consume successful-View budget, but their measured/deterministic cost and failure caps remain explicit;
-- Ready alone does not stop while calibrated marginal gain remains material;
-- fixed-four remains regression baseline only.
+- which counters are per target, Scope Epoch, acquisition attempt, View iteration, probe attempt, replacement, Solver Iteration, and Scope Revision;
+- successful/failed/probe-only View accounting and bounded replacement;
+- deterministic cost-ceiling units versus operational timeout/OOM/cancel;
+- structured terminal/outcome taxonomy;
+- treatment of scope-advanced mandatory re-solves;
+- whether Continue Acquisition resets, inherits, or extends budgets;
+- replay semantics for partially completed attempts and recorded cost decisions;
+- circuit-breaker rules and no silent fixed-four/geometry-only fallback.
 
-## Review gates
+## Required boundaries
 
-Outcome taxonomy; deterministic cost units versus wall-clock diagnostics; continuation budget reset; replacement/circuit breaker; interactions among View, cost, and scope budgets; complete stop-reason names and handoff to V2H/V2I.
-
-## Validation families
-
-Each budget exhaustion; scope churn cap; failed/replacement sequence; tightened marginal gain; deterministic stop reasons; continuation budget interaction.
+Failed work never becomes Evidence. Operational timeout may fail an attempt but cannot retroactively choose a different candidate. All values remain calibration-owned until explicit promotion.
 
 ## Non-goals
 
-No Candidate publication UI or numeric calibration values.
+No Candidate publication matrix (V2H), Browser orchestration implementation (V2I), or UI (V2J).

@@ -4,7 +4,7 @@ Read this file for AI Select behavior, terminology, scope, or current authority.
 
 ## Current authority
 
-Final Spec v2.0 Amendments 006→001, Final Spec v2.0 where not amended, current mapping, ADRs 0027→0020 where current, carried-over ADRs, Context Amendments 006→001, ticket graph, review status, then affected code/tests/runtime/benchmarks. Surface conflicts.
+Final Spec v2.0 Amendments 007→001, Final Spec v2.0 where not amended, current mapping, ADRs 0028→0020 where current, carried-over ADRs, Context Amendments 007→001, ticket graph, review status, then affected code/tests/runtime/benchmarks. Surface conflicts.
 
 ## Runtime versus target
 
@@ -14,20 +14,17 @@ Amended v2.0 is the target; implemented v1.3 remains shipped until explicit revi
 
 - Automatic acquisition is default; Expert Recovery retains Add Observation and Continue Acquisition.
 - Seed is a high-precision prior, not ownership.
-- TargetScopeState separates Scope Epoch/Revision, Core, bounded seed-independent Envelope ledger, active/rejected Frontier, and Context.
-- Core grows but does not shrink inside a Scope Epoch; authoritative correction/removal may rotate the epoch.
-- Rejected Frontier is not Context and reopens only with new evidence/provenance.
-- Frontier transitions are component-level and hysteretic.
-- Structured Frontier Debt distinguishes unobserved, conflict, and promotion-pending support; raw Gaussian count is not materiality.
+- Core, seed-independent Discovery Envelope, reversible Frontier, and Context are distinct.
 - q is membership tendency; s is support/knownness.
-- Consensus uses immutable-Evidence pseudo-mass updates, lagged regional Reliability, and bounded deterministic convergence.
-- Scope remains frozen during solve. A material post-solve delta advances scope and forces a new canonical solve before Readiness/Candidate.
-- Non-converged, oscillating, stale, or scope-advanced consensus cannot publish Candidate.
+- Scope is component-level; Frontier Debt distinguishes unobserved, conflict, and promotion-pending work.
+- View Utility is prospective and distinct from Coverage, Debt, Readiness, and Candidate.
+- ViewUtilityProbe is a low-resolution planning heuristic over a deterministic shortlist, not an observation or authority.
+- Deterministic cost units may affect ranking; transient wall-clock/GPU/cache state may not.
 
 ## Product boundaries
 
-Browser owns user-visible target state and Native Selection. Seed, Scope, Frontier, q/s, Reliability, Utility, and Candidate are derived state and never mutate Native Selection by themselves. Raw P/N/V and Stable Masks remain observation authority. Complete Contributor, V2AX, and leave-one-out paths remain reference/debug only.
+Browser owns user-visible target state and Native Selection. Seed, Frontier, q/s, Reliability, View Utility, probe output, and Candidate are derived state and never mutate Native Selection by themselves. Raw P/N/V and Stable Masks remain observation authority. Complete Contributor, classified N, leave-one-out Reliability, fixed-four, and full-render-all-candidates remain reference/benchmark paths.
 
 ## Historical material
 
-Implemented v1 history lives under `docs/ai-select/history/v1/`. Context overlays are temporary and supersede conflicting root glossary definitions until controlled consolidation. EvidenceWorkingSet v1 remains shipped history and must not silently acquire Frontier semantics.
+Implemented v1 history lives under `docs/ai-select/history/v1/`. Context overlays are temporary and supersede conflicting root glossary definitions until controlled consolidation.

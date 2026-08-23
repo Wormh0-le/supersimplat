@@ -7,26 +7,26 @@ Implemented v1.3 traceability remains under `docs/ai-select/history/v1/TRACEABIL
 
 ## Carried-over implemented foundations
 
-C001–C012 remain implemented v1.3 foundations: target/Stable identity, authoritative RGB, SAM 3 Image, Stable Mask/Participation/User Confirmed authority, single-N Direct P/N/V, v1 Working Sets/boundary contact, Lift Readiness, atomic Candidate/stale blocking, Native operations, suspension/Undo, and User-added View recovery foundation.
+C001–C012 remain implemented v1.3 foundations: target/Stable identity, authoritative RGB, SAM 3 Image, Stable Mask/Participation/User Confirmed authority, single-N Direct P/N/V, Working Sets/boundary contact, Lift Readiness, atomic Candidate/stale blocking, Native operations, suspension/Undo, and User-added View recovery foundation.
 
 ## New v2 target requirements
 
 | ID | Requirement | Owner | Status |
 |---|---|---|---|
 | N001–N004 | projected depth, CWED moments, non-authoritative semantics, V2AX experiment | V2A | reviewed/decomposition-pending |
-| N005–N014 | S0/S1 Seed, seed-independent discovery, Core Coverage, Frontier Debt, readiness inputs | V2B/V2E/V2G | reviewed/decomposition-pending |
-| N015–N019 | continuous q+s bounded recurrence, lagged Reliability, P/N weighting with raw V | V2C/V2D/V2E | reviewed/decomposition-pending |
-| N020–N035 | View Utility, budgets, publication, loop, cancellation, Expert Recovery, retired persistent controls | V2F–V2J | accepted/review-required |
-| N036 | calibration, policy freeze, production promotion, cutover, and qualification have explicit owners | unassigned | blocker |
-| N037–N043 | frozen-scope solve, non-convergence gate, immutable reaggregation, pseudo-mass q/s, robust Reliability, convergence, regional/LOO split | V2C/V2D/V2E | reviewed/decomposition-pending |
-| N044 | TargetScopeState separates Scope Epoch/Revision, Core, Envelope ledger, Frontier, rejected ledger, and Context | V2B/V2E | accepted/reviewed-parent |
-| N045 | Core is monotonic inside a Scope Epoch; authoritative correction/removal may rotate the epoch | V2B/V2E/V2I | accepted/reviewed-parent |
-| N046 | Envelope expansion is bounded, seed-independent, provenance-recorded, and deduplicated | V2B/V2E | accepted/reviewed-parent |
-| N047 | Frontier promotion/rejection/reopen is component-level, hysteretic, and rejected Frontier is not Context | V2B/V2E | accepted/reviewed-parent |
-| N048 | material Scope Delta advances scope and forces a new canonical solve before Readiness/Candidate | V2C/V2E/V2H/V2I | accepted/reviewed-parent |
-| N049 | Scope Revision churn has a finite per-attempt budget and fails Limited/closed | V2G/V2I | accepted-scope/review-required |
-| N050 | Frontier Debt is structured by component and distinguishes unobserved, conflict, and promotion-pending debt | V2E/V2F/V2G | accepted/reviewed-parent |
-| N051 | EvidenceWorkingSet v2 projects explicit Core/active-Frontier/Context roles and exact scope identity | V2B/V2E | accepted/decomposition-pending |
+| N005–N014 | S0/S1 Seed, TargetScopeState, component Frontier, Debt, readiness inputs | V2B/V2E/V2G | reviewed/decomposition-pending |
+| N015–N019 | continuous q+s canonical solve, lagged Reliability, P/N weighting with unweighted V | V2C/V2D/V2E | reviewed/decomposition-pending |
+| N020–N035 | View Utility, budgets, publication, orchestration, cancellation, Expert Recovery | V2F–V2J | accepted/review-required |
+| N036 | calibration, policy freeze, production promotion, cutover, qualification have explicit owners | unassigned | blocker |
+| N037–N043 | frozen scope, fail-closed convergence, immutable reaggregation, pseudo-mass q/s, robust Reliability, regional readout | V2C/V2D/V2E | reviewed/decomposition-pending |
+| N044 | candidate pool is deterministic, finite, layered, and component-Debt aware | V2F | accepted/reviewed-parent |
+| N045 | all candidates pass geometry pruning; only a deterministic shortlist receives an occlusion-aware raster probe | V2F | accepted/reviewed-parent |
+| N046 | ViewUtilityProbe is prospective only and never becomes RGB, Evidence, Coverage, Readiness, or Candidate authority | V2F | accepted/reviewed-parent |
+| N047 | complete Render Working Set and render-only occluders remain active in the low-resolution probe | V2F | accepted/reviewed-parent |
+| N048 | canonical View Utility cost uses deterministic units; wall-clock cannot alter candidate ranking | V2F/V2G/V2I | accepted/review-required |
+| N049 | full authoritative RGB/SAM/Evidence runs only for the selected winner on the product path | V2F/V2I | accepted/review-required |
+| N050 | predicted Core/Frontier/Uncertain gains are recorded against realized outcomes for calibration | V2F/calibration owner TBD | accepted/owner-incomplete |
+| N051 | probe and scoring identities bind target, dependency, scope, q/s, candidate, policies, and Render Working Set | V2F/V2I | accepted/review-required |
 
 ## Coverage result
 
@@ -35,10 +35,10 @@ carried-over implemented requirements = 12
 new v2 requirements                 = 51
 mapped new requirements             = 50
 unassigned release requirement      = N036
-accepted cross-ticket decisions     = Q4-B, Q5-D, Q6-B, Q7-B
-reviewed parent direction           = V2A–V2E
+reviewed parent direction           = V2A–V2F
+accepted decisions                  = Q4-B, Q5-D, Q6-B, Q7-B, Q8-C
 agent-ready stages                  = 0
-next review item                    = Q8 View Utility probe + cost + candidate pool
+next review item                    = Q9 V2G/V2I budgets + identity + replay
 ```
 
 No implementation closure may be claimed while N036 is unassigned or relevant stages remain review-required/decomposition-pending.

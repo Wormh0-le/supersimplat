@@ -1,34 +1,35 @@
-# V2I — Browser loop orchestration, identities, and replay
+# V2I — Browser loop orchestration, identity hierarchy, journal, and replay
 
-Status: **review-required parent envelope; not agent-ready**
+Status: **review-required parent envelope — next joint review with V2G; not agent-ready**
 
 Blocked by: V2F, V2G  
 Blocks: V2J
 
 ## Goal
 
-Generalize the serial View pipeline into Browser-driven bounded acquisition over validated requests while coordinating View acquisition, canonical Consensus solves, material Scope Delta re-solves, budgets, cancellation, suspension, and deterministic journals.
+Generalize the implemented serial Generated View controller into a Browser-driven bounded acquisition loop over existing validated request/response boundaries, with an explicit hierarchy for loop, acquisition attempt, iteration, probe, render, mask, Evidence, Consensus Revision, Scope Revision, and endpoint attempt identities.
 
-## Required behavior
+## Required boundaries
 
 - no autonomous Companion product session or new transport;
-- every request independently validates target, dependency, observation set, Scope Epoch/Revision, policy, and attempt identity;
-- material Scope Delta commits a new Scope Revision and schedules a subsequent canonical solve before Utility/Readiness/publication;
-- Scope Revision, Consensus Revision, Solver Iteration, acquisition iteration, and endpoint attempt IDs remain distinct;
-- finite scope-revision budget is enforced by V2G semantics;
-- Cancel immediately prevents later publication while process/GPU interruption remains best effort;
-- completed Views/Masks/raw Evidence/prior Candidate remain inspectable;
-- stale or late results cannot attach to a newer scope or dependency;
-- Continue Acquisition is a fresh bounded attempt, not replay.
+- every request independently validates exact identities;
+- only complete independent Views/Masks/Evidence publish progressively;
+- Candidate publication authority remains V2H/Lift Readiness;
+- Cancel immediately prevents later product publication, while GPU/process interruption is best effort;
+- Scope-advanced results must re-solve before Readiness;
+- wall-clock telemetry cannot alter replayable candidate ranking;
+- Continue Acquisition is a fresh bounded attempt, not same-attempt replay.
 
-## Review gates
+## Q9 review gates
 
-Identity hierarchy; journal lifetime; canonical replay versus wall-clock variation; scope-advanced scheduling; suspend/resume boundaries; continuation budget/identity; late-result handling.
-
-## Validation families
-
-Scope-delta re-solve state machine; budget/stop/cancel/suspend paths; stale scope rejection; replay determinism; existing generated-view regressions.
+- canonical identity hierarchy and which IDs rotate for retry, replacement, Scope Revision, correction, Continue Acquisition, and Restart;
+- append-only decision journal versus recomputation on replay;
+- exact replay of previously decided candidates and outcomes without consulting new wall-clock/cache state;
+- partial completion, late-result, cancel, suspend/resume, stale dependency, and OOM semantics;
+- budget state binding and Continue Acquisition inheritance/reset;
+- Browser/Companion ownership of loop state and disposable caches;
+- deterministic journal compaction/lifetime and recovery after process restart.
 
 ## Non-goals
 
-No UI controls, publication policy, or Utility/budget math.
+No UI surface, utility math, numeric budgets, or terminal Candidate matrix.

@@ -7,10 +7,9 @@ Updated: 2026-08-23
 
 - Amendment 001 / ADR 0022: automation-default, expert-recoverable product.
 - Amendment 002 / ADR 0023: CWED staging, S0/S1 shadow Seeds, seed-independent Envelope/Frontier, one production N channel.
-- Amendment 003 / ADR 0024: continuous q+s deterministic bounded recurrence.
-- Amendment 004 / ADR 0025: multi-channel same-decision readout, regional Reliability, LOO reference only.
-- Amendment 005 / ADR 0026: finite pseudo-mass update, robust Reliability, bounded convergence.
-- Amendment 006 / ADR 0027: component TargetScopeState, structured Frontier Debt, material Scope Delta mandatory re-solve.
+- Amendments 003–005 / ADRs 0024–0026: continuous q+s recurrence, multi-channel regional Reliability, finite pseudo-mass update, and bounded convergence.
+- Amendment 006 / ADR 0027: component TargetScopeState, structured Frontier Debt, and mandatory re-solve after material Scope Delta.
+- Amendment 007 / ADR 0028: finite layered candidate pool, geometry pruning, shortlist low-resolution ViewUtilityProbe, deterministic cost units, and winner-only full acquisition.
 
 ## Review order
 
@@ -18,14 +17,11 @@ Updated: 2026-08-23
 |---|---|---|---|
 | 0 | Control-plane lifecycle | complete | current/history separated |
 | 0.5 | Product orientation | complete | Expert Recovery accepted |
-| 1 | V2A/V2B depth, Seed, discovery | complete at parent-decision level | Amendment 002 |
-| 2.1 | Recurrence model | complete | Q4-B / Amendment 003 |
-| 2.2 | Readout + residual | complete | Q5-D / Amendment 004 |
-| 2.3 | q/s update + Reliability + convergence | complete | Q6-B / Amendment 005 |
-| 2.4 | Scope Delta + Frontier Debt | complete | Q7-B / Amendment 006 |
-| 3 | V2F View Utility | next | probe, approximation, candidate pool, cost, exploration closed |
-| 4 | V2G/V2I loop/budgets/replay | pending | taxonomy, identities, deterministic cost, cancel/suspend/continue closed |
-| 5 | V2H terminal publication | pending | Readiness × StopReason and consent closed |
+| 1 | V2A/V2B depth, Seed, discovery | complete at parent-decision level | Amendments 002 / ADR 0023 |
+| 2 | V2C/V2D/V2E iterative consensus/scope | complete at parent-decision level | Q4-B through Q7-B / Amendments 003–006 |
+| 3 | V2F View Utility | complete at parent-decision level | Q8-C / Amendment 007 / ADR 0028 |
+| 4 | V2G/V2I budgets, outcomes, identity, replay, continuation | **next** | deterministic accounting, attempt hierarchy, journal, cancel/suspend/continue closed |
+| 5 | V2H terminal publication | pending | full Readiness × StopReason matrix and Limited consent closed |
 | 6 | V2J UI + Expert Recovery | pending | recovery surface and stale Candidate UX closed |
 | 7 | Ticket decomposition | pending | reviewed parents split into small TDD stages |
 | 8 | Calibration/promotion/release | pending | explicit owners and gates |
@@ -33,9 +29,9 @@ Updated: 2026-08-23
 ## Current frontier
 
 ```text
-next review item          = Q8 View Utility probe + cost + candidate pool
-reviewed parent direction = V2A–V2E
-accepted cross-ticket     = Q4-B, Q5-D, Q6-B, Q7-B
+next review item          = Q9 V2G/V2I budgets + identity + replay
+reviewed parent direction = V2A–V2F
+accepted decisions        = Q4-B, Q5-D, Q6-B, Q7-B, Q8-C
 agent-ready stages        = none
 ticket in flight          = none
 ```
@@ -43,21 +39,21 @@ ticket in flight          = none
 ## Rules
 
 - Do not implement parent envelopes directly.
-- Do not encode Frontier as Context or treat rejected Frontier as proven background.
-- Do not promote/reject from a non-converged solve.
-- Do not use a pre-delta or `scope-advanced` Consensus for Readiness/Candidate.
-- Do not reopen a rejected component without new authoritative evidence/provenance.
-- Do not let raw Gaussian count define component materiality or Debt.
-- Do not exceed the finite Scope Revision budget or conflate it with Solver/View iterations.
-- Do not accumulate previous q/s as Evidence, normalize View weights to one, mutate scope during solve, or publish from non-convergence.
+- Do not treat ViewUtilityProbe as RGB, Evidence, Coverage, Readiness, or Candidate authority.
+- Do not use transient wall-clock or GPU load in canonical camera ranking.
+- Do not full-render or run SAM for unselected candidates on the product path.
+- Do not silently fall back to fixed-four or geometry-only winner selection when the required probe fails.
+- Do not publish Candidate from non-converged, scope-advanced, stale, or otherwise incompatible state.
+- Do not mutate Scope during a canonical solve.
+- Do not make classified N or leave-one-out Reliability a production prerequisite.
 - A stage becomes agent-ready only when this file and the current mapping agree.
 
 ## Known blockers
 
-1. View Utility lacks a reviewed prediction/probe seam, approximation contract, deterministic cost model, and candidate-pool bounds.
-2. Component adjacency, hysteresis, materiality, Debt, and scope-budget numbers need calibration ownership.
-3. EvidenceWorkingSet v2 schema/identity migration must be decomposed.
-4. Terminal behavior remains incomplete for Readiness × StopReason, including scope-budget exhaustion.
-5. Loop replay remains unreconciled with endpoint attempts, scope revisions, and wall-clock variation.
-6. Expert Recovery continuation budget and stale Candidate UX remain undefined.
-7. Calibration, policy freeze, production promotion, cutover, and release qualification lack explicit ticket owners.
+1. V2G/V2I do not yet define deterministic budget accounting, probe/acquisition failure taxonomy, bounded replacement, or cost-ceiling semantics.
+2. Loop, acquisition-attempt, iteration, Scope Revision, Consensus Revision, probe, render, mask, Evidence, and endpoint-attempt identities are not reconciled.
+3. Exact replay is not reconciled with measured latency, timeout, cache history, or partially completed products.
+4. Continue Acquisition budget inheritance/reset and its identity relation to the previous terminal attempt remain undefined.
+5. Terminal behavior remains incomplete for Readiness × StopReason combinations.
+6. Expert Recovery stale-Candidate presentation remains undefined.
+7. Calibration, policy freeze, production promotion, cutover, and release qualification lack explicit owners.

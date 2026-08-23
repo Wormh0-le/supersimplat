@@ -2,26 +2,27 @@
 
 ## Current normative stack
 
-Read in this order:
+Read newest accepted amendments first:
 
-1. Amendment 006 — component Target Scope, structured Frontier Debt, mandatory re-solve;
-2. Amendment 005 — pseudo-mass update, robust Reliability, convergence;
-3. Amendment 004 — consensus readout and regional Reliability;
-4. Amendment 003 — deterministic bounded recurrence;
-5. Amendment 002 — Seed/discovery/depth staging;
-6. Amendment 001 — Expert Recovery;
-7. Final Spec v2.0 where not amended;
-8. ADRs 0027 through 0020 where current;
-9. carried-over nonconflicting ADRs;
-10. current mapping and review-status documents.
+1. Amendment 007 — hybrid View Utility probe and bounded candidate pool;
+2. Amendment 006 — component Target Scope and structured Frontier Debt;
+3. Amendment 005 — pseudo-mass update, robust Reliability, convergence;
+4. Amendment 004 — consensus readout and regional Reliability;
+5. Amendment 003 — deterministic bounded recurrence;
+6. Amendment 002 — Seed/discovery/depth staging;
+7. Amendment 001 — Expert Recovery;
+8. Final Spec v2.0 where not amended;
+9. ADRs 0028 through 0020 where current;
+10. carried-over nonconflicting ADRs;
+11. current mapping and review-status documents.
 
-Amendment 006 adopts Scope Epoch/Revision, component-level Frontier transitions, bounded Envelope/rejected ledgers, mandatory re-solve after material Scope Delta, structured Frontier Debt, and an explicit EvidenceWorkingSet v2 migration boundary.
+Amendment 007 adopts a finite layered candidate pool, deterministic geometry pruning, low-resolution complete-occlusion probing for a shortlist, deterministic cost units, and full authoritative acquisition only for the winning candidate.
 
-Runtime remains implemented v1.3 until reviewed V2 stages perform explicit cutovers.
+Runtime behavior remains implemented v1.3 until reviewed V2 stages perform explicit cutovers.
 
 ## Domain vocabulary
 
-Root `CONTEXT.md` is overlaid, newest first, by Context Amendments 006 through 001. These overlays are temporary and must be consolidated in one controlled cleanup.
+Root `CONTEXT.md` is overlaid, newest first, by Context Amendments 007 through 001. These overlays are temporary and must be consolidated in one controlled cleanup.
 
 ## Historical specifications
 

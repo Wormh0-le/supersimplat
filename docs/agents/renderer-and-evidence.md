@@ -1,32 +1,29 @@
-# Renderer and Evidence
+# Renderer, Evidence, and View Utility Probe
 
-Read for gsplat, CUDA, RGB, P/N/V, CWED, Working Sets, q+s readout, Reliability, Target Scope, or reference Contributor.
+Read for gsplat, CUDA, RGB, P/N/V, CWED, Working Sets, q+s readout, Reliability, ViewUtilityProbe, or reference paths.
 
 ## Current versus target
 
-Current Direct Evidence produces immutable single-N P/N/V and uses EvidenceWorkingSet v1 Core/Context roles. Pinned gsplat exposes projected depth, but project CUDA does not yet consume it. The target adds internal depth/readout moments and a separate TargetScopeState; classified N remains experimental.
+Current Direct Evidence produces immutable single-N P/N/V. The target adds depth moments, q+s readout, TargetScopeState/Working Set v2, and a low-resolution ViewUtilityProbe. These remain unimplemented until reviewed stages land.
 
-## Same-decision rule
+## Same-decision and probe boundaries
 
-Authoritative RGB, Direct Evidence, CWED moments, and consensus readout reuse the accepted front-to-back alpha/transmittance decision chain. Independently re-deciding formulas do not establish same-decision behavior.
+Authoritative RGB, Direct Evidence, CWED moments, and consensus readout must reuse the accepted full-resolution front-to-back decision chain. ViewUtilityProbe is a separate low-resolution prospective raster approximation: it must use complete compatible Render Working Set occlusion, but it is not formal RGB/Evidence or exact full-resolution same-decision truth.
 
-## Consensus/update contract
+## Probe invariants
 
-- q/s readout uses `M_scope/M_fg/M_known/M_core/M_frontier` and derives P/K/C/F.
-- Render-only occluders affect transmittance but not semantic moments.
-- Each iteration reaggregates immutable normalized per-View masses.
-- `q=(a+P)/(a+b+P+N)`; `s=(1-exp(-E/tau_E))*(1-exp(-V/tau_V))`.
-- Reliability multiplies P/N only; V remains unweighted.
-- Non-convergence, oscillation, stale scope, and scope-advanced output cannot publish Candidate.
-
-## Scope/Working Set migration
-
-TargetScopeState is semantic authority for Core, Envelope, Frontier, rejected ledger, and Context. EvidenceWorkingSet v2 must project Core + active Frontier + required Context with exact scope binding. Rejected Frontier is not Context. The v1 contract must remain unchanged until an explicit schema/consumer/runtime-identity migration.
+- render-only occluders affect probe alpha/transmittance;
+- semantic moments are restricted to current exact scope roles;
+- probe output remains Companion-local;
+- no SAM, Stable Mask, P/N/V, Coverage, Readiness, Scope mutation, or Candidate publication occurs during probing;
+- only the selected winner runs full authoritative acquisition;
+- cached/incremental probe scoring must equal cold full rescore for identical canonical inputs;
+- deterministic cost inputs are versioned; measured wall-clock is telemetry/timeout only.
 
 ## Production claims
 
-Pin source/runtime/GPU/schema/policy/reduction/scope identities. Measure readout channels, q/s and scope memory, componentization, atomics/registers, latency, VRAM/OOM, warm/cold equivalence, convergence, scope churn, and density-invariant Debt. Experimental identities cannot enter production before calibration and explicit promotion.
+Pin candidate-pool, pruning, probe, utility, cost, renderer/runtime/GPU, Scope/q-s, and Render Working Set identities. Measure shortlist quality, pure-geometry failures, predicted/realized gain, latency, registers/atomics, VRAM/OOM, stale invalidation, cold/cache equivalence, and winner quality. Experimental policies cannot enter production before calibration and explicit promotion.
 
 ## Reference paths
 
-Complete Contributor, V2AX classified N, and leave-one-out Reliability remain reference/benchmark paths and never silently become product authority.
+Complete Contributor, V2AX classified N, leave-one-out Reliability, fixed-four, and full-render-all-candidates remain reference/benchmark paths. They do not silently become product authority.

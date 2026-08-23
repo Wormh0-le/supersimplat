@@ -1,19 +1,19 @@
 {
   "schema_version": 1,
-  "control_plane_version": "ai-select-v2-preimplementation-review-5",
+  "control_plane_version": "ai-select-v2-preimplementation-review-6",
   "feature": "ai-select",
   "branch": "ai-select-v1",
   "normative_target": {
     "spec": "docs/specs/ai-select-final-spec-v2.0.md",
     "amendments": [
+      "docs/specs/ai-select-final-spec-v2.0-amendment-005-pseudomass-reliability-convergence.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-004-consensus-readout-regional-reliability.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-003-deterministic-bounded-consensus-recurrence.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-002-seed-discovery-depth-staging.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-001-expert-recovery.md"
     ],
-    "accepted_date": "2026-08-22",
-    "latest_amendment_accepted_date": "2026-08-23",
     "active_adrs": [
+      "docs/adr/0026-adopt-finite-pseudomass-update-and-bounded-convergence.md",
       "docs/adr/0025-adopt-multichannel-consensus-readout-and-loo-reference.md",
       "docs/adr/0024-deterministic-bounded-consensus-recurrence.md",
       "docs/adr/0023-stage-depth-support-and-require-seed-independent-discovery.md",
@@ -22,105 +22,79 @@
       "docs/adr/0020-auto-publish-candidate-at-ready-low-gain-terminal.md"
     ],
     "context_overlays": [
+      "docs/ai-select/CONTEXT-AMENDMENT-005-PSEUDOMASS-RELIABILITY-CONVERGENCE.md",
       "docs/ai-select/CONTEXT-AMENDMENT-004-CONSENSUS-READOUT-RELIABILITY.md",
       "docs/ai-select/CONTEXT-AMENDMENT-003-CONSENSUS-RECURRENCE.md",
       "docs/ai-select/CONTEXT-AMENDMENT-002-SEED-DISCOVERY-DEPTH.md",
       "docs/ai-select/CONTEXT-AMENDMENT-001-EXPERT-RECOVERY.md"
-    ],
-    "carried_over_adrs": [
-      "docs/adr/0019-promote-direct-evidence-candidate-and-bind-production-identity.md",
-      "docs/adr/0018-adopt-single-result-authoring-and-retire-explicit-recovery-planning-controls.md",
-      "docs/adr/0016-adopt-sam3-image-instance-workflow-and-minimal-multiview.md",
-      "docs/adr/0017-separate-geometry-quality-from-route-b-prompt-support.md",
-      "docs/adr/0013-adopt-mask-conditioned-direct-gaussian-evidence.md",
-      "docs/adr/0015-automate-readiness-and-keep-model-resolution-operator-owned.md"
     ]
   },
   "runtime_baseline": {
     "spec": "docs/specs/ai-select-final-spec-v1.3.md",
-    "status": "implemented",
-    "note": "Shipped behavior remains v1.3 until reviewed V2 stages perform explicit cutovers."
+    "status": "implemented"
   },
   "product_orientation": {
     "default": "automatic-acquisition",
     "expert_recovery": true,
     "user_added_view": "retained-as-secondary-recovery",
     "continue_acquisition": "accepted-product-intent-review-required",
-    "camera_intervention_while_running": false,
-    "persistent_generate_more": false
+    "camera_intervention_while_running": false
   },
   "reviewed_seed_discovery_decisions": {
     "depth_term": "contribution-weighted-expected-depth",
-    "depth_moments": ["M0", "M1", "M2", "variance"],
-    "cwed_is_authoritative_surface_depth": false,
     "seed_variants": ["S0-pnv-connectivity", "S1-soft-center-depth"],
     "seed_variants_shadow_parallel": true,
-    "seed_hard_bounds_discovery": false,
-    "core_monotonic_scope": "stable-input-revision",
     "discovery_envelope_seed_independent": true,
     "frontier_reversible": true,
     "core_coverage_separate_from_frontier_debt": true,
-    "utility_terms": ["core", "frontier", "uncertain", "diversity", "duplication", "cost"],
     "classified_negative_mass": "nonblocking-v2ax-experiment",
     "production_negative_mass": "single-channel"
   },
   "reviewed_consensus_recurrence_decisions": {
     "model": "continuous-q-plus-support-s",
-    "q_is_calibrated_probability": false,
     "canonical_solve": "deterministic-bounded-batch",
-    "canonical_input": "exact-current-included-stable-observation-set",
     "arrival_order_independent": true,
-    "initialization": "finite-seed-prior-plus-uniform-aggregate",
     "reliability_lag": "one-solver-iteration",
-    "same_round_feedback": false,
-    "public_revision_per_input_change": 1,
-    "private_solver_iterations": "bounded",
     "scope_frozen_during_solve": true,
     "scope_commit": "two-phase-after-solve",
-    "incremental_cache_authority": false,
-    "cold_full_solve_equivalence_required": true,
-    "non_convergence": "limited-fail-closed-no-candidate",
-    "q5_readout_and_residual_pending": false
+    "non_convergence": "limited-fail-closed-no-candidate"
   },
   "reviewed_consensus_readout_decisions": {
     "production_model": "multichannel-same-decision",
-    "semantic_scope": ["core", "frontier", "context"],
     "support_aware_membership": "q_tilde=0.5+s*(q-0.5)",
     "moments": ["M_scope", "M_fg", "M_known", "M_core", "M_frontier"],
     "derived_maps": ["P", "K", "C", "F"],
-    "raw_v_is_visibility_authority": true,
-    "render_only_occluders_preserved": true,
-    "browser_protocol_artifact": false,
     "residual_regions": ["strong-positive-interior", "local-negative-ring", "boundary-low-weight"],
-    "far_neutral_excluded": true,
     "positive_frontier_protection": "bounded-asymmetric",
-    "negative_frontier_protection": false,
-    "insufficient_comparison_support": "neutral-weight-with-reason",
-    "user_confirmed_manual_weight": 1.0,
     "production_leave_one_out": false,
     "offline_leave_one_out_reference": true
   },
-  "current_control_plane": {
-    "mapping": "docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md",
-    "ticket_graph": "docs/ai-select/TICKET-GRAPH-V2.md",
-    "traceability": "docs/ai-select/TRACEABILITY.md",
-    "review_status": "docs/ai-select/V2-REVIEW-STATUS.md",
-    "tickets_directory": "docs/ai-select/tickets/v2",
-    "v2a_ticket": "docs/ai-select/tickets/v2/V2A-depth-moments-and-depth-evidence-experiment.md",
-    "v2b_ticket": "docs/ai-select/tickets/v2/V2B-conservative-seed-discovery-frontier.md",
-    "v2c_ticket": "docs/ai-select/tickets/v2/V2C-provisional-consensus-softmask-readout.md",
-    "v2d_ticket": "docs/ai-select/tickets/v2/V2D-observation-reliability.md",
-    "v2e_ticket": "docs/ai-select/tickets/v2/V2E-weighted-aggregation-revision.md",
-    "v2j_ticket": "docs/ai-select/tickets/v2/V2J-acquisition-ui-expert-recovery.md"
+  "reviewed_consensus_update_decisions": {
+    "canonical_reaggregation": "immutable-evidence-each-iteration",
+    "iterative_evidence_double_counting": false,
+    "q_update": "finite-pseudomass-posterior",
+    "q_formula": "(a+P)/(a+b+P+N)",
+    "s_update": "semantic-and-visible-saturation-product",
+    "saturation_family": "1-exp(-x/tau)",
+    "neutral_reliability_weight": 1.0,
+    "relative_reliability": "median-mad-sigmoid-with-floor",
+    "weights_sum_normalized": false,
+    "absolute_guard": "consensus-maturity-gated",
+    "convergence_metrics": ["material-mean-q-s-drift", "material-tail-q-s-drift", "max-view-weight-drift"],
+    "consecutive_convergence_iterations_minimum": 2,
+    "period_two_oscillation_detection": true,
+    "maximum_solver_iterations": "finite-calibration-owned",
+    "q7_scope_delta_pending": true
   },
   "planning_status": "pre-implementation-review",
   "reviewed_parent_envelopes": ["V2A", "V2B"],
   "reviewed_cross_ticket_decisions": [
     "Q4-B-deterministic-bounded-q-s-recurrence",
-    "Q5-D-multichannel-readout-regional-residual-loo-reference"
+    "Q5-D-multichannel-readout-regional-residual-loo-reference",
+    "Q6-B-finite-pseudomass-robust-reliability-bounded-convergence"
   ],
   "review_frontier": ["V2C", "V2D", "V2E"],
-  "next_review_item": "Q6-q-s-update-reliability-normalization-convergence",
+  "next_review_item": "Q7-scope-delta-frontier-debt",
   "agent_ready_tickets": [],
   "ticket_in_flight": null,
   "next_implementation_ticket": null,
@@ -129,25 +103,10 @@
     "V2AX-depth-classified-negative-evidence",
     "V2D-leave-one-out-reliability-reference"
   ],
-  "provisional_topological_order": ["V2A", "V2C", "V2B", "V2D", "V2E", "V2F", "V2G", "V2H", "V2I", "V2J"],
   "release_ownership_blocker": "Calibration, policy freeze, production identity promotion, cutover, and release qualification are not yet owned by reviewed tickets.",
-  "deprecated": [
-    "CONTEXT.md terms superseded by CONTEXT-AMENDMENT-004-CONSENSUS-READOUT-RELIABILITY.md",
-    "CONTEXT.md terms superseded by CONTEXT-AMENDMENT-003-CONSENSUS-RECURRENCE.md",
-    "CONTEXT.md terms superseded by CONTEXT-AMENDMENT-002-SEED-DISCOVERY-DEPTH.md",
-    "CONTEXT.md term User-added View (superseded)",
-    "ADR 0021 mandatory classified-N production clause",
-    "docs/ai-select/tickets/v2/V2A-evidence-internal-depth-classified-n.md",
-    "docs/ai-select/tickets/v2/V2B-conservative-seed-support-core-denominator.md",
-    "docs/ai-select/tickets/v2/V2J-acquisition-ui-user-added-view-removal.md"
-  ],
   "historical_v1": {
     "directory": "docs/ai-select/history/v1",
-    "mapping": "docs/ai-select/history/v1/CURRENT-TICKET-SPEC-MAPPING-V1.md",
-    "traceability": "docs/ai-select/history/v1/TRACEABILITY-V1.md",
-    "manifest": "docs/ai-select/history/v1/manifest-v1.json",
-    "ticket_graph": "docs/ai-select/history/v1/TICKET-GRAPH-V1.md"
+    "manifest": "docs/ai-select/history/v1/manifest-v1.json"
   },
-  "ticket_lifecycle": ["research", "accepted-scope", "review-required", "reviewed-awaiting-decomposition", "agent-ready", "in-progress", "implemented", "calibrated", "production-promoted", "deprecated", "historical"],
   "implementation_gate": "A V2 stage may start only when CURRENT-TICKET-SPEC-MAPPING.md and V2-REVIEW-STATUS.md both mark it agent-ready."
 }

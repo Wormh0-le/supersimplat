@@ -1,77 +1,66 @@
-# V2E — Weighted aggregation, q/s update, and two-phase target-scope revision
+# V2E — Weighted aggregation, q/s update, convergence, and two-phase scope revision
 
-Status: **review-required parent envelope — Q4 recurrence/order and Q5 Reliability inputs accepted; transforms/scope thresholds pending; not agent-ready**
+Status: **review-required parent envelope — Q4/Q5/Q6 accepted; Q7 Scope Delta pending; not agent-ready**
 
 Blocked by: V2B, V2D  
 Blocks: V2F, V2H
 
 ## Authority
 
-- Final Spec v2.0 Amendments 004 and 003;
-- ADR 0025 and ADR 0024;
-- Amendment 002 / ADR 0023;
-- current immutable P/N/V and Lift Readiness seams.
+- Final Spec Amendments 002–005;
+- ADRs 0023–0026;
+- immutable single-N P/N/V and Lift Readiness contracts.
 
 ## Goal
 
-Generalize current one-shot aggregation into the deterministic aggregation/update step of the bounded consensus recurrence, preserving single-N P/N/V, applying accepted view-level Reliability to semantic P/N only, and committing Core/Frontier changes only after the solve.
+Generalize one-shot aggregation into the deterministic aggregation/update step of the bounded recurrence, preserving immutable Evidence and raw visibility while producing q/s, convergence diagnostics, and a post-solve target-scope proposal.
 
-## Inputs / preconditions
+## Accepted update contract
 
-- immutable per-View `positiveMass`, `negativeMass`, `visibleMass`;
-- iteration Reliability weights from V2D;
-- q/s prior state and frozen scope revision from V2C;
-- Core / Discovery Envelope / Frontier state from V2B;
-- exact policy and canonical input identities.
+For each iteration, use versioned per-View normalized masses:
 
-## Outputs / handoff
+```text
+P_i = sum_c omega_c * Pbar_ic
+N_i = sum_c omega_c * Nbar_ic
+V_i = sum_c Vbar_ic
 
-- iteration weighted aggregate with raw V preserved;
-- updated q/s state for the next Solver Iteration;
-- final Selected/Rejected/Uncertain diagnostics after bounded solve;
-- Core Observation Coverage and separate Frontier Debt inputs;
-- proposed post-solve Scope Delta;
-- exact revision/policy identities;
-- incremental implementation equivalent to cold full recomputation.
+q_i = (a_i + P_i) / (a_i + b_i + P_i + N_i)
+E_i = P_i + N_i
+s_i = (1 - exp(-E_i/tau_E)) * (1 - exp(-V_i/tau_V))
+```
 
-## Accepted recurrence and Reliability invariants
-
-- Aggregate iteration `r` consumes Reliability `ω^(r)` derived from lagged q/s readout.
-- Missing, unusable, or excluded observations remain unobserved, never negative.
-- Current production keeps one Negative Mass channel.
-- Reliability changes P/N only; raw V is unchanged.
-- Insufficient-comparison-support and User Confirmed/manual observations carry neutral/full semantic weight as defined by V2D.
-- Production aggregation does not consume leave-one-out reference results.
-- Core, Envelope, Frontier, and Context are frozen for every Solver Iteration in one revision.
-- Scope changes are proposed only after final convergence status.
-- Scope Delta commits atomically after Consensus Revision and cannot recursively retrigger the same solve.
-- Frontier remains reversible; Core is monotonic only inside the stable input revision.
-- Arrival order and cache history do not change canonical output.
-- Non-converged output cannot establish Ready or publish Candidate.
-- Lift Readiness remains the publication authority.
+- finite priors are fixed by frozen scope/provenance and yield to real Evidence;
+- every iteration reaggregates immutable Evidence and never adds previous q/s as Evidence;
+- current production retains one Negative Mass channel;
+- Reliability changes P/N only; V is not multiplied by Reliability;
+- missing/unusable/excluded observations remain unobserved, never negative;
+- canonical convergence uses material mean drift, high-percentile tail drift, View-weight drift, consecutive satisfaction, period-two detection, and a finite maximum;
+- Core/Envelope/Frontier are frozen during the solve;
+- Scope Delta is proposed only after the final converged state and commits separately;
+- non-converged/oscillating results cannot establish Ready or publish Candidate;
+- warm/incremental output must equal cold full recomputation within declared tolerance.
 
 ## Remaining review gates before decomposition
 
-- exact q0/s0 and q/s update transforms;
-- robust residual-to-weight normalization consumed from V2D;
-- convergence metric and numerical tolerance;
-- Scope Delta promotion/rejection thresholds;
-- Frontier Debt representation;
-- incremental cache decomposition and canonical equivalence checks;
-- policy identity and later production-promotion owner.
+- Q7 Core promotion, Frontier retention/rejection, Envelope expansion, and Frontier Debt;
+- exact material-support and target-scope delta representations;
+- Selected/Rejected/Uncertain diagnostics derived from final q/s;
+- numerical reduction/tolerance and memory/performance budget;
+- calibration, policy freeze, production promotion, and cutover ownership.
 
 ## Validation families
 
-- incremental/warm versus cold canonical equivalence;
-- input permutation equivalence;
-- raw-V unchanged under Reliability weighting;
-- neutral/immune View weighting semantics;
-- q/s unknown-versus-conflict fixtures;
-- scope freeze and post-solve two-phase commit;
-- Core promotion and Frontier rejection adversarial fixtures;
-- non-convergence and stale dependency handling;
-- production identity fail-closed tests.
+- immutable reaggregation / no double counting;
+- finite prior yields to growing Evidence;
+- unknown versus conflict q/s fixtures;
+- raw-V unchanged under Reliability;
+- robust/absolute Reliability integration;
+- warm versus cold and input-permutation equivalence;
+- convergence, false-convergence, tail-drift, and period-two fixtures;
+- scope freeze and post-solve atomic delta;
+- non-convergence/stale dependency handling;
+- production identity fail closed.
 
 ## Non-goals
 
-- No classified-N production migration, leave-one-out production consumption, View Utility scoring, terminal Candidate publication, or Native Selection mutation.
+No classified-N migration, View Utility, terminal Candidate publication, Native Selection mutation, or gradient/logit optimization.

@@ -4,36 +4,32 @@ Status: **v2 control plane current; pre-implementation review active**
 
 ## Completed
 
-- Final Spec v2.0 is the target; v1.3 remains the shipped baseline.
-- Amendment 001 / ADR 0022 adopt automation-default Expert Recovery.
-- Amendment 002 / ADR 0023 adopt CWED, S0/S1 shadow Seeds, seed-independent Envelope/Frontier, separate Coverage/Debt, and nonblocking classified-N experimentation.
-- Amendment 003 / ADR 0024 adopt continuous q+s consensus, deterministic bounded recurrence, lagged Reliability, frozen scope, and post-solve Scope Delta.
-- Amendment 004 / ADR 0025 adopt multi-channel same-decision readout, trusted regional Reliability, asymmetric Positive Frontier Protection, and offline leave-one-out reference benchmarking.
-- ADR 0021 is retained and marked partially superseded rather than rewritten or deleted.
-- Current mapping, traceability, manifest, review gate, graph, and agent guidance point to the amended target.
-- Implemented v1 control-plane snapshots remain under `docs/ai-select/history/v1/`.
-- Obsolete unimplemented V2A/V2B envelopes were deleted and replaced; obsolete V2J removal documentation remains deleted.
-- Context amendments 004/003/002/001 override stale glossary definitions until controlled consolidation.
+- v1.3 remains the shipped baseline; amended v2.0 is the target.
+- Amendments 001–005 and ADRs through 0026 record Expert Recovery, Seed/discovery/depth staging, q+s recurrence, regional Reliability, finite pseudo-mass update, and bounded convergence.
+- Accepted ADR history is retained and marked superseded where necessary rather than rewritten.
+- Current mapping, traceability, manifest, review gate, graph, tickets, and agent guidance are aligned.
+- Implemented v1 snapshots remain under `history/v1/`.
+- Obsolete unimplemented planning envelopes were deleted and replaced.
+- Context overlays 005–001 temporarily override stale root glossary terms.
 
 ## Current planning state
 
 ```text
 runtime baseline       = implemented v1.3
-normative target       = v2.0 + Amendments 001–004
+normative target       = v2.0 + Amendments 001–005
 planning phase         = pre-implementation review
-reviewed parent scope  = V2A, V2B
-accepted cross-ticket  = Q4-B, Q5-D
+accepted cross-ticket = Q4-B, Q5-D, Q6-B
 agent-ready stages     = none
-next review item       = Q6 q/s update + Reliability normalization + convergence
+next review item       = Q7 Scope Delta + Frontier Debt
 ```
 
 ## Remaining work
 
-- close q/s transforms, robust Reliability normalization, convergence, and Scope Delta thresholds;
-- review View Utility probe, candidate pool, cost, and exploration schedule;
+- close Scope Delta and Frontier Debt;
+- review View Utility probe/cost/exploration;
 - close loop identity/budgets, terminal matrix, and Expert Recovery lifecycle;
-- split parent envelopes into small TDD stages;
+- decompose reviewed parents into small TDD stages;
 - assign calibration, policy freeze, production promotion, cutover, and release qualification;
-- fold context amendments into root `CONTEXT.md` only during a safe full-glossary consolidation.
+- consolidate context overlays only in one safe glossary cleanup.
 
 No production code changed in these documentation decisions.

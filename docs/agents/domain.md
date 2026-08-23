@@ -4,37 +4,38 @@ Read this file when work changes AI Select behavior, terminology, product scope,
 
 ## Current authority
 
-The current normative target is **Final Spec v2.0**. The shipped runtime remains the implemented v1.3 baseline until each V2 cutover ticket lands.
-
 Read sources in this order:
 
-1. `docs/specs/ai-select-final-spec-v2.0.md`
-2. `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`
-3. `docs/adr/0021-kernel-internal-depth-readouts-and-depth-classified-negative-mass.md`
-4. `docs/adr/0020-auto-publish-candidate-at-ready-low-gain-terminal.md`
-5. carried-over ADR 0019, then residual ADR 0018 and unconflicted ADRs 0016/0017/0013/0015
-6. `CONTEXT.md` for stable vocabulary only
+1. `docs/specs/ai-select-final-spec-v2.0-amendment-001-expert-recovery.md`
+2. `docs/specs/ai-select-final-spec-v2.0.md`, except where amended
+3. `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md`
+4. ADR 0022, ADR 0021, ADR 0020
+5. carried-over ADR 0019, residual ADR 0018, and unconflicted ADRs 0016/0017/0013/0015
+6. `docs/ai-select/CONTEXT-AMENDMENT-001-EXPERT-RECOVERY.md`, then root `CONTEXT.md`
 7. `docs/ai-select/TICKET-GRAPH-V2.md`
 8. `docs/ai-select/V2-REVIEW-STATUS.md`
-9. the affected V2 ticket, implementation, tests, runtime declarations, and benchmark records
+9. the affected ticket, implementation, tests, runtime declarations, and benchmark records
 
 Surface conflicts instead of silently choosing one source.
 
-## Implementation gate
+## Runtime versus target
 
-V2A–V2J are accepted product scope but are under pre-implementation review. Do not implement a V2 ticket merely because its file exists. It becomes agent-ready only when the current mapping and review-status document both say so.
+- Final Spec v2.0 as amended is the normative target.
+- Shipped behavior remains the implemented v1.3 baseline until explicit V2 cutovers land.
+- V2A–V2J are accepted scope but are not agent-ready unless both current mapping and review status say so.
 
-## Product boundaries carried into v2.0
+## Product orientation
 
-- AI Select is a native SuperSplat Selection Tool, not a separate semantic-object workspace.
-- The browser owns one user-visible Current Target Context and all user-visible product state.
-- Authoritative AI observation RGB comes from locked gsplat.
-- Stable Masks and Participation remain distinct from P/N/V Evidence, provisional consensus, Candidate, and Native Selection.
-- AI Candidate is derived state. It changes Native Selection only through explicit Set, Add, Remove, or Intersect backed by native EditHistory.
-- Complete per-pixel Contributor remains reference/debug only.
-- RGB Ready, Mask Ready, Evidence Ready, and Candidate Ready remain distinct.
-- Provisional consensus, reliability, and View Utility are not ownership authorities and cannot mutate Native Selection.
+- Automatic acquisition is the default post-Anchor workflow.
+- Expert Recovery is secondary and available only when no loop is running and the target is active.
+- Expert Recovery retains User-added View as `Add Observation / Use Current View` and adds `Continue Acquisition`.
+- Expert recovery never bypasses Stable Mask, Participation, Direct Evidence, Candidate identity, or explicit Native Set/Add/Remove/Intersect.
+- Persistent planning controls and camera management during a running loop remain out of scope.
+
+## Product boundaries
+
+AI Select is a native SuperSplat Selection Tool, not a semantic-object workspace. The Browser owns user-visible target state and Native Selection. Provisional consensus, reliability, View Utility, and Candidate are derived state and never mutate Native Selection by themselves. Complete per-pixel Contributor remains reference/debug only.
 
 ## Historical material
 
-Final Spec v1.3 and its implemented ticket graph remain historical provenance for the shipped baseline. Historical mapping, traceability, manifest, and graph live under `docs/ai-select/history/v1/`. Root-level v1 ticket files and old acceptance evidence are retained only as implemented-history records unless a current document explicitly references them.
+Final Spec v1.3 and its ticket graph remain provenance for the shipped baseline under `docs/ai-select/history/v1/`. The old root glossary definition `User-added View (superseded)` is deprecated by the current context amendment.

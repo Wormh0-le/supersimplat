@@ -1,86 +1,93 @@
 # AI Select v2.0 — Provisional Implementation Ticket Graph
 
-Status: **accepted product scope — pre-implementation review; not agent-ready**
+Status: **accepted scope, pre-implementation review; no ticket is agent-ready**
 
-Source: `docs/specs/ai-select-final-spec-v2.0.md`, ADR 0020 and ADR 0021.  
-Current gate: `docs/ai-select/V2-REVIEW-STATUS.md`.
+Sources:
 
-## Execution rule
+- Final Spec v2.0 Amendment 001;
+- Final Spec v2.0, except where amended;
+- ADR 0022, ADR 0021, ADR 0020;
+- carried-over non-conflicting v1.3 decisions.
 
-- No V2 ticket is currently agent-ready.
-- Accepted scope is not permission to implement.
-- At most one reviewed implementation stage may be in flight.
-- Every implementation stage uses TDD, code review, repository validation, and the required locked-GPU gate.
-- Shipped behavior remains v1.3 until an explicit reviewed cutover.
-- Experimental policy identities never satisfy production readiness.
+## Execution rules
 
-## Ticket lifecycle
+- Runtime remains v1.3 until explicit reviewed cutovers.
+- Parent tickets V2A–V2J are capability envelopes, not yet executable slices.
+- At most one agent-ready implementation stage may be in flight.
+- Every stage uses TDD and code review and preserves the shipped baseline.
+- Calibration, policy freeze, production promotion, cutover, and release qualification still require explicit graph ownership.
 
-```text
-accepted-scope
-→ review-required
-→ agent-ready
-→ in-progress
-→ implemented
-→ calibrated
-→ production-promoted
-```
+## Ticket set
 
-V2A–V2J are currently `review-required`.
-
-## Provisional parent set
-
-| ID | Capability | Spec | Provisional dependencies |
+| ID | Capability | Blocked by | Blocks |
 |---|---|---|---|
-| V2A | Evidence-Internal Depth + depth-classified Negative Mass | §5 | — |
-| V2B | Conservative Seed Support + Core Target denominator | §4 | V2A |
-| V2C | Provisional Consensus + soft-mask readout | §5, §7.1 | — |
-| V2D | Observation Reliability | §7.2 | V2A, V2C |
-| V2E | Weighted aggregation revision | §7.3 | V2A, V2B, V2D |
-| V2F | View Utility + layered candidate pool | §6.1–§6.2 | V2B |
-| V2G | Budgets, outcomes, failure and termination | §6.3–§6.4 | V2F |
-| V2H | Terminal publication semantics | §6.4 | V2E, V2G |
-| V2I | Browser loop orchestration + attempt semantics | §3, §8 | V2F, V2G |
-| V2J | Acquisition UI + recovery/capability cutover | §10 | V2H, V2I |
+| V2A | Evidence-internal depth + depth-classified N | — | V2B, V2D, V2E |
+| V2B | Conservative Seed + Core Target denominator | V2A | V2E, V2F |
+| V2C | Provisional Consensus + soft-mask readout | — | V2D |
+| V2D | Observation Reliability | V2A, V2C | V2E |
+| V2E | Weighted Aggregation revision | V2A, V2B, V2D | V2H |
+| V2F | View Utility + layered candidate pool | V2B | V2G, V2I |
+| V2G | Dual budget, outcomes, termination, continuation policy | V2F | V2H, V2I |
+| V2H | Terminal publication semantics | V2E, V2G | V2J |
+| V2I | Browser loop orchestration + attempt/replay semantics | V2F, V2G | V2J |
+| V2J | Acquisition UI + Expert Recovery | V2H, V2I | — |
 
-## Provisional dependency shape
+## Provisional dependency graph
 
 ```text
 V2A ─► V2B ─► V2F ─► V2G ─┬─► V2H ─┐
-  └────► V2D ◄──── V2C      └─► V2I ─┴─► V2J
-          │
-          └─► V2E ─────────────► V2H
+ │       │                  └─► V2I ─┤
+ │       └──────► V2E ◄──────────────┘
+ └─► V2D ◄─ V2C      │
+         └───────────►┘
+                              ▼
+                 V2J UI + Expert Recovery
 ```
 
-This graph is **not yet closed**:
-
-- V2B/V2E ownership of denominator expansion is unresolved.
-- V2C/V2D/V2E require one explicit recurrence model.
-- V2F requires a ViewUtilityProbe/approximation seam.
-- V2G/V2I require an outcome taxonomy, identity hierarchy and deterministic cost/replay model.
-- V2H requires a complete Readiness × StopReason publication matrix.
-- V2J requires a reviewed recovery decision before User-added View removal.
-- calibration, policy freeze, production-identity promotion, cutover and release qualification require explicit graph ownership.
-
-## Review frontier
+One provisional topological order:
 
 ```text
-first: V2A feasibility and contract review
-then:  V2C/V2D/V2E recurrence review
+V2A, V2C → V2B → {V2D → V2E} ∥ V2F → V2G → {V2H, V2I} → V2J
 ```
 
-V2A and V2C are conceptual roots, but only the user-guided review determines when either becomes agent-ready.
+The graph will be revised after each design review. V2A and V2C are the current review roots.
 
-## Parent-ticket rule
+## Product cutover intent
 
-V2A–V2J are capability umbrellas. Before implementation, each affected parent must be split into small independently testable stages. A parent ticket must not combine CUDA/ABI, protocol migration, algorithm, cache/replay, UI and production promotion in one coding session.
+### Default path
 
-## Current non-goals
+```text
+Anchor → automatic bounded acquisition → Candidate/readiness
+```
 
-- no implementation during control-plane review;
-- no hidden fixed-four fallback;
-- no new autonomous Companion session;
-- no unreviewed standalone depth protocol;
-- no silent production-identity reuse after schema/policy change;
-- no deletion of shipped v1.3 recovery capability before its cutover decision;
-- no claim of production readiness from an `experimental-v*` policy.
+### Expert Recovery after the loop stops
+
+```text
+Add Observation / Use Current View
+or
+Continue Acquisition as a fresh bounded attempt
+```
+
+User-added View is retained and repositioned as recovery. It is not deleted, is not part of the automatic happy path, and is unavailable while the loop runs.
+
+## Scope boundaries
+
+- fixed-four remains a regression/ablation baseline only;
+- no Companion-autonomous product session or new transport;
+- no automatic Native Selection application;
+- no persistent Stop/Generate More/Regenerate controls;
+- Continue Acquisition is terminal recovery, not same-attempt replay;
+- Add Observation uses the current validated User-added View foundations;
+- User Confirmed Stable Masks retain authority;
+- whole-frame rendered-depth protocol remains separately gated;
+- region/per-pixel reliability remains out of scope without benchmark evidence;
+- no V2 ticket enters production identity while still `experimental-v*`.
+
+## Agent-readiness
+
+```text
+agent-ready tickets = none
+next review item = V2A
+```
+
+See `CURRENT-TICKET-SPEC-MAPPING.md` and `V2-REVIEW-STATUS.md`.

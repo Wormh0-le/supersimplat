@@ -1,29 +1,29 @@
 # Final Spec v2.0 → Current Planning Mapping
 
-Status: **current control-plane entry point — pre-implementation review**
-
+Status: **current control-plane entry point — pre-implementation review**  
 Updated: 2026-08-23  
 Branch: `ai-select-v1`
 
 ## Authority
 
-1. `docs/specs/ai-select-final-spec-v2.0.md`
-2. this mapping
-3. ADR 0021
-4. ADR 0020
-5. carried-over ADR 0019
-6. residual ADR 0018 and unconflicted ADRs 0016/0017/0013/0015
-7. `CONTEXT.md` for stable vocabulary only
-8. `docs/ai-select/TICKET-GRAPH-V2.md`
-9. `docs/ai-select/V2-REVIEW-STATUS.md`
-10. affected ticket, implementation, tests, runtime declarations, and benchmark evidence
+1. `docs/specs/ai-select-final-spec-v2.0-amendment-001-expert-recovery.md`
+2. `docs/specs/ai-select-final-spec-v2.0.md`, except where amended
+3. this mapping
+4. ADR 0022
+5. ADR 0021
+6. ADR 0020
+7. carried-over ADR 0019, residual ADR 0018, unconflicted ADRs 0016/0017/0013/0015
+8. `docs/ai-select/CONTEXT-AMENDMENT-001-EXPERT-RECOVERY.md`, then `CONTEXT.md`
+9. `docs/ai-select/TICKET-GRAPH-V2.md`
+10. `docs/ai-select/V2-REVIEW-STATUS.md`
+11. affected ticket, implementation, tests, runtime declarations, and benchmark evidence
 
-Final Spec v1.3 is historical provenance for the shipped baseline. Its exact mapping, traceability, manifest, and graph are preserved under `docs/ai-select/history/v1/`.
+Final Spec v1.3 is historical provenance for the shipped baseline under `docs/ai-select/history/v1/`.
 
 ## Runtime and planning status
 
 ```text
-normative target          = Final Spec v2.0
+normative target          = amended Final Spec v2.0
 shipped runtime baseline  = implemented Final Spec v1.3
 v2 implementation status  = not started
 planning phase            = pre-implementation review
@@ -32,35 +32,48 @@ agent-ready V2 tickets    = none
 review frontier           = V2A, then V2C
 ```
 
-Accepted product scope does not make a ticket agent-ready. An implementation ticket becomes agent-ready only after its design/implementation blockers are closed here and in `V2-REVIEW-STATUS.md`.
+Accepted scope does not make a ticket agent-ready.
+
+## Accepted product orientation
+
+```text
+default:
+Anchor → automatic acquisition → terminal Candidate/readiness
+
+expert recovery after the loop stops:
+Add Observation / Use Current View
+or Continue Acquisition
+```
+
+User-added View is retained as a secondary recovery capability. The previous v2 clause and obsolete V2J ticket that removed it are superseded/deleted. Persistent planning controls remain retired.
 
 ## Current v2 mapping
 
-| Ticket | Final Spec v2.0 scope | Current lifecycle | Key review gate |
+| Ticket | Scope | Lifecycle | Key review gate |
 |---|---|---|---|
-| V2A | §5, ADR 0021 | review-required | depth data path, traversal, classified-N schema/identity |
-| V2B | §4 | review-required | seed representation, connectivity, fallback and denominator ownership |
-| V2C | §5, §7.1 | review-required | consensus state, initialization and recurrence |
-| V2D | §7.2 | review-required | reliability equation, guardrails and provenance exemptions |
-| V2E | §7.3 | review-required | recurrence integration, denominator expansion and incremental equivalence |
-| V2F | §6.1–§6.2 | review-required | ViewUtilityProbe, approximation/cost and candidate-pool contract |
-| V2G | §6.3–§6.4 | review-required | outcome taxonomy, deterministic cost accounting and stop reasons |
-| V2H | §6.4, ADR 0020 | review-required | complete Readiness × StopReason publication matrix and consent |
-| V2I | §3, §8 | review-required | loop/iteration/request identity hierarchy, journal, replay and cancel |
-| V2J | §10 | review-required | recovery UX and whether/when User-added View is removed |
+| V2A | Depth readout + classified N | review-required | depth data path, traversal, schema, identity |
+| V2B | Conservative Seed + denominator | review-required | representation, connectivity, fallback, expansion owner |
+| V2C | Provisional Consensus | review-required | q0, state, recurrence, soft-mask seam |
+| V2D | Observation Reliability | review-required | equation, lag, guardrails, provenance exemptions |
+| V2E | Weighted Aggregation | review-required | recurrence integration and incremental equivalence |
+| V2F | View Utility | review-required | prediction probe, approximation, cost, candidate pool |
+| V2G | Budgets + termination | review-required | outcome taxonomy, deterministic cost, continuation budget |
+| V2H | Terminal publication | review-required | complete Readiness × StopReason matrix and consent |
+| V2I | Loop orchestration | review-required | identity hierarchy, journal, replay, cancel/suspend |
+| V2J | Acquisition UI + Expert Recovery | review-required | recovery availability, Add Observation, Continue Acquisition, stale Candidate UX |
 
-The dependency graph in `TICKET-GRAPH-V2.md` is provisional until these review gates close.
+The dependency graph is provisional until these review gates close.
 
 ## Carry-over implementation
 
-The following remain implemented v1.3 foundations and must stay green throughout v2 work:
+The following v1.3 foundations remain implemented and must stay green:
 
-- official SAM 3 Image single-result authoring;
-- Anchor, Prompt/Edit, TargetGeometryHint and Stable Mask lifecycle;
-- Participation and User Confirmed authority;
+- SAM 3 Image single-result authoring;
+- Anchor, TargetGeometryHint, Stable Mask, Participation, and User Confirmed authority;
 - authoritative gsplat RGB and same-decision Direct P/N/V;
-- Stable Gaussian IDs, SceneSnapshot, Render/Evidence Working Sets;
-- Lift Readiness authority, atomic Candidate replacement and Native operations;
+- Stable IDs, SceneSnapshot, Render/Evidence Working Sets;
+- Lift Readiness, atomic Candidate replacement, and Native operations;
+- User-added View implementation as a migration foundation;
 - dirty/stale/suspend/replay/failure isolation;
 - production identity and locked-GPU benchmark infrastructure.
 
@@ -68,34 +81,22 @@ The following remain implemented v1.3 foundations and must stay green throughout
 
 ### Current
 
-- `docs/specs/ai-select-final-spec-v2.0.md`
-- ADR 0020/0021 and carried-over non-conflicting ADRs
-- this mapping
-- `docs/ai-select/TICKET-GRAPH-V2.md`
-- `docs/ai-select/TRACEABILITY.md`
-- `docs/ai-select/manifest.json`
-- `docs/ai-select/V2-REVIEW-STATUS.md`
-- `docs/ai-select/tickets/v2/`
+- amended Final Spec v2.0 and ADRs 0022/0021/0020;
+- current mapping, traceability, manifest, review status, V2 graph, and V2 tickets;
+- root `CONTEXT.md` plus the current Expert Recovery context amendment.
 
-### Historical, retained for provenance
+### Historical
 
-- `docs/specs/ai-select-final-spec-v1.3.md`
-- `docs/ai-select/history/v1/`
-- root-level implemented v1 ticket files under `docs/ai-select/tickets/`
-- v1 audits, walkthroughs, contracts, and benchmark records
+- implemented v1 control-plane snapshots under `docs/ai-select/history/v1/`;
+- Final Spec v1.3 and older specifications;
+- closed v1 ticket files and acceptance evidence.
 
-### Deprecated as current authority
+### Deprecated or removed
 
-- root `docs/ai-select/TICKET-GRAPH.md` is a compatibility entry point only;
-- v1 files must not advertise a current frontier or override v2;
-- `.scratch/ai-select-v1/` remains compatibility-only.
+- root glossary definition `User-added View (superseded)` is deprecated by the context amendment;
+- `docs/ai-select/tickets/v2/V2J-acquisition-ui-user-added-view-removal.md` is removed and replaced by the Expert Recovery ticket;
+- old root v1 graph/audit/walkthrough paths are compatibility pointers only.
 
-## Machine-readable frontier
+## Implementation gate
 
-```text
-review_frontier = V2A, V2C
-next_review_item = V2A
-next_implementation_ticket = none
-next_implementation_subticket = none
-implementation_blocker = pre-implementation review
-```
+A V2 ticket may start only when this mapping and `V2-REVIEW-STATUS.md` both mark the exact stage `agent-ready`.

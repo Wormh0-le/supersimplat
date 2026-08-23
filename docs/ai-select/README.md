@@ -1,61 +1,63 @@
 # AI Select Documentation
 
-This directory separates the current v2.0 target control plane from implemented v1.3 history.
-
 ## Current control plane
 
 ```text
-docs/ai-select/
-├── CURRENT-TICKET-SPEC-MAPPING.md
-├── TICKET-GRAPH-V2.md
-├── TRACEABILITY.md
-├── manifest.json
-├── V2-REVIEW-STATUS.md
-├── tickets/
-│   ├── README.md
-│   ├── v2/                 # accepted v2 capability umbrellas; review-required
-│   └── *.md                # implemented v1 ticket records; historical
-└── history/
-    └── v1/                 # exact v1 mapping/traceability/manifest/graph snapshots
+Final Spec v2.0 Amendment 001
+→ Final Spec v2.0
+→ ADR 0022 / 0021 / 0020
+→ CURRENT-TICKET-SPEC-MAPPING.md
+→ V2-REVIEW-STATUS.md
+→ TICKET-GRAPH-V2.md
+→ tickets/v2/
 ```
 
-The normative product target is `docs/specs/ai-select-final-spec-v2.0.md`. The shipped runtime remains the implemented v1.3 baseline until reviewed V2 cutovers land.
+No V2 ticket is agent-ready. Runtime remains the implemented v1.3 baseline.
 
-## Start here
+## Product orientation
 
-1. [`CURRENT-TICKET-SPEC-MAPPING.md`](CURRENT-TICKET-SPEC-MAPPING.md)
-2. [`V2-REVIEW-STATUS.md`](V2-REVIEW-STATUS.md)
-3. [`TICKET-GRAPH-V2.md`](TICKET-GRAPH-V2.md)
-4. [`TRACEABILITY.md`](TRACEABILITY.md)
-5. [`manifest.json`](manifest.json)
+```text
+default:
+Anchor → automatic acquisition → terminal Candidate/readiness
 
-No V2 ticket is currently agent-ready.
+secondary Expert Recovery:
+Add Observation / Use Current View
+or Continue Acquisition
+```
 
-## Document lifecycle
+User-added View is retained as recovery and is not exposed as camera management during a running loop.
 
-### Current
+## Current documents
 
-Current spec, ADRs, mapping, review gate, graph, traceability, manifest, and V2 ticket contracts may direct future work.
+- `CURRENT-TICKET-SPEC-MAPPING.md` — current authority and ticket lifecycle;
+- `V2-REVIEW-STATUS.md` — human-readable implementation gate;
+- `TRACEABILITY.md` — amended v2 target coverage;
+- `manifest.json` — machine-readable control plane;
+- `TICKET-GRAPH-V2.md` — provisional parent capability graph;
+- `CONTEXT-AMENDMENT-001-EXPERT-RECOVERY.md` — current recovery vocabulary override;
+- `tickets/v2/` — review-required V2 capability envelopes.
 
-### Historical
+## Historical documents
 
-- Final Spec v1.3;
-- exact v1 control-plane snapshots under `history/v1/`;
-- root-level implemented v1 ticket files;
-- `TICKET-14-SPLIT.md`, v1 audits, walkthroughs, protocol records, and v1 benchmark evidence.
+Implemented v1 control-plane snapshots live under:
 
-Historical files remain useful for provenance and regression but cannot override v2.0.
+```text
+docs/ai-select/history/v1/
+```
 
-### Deprecated compatibility entry points
+Root v1 graph/audit/walkthrough files are compatibility pointers only. Closed v1 ticket files remain implementation provenance, not current planning.
 
-- `TICKET-GRAPH.md` redirects to current v2 and historical v1 graphs.
-- `.scratch/ai-select-v1/` is compatibility-only.
-- Old external links may be retained as redirects; do not add new normative content there.
+## Documentation lifecycle
 
-### Disposable
+- Current amendments supersede conflicting clauses without rewriting accepted history.
+- Deprecated terms and paths are named explicitly.
+- Obsolete deletion-oriented V2J documentation has been removed.
+- Research remains under `docs/research/`.
+- Executable disposable probes remain under `.scratch/experiments/`.
+- Calibration and production promotion must gain explicit ticket ownership before v2 closure.
 
-Executable experiments, repros and temporary validation harnesses belong under `.scratch/experiments/ai-select-v1/`. Delete them when no longer needed unless promoted to durable benchmark evidence.
+## Next review
 
-## Review before implementation
-
-The immediate work is not coding. Follow the ordered review in `V2-REVIEW-STATUS.md`, amend the design where needed, split capability umbrellas into small stages, and assign calibration/promotion/release ownership before marking a ticket agent-ready.
+```text
+V2A — depth data path, expected-depth traversal, classified-N schema and identity
+```

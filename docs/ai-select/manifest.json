@@ -1,15 +1,19 @@
 {
   "schema_version": 1,
-  "control_plane_version": "ai-select-v2-preimplementation-review-1",
+  "control_plane_version": "ai-select-v2-preimplementation-review-2",
   "feature": "ai-select",
   "branch": "ai-select-v1",
   "normative_target": {
+    "amendment": "docs/specs/ai-select-final-spec-v2.0-amendment-001-expert-recovery.md",
     "spec": "docs/specs/ai-select-final-spec-v2.0.md",
     "accepted_date": "2026-08-22",
+    "amendment_accepted_date": "2026-08-23",
     "active_adrs": [
+      "docs/adr/0022-automation-default-with-expert-recovery.md",
       "docs/adr/0021-kernel-internal-depth-readouts-and-depth-classified-negative-mass.md",
       "docs/adr/0020-auto-publish-candidate-at-ready-low-gain-terminal.md"
     ],
+    "context_overlay": "docs/ai-select/CONTEXT-AMENDMENT-001-EXPERT-RECOVERY.md",
     "carried_over_adrs": [
       "docs/adr/0019-promote-direct-evidence-candidate-and-bind-production-identity.md",
       "docs/adr/0018-adopt-single-result-authoring-and-retire-explicit-recovery-planning-controls.md",
@@ -22,14 +26,23 @@
   "runtime_baseline": {
     "spec": "docs/specs/ai-select-final-spec-v1.3.md",
     "status": "implemented",
-    "note": "Shipped behavior remains v1.3 until the owning V2 ticket performs an explicit cutover."
+    "note": "Shipped behavior remains v1.3 until reviewed V2 stages perform explicit cutovers."
+  },
+  "product_orientation": {
+    "default": "automatic-acquisition",
+    "expert_recovery": true,
+    "user_added_view": "retained-as-secondary-recovery",
+    "continue_acquisition": "accepted-product-intent-review-required",
+    "camera_intervention_while_running": false,
+    "persistent_generate_more": false
   },
   "current_control_plane": {
     "mapping": "docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md",
     "ticket_graph": "docs/ai-select/TICKET-GRAPH-V2.md",
     "traceability": "docs/ai-select/TRACEABILITY.md",
     "review_status": "docs/ai-select/V2-REVIEW-STATUS.md",
-    "tickets_directory": "docs/ai-select/tickets/v2"
+    "tickets_directory": "docs/ai-select/tickets/v2",
+    "v2j_ticket": "docs/ai-select/tickets/v2/V2J-acquisition-ui-expert-recovery.md"
   },
   "planning_status": "pre-implementation-review",
   "review_frontier": [
@@ -54,6 +67,10 @@
     "V2J"
   ],
   "release_ownership_blocker": "Calibration, policy freeze, production identity promotion, cutover, and release qualification are not yet owned by reviewed tickets.",
+  "deprecated": [
+    "CONTEXT.md term: User-added View (superseded)",
+    "docs/ai-select/tickets/v2/V2J-acquisition-ui-user-added-view-removal.md"
+  ],
   "historical_v1": {
     "directory": "docs/ai-select/history/v1",
     "mapping": "docs/ai-select/history/v1/CURRENT-TICKET-SPEC-MAPPING-V1.md",
@@ -73,5 +90,5 @@
     "deprecated",
     "historical"
   ],
-  "implementation_gate": "A V2 ticket may start only when both CURRENT-TICKET-SPEC-MAPPING.md and V2-REVIEW-STATUS.md mark it agent-ready."
+  "implementation_gate": "A V2 stage may start only when CURRENT-TICKET-SPEC-MAPPING.md and V2-REVIEW-STATUS.md both mark it agent-ready."
 }

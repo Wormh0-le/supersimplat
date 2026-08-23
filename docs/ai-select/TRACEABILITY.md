@@ -1,78 +1,70 @@
-# Final Spec v2.0 Traceability Matrix
+# Final Spec v2.0 Current Traceability
 
-Status: **current planning traceability — implementation coverage pending**  
+Status: **current target coverage — pre-implementation review**  
 Updated: 2026-08-23
 
-This matrix maps the current normative v2.0 requirements to planned ownership. It does not claim implementation. The implemented v1.3 coverage record is preserved at `history/v1/TRACEABILITY-V1.md`.
+Final Spec v1.3 implementation traceability is preserved under `docs/ai-select/history/v1/TRACEABILITY-V1.md`.
 
-## Carried-over requirements
+## Authority
 
-| ID | Requirement | Implementation baseline | V2 regression owner |
-|---|---|---|---|
-| C001 | One object/Active Splat per Current Target Context | implemented v1.3 | all V2 tickets |
-| C002 | authoritative gsplat RGB and exact CameraBinding | implemented v1.3 | V2A, V2F, V2I |
-| C003 | official SAM 3 Image single-result Mask workflow | implemented v1.3 | V2I, V2J |
-| C004 | Stable Mask, Participation and User Confirmed authority remain distinct | implemented v1.3 | V2D, V2I, V2J |
-| C005 | TargetGeometryHint remains localization/Prompt context, not ownership | implemented v1.3 | V2B, V2F |
-| C006 | raw per-view Evidence is exact, immutable and identity-bound | implemented v1.3 | V2A, V2E |
-| C007 | missing/unusable observation is unobserved, not negative | implemented v1.3 | V2A, V2D, V2E |
-| C008 | Candidate replacement is atomic and never self-applies | implemented v1.3 | V2H |
-| C009 | Native Selection changes only via explicit Set/Add/Remove/Intersect | implemented v1.3 | V2H, V2J |
-| C010 | stale results fail closed and failures preserve valid artifacts | implemented v1.3 | V2I |
-| C011 | production behavior is bound to exact runtime/policy identity | implemented v1.3 | V2A–V2I |
-| C012 | complete Contributor remains reference/debug only | implemented v1.3 | V2A, V2C |
+Traceability covers Final Spec v2.0 as amended by Amendment 001 and ADRs 0022/0021/0020.
 
-## New v2.0 requirements
+## Carried-over implemented foundations
+
+| ID | Requirement | Status |
+|---|---|---|
+| C001 | One Current Target Context and Stable Gaussian identity | implemented-v1.3 |
+| C002 | Authoritative gsplat RGB and exact CameraBinding | implemented-v1.3 |
+| C003 | SAM 3 Image single-result Mask authoring | implemented-v1.3 |
+| C004 | Stable Mask and Participation authority | implemented-v1.3 |
+| C005 | User Confirmed Stable Mask preservation | implemented-v1.3 |
+| C006 | same-decision Direct P/N/V | implemented-v1.3 |
+| C007 | Render/Evidence Working Set separation | implemented-v1.3 |
+| C008 | Lift Readiness authority | implemented-v1.3 |
+| C009 | atomic Candidate replacement and stale blocking | implemented-v1.3 |
+| C010 | explicit Native Set/Add/Remove/Intersect | implemented-v1.3 |
+| C011 | target dependency suspension and exact Undo recovery | implemented-v1.3 |
+| C012 | User-added View foundation | implemented-v1.3 / retained for recovery |
+
+## New v2 target requirements
 
 | ID | Requirement | Owner | Status |
 |---|---|---|---|
-| N001 | Anchor Direct Evidence can seed a precision-first Conservative Seed Support | V2A, V2B | review-required |
-| N002 | Seed is Companion-local, diagnosable, incomplete, and not ownership/Candidate | V2B | review-required |
-| N003 | Connectivity preserves qualified satellites and records filtered reasons | V2B | review-required |
-| N004 | Seed unavailable does not silently fail or become a hard Evidence boundary | V2B | review-required |
-| N005 | Core Target denominator starts from reviewed seed/fallback policy and never shrinks silently | V2B, V2E | review-required |
-| N006 | shadow evaluation can compare seed-based and broad coverage | V2B | review-required |
-| N007 | Direct Evidence gains a same-decision depth readout with explicit ABI semantics | V2A | review-required |
-| N008 | Negative Mass classification has a versioned schema and migration | V2A | review-required |
-| N009 | depth readout/classification does not create a second visibility authority | V2A | review-required |
-| N010 | Provisional consensus is defined, initialized, revisioned and disposable | V2C | review-required |
-| N011 | consensus soft-mask readout is Companion-local and non-authoritative | V2C | review-required |
-| N012 | consensus/reliability recurrence is bounded and replayable | V2C, V2D, V2E | review-required |
-| N013 | Observation Reliability is view-level and weights semantic P/N only | V2D, V2E | review-required |
-| N014 | raw V remains realized observation rather than Mask trust | V2D, V2E | review-required |
-| N015 | reliability never mutates Stable Mask, Participation, or Native Selection | V2D | review-required |
-| N016 | anti-self-confirmation guardrails are structurally enforced and calibrated | V2D | review-required |
-| N017 | weighted incremental aggregation equals full recomputation | V2E | review-required |
-| N018 | realized Coverage/Diversity, prospective View Utility, and Readiness stay separate | V2F, V2G | review-required |
-| N019 | first post-Anchor View follows a deterministic reviewed rule | V2F | review-required |
-| N020 | subsequent Views use a deterministic, versioned utility policy | V2F | review-required |
-| N021 | utility prediction has an explicit probe/approximation and cost contract | V2F | review-required |
-| N022 | acquisition is bounded by reviewed View and deterministic cost budgets | V2G | review-required |
-| N023 | View outcomes, replacement, circuit-breaker and budget accounting are explicit | V2G | review-required |
-| N024 | every terminal emits a structured stop reason | V2G | review-required |
-| N025 | Candidate publication is defined for every Readiness × StopReason combination | V2H | review-required |
-| N026 | ready-and-low-marginal-gain may auto-publish atomically but never auto-apply | V2H | review-required |
-| N027 | Limited publication requires explicit, legible user consent | V2H, V2J | review-required |
-| N028 | Browser drives the loop over existing validated request/response transport | V2I | review-required |
-| N029 | loop, iteration and endpoint attempts have non-conflicting identities | V2I | review-required |
-| N030 | replay is deterministic despite operational timing variation | V2G, V2I | review-required |
-| N031 | Cancel revokes publication authority immediately and preserves completed artifacts | V2I, V2J | review-required |
-| N032 | suspend/resume, stale dependency and late-result behavior are explicit | V2I | review-required |
-| N033 | UI presents phase, readiness and terminal reason without a diagnostics dashboard | V2J | review-required |
-| N034 | recovery remains possible when automatic acquisition cannot reach a useful terminal | V2J | review-required |
-| N035 | User-added View removal, if retained, occurs only at an explicit reviewed cutover | V2J | review-required |
-| N036 | calibration, policy freeze, production identity promotion and release qualification have explicit owners | graph review | unmapped-blocker |
+| N001 | contribution-weighted depth readout uses the accepted Direct Evidence sequence | V2A | review-required |
+| N002 | Negative Evidence gains reviewed depth classification and identity migration | V2A | review-required |
+| N003 | precision-first Conservative Seed is non-ownership and diagnosable | V2B | review-required |
+| N004 | Core Target denominator expands monotonically without manufacturing coverage | V2B/V2E | review-required |
+| N005 | provisional consensus is Companion-local, bounded, and non-executable | V2C | review-required |
+| N006 | consensus soft-mask readout does not create an independent visibility authority | V2C | review-required |
+| N007 | reliability uses lagged 3D consistency with anti-confirmation-bias guards | V2D | review-required |
+| N008 | reliability affects semantic P/N but not raw V | V2D/V2E | review-required |
+| N009 | weighted incremental aggregation equals full recomputation | V2E | review-required |
+| N010 | View Utility is prospective and separate from realized coverage/readiness | V2F | review-required |
+| N011 | candidate pool and utility selection are deterministic and replayable | V2F | review-required |
+| N012 | dual budget, failure taxonomy, and bounded termination are explicit | V2G | review-required |
+| N013 | Ready plus low marginal gain may auto-publish Candidate atomically | V2H | review-required |
+| N014 | Limited outcomes require explicit consent and never self-apply | V2H | review-required |
+| N015 | Browser drives the loop over validated request/response boundaries | V2I | review-required |
+| N016 | loop/iteration/request identity and replay are hierarchical and fail closed | V2I | review-required |
+| N017 | running-loop Cancel prevents later publication while preserving completed artifacts | V2I/V2J | review-required |
+| N018 | automatic acquisition is the default post-Anchor path | V2I/V2J | accepted-scope |
+| N019 | Expert Recovery is secondary and unavailable while the loop runs | V2J | accepted-scope / review-required |
+| N020 | Add Observation retains User-added View with authoritative RGB and Stable Mask rules | V2J | accepted-scope / review-required |
+| N021 | Continue Acquisition starts a fresh bounded attempt from exact current artifacts | V2G/V2I/V2J | accepted-scope / review-required |
+| N022 | a new recovery observation stales Candidate and never patches Native Selection | V2H/V2J | accepted-scope / review-required |
+| N023 | User Confirmed/manual observations retain reliability exemption | V2D/V2J | accepted-scope / review-required |
+| N024 | persistent planning controls remain retired | V2J | accepted-scope |
+| N025 | calibration, policy freeze, production identity promotion, cutover, and qualification have explicit owners | unassigned | blocker |
 
 ## Coverage result
 
 ```text
-current v2 requirements: 48
-carried-over implemented requirements: 12
-new requirements implemented: 0
-new requirements mapped to V2A–V2J: 35
-unmapped release requirement: N036
-agent-ready tickets: 0
-current review frontier: V2A, V2C
+carried-over implemented requirements = 12
+new v2 requirements                 = 25
+mapped new requirements             = 24
+unassigned release requirement      = N025
+agent-ready tickets                 = 0
+next review item                    = V2A
 ```
 
-The matrix does not pass an implementation-closure audit until every new requirement is implemented, validated, and linked to immutable evidence.
+No implementation closure may be claimed while N025 is unassigned or while the relevant stages remain `review-required`.

@@ -1,69 +1,64 @@
 # Lifecycle and Protocol Invariants
 
-Read this file for target, View, Mask, Evidence, Candidate, acquisition-loop, identity, retry, cancellation, suspension, asynchronous work, or native-selection behavior.
+Read this file for target, View, Mask, Evidence, Candidate, acquisition-loop, expert-recovery, identity, replay, cancellation, suspension, or native-selection behavior.
 
-## Baseline and target
+## Baseline and implementation gate
 
-- Final Spec v2.0 is the normative target.
-- Shipped runtime behavior remains v1.3 until the owning V2 ticket performs an explicit, identity-bound cutover.
-- V2 tickets are not implementation-ready until the current review gate marks them agent-ready.
+- Final Spec v2.0 plus Amendment 001 is the normative target.
+- Runtime remains v1.3 until the owning reviewed V2 stage performs an explicit cutover.
+- No V2 ticket is implementation-ready unless current mapping and review status both mark it agent-ready.
 
-## Stable identity and target context
+## Stable authority
 
-- The editor owns Stable Gaussian IDs; renderer, file, chunk, draw, and Companion tensor order never become identity.
-- AI Select targets one Active Splat and exposes at most one Current Target Context.
-- Anchor, Views, Masks, Participation, raw Evidence, loop state, readiness, Candidate, and Uncertain are target-local.
-- Restart rotates `targetContextId`, disposes target-local AI state, and preserves Native Selection/EditHistory plus reusable runtime caches.
-- Previous target AI contexts are not restored or browsed.
+- The editor owns Stable Gaussian IDs and one Current Target Context.
+- Anchor, Views, Masks, Participation, raw Evidence, acquisition state, readiness, Candidate, and Uncertain are target-local.
+- Stable Mask, Participation, Direct Evidence, Candidate, and Native Selection remain distinct authorities.
+- User Confirmed/manual Stable Masks cannot be silently replaced or automatically downweighted.
+- Candidate changes Native Selection only through explicit Set/Add/Remove/Intersect backed by native EditHistory.
 
-## View and Mask authority
+## Rendering and publication
 
 - All AI observation RGB uses locked gsplat and exact CameraBinding.
 - `RGB Ready != Mask Ready != Evidence Ready != Candidate Ready`.
-- Stable Mask is required before formal per-view Evidence.
-- Editing Mask changes do not affect current Evidence until Confirm Mask atomically publishes a new Stable revision.
-- Automatic publication never silently replaces a User Confirmed Stable Mask.
-- Mask/View Quality, Participation, and Observation Reliability are separate authorities.
-- Participation remains explicit; reliability cannot silently exclude a View or modify its Stable Mask.
+- Stable Mask, per-view Evidence, and Candidate replacement publish atomically.
+- Failed or stale work preserves independently valid Views, Stable Masks, raw Evidence, and the prior inspectable Candidate.
+- Late results never attach to a newer target/dependency/policy identity.
 
-## V2 acquisition-loop target semantics
+## Automatic acquisition
 
-- After Anchor confirmation, the Browser drives a bounded stepwise acquisition loop over the existing validated request/response transport.
-- The Companion may retain disposable loop-scoped derived state, but it does not own an autonomous user-visible session.
-- Each completed View is independently identity-bound and may publish progressively only when complete.
-- Provisional consensus, reliability, weighted aggregation, coverage, diversity, and readiness revisions never change Native Selection.
-- A Ready result auto-publishes a Candidate only at the exact terminal accepted by ADR 0020. Candidate application remains an explicit user action.
-- Limited, failed, cancelled, stale, or suspended outcomes follow the current terminal/publication matrix; no implementation may invent a fallback.
-- User-added View remains shipped v1.3 behavior until its reviewed cutover ticket lands. Do not remove it early.
+- Anchor confirmation starts automation by default.
+- The running Acquisition Loop owns a bounded sequence of planner-selected Generated Views.
+- Users do not manage cameras or invoke persistent Generate More while the loop runs.
+- Cancel changes product authority immediately: no later result may publish. GPU/process interruption remains best effort.
 
-## Attempts, replay, and cancellation
+## Expert Recovery
 
-- Semantic identity and execution-attempt identity are distinct.
-- Existing endpoint-level attempt IDs remain valid; a future loop identity must compose rather than replace per-request identities.
-- Same-attempt replay returns or reconstructs the previously admitted observable result; it must not depend on new wall-clock timing.
-- Cancellation is **semantically immediate**: no later result may acquire publication authority and the UI may leave the running state immediately.
-- GPU/kernel interruption remains best effort; stale-result correctness cannot depend on physical cancellation succeeding.
-- Late or racing results never overwrite newer target, dependency, policy, or iteration identity.
+Expert Recovery is available only when:
 
-## Candidate and Native Selection
+- no acquisition loop is running;
+- the target is active, not Suspended;
+- the user invokes a secondary recovery/advanced action.
 
-- Candidate derives only from exact current Included Stable Views, matching Evidence, accepted policy identities, and the sole Lift Readiness authority.
-- Candidate replacement is atomic; failure preserves the prior inspectable Candidate.
-- A stale Candidate remains inspectable but cannot be applied.
-- Candidate changes Native Selection only through explicit Set/Add/Remove/Intersect using native `SelectOp` and `EditHistory`.
-- Applying Candidate does not exit AI Select or destroy the target context.
-- Native Selection-only changes and Undo/Redo do not stale Candidate.
+### Add Observation / Use Current View
 
-## Scene dependency and suspension
+- Captures an explicit Editor CameraBinding as a User-added View.
+- Uses authoritative RGB and the ordinary SAM/manual Mask workflow.
+- Enters Evidence only after Stable Mask publication and Included Participation.
+- A new current Stable observation stales the prior Candidate; it never patches Candidate or Native Selection directly.
 
-- Material target-dependency mutation suspends rather than destroys the context.
-- Suspended state remains inspectable but cannot be edited, acquired, lifted, published, or applied.
-- Exact Undo may restore the prior semantic token and AI state.
-- Suspend/resume of a future acquisition loop is allowed only at a reviewed safe boundary; dependency change while suspended must stale the loop rather than silently resume.
+### Continue Acquisition
 
-## Atomicity and failure isolation
+- Starts a fresh bounded loop attempt from exact current stable artifacts.
+- Is not same-attempt replay, identical-input retry, or a persistent planning control.
+- Does not automatically apply a Candidate.
+- Eligibility, budget reset, and attempt hierarchy remain review gates for V2G/V2I/V2J.
 
-- Stable Mask, per-view Evidence, readiness result, and Candidate replacement publish atomically.
-- Partial products never become stable user state.
-- Render, Mask, Evidence, acquisition, and Lift failures remain distinguishable.
-- Failure preserves every independently valid completed artifact and the prior Candidate.
+## Recovery after terminal states
+
+Expert Recovery may be offered after Ready, Limited, Not Ready, budget/no-feasible/stage-failure terminals, or user Cancel. Suspended targets must first restore an exact compatible dependency state.
+
+The previous Candidate remains inspectable. Once stale, it cannot be applied until current recomputation atomically publishes a replacement.
+
+## Replay and identity
+
+The loop-level, iteration-level, and endpoint-attempt identity hierarchy is not yet closed. Do not collapse existing request attempts into one ID or claim exact deterministic replay from wall-clock budgets before V2I review resolves the contract.

@@ -1,11 +1,12 @@
 {
   "schema_version": 1,
-  "control_plane_version": "ai-select-v2-preimplementation-review-6",
+  "control_plane_version": "ai-select-v2-preimplementation-review-7",
   "feature": "ai-select",
   "branch": "ai-select-v1",
   "normative_target": {
     "spec": "docs/specs/ai-select-final-spec-v2.0.md",
     "amendments": [
+      "docs/specs/ai-select-final-spec-v2.0-amendment-006-component-scope-frontier-debt.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-005-pseudomass-reliability-convergence.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-004-consensus-readout-regional-reliability.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-003-deterministic-bounded-consensus-recurrence.md",
@@ -13,6 +14,7 @@
       "docs/specs/ai-select-final-spec-v2.0-amendment-001-expert-recovery.md"
     ],
     "active_adrs": [
+      "docs/adr/0027-adopt-component-scope-state-and-mandatory-resolve.md",
       "docs/adr/0026-adopt-finite-pseudomass-update-and-bounded-convergence.md",
       "docs/adr/0025-adopt-multichannel-consensus-readout-and-loo-reference.md",
       "docs/adr/0024-deterministic-bounded-consensus-recurrence.md",
@@ -22,6 +24,7 @@
       "docs/adr/0020-auto-publish-candidate-at-ready-low-gain-terminal.md"
     ],
     "context_overlays": [
+      "docs/ai-select/CONTEXT-AMENDMENT-006-TARGET-SCOPE-FRONTIER-DEBT.md",
       "docs/ai-select/CONTEXT-AMENDMENT-005-PSEUDOMASS-RELIABILITY-CONVERGENCE.md",
       "docs/ai-select/CONTEXT-AMENDMENT-004-CONSENSUS-READOUT-RELIABILITY.md",
       "docs/ai-select/CONTEXT-AMENDMENT-003-CONSENSUS-RECURRENCE.md",
@@ -50,51 +53,56 @@
     "classified_negative_mass": "nonblocking-v2ax-experiment",
     "production_negative_mass": "single-channel"
   },
-  "reviewed_consensus_recurrence_decisions": {
+  "reviewed_consensus_decisions": {
     "model": "continuous-q-plus-support-s",
     "canonical_solve": "deterministic-bounded-batch",
     "arrival_order_independent": true,
     "reliability_lag": "one-solver-iteration",
+    "readout": "multichannel-same-decision-p-k-c-f",
+    "regional_residual": true,
+    "offline_leave_one_out_reference": true,
+    "q_update": "finite-pseudomass-posterior",
+    "s_update": "semantic-and-visible-saturation-product",
+    "relative_reliability": "median-mad-with-floor-not-sum-normalized",
+    "absolute_guard": "consensus-maturity-gated",
+    "convergence_metrics": ["material-mean-drift", "material-tail-drift", "max-view-weight-drift"],
+    "period_two_detection": true,
     "scope_frozen_during_solve": true,
-    "scope_commit": "two-phase-after-solve",
     "non_convergence": "limited-fail-closed-no-candidate"
   },
-  "reviewed_consensus_readout_decisions": {
-    "production_model": "multichannel-same-decision",
-    "support_aware_membership": "q_tilde=0.5+s*(q-0.5)",
-    "moments": ["M_scope", "M_fg", "M_known", "M_core", "M_frontier"],
-    "derived_maps": ["P", "K", "C", "F"],
-    "residual_regions": ["strong-positive-interior", "local-negative-ring", "boundary-low-weight"],
-    "positive_frontier_protection": "bounded-asymmetric",
-    "production_leave_one_out": false,
-    "offline_leave_one_out_reference": true
+  "reviewed_scope_delta_decisions": {
+    "state_model": "component-target-scope-state",
+    "scope_epoch_core_monotonic": true,
+    "new_observation_rotates_epoch": false,
+    "authoritative_evidence_correction_may_rotate_epoch": true,
+    "envelope_ledger": "bounded-seed-independent-provenance-deduplicated",
+    "frontier_transition_unit": "component-or-versioned-subcomponent",
+    "rejected_frontier_is_context": false,
+    "reopen_requires_new_provenance": true,
+    "material_scope_delta_requires_resolve": true,
+    "scope_advanced_result_publication_eligible": false,
+    "scope_revision_budget": "finite-calibration-owned",
+    "frontier_debt": ["unobserved", "conflict", "promotion-pending"],
+    "debt_materiality": "bounded-density-normalized-not-gaussian-count",
+    "evidence_working_set_v2_required": true
   },
-  "reviewed_consensus_update_decisions": {
-    "canonical_reaggregation": "immutable-evidence-each-iteration",
-    "iterative_evidence_double_counting": false,
-    "q_update": "finite-pseudomass-posterior",
-    "q_formula": "(a+P)/(a+b+P+N)",
-    "s_update": "semantic-and-visible-saturation-product",
-    "saturation_family": "1-exp(-x/tau)",
-    "neutral_reliability_weight": 1.0,
-    "relative_reliability": "median-mad-sigmoid-with-floor",
-    "weights_sum_normalized": false,
-    "absolute_guard": "consensus-maturity-gated",
-    "convergence_metrics": ["material-mean-q-s-drift", "material-tail-q-s-drift", "max-view-weight-drift"],
-    "consecutive_convergence_iterations_minimum": 2,
-    "period_two_oscillation_detection": true,
-    "maximum_solver_iterations": "finite-calibration-owned",
-    "q7_scope_delta_pending": true
+  "current_control_plane": {
+    "mapping": "docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md",
+    "review_status": "docs/ai-select/V2-REVIEW-STATUS.md",
+    "ticket_graph": "docs/ai-select/TICKET-GRAPH-V2.md",
+    "traceability": "docs/ai-select/TRACEABILITY.md",
+    "tickets_directory": "docs/ai-select/tickets/v2"
   },
   "planning_status": "pre-implementation-review",
-  "reviewed_parent_envelopes": ["V2A", "V2B"],
+  "reviewed_parent_envelopes": ["V2A", "V2B", "V2C", "V2D", "V2E"],
   "reviewed_cross_ticket_decisions": [
     "Q4-B-deterministic-bounded-q-s-recurrence",
     "Q5-D-multichannel-readout-regional-residual-loo-reference",
-    "Q6-B-finite-pseudomass-robust-reliability-bounded-convergence"
+    "Q6-B-finite-pseudomass-robust-reliability-bounded-convergence",
+    "Q7-B-component-scope-state-structured-frontier-debt"
   ],
-  "review_frontier": ["V2C", "V2D", "V2E"],
-  "next_review_item": "Q7-scope-delta-frontier-debt",
+  "review_frontier": ["V2F"],
+  "next_review_item": "Q8-view-utility-probe-candidate-pool-cost",
   "agent_ready_tickets": [],
   "ticket_in_flight": null,
   "next_implementation_ticket": null,
@@ -104,9 +112,5 @@
     "V2D-leave-one-out-reliability-reference"
   ],
   "release_ownership_blocker": "Calibration, policy freeze, production identity promotion, cutover, and release qualification are not yet owned by reviewed tickets.",
-  "historical_v1": {
-    "directory": "docs/ai-select/history/v1",
-    "manifest": "docs/ai-select/history/v1/manifest-v1.json"
-  },
   "implementation_gate": "A V2 stage may start only when CURRENT-TICKET-SPEC-MAPPING.md and V2-REVIEW-STATUS.md both mark it agent-ready."
 }

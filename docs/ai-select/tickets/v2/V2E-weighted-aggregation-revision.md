@@ -1,66 +1,59 @@
-# V2E — Weighted aggregation, q/s update, convergence, and two-phase scope revision
+# V2E — Weighted update, component Scope Delta, and Frontier Debt
 
-Status: **review-required parent envelope — Q4/Q5/Q6 accepted; Q7 Scope Delta pending; not agent-ready**
+Status: **reviewed parent envelope — Q4–Q7 accepted; awaiting stage decomposition; not agent-ready**
 
 Blocked by: V2B, V2D  
 Blocks: V2F, V2H
 
 ## Authority
 
-- Final Spec Amendments 002–005;
-- ADRs 0023–0026;
-- immutable single-N P/N/V and Lift Readiness contracts.
+Final Spec Amendments 002–006; ADRs 0023–0027; immutable single-N P/N/V and Lift Readiness contracts.
 
 ## Goal
 
-Generalize one-shot aggregation into the deterministic aggregation/update step of the bounded recurrence, preserving immutable Evidence and raw visibility while producing q/s, convergence diagnostics, and a post-solve target-scope proposal.
+Own the canonical immutable-Evidence q/s update, convergence result, component-level post-solve Scope Delta, mandatory re-solve handoff, and structured Frontier Debt.
 
-## Accepted update contract
-
-For each iteration, use versioned per-View normalized masses:
+## Accepted update
 
 ```text
 P_i = sum_c omega_c * Pbar_ic
 N_i = sum_c omega_c * Nbar_ic
 V_i = sum_c Vbar_ic
-
 q_i = (a_i + P_i) / (a_i + b_i + P_i + N_i)
-E_i = P_i + N_i
-s_i = (1 - exp(-E_i/tau_E)) * (1 - exp(-V_i/tau_V))
+s_i = (1-exp(-(P_i+N_i)/tau_E)) * (1-exp(-V_i/tau_V))
 ```
 
-- finite priors are fixed by frozen scope/provenance and yield to real Evidence;
-- every iteration reaggregates immutable Evidence and never adds previous q/s as Evidence;
-- current production retains one Negative Mass channel;
-- Reliability changes P/N only; V is not multiplied by Reliability;
-- missing/unusable/excluded observations remain unobserved, never negative;
-- canonical convergence uses material mean drift, high-percentile tail drift, View-weight drift, consecutive satisfaction, period-two detection, and a finite maximum;
-- Core/Envelope/Frontier are frozen during the solve;
-- Scope Delta is proposed only after the final converged state and commits separately;
-- non-converged/oscillating results cannot establish Ready or publish Candidate;
-- warm/incremental output must equal cold full recomputation within declared tolerance.
+Previous q/s is never re-added as Evidence. Reliability affects P/N only.
 
-## Remaining review gates before decomposition
+## Accepted scope contract
 
-- Q7 Core promotion, Frontier retention/rejection, Envelope expansion, and Frontier Debt;
-- exact material-support and target-scope delta representations;
-- Selected/Rejected/Uncertain diagnostics derived from final q/s;
-- numerical reduction/tolerance and memory/performance budget;
-- calibration, policy freeze, production promotion, and cutover ownership.
+- solve binds one frozen TargetScopeState revision;
+- only a converged solve may promote/retain/reject/reopen/expand;
+- transitions are component-level and hysteretic;
+- promotion is irreversible inside the Scope Epoch;
+- rejection requires high support and persistent negative/background conclusion; low s/V cannot reject;
+- rejected Frontier is not Context and reopens only on new provenance;
+- material Scope Delta advances Scope Revision and forces a new canonical solve;
+- pre-delta/scope-advanced output cannot feed Readiness or Candidate;
+- no material delta allows structured Debt and Readiness evaluation;
+- scope churn is bounded by a separate finite revision budget.
+
+## Structured Frontier Debt
+
+Produce component records and aggregate summaries for Unobserved, Conflict, and Promotion-pending Debt. Materiality is bounded/density-normalized and cannot be raw Gaussian count. Emit `clear/low/material/unresolved` summary with exact policy identity.
+
+## Outputs / handoff
+
+Weighted aggregate, q/s, convergence diagnostics, Scope Delta and digest, TargetScopeState revision, scope-advanced/current status, component Debt ledger/summary, Core Coverage input, Working Set v2 projection input, exact policy identities.
+
+## Stage-level gates
+
+Component policy/lineage, hysteresis, Debt materiality/status, maximum scope revisions, Selected/Rejected/Uncertain diagnostics, Working Set v2 migration, numerical tolerance, production promotion owner.
 
 ## Validation families
 
-- immutable reaggregation / no double counting;
-- finite prior yields to growing Evidence;
-- unknown versus conflict q/s fixtures;
-- raw-V unchanged under Reliability;
-- robust/absolute Reliability integration;
-- warm versus cold and input-permutation equivalence;
-- convergence, false-convergence, tail-drift, and period-two fixtures;
-- scope freeze and post-solve atomic delta;
-- non-convergence/stale dependency handling;
-- production identity fail closed.
+No double counting; raw-V invariant; convergence; component promotion/rejection/reopen; rejected-not-Context; Core monotonicity/epoch rotation; material delta mandatory re-solve; stale scope publication block; finite scope churn; density-invariant Debt; Working Set role migration.
 
 ## Non-goals
 
-No classified-N migration, View Utility, terminal Candidate publication, Native Selection mutation, or gradient/logit optimization.
+No classified-N migration, View Utility scoring, terminal publication, Native mutation, or gradient/logit optimization.

@@ -1,86 +1,61 @@
-# V2B — Conservative Seed, Core Target, and Discovery Frontier
+# V2B — Conservative Seed and component Target Scope State
 
-Status: **reviewed parent envelope — awaiting stage decomposition; not agent-ready**
+Status: **reviewed parent envelope — Q7-B accepted; awaiting stage decomposition; not agent-ready**
 
-Blocked by: V2A2 only for the S1 shadow variant; S0 and discovery-scope design are depth-independent  
+Blocked by: V2A2 only for S1 shadow  
 Blocks: V2E, V2F
 
 ## Authority
 
-- Final Spec v2.0 Amendment 002;
-- ADR 0023;
-- carry-over Stable Gaussian ID, SceneSnapshot, Working Set, Stable Mask, and Participation contracts.
+Final Spec Amendments 002 and 006; ADRs 0023 and 0027; carried-over Stable ID, SceneSnapshot, Stable Mask, Participation, and Working Set contracts.
 
 ## Goal
 
-Evaluate high-precision S0/S1 Conservative Seed variants while establishing a seed-independent target-scope model that can discover real object support omitted by the initial Seed.
+Evaluate S0/S1 precision-first Seeds while creating a seed-independent, component-level TargetScopeState that can discover and track support omitted by Seed without treating uncertainty as ownership or background.
 
-## Reviewed domain model
+## Accepted model
 
 ```text
-Seed S_0             high-precision bootstrap prior
-Core C_t             current high-confidence target support
-Envelope E_t         seed-independent potential discovery scope
-Frontier F_t=E_t-C_t reversible unresolved support
+Scope Epoch
+  └─ immutable Scope Revision
+       ├─ Core components
+       ├─ bounded Discovery Envelope ledger
+       ├─ active Frontier components
+       ├─ rejected/reopened Frontier ledger
+       └─ required Context
 ```
+
+- S0 uses P/N/V, visibility, conflict, and scale-aware connectivity.
+- S1 adds soft Gaussian-center depth consistency; failure never erases plausible Envelope support.
+- Envelope sources are seed-independent and provenance-recorded.
+- Frontier transitions are component-level or deterministic subcomponent-level.
+- Rejected Frontier is not Context and reopens only with new authoritative evidence/provenance.
+- Core grows but does not shrink inside a Scope Epoch; authoritative correction/removal may rotate the epoch.
+- Discovery Envelope ledger is bounded and deduplicated within an epoch.
+- Core Coverage and structured Frontier Debt remain separate.
 
 ## Outputs / handoff
 
-- Companion-internal S0 and S1 seed records with Stable IDs and diagnosable scores/reasons;
-- graded admission: `seed-core`, `satellite`, `frontier`, `filtered-gross-outlier`;
-- scale-aware connectivity that does not silently discard all non-largest components;
-- Core state with revision identity and monotonic expansion inside one stable input revision;
-- Discovery Envelope and reversible Frontier state with versioned policy identity;
-- Core Observation Coverage input and separate Frontier Debt input;
-- promotion/rejection journal for Frontier support;
-- frozen shadow records comparing S0 and S1.
+- S0/S1 shadow Seed records;
+- deterministic componentization and lineage records;
+- TargetScopeState and exact epoch/revision identity;
+- discovery-source ledger and active/rejected Frontier state;
+- component promotion/rejection provenance;
+- Working Set v2 migration input preserving Core/Frontier/Context roles;
+- Core Coverage and Frontier Debt inputs for V2E/V2F.
 
-## Seed variants
+## Stage-level gates
 
-### S0
+- component adjacency/lineage policy and bounds;
+- epoch rotation identity and exact restoration behavior;
+- Envelope source admission/deduplication/budget;
+- EvidenceWorkingSet v2 schema and production identity migration;
+- S0/S1 shadow benchmark and threshold ownership.
 
-Uses P/N/V support, valid visibility, low conflict, and scale-aware 3D connectivity.
+## Validation families
 
-### S1
-
-Adds a soft Gaussian-center depth-consistency feature using V2A2 CWED validity/variance, Gaussian scale, and Mask interior/boundary context. Failing this feature cannot by itself erase plausible support from the Discovery Envelope.
-
-## Seed-independent discovery sources
-
-At minimum, the reviewed architecture preserves:
-
-- Evidence Working Set boundary contact;
-- Core-external positive support reached by a new Included Stable View;
-- coherent support across multiple Views;
-- User Confirmed Expert Recovery observations;
-- reviewed TargetGeometryHint-local or Target Splat-local envelope support.
-
-These sources first enter Frontier. Frontier never becomes Candidate membership directly.
-
-## Reviewed acceptance decisions
-
-- [x] Seed is non-ownership, deliberately incomplete, and never a hard Evidence boundary.
-- [x] S0 and S1 run in parallel shadow evaluation before production selection.
-- [x] Gaussian-center depth consistency is a soft score rather than a permanent binary gate.
-- [x] Discovery Envelope is not derived solely from Seed.
-- [x] Frontier may grow, shrink, be rejected, or promote into Core.
-- [x] Core is monotonic only inside one stable input revision; authoritative revision rotation may rebuild it.
-- [x] Core Coverage and Frontier Debt are distinct readiness/planning inputs.
-- [x] High Core Coverage alone cannot prove acquisition is complete.
-
-## Validation families for later stages
-
-- S0/S1 seed precision, recall, contamination, and thin/disconnected-structure retention;
-- deterministic component/satellite/frontier bookkeeping;
-- no-seed-lock adversarial fixtures;
-- Core monotonicity inside a revision and explicit rebuild on revision rotation;
-- reversible Frontier tests;
-- boundary-contact and User Confirmed discovery tests;
-- final Candidate quality, automatic View count, latency, and Add/Remove correction burden.
+Seed precision/recall and thin/disconnected retention; no-seed-lock fixtures; deterministic component lineage; Core monotonicity/epoch rebuild; rejected-not-Context; reopen only on new provenance; bounded ledger; Working Set role migration; Expert Recovery discovery.
 
 ## Non-goals
 
-- No View Utility implementation (V2F).
-- No direct Candidate or Native Selection mutation.
-- No production seed policy promotion or numeric threshold freeze.
-- No requirement that S1 outperform S0 before benchmark evidence exists.
+No View Utility math, Candidate/Native mutation, production Seed winner, or hardcoded calibration values.

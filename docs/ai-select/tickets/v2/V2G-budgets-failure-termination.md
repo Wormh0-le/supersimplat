@@ -1,67 +1,39 @@
-# V2G — Dual budget, failure semantics, termination
+# V2G — View, cost, and scope-revision budgets; failure and termination
 
-Status: **planned — accepted v2.0 scope; not implemented** (see `docs/ai-select/TICKET-GRAPH-V2.md`)
+Status: **review-required parent envelope; not agent-ready**
 
-Blocked by: V2F
+Blocked by: V2F  
 Blocks: V2H, V2I
-
-## Final Spec v2.0 mapping
-
-- Final Spec v2.0 §6.3–6.4; supersedes ADR 0018 `4–8` range with the dual budget
-  (single-result authoring part of ADR 0018 carries over)
 
 ## Goal
 
-Implement the dual budget, failure semantics (failed Views free, bounded
-replacement, stage-failure circuit breaker) and the tightened-gain
-termination rule of the acquisition loop.
+Define bounded acquisition over three distinct resources: successful View count, deterministic acquisition cost, and Scope Revision churn, plus failure/replacement and stop semantics.
 
-## Inputs / preconditions
+## Accepted inputs
 
-- View Utility + candidate pool (V2F);
-- readiness authority (Ticket 13, carried over);
-- loop stop-reason working set from spec §6.3.
+- View Utility and candidate pool;
+- Lift Readiness and structured Frontier Debt;
+- Q7 finite `maximumScopeRevisions` requirement;
+- failure and stop-reason families.
 
-## Outputs / handoff
+## Required behavior
 
-- Dual budget accounting: View-count hard maximum + latency/cost ceiling;
-  either exhaustion stops the loop;
-- failure semantics: a failed View consumes no View budget; consecutive
-  same-stage failures reach a small cap → bounded replacement with the
-  next-best utility candidate; continued failure → stage-failure circuit
-  breaker;
-- structured stop-reason working set:
-  `ready-and-low-marginal-gain`, `marginal-gain-exhausted`,
-  `view-budget-exhausted`, `cost-budget-exhausted`, `no-feasible-view`,
-  `stage-failure`, `stale/cancelled/suspended`;
-- tightened-gain termination: reaching Ready does not stop; the marginal-gain
-  threshold tightens once Ready and the loop terminates only below the
-  tightened threshold.
+- Solver Iterations, Scope Revisions, and View acquisitions are distinct counters;
+- either View or cost budget exhaustion stops new acquisition;
+- material Scope Delta may trigger re-solve only while the scope-revision budget remains;
+- exhaustion with material scope churn produces Limited `scope-revision-budget-exhausted` and forbids automatic Candidate publication;
+- failed Views do not consume successful-View budget, but their measured/deterministic cost and failure caps remain explicit;
+- Ready alone does not stop while calibrated marginal gain remains material;
+- fixed-four remains regression baseline only.
 
-## Acceptance criteria
+## Review gates
 
-- [ ] Both budget dimensions enforced; either exhaustion produces the correct
-      stop reason.
-- [ ] Failed Views never consume View budget; replacement ordering follows
-      utility; circuit breaker fires after the bounded cap.
-- [ ] Stop reasons are structured, machine-readable, and carry enough context
-      for the UI surface (V2J); canonical naming is recorded as the working
-      set pending the domain-modeling naming pass — no premature freeze.
-- [ ] Ready does not immediately stop; tightened-threshold logic is tested
-      (gain above tightened threshold continues, below terminates).
-- [ ] All budget/threshold values are named calibration inputs (spec §12),
-      not hardcoded constants.
-- [ ] Fixed-four / `4–8` planning is no longer on the product path; it
-      survives only as frozen regression/ablation baseline.
+Outcome taxonomy; deterministic cost units versus wall-clock diagnostics; continuation budget reset; replacement/circuit breaker; interactions among View, cost, and scope budgets; complete stop-reason names and handoff to V2H/V2I.
 
-## Validation
+## Validation families
 
-- Budget exhaustion tests (each dimension, each stop reason);
-- failure/replacement/circuit-breaker sequence tests;
-- tightened-threshold state machine tests;
-- determinism of stop-reason emission for replayed attempts.
+Each budget exhaustion; scope churn cap; failed/replacement sequence; tightened marginal gain; deterministic stop reasons; continuation budget interaction.
 
 ## Non-goals
 
-- No publication semantics (V2H), no browser state machine (V2I), no numeric
-  values (calibration round owns them).
+No Candidate publication UI or numeric calibration values.

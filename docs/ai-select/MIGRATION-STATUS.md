@@ -4,32 +4,32 @@ Status: **v2 control plane current; pre-implementation review active**
 
 ## Completed
 
-- v1.3 remains the shipped baseline; amended v2.0 is the target.
-- Amendments 001–005 and ADRs through 0026 record Expert Recovery, Seed/discovery/depth staging, q+s recurrence, regional Reliability, finite pseudo-mass update, and bounded convergence.
-- Accepted ADR history is retained and marked superseded where necessary rather than rewritten.
+- v1.3 remains shipped; amended v2.0 is the target.
+- Amendments 001–006 and ADRs through 0027 record Expert Recovery, staged depth/Seed discovery, q+s recurrence/readout/update, component Target Scope, mandatory re-solve, and structured Frontier Debt.
+- Accepted history is retained and marked superseded where necessary rather than rewritten.
 - Current mapping, traceability, manifest, review gate, graph, tickets, and agent guidance are aligned.
-- Implemented v1 snapshots remain under `history/v1/`.
-- Obsolete unimplemented planning envelopes were deleted and replaced.
-- Context overlays 005–001 temporarily override stale root glossary terms.
+- Implemented v1 snapshots remain under `history/v1/`; obsolete unimplemented planning envelopes were deleted/replaced.
+- Context overlays 006–001 temporarily override stale root glossary terms.
+- EvidenceWorkingSet v1 remains the runtime baseline and has not been silently repurposed.
 
 ## Current planning state
 
 ```text
 runtime baseline       = implemented v1.3
-normative target       = v2.0 + Amendments 001–005
+normative target       = v2.0 + Amendments 001–006
 planning phase         = pre-implementation review
-accepted cross-ticket = Q4-B, Q5-D, Q6-B
+reviewed parent scope  = V2A–V2E
+accepted cross-ticket = Q4-B, Q5-D, Q6-B, Q7-B
 agent-ready stages     = none
-next review item       = Q7 Scope Delta + Frontier Debt
+next review item       = Q8 View Utility probe + cost + candidate pool
 ```
 
 ## Remaining work
 
-- close Scope Delta and Frontier Debt;
-- review View Utility probe/cost/exploration;
+- review View Utility probe/cost/candidate pool/exploration;
 - close loop identity/budgets, terminal matrix, and Expert Recovery lifecycle;
-- decompose reviewed parents into small TDD stages;
+- decompose reviewed parents into small TDD stages, including TargetScopeState and EvidenceWorkingSet v2 migration;
 - assign calibration, policy freeze, production promotion, cutover, and release qualification;
-- consolidate context overlays only in one safe glossary cleanup.
+- consolidate Context overlays only in one safe glossary cleanup.
 
 No production code changed in these documentation decisions.

@@ -4,7 +4,7 @@ Status: **accepted amended scope, pre-implementation review; no ticket is agent-
 
 ## Current sources
 
-Final Spec v2.0 with Amendments 001–005; ADRs 0020–0026 where current; carried-over nonconflicting v1.3 decisions.
+Final Spec v2.0 with Amendments 001–006; ADRs 0020–0027 where current; carried-over nonconflicting v1.3 decisions.
 
 ## Execution rules
 
@@ -15,12 +15,12 @@ Runtime remains v1.3 until explicit reviewed cutovers. Parent tickets are capabi
 | ID | Capability | Blocked by | Blocks |
 |---|---|---|---|
 | V2A | Projected depth + CWED moments; V2AX sidecar | — | V2B S1 path |
-| V2B | Conservative Seed + Core/Envelope/Frontier | V2A for S1 only | V2E, V2F |
+| V2B | Conservative Seed + component TargetScopeState | V2A for S1 only | V2E, V2F |
 | V2C | q+s Consensus/readout + deterministic bounded solve | — | V2D |
 | V2D | lagged regional Observation Reliability | V2C | V2E |
-| V2E | weighted q/s update + convergence + two-phase scope revision | V2B, V2D | V2F, V2H |
-| V2F | View Utility + exploration + candidate pool | V2B, V2E | V2G, V2I |
-| V2G | budget, outcomes, termination, continuation | V2F | V2H, V2I |
+| V2E | weighted q/s update + convergence + Scope Delta/Debt | V2B, V2D | V2F, V2H |
+| V2F | View Utility probe + exploration + candidate pool | V2B, V2E | V2G, V2I |
+| V2G | View/cost/scope budgets, outcomes, termination | V2F | V2H, V2I |
 | V2H | terminal publication semantics | V2E, V2G | V2J |
 | V2I | Browser loop orchestration + identity/replay | V2F, V2G | V2J |
 | V2J | Acquisition UI + Expert Recovery | V2H, V2I | — |
@@ -37,44 +37,36 @@ V2C ─► V2D ────────────────────┘  
                                                     V2J UI + Expert Recovery
 ```
 
-## Accepted consensus/update architecture
+## Accepted iterative architecture
 
 ```text
-exact current Included Stable observations
+Seed + seed-independent Envelope
         ↓
-finite scope/provenance pseudo-mass prior
-+ uniform immutable Evidence aggregate
+component TargetScopeState
         ↓
-q^(0), s^(0)
+exact Scope Revision + Included Stable Evidence
         ↓
-┌──────────────────────────────────────────┐
-│ lagged P/K/C/F readout                   │
-│ → regional residual                     │
-│ → neutral or robust/absolute omega       │
-│ → weighted immutable P/N + unweighted V  │
-│ → finite-posterior q and support s       │
-│ → convergence / oscillation diagnostics  │
-└──────── deterministic + bounded ─────────┘
+deterministic bounded q+s solve
         ↓
-one atomic Consensus Revision
+regional Reliability + immutable-Evidence update
         ↓
-post-solve Scope Delta (Q7 pending)
+converged Consensus Revision
+        ↓
+component Scope Delta
+  ├─ empty ─────────────► Debt / Readiness / Utility
+  └─ material ─► new Scope Revision ─► mandatory new solve
 ```
 
 Key invariants:
 
-- no iterative Evidence double counting;
-- q is not calibrated probability; s separates unknown from conflict;
-- weights are independent `[r_min,1]`, not sum normalized;
-- absolute guard is consensus-maturity gated;
-- convergence checks mean, tail, and View-weight drift for consecutive iterations;
-- period-two oscillation is explicit;
-- scope is frozen during solve;
-- non-convergence cannot publish Candidate.
-
-## Reviewed Seed/discovery architecture
-
-Seed initializes but does not bound Core discovery. Discovery Envelope is seed-independent, Frontier reversible, Core monotonic only inside one stable input revision, and Core Coverage cannot hide Frontier Debt.
+- Core is monotonic inside a Scope Epoch;
+- Envelope ledger is bounded/provenance-recorded; active Frontier is reversible;
+- rejected Frontier is not Context and reopens only on new provenance;
+- promotion/rejection is component-level and hysteretic;
+- Frontier Debt distinguishes unobserved, conflict, and promotion-pending components;
+- pre-delta/scope-advanced Consensus cannot publish;
+- Scope Revision churn is finite;
+- EvidenceWorkingSet v2 must preserve explicit roles and exact scope identity.
 
 ## Product cutover intent
 
@@ -89,7 +81,8 @@ Fixed-four is regression baseline only. Production retains one N channel. No aut
 ## Agent-readiness
 
 ```text
-accepted cross-ticket = Q4-B, Q5-D, Q6-B
-agent-ready stages    = none
-next review item      = Q7 Scope Delta + Frontier Debt
+reviewed parent direction = V2A–V2E
+accepted cross-ticket     = Q4-B, Q5-D, Q6-B, Q7-B
+agent-ready stages        = none
+next review item          = Q8 View Utility probe + cost + candidate pool
 ```

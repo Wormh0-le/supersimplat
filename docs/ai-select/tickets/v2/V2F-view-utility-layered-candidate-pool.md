@@ -1,62 +1,54 @@
-# V2F — View Utility, exploration, and layered candidate pool
+# V2F — View Utility probe, exploration, and candidate pool
 
-Status: **review-required parent envelope; objective reviewed, prediction seam unresolved; not agent-ready**
+Status: **review-required parent envelope — current review frontier; not agent-ready**
 
 Blocked by: V2B, V2E  
 Blocks: V2G, V2I
 
 ## Authority
 
-- Final Spec v2.0 §6.1–§6.2 as amended by Amendment 002;
-- ADR 0023;
-- Observation Coverage, View Diversity, TargetGeometryHint, and feasibility carry-over contracts.
+Final Spec Amendments 002 and 006; ADRs 0023 and 0027; carried-over CameraBinding, TargetGeometryHint, feasibility, Observation Coverage, and View Diversity contracts.
 
 ## Goal
 
-Select the next feasible CameraBinding by prospective value while balancing exploitation of known Core support with seed-independent Frontier discovery and Uncertain resolution.
+Choose the next feasible CameraBinding by prospective value while balancing Core exploitation, component Frontier Debt reduction, Uncertain resolution, directional diversity, duplication, and total acquisition/revision cost.
 
-## Reviewed utility structure
+## Accepted inputs
 
-The policy must be able to express separately calibrated terms for:
+- current exact TargetScopeState and Scope Revision;
+- Core Observation Coverage;
+- structured Frontier Debt and component materiality;
+- final current q/s and Uncertain diagnostics;
+- View Diversity and prior CameraBindings;
+- TargetGeometryHint/Seed framing for the first View;
+- feasibility and cost state.
 
-```text
-Core Observation Coverage gain
-Frontier discovery / Frontier Debt reduction
-Uncertain-resolution gain
-View-direction diversity
-re-observation / duplication penalty
-render + SAM + Evidence + revision cost
-```
-
-No single term is the publication authority. Lift Readiness remains separate.
+A `scope-advanced`, non-converged, or stale Consensus result is not a valid utility state; orchestration first completes the required canonical re-solve.
 
 ## Required behavior
 
-- the first post-Anchor View may use a deterministic TargetGeometryHint/Seed framing rule because iterative state does not yet exist;
-- later Views consume Core, Frontier, aggregate/Uncertain, diversity, feasibility, and cost state;
-- Seed influence is strongest early and declines as iterative evidence becomes available;
-- a bounded exploration floor prevents the planner from only re-observing already-covered Seed/Core;
-- candidate layers include existing hint offsets and reviewed local sampling, all passing existing feasibility gates;
-- selection and tie-breaks are deterministic and replayable;
-- predicted gain is recorded against realized Core gain and Frontier discovery for calibration.
+- first post-Anchor View may use deterministic hint/Seed framing;
+- later Views consume Core, component Debt, Uncertain, diversity, feasibility, and cost;
+- Seed influence declines as current iterative state matures;
+- bounded exploration prevents only re-observing covered Core;
+- predicted gain records realized Core gain, Debt reduction, and new discovery;
+- selection/tie-break is deterministic and replayable;
+- no utility term publishes Candidate or changes scope directly.
 
-## Review gates before decomposition
+## Q8 review gates
 
-- the ViewUtilityProbe data source and approximation contract;
-- candidate-pool generation and bounds;
-- cost units and whether wall-clock can affect deterministic decisions;
-- seed-influence decay and exploration-floor schedule;
-- normalization across Core, Frontier, Uncertain, diversity, and cost;
-- incremental versus full rescore equivalence.
+- ViewUtilityProbe data source and approximation authority;
+- candidate-pool layers and finite bounds;
+- whether candidate scoring uses low-resolution raster probes, geometric approximation, or staged hybrid probing;
+- deterministic cost units and treatment of measured wall-clock;
+- normalization across Core gain, component Debt, Uncertain, diversity, duplication, and cost;
+- seed decay/exploration floor;
+- incremental/full rescore equivalence and prediction/realization calibration.
 
 ## Validation families
 
-- deterministic candidate sequence and tie-break;
-- no-seed-lock scenarios where a Frontier View outranks Core re-observation;
-- predicted versus realized gain calibration;
-- simple-object early stopping and difficult-object continued exploration;
-- candidate feasibility, latency, VRAM, and failure behavior.
+Deterministic candidates/tie-break; no-seed-lock; component Debt targeting; predicted/realized gain; simple-object early stop; difficult-object exploration; probe latency/VRAM/OOM; scope-revision identity rejection.
 
 ## Non-goals
 
-- No budget/termination implementation, Candidate publication, or fixed-four product fallback.
+No budget/termination implementation, Candidate publication, or fixed-four product fallback.

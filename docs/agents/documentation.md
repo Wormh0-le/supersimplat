@@ -1,29 +1,29 @@
 # Project Documentation and Traceability
 
-Read this file when changing `CONTEXT.md`, current specifications, ADRs, feature documents, tickets, comments, or traceability.
+Read this file when changing `CONTEXT.md`, GitHub Issue authority, accepted decisions, comments, historical links, or traceability.
 
 ## Artifact ownership
 
-- `CONTEXT.md` owns stable domain vocabulary, not implementation status, counts, paths, constants, or feature scratch notes.
-- `docs/ai-select/CURRENT-TICKET-SPEC-MAPPING.md` points to the current product authority and implementation scope.
-- The current Final Spec owns product behavior; active ADRs own durable architectural decisions and trade-offs.
-- Implementation tickets and traceability artifacts own active work decomposition and coverage.
-- Historical specs, ADRs, audits, and benchmarks remain history; qualify them so they cannot be mistaken for current authority.
+- Root `CONTEXT.md` owns stable domain vocabulary. It does not own implementation status, readiness, counts, paths, numeric calibration, or active decomposition.
+- GitHub [Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37) owns the current AI Select v2.0 authority index, decision status, parent dependency frontier, implementation gate, and immutable links to the accepted specification record.
+- Parent Issues #38–#47 own reviewed capability envelopes and their decomposition frontiers. They are not agent-ready implementation tickets.
+- Exact child Issues own active TDD stages, inputs/outputs, dependencies, migration boundary, validation, and readiness. Only a child explicitly linked from #37 and labeled `ready-for-agent` may authorize implementation.
+- Explicitly accepted Issue comments may record a new decision; reconcile the owning Issue body and #37 when the durable status or graph changes.
+- Commit [`aacad57`](https://github.com/Wormh0-le/supersimplat/tree/aacad57fc534acc43522ca4d51d41149b5ee9692) is the immutable migration snapshot for removed specifications, ADRs, feature documents, tickets, reviews, benchmarks, and `.scratch` evidence.
+- `docs/agents/**` owns agent guidance only. Do not recreate a second current spec/ticket/ADR control plane under `docs/**`.
 
-Update only the artifact whose owned claim changed. Do not edit current specs, ADRs, or traceability for a code-only implementation detail that leaves their contract unchanged.
+Update only the artifact whose owned claim changed. Do not edit #37 or a capability Issue for a code-only detail that leaves its contract, graph, calibration, or readiness unchanged.
 
-## Feature-document lifecycle
+## Feature and decision lifecycle
 
-Planning and feature documents are temporary unless they contain durable authority. At feature closeout, classify each affected artifact:
+- New product or architectural decisions belong in the narrowest owning Issue and must be linked from #37 when they change the global map.
+- Stable terminology may be consolidated into `CONTEXT.md`; do not copy active decomposition or mutable status into the glossary.
+- Preserve historical acceptance records through immutable commit links rather than restoring deleted planning files.
+- At feature closeout, close the exact child Issue with evidence, update the parent checklist/frontier, and update #37 only when parent/global status changed.
+- If implementation reveals a contract conflict, stop at the fail-closed boundary and reopen the decision in the owning Issue instead of silently changing code or glossary text.
 
-- promote stable terminology to `CONTEXT.md`;
-- update current behavior in the Final Spec;
-- accept or supersede a qualifying ADR rather than rewriting history;
-- reconcile ticket mapping and traceability when implementation scope changed;
-- archive only material historical evidence; delete intermediate implementation narratives by default.
-
-For local comments, follow the global durable-comment rule. Use comments for non-obvious authority, identity, atomicity, fail-closed behavior, or trust boundaries; link to the owning spec/ADR instead of duplicating broad rationale.
+For local comments, use comments only for non-obvious authority, identity, atomicity, fail-closed behavior, or trust boundaries. Link to the owning Issue rather than duplicating broad rationale.
 
 ## Validation
 
-Check affected terminology against `CONTEXT.md` and the current mapping, then verify changed links, commands, schemas, examples, ticket relationships, and traceability. Do not hard-code a separate list of current ADR numbers in this guide.
+Check terminology against `CONTEXT.md` and current Issue authority, then verify changed links, commands, schemas, examples, issue relationships, labels, and acceptance evidence. Documentation-only cleanup does not require runtime suites unless executable behavior or generated artifacts changed.

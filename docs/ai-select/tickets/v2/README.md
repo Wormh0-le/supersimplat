@@ -1,28 +1,20 @@
 # AI Select v2 Ticket Envelopes
 
-Status: **pre-implementation review; no ticket is agent-ready**
+Status: **pre-implementation review; no stage is agent-ready**
 
-Parent envelopes:
-
-- V2A — projected depth, CWED moments, V2AX experiment;
-- V2B — Conservative Seed and TargetScopeState foundations;
-- V2C — q+s canonical bounded solve/readout;
-- V2D — lagged regional Reliability;
-- V2E — weighted q/s update, convergence, component Scope Delta/Debt;
-- V2F — layered candidate pool and hybrid ViewUtilityProbe;
-- V2G — deterministic budgets/failure/termination/continuation;
-- V2H — terminal publication;
-- V2I — loop orchestration/identity/journal/replay;
-- V2J — UI + Expert Recovery.
+Parent envelopes remain V2A–V2J. Reviewed parent direction now covers V2A–V2G and V2I. V2H is the current review frontier; V2J follows.
 
 Accepted cross-ticket decisions:
 
 ```text
-Q4-B continuous q+s bounded recurrence
-Q5-D regional readout + offline LOO reference
-Q6-B finite pseudo-mass update + robust Reliability + convergence
-Q7-B component scope state + structured Frontier Debt
-Q8-C layered pool + geometry pruning + shortlist raster probe
+Q4-B bounded q+s recurrence
+Q5-D regional readout + LOO reference
+Q6-B finite pseudo-mass + robust Reliability + convergence
+Q7-B component Scope + structured Frontier Debt
+Q8-C hybrid ViewUtilityProbe
+Q9-B hierarchical identity + Browser Journal + deterministic budgets
 ```
 
-V2A–V2F are reviewed parent directions awaiting decomposition. Q9 must close V2G/V2I budgets, identity, journal, replay, cancellation, and Continue Acquisition before decomposition continues. No parent envelope may be implemented directly.
+V2AX, leave-one-out Reliability, fixed-four, and full-render-all-candidates remain nonblocking experiments/reference baselines.
+
+Do not implement parent envelopes directly. An exact stage must be jointly marked `agent-ready` by current mapping and review status.

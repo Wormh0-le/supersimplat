@@ -1,35 +1,39 @@
-# V2H — Terminal publication semantics
+# V2H — Terminal Candidate publication and explicit consent
 
-Status: **review-required parent envelope; not agent-ready**
+Status: **review-required parent envelope — current review frontier; not agent-ready**
 
 Blocked by: V2E, V2G  
 Blocks: V2J
 
+## Authority
+
+Final Spec v2.0, Amendments 003–008, ADR 0020, and carried-over atomic production Candidate publication.
+
 ## Goal
 
-Define Candidate publication and explicit Limited consent across Readiness and terminal stop reasons while preserving atomicity and Native Selection authority.
+Define a complete, fail-closed mapping from current Readiness plus terminal outcome to Candidate publication, prior-Candidate preservation, explicit Limited consent, and available recovery actions.
 
-## Accepted prerequisites
+## Inputs
 
-Candidate publication requires:
+- current converged, scope-stable Consensus/aggregate and exact identity;
+- Lift Readiness and Frontier Debt;
+- terminal outcome from V2G;
+- Attempt/Series/Journal terminal state from V2I;
+- prior Candidate current/stale state.
 
-- converged current Consensus;
-- exact current Scope Epoch/Revision;
-- no pending material Scope Delta;
-- result not `scope-advanced`, stale, non-converged, or oscillating;
-- exact production Evidence/policy identity;
-- Lift Readiness authority.
+## Q10 review gates
 
-`ready-and-low-marginal-gain` may auto-publish Candidate atomically. Scope-revision-budget exhaustion, Limited debt, or other non-happy terminals never auto-publish. Whether explicit user consent can publish a Limited Candidate is a remaining terminal-matrix decision.
+- behavior for Ready/Limited/Not Ready across low-gain, budget exhaustion, no-feasible, failure, cancel, suspend, stale, and non-convergence outcomes;
+- whether Ready at a non-low-gain forced terminal auto-publishes or requires consent;
+- explicit `Use Limited Candidate` versus Re-Lift semantics;
+- prior Candidate preservation and application eligibility while a fresh continuation runs;
+- no Candidate from scope-advanced, non-converged, oscillating, cancelled, suspended, or stale results;
+- recovery recommendations and atomic publication identity.
 
-## Review gates
+## Invariants already accepted
 
-Complete Readiness × StopReason matrix; distinction between Re-Lift and “Use Limited Candidate”; prior Candidate preservation; scope/consensus identity binding; cancellation/OOM/failure atomicity.
+Candidate never self-applies Native Selection. Partial/non-current publication is forbidden. Ready-low-gain may auto-publish under ADR 0020. Limited never auto-publishes without an explicit consent decision. Re-Lift re-evaluates exact current stable inputs and does not restart acquisition.
 
 ## Validation families
 
-Happy-path auto-publication; every terminal branch; scope-advanced/stale/non-converged rejection; explicit Limited consent; prior Candidate preservation; no automatic Native operation.
-
-## Non-goals
-
-No UI surface, threshold calibration, or Native operation automation.
+Complete Readiness × terminal-outcome table; atomicity; stale/cancel/suspend; prior Candidate; explicit Limited consent; Re-Lift regression; Continue interaction.

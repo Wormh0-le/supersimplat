@@ -1,36 +1,61 @@
-# V2G — Deterministic budgets, failures, termination, and continuation
+# V2G — Deterministic budgets, outcomes, failure circuit, and termination
 
-Status: **review-required parent envelope — next joint review with V2I; not agent-ready**
+Status: **reviewed parent envelope — Q9-B accepted; awaiting decomposition; not agent-ready**
 
 Blocked by: V2F  
 Blocks: V2H, V2I
 
+## Authority
+
+Final Spec Amendments 006–008; ADRs 0027–0029; Lift Readiness remains separate publication authority.
+
 ## Goal
 
-Define finite acquisition, probe, replacement, Scope Revision, and cost budgets; structured outcomes; and deterministic terminal rules without allowing transient wall-clock to change canonical camera decisions.
+Own the deterministic budget ledger, structured iteration/terminal outcomes, replacement/failure circuit, and bounded termination used by Browser orchestration.
 
-## Accepted inputs
+## Accepted budget model
 
-- V2F deterministic candidate/probe/utility result;
-- Core Coverage, structured Frontier Debt, View Diversity, remaining Utility, and Consensus/Scope status;
-- measured operational telemetry separated from canonical cost units;
-- Expert Recovery intent for Continue Acquisition.
+Per Attempt:
 
-## Q9 review gates
+- Successful Observation Budget;
+- Selected Candidate Attempt Budget;
+- Deterministic Cost Budget;
+- Replacement/Failure Budget;
+- Scope Revision Budget.
 
-- which counters are per target, Scope Epoch, acquisition attempt, View iteration, probe attempt, replacement, Solver Iteration, and Scope Revision;
-- successful/failed/probe-only View accounting and bounded replacement;
-- deterministic cost-ceiling units versus operational timeout/OOM/cancel;
-- structured terminal/outcome taxonomy;
-- treatment of scope-advanced mandatory re-solves;
-- whether Continue Acquisition resets, inherits, or extends budgets;
-- replay semantics for partially completed attempts and recorded cost decisions;
-- circuit-breaker rules and no silent fixed-four/geometry-only fallback.
+Per Series:
 
-## Required boundaries
+- cumulative deterministic resource cap;
+- finite continuation count and other calibrated hard caps.
 
-Failed work never becomes Evidence. Operational timeout may fail an attempt but cannot retroactively choose a different candidate. All values remain calibration-owned until explicit promotion.
+A failed/Excluded View consumes no Successful Observation slot but consumes applicable candidate-attempt, cost, and failure/replacement budgets. Replay consumes no new budget; fresh retry does.
+
+## Accepted deterministic behavior
+
+- wall-clock/cache state is telemetry and operational safety, not canonical cost/ranking;
+- replacement follows the already committed utility ranking;
+- all ledgers and transitions are journal-bound and finite;
+- scope-advanced requires mandatory re-solve unless Scope Revision budget ends the Attempt;
+- fixed-four remains an ablation baseline, never fallback.
+
+## Outcome families
+
+Iteration: observation-ready/excluded, probe/render/mask/Evidence failures, consensus-non-converged, scope-advanced.
+
+Terminal: ready-low-gain, marginal-gain-exhausted, observation/candidate/cost/scope budget exhausted, no-feasible-view, failure-circuit-open, cancelled, suspended, stale.
+
+## Remaining gates before decomposition
+
+- numeric budget and deterministic cost-unit calibration;
+- exact failure-stage grouping and circuit thresholds;
+- Q10 Readiness × terminal-outcome publication matrix;
+- Continue Series-cap presentation shared with V2J;
+- production identity and release calibration owner.
+
+## Validation families
+
+Budget transition table; replay/no-debit; fresh retry/debit; failed-work matrix; committed-ranking replacement; deterministic cost versus wall-clock variation; failure circuit; Series continuation caps; structured stop reasons.
 
 ## Non-goals
 
-No Candidate publication matrix (V2H), Browser orchestration implementation (V2I), or UI (V2J).
+No Candidate publication policy, UI, or Companion-autonomous session.

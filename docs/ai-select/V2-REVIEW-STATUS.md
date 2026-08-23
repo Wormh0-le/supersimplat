@@ -5,55 +5,50 @@ Updated: 2026-08-23
 
 ## Accepted decisions
 
-- Amendment 001 / ADR 0022: automation-default, expert-recoverable product.
-- Amendment 002 / ADR 0023: CWED staging, S0/S1 shadow Seeds, seed-independent Envelope/Frontier, one production N channel.
-- Amendments 003–005 / ADRs 0024–0026: continuous q+s recurrence, multi-channel regional Reliability, finite pseudo-mass update, and bounded convergence.
-- Amendment 006 / ADR 0027: component TargetScopeState, structured Frontier Debt, and mandatory re-solve after material Scope Delta.
-- Amendment 007 / ADR 0028: finite layered candidate pool, geometry pruning, shortlist low-resolution ViewUtilityProbe, deterministic cost units, and winner-only full acquisition.
+- Amendments 001–002: Expert Recovery, Seed/depth staging, seed-independent discovery.
+- Amendments 003–006: deterministic q+s recurrence, regional Reliability, pseudo-mass/convergence, component Scope/Frontier Debt.
+- Amendment 007: layered candidates + geometric pruning + shortlist ViewUtilityProbe.
+- Amendment 008 / ADR 0029: hierarchical Series/Attempt/Iteration identities, Browser Decision Journal, deterministic budgets, exact replay/retry, Cancel/Suspend, and fresh Continue Attempt.
 
 ## Review order
 
-| Step | Area | Status | Exit condition |
-|---|---|---|---|
-| 0 | Control-plane lifecycle | complete | current/history separated |
-| 0.5 | Product orientation | complete | Expert Recovery accepted |
-| 1 | V2A/V2B depth, Seed, discovery | complete at parent-decision level | Amendments 002 / ADR 0023 |
-| 2 | V2C/V2D/V2E iterative consensus/scope | complete at parent-decision level | Q4-B through Q7-B / Amendments 003–006 |
-| 3 | V2F View Utility | complete at parent-decision level | Q8-C / Amendment 007 / ADR 0028 |
-| 4 | V2G/V2I budgets, outcomes, identity, replay, continuation | **next** | deterministic accounting, attempt hierarchy, journal, cancel/suspend/continue closed |
-| 5 | V2H terminal publication | pending | full Readiness × StopReason matrix and Limited consent closed |
-| 6 | V2J UI + Expert Recovery | pending | recovery surface and stale Candidate UX closed |
-| 7 | Ticket decomposition | pending | reviewed parents split into small TDD stages |
-| 8 | Calibration/promotion/release | pending | explicit owners and gates |
+| Step | Area | Status |
+|---|---|---|
+| 0–2.4 | control plane through Scope Delta/Frontier Debt | complete |
+| 3 | V2F hybrid View Utility | complete at parent-decision level |
+| 4 | V2G/V2I identity, budgets, Journal, replay, continuation | complete at parent-decision level |
+| 5 | V2H terminal publication | **next** |
+| 6 | V2J UI + Expert Recovery presentation | pending |
+| 7 | parent-ticket decomposition | pending |
+| 8 | calibration/promotion/release ownership | pending |
 
 ## Current frontier
 
 ```text
-next review item          = Q9 V2G/V2I budgets + identity + replay
-reviewed parent direction = V2A–V2F
-accepted decisions        = Q4-B, Q5-D, Q6-B, Q7-B, Q8-C
+next review item          = Q10 Readiness × Terminal Outcome publication matrix
+reviewed parent direction = V2A–V2G, V2I
+accepted cross-ticket     = Q4-B through Q9-B
 agent-ready stages        = none
 ticket in flight          = none
 ```
 
-## Rules
+## Q9 invariants
 
-- Do not implement parent envelopes directly.
-- Do not treat ViewUtilityProbe as RGB, Evidence, Coverage, Readiness, or Candidate authority.
-- Do not use transient wall-clock or GPU load in canonical camera ranking.
-- Do not full-render or run SAM for unselected candidates on the product path.
-- Do not silently fall back to fixed-four or geometry-only winner selection when the required probe fails.
-- Do not publish Candidate from non-converged, scope-advanced, stale, or otherwise incompatible state.
-- Do not mutate Scope during a canonical solve.
-- Do not make classified N or leave-one-out Reliability a production prerequisite.
-- A stage becomes agent-ready only when this file and the current mapping agree.
+- Do not collapse existing endpoint attempts into one loop ID.
+- Browser owns the append-only Decision Journal and product action sequence.
+- Same-attempt replay never reranks or debits budget again.
+- Fresh retry uses a new endpoint attempt ID and consumes declared budgets.
+- Failed work is free only for Successful Observation Budget.
+- Wall-clock/cache state cannot change canonical candidate ranking.
+- Cancel closes publication authority immediately; late results are discarded.
+- Exact resume uses the same Attempt only from a compatible journal boundary.
+- Continue Acquisition is a fresh Attempt with new per-Attempt allowances and shared Series caps.
+- No Companion-autonomous acquisition session.
 
 ## Known blockers
 
-1. V2G/V2I do not yet define deterministic budget accounting, probe/acquisition failure taxonomy, bounded replacement, or cost-ceiling semantics.
-2. Loop, acquisition-attempt, iteration, Scope Revision, Consensus Revision, probe, render, mask, Evidence, and endpoint-attempt identities are not reconciled.
-3. Exact replay is not reconciled with measured latency, timeout, cache history, or partially completed products.
-4. Continue Acquisition budget inheritance/reset and its identity relation to the previous terminal attempt remain undefined.
-5. Terminal behavior remains incomplete for Readiness × StopReason combinations.
-6. Expert Recovery stale-Candidate presentation remains undefined.
-7. Calibration, policy freeze, production promotion, cutover, and release qualification lack explicit owners.
+1. Readiness × terminal outcome → Candidate publication and explicit Limited consent are not closed.
+2. V2J labels, availability, Candidate-while-running presentation, and recovery affordances remain open.
+3. Numeric budget/cost/threshold values and GPU performance budgets need calibration owners.
+4. Reviewed parent envelopes still require small TDD stage decomposition.
+5. Calibration, policy freeze, production promotion, cutover, and release qualification require explicit graph owners.

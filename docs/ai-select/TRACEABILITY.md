@@ -5,40 +5,37 @@ Updated: 2026-08-23
 
 Implemented v1.3 traceability remains under `docs/ai-select/history/v1/TRACEABILITY-V1.md`.
 
-## Carried-over implemented foundations
+## Coverage summary
 
-C001–C012 remain implemented v1.3 foundations: target/Stable identity, authoritative RGB, SAM 3 Image, Stable Mask/Participation/User Confirmed authority, single-N Direct P/N/V, Working Sets/boundary contact, Lift Readiness, atomic Candidate/stale blocking, Native operations, suspension/Undo, and User-added View recovery foundation.
+C001–C012 remain implemented v1.3 foundations. Existing v2 requirements N001–N043 remain owned as previously mapped.
 
-## New v2 target requirements
+## Acquisition identity and budget requirements
 
 | ID | Requirement | Owner | Status |
 |---|---|---|---|
-| N001–N004 | projected depth, CWED moments, non-authoritative semantics, V2AX experiment | V2A | reviewed/decomposition-pending |
-| N005–N014 | S0/S1 Seed, TargetScopeState, component Frontier, Debt, readiness inputs | V2B/V2E/V2G | reviewed/decomposition-pending |
-| N015–N019 | continuous q+s canonical solve, lagged Reliability, P/N weighting with unweighted V | V2C/V2D/V2E | reviewed/decomposition-pending |
-| N020–N035 | View Utility, budgets, publication, orchestration, cancellation, Expert Recovery | V2F–V2J | accepted/review-required |
-| N036 | calibration, policy freeze, production promotion, cutover, qualification have explicit owners | unassigned | blocker |
-| N037–N043 | frozen scope, fail-closed convergence, immutable reaggregation, pseudo-mass q/s, robust Reliability, regional readout | V2C/V2D/V2E | reviewed/decomposition-pending |
-| N044 | candidate pool is deterministic, finite, layered, and component-Debt aware | V2F | accepted/reviewed-parent |
-| N045 | all candidates pass geometry pruning; only a deterministic shortlist receives an occlusion-aware raster probe | V2F | accepted/reviewed-parent |
-| N046 | ViewUtilityProbe is prospective only and never becomes RGB, Evidence, Coverage, Readiness, or Candidate authority | V2F | accepted/reviewed-parent |
-| N047 | complete Render Working Set and render-only occluders remain active in the low-resolution probe | V2F | accepted/reviewed-parent |
-| N048 | canonical View Utility cost uses deterministic units; wall-clock cannot alter candidate ranking | V2F/V2G/V2I | accepted/review-required |
-| N049 | full authoritative RGB/SAM/Evidence runs only for the selected winner on the product path | V2F/V2I | accepted/review-required |
-| N050 | predicted Core/Frontier/Uncertain gains are recorded against realized outcomes for calibration | V2F/calibration owner TBD | accepted/owner-incomplete |
-| N051 | probe and scoring identities bind target, dependency, scope, q/s, candidate, policies, and Render Working Set | V2F/V2I | accepted/review-required |
+| N044 | Acquisition Series contains the initial and fresh Continue Attempts under cumulative caps | V2G/V2I/V2J | accepted / review-decomposition pending |
+| N045 | Attempt, Iteration, Utility, probe, endpoint, Consensus, and Scope identities remain hierarchical and distinct | V2I | accepted / decomposition pending |
+| N046 | Browser owns an append-only digest-chained Decision Journal and product action sequence | V2I | accepted / decomposition pending |
+| N047 | successful observations, selected candidates, deterministic cost, failures/replacements, and Scope Revisions use separate finite ledgers | V2G/V2I | accepted / decomposition pending |
+| N048 | failed or Excluded work is free only for Successful Observation Budget and still consumes applicable cost/failure ledgers | V2G | accepted / decomposition pending |
+| N049 | same-attempt replay reuses committed decisions/results without reranking or budget debit | V2I | accepted / decomposition pending |
+| N050 | fresh retry/replacement uses new identities and declared budget debit; replacement follows committed ranking | V2G/V2I | accepted / decomposition pending |
+| N051 | wall-clock/cache state does not alter canonical ranking or deterministic budget decisions | V2F/V2G/V2I | accepted / decomposition pending |
+| N052 | Cancel closes publication authority immediately and discards late results while preserving completed artifacts | V2I/V2J | accepted / decomposition pending |
+| N053 | exact Suspend/Resume continues only from a compatible journal boundary; otherwise the Attempt is stale | V2I | accepted / decomposition pending |
+| N054 | Continue Acquisition creates a fresh Attempt with new per-Attempt allowances and preserved Series caps/artifacts | V2G/V2I/V2J | accepted / decomposition pending |
+| N055 | Companion remains endpoint/derived-state owner, not an autonomous product-session authority | V2I | accepted / decomposition pending |
+| N056 | Readiness × terminal outcome Candidate publication and explicit Limited consent are completely mapped | V2H | review-required / next |
+| N057 | calibration, policy freeze, production promotion, cutover, and release qualification have explicit owners | unassigned | blocker |
 
-## Coverage result
+## Result
 
 ```text
 carried-over implemented requirements = 12
-new v2 requirements                 = 51
-mapped new requirements             = 50
-unassigned release requirement      = N036
-reviewed parent direction           = V2A–V2F
-accepted decisions                  = Q4-B, Q5-D, Q6-B, Q7-B, Q8-C
+new v2 requirements                 = 57
+mapped new requirements             = 56
+unassigned release requirement      = N057
+accepted cross-ticket decisions     = Q4-B through Q9-B
 agent-ready stages                  = 0
-next review item                    = Q9 V2G/V2I budgets + identity + replay
+next review item                    = V2H publication matrix
 ```
-
-No implementation closure may be claimed while N036 is unassigned or relevant stages remain review-required/decomposition-pending.

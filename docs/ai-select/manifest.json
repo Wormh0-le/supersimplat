@@ -1,11 +1,12 @@
 {
   "schema_version": 1,
-  "control_plane_version": "ai-select-v2-preimplementation-review-8",
+  "control_plane_version": "ai-select-v2-preimplementation-review-9",
   "feature": "ai-select",
   "branch": "ai-select-v1",
   "normative_target": {
     "spec": "docs/specs/ai-select-final-spec-v2.0.md",
     "amendments": [
+      "docs/specs/ai-select-final-spec-v2.0-amendment-008-hierarchical-acquisition-journal-budgets.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-007-hybrid-view-utility-probe.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-006-component-scope-frontier-debt.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-005-pseudomass-reliability-convergence.md",
@@ -14,75 +15,59 @@
       "docs/specs/ai-select-final-spec-v2.0-amendment-002-seed-discovery-depth-staging.md",
       "docs/specs/ai-select-final-spec-v2.0-amendment-001-expert-recovery.md"
     ],
-    "active_adrs": [
-      "docs/adr/0028-adopt-hybrid-view-utility-probe.md",
-      "docs/adr/0027-adopt-component-scope-state-and-mandatory-resolve.md",
-      "docs/adr/0026-adopt-finite-pseudomass-update-and-bounded-convergence.md",
-      "docs/adr/0025-adopt-multichannel-consensus-readout-and-loo-reference.md",
-      "docs/adr/0024-deterministic-bounded-consensus-recurrence.md",
-      "docs/adr/0023-stage-depth-support-and-require-seed-independent-discovery.md",
-      "docs/adr/0022-automation-default-with-expert-recovery.md",
-      "docs/adr/0021-kernel-internal-depth-readouts-and-depth-classified-negative-mass.md",
-      "docs/adr/0020-auto-publish-candidate-at-ready-low-gain-terminal.md"
-    ],
-    "context_overlays": [
-      "docs/ai-select/CONTEXT-AMENDMENT-007-VIEW-UTILITY-PROBE.md",
-      "docs/ai-select/CONTEXT-AMENDMENT-006-TARGET-SCOPE-FRONTIER-DEBT.md",
-      "docs/ai-select/CONTEXT-AMENDMENT-005-PSEUDOMASS-RELIABILITY-CONVERGENCE.md",
-      "docs/ai-select/CONTEXT-AMENDMENT-004-CONSENSUS-READOUT-RELIABILITY.md",
-      "docs/ai-select/CONTEXT-AMENDMENT-003-CONSENSUS-RECURRENCE.md",
-      "docs/ai-select/CONTEXT-AMENDMENT-002-SEED-DISCOVERY-DEPTH.md",
-      "docs/ai-select/CONTEXT-AMENDMENT-001-EXPERT-RECOVERY.md"
-    ]
+    "latest_adr": "docs/adr/0029-adopt-browser-journal-and-layered-acquisition-identities.md",
+    "context_overlay": "docs/ai-select/CONTEXT-AMENDMENT-008-ACQUISITION-JOURNAL-BUDGETS.md"
   },
   "runtime_baseline": {
     "spec": "docs/specs/ai-select-final-spec-v1.3.md",
     "status": "implemented"
   },
-  "product_orientation": {
-    "default": "automatic-acquisition",
-    "expert_recovery": true,
-    "user_added_view": "retained-as-secondary-recovery",
-    "continue_acquisition": "accepted-product-intent-review-required",
-    "camera_intervention_while_running": false
-  },
-  "reviewed_view_utility_decisions": {
-    "architecture": "finite-layered-pool-two-stage-hybrid-probe",
-    "candidate_layers": ["hint-offsets", "target-scope-shell", "component-debt-targeted"],
-    "stage_one": "deterministic-geometric-pruning",
-    "stage_two": "deterministic-shortlist-low-resolution-occlusion-aware-raster-probe",
-    "complete_render_working_set": true,
-    "render_only_occluders_preserved": true,
-    "probe_is_product_authority": false,
-    "winner_only_full_authoritative_acquisition": true,
-    "canonical_cost": "deterministic-cost-units",
-    "wall_clock_changes_ranking": false,
-    "wall_clock_role": "telemetry-and-operational-safety",
-    "fixed_four_product_fallback": false,
-    "full_render_all_candidates": "offline-oracle-only",
-    "predicted_realized_calibration_required": true
+  "reviewed_acquisition_lifecycle": {
+    "authority": "browser-driven-existing-transport",
+    "identity_hierarchy": [
+      "acquisition-series",
+      "acquisition-attempt",
+      "acquisition-iteration",
+      "utility-decision",
+      "probe-and-endpoint-attempts",
+      "consensus-revision",
+      "scope-revision"
+    ],
+    "journal": "browser-owned-append-only-digest-chain",
+    "budgets": [
+      "successful-observation",
+      "selected-candidate-attempt",
+      "deterministic-cost",
+      "replacement-failure",
+      "scope-revision",
+      "series-cumulative-cap"
+    ],
+    "failed_work_free_only_for": "successful-observation-budget",
+    "same_attempt_replay": "no-rerank-no-redebit",
+    "fresh_retry": "new-endpoint-attempt-and-budget-debit",
+    "replacement_ranking": "already-committed",
+    "wall_clock_changes_canonical_ranking": false,
+    "cancel": "terminal-publication-gate-closed-late-results-discarded",
+    "exact_resume": "same-attempt-from-compatible-journal-boundary",
+    "continue_acquisition": "fresh-attempt-new-per-attempt-budgets-shared-series-cap",
+    "companion_autonomous_session": false
   },
   "planning_status": "pre-implementation-review",
-  "reviewed_parent_envelopes": ["V2A", "V2B", "V2C", "V2D", "V2E", "V2F"],
+  "reviewed_parent_envelopes": ["V2A", "V2B", "V2C", "V2D", "V2E", "V2F", "V2G", "V2I"],
   "reviewed_cross_ticket_decisions": [
     "Q4-B-deterministic-bounded-q-s-recurrence",
     "Q5-D-multichannel-readout-regional-residual-loo-reference",
     "Q6-B-finite-pseudomass-robust-reliability-bounded-convergence",
     "Q7-B-component-scope-state-structured-frontier-debt",
-    "Q8-C-layered-candidate-hybrid-view-utility-probe"
+    "Q8-C-layered-candidate-hybrid-view-utility-probe",
+    "Q9-B-hierarchical-identity-browser-journal-deterministic-budgets"
   ],
-  "review_frontier": ["V2G", "V2I"],
-  "next_review_item": "Q9-loop-budget-identity-replay-continuation",
+  "review_frontier": ["V2H"],
+  "next_review_item": "Q10-readiness-terminal-outcome-publication-matrix",
   "agent_ready_tickets": [],
   "ticket_in_flight": null,
   "next_implementation_ticket": null,
   "next_implementation_subticket": null,
-  "experimental_sidecars": [
-    "V2AX-depth-classified-negative-evidence",
-    "V2D-leave-one-out-reliability-reference",
-    "V2F-fixed-four-ablation",
-    "V2F-full-render-all-candidates-oracle"
-  ],
   "release_ownership_blocker": "Calibration, policy freeze, production identity promotion, cutover, and release qualification are not yet owned by reviewed tickets.",
   "implementation_gate": "A V2 stage may start only when CURRENT-TICKET-SPEC-MAPPING.md and V2-REVIEW-STATUS.md both mark it agent-ready."
 }

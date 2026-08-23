@@ -80,6 +80,16 @@ Status: current reusable interface guidance
 - 子工具栏和浮动工具栏默认使用带 tooltip 的图标按钮。响应式退化优先移动低频操作，不把图标还原成长文字，也不得换行。
 - 不为快速、可撤销的本地操作增加确认框、Apply 中间步骤或持久 spinner。
 
+### 2D Evidence 与 3D Spatial Authoring 协同
+
+- Evidence/Workflow、Spatial Authoring 和 Selection Application 是职责层，不是要求创建三个并列界面的理由。
+- AI View Dock 拥有已渲染 Evidence、2D Prompt/Mask 和跨 View workflow；主 3D 视口工具栏拥有 Anchor/View 空间编辑；同一工具栏的 Candidate 组拥有 Overlay 与 Native Selection 操作。
+- Add Observation、Use Current View、Adjust Anchor、Move/Rotate、Confirm/Cancel 等空间命令不得复制到 Dock 或 Session Strip。
+- 调整 Anchor/View 时可以显示靠近活动视锥体的透明 Spatial Edit HUD。HUD 只反馈当前任务、模式、草稿/渲染状态和已有数据可可靠计算的构图信息；它不承载按钮、菜单或独立状态机。
+- 3D 草稿可以高频本地更新；Dock 只在稳定渲染/发布边界更新 RGB/Mask，不追逐逐帧姿态。
+- Navigator 与 3D Camera Frustum 应共享同一 View identity、active/hover presentation 和双向选择语义；不要建立第二套空间选择模型。
+- 具体 Pause、Resume/Continue、Anchor/Observation 提交边界和验收矩阵见 [V2J Q11 合同](../docs/ai-select/tickets/v2/V2J-acquisition-ui-expert-recovery.md)。
+
 ### 状态栏
 
 - Status Bar 只承载紧凑、只读、持续有解释价值的统计或生命周期状态。
@@ -102,6 +112,15 @@ Status: current reusable interface guidance
 - 一行合并 availability、当前生产状态和必要摘要。
 - 同一时刻最多一个上下文动作。
 - 状态文字和动作不得复制到相邻表面。
+
+### Session Strip
+
+- Session Strip 是 Compact Context Bar 的 workflow 专用变体，用于跨 View、跨编辑表面的 Attempt/session 状态；它不是永久 Dock 标题、选中 View 标题或 planner dashboard。
+- 只有当活动目标/session 确实需要解释时显示；无状态价值时折叠，不长期占用画布高度。
+- 单行、固定高度、不换行。状态文本可以先省略，右侧唯一动作槽保持稳定。
+- 最多承载一个 Pause/Cancel、Resume/Continue 或 publication-consent 动作；空间编辑、Native Selection、Re-Lift、Restart 和技术指标仍留在其既有所有者表面。
+- 自动 Pause 的 pending/paused 反馈不得抢走触发操作的焦点；状态变化应通过可访问 live region 通知。
+- 具体状态与动作可用性属于功能合同，不在本系统文件中复制。
 
 ### Navigator Card
 
@@ -170,6 +189,7 @@ Status: current reusable interface guidance
 
 - [AI View Dock 布局设计](../docs/ai-select/ai-view-dock-layout.md)
 - [AI Select Toolbar 布局与交互设计](../docs/ai-select/ai-select-toolbar-layout.md)
+- [V2J Q11 Progressive Acquisition UI + Expert Recovery](../docs/ai-select/tickets/v2/V2J-acquisition-ui-expert-recovery.md)
 - [Ticket 16A 实现合同](../docs/ai-select/tickets/16A-candidate-viewport-presentation.md)
 - [Tickets 16B–16G 视觉走查修正](../docs/ai-select/tickets/README.md)
 - [Ticket 17 目标生命周期合同](../docs/ai-select/tickets/17-applied-undo-fix-restart-multitarget.md)

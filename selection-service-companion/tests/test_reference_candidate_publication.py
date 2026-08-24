@@ -306,8 +306,8 @@ class ReferenceCandidatePublicationTests(unittest.TestCase):
     ) -> None:
         record = json.loads(
             (
-                Path(__file__).parents[2]
-                / "docs/ai-select/benchmarks/14d-reference-candidate-quality.json"
+                Path(__file__).resolve().parent
+                / "fixtures/ai-select-v1/14d-reference-candidate-quality.json"
             ).read_text(encoding="utf-8")
         )
 

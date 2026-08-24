@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "purpose": "shared deterministic Frame Set for controlled front/back-overlap lifting",
+  "frame_set_version": "frame-set-v1",
+  "scene": {
+    "ply": "../controlled_front_back_overlap.ply",
+    "sha256": "cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e",
+    "gaussian_count": 16384
+  },
+  "resolution": [512, 512],
+  "horizontal_fov_degrees": 42.0,
+  "frames": [
+    {
+      "frame_index": 0,
+      "candidate_id": "anchor-front",
+      "category": "anchor",
+      "file": "frames/000-anchor-front.png",
+      "sha256": "2f2e0c799b29d45260cc0333e3b47bc5dca5d1530623688314390afeb3f14d34",
+      "camera_to_world": [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, -3.200000047683716],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "eye": [0.0, 0.0, -3.2],
+      "target": [0.0, 0.0, 0.25],
+      "source": "deterministic-controlled-render"
+    },
+    {
+      "frame_index": 1,
+      "candidate_id": "side-right",
+      "category": "ring",
+      "file": "frames/001-side-right.png",
+      "sha256": "63b3bd934428046a2c667616383c756bab35de3acccb8eec8bfdebd29c7af8f8",
+      "camera_to_world": [
+        [0.0, 0.0, -1.0, 3.200000047683716],
+        [-0.0, 1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.3100000023841858],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "eye": [3.2, 0.0, 0.31],
+      "target": [0.0, 0.0, 0.31],
+      "source": "deterministic-controlled-render"
+    },
+    {
+      "frame_index": 2,
+      "candidate_id": "side-left",
+      "category": "ring",
+      "file": "frames/002-side-left.png",
+      "sha256": "216a885389f2874266363f380703d872ab7ada0be362783c441ad76c53eb8907",
+      "camera_to_world": [
+        [0.0, -0.0, 1.0, -3.200000047683716],
+        [0.0, 1.0, 0.0, 0.0],
+        [-1.0, 0.0, 0.0, 0.3100000023841858],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "eye": [-3.2, 0.0, 0.31],
+      "target": [0.0, 0.0, 0.31],
+      "source": "deterministic-controlled-render"
+    },
+    {
+      "frame_index": 3,
+      "candidate_id": "rear",
+      "category": "ring",
+      "file": "frames/003-rear.png",
+      "sha256": "fccffcb0dbe4473b24464e323f2398a1ba8eab97a852ccd9bf28485654498d68",
+      "camera_to_world": [
+        [-1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0, 3.200000047683716],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "eye": [0.0, 0.0, 3.2],
+      "target": [0.0, 0.0, 0.25],
+      "source": "deterministic-controlled-render"
+    }
+  ]
+}

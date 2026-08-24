@@ -23,11 +23,11 @@ from selection_service_companion.controlled_overlap_benchmark import (
 )
 
 
+HISTORICAL_FIXTURE_ROOT = (
+    Path(__file__).resolve().parent / "fixtures" / "ai-select-v1"
+)
 FROZEN_PROMPT_LOG = (
-    Path(__file__).resolve().parents[2]
-    / "docs"
-    / "benchmarks"
-    / "fixtures"
+    HISTORICAL_FIXTURE_ROOT
     / "controlled-overlap"
     / "benchmark-prompt-log-v1.json"
 )
@@ -159,13 +159,7 @@ class FrozenControlledOverlapGroundTruthTests(unittest.TestCase):
     frozen Benchmark Prompt Log stay byte-identical.
     """
 
-    fixture_root = (
-        Path(__file__).resolve().parents[2]
-        / "docs"
-        / "benchmarks"
-        / "fixtures"
-        / "controlled-overlap"
-    )
+    fixture_root = HISTORICAL_FIXTURE_ROOT / "controlled-overlap"
 
     def load_frozen(self) -> tuple[dict, dict, dict]:
         manifest = json.loads(
@@ -749,10 +743,7 @@ class PocRunRecordTests(unittest.TestCase):
         self,
     ) -> None:
         fixture = (
-            Path(__file__).resolve().parents[2]
-            / "docs"
-            / "benchmarks"
-            / "fixtures"
+            HISTORICAL_FIXTURE_ROOT
             / "controlled-overlap"
             / "controlled_front_back_overlap.ply"
         )
@@ -771,10 +762,7 @@ class PocRunRecordTests(unittest.TestCase):
 
     def test_rejects_a_modified_controlled_overlap_fixture(self) -> None:
         fixture = (
-            Path(__file__).resolve().parents[2]
-            / "docs"
-            / "benchmarks"
-            / "fixtures"
+            HISTORICAL_FIXTURE_ROOT
             / "controlled-overlap"
             / "controlled_front_back_overlap.ply"
         )

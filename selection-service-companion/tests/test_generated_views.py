@@ -337,8 +337,8 @@ class GeneratedViewPolicyTests(unittest.TestCase):
 
     def test_neighbor_anomaly_policy_matches_controlled_calibration_fixture(self) -> None:
         fixture_path = (
-            Path(__file__).resolve().parents[2]
-            / "docs/benchmarks/fixtures/generated-view-neighbor-anomaly-v1.json"
+            Path(__file__).resolve().parent
+            / "fixtures/ai-select-v1/generated-view-neighbor-anomaly-v1.json"
         )
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
 

@@ -9,7 +9,7 @@ Read this file when changing `CONTEXT.md`, GitHub Issue authority, accepted deci
 - Parent Issues #38–#47 own reviewed capability envelopes and their decomposition frontiers. They are not agent-ready implementation tickets.
 - Exact child Issues own active TDD stages, inputs/outputs, dependencies, migration boundary, validation, and readiness. Only a child explicitly linked from #37 and labeled `ready-for-agent` may authorize implementation.
 - Explicitly accepted Issue comments may record a new decision; reconcile the owning Issue body and #37 when the durable status or graph changes.
-- Commit [`aacad57`](https://github.com/Wormh0-le/supersimplat/tree/aacad57fc534acc43522ca4d51d41149b5ee9692) is the immutable migration snapshot for removed specifications, ADRs, feature documents, tickets, reviews, benchmarks, and `.scratch` evidence.
+- Commit [`504e888`](https://github.com/Wormh0-le/supersimplat/tree/504e8885b87575761dc2e367e520b7dfba46884b) is the immutable migration snapshot for removed specifications, ADRs, feature documents, tickets, reviews, benchmarks, and `.scratch` evidence.
 - `docs/agents/**` owns agent guidance only. Do not recreate a second current spec/ticket/ADR control plane under `docs/**`.
 
 Update only the artifact whose owned claim changed. Do not edit #37 or a capability Issue for a code-only detail that leaves its contract, graph, calibration, or readiness unchanged.

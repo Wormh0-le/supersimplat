@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "status": "controlled-fixture",
+  "policyId": "generated-view-neighbor-anomaly/v1",
+  "purpose": "Calibrate and regression-test the internal generated-view neighbor-anomaly gate before Frame Set publication.",
+  "source": {
+    "kind": "deterministic-8x8-mask-grid",
+    "test": "selection-service-companion/tests/test_generated_views.py::GeneratedViewPolicyTests.test_rejects_a_projected_seed_overlap_anomalous_to_the_accepted_neighbor",
+    "seedRegion": "Anchor contributor-derived Seed Region"
+  },
+  "thresholds": {
+    "minimumAreaRatio": 0.05,
+    "maximumAreaRatio": 20.0,
+    "minimumExtentRatio": 0.1,
+    "maximumExtentRatio": 10.0,
+    "maximumCenterDisplacement": 0.8,
+    "minimumProjectedSeedOverlap": 0.05,
+    "minimumProjectedSeedOverlapRatio": 0.1,
+    "maximumProjectedSeedOverlapRatio": 10.0,
+    "minimumContributorCountRatio": 0.1,
+    "maximumContributorCountRatio": 10.0,
+    "minimumTrackingConfidenceRatio": 0.5
+  },
+  "controlledCases": [
+    {
+      "name": "anchor-to-full-overlap",
+      "acceptedNeighbor": {
+        "viewId": "anchor",
+        "projectedSeedRegionOverlap": 1.0,
+        "semantics": "The Seed Region is derived from the accepted Anchor mask, so its overlap baseline is one."
+      },
+      "candidate": {
+        "viewId": "ring-01",
+        "maskAreaFraction": 0.25,
+        "boundingExtentFraction": 0.7071067811865476,
+        "projectedSeedRegionOverlap": 1.0,
+        "contributorSupportCount": 1,
+        "trackingConfidence": 0.9
+      },
+      "expectedOutcome": "accepted"
+    },
+    {
+      "name": "relative-projected-seed-overlap-drop",
+      "acceptedNeighbor": {
+        "viewId": "ring-01",
+        "projectedSeedRegionOverlap": 1.0
+      },
+      "candidate": {
+        "viewId": "upper-00",
+        "maskAreaFraction": 0.25,
+        "boundingExtentFraction": 0.7071067811865476,
+        "projectedSeedRegionOverlap": 0.0625,
+        "projectedSeedRegionOverlapRatio": 0.0625,
+        "contributorSupportCount": 1,
+        "trackingConfidence": 0.9
+      },
+      "expectedRejectionReason": "projected_seed_overlap_neighbor"
+    },
+    {
+      "name": "missing-projected-seed-metric",
+      "candidate": {
+        "viewId": "ring-01",
+        "projectedSeedRegionOverlap": null
+      },
+      "expectedRejectionReason": "projected_seed_overlap_unavailable"
+    }
+  ],
+  "calibrationRule": "Any threshold or measured-fixture change requires a new policyId, a new fixture revision, and a matching ADR update."
+}

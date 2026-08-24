@@ -359,10 +359,9 @@ class SelectionEvidenceTests(unittest.TestCase):
 
     def test_binds_controlled_front_back_overlap_fixture_to_supported_evidence(self) -> None:
         fixture_root = (
-            Path(__file__).resolve().parents[2]
-            / "docs"
-            / "benchmarks"
+            Path(__file__).resolve().parent
             / "fixtures"
+            / "ai-select-v1"
             / "controlled-overlap"
         )
         fixture_frame_set = json.loads(

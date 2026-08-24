@@ -354,7 +354,7 @@ const setup = async (options = {}) => {
                 rasterImplementationId:
                     'supersimplat-gsplat-direct-evidence/v1',
                 runtimeBuildId:
-                    'sha256:b87858ec0baaeea5cc272e02273f8f3a13410f4322c33c088fed4b4144ecf1e0',
+                    'sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f',
                 renderWorkingSetToken:
                     request.snapshot.contentDigest ??
                     `sha256:${'f'.repeat(64)}`,

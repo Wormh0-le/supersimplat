@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SuperSimPlat Direct Evidence ABI v2.
+// SuperSimPlat Direct Evidence ABI v3.
 //
 // This kernel deliberately owns the accepted front-to-back decision chain for
 // both RGB and P/N/V. Keep its sigma/alpha/termination expressions aligned
@@ -37,16 +37,15 @@ __global__ void direct_evidence_kernel(
     const int32_t tile_width,
     const int32_t tile_height,
     const bool evidence_enabled,
+    const bool depth_moments_enabled,
     const int32_t boundary_capacity,
     float* __restrict__ render_colors,
     float* __restrict__ render_alphas,
     float* __restrict__ evidence_masses,
+    float* __restrict__ depth_moments,
     int32_t* __restrict__ boundary_rows,
     int32_t* __restrict__ boundary_count,
     int32_t* __restrict__ boundary_overflow) {
-    // V2A1 carries the immutable projected-row depth into this boundary. V2A2
-    // will consume it for moments; this stage must not alter RGB or P/N/V.
-    (void)projected_depths;
     const int32_t pixel = static_cast<int32_t>(blockIdx.x * blockDim.x + threadIdx.x);
     const int32_t pixel_count = width * height;
     if (pixel >= pixel_count) {
@@ -76,6 +75,9 @@ __global__ void direct_evidence_kernel(
     float rgb0 = 0.0f;
     float rgb1 = 0.0f;
     float rgb2 = 0.0f;
+    float depth_m0 = 0.0f;
+    float depth_m1 = 0.0f;
+    float depth_m2 = 0.0f;
     for (int32_t intersection = range_start; intersection < range_end; ++intersection) {
         const int32_t gaussian = flatten_ids[intersection];
         const float dx = means2d[gaussian * 2 + 0] - center_x;
@@ -98,6 +100,12 @@ __global__ void direct_evidence_kernel(
         rgb0 += colors[gaussian * 3 + 0] * accepted_weight;
         rgb1 += colors[gaussian * 3 + 1] * accepted_weight;
         rgb2 += colors[gaussian * 3 + 2] * accepted_weight;
+        if (depth_moments_enabled) {
+            const float depth = projected_depths[gaussian];
+            depth_m0 += accepted_weight;
+            depth_m1 += accepted_weight * depth;
+            depth_m2 += accepted_weight * depth * depth;
+        }
 
         if (evidence_pixel) {
             const int32_t local_id = local_evidence_ids[gaussian];
@@ -130,6 +138,11 @@ __global__ void direct_evidence_kernel(
     render_colors[pixel * 3 + 1] = rgb1 + transmittance * background[1];
     render_colors[pixel * 3 + 2] = rgb2 + transmittance * background[2];
     render_alphas[pixel] = 1.0f - transmittance;
+    if (depth_moments_enabled) {
+        depth_moments[pixel * 3 + 0] = depth_m0;
+        depth_moments[pixel * 3 + 1] = depth_m1;
+        depth_moments[pixel * 3 + 2] = depth_m2;
+    }
 }
 
 __global__ void projected_depth_row_probe_kernel(
@@ -213,6 +226,7 @@ std::vector<torch::Tensor> rasterize_direct_evidence(
     int64_t height,
     int64_t evidence_count,
     bool evidence_enabled,
+    bool depth_moments_enabled,
     int64_t boundary_capacity) {
     require_cuda_float(means2d, "means2d");
     require_cuda_float(projected_depths, "projected_depths");
@@ -269,6 +283,9 @@ std::vector<torch::Tensor> rasterize_direct_evidence(
     auto render_colors = torch::empty({height, width, 3}, float_options);
     auto render_alphas = torch::empty({height, width, 1}, float_options);
     auto evidence_masses = torch::zeros({evidence_count, 4}, float_options);
+    auto depth_moments = depth_moments_enabled
+        ? torch::empty({height, width, 3}, float_options)
+        : torch::empty({0}, float_options);
     auto boundary_rows = torch::empty({boundary_capacity}, int_options);
     auto boundary_count = torch::zeros({1}, int_options);
     auto boundary_overflow = torch::zeros({1}, int_options);
@@ -293,10 +310,12 @@ std::vector<torch::Tensor> rasterize_direct_evidence(
         static_cast<int32_t>(tile_width),
         static_cast<int32_t>(tile_height),
         evidence_enabled,
+        depth_moments_enabled,
         static_cast<int32_t>(boundary_capacity),
         render_colors.data_ptr<float>(),
         render_alphas.data_ptr<float>(),
         evidence_masses.data_ptr<float>(),
+        depth_moments.data_ptr<float>(),
         boundary_rows.data_ptr<int32_t>(),
         boundary_count.data_ptr<int32_t>(),
         boundary_overflow.data_ptr<int32_t>());
@@ -305,6 +324,7 @@ std::vector<torch::Tensor> rasterize_direct_evidence(
         render_colors,
         render_alphas,
         evidence_masses,
+        depth_moments,
         boundary_rows,
         boundary_count,
         boundary_overflow,
@@ -312,7 +332,7 @@ std::vector<torch::Tensor> rasterize_direct_evidence(
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
-    module.attr("abi_version") = "supersimplat-direct-evidence-abi/v2";
+    module.attr("abi_version") = "supersimplat-direct-evidence-abi/v3";
     module.def("probe_projected_depth_rows", &probe_projected_depth_rows,
         "Test-only compiled projected-depth row alignment probe");
     module.def("rasterize_direct_evidence", &rasterize_direct_evidence,

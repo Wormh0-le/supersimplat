@@ -24,7 +24,7 @@ from .renderer_runtime import (
 )
 
 
-DIRECT_EVIDENCE_ABI_VERSION: Final = "supersimplat-direct-evidence-abi/v2"
+DIRECT_EVIDENCE_ABI_VERSION: Final = "supersimplat-direct-evidence-abi/v3"
 DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID: Final = (
     "supersimplat-gsplat-direct-evidence/v1"
 )
@@ -38,7 +38,7 @@ DIRECT_EVIDENCE_BUILD_FLAGS: Final = (
 # Updated only when the checked-in CUDA source changes. The loader verifies it
 # before compilation so a dirty or mismatched source fails readiness closed.
 DIRECT_EVIDENCE_SOURCE_REVISION: Final = (
-    "sha256:3c14ab06a3f60c893de9e86d7242269e0eb43b253b1808ebbec8e60b59fae917"
+    "sha256:dd40059d5bdd9fa9a06e6a9752f77775084ca1924878bf7a3c4504a46b89242e"
 )
 DIRECT_EVIDENCE_SUPPORTED_COMPUTE_CAPABILITIES: Final = ((8, 9),)
 _CUDA_SOURCE = Path(__file__).with_name("cuda") / "direct_evidence.cu"
@@ -69,6 +69,7 @@ class DirectEvidenceTelemetry:
 
     evidence_buffer_bytes: int
     pixel_weight_buffer_bytes: int
+    depth_moment_buffer_bytes: int
     boundary_buffer_bytes: int
     peak_vram_bytes: int
 
@@ -81,6 +82,7 @@ class DirectEvidenceRasterization:
     service_rgb_bytes: bytes
     rgb: Any
     alpha: Any
+    depth_moments: Any | None
     positive_mass: Any
     negative_mass: Any
     visible_mass: Any
@@ -410,8 +412,9 @@ def _run_projected_kernel(
     height: int,
     evidence_count: int,
     evidence_enabled: bool,
+    depth_moments_enabled: bool,
     boundary_capacity: int,
-) -> tuple[Any, Any, Any, Any, int, bool, int]:
+) -> tuple[Any, Any, Any, Any, Any, int, bool, int]:
     """Invoke the extension once and return GPU outputs plus diagnostics."""
 
     import torch
@@ -423,6 +426,7 @@ def _run_projected_kernel(
         rgb,
         alpha,
         masses,
+        depth_moments,
         boundary_rows,
         boundary_count,
         boundary_overflow,
@@ -441,17 +445,44 @@ def _run_projected_kernel(
         height,
         evidence_count,
         evidence_enabled,
+        depth_moments_enabled,
         boundary_capacity,
     )
     return (
         rgb,
         alpha,
         masses,
+        depth_moments,
         boundary_rows,
         int(boundary_count.item()),
         bool(boundary_overflow.item()),
         int(torch.cuda.max_memory_allocated(device)),
     )
+
+
+def _retained_depth_moments(
+    depth_moments: Any,
+    *,
+    enabled: bool,
+    width: int,
+    height: int,
+    device: Any,
+) -> Any | None:
+    """Keep only one structurally complete internal moment image."""
+
+    import torch
+
+    if not enabled:
+        return None
+    if (
+        not isinstance(depth_moments, torch.Tensor)
+        or depth_moments.dtype != torch.float32
+        or not depth_moments.is_contiguous()
+        or tuple(depth_moments.shape) != (height, width, 3)
+        or depth_moments.device != device
+    ):
+        return None
+    return depth_moments
 
 
 def rasterize_projected_authoritative_rgb(
@@ -461,6 +492,7 @@ def rasterize_projected_authoritative_rgb(
     background: Any,
     width: int,
     height: int,
+    depth_moments_enabled: bool = False,
 ) -> DirectEvidenceRasterization:
     """Run the Direct-Evidence-capable raster with all Evidence writes disabled."""
 
@@ -491,7 +523,16 @@ def rasterize_projected_authoritative_rgb(
     )
     disabled_weights = torch.empty((0,), dtype=torch.float32, device=device)
     try:
-        rgb, alpha, masses, _, _, _, peak = _run_projected_kernel(
+        (
+            rgb,
+            alpha,
+            masses,
+            raw_depth_moments,
+            _,
+            _,
+            _,
+            peak,
+        ) = _run_projected_kernel(
             meta=meta,
             projected_depths=projected_depths,
             evaluated_colors=evaluated_colors,
@@ -502,7 +543,15 @@ def rasterize_projected_authoritative_rgb(
             height=height,
             evidence_count=0,
             evidence_enabled=False,
+            depth_moments_enabled=depth_moments_enabled,
             boundary_capacity=1,
+        )
+        depth_moments = _retained_depth_moments(
+            raw_depth_moments,
+            enabled=depth_moments_enabled,
+            width=width,
+            height=height,
+            device=device,
         )
         rgb_bytes = (
             rgb.detach()
@@ -530,6 +579,7 @@ def rasterize_projected_authoritative_rgb(
         service_rgb_bytes=rgb_bytes,
         rgb=rgb,
         alpha=alpha,
+        depth_moments=depth_moments,
         positive_mass=masses[:, 0],
         negative_mass=masses[:, 1],
         visible_mass=masses[:, 2],
@@ -539,6 +589,9 @@ def rasterize_projected_authoritative_rgb(
         telemetry=DirectEvidenceTelemetry(
             evidence_buffer_bytes=0,
             pixel_weight_buffer_bytes=0,
+            depth_moment_buffer_bytes=(
+                height * width * 3 * 4 if depth_moments_enabled else 0
+            ),
             boundary_buffer_bytes=12,
             peak_vram_bytes=peak,
         ),
@@ -556,6 +609,7 @@ def rasterize_projected_direct_evidence(
     pixel_weights: object,
     width: int,
     height: int,
+    depth_moments_enabled: bool = False,
 ) -> DirectEvidenceRasterization:
     """Run the pinned global-atomic baseline and publish only complete output."""
 
@@ -600,6 +654,7 @@ def rasterize_projected_direct_evidence(
             rgb,
             alpha,
             masses,
+            raw_depth_moments,
             boundary_rows,
             boundary_count,
             boundary_overflow,
@@ -615,7 +670,15 @@ def rasterize_projected_direct_evidence(
             height=height,
             evidence_count=len(evidence_ids),
             evidence_enabled=True,
+            depth_moments_enabled=depth_moments_enabled,
             boundary_capacity=boundary_capacity,
+        )
+        depth_moments = _retained_depth_moments(
+            raw_depth_moments,
+            enabled=depth_moments_enabled,
+            width=width,
+            height=height,
+            device=device,
         )
         if boundary_overflow:
             raise MaskSessionError(
@@ -659,6 +722,7 @@ def rasterize_projected_direct_evidence(
         service_rgb_bytes=rgb_bytes,
         rgb=rgb,
         alpha=alpha,
+        depth_moments=depth_moments,
         positive_mass=masses[:, 0],
         negative_mass=masses[:, 1],
         visible_mass=masses[:, 2],
@@ -668,6 +732,9 @@ def rasterize_projected_direct_evidence(
         telemetry=DirectEvidenceTelemetry(
             evidence_buffer_bytes=len(evidence_ids) * 4 * 4,
             pixel_weight_buffer_bytes=height * width * 4 * 4,
+            depth_moment_buffer_bytes=(
+                height * width * 3 * 4 if depth_moments_enabled else 0
+            ),
             boundary_buffer_bytes=boundary_capacity * 4 + 8,
             peak_vram_bytes=peak,
         ),

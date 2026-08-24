@@ -723,6 +723,7 @@ class LockedGsplatBackend:
         evidence_stable_ids: Sequence[int],
         target_stable_ids: Sequence[int],
         pixel_weights: object,
+        depth_moments_enabled: bool = False,
     ) -> DirectEvidenceRasterization:
         """Produce compact P/N/V in the authoritative RGB decision traversal."""
 
@@ -744,6 +745,7 @@ class LockedGsplatBackend:
             pixel_weights=pixel_weights,
             width=width,
             height=height,
+            depth_moments_enabled=depth_moments_enabled,
         )
 
     @staticmethod

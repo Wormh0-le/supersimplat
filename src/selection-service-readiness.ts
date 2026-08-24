@@ -1536,7 +1536,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             capabilities.directEvidence.evidenceBackendId !==
                 'global-atomic/direct-v1' ||
             capabilities.directEvidence.abiVersion !==
-                'supersimplat-direct-evidence-abi/v2' ||
+                'supersimplat-direct-evidence-abi/v3' ||
             capabilities.directEvidence.runtimeBuildId !==
                 this.requirements.runtimeBuildId ||
             !capabilities.directEvidence.supportedComputeCapabilities.includes(

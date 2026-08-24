@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SuperSimPlat Direct Evidence ABI v1.
+// SuperSimPlat Direct Evidence ABI v2.
 //
 // This kernel deliberately owns the accepted front-to-back decision chain for
 // both RGB and P/N/V. Keep its sigma/alpha/termination expressions aligned
@@ -22,6 +22,7 @@ constexpr float kTransmittanceThreshold = 1.0e-4f;
 
 __global__ void direct_evidence_kernel(
     const float* __restrict__ means2d,
+    const float* __restrict__ projected_depths,
     const float* __restrict__ conics,
     const float* __restrict__ colors,
     const float* __restrict__ opacities,
@@ -43,6 +44,9 @@ __global__ void direct_evidence_kernel(
     int32_t* __restrict__ boundary_rows,
     int32_t* __restrict__ boundary_count,
     int32_t* __restrict__ boundary_overflow) {
+    // V2A1 carries the immutable projected-row depth into this boundary. V2A2
+    // will consume it for moments; this stage must not alter RGB or P/N/V.
+    (void)projected_depths;
     const int32_t pixel = static_cast<int32_t>(blockIdx.x * blockDim.x + threadIdx.x);
     const int32_t pixel_count = width * height;
     if (pixel >= pixel_count) {
@@ -144,6 +148,7 @@ void require_cuda_int32(const torch::Tensor& tensor, const char* name) {
 
 std::vector<torch::Tensor> rasterize_direct_evidence(
     torch::Tensor means2d,
+    torch::Tensor projected_depths,
     torch::Tensor conics,
     torch::Tensor colors,
     torch::Tensor opacities,
@@ -158,6 +163,7 @@ std::vector<torch::Tensor> rasterize_direct_evidence(
     bool evidence_enabled,
     int64_t boundary_capacity) {
     require_cuda_float(means2d, "means2d");
+    require_cuda_float(projected_depths, "projected_depths");
     require_cuda_float(conics, "conics");
     require_cuda_float(colors, "colors");
     require_cuda_float(opacities, "opacities");
@@ -178,6 +184,10 @@ std::vector<torch::Tensor> rasterize_direct_evidence(
     const int64_t gaussian_count = means2d.size(1);
     TORCH_CHECK(gaussian_count <= INT32_MAX,
         "gaussian count exceeds the Direct Evidence ABI");
+    TORCH_CHECK(projected_depths.sizes() == torch::IntArrayRef({1, gaussian_count}),
+        "projected_depths must have shape [1,N]");
+    TORCH_CHECK(torch::isfinite(projected_depths).all().item<bool>(),
+        "projected_depths must contain only finite values");
     TORCH_CHECK(conics.sizes() == torch::IntArrayRef({1, gaussian_count, 3}),
         "conics must have shape [1,N,3]");
     TORCH_CHECK(colors.sizes() == torch::IntArrayRef({1, gaussian_count, 3}),
@@ -196,7 +206,8 @@ std::vector<torch::Tensor> rasterize_direct_evidence(
         "isect_offsets must cover every tile");
     TORCH_CHECK(flatten_ids.numel() <= INT32_MAX, "too many tile intersections");
     const auto device = means2d.device();
-    TORCH_CHECK(conics.device() == device && colors.device() == device &&
+    TORCH_CHECK(projected_depths.device() == device &&
+        conics.device() == device && colors.device() == device &&
         opacities.device() == device && background.device() == device &&
         isect_offsets.device() == device && flatten_ids.device() == device &&
         local_evidence_ids.device() == device && pixel_weights.device() == device,
@@ -217,6 +228,7 @@ std::vector<torch::Tensor> rasterize_direct_evidence(
     const int blocks = static_cast<int>((pixel_count + threads - 1) / threads);
     direct_evidence_kernel<<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(
         means2d.data_ptr<float>(),
+        projected_depths.data_ptr<float>(),
         conics.data_ptr<float>(),
         colors.data_ptr<float>(),
         opacities.data_ptr<float>(),
@@ -250,6 +262,7 @@ std::vector<torch::Tensor> rasterize_direct_evidence(
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
+    module.attr("abi_version") = "supersimplat-direct-evidence-abi/v2";
     module.def("rasterize_direct_evidence", &rasterize_direct_evidence,
         "SuperSimPlat same-decision RGB and Direct Evidence rasterization");
 }

@@ -24,7 +24,7 @@ from .renderer_runtime import (
 )
 
 
-DIRECT_EVIDENCE_ABI_VERSION: Final = "supersimplat-direct-evidence-abi/v1"
+DIRECT_EVIDENCE_ABI_VERSION: Final = "supersimplat-direct-evidence-abi/v2"
 DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID: Final = (
     "supersimplat-gsplat-direct-evidence/v1"
 )
@@ -38,7 +38,7 @@ DIRECT_EVIDENCE_BUILD_FLAGS: Final = (
 # Updated only when the checked-in CUDA source changes. The loader verifies it
 # before compilation so a dirty or mismatched source fails readiness closed.
 DIRECT_EVIDENCE_SOURCE_REVISION: Final = (
-    "sha256:d5568856951be511573c6c766d225f8b95c3ac5850eb965805c2aa632c01976a"
+    "sha256:e4d1b020aef9617406df48ef9500ea3ffea473a55e25222f2977085ad0a9f5bb"
 )
 DIRECT_EVIDENCE_SUPPORTED_COMPUTE_CAPABILITIES: Final = ((8, 9),)
 _CUDA_SOURCE = Path(__file__).with_name("cuda") / "direct_evidence.cu"
@@ -90,6 +90,20 @@ class DirectEvidenceRasterization:
     telemetry: DirectEvidenceTelemetry
 
 
+def _expected_extension_name() -> str:
+    return (
+        "supersimplat_direct_evidence_"
+        + DIRECT_EVIDENCE_RUNTIME_BUILD_ID.removeprefix("sha256:")[:16]
+    )
+
+
+def _extension_has_current_identity(extension: Any) -> bool:
+    return (
+        getattr(extension, "__name__", None) == _expected_extension_name()
+        and getattr(extension, "abi_version", None) == DIRECT_EVIDENCE_ABI_VERSION
+    )
+
+
 def direct_evidence_source_revision() -> str:
     try:
         source = _CUDA_SOURCE.read_bytes()
@@ -108,6 +122,10 @@ def direct_evidence_capability() -> dict[str, object]:
     status = (
         "ready"
         if source_revision == DIRECT_EVIDENCE_SOURCE_REVISION
+        and (
+            _EXTENSION is None
+            or _extension_has_current_identity(_EXTENSION)
+        )
         else "unavailable"
     )
     detected_compute_capability: str | None = None
@@ -154,9 +172,19 @@ def direct_evidence_capability() -> dict[str, object]:
 def _load_extension() -> Any:
     global _EXTENSION
     if _EXTENSION is not None:
+        if not _extension_has_current_identity(_EXTENSION):
+            raise MaskSessionError(
+                "rendererUnavailable",
+                "The loaded Direct Evidence CUDA extension identity is stale.",
+            )
         return _EXTENSION
     with _EXTENSION_LOCK:
         if _EXTENSION is not None:
+            if not _extension_has_current_identity(_EXTENSION):
+                raise MaskSessionError(
+                    "rendererUnavailable",
+                    "The loaded Direct Evidence CUDA extension identity is stale.",
+                )
             return _EXTENSION
         if direct_evidence_source_revision() != DIRECT_EVIDENCE_SOURCE_REVISION:
             raise MaskSessionError(
@@ -173,17 +201,20 @@ def _load_extension() -> Any:
                     "rendererUnavailable",
                     "Direct Evidence does not support this GPU compute capability.",
                 )
-            extension_name = (
-                "supersimplat_direct_evidence_"
-                + DIRECT_EVIDENCE_SOURCE_REVISION.removeprefix("sha256:")[:16]
-            )
-            _EXTENSION = load(
+            extension_name = _expected_extension_name()
+            extension = load(
                 name=extension_name,
                 sources=[str(_CUDA_SOURCE)],
                 extra_cuda_cflags=list(DIRECT_EVIDENCE_BUILD_FLAGS),
                 with_cuda=True,
                 verbose=False,
             )
+            if not _extension_has_current_identity(extension):
+                raise MaskSessionError(
+                    "rendererUnavailable",
+                    "The compiled Direct Evidence CUDA extension identity is stale.",
+                )
+            _EXTENSION = extension
         except MaskSessionError:
             raise
         except Exception as error:
@@ -269,6 +300,32 @@ def build_local_evidence_mapping(
     return mapping, evidence_ids, render_ids
 
 
+def _validated_projected_depth(
+    meta: dict[str, Any],
+    *,
+    gaussian_count: int,
+    expected_device: Any,
+    failure_code: str,
+    failure_message: str,
+) -> Any:
+    """Return the exact pinned gsplat depth rows or fail before CUDA dispatch."""
+
+    import torch
+
+    depths = meta.get("depths")
+    if (
+        not isinstance(depths, torch.Tensor)
+        or not depths.is_cuda
+        or depths.dtype != torch.float32
+        or not depths.is_contiguous()
+        or tuple(depths.shape) != (1, gaussian_count)
+        or depths.device != expected_device
+        or not bool(torch.isfinite(depths).all().item())
+    ):
+        raise MaskSessionError(failure_code, failure_message)
+    return depths
+
+
 def _pixel_weight_tensor(pixel_weights: object, *, device: Any) -> Any:
     import torch
 
@@ -344,6 +401,7 @@ def _pixel_weight_tensor(pixel_weights: object, *, device: Any) -> Any:
 def _run_projected_kernel(
     *,
     meta: dict[str, Any],
+    projected_depths: Any,
     evaluated_colors: Any,
     background: Any,
     local_ids: Any,
@@ -370,6 +428,7 @@ def _run_projected_kernel(
         boundary_overflow,
     ) = extension.rasterize_direct_evidence(
         meta["means2d"].contiguous(),
+        projected_depths,
         meta["conics"].contiguous(),
         evaluated_colors.contiguous(),
         meta["opacities"].contiguous(),
@@ -418,6 +477,15 @@ def rasterize_projected_authoritative_rgb(
             "Direct Evidence authoritative RGB projected rows are invalid.",
         )
     device = means2d.device
+    projected_depths = _validated_projected_depth(
+        meta,
+        gaussian_count=means2d.shape[1],
+        expected_device=device,
+        failure_code="rendererFailure",
+        failure_message=(
+            "Direct Evidence authoritative RGB projected depth is invalid."
+        ),
+    )
     local_ids = torch.full(
         (means2d.shape[1],), -1, dtype=torch.int32, device=device
     )
@@ -425,6 +493,7 @@ def rasterize_projected_authoritative_rgb(
     try:
         rgb, alpha, masses, _, _, _, peak = _run_projected_kernel(
             meta=meta,
+            projected_depths=projected_depths,
             evaluated_colors=evaluated_colors,
             background=background,
             local_ids=local_ids,
@@ -509,6 +578,15 @@ def rasterize_projected_direct_evidence(
             "rendererInvalidEvidenceMapping",
             "Direct Evidence projected rows do not match Stable Gaussian identity.",
         )
+    projected_depths = _validated_projected_depth(
+        meta,
+        gaussian_count=len(render_ids),
+        expected_device=device,
+        failure_code="rendererInvalidEvidenceMapping",
+        failure_message=(
+            "Direct Evidence projected depth does not match the render rows."
+        ),
+    )
     weights = _pixel_weight_tensor(pixel_weights, device=device)
     if tuple(weights.shape[:2]) != (height, width):
         raise MaskSessionError(
@@ -528,6 +606,7 @@ def rasterize_projected_direct_evidence(
             peak,
         ) = _run_projected_kernel(
             meta=meta,
+            projected_depths=projected_depths,
             evaluated_colors=evaluated_colors,
             background=background,
             local_ids=local_ids,

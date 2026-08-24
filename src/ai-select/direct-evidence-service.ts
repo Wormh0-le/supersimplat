@@ -28,7 +28,7 @@ export const directEvidenceRasterImplementationId =
     'supersimplat-gsplat-direct-evidence/v1';
 export const directEvidenceBackendId = 'global-atomic/direct-v1';
 export const directEvidenceRuntimeBuildId =
-    'sha256:42765fdd26ef420b822357e70fa39b95eaf11e31e6b0426215cd6c4a6f1fc3a4';
+    'sha256:91057a5e4da33e0a4c3afe1cace80d23e0595c411cb5a6100b8c72ce42cdbaa1';
 
 export interface DirectEvidenceRequest {
     /** Execution identity: replay is idempotent, new intent mints a new ID. */

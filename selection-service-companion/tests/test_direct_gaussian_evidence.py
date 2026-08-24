@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
+import selection_service_companion.direct_gaussian_evidence as direct_evidence_module
 from selection_service_companion.direct_gaussian_evidence import (
+    DIRECT_EVIDENCE_ABI_VERSION,
     DIRECT_EVIDENCE_BACKEND_ID,
     DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
     DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
     DIRECT_EVIDENCE_SOURCE_REVISION,
     build_local_evidence_mapping,
     direct_evidence_capability,
+    rasterize_projected_authoritative_rgb,
     rasterize_projected_direct_evidence,
 )
 from selection_service_companion.masking import MaskSessionError
@@ -55,6 +60,10 @@ class DirectEvidenceIdentityTests(unittest.TestCase):
         )
         self.assertEqual(capability["sourceRevision"], DIRECT_EVIDENCE_SOURCE_REVISION)
         self.assertEqual(
+            DIRECT_EVIDENCE_SOURCE_REVISION,
+            "sha256:e4d1b020aef9617406df48ef9500ea3ffea473a55e25222f2977085ad0a9f5bb",
+        )
+        self.assertEqual(
             capability["rasterImplementationId"],
             DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
         )
@@ -64,7 +73,27 @@ class DirectEvidenceIdentityTests(unittest.TestCase):
         self.assertEqual(
             capability["runtimeBuildId"], DIRECT_EVIDENCE_RUNTIME_BUILD_ID
         )
+        self.assertEqual(
+            DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+            "sha256:91057a5e4da33e0a4c3afe1cace80d23e0595c411cb5a6100b8c72ce42cdbaa1",
+        )
+        self.assertEqual(
+            capability["abiVersion"], "supersimplat-direct-evidence-abi/v2"
+        )
+        self.assertEqual(
+            DIRECT_EVIDENCE_ABI_VERSION, "supersimplat-direct-evidence-abi/v2"
+        )
         self.assertEqual(capability["supportedComputeCapabilities"], ["8.9"])
+
+    def test_stale_loaded_extension_cannot_advertise_ready(self) -> None:
+        stale = SimpleNamespace(
+            __name__="supersimplat_direct_evidence_stale",
+            abi_version="supersimplat-direct-evidence-abi/v1",
+        )
+        with patch.object(direct_evidence_module, "_EXTENSION", stale):
+            capability = direct_evidence_capability()
+
+        self.assertEqual(capability["status"], "unavailable")
 
     def test_render_target_and_evidence_identity_mapping_is_fail_closed(self) -> None:
         mapping, evidence_ids, render_ids = build_local_evidence_mapping(
@@ -112,6 +141,11 @@ class LockedGpuDirectEvidenceTests(unittest.TestCase):
             "opacities": torch.tensor(
                 [[0.5] * count], dtype=torch.float32, device="cuda"
             ),
+            "depths": torch.tensor(
+                [[float(index + 1) for index in range(count)]],
+                dtype=torch.float32,
+                device="cuda",
+            ),
             "isect_offsets": torch.tensor(
                 [[[0]]], dtype=torch.int32, device="cuda"
             ),
@@ -146,9 +180,150 @@ class LockedGpuDirectEvidenceTests(unittest.TestCase):
             height=1,
         )
 
+    def test_invalid_projected_depth_fails_closed_before_direct_evidence_dispatch(
+        self,
+    ) -> None:
+        import torch
+
+        valid = self._projected(two_gaussians=True)
+        invalid_depths = {
+            "missing": None,
+            "wrong-shape": torch.tensor(
+                [1.0, 2.0], dtype=torch.float32, device="cuda"
+            ),
+            "wrong-dtype": torch.tensor(
+                [[1.0, 2.0]], dtype=torch.float64, device="cuda"
+            ),
+            "non-contiguous": torch.tensor(
+                [[1.0, 0.0, 2.0, 0.0]], dtype=torch.float32, device="cuda"
+            )[:, ::2],
+            "non-finite": torch.tensor(
+                [[1.0, float("nan")]], dtype=torch.float32, device="cuda"
+            ),
+            "wrong-device": torch.tensor(
+                [[1.0, 2.0]], dtype=torch.float32, device="cpu"
+            ),
+        }
+        for name, depths in invalid_depths.items():
+            with self.subTest(name=name):
+                meta = dict(valid)
+                if depths is None:
+                    del meta["depths"]
+                else:
+                    meta["depths"] = depths
+                with self.assertRaises(MaskSessionError) as raised:
+                    rasterize_projected_direct_evidence(
+                        meta=meta,
+                        evaluated_colors=torch.ones(
+                            (1, 2, 3), dtype=torch.float32, device="cuda"
+                        ),
+                        background=torch.zeros(
+                            (1, 3), dtype=torch.float32, device="cuda"
+                        ),
+                        render_stable_gaussian_ids=(7, 8),
+                        evidence_stable_gaussian_ids=(7, 8),
+                        target_stable_gaussian_ids=(7, 8),
+                        pixel_weights=weights(1.0, 0.0, 1.0, 0.0),
+                        width=1,
+                        height=1,
+                    )
+                self.assertEqual(
+                    raised.exception.code, "rendererInvalidEvidenceMapping"
+                )
+
+    def test_missing_projected_depth_fails_closed_before_authoritative_rgb_dispatch(
+        self,
+    ) -> None:
+        import torch
+
+        meta = self._projected()
+        del meta["depths"]
+        with self.assertRaises(MaskSessionError) as raised:
+            rasterize_projected_authoritative_rgb(
+                meta=meta,
+                evaluated_colors=torch.ones(
+                    (1, 1, 3), dtype=torch.float32, device="cuda"
+                ),
+                background=torch.zeros(
+                    (1, 3), dtype=torch.float32, device="cuda"
+                ),
+                width=1,
+                height=1,
+            )
+        self.assertEqual(raised.exception.code, "rendererFailure")
+
+    def test_projected_depth_rows_reach_the_compiled_abi_without_reordering(
+        self,
+    ) -> None:
+        import torch
+
+        meta = self._projected(two_gaussians=True)
+        meta["depths"] = torch.tensor(
+            [[11.0, 29.0]], dtype=torch.float32, device="cuda"
+        )
+        meta["flatten_ids"] = torch.tensor(
+            [1, 0], dtype=torch.int32, device="cuda"
+        )
+        real_extension = direct_evidence_module._load_extension()
+        self.assertEqual(real_extension.abi_version, DIRECT_EVIDENCE_ABI_VERSION)
+        self.assertEqual(
+            real_extension.__name__,
+            "supersimplat_direct_evidence_"
+            + DIRECT_EVIDENCE_RUNTIME_BUILD_ID.removeprefix("sha256:")[:16],
+        )
+        captured: list[tuple[object, ...]] = []
+
+        class RecordingExtension:
+            def rasterize_direct_evidence(self, *args: object):
+                captured.append(args)
+                return real_extension.rasterize_direct_evidence(*args)
+
+        with patch.object(
+            direct_evidence_module,
+            "_load_extension",
+            return_value=RecordingExtension(),
+        ):
+            rasterize_projected_direct_evidence(
+                meta=meta,
+                evaluated_colors=torch.tensor(
+                    [[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]],
+                    dtype=torch.float32,
+                    device="cuda",
+                ),
+                background=torch.zeros(
+                    (1, 3), dtype=torch.float32, device="cuda"
+                ),
+                render_stable_gaussian_ids=(7, 8),
+                evidence_stable_gaussian_ids=(7, 8),
+                target_stable_gaussian_ids=(7, 8),
+                pixel_weights=weights(1.0, 0.0, 1.0, 0.0),
+                width=1,
+                height=1,
+            )
+
+        self.assertEqual(len(captured), 1)
+        abi_args = captured[0]
+        abi_depths = abi_args[1]
+        abi_flatten_ids = abi_args[7]
+        self.assertEqual(abi_depths.data_ptr(), meta["depths"].data_ptr())
+        self.assertEqual(abi_depths.stride(), meta["depths"].stride())
+        self.assertEqual(abi_flatten_ids.detach().cpu().tolist(), [1, 0])
+        self.assertEqual(
+            abi_depths[0, abi_flatten_ids.to(torch.int64)]
+            .detach()
+            .cpu()
+            .tolist(),
+            [29.0, 11.0],
+        )
+
     def test_same_decision_rgb_and_independent_pnv_share_one_weight(self) -> None:
         result = self._render(weights(2.0, 3.0, 5.0, 7.0))
 
+        self.assertEqual(
+            result.service_rgb_digest,
+            "sha256:25ff297dd78c82468376d6e2c93b672b49c01fb125a2812b94f8f9693a51b67e",
+        )
+        self.assertEqual(result.service_rgb_bytes, bytes((128, 0, 0)))
         self.assertTrue(math.isclose(float(result.alpha.item()), 0.5))
         self.assertTrue(math.isclose(float(result.rgb[0, 0, 0].item()), 0.5))
         self.assertTrue(math.isclose(float(result.positive_mass.item()), 1.0))

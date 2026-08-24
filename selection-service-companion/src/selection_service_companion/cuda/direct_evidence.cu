@@ -132,6 +132,20 @@ __global__ void direct_evidence_kernel(
     render_alphas[pixel] = 1.0f - transmittance;
 }
 
+__global__ void projected_depth_row_probe_kernel(
+    const float* __restrict__ projected_depths,
+    const int32_t* __restrict__ render_rows,
+    const int32_t row_count,
+    float* __restrict__ observed_depths) {
+    const int32_t index = static_cast<int32_t>(
+        blockIdx.x * blockDim.x + threadIdx.x
+    );
+    if (index >= row_count) {
+        return;
+    }
+    observed_depths[index] = projected_depths[render_rows[index]];
+}
+
 void require_cuda_float(const torch::Tensor& tensor, const char* name) {
     TORCH_CHECK(tensor.is_cuda(), name, " must be a CUDA tensor");
     TORCH_CHECK(tensor.scalar_type() == torch::kFloat32, name, " must be float32");
@@ -145,6 +159,44 @@ void require_cuda_int32(const torch::Tensor& tensor, const char* name) {
 }
 
 } // namespace
+
+torch::Tensor probe_projected_depth_rows(
+    torch::Tensor projected_depths,
+    torch::Tensor render_rows) {
+    require_cuda_float(projected_depths, "projected_depths");
+    require_cuda_int32(render_rows, "render_rows");
+    TORCH_CHECK(projected_depths.dim() == 2 && projected_depths.size(0) == 1,
+        "projected_depths must have shape [1,N]");
+    TORCH_CHECK(render_rows.dim() == 1 && render_rows.numel() > 0,
+        "render_rows must be a non-empty row vector");
+    TORCH_CHECK(render_rows.numel() <= INT32_MAX,
+        "render_rows exceeds the Direct Evidence ABI");
+    TORCH_CHECK(render_rows.device() == projected_depths.device(),
+        "projected_depths and render_rows must be on one CUDA device");
+    const int32_t minimum_row = render_rows.min().item<int32_t>();
+    const int32_t maximum_row = render_rows.max().item<int32_t>();
+    TORCH_CHECK(minimum_row >= 0 && maximum_row < projected_depths.size(1),
+        "render_rows must index projected_depths rows");
+
+    const auto device = projected_depths.device();
+    const c10::cuda::CUDAGuard device_guard(device);
+    auto observed_depths = torch::empty(
+        {render_rows.numel()}, projected_depths.options()
+    );
+    constexpr int threads = 256;
+    const int blocks = static_cast<int>(
+        (render_rows.numel() + threads - 1) / threads
+    );
+    projected_depth_row_probe_kernel<<<
+        blocks, threads, 0, at::cuda::getCurrentCUDAStream()
+    >>>(
+        projected_depths.data_ptr<float>(),
+        render_rows.data_ptr<int32_t>(),
+        static_cast<int32_t>(render_rows.numel()),
+        observed_depths.data_ptr<float>());
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+    return observed_depths;
+}
 
 std::vector<torch::Tensor> rasterize_direct_evidence(
     torch::Tensor means2d,
@@ -186,8 +238,6 @@ std::vector<torch::Tensor> rasterize_direct_evidence(
         "gaussian count exceeds the Direct Evidence ABI");
     TORCH_CHECK(projected_depths.sizes() == torch::IntArrayRef({1, gaussian_count}),
         "projected_depths must have shape [1,N]");
-    TORCH_CHECK(torch::isfinite(projected_depths).all().item<bool>(),
-        "projected_depths must contain only finite values");
     TORCH_CHECK(conics.sizes() == torch::IntArrayRef({1, gaussian_count, 3}),
         "conics must have shape [1,N,3]");
     TORCH_CHECK(colors.sizes() == torch::IntArrayRef({1, gaussian_count, 3}),
@@ -263,6 +313,8 @@ std::vector<torch::Tensor> rasterize_direct_evidence(
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
     module.attr("abi_version") = "supersimplat-direct-evidence-abi/v2";
+    module.def("probe_projected_depth_rows", &probe_projected_depth_rows,
+        "Test-only compiled projected-depth row alignment probe");
     module.def("rasterize_direct_evidence", &rasterize_direct_evidence,
         "SuperSimPlat same-decision RGB and Direct Evidence rasterization");
 }

@@ -38,7 +38,7 @@ DIRECT_EVIDENCE_BUILD_FLAGS: Final = (
 # Updated only when the checked-in CUDA source changes. The loader verifies it
 # before compilation so a dirty or mismatched source fails readiness closed.
 DIRECT_EVIDENCE_SOURCE_REVISION: Final = (
-    "sha256:e4d1b020aef9617406df48ef9500ea3ffea473a55e25222f2977085ad0a9f5bb"
+    "sha256:3c14ab06a3f60c893de9e86d7242269e0eb43b253b1808ebbec8e60b59fae917"
 )
 DIRECT_EVIDENCE_SUPPORTED_COMPUTE_CAPABILITIES: Final = ((8, 9),)
 _CUDA_SOURCE = Path(__file__).with_name("cuda") / "direct_evidence.cu"

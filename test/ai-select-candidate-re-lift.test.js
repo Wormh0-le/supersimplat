@@ -116,7 +116,7 @@ const currentInput = {
     evidenceBackendKind: 'production-direct',
     evidenceBackendId: 'global-atomic/direct-v1',
     runtimeBuildId:
-        'sha256:91057a5e4da33e0a4c3afe1cace80d23e0595c411cb5a6100b8c72ce42cdbaa1'
+        'sha256:b87858ec0baaeea5cc272e02273f8f3a13410f4322c33c088fed4b4144ecf1e0'
 };
 const admission = admitGaussianEvidence(currentInput);
 assert.equal(admission.status, 'admitted');

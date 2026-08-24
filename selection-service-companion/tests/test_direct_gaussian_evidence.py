@@ -61,7 +61,7 @@ class DirectEvidenceIdentityTests(unittest.TestCase):
         self.assertEqual(capability["sourceRevision"], DIRECT_EVIDENCE_SOURCE_REVISION)
         self.assertEqual(
             DIRECT_EVIDENCE_SOURCE_REVISION,
-            "sha256:e4d1b020aef9617406df48ef9500ea3ffea473a55e25222f2977085ad0a9f5bb",
+            "sha256:3c14ab06a3f60c893de9e86d7242269e0eb43b253b1808ebbec8e60b59fae917",
         )
         self.assertEqual(
             capability["rasterImplementationId"],
@@ -75,7 +75,7 @@ class DirectEvidenceIdentityTests(unittest.TestCase):
         )
         self.assertEqual(
             DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
-            "sha256:91057a5e4da33e0a4c3afe1cace80d23e0595c411cb5a6100b8c72ce42cdbaa1",
+            "sha256:b87858ec0baaeea5cc272e02273f8f3a13410f4322c33c088fed4b4144ecf1e0",
         )
         self.assertEqual(
             capability["abiVersion"], "supersimplat-direct-evidence-abi/v2"
@@ -270,6 +270,13 @@ class LockedGpuDirectEvidenceTests(unittest.TestCase):
             real_extension.__name__,
             "supersimplat_direct_evidence_"
             + DIRECT_EVIDENCE_RUNTIME_BUILD_ID.removeprefix("sha256:")[:16],
+        )
+        compiled_rows = real_extension.probe_projected_depth_rows(
+            meta["depths"], meta["flatten_ids"]
+        )
+        self.assertEqual(
+            compiled_rows.detach().cpu().tolist(),
+            [29.0, 11.0],
         )
         captured: list[tuple[object, ...]] = []
 

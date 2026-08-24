@@ -191,7 +191,7 @@ const anchorResponse = (request) => ({
     rendererId: 'gsplat',
     rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
     runtimeBuildId:
-        'sha256:91057a5e4da33e0a4c3afe1cace80d23e0595c411cb5a6100b8c72ce42cdbaa1',
+        'sha256:b87858ec0baaeea5cc272e02273f8f3a13410f4322c33c088fed4b4144ecf1e0',
     renderWorkingSetToken: request.snapshot.contentDigest,
     renderStableGaussianIds: Array.from(
         request.snapshot.stableIds,
@@ -719,7 +719,7 @@ const candidateReLiftRequest = () => {
         evidenceBackendKind: 'production-direct',
         evidenceBackendId: 'global-atomic/direct-v1',
         runtimeBuildId:
-            'sha256:91057a5e4da33e0a4c3afe1cace80d23e0595c411cb5a6100b8c72ce42cdbaa1'
+            'sha256:b87858ec0baaeea5cc272e02273f8f3a13410f4322c33c088fed4b4144ecf1e0'
     };
     const evidenceAdmission = admitGaussianEvidence(currentInput);
     assert.equal(evidenceAdmission.status, 'admitted');
@@ -766,7 +766,7 @@ const directEvidenceRequest = () => {
             evidenceBackendKind: 'production-direct',
             evidenceBackendId: 'global-atomic/direct-v1',
             runtimeBuildId:
-                'sha256:91057a5e4da33e0a4c3afe1cace80d23e0595c411cb5a6100b8c72ce42cdbaa1'
+                'sha256:b87858ec0baaeea5cc272e02273f8f3a13410f4322c33c088fed4b4144ecf1e0'
         }
     };
 };

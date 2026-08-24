@@ -42,7 +42,7 @@ export const referenceEvidenceRasterImplementationId =
 export const referenceContributorEvidenceBackendId =
     'complete-contributor/reference-v1';
 export const referenceEvidenceRuntimeBuildId =
-    'sha256:91057a5e4da33e0a4c3afe1cace80d23e0595c411cb5a6100b8c72ce42cdbaa1';
+    'sha256:b87858ec0baaeea5cc272e02273f8f3a13410f4322c33c088fed4b4144ecf1e0';
 export const productionEvidencePolicyDigest = referenceEvidencePolicyDigest;
 export const productionAggregationPolicyDigest =
     referenceAggregationPolicyDigest;

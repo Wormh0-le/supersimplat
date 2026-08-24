@@ -37,7 +37,7 @@ const activeModelDigest = 'sha256:model-v1';
 const checkpointDigest = `sha256:${'4'.repeat(64)}`;
 const runtimeConfigDigest = `sha256:${'5'.repeat(64)}`;
 const runtimeBuildId =
-    'sha256:91057a5e4da33e0a4c3afe1cace80d23e0595c411cb5a6100b8c72ce42cdbaa1';
+    'sha256:b87858ec0baaeea5cc272e02273f8f3a13410f4322c33c088fed4b4144ecf1e0';
 const evidencePolicyDigest =
     'sha256:debcee99d261f28ab373b16016447f056872476a960a1af23599cc6ea1f20efd';
 const aggregationPolicyDigest =
@@ -183,9 +183,9 @@ const capabilities = (overrides = {}) => ({
         evidenceBackendKind: 'production-direct',
         evidenceBackendId: 'global-atomic/direct-v1',
         sourceRevision:
-            'sha256:e4d1b020aef9617406df48ef9500ea3ffea473a55e25222f2977085ad0a9f5bb',
+            'sha256:3c14ab06a3f60c893de9e86d7242269e0eb43b253b1808ebbec8e60b59fae917',
         expectedSourceRevision:
-            'sha256:e4d1b020aef9617406df48ef9500ea3ffea473a55e25222f2977085ad0a9f5bb',
+            'sha256:3c14ab06a3f60c893de9e86d7242269e0eb43b253b1808ebbec8e60b59fae917',
         abiVersion: 'supersimplat-direct-evidence-abi/v2',
         runtimeBuildId: runtimeBuildId,
         torchVersion: '2.11.0+cu128',

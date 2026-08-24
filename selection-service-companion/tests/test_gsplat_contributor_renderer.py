@@ -15,10 +15,18 @@ from PIL import Image
 
 from selection_service_companion.anchor_timing import AnchorServerTiming
 from selection_service_companion.camera_binding import camera_binding_digest
+from selection_service_companion.depth_moment_readout import (
+    DepthMomentConsumerRegistration,
+    DepthMomentReadoutCache,
+    create_depth_moment_readout_identity,
+)
+from selection_service_companion.depth_moments import DepthMomentValidityPolicy
 from selection_service_companion.direct_gaussian_evidence import (
+    DIRECT_EVIDENCE_ABI_VERSION,
     DIRECT_EVIDENCE_BACKEND_ID,
     DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
     DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+    DIRECT_EVIDENCE_SOURCE_REVISION,
 )
 from selection_service_companion.evidence import ContributorSample
 from selection_service_companion.gsplat_renderer import (
@@ -39,6 +47,7 @@ from selection_service_companion.generated_views import (
 )
 from selection_service_companion.masking import MaskSessionError, RegisteredFrame
 from selection_service_companion.gaussian_evidence_contract import (
+    admit_gaussian_evidence,
     create_evidence_working_set,
 )
 from selection_service_companion.reference_gaussian_evidence import (
@@ -1560,6 +1569,11 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
             "runtimeBuildId": DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
         }
 
+        moment_policy = DepthMomentValidityPolicy(
+            policy_id="depth-moment-minimum-m0/renderer-integration-test-v1",
+            minimum_m0=0.01,
+        )
+        moment_cache = DepthMomentReadoutCache()
         direct = renderer.compute_direct_evidence(
             admission_input=direct_input,
             stable_mask_artifact=mask,
@@ -1567,7 +1581,94 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
             scene_snapshot=scene,
             camera_binding=binding,
             target_stable_ids=[41, 99, 123],
+            depth_moment_consumer=DepthMomentConsumerRegistration(
+                cache=moment_cache,
+                policy=moment_policy,
+            ),
         )
+        admission_result = admit_gaussian_evidence(direct_input)
+        self.assertEqual(admission_result["status"], "admitted")
+        admission = admission_result["admission"]
+        assert isinstance(admission, dict)
+        moment_identity = create_depth_moment_readout_identity(
+            admission,
+            render_stable_ids_by_projected_row=validate_supported_snapshot(scene),
+            policy=moment_policy,
+            width=width,
+            height=height,
+            direct_evidence_abi_version=DIRECT_EVIDENCE_ABI_VERSION,
+            direct_evidence_source_revision=DIRECT_EVIDENCE_SOURCE_REVISION,
+            direct_evidence_runtime_build_id=DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+        )
+        moment_lookup = moment_cache.lookup(moment_identity)
+        self.assertEqual(moment_lookup.status, "available")
+        assert moment_lookup.readout is not None
+        self.assertEqual(
+            tuple(moment_lookup.readout.raw_depth_moments.shape),
+            (height, width, 3),
+        )
+        self.assertEqual(
+            moment_lookup.readout.telemetry.depth_moment_buffer_bytes,
+            height * width * 3 * 4,
+        )
+        self.assertGreater(
+            moment_lookup.readout.telemetry.owned_tensor_buffer_bytes,
+            moment_lookup.readout.telemetry.depth_moment_buffer_bytes,
+        )
+        self.assertGreater(
+            moment_lookup.readout.telemetry.peak_vram_bytes,
+            0,
+        )
+        self.assertNotIn("depthMoments", direct)
+        self.assertNotIn("cwed", direct)
+
+        rasterize_direct = renderer.backend.rasterize_direct_evidence_typed
+
+        def without_depth_moments(**kwargs: object):
+            rasterized = rasterize_direct(**kwargs)
+            return replace(
+                rasterized,
+                depth_moments=None,
+                telemetry=replace(
+                    rasterized.telemetry,
+                    depth_moment_buffer_bytes=0,
+                ),
+            )
+
+        unavailable_cache = DepthMomentReadoutCache()
+        with mock.patch.object(
+            renderer.backend,
+            "rasterize_direct_evidence_typed",
+            side_effect=without_depth_moments,
+        ):
+            without_depth = renderer.compute_direct_evidence(
+                admission_input=direct_input,
+                stable_mask_artifact=mask,
+                policy=policy,
+                scene_snapshot=scene,
+                camera_binding=binding,
+                target_stable_ids=[41, 99, 123],
+                depth_moment_consumer=DepthMomentConsumerRegistration(
+                    cache=unavailable_cache,
+                    policy=moment_policy,
+                ),
+            )
+        for channel in (
+            "positiveMass",
+            "negativeMass",
+            "visibleMass",
+            "boundaryMass",
+        ):
+            for observed, expected in zip(
+                without_depth[channel], direct[channel], strict=True
+            ):
+                self.assertAlmostEqual(observed, expected, delta=2e-5)
+        self.assertEqual(
+            unavailable_cache.lookup(moment_identity).status,
+            "unavailable",
+        )
+        self.assertNotIn("depthMoments", without_depth)
+        self.assertNotIn("cwed", without_depth)
         reference_input = {
             **direct_input,
             "rasterImplementationId": DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,

@@ -15,6 +15,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Final, Iterable, Sequence
 
+from .depth_moments import validate_depth_moment_tensor
 from .masking import MaskSessionError
 from .renderer_runtime import (
     EXPECTED_CUDA_VERSION,
@@ -470,19 +471,17 @@ def _retained_depth_moments(
 ) -> Any | None:
     """Keep only one structurally complete internal moment image."""
 
-    import torch
-
     if not enabled:
         return None
-    if (
-        not isinstance(depth_moments, torch.Tensor)
-        or depth_moments.dtype != torch.float32
-        or not depth_moments.is_contiguous()
-        or tuple(depth_moments.shape) != (height, width, 3)
-        or depth_moments.device != device
-    ):
+    try:
+        return validate_depth_moment_tensor(
+            depth_moments,
+            width=width,
+            height=height,
+            device=device,
+        )
+    except ValueError:
         return None
-    return depth_moments
 
 
 def rasterize_projected_authoritative_rgb(

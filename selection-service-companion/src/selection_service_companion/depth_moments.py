@@ -94,6 +94,43 @@ def rasterize_scalar_depth_moments(
     return ScalarDepthMoments(m0=m0, m1=m1, m2=m2)
 
 
+def validate_depth_moment_tensor(
+    depth_moments: Any,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+    device: Any | None = None,
+    require_finite: bool = False,
+) -> Any:
+    """Validate the shared raw contiguous float32 ``[H,W,3]`` contract."""
+
+    import torch
+
+    if (width is None) != (height is None):
+        raise ValueError("Depth-moment width and height must be supplied together.")
+    expected_shape = (
+        None if width is None else (height, width, 3)
+    )
+    if (
+        not isinstance(depth_moments, torch.Tensor)
+        or depth_moments.dtype != torch.float32
+        or not depth_moments.is_contiguous()
+        or depth_moments.ndim != 3
+        or depth_moments.shape[2] != 3
+        or (
+            expected_shape is not None
+            and tuple(depth_moments.shape) != expected_shape
+        )
+        or (device is not None and depth_moments.device != device)
+        or (
+            require_finite
+            and not bool(torch.isfinite(depth_moments).all().item())
+        )
+    ):
+        raise ValueError("Depth moments must be contiguous float32 [H,W,3].")
+    return depth_moments
+
+
 def derive_depth_moment_readout(
     depth_moments: Any,
     *,
@@ -103,15 +140,7 @@ def derive_depth_moment_readout(
 
     import torch
 
-    if (
-        not isinstance(depth_moments, torch.Tensor)
-        or depth_moments.dtype != torch.float32
-        or not depth_moments.is_contiguous()
-        or depth_moments.ndim != 3
-        or depth_moments.shape[2] != 3
-    ):
-        raise ValueError("Depth moments must be contiguous float32 [H,W,3].")
-
+    validate_depth_moment_tensor(depth_moments)
     m0, m1, m2 = depth_moments.unbind(dim=2)
     finite_moments = torch.isfinite(depth_moments).all(dim=2)
     mass_valid = finite_moments & (m0 >= float(policy.minimum_m0))
@@ -155,4 +184,5 @@ __all__ = [
     "ScalarDepthMoments",
     "derive_depth_moment_readout",
     "rasterize_scalar_depth_moments",
+    "validate_depth_moment_tensor",
 ]

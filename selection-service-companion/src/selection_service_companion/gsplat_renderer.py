@@ -24,10 +24,13 @@ from typing import Any, ClassVar, Mapping, Protocol, Sequence
 from .anchor_timing import AnchorServerTiming
 from .binary_scene_snapshot import PackedBinarySceneSnapshot
 from .camera_binding import camera_binding_digest, parse_camera_binding
+from .depth_moment_readout import DepthMomentConsumerRegistration
 from .direct_gaussian_evidence import (
+    DIRECT_EVIDENCE_ABI_VERSION,
     DIRECT_EVIDENCE_BACKEND_ID,
     DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
     DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+    DIRECT_EVIDENCE_SOURCE_REVISION,
     DirectEvidenceRasterization,
     rasterize_projected_authoritative_rgb,
     rasterize_projected_direct_evidence,
@@ -1876,8 +1879,9 @@ class GsplatContributorRenderer:
         scene_snapshot: SceneSnapshotInput,
         camera_binding: Mapping[str, object],
         target_stable_ids: Sequence[int],
+        depth_moment_consumer: DepthMomentConsumerRegistration | None = None,
     ) -> dict[str, object]:
-        """Atomically produce one production same-decision P/N/V artifact."""
+        """Atomically produce P/N/V and optionally consume internal moments."""
 
         from .gaussian_evidence_contract import (
             GaussianEvidenceContractError,
@@ -1966,6 +1970,7 @@ class GsplatContributorRenderer:
                 evidence_stable_ids=admission["stableGaussianIds"],
                 target_stable_ids=target_stable_ids,
                 pixel_weights=pixel_weights,
+                depth_moments_enabled=depth_moment_consumer is not None,
             )
         except ReferenceGaussianEvidenceError:
             raise
@@ -2004,7 +2009,7 @@ class GsplatContributorRenderer:
             "peakVramBytes": rasterized.telemetry.peak_vram_bytes,
         }
         try:
-            return create_gaussian_evidence_artifact(
+            artifact = create_gaussian_evidence_artifact(
                 admission,
                 {
                     "positiveMass": rasterized.positive_mass.detach().cpu().tolist(),
@@ -2018,6 +2023,26 @@ class GsplatContributorRenderer:
                 "AI Select Direct Evidence produced incomplete P/N/V.",
                 code="directEvidenceArtifactInvalid",
             ) from error
+        if depth_moment_consumer is not None:
+            depth_moment_consumer.consume_complete(
+                admission=admission,
+                render_stable_ids_by_projected_row=stable_ids,
+                raw_depth_moments=rasterized.depth_moments,
+                width=width,
+                height=height,
+                depth_moment_buffer_bytes=(
+                    rasterized.telemetry.depth_moment_buffer_bytes
+                ),
+                peak_vram_bytes=rasterized.telemetry.peak_vram_bytes,
+                direct_evidence_abi_version=DIRECT_EVIDENCE_ABI_VERSION,
+                direct_evidence_source_revision=(
+                    DIRECT_EVIDENCE_SOURCE_REVISION
+                ),
+                direct_evidence_runtime_build_id=(
+                    DIRECT_EVIDENCE_RUNTIME_BUILD_ID
+                ),
+            )
+        return artifact
 
     def render_anchor(
         self,

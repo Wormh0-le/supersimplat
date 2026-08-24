@@ -64,6 +64,39 @@ def _runtime_build_id() -> str:
 DIRECT_EVIDENCE_RUNTIME_BUILD_ID: Final = _runtime_build_id()
 
 
+class DepthMomentRasterUnavailableError(RuntimeError):
+    """Typed failure proven to belong to the optional moment output."""
+
+    _REASONS = frozenset({
+        "depth-moment-capacity-unavailable",
+        "depth-moment-runtime-unavailable",
+    })
+
+    def __init__(self, reason: str) -> None:
+        if reason not in self._REASONS:
+            raise ValueError("Depth-moment raster failure reason is invalid.")
+        self.reason = reason
+        super().__init__(reason)
+
+
+def _is_capacity_failure(error: Exception) -> bool:
+    try:
+        import torch
+    except ImportError:
+        torch = None
+    current: BaseException | None = error
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        if isinstance(current, MemoryError) or (
+            torch is not None
+            and isinstance(current, torch.OutOfMemoryError)
+        ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 @dataclass(frozen=True)
 class DirectEvidenceTelemetry:
     """Per-view buffers and observed allocator peak for the Direct operation."""
@@ -480,8 +513,10 @@ def _retained_depth_moments(
             height=height,
             device=device,
         )
-    except ValueError:
-        return None
+    except ValueError as error:
+        raise DepthMomentRasterUnavailableError(
+            "depth-moment-runtime-unavailable"
+        ) from error
 
 
 def rasterize_projected_authoritative_rgb(
@@ -649,29 +684,36 @@ def rasterize_projected_direct_evidence(
     local_ids = torch.tensor(mapping, dtype=torch.int32, device=device)
     boundary_capacity = max(4096, len(evidence_ids) * 8)
     try:
-        (
-            rgb,
-            alpha,
-            masses,
-            raw_depth_moments,
-            boundary_rows,
-            boundary_count,
-            boundary_overflow,
-            peak,
-        ) = _run_projected_kernel(
-            meta=meta,
-            projected_depths=projected_depths,
-            evaluated_colors=evaluated_colors,
-            background=background,
-            local_ids=local_ids,
-            weights=weights,
-            width=width,
-            height=height,
-            evidence_count=len(evidence_ids),
-            evidence_enabled=True,
-            depth_moments_enabled=depth_moments_enabled,
-            boundary_capacity=boundary_capacity,
-        )
+        try:
+            (
+                rgb,
+                alpha,
+                masses,
+                raw_depth_moments,
+                boundary_rows,
+                boundary_count,
+                boundary_overflow,
+                peak,
+            ) = _run_projected_kernel(
+                meta=meta,
+                projected_depths=projected_depths,
+                evaluated_colors=evaluated_colors,
+                background=background,
+                local_ids=local_ids,
+                weights=weights,
+                width=width,
+                height=height,
+                evidence_count=len(evidence_ids),
+                evidence_enabled=True,
+                depth_moments_enabled=depth_moments_enabled,
+                boundary_capacity=boundary_capacity,
+            )
+        except Exception as error:
+            if depth_moments_enabled and _is_capacity_failure(error):
+                raise DepthMomentRasterUnavailableError(
+                    "depth-moment-capacity-unavailable"
+                ) from error
+            raise
         depth_moments = _retained_depth_moments(
             raw_depth_moments,
             enabled=depth_moments_enabled,
@@ -709,6 +751,8 @@ def rasterize_projected_direct_evidence(
                 "rendererFailure",
                 "Direct Evidence returned non-finite output; no artifact was published.",
             )
+    except DepthMomentRasterUnavailableError:
+        raise
     except MaskSessionError:
         raise
     except Exception as error:
@@ -747,6 +791,7 @@ __all__ = [
     "DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID",
     "DIRECT_EVIDENCE_RUNTIME_BUILD_ID",
     "DIRECT_EVIDENCE_SOURCE_REVISION",
+    "DepthMomentRasterUnavailableError",
     "DirectEvidenceRasterization",
     "DirectEvidenceTelemetry",
     "build_local_evidence_mapping",

@@ -311,6 +311,59 @@ class DepthMomentReadoutCacheTests(unittest.TestCase):
         cache.publish(replacement)
         self.assertEqual(cache.lookup(replacement.identity).status, "available")
 
+    def test_lookup_translates_operational_digest_failures(self) -> None:
+        import torch
+
+        from selection_service_companion.masking import MaskSessionError
+
+        try:
+            raise torch.OutOfMemoryError("injected wrapped CUDA OOM")
+        except torch.OutOfMemoryError as cause:
+            try:
+                raise MaskSessionError(
+                    "rendererFailure",
+                    "injected production-shaped failure",
+                ) from cause
+            except MaskSessionError as wrapper:
+                wrapped_capacity_error = wrapper
+
+        failures = (
+            (
+                RuntimeError("injected digest runtime failure"),
+                "depth-moment-runtime-unavailable",
+            ),
+            (
+                MemoryError("injected digest host capacity failure"),
+                "depth-moment-capacity-unavailable",
+            ),
+            (
+                torch.OutOfMemoryError("injected digest CUDA OOM"),
+                "depth-moment-capacity-unavailable",
+            ),
+            (
+                wrapped_capacity_error,
+                "depth-moment-capacity-unavailable",
+            ),
+        )
+        for error, reason in failures:
+            with self.subTest(error=type(error).__name__):
+                cached = record()
+                cache = DepthMomentReadoutCache()
+                self.assertEqual(cache.publish(cached).status, "available")
+
+                with patch(
+                    "selection_service_companion.depth_moment_readout._tensor_digest",
+                    side_effect=error,
+                ):
+                    result = cache.lookup(cached.identity)
+
+                self.assertEqual(result.status, "unavailable")
+                self.assertEqual(result.reason, reason)
+                self.assertIsNone(result.readout)
+                retained = cache.lookup(cached.identity)
+                self.assertEqual(retained.status, "unavailable")
+                self.assertEqual(retained.reason, reason)
+
     def test_restart_recomputation_must_digest_match(self) -> None:
         original = record()
         restarted = DepthMomentReadoutCache()

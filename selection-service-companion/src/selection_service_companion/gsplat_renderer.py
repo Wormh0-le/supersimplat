@@ -31,6 +31,7 @@ from .direct_gaussian_evidence import (
     DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
     DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
     DIRECT_EVIDENCE_SOURCE_REVISION,
+    DepthMomentRasterUnavailableError,
     DirectEvidenceRasterization,
     rasterize_projected_authoritative_rgb,
     rasterize_projected_direct_evidence,
@@ -1954,6 +1955,7 @@ class GsplatContributorRenderer:
                 "AI Select Direct Evidence Render Working Set token is stale.",
                 code="directEvidenceRenderWorkingSetMismatch",
             )
+        depth_moment_source_failed = False
         try:
             import torch
 
@@ -1961,17 +1963,47 @@ class GsplatContributorRenderer:
             pixel_weights = typed_pixel_evidence_weights(
                 dict(stable_mask_artifact), dict(policy), torch
             )
-            rasterized = self.backend.rasterize_direct_evidence_typed(
-                snapshot=scene_snapshot,
-                camera=immutable_camera,
-                width=width,
-                height=height,
-                render_stable_ids=stable_ids,
-                evidence_stable_ids=admission["stableGaussianIds"],
-                target_stable_ids=target_stable_ids,
-                pixel_weights=pixel_weights,
-                depth_moments_enabled=depth_moment_consumer is not None,
-            )
+            try:
+                rasterized = self.backend.rasterize_direct_evidence_typed(
+                    snapshot=scene_snapshot,
+                    camera=immutable_camera,
+                    width=width,
+                    height=height,
+                    render_stable_ids=stable_ids,
+                    evidence_stable_ids=admission["stableGaussianIds"],
+                    target_stable_ids=target_stable_ids,
+                    pixel_weights=pixel_weights,
+                    depth_moments_enabled=depth_moment_consumer is not None,
+                )
+            except DepthMomentRasterUnavailableError as moment_error:
+                if depth_moment_consumer is None:
+                    raise
+                depth_moment_consumer.consume_source_failure(
+                    admission=admission,
+                    render_stable_ids_by_projected_row=stable_ids,
+                    width=width,
+                    height=height,
+                    direct_evidence_abi_version=DIRECT_EVIDENCE_ABI_VERSION,
+                    direct_evidence_source_revision=(
+                        DIRECT_EVIDENCE_SOURCE_REVISION
+                    ),
+                    direct_evidence_runtime_build_id=(
+                        DIRECT_EVIDENCE_RUNTIME_BUILD_ID
+                    ),
+                    error=moment_error,
+                )
+                depth_moment_source_failed = True
+                rasterized = self.backend.rasterize_direct_evidence_typed(
+                    snapshot=scene_snapshot,
+                    camera=immutable_camera,
+                    width=width,
+                    height=height,
+                    render_stable_ids=stable_ids,
+                    evidence_stable_ids=admission["stableGaussianIds"],
+                    target_stable_ids=target_stable_ids,
+                    pixel_weights=pixel_weights,
+                    depth_moments_enabled=False,
+                )
         except ReferenceGaussianEvidenceError:
             raise
         except Exception as error:
@@ -2023,7 +2055,7 @@ class GsplatContributorRenderer:
                 "AI Select Direct Evidence produced incomplete P/N/V.",
                 code="directEvidenceArtifactInvalid",
             ) from error
-        if depth_moment_consumer is not None:
+        if depth_moment_consumer is not None and not depth_moment_source_failed:
             depth_moment_consumer.consume_complete(
                 admission=admission,
                 render_stable_ids_by_projected_row=stable_ids,

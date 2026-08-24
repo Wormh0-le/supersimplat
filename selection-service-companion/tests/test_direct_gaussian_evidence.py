@@ -18,6 +18,7 @@ from selection_service_companion.direct_gaussian_evidence import (
     DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
     DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
     DIRECT_EVIDENCE_SOURCE_REVISION,
+    DepthMomentRasterUnavailableError,
     build_local_evidence_mapping,
     direct_evidence_capability,
     rasterize_projected_authoritative_rgb,
@@ -187,6 +188,66 @@ class LockedGpuDirectEvidenceTests(unittest.TestCase):
             height=1,
             depth_moments_enabled=depth_moments_enabled,
         )
+
+    def test_moment_capacity_failure_is_typed_without_weakening_production(self) -> None:
+        import torch
+
+        capacity_error = torch.OutOfMemoryError(
+            "injected moment-enabled CUDA OOM"
+        )
+        with patch.object(
+            direct_evidence_module,
+            "_run_projected_kernel",
+            side_effect=capacity_error,
+        ):
+            with self.assertRaises(DepthMomentRasterUnavailableError) as raised:
+                self._render(
+                    weights(2.0, 3.0, 5.0, 7.0),
+                    depth_moments_enabled=True,
+                )
+        self.assertEqual(
+            raised.exception.reason,
+            "depth-moment-capacity-unavailable",
+        )
+        self.assertIs(raised.exception.__cause__, capacity_error)
+
+        run_projected_kernel = direct_evidence_module._run_projected_kernel
+
+        def invalid_moment_output(**kwargs: object):
+            output = list(run_projected_kernel(**kwargs))
+            output[3] = torch.empty(
+                (0,), dtype=torch.float32, device=output[0].device
+            )
+            return tuple(output)
+
+        with patch.object(
+            direct_evidence_module,
+            "_run_projected_kernel",
+            side_effect=invalid_moment_output,
+        ):
+            with self.assertRaises(DepthMomentRasterUnavailableError) as runtime:
+                self._render(
+                    weights(2.0, 3.0, 5.0, 7.0),
+                    depth_moments_enabled=True,
+                )
+        self.assertEqual(
+            runtime.exception.reason,
+            "depth-moment-runtime-unavailable",
+        )
+
+        with patch.object(
+            direct_evidence_module,
+            "_run_projected_kernel",
+            side_effect=torch.OutOfMemoryError(
+                "injected production CUDA OOM"
+            ),
+        ):
+            with self.assertRaises(MaskSessionError) as production_failure:
+                self._render(
+                    weights(2.0, 3.0, 5.0, 7.0),
+                    depth_moments_enabled=False,
+                )
+        self.assertEqual(production_failure.exception.code, "rendererFailure")
 
     def test_moment_image_is_allocated_only_when_explicitly_enabled(self) -> None:
         import torch

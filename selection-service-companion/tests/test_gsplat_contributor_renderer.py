@@ -27,6 +27,7 @@ from selection_service_companion.direct_gaussian_evidence import (
     DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
     DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
     DIRECT_EVIDENCE_SOURCE_REVISION,
+    DepthMomentRasterUnavailableError,
 )
 from selection_service_companion.evidence import ContributorSample
 from selection_service_companion.gsplat_renderer import (
@@ -51,6 +52,7 @@ from selection_service_companion.gaussian_evidence_contract import (
     create_evidence_working_set,
 )
 from selection_service_companion.reference_gaussian_evidence import (
+    ReferenceGaussianEvidenceError,
     default_reference_evidence_policy,
     typed_pixel_evidence_weights,
 )
@@ -1669,6 +1671,93 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
         )
         self.assertNotIn("depthMoments", without_depth)
         self.assertNotIn("cwed", without_depth)
+
+        fallback_failures = (
+            DepthMomentRasterUnavailableError(
+                "depth-moment-capacity-unavailable"
+            ),
+            DepthMomentRasterUnavailableError(
+                "depth-moment-runtime-unavailable"
+            ),
+        )
+        for moment_error in fallback_failures:
+            expected_reason = moment_error.reason
+            with self.subTest(moment_error=expected_reason):
+                fallback_calls: list[bool] = []
+
+                def fail_only_with_moments(**kwargs: object):
+                    enabled = bool(kwargs["depth_moments_enabled"])
+                    fallback_calls.append(enabled)
+                    if enabled:
+                        raise moment_error
+                    return rasterize_direct(**kwargs)
+
+                fallback_cache = DepthMomentReadoutCache()
+                fallback_consumer = DepthMomentConsumerRegistration(
+                    cache=fallback_cache,
+                    policy=moment_policy,
+                )
+                with mock.patch.object(
+                    renderer.backend,
+                    "rasterize_direct_evidence_typed",
+                    side_effect=fail_only_with_moments,
+                ):
+                    fallback_artifact = renderer.compute_direct_evidence(
+                        admission_input=direct_input,
+                        stable_mask_artifact=mask,
+                        policy=policy,
+                        scene_snapshot=scene,
+                        camera_binding=binding,
+                        target_stable_ids=[41, 99, 123],
+                        depth_moment_consumer=fallback_consumer,
+                    )
+
+                self.assertEqual(fallback_calls, [True, False])
+                for channel in (
+                    "positiveMass",
+                    "negativeMass",
+                    "visibleMass",
+                    "boundaryMass",
+                ):
+                    for observed, expected in zip(
+                        fallback_artifact[channel], direct[channel], strict=True
+                    ):
+                        self.assertAlmostEqual(observed, expected, delta=2e-5)
+                self.assertEqual(fallback_consumer.result.status, "unavailable")
+                self.assertEqual(fallback_consumer.result.reason, expected_reason)
+                fallback_lookup = fallback_cache.lookup(moment_identity)
+                self.assertEqual(fallback_lookup.status, "unavailable")
+                self.assertEqual(fallback_lookup.reason, expected_reason)
+                self.assertIsNone(fallback_lookup.readout)
+
+        failed_calls: list[bool] = []
+
+        def fail_every_direct_evidence_render(**kwargs: object):
+            failed_calls.append(bool(kwargs["depth_moments_enabled"]))
+            raise RuntimeError("injected production raster failure")
+
+        failed_consumer = DepthMomentConsumerRegistration(
+            cache=DepthMomentReadoutCache(),
+            policy=moment_policy,
+        )
+        with mock.patch.object(
+            renderer.backend,
+            "rasterize_direct_evidence_typed",
+            side_effect=fail_every_direct_evidence_render,
+        ):
+            with self.assertRaises(ReferenceGaussianEvidenceError) as raised:
+                renderer.compute_direct_evidence(
+                    admission_input=direct_input,
+                    stable_mask_artifact=mask,
+                    policy=policy,
+                    scene_snapshot=scene,
+                    camera_binding=binding,
+                    target_stable_ids=[41, 99, 123],
+                    depth_moment_consumer=failed_consumer,
+                )
+        self.assertEqual(raised.exception.code, "directEvidenceRenderFailed")
+        self.assertEqual(failed_calls, [True])
+
         reference_input = {
             **direct_input,
             "rasterImplementationId": DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,

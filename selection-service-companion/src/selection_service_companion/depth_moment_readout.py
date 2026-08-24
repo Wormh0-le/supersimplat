@@ -583,7 +583,12 @@ class DepthMomentReadoutRecord:
                 and current_tensor_digests == self.tensor_digests
                 and canonical_json_digest(payload) == self.readout_digest
             )
-        except (DepthMomentReadoutError, TypeError, ValueError):
+        except (DepthMomentReadoutError, TypeError, ValueError) as error:
+            if _readout_failure_reason(error) in {
+                "depth-moment-capacity-unavailable",
+                "depth-moment-runtime-unavailable",
+            }:
+                raise
             return False
 
 
@@ -708,7 +713,24 @@ class DepthMomentReadoutCache:
                 status=entry.status,
                 reason=entry.reason,
             )
-        if not entry.readout.validate():
+        try:
+            is_valid = entry.readout.validate()
+        except Exception as error:
+            reason = _readout_failure_reason(error)
+            unavailable = _DepthMomentCacheEntry(
+                identity=identity,
+                status="unavailable",
+                reason=reason,
+                readout=None,
+            )
+            with self._lock:
+                if self._entries.get(identity.slot) == entry:
+                    self._entries[identity.slot] = unavailable
+            return DepthMomentLookupResult(
+                status="unavailable",
+                reason=reason,
+            )
+        if not is_valid:
             stale = _DepthMomentCacheEntry(
                 identity=identity,
                 status="stale",
@@ -736,18 +758,34 @@ class DepthMomentReadoutCache:
 
 
 def _readout_failure_reason(error: Exception) -> str:
-    if isinstance(error, DepthMomentReadoutError):
-        return "depth-moments-unavailable"
-    if isinstance(error, MemoryError):
-        return "depth-moment-capacity-unavailable"
+    explicit_reasons = frozenset({
+        "depth-moment-capacity-unavailable",
+        "depth-moment-runtime-unavailable",
+    })
     try:
         import torch
     except ImportError:
         torch = None
-    if torch is not None and isinstance(error, torch.OutOfMemoryError):
-        return "depth-moment-capacity-unavailable"
-    if isinstance(error, RuntimeError):
+    current: BaseException | None = error
+    visited: set[int] = set()
+    runtime_failure = False
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        explicit_reason = getattr(current, "reason", None)
+        if explicit_reason in explicit_reasons:
+            return str(explicit_reason)
+        if isinstance(current, MemoryError) or (
+            torch is not None
+            and isinstance(current, torch.OutOfMemoryError)
+        ):
+            return "depth-moment-capacity-unavailable"
+        if isinstance(current, RuntimeError):
+            runtime_failure = True
+        current = current.__cause__ or current.__context__
+    if runtime_failure:
         return "depth-moment-runtime-unavailable"
+    if isinstance(error, DepthMomentReadoutError):
+        return "depth-moments-unavailable"
     return "depth-moment-consumer-failed"
 
 
@@ -793,6 +831,44 @@ class DepthMomentConsumerRegistration:
             self._result = result
         return result
 
+    def _create_identity(
+        self,
+        *,
+        admission: Mapping[str, object],
+        render_stable_ids_by_projected_row: Sequence[int],
+        width: int,
+        height: int,
+        direct_evidence_abi_version: str,
+        direct_evidence_source_revision: str,
+        direct_evidence_runtime_build_id: str,
+    ) -> DepthMomentReadoutIdentity:
+        return create_depth_moment_readout_identity(
+            admission,
+            render_stable_ids_by_projected_row=(
+                render_stable_ids_by_projected_row
+            ),
+            policy=self.policy,
+            width=width,
+            height=height,
+            direct_evidence_abi_version=direct_evidence_abi_version,
+            direct_evidence_source_revision=direct_evidence_source_revision,
+            direct_evidence_runtime_build_id=direct_evidence_runtime_build_id,
+        )
+
+    def _identity_failure(
+        self,
+        error: Exception,
+    ) -> DepthMomentLookupResult:
+        reason = (
+            "depth-moment-identity-invalid"
+            if isinstance(error, DepthMomentReadoutError)
+            else _readout_failure_reason(error)
+        )
+        return self._record_result(DepthMomentLookupResult(
+            status="unavailable",
+            reason=reason,
+        ))
+
     def consume_complete(
         self,
         *,
@@ -808,12 +884,11 @@ class DepthMomentConsumerRegistration:
         direct_evidence_runtime_build_id: str,
     ) -> DepthMomentLookupResult:
         try:
-            identity = create_depth_moment_readout_identity(
-                admission,
+            identity = self._create_identity(
+                admission=admission,
                 render_stable_ids_by_projected_row=(
                     render_stable_ids_by_projected_row
                 ),
-                policy=self.policy,
                 width=width,
                 height=height,
                 direct_evidence_abi_version=direct_evidence_abi_version,
@@ -821,15 +896,7 @@ class DepthMomentConsumerRegistration:
                 direct_evidence_runtime_build_id=direct_evidence_runtime_build_id,
             )
         except Exception as error:
-            reason = (
-                "depth-moment-identity-invalid"
-                if isinstance(error, DepthMomentReadoutError)
-                else _readout_failure_reason(error)
-            )
-            return self._record_result(DepthMomentLookupResult(
-                status="unavailable",
-                reason=reason,
-            ))
+            return self._identity_failure(error)
         try:
             readout = DepthMomentReadoutRecord(
                 identity=identity,
@@ -852,6 +919,39 @@ class DepthMomentConsumerRegistration:
                 reason=_readout_failure_reason(error),
             )
         return self._record_result(result)
+
+    def consume_source_failure(
+        self,
+        *,
+        admission: Mapping[str, object],
+        render_stable_ids_by_projected_row: Sequence[int],
+        width: int,
+        height: int,
+        direct_evidence_abi_version: str,
+        direct_evidence_source_revision: str,
+        direct_evidence_runtime_build_id: str,
+        error: Exception,
+    ) -> DepthMomentLookupResult:
+        """Bind an optional source failure without publishing partial moments."""
+
+        try:
+            identity = self._create_identity(
+                admission=admission,
+                render_stable_ids_by_projected_row=(
+                    render_stable_ids_by_projected_row
+                ),
+                width=width,
+                height=height,
+                direct_evidence_abi_version=direct_evidence_abi_version,
+                direct_evidence_source_revision=direct_evidence_source_revision,
+                direct_evidence_runtime_build_id=direct_evidence_runtime_build_id,
+            )
+        except Exception as identity_error:
+            return self._identity_failure(identity_error)
+        return self.unavailable(
+            identity,
+            reason=_readout_failure_reason(error),
+        )
 
     def unavailable(
         self,

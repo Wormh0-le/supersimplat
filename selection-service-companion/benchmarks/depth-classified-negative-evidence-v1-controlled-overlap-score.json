@@ -1,0 +1,223 @@
+{
+  "artifactKind": "depth-classified-negative-evidence-score/experimental-reference",
+  "baselineGatePassed": false,
+  "baselineResult": "failed",
+  "groundTruthClosedDuringPrediction": true,
+  "groundTruthSha256": "sha256:740e2a6a3080a6828aa14ff5fc7e0c9741af50e89b53b2480c26ba1021027dc0",
+  "inputIdentity": {
+    "cameraBindingsDigest": "sha256:5aafe0bc8e7d1a8b430b7212fbec8f14b0131fc9df722b3381505692964e8153",
+    "deterministicSeed": "controlled-overlap-seed-1",
+    "rendererRuntimeDigest": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
+    "sceneSnapshotDigest": "sha256:cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e",
+    "stableMasksDigest": "sha256:fb117b62a0120dcab60f6ede886daab7d43c188eef5b04c1b08940e07416a261",
+    "workingSetsDigest": "sha256:25f448eba450fe81559a501df434ed6401bb59e55a12c963699fe11354a511c6"
+  },
+  "inputIdentityDigest": "sha256:9c1556a9f5c40d287d2ae84fb89b6363e580b9b0e0382f66ef6016b7829ccf38",
+  "methods": [
+    {
+      "bufferWrites": {
+        "classifiedSidecar": 0,
+        "productionNegativeMass": 49152,
+        "total": 49152
+      },
+      "method": {
+        "coefficients": null,
+        "methodId": "production-single-negative-mass/baseline-v1"
+      },
+      "metrics": {
+        "distractorLeakageCount": 150,
+        "distractorLeakageRate": 0.018310546875,
+        "finalCandidateQuality": {
+          "rejectedCount": 419,
+          "selectedCount": 8084,
+          "uncertainCount": 7881,
+          "uncertainRate": 0.48101806640625
+        },
+        "targetPrecision": 0.9812874251497006,
+        "targetRecall": 0.9951923076923077,
+        "thinOrEdgeRetention": null,
+        "thinOrEdgeRetentionAvailable": false
+      },
+      "qualityGatePassed": false,
+      "recordDigest": "sha256:866c95ddff79f29a31cb53e6f36e47e3c43eed53615e21329d1cca01a3eaafc5",
+      "recordKind": "depth-classified-negative-evidence-baseline/experimental-reference",
+      "runtimeSource": {
+        "computeCapability": "8.9",
+        "cudaVersion": "12.8",
+        "directEvidenceAbiVersion": "supersimplat-direct-evidence-abi/v3",
+        "directEvidenceRuntimeBuildId": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
+        "directEvidenceSourceRevision": "sha256:dd40059d5bdd9fa9a06e6a9752f77775084ca1924878bf7a3c4504a46b89242e",
+        "gpuName": "NVIDIA GeForce RTX 4090 D",
+        "gsplatSourceCommit": "77ab983ffe43420b2131669cb35776b883ca4c3c",
+        "rendererRuntimeDigest": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
+        "torchVersion": "2.11.0+cu128"
+      },
+      "timingAndVram": {
+        "latencyMilliseconds": 727.2443649981142,
+        "peakVramBytes": 43320832
+      }
+    },
+    {
+      "bufferWrites": {
+        "behind": 49152,
+        "classifiedSidecar": 196608,
+        "front": 49152,
+        "invalidDepth": 49152,
+        "near": 49152,
+        "productionNegativeMass": 49152,
+        "total": 245760
+      },
+      "method": {
+        "behindCoefficient": 0.0,
+        "frontCoefficient": 1.0,
+        "invalidDepthCoefficient": 1.0,
+        "methodId": "front-near-preserve-behind-suppress/experimental-reference-v1",
+        "nearCoefficient": 1.0,
+        "schemaVersion": 1
+      },
+      "metrics": {
+        "distractorLeakageCount": 226,
+        "distractorLeakageRate": 0.027587890625,
+        "finalCandidateQuality": {
+          "rejectedCount": 387,
+          "selectedCount": 8183,
+          "uncertainCount": 7814,
+          "uncertainRate": 0.4769287109375
+        },
+        "targetPrecision": 0.9721503388786198,
+        "targetRecall": 0.9981022267206477,
+        "thinOrEdgeRetention": null,
+        "thinOrEdgeRetentionAvailable": false
+      },
+      "qualityGatePassed": false,
+      "recordDigest": "sha256:3c6a7af483cb6127816104a3aabd62b0b6aca9cd83d756c90763802537b0d447",
+      "recordKind": "depth-classified-negative-evidence-variant/experimental-reference",
+      "runtimeSource": {
+        "computeCapability": "8.9",
+        "cudaVersion": "12.8",
+        "directEvidenceAbiVersion": "supersimplat-direct-evidence-abi/v3",
+        "directEvidenceRuntimeBuildId": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
+        "directEvidenceSourceRevision": "sha256:dd40059d5bdd9fa9a06e6a9752f77775084ca1924878bf7a3c4504a46b89242e",
+        "gpuName": "NVIDIA GeForce RTX 4090 D",
+        "gsplatSourceCommit": "77ab983ffe43420b2131669cb35776b883ca4c3c",
+        "rendererRuntimeDigest": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
+        "torchVersion": "2.11.0+cu128"
+      },
+      "timingAndVram": {
+        "latencyMilliseconds": 3481.7003780008235,
+        "peakVramBytes": 4527751168
+      }
+    },
+    {
+      "bufferWrites": {
+        "behind": 49152,
+        "classifiedSidecar": 196608,
+        "front": 49152,
+        "invalidDepth": 49152,
+        "near": 49152,
+        "productionNegativeMass": 49152,
+        "total": 245760
+      },
+      "method": {
+        "behindCoefficient": 0.25,
+        "frontCoefficient": 1.0,
+        "invalidDepthCoefficient": 1.0,
+        "methodId": "front-near-preserve-behind-quarter/experimental-reference-v1",
+        "nearCoefficient": 1.0,
+        "schemaVersion": 1
+      },
+      "metrics": {
+        "distractorLeakageCount": 153,
+        "distractorLeakageRate": 0.0186767578125,
+        "finalCandidateQuality": {
+          "rejectedCount": 388,
+          "selectedCount": 8110,
+          "uncertainCount": 7886,
+          "uncertainRate": 0.4813232421875
+        },
+        "targetPrecision": 0.9809748818701816,
+        "targetRecall": 0.9981022267206477,
+        "thinOrEdgeRetention": null,
+        "thinOrEdgeRetentionAvailable": false
+      },
+      "qualityGatePassed": false,
+      "recordDigest": "sha256:3cfd06fb743a14d5fface1a7e2ba8b91dc8e563db0acd623837c7a02c64cf90b",
+      "recordKind": "depth-classified-negative-evidence-variant/experimental-reference",
+      "runtimeSource": {
+        "computeCapability": "8.9",
+        "cudaVersion": "12.8",
+        "directEvidenceAbiVersion": "supersimplat-direct-evidence-abi/v3",
+        "directEvidenceRuntimeBuildId": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
+        "directEvidenceSourceRevision": "sha256:dd40059d5bdd9fa9a06e6a9752f77775084ca1924878bf7a3c4504a46b89242e",
+        "gpuName": "NVIDIA GeForce RTX 4090 D",
+        "gsplatSourceCommit": "77ab983ffe43420b2131669cb35776b883ca4c3c",
+        "rendererRuntimeDigest": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
+        "torchVersion": "2.11.0+cu128"
+      },
+      "timingAndVram": {
+        "latencyMilliseconds": 3472.6376680009707,
+        "peakVramBytes": 4527751168
+      }
+    },
+    {
+      "bufferWrites": {
+        "behind": 49152,
+        "classifiedSidecar": 196608,
+        "front": 49152,
+        "invalidDepth": 49152,
+        "near": 49152,
+        "productionNegativeMass": 49152,
+        "total": 245760
+      },
+      "method": {
+        "behindCoefficient": 0.5,
+        "frontCoefficient": 0.5,
+        "invalidDepthCoefficient": 1.0,
+        "methodId": "near-emphasis-symmetric-half/experimental-reference-v1",
+        "nearCoefficient": 1.0,
+        "schemaVersion": 1
+      },
+      "metrics": {
+        "distractorLeakageCount": 150,
+        "distractorLeakageRate": 0.018310546875,
+        "finalCandidateQuality": {
+          "rejectedCount": 355,
+          "selectedCount": 8107,
+          "uncertainCount": 7922,
+          "uncertainRate": 0.4835205078125
+        },
+        "targetPrecision": 0.9813409628063192,
+        "targetRecall": 0.9981022267206477,
+        "thinOrEdgeRetention": null,
+        "thinOrEdgeRetentionAvailable": false
+      },
+      "qualityGatePassed": false,
+      "recordDigest": "sha256:34522c1595a1e8dd88d3e8386e5a02074e3702d067a92efba809d3b57b4236a1",
+      "recordKind": "depth-classified-negative-evidence-variant/experimental-reference",
+      "runtimeSource": {
+        "computeCapability": "8.9",
+        "cudaVersion": "12.8",
+        "directEvidenceAbiVersion": "supersimplat-direct-evidence-abi/v3",
+        "directEvidenceRuntimeBuildId": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
+        "directEvidenceSourceRevision": "sha256:dd40059d5bdd9fa9a06e6a9752f77775084ca1924878bf7a3c4504a46b89242e",
+        "gpuName": "NVIDIA GeForce RTX 4090 D",
+        "gsplatSourceCommit": "77ab983ffe43420b2131669cb35776b883ca4c3c",
+        "rendererRuntimeDigest": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
+        "torchVersion": "2.11.0+cu128"
+      },
+      "timingAndVram": {
+        "latencyMilliseconds": 3478.191483000046,
+        "peakVramBytes": 4527751168
+      }
+    }
+  ],
+  "predictionManifestSha256": "sha256:66224db481bfef74f89d634ebb92641232a7412546c370714358debfed23a8d7",
+  "schemaVersion": 1,
+  "scorePolicy": {
+    "maximumDistractorLeakageCount": 81,
+    "minimumTargetPrecision": 0.9,
+    "minimumTargetRecall": 0.9,
+    "policyId": "depth-classified-negative-evidence-score/experimental-reference-v1"
+  },
+  "variantCannotAlterBaselineResult": true
+}

@@ -1,0 +1,218 @@
+{
+  "compilerDiagnostics": {
+    "arch": "sm_89",
+    "directEvidenceKernelRegisters": 36,
+    "localBytes": 0,
+    "projectedDepthProbeKernelRegisters": 10,
+    "rawOutputSha256": "sha256:e673286d2e3b8c2a15143d11e51c7ed0973a6d80f8bc52e87d537fd9d7e6d32d",
+    "sharedBytes": 0,
+    "stackBytes": 0,
+    "tool": "cuobjdump --dump-resource-usage"
+  },
+  "directEvidence": {
+    "abiVersion": "supersimplat-direct-evidence-abi/v3",
+    "buildFlags": [
+      "-O3",
+      "--use_fast_math",
+      "--generate-line-info",
+      "--ptxas-options=-v"
+    ],
+    "evidenceBackendId": "global-atomic/direct-v1",
+    "rasterImplementationId": "supersimplat-gsplat-direct-evidence/v1",
+    "runtimeBuildId": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
+    "sourceRevision": "sha256:dd40059d5bdd9fa9a06e6a9752f77775084ca1924878bf7a3c4504a46b89242e",
+    "supportedComputeCapabilities": ["8.9"]
+  },
+  "failureOutcomes": {
+    "allocationFailure": {
+      "method": "typed-cuda-oom-fault-injection",
+      "passed": true,
+      "priorReadoutPreserved": true,
+      "productionArtifactsPreserved": true,
+      "productionOutputDigestAfter": "sha256:bc9a21f4e98553887cbed6af7e2dc4f21d1fc4285a3e4d0b62fb350bb0c26656",
+      "productionOutputDigestBefore": "sha256:bc9a21f4e98553887cbed6af7e2dc4f21d1fc4285a3e4d0b62fb350bb0c26656",
+      "result": "unavailable-no-partial-readout"
+    },
+    "cancellation": {
+      "method": "consumer-publication-boundary",
+      "passed": true,
+      "priorReadoutPreserved": true,
+      "productionArtifactsPreserved": true,
+      "productionOutputDigestAfter": "sha256:bc9a21f4e98553887cbed6af7e2dc4f21d1fc4285a3e4d0b62fb350bb0c26656",
+      "productionOutputDigestBefore": "sha256:bc9a21f4e98553887cbed6af7e2dc4f21d1fc4285a3e4d0b62fb350bb0c26656",
+      "result": "unavailable-no-partial-readout"
+    },
+    "capabilityMismatch": {
+      "method": "record-identity-fault-injection",
+      "passed": true,
+      "result": "qualification-rejected"
+    },
+    "runtimeMismatch": {
+      "method": "record-identity-fault-injection",
+      "passed": true,
+      "result": "qualification-rejected"
+    },
+    "sourceMismatch": {
+      "method": "record-identity-fault-injection",
+      "passed": true,
+      "result": "qualification-rejected"
+    },
+    "supportedFixtureOom": {
+      "method": "measured",
+      "passed": true,
+      "result": "zero-oom-one-consumer"
+    }
+  },
+  "fixtures": [
+    {
+      "cameraBindingDigest": "sha256:81e1d3763f812614b427431a1774e886e9eb3351ce0fc72cbeb374f8104268ed",
+      "cameraManifest": {
+        "convention": "opencv-world-to-camera",
+        "farPlane": 20.0,
+        "intrinsics": [
+          1312.9648886056762, 0.0, 504.0, 0.0, 1312.9648886056762, 504.0, 0.0,
+          0.0, 1.0
+        ],
+        "model": "pinhole",
+        "nearPlane": 0.01,
+        "worldToCamera": [
+          1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 3.2, 0.0, 0.0,
+          0.0, 1.0
+        ]
+      },
+      "evidenceGaussianCount": 16384,
+      "evidenceWorkingSetToken": "sha256:7bc06290a466ec713f50f2925deb4c1c17897e543dd7c1d4812fbb065a6c8351",
+      "fixtureId": "controlled-overlap-anchor-1008/v1",
+      "intersectionCount": 289072,
+      "projectedGaussianCount": 16384,
+      "renderGaussianCount": 16384,
+      "renderWorkingSetToken": "sha256:d26049f7ec8cf3066a89e2c23155bbfea6e27dd3bb49fe58d8f89cc753bc1d20",
+      "resolution": [1008, 1008],
+      "scenePath": "selection-service-companion/tests/fixtures/ai-select-v1/controlled-overlap/controlled_front_back_overlap.ply",
+      "sceneSha256": "sha256:cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e"
+    }
+  ],
+  "issue": 53,
+  "measurements": {
+    "comparison": {
+      "cacheHitToDownstreamConsumerRatio": 128.26757047237942,
+      "cacheHitToReadoutConstructionRatio": 0.8052584584151566,
+      "cacheHitToRecomputationRatio": 0.04113691473256212
+    },
+    "latencyMs": {
+      "cacheHitValidation": {
+        "maximum": 11.191908000910189,
+        "median": 11.159407000377541,
+        "p95": 11.170439000125043
+      },
+      "downstreamConsumer": {
+        "maximum": 2.6216420010314323,
+        "median": 0.08700100079295225,
+        "p95": 0.10203500278294086
+      },
+      "readoutConstruction": {
+        "maximum": 28.08549600013066,
+        "median": 13.858168000297155,
+        "p95": 14.791566001804313
+      },
+      "recomputation": {
+        "maximum": 324.6421330004523,
+        "median": 271.27476800160366,
+        "p95": 275.348084000143
+      },
+      "withMoments": {
+        "maximum": 341.81070100021316,
+        "median": 269.45275899925036,
+        "p95": 295.82974900040426
+      },
+      "withoutMoments": {
+        "maximum": 317.86285400085035,
+        "median": 278.1161580023763,
+        "p95": 310.3741409977374
+      }
+    },
+    "memory": {
+      "cacheValidationPeakVramBytes": 357602816,
+      "momentBufferBytes": 12192768,
+      "ownedTensorBufferBytes": 21337344,
+      "readoutPeakVramBytes": 415047680,
+      "transientDeviceBytes": 21337344,
+      "transientHostBytes": 21337344,
+      "withMomentsPeakVramBytes": 357914112,
+      "withoutMomentsPeakVramBytes": 328291840
+    },
+    "sampleCount": 7,
+    "transferAndHash": {
+      "bytes": 21337344,
+      "gpuToCpuMs": 1.9218380002712365,
+      "sha256Ms": 10.521281998080667,
+      "synchronizationIncluded": true,
+      "synchronizeOnlyMs": 0.03338000169605948
+    },
+    "warmupCount": 2
+  },
+  "momentPolicy": {
+    "minimumM0": 0.00392156862745098,
+    "policyId": "depth-moment-minimum-m0/qualified-v1",
+    "readout": "M0/M1/M2-float32-cwed-variance/v1",
+    "selectionRule": "same-decision-minimum-accepted-alpha/v1"
+  },
+  "promotionGate": {
+    "checks": [
+      "semantic-parity",
+      "identity-fail-closed",
+      "no-supported-fixture-oom",
+      "failure-atomicity",
+      "checked-measurements"
+    ],
+    "passed": true
+  },
+  "qualificationId": "depth-moment-cwed-foundation/qualified-v1",
+  "recordDigest": "sha256:aafcb20c4c0d9e4376ef6c55c1744a23707c5e05ecb053a2d27e276af7e5bd4d",
+  "recordedAt": "2026-08-25T14:54:55.403665Z",
+  "runtime": {
+    "computeCapability": "8.9",
+    "cudaVersion": "12.8",
+    "driverVersion": "580.178.04",
+    "gpuName": "NVIDIA GeForce RTX 4090 D",
+    "gsplatSourceCommit": "77ab983ffe43420b2131669cb35776b883ca4c3c",
+    "gsplatVersion": "1.5.3",
+    "operatingSystem": "Linux",
+    "pythonVersion": "3.12.12",
+    "rendererLockDigest": "sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40",
+    "torchVersion": "2.11.0+cu128",
+    "uvLockSha256": "sha256:a04a3840702bca8d86365dc44c8a693344e54fb09db8a2c2131a4ed711717e40"
+  },
+  "schemaId": "depth-moment-cwed-qualification/run-v1",
+  "semanticParity": {
+    "atol": 1e-6,
+    "authoritativeRgbUnchanged": true,
+    "boundaryBehaviorUnchanged": true,
+    "depthMomentTensorDigest": "sha256:7e02b3cc110849826b527b212af124da2365b7852f31282cb84e048977b82655",
+    "evidenceUnchanged": true,
+    "mandatoryCases": [
+      "zero-mass",
+      "one-layer",
+      "two-layer",
+      "rejected-and-terminated"
+    ],
+    "maximumMomentAbsoluteError": 0.0,
+    "maximumProductionEvidenceAbsoluteError": 7.152557373046875e-7,
+    "productionEvidenceAtol": 2e-5,
+    "rtol": 1e-6,
+    "status": "passed",
+    "withMomentsProductionOutputDigest": "sha256:5329319fda2c2abe4f0d5da32021585ff175f3d380d5239819f80ff264a28584",
+    "withoutMomentsOutputDigest": "sha256:bc9a21f4e98553887cbed6af7e2dc4f21d1fc4285a3e4d0b62fb350bb0c26656"
+  },
+  "status": "qualified",
+  "supportedEnvelope": {
+    "computeCapabilities": ["8.9"],
+    "maxConcurrentConsumers": 1,
+    "maxEvidenceGaussianCount": 16384,
+    "maxHeight": 1008,
+    "maxIntersectionCount": 289072,
+    "maxPixels": 1016064,
+    "maxRenderGaussianCount": 16384,
+    "maxWidth": 1008
+  }
+}

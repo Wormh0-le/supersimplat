@@ -26,11 +26,9 @@ from .binary_scene_snapshot import PackedBinarySceneSnapshot
 from .camera_binding import camera_binding_digest, parse_camera_binding
 from .depth_moment_readout import DepthMomentConsumerRegistration
 from .direct_gaussian_evidence import (
-    DIRECT_EVIDENCE_ABI_VERSION,
     DIRECT_EVIDENCE_BACKEND_ID,
     DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
     DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
-    DIRECT_EVIDENCE_SOURCE_REVISION,
     DepthMomentRasterUnavailableError,
     DirectEvidenceRasterization,
     rasterize_projected_authoritative_rgb,
@@ -45,10 +43,7 @@ from .generated_views import (
     SeedRegion,
 )
 from .masking import MaskSessionError, RegisteredFrame
-from .renderer_runtime import (
-    EXPECTED_RENDERER_LOCK_DIGEST,
-    current_renderer_runtime,
-)
+from .renderer_runtime import current_renderer_runtime
 from .spatial_scene_working_set import SpatialWorkingSet
 
 
@@ -674,7 +669,6 @@ class LockedGsplatBackend:
             width=width,
             height=height,
         )
-        service_rgb = direct_rgb.rgb.unsqueeze(0)
         raster_alpha = direct_rgb.alpha.unsqueeze(0)
 
         contributor_ids: Any | None = None
@@ -1956,6 +1950,14 @@ class GsplatContributorRenderer:
                 code="directEvidenceRenderWorkingSetMismatch",
             )
         depth_moment_source_failed = False
+        depth_moments_enabled = False
+
+        def abandon_depth_moments() -> None:
+            if depth_moment_consumer is not None:
+                depth_moment_consumer.abandon(
+                    reason="depth-moment-runtime-unavailable"
+                )
+
         try:
             import torch
 
@@ -1963,6 +1965,15 @@ class GsplatContributorRenderer:
             pixel_weights = typed_pixel_evidence_weights(
                 dict(stable_mask_artifact), dict(policy), torch
             )
+            if depth_moment_consumer is not None:
+                depth_moments_enabled = depth_moment_consumer.prepare_execution(
+                    admission=admission,
+                    render_stable_ids_by_projected_row=stable_ids,
+                    evidence_gaussian_count=len(admission["stableGaussianIds"]),
+                    width=width,
+                    height=height,
+                )
+                depth_moment_source_failed = not depth_moments_enabled
             try:
                 rasterized = self.backend.rasterize_direct_evidence_typed(
                     snapshot=scene_snapshot,
@@ -1973,7 +1984,7 @@ class GsplatContributorRenderer:
                     evidence_stable_ids=admission["stableGaussianIds"],
                     target_stable_ids=target_stable_ids,
                     pixel_weights=pixel_weights,
-                    depth_moments_enabled=depth_moment_consumer is not None,
+                    depth_moments_enabled=depth_moments_enabled,
                 )
             except DepthMomentRasterUnavailableError as moment_error:
                 if depth_moment_consumer is None:
@@ -1983,13 +1994,6 @@ class GsplatContributorRenderer:
                     render_stable_ids_by_projected_row=stable_ids,
                     width=width,
                     height=height,
-                    direct_evidence_abi_version=DIRECT_EVIDENCE_ABI_VERSION,
-                    direct_evidence_source_revision=(
-                        DIRECT_EVIDENCE_SOURCE_REVISION
-                    ),
-                    direct_evidence_runtime_build_id=(
-                        DIRECT_EVIDENCE_RUNTIME_BUILD_ID
-                    ),
                     error=moment_error,
                 )
                 depth_moment_source_failed = True
@@ -2005,22 +2009,30 @@ class GsplatContributorRenderer:
                     depth_moments_enabled=False,
                 )
         except ReferenceGaussianEvidenceError:
+            abandon_depth_moments()
             raise
         except Exception as error:
+            abandon_depth_moments()
             failure_code = getattr(error, "code", type(error).__name__)
             raise ReferenceGaussianEvidenceError(
                 f"AI Select Direct Evidence rendering failed ({failure_code}).",
                 code="directEvidenceRenderFailed",
                 cause_code=str(failure_code),
             ) from error
-        image_png = _rgb_png(rasterized.service_rgb_bytes, width, height)
+        try:
+            image_png = _rgb_png(rasterized.service_rgb_bytes, width, height)
+        except Exception:
+            abandon_depth_moments()
+            raise
         rgb_digest = f"sha256:{hashlib.sha256(image_png).hexdigest()}"
         if rgb_digest != admission["rgbDigest"]:
+            abandon_depth_moments()
             raise ReferenceGaussianEvidenceError(
                 "AI Select Direct Evidence RGB digest does not match the Stable Mask binding.",
                 code="directEvidenceRgbMismatch",
             )
         if rasterized.boundary_contact_stable_gaussian_ids:
+            abandon_depth_moments()
             contacts = ",".join(
                 str(value)
                 for value in rasterized.boundary_contact_stable_gaussian_ids[:32]
@@ -2051,6 +2063,7 @@ class GsplatContributorRenderer:
                 },
             )
         except GaussianEvidenceContractError as error:
+            abandon_depth_moments()
             raise ReferenceGaussianEvidenceError(
                 "AI Select Direct Evidence produced incomplete P/N/V.",
                 code="directEvidenceArtifactInvalid",
@@ -2066,13 +2079,11 @@ class GsplatContributorRenderer:
                     rasterized.telemetry.depth_moment_buffer_bytes
                 ),
                 peak_vram_bytes=rasterized.telemetry.peak_vram_bytes,
-                direct_evidence_abi_version=DIRECT_EVIDENCE_ABI_VERSION,
-                direct_evidence_source_revision=(
-                    DIRECT_EVIDENCE_SOURCE_REVISION
+                projected_gaussian_count=(
+                    rasterized.telemetry.projected_gaussian_count
                 ),
-                direct_evidence_runtime_build_id=(
-                    DIRECT_EVIDENCE_RUNTIME_BUILD_ID
-                ),
+                evidence_gaussian_count=len(admission["stableGaussianIds"]),
+                intersection_count=rasterized.telemetry.intersection_count,
             )
         return artifact
 

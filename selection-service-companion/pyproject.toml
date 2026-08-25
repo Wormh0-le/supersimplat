@@ -35,6 +35,8 @@ packages = ["src/selection_service_companion"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/selection_service_companion/cuda/direct_evidence.cu" = "selection_service_companion/cuda/direct_evidence.cu"
+"src/selection_service_companion/qualifications/depth-moment-cwed-foundation-cc89-v1.json" = "selection_service_companion/qualifications/depth-moment-cwed-foundation-cc89-v1.json"
+"uv.lock" = "selection_service_companion/qualifications/uv.lock"
 
 [tool.uv.sources]
 gsplat = { git = "https://github.com/nerfstudio-project/gsplat.git", rev = "77ab983ffe43420b2131669cb35776b883ca4c3c" }

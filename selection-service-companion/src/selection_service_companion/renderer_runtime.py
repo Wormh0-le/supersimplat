@@ -8,6 +8,7 @@ import importlib.metadata
 import json
 from pathlib import Path
 import platform
+import re
 import sys
 from typing import Literal, Protocol
 
@@ -66,6 +67,9 @@ class GsplatRuntimeFacts:
     gsplat_distribution_path: Path | None = None
     torch_inspection_error: str | None = None
     gsplat_inspection_error: str | None = None
+    gpu_name: str | None = None
+    compute_capability: str | None = None
+    driver_version: str | None = None
 
 
 class GsplatRuntimeInspection(Protocol):
@@ -94,6 +98,8 @@ class CurrentProcessGsplatInspection:
         cuda_available = False
         torch_package_path: Path | None = None
         torch_inspection_error: str | None = None
+        gpu_name: str | None = None
+        compute_capability: str | None = None
         try:
             torch = importlib.import_module("torch")
             module_path = getattr(torch, "__file__", None)
@@ -107,6 +113,14 @@ class CurrentProcessGsplatInspection:
             )
             is_available = getattr(getattr(torch, "cuda", None), "is_available", None)
             cuda_available = bool(is_available()) if callable(is_available) else False
+            if cuda_available:
+                get_name = getattr(torch.cuda, "get_device_name", None)
+                if callable(get_name):
+                    gpu_name = str(get_name())
+                get_capability = getattr(torch.cuda, "get_device_capability", None)
+                if callable(get_capability):
+                    major, minor = get_capability()
+                    compute_capability = f"{major}.{minor}"
         # Optional binary packages can fail with extension-specific exceptions.
         # Readiness must fail closed instead of taking down /capabilities.
         except Exception as error:
@@ -143,6 +157,20 @@ class CurrentProcessGsplatInspection:
         except Exception as error:
             gsplat_inspection_error = type(error).__name__
 
+        driver_version: str | None = None
+        try:
+            version_text = Path("/proc/driver/nvidia/version").read_text(
+                encoding="utf-8"
+            )
+            match = re.search(
+                r"Kernel Module(?: for x86_64)?\s+([0-9.]+)",
+                version_text,
+            )
+            if match is not None:
+                driver_version = match.group(1)
+        except OSError:
+            driver_version = None
+
         return GsplatRuntimeFacts(
             environment_prefix=Path(sys.prefix),
             operating_system=platform.system(),
@@ -158,6 +186,9 @@ class CurrentProcessGsplatInspection:
             gsplat_distribution_path=gsplat_distribution_path,
             torch_inspection_error=torch_inspection_error,
             gsplat_inspection_error=gsplat_inspection_error,
+            gpu_name=gpu_name,
+            compute_capability=compute_capability,
+            driver_version=driver_version,
         )
 
 

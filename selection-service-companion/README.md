@@ -338,6 +338,41 @@ prediction semantics and per-prompt diagnostics; a raw model score orders the
 preview but never auto-confirms a Mask. The existing Ticket 07A seam performs
 any later ranking and publishes the bound `ProposalDecision`.
 
+## Qualify the internal CWED foundation
+
+Issue #53 freezes the Companion-internal M0/M1/M2 → CWED/variance readout on
+the locked renderer runtime. Regenerate the checked qualification record from
+the repository root with:
+
+```sh
+rtk uv run --project selection-service-companion --locked --extra renderer \
+  --python 3.12 python \
+  selection-service-companion/scripts/benchmark_v2a4_cwed_qualification.py
+```
+
+The checked record is
+`src/selection_service_companion/qualifications/depth-moment-cwed-foundation-cc89-v1.json`
+(relative to this package). Its frozen envelope is NVIDIA GeForce RTX 4090 D,
+compute capability 8.9, CUDA 12.8, at most 1008×1008 pixels, 16,384 Render and
+Evidence Working Set Gaussians, 289,072 intersections, and one internal
+consumer at a time. The frozen minimum M0 is `1/255`: the predeclared
+selection rule reuses the existing minimum accepted alpha contribution instead
+of tuning a threshold against scene truth. The record binds the Direct Evidence ABI/source/runtime,
+renderer lock, gsplat commit, Camera manifest, Working Set tokens, moment
+policy, semantic parity digests/tolerances, latency, cache-integrity transfer
+and SHA-256 cost, peak VRAM, compiler resources, OOM, allocation-failure, and
+cancellation results. Allocation failure and cancellation are injected against
+an exact identity with an existing valid readout; the gate requires that
+readout and the RGB/P/N/V/boundary digest to remain unchanged.
+
+`load_internal_depth_moment_capability()` hashes the governing `uv.lock` and
+fails unavailable when the actual process, lock, GPU/driver, runtime, or
+envelope identity differs. Work outside the envelope reruns or remains on
+ordinary single-N production Direct Evidence without a CWED readout; it never
+reduces resolution or weakens pre-reuse tensor-integrity checks. This internal
+qualification does not enter `/capabilities`, the Browser Runtime Profile,
+Gaussian Evidence, Production Identity, or Candidate identity.
+
 Run the opt-in locked real-model check with the operator-owned SAM 3 Image
 checkpoint and CUDA:
 

@@ -182,6 +182,21 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
         self.assertNotIn("maskConstraints", provider["promptCapabilities"])
         self.assertNotIn("text", provider["promptCapabilities"])
 
+    def test_internal_cwed_qualification_does_not_enter_browser_runtime_profile(
+        self,
+    ) -> None:
+        self.install_model("sha256:historical-one")
+
+        result = self.state.runtime_profile_capabilities([EDITOR_ORIGIN])
+        serialized = json.dumps(result, sort_keys=True).lower()
+
+        for forbidden in ("cwed", "depthmoment", "depth_moment"):
+            self.assertNotIn(forbidden, serialized)
+        self.assertNotIn(
+            "aiSelectDepthMoments",
+            result["supportedOperations"],
+        )
+
     def test_current_adapter_capability_advertises_rgb_and_opaque_refinement(
         self,
     ) -> None:

@@ -15,6 +15,7 @@ import math
 from threading import Lock
 from typing import Any, Final, Literal, Mapping, Sequence
 
+from .depth_moment_qualification import DepthMomentInternalCapability
 from .depth_moments import (
     DepthMomentValidityPolicy,
     derive_depth_moment_readout,
@@ -23,13 +24,15 @@ from .depth_moments import (
 from .digests import canonical_json_digest
 
 
-DEPTH_MOMENT_READOUT_SCHEMA_ID: Final = "depth-moment-readout/internal-v1"
+DEPTH_MOMENT_READOUT_SCHEMA_ID: Final = "depth-moment-readout/internal-v2"
 _PROJECTED_ROW_MAPPING_SCHEMA_ID: Final = (
     "direct-evidence-projected-row-mapping/internal-v1"
 )
 _DIGEST_PREFIX: Final = "sha256:"
 _DIGEST_LENGTH: Final = len(_DIGEST_PREFIX) + 64
 _MAX_STABLE_GAUSSIAN_ID: Final = (1 << 32) - 1
+_CONSUMER_PERMIT_LOCK = Lock()
+_ACTIVE_CONSUMER_COUNT = 0
 _ADMISSION_KEYS: Final = {
     "requestBinding",
     "targetSplatId",
@@ -207,6 +210,9 @@ class DepthMomentReadoutIdentity:
     direct_evidence_abi_version: str
     direct_evidence_source_revision: str
     direct_evidence_runtime_build_id: str
+    qualification_id: str
+    qualification_digest: str
+    execution_envelope_digest: str
     moment_policy_id: str
     moment_minimum_m0: float
     width: int
@@ -223,6 +229,7 @@ class DepthMomentReadoutIdentity:
             ("target_splat_id", self.target_splat_id),
             ("view_id", self.view_id),
             ("direct_evidence_abi_version", self.direct_evidence_abi_version),
+            ("qualification_id", self.qualification_id),
             ("moment_policy_id", self.moment_policy_id),
         ):
             _require_non_empty(value, name)
@@ -237,6 +244,8 @@ class DepthMomentReadoutIdentity:
             ("projected_row_mapping_digest", self.projected_row_mapping_digest),
             ("direct_evidence_source_revision", self.direct_evidence_source_revision),
             ("direct_evidence_runtime_build_id", self.direct_evidence_runtime_build_id),
+            ("qualification_digest", self.qualification_digest),
+            ("execution_envelope_digest", self.execution_envelope_digest),
         ):
             _require_digest(value, name)
         if (
@@ -276,6 +285,11 @@ class DepthMomentReadoutIdentity:
                 "abiVersion": self.direct_evidence_abi_version,
                 "sourceRevision": self.direct_evidence_source_revision,
                 "runtimeBuildId": self.direct_evidence_runtime_build_id,
+            },
+            "qualification": {
+                "qualificationId": self.qualification_id,
+                "qualificationDigest": self.qualification_digest,
+                "executionEnvelopeDigest": self.execution_envelope_digest,
             },
             "momentPolicy": {
                 "policyId": self.moment_policy_id,
@@ -330,28 +344,34 @@ def create_depth_moment_readout_identity(
     admission: Mapping[str, object],
     *,
     render_stable_ids_by_projected_row: Sequence[int],
-    policy: DepthMomentValidityPolicy,
+    capability: DepthMomentInternalCapability,
     width: int,
     height: int,
-    direct_evidence_abi_version: str,
-    direct_evidence_source_revision: str,
-    direct_evidence_runtime_build_id: str,
 ) -> DepthMomentReadoutIdentity:
-    """Bind one expected readout to an exact admitted Direct Evidence render."""
+    """Bind one expected readout to an exact qualified Direct Evidence render."""
 
     if not isinstance(admission, Mapping) or set(admission) != _ADMISSION_KEYS:
         raise DepthMomentReadoutError(
             "Depth-moment identity requires the exact admitted Evidence keys."
         )
-    if not isinstance(policy, DepthMomentValidityPolicy):
+    if (
+        not isinstance(capability, DepthMomentInternalCapability)
+        or capability.status != "ready"
+        or capability.policy is None
+        or capability.envelope is None
+    ):
         raise DepthMomentReadoutError(
-            "Depth-moment identity requires a versioned validity policy."
+            "Depth-moment identity requires a ready qualified capability."
         )
+    policy = capability.policy
     if admission.get("evidenceBackendKind") != "production-direct":
         raise DepthMomentReadoutError(
             "Depth moments may bind only production Direct Evidence."
         )
-    if admission.get("runtimeBuildId") != direct_evidence_runtime_build_id:
+    if (
+        admission.get("runtimeBuildId")
+        != capability.direct_evidence_runtime_build_id
+    ):
         raise DepthMomentReadoutError(
             "Depth-moment runtime identity does not match Direct Evidence admission."
         )
@@ -371,9 +391,18 @@ def create_depth_moment_readout_identity(
         projected_row_mapping_digest=projected_row_mapping_digest(
             render_stable_ids_by_projected_row
         ),
-        direct_evidence_abi_version=direct_evidence_abi_version,
-        direct_evidence_source_revision=direct_evidence_source_revision,
-        direct_evidence_runtime_build_id=direct_evidence_runtime_build_id,
+        direct_evidence_abi_version=capability.direct_evidence_abi_version,
+        direct_evidence_source_revision=(
+            capability.direct_evidence_source_revision
+        ),
+        direct_evidence_runtime_build_id=(
+            capability.direct_evidence_runtime_build_id
+        ),
+        qualification_id=capability.qualification_id,
+        qualification_digest=capability.qualification_digest,
+        execution_envelope_digest=canonical_json_digest(
+            capability.envelope.as_dict()
+        ),
         moment_policy_id=policy.policy_id,
         moment_minimum_m0=float(policy.minimum_m0),
         width=width,
@@ -422,6 +451,9 @@ class DepthMomentTelemetry:
     depth_moment_buffer_bytes: int
     peak_vram_bytes: int
     owned_tensor_buffer_bytes: int = 0
+    projected_gaussian_count: int = 0
+    evidence_gaussian_count: int = 0
+    intersection_count: int = 0
 
     def __post_init__(self) -> None:
         _require_nonnegative_integer(
@@ -431,12 +463,22 @@ class DepthMomentTelemetry:
         _require_nonnegative_integer(
             self.owned_tensor_buffer_bytes, "owned_tensor_buffer_bytes"
         )
+        _require_nonnegative_integer(
+            self.projected_gaussian_count, "projected_gaussian_count"
+        )
+        _require_nonnegative_integer(
+            self.evidence_gaussian_count, "evidence_gaussian_count"
+        )
+        _require_nonnegative_integer(self.intersection_count, "intersection_count")
 
     def as_dict(self) -> dict[str, int]:
         return {
             "depthMomentBufferBytes": self.depth_moment_buffer_bytes,
             "ownedTensorBufferBytes": self.owned_tensor_buffer_bytes,
             "peakVramBytes": self.peak_vram_bytes,
+            "projectedGaussianCount": self.projected_gaussian_count,
+            "evidenceGaussianCount": self.evidence_gaussian_count,
+            "intersectionCount": self.intersection_count,
         }
 
 
@@ -526,6 +568,9 @@ class DepthMomentReadoutRecord:
             depth_moment_buffer_bytes=telemetry.depth_moment_buffer_bytes,
             owned_tensor_buffer_bytes=owned_tensor_buffer_bytes,
             peak_vram_bytes=measured_peak_vram_bytes,
+            projected_gaussian_count=telemetry.projected_gaussian_count,
+            evidence_gaussian_count=telemetry.evidence_gaussian_count,
+            intersection_count=telemetry.intersection_count,
         )
         payload = {
             "schemaId": DEPTH_MOMENT_READOUT_SCHEMA_ID,
@@ -610,6 +655,12 @@ class _DepthMomentCacheEntry:
     readout: DepthMomentReadoutRecord | None
 
 
+@dataclass(frozen=True)
+class _ValidatedDepthMomentPublish:
+    readout: DepthMomentReadoutRecord
+    validation_digest: str
+
+
 class DepthMomentReadoutCache:
     """Process-local cache that never remaps a readout across identities."""
 
@@ -617,16 +668,37 @@ class DepthMomentReadoutCache:
         self._entries: dict[tuple[str, str], _DepthMomentCacheEntry] = {}
         self._lock = Lock()
 
-    def publish(
+    def validate_for_publish(
         self,
         readout: DepthMomentReadoutRecord,
-        *,
-        expected_recomputed_digest: str | None = None,
-    ) -> DepthMomentLookupResult:
+    ) -> _ValidatedDepthMomentPublish:
+        """Perform expensive tensor-integrity proof before the commit lock."""
+
         if not isinstance(readout, DepthMomentReadoutRecord) or not readout.validate():
             raise DepthMomentReadoutError(
                 "Only a complete digest-valid depth-moment readout may be cached."
             )
+        return _ValidatedDepthMomentPublish(
+            readout=readout,
+            validation_digest=readout.readout_digest,
+        )
+
+    def publish_validated(
+        self,
+        validated: _ValidatedDepthMomentPublish,
+        *,
+        expected_recomputed_digest: str | None = None,
+    ) -> DepthMomentLookupResult:
+        """Atomically publish a readout whose full tensor proof just passed."""
+
+        if (
+            not isinstance(validated, _ValidatedDepthMomentPublish)
+            or validated.validation_digest != validated.readout.readout_digest
+        ):
+            raise DepthMomentReadoutError(
+                "Depth-moment publication requires a current validation token."
+            )
+        readout = validated.readout
         if expected_recomputed_digest is not None:
             _require_digest(
                 expected_recomputed_digest, "expected_recomputed_digest"
@@ -658,11 +730,24 @@ class DepthMomentReadoutCache:
             readout=readout,
         )
 
+    def publish(
+        self,
+        readout: DepthMomentReadoutRecord,
+        *,
+        expected_recomputed_digest: str | None = None,
+    ) -> DepthMomentLookupResult:
+        validated = self.validate_for_publish(readout)
+        return self.publish_validated(
+            validated,
+            expected_recomputed_digest=expected_recomputed_digest,
+        )
+
     def mark_unavailable(
         self,
         identity: DepthMomentReadoutIdentity,
         *,
         reason: str,
+        preserve_available: bool = False,
     ) -> DepthMomentLookupResult:
         if not isinstance(identity, DepthMomentReadoutIdentity):
             raise DepthMomentReadoutError(
@@ -676,7 +761,15 @@ class DepthMomentReadoutCache:
             readout=None,
         )
         with self._lock:
-            self._entries[identity.slot] = entry
+            current = self._entries.get(identity.slot)
+            if not (
+                preserve_available
+                and current is not None
+                and current.identity == identity
+                and current.status == "available"
+                and current.readout is not None
+            ):
+                self._entries[identity.slot] = entry
         return DepthMomentLookupResult(status="unavailable", reason=reason)
 
     def lookup(
@@ -791,12 +884,20 @@ def _readout_failure_reason(error: Exception) -> str:
 
 @dataclass
 class DepthMomentConsumerRegistration:
-    """Internal opt-in consumer for one Direct Evidence moment operation."""
+    """Internal opt-in consumer for one qualified Direct Evidence operation."""
 
     cache: DepthMomentReadoutCache = field(repr=False)
-    policy: DepthMomentValidityPolicy
+    capability: DepthMomentInternalCapability
     expected_recomputed_digest: str | None = None
     _result: DepthMomentLookupResult = field(init=False, repr=False)
+    _prepared_identity: DepthMomentReadoutIdentity | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _cancelled: bool = field(default=False, init=False, repr=False)
+    _terminal: bool = field(default=False, init=False, repr=False)
+    _permit_held: bool = field(default=False, init=False, repr=False)
     _result_lock: Lock = field(default_factory=Lock, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -804,9 +905,14 @@ class DepthMomentConsumerRegistration:
             raise DepthMomentReadoutError(
                 "Depth-moment consumer requires a process-local cache."
             )
-        if not isinstance(self.policy, DepthMomentValidityPolicy):
+        if (
+            not isinstance(self.capability, DepthMomentInternalCapability)
+            or self.capability.status != "ready"
+            or self.capability.policy is None
+            or self.capability.envelope is None
+        ):
             raise DepthMomentReadoutError(
-                "Depth-moment consumer requires a versioned policy."
+                "Depth-moment consumer requires a ready qualified capability."
             )
         if self.expected_recomputed_digest is not None:
             _require_digest(
@@ -819,6 +925,15 @@ class DepthMomentConsumerRegistration:
         )
 
     @property
+    def policy(self) -> DepthMomentValidityPolicy:
+        policy = self.capability.policy
+        if policy is None:  # Guarded by construction; retained for type narrowing.
+            raise DepthMomentReadoutError(
+                "Depth-moment capability has no qualified policy."
+            )
+        return policy
+
+    @property
     def result(self) -> DepthMomentLookupResult:
         with self._result_lock:
             return self._result
@@ -826,10 +941,79 @@ class DepthMomentConsumerRegistration:
     def _record_result(
         self,
         result: DepthMomentLookupResult,
+        *,
+        terminal: bool = False,
     ) -> DepthMomentLookupResult:
         with self._result_lock:
             self._result = result
+            self._terminal = self._terminal or terminal
+        if terminal:
+            self._release_consumer_permit()
         return result
+
+    def _acquire_consumer_permit_locked(self) -> bool:
+        """Acquire capacity while the caller holds the registration state lock."""
+
+        global _ACTIVE_CONSUMER_COUNT
+
+        envelope = self.capability.envelope
+        if envelope is None:
+            return False
+        with _CONSUMER_PERMIT_LOCK:
+            if _ACTIVE_CONSUMER_COUNT >= envelope.max_concurrent_consumers:
+                return False
+            _ACTIVE_CONSUMER_COUNT += 1
+            self._permit_held = True
+            return True
+
+    def _release_consumer_permit(self) -> None:
+        global _ACTIVE_CONSUMER_COUNT
+
+        with _CONSUMER_PERMIT_LOCK:
+            if not self._permit_held:
+                return
+            self._permit_held = False
+            _ACTIVE_CONSUMER_COUNT -= 1
+
+    def cancel(self) -> DepthMomentLookupResult:
+        """Cancel before publication; a completed readout remains authoritative."""
+
+        with self._result_lock:
+            if self._terminal:
+                return self._result
+            self._cancelled = True
+            self._terminal = True
+            identity = self._prepared_identity
+            result = DepthMomentLookupResult(
+                status="unavailable",
+                reason="depth-moment-cancelled",
+            )
+            self._result = result
+        if identity is not None:
+            result = self.cache.mark_unavailable(
+                identity,
+                reason="depth-moment-cancelled",
+                preserve_available=True,
+            )
+            with self._result_lock:
+                self._result = result
+        self._release_consumer_permit()
+        return result
+
+    def abandon(self, *, reason: str) -> DepthMomentLookupResult:
+        """Release an unpublished operation after a surrounding render failure."""
+
+        _require_non_empty(reason, "reason")
+        with self._result_lock:
+            if self._terminal:
+                return self._result
+            identity = self._prepared_identity
+        if identity is not None:
+            return self.unavailable(identity, reason=reason)
+        return self._record_result(
+            DepthMomentLookupResult(status="unavailable", reason=reason),
+            terminal=True,
+        )
 
     def _create_identity(
         self,
@@ -838,22 +1022,66 @@ class DepthMomentConsumerRegistration:
         render_stable_ids_by_projected_row: Sequence[int],
         width: int,
         height: int,
-        direct_evidence_abi_version: str,
-        direct_evidence_source_revision: str,
-        direct_evidence_runtime_build_id: str,
     ) -> DepthMomentReadoutIdentity:
         return create_depth_moment_readout_identity(
             admission,
             render_stable_ids_by_projected_row=(
                 render_stable_ids_by_projected_row
             ),
-            policy=self.policy,
+            capability=self.capability,
             width=width,
             height=height,
-            direct_evidence_abi_version=direct_evidence_abi_version,
-            direct_evidence_source_revision=direct_evidence_source_revision,
-            direct_evidence_runtime_build_id=direct_evidence_runtime_build_id,
         )
+
+    def prepare_execution(
+        self,
+        *,
+        admission: Mapping[str, object],
+        render_stable_ids_by_projected_row: Sequence[int],
+        evidence_gaussian_count: int,
+        width: int,
+        height: int,
+    ) -> bool:
+        """Authorize moment allocation only inside the qualified envelope."""
+
+        with self._result_lock:
+            if self._terminal:
+                return False
+        try:
+            identity = self._create_identity(
+                admission=admission,
+                render_stable_ids_by_projected_row=(
+                    render_stable_ids_by_projected_row
+                ),
+                width=width,
+                height=height,
+            )
+        except Exception as error:
+            self._identity_failure(error)
+            return False
+        if not self.capability.supports_execution(
+            width=width,
+            height=height,
+            render_gaussian_count=len(render_stable_ids_by_projected_row),
+            evidence_gaussian_count=evidence_gaussian_count,
+        ):
+            self.unavailable(
+                identity,
+                reason="depth-moment-envelope-unavailable",
+            )
+            return False
+        with self._result_lock:
+            if self._terminal or self._cancelled:
+                return False
+            self._prepared_identity = identity
+            permitted = self._acquire_consumer_permit_locked()
+        if not permitted:
+            self.unavailable(
+                identity,
+                reason="depth-moment-capacity-unavailable",
+            )
+            return False
+        return True
 
     def _identity_failure(
         self,
@@ -864,10 +1092,13 @@ class DepthMomentConsumerRegistration:
             if isinstance(error, DepthMomentReadoutError)
             else _readout_failure_reason(error)
         )
-        return self._record_result(DepthMomentLookupResult(
-            status="unavailable",
-            reason=reason,
-        ))
+        return self._record_result(
+            DepthMomentLookupResult(
+                status="unavailable",
+                reason=reason,
+            ),
+            terminal=True,
+        )
 
     def consume_complete(
         self,
@@ -879,10 +1110,28 @@ class DepthMomentConsumerRegistration:
         height: int,
         depth_moment_buffer_bytes: int,
         peak_vram_bytes: int,
-        direct_evidence_abi_version: str,
-        direct_evidence_source_revision: str,
-        direct_evidence_runtime_build_id: str,
+        projected_gaussian_count: int | None = None,
+        evidence_gaussian_count: int | None = None,
+        intersection_count: int | None = None,
     ) -> DepthMomentLookupResult:
+        with self._result_lock:
+            if self._terminal or self._cancelled:
+                return self._result
+            prepared = self._prepared_identity is not None
+        if not prepared and not self.prepare_execution(
+            admission=admission,
+            render_stable_ids_by_projected_row=(
+                render_stable_ids_by_projected_row
+            ),
+            evidence_gaussian_count=(
+                len(admission.get("stableGaussianIds", ()))
+                if evidence_gaussian_count is None
+                else evidence_gaussian_count
+            ),
+            width=width,
+            height=height,
+        ):
+            return self.result
         try:
             identity = self._create_identity(
                 admission=admission,
@@ -891,12 +1140,34 @@ class DepthMomentConsumerRegistration:
                 ),
                 width=width,
                 height=height,
-                direct_evidence_abi_version=direct_evidence_abi_version,
-                direct_evidence_source_revision=direct_evidence_source_revision,
-                direct_evidence_runtime_build_id=direct_evidence_runtime_build_id,
             )
         except Exception as error:
             return self._identity_failure(error)
+        projected_count = (
+            len(render_stable_ids_by_projected_row)
+            if projected_gaussian_count is None
+            else projected_gaussian_count
+        )
+        evidence_count = (
+            len(admission.get("stableGaussianIds", ()))
+            if evidence_gaussian_count is None
+            else evidence_gaussian_count
+        )
+        intersections = 0 if intersection_count is None else intersection_count
+        if (
+            projected_count != len(render_stable_ids_by_projected_row)
+            or not self.capability.supports_execution(
+                width=width,
+                height=height,
+                render_gaussian_count=len(render_stable_ids_by_projected_row),
+                evidence_gaussian_count=evidence_count,
+                intersection_count=intersections,
+            )
+        ):
+            return self.unavailable(
+                identity,
+                reason="depth-moment-envelope-unavailable",
+            )
         try:
             readout = DepthMomentReadoutRecord(
                 identity=identity,
@@ -905,20 +1176,32 @@ class DepthMomentConsumerRegistration:
                 telemetry=DepthMomentTelemetry(
                     depth_moment_buffer_bytes=depth_moment_buffer_bytes,
                     peak_vram_bytes=peak_vram_bytes,
+                    projected_gaussian_count=projected_count,
+                    evidence_gaussian_count=evidence_count,
+                    intersection_count=intersections,
                 ),
             )
-            result = self.cache.publish(
-                readout,
-                expected_recomputed_digest=self.expected_recomputed_digest,
-            )
+            validated = self.cache.validate_for_publish(readout)
+            with self._result_lock:
+                if self._terminal or self._cancelled:
+                    return self._result
+                result = self.cache.publish_validated(
+                    validated,
+                    expected_recomputed_digest=self.expected_recomputed_digest,
+                )
+                self._result = result
+                self._terminal = True
+            self._release_consumer_permit()
+            return result
         except Exception as error:
             # Preserve operational categories while keeping shadow failures
             # subordinate to valid production RGB/P/N/V publication.
             result = self.cache.mark_unavailable(
                 identity,
                 reason=_readout_failure_reason(error),
+                preserve_available=True,
             )
-        return self._record_result(result)
+        return self._record_result(result, terminal=True)
 
     def consume_source_failure(
         self,
@@ -927,9 +1210,6 @@ class DepthMomentConsumerRegistration:
         render_stable_ids_by_projected_row: Sequence[int],
         width: int,
         height: int,
-        direct_evidence_abi_version: str,
-        direct_evidence_source_revision: str,
-        direct_evidence_runtime_build_id: str,
         error: Exception,
     ) -> DepthMomentLookupResult:
         """Bind an optional source failure without publishing partial moments."""
@@ -942,9 +1222,6 @@ class DepthMomentConsumerRegistration:
                 ),
                 width=width,
                 height=height,
-                direct_evidence_abi_version=direct_evidence_abi_version,
-                direct_evidence_source_revision=direct_evidence_source_revision,
-                direct_evidence_runtime_build_id=direct_evidence_runtime_build_id,
             )
         except Exception as identity_error:
             return self._identity_failure(identity_error)
@@ -960,7 +1237,12 @@ class DepthMomentConsumerRegistration:
         reason: str,
     ) -> DepthMomentLookupResult:
         return self._record_result(
-            self.cache.mark_unavailable(identity, reason=reason)
+            self.cache.mark_unavailable(
+                identity,
+                reason=reason,
+                preserve_available=True,
+            ),
+            terminal=True,
         )
 
 

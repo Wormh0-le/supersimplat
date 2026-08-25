@@ -99,13 +99,15 @@ def _is_capacity_failure(error: Exception) -> bool:
 
 @dataclass(frozen=True)
 class DirectEvidenceTelemetry:
-    """Per-view buffers and observed allocator peak for the Direct operation."""
+    """Per-view buffers, work counts, and observed Direct allocator peak."""
 
     evidence_buffer_bytes: int
     pixel_weight_buffer_bytes: int
     depth_moment_buffer_bytes: int
     boundary_buffer_bytes: int
     peak_vram_bytes: int
+    projected_gaussian_count: int
+    intersection_count: int
 
 
 @dataclass(frozen=True)
@@ -628,6 +630,8 @@ def rasterize_projected_authoritative_rgb(
             ),
             boundary_buffer_bytes=12,
             peak_vram_bytes=peak,
+            projected_gaussian_count=int(means2d.shape[1]),
+            intersection_count=int(meta["flatten_ids"].numel()),
         ),
     )
 
@@ -780,6 +784,8 @@ def rasterize_projected_direct_evidence(
             ),
             boundary_buffer_bytes=boundary_capacity * 4 + 8,
             peak_vram_bytes=peak,
+            projected_gaussian_count=int(means2d.shape[1]),
+            intersection_count=int(meta["flatten_ids"].numel()),
         ),
     )
 

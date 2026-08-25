@@ -15,6 +15,11 @@ from PIL import Image
 
 from selection_service_companion.anchor_timing import AnchorServerTiming
 from selection_service_companion.camera_binding import camera_binding_digest
+from selection_service_companion.depth_moment_qualification import (
+    QUALIFIED_DEPTH_MOMENT_CAPABILITY_ID,
+    DepthMomentExecutionEnvelope,
+    DepthMomentInternalCapability,
+)
 from selection_service_companion.depth_moment_readout import (
     DepthMomentConsumerRegistration,
     DepthMomentReadoutCache,
@@ -61,6 +66,31 @@ from selection_service_companion.reference_gaussian_evidence_aggregation import 
     default_reference_aggregation_policy,
 )
 from selection_service_companion.state import CompanionState
+
+
+def qualified_depth_moment_capability(
+    policy: DepthMomentValidityPolicy,
+) -> DepthMomentInternalCapability:
+    return DepthMomentInternalCapability(
+        status="ready",
+        reason="test-qualified",
+        qualification_id=QUALIFIED_DEPTH_MOMENT_CAPABILITY_ID,
+        qualification_digest="sha256:" + ("9" * 64),
+        policy=policy,
+        envelope=DepthMomentExecutionEnvelope(
+            compute_capabilities=("8.9",),
+            max_width=4096,
+            max_height=4096,
+            max_pixels=4096 * 4096,
+            max_render_gaussian_count=65536,
+            max_evidence_gaussian_count=65536,
+            max_intersection_count=1_000_000,
+            max_concurrent_consumers=1,
+        ),
+        direct_evidence_abi_version=DIRECT_EVIDENCE_ABI_VERSION,
+        direct_evidence_source_revision=DIRECT_EVIDENCE_SOURCE_REVISION,
+        direct_evidence_runtime_build_id=DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+    )
 
 
 def supported_snapshot() -> dict[str, object]:
@@ -1575,6 +1605,7 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
             policy_id="depth-moment-minimum-m0/renderer-integration-test-v1",
             minimum_m0=0.01,
         )
+        moment_capability = qualified_depth_moment_capability(moment_policy)
         moment_cache = DepthMomentReadoutCache()
         direct = renderer.compute_direct_evidence(
             admission_input=direct_input,
@@ -1585,7 +1616,7 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
             target_stable_ids=[41, 99, 123],
             depth_moment_consumer=DepthMomentConsumerRegistration(
                 cache=moment_cache,
-                policy=moment_policy,
+                capability=moment_capability,
             ),
         )
         admission_result = admit_gaussian_evidence(direct_input)
@@ -1595,12 +1626,9 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
         moment_identity = create_depth_moment_readout_identity(
             admission,
             render_stable_ids_by_projected_row=validate_supported_snapshot(scene),
-            policy=moment_policy,
+            capability=moment_capability,
             width=width,
             height=height,
-            direct_evidence_abi_version=DIRECT_EVIDENCE_ABI_VERSION,
-            direct_evidence_source_revision=DIRECT_EVIDENCE_SOURCE_REVISION,
-            direct_evidence_runtime_build_id=DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
         )
         moment_lookup = moment_cache.lookup(moment_identity)
         self.assertEqual(moment_lookup.status, "available")
@@ -1619,6 +1647,18 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
         )
         self.assertGreater(
             moment_lookup.readout.telemetry.peak_vram_bytes,
+            0,
+        )
+        self.assertEqual(
+            moment_lookup.readout.telemetry.projected_gaussian_count,
+            3,
+        )
+        self.assertEqual(
+            moment_lookup.readout.telemetry.evidence_gaussian_count,
+            3,
+        )
+        self.assertGreater(
+            moment_lookup.readout.telemetry.intersection_count,
             0,
         )
         self.assertNotIn("depthMoments", direct)
@@ -1652,7 +1692,7 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
                 target_stable_ids=[41, 99, 123],
                 depth_moment_consumer=DepthMomentConsumerRegistration(
                     cache=unavailable_cache,
-                    policy=moment_policy,
+                    capability=moment_capability,
                 ),
             )
         for channel in (
@@ -1695,7 +1735,7 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
                 fallback_cache = DepthMomentReadoutCache()
                 fallback_consumer = DepthMomentConsumerRegistration(
                     cache=fallback_cache,
-                    policy=moment_policy,
+                    capability=moment_capability,
                 )
                 with mock.patch.object(
                     renderer.backend,
@@ -1738,7 +1778,7 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
 
         failed_consumer = DepthMomentConsumerRegistration(
             cache=DepthMomentReadoutCache(),
-            policy=moment_policy,
+            capability=moment_capability,
         )
         with mock.patch.object(
             renderer.backend,
@@ -1757,6 +1797,20 @@ class LockedGsplatGpuGoldenTests(unittest.TestCase):
                 )
         self.assertEqual(raised.exception.code, "directEvidenceRenderFailed")
         self.assertEqual(failed_calls, [True])
+        release_probe = DepthMomentConsumerRegistration(
+            cache=DepthMomentReadoutCache(),
+            capability=moment_capability,
+        )
+        self.assertTrue(
+            release_probe.prepare_execution(
+                admission=admission,
+                render_stable_ids_by_projected_row=(41, 99, 123),
+                evidence_gaussian_count=3,
+                width=width,
+                height=height,
+            )
+        )
+        release_probe.cancel()
 
         reference_input = {
             **direct_input,

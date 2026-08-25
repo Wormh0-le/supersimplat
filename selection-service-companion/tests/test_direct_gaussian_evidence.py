@@ -288,6 +288,8 @@ class LockedGpuDirectEvidenceTests(unittest.TestCase):
             [[[0.5, 0.5, 0.5]]],
         )
         self.assertEqual(enabled.telemetry.depth_moment_buffer_bytes, 12)
+        self.assertEqual(enabled.telemetry.projected_gaussian_count, 1)
+        self.assertEqual(enabled.telemetry.intersection_count, 1)
         self.assertGreater(enabled.telemetry.peak_vram_bytes, 0)
         self.assertEqual(disabled.service_rgb_digest, enabled.service_rgb_digest)
         self.assertEqual(disabled.service_rgb_bytes, enabled.service_rgb_bytes)

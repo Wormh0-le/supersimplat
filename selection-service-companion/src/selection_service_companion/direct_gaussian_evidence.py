@@ -119,6 +119,7 @@ class DirectEvidenceRasterization:
     rgb: Any
     alpha: Any
     depth_moments: Any | None
+    projected_depth_rows: Any
     positive_mass: Any
     negative_mass: Any
     visible_mass: Any
@@ -616,6 +617,7 @@ def rasterize_projected_authoritative_rgb(
         rgb=rgb,
         alpha=alpha,
         depth_moments=depth_moments,
+        projected_depth_rows=projected_depths[0],
         positive_mass=masses[:, 0],
         negative_mass=masses[:, 1],
         visible_mass=masses[:, 2],
@@ -770,6 +772,7 @@ def rasterize_projected_direct_evidence(
         rgb=rgb,
         alpha=alpha,
         depth_moments=depth_moments,
+        projected_depth_rows=projected_depths[0],
         positive_mass=masses[:, 0],
         negative_mass=masses[:, 1],
         visible_mass=masses[:, 2],

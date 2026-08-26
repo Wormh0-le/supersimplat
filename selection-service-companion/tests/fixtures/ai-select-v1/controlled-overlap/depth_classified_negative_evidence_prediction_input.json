@@ -1,0 +1,80 @@
+{
+  "evidenceWorkingSet": {
+    "contextStableGaussianIds": [],
+    "coreStableGaussianIdsSource": "validated-scene-snapshot-order",
+    "policyDigest": "sha256:226bdd3b25bb9733da5c33820f6e4a834b455d7e2202f84299f3ce760f05bc5a",
+    "policyId": "whole-target-splat/pre-ground-truth-v1"
+  },
+  "frameSet": {
+    "horizontalFovDegrees": 42.0,
+    "resolution": [512, 512],
+    "views": [
+      {
+        "cameraToWorld": [
+          [1.0, 0.0, 0.0, 0.0],
+          [0.0, 1.0, 0.0, 0.0],
+          [0.0, 0.0, 1.0, -3.200000047683716],
+          [0.0, 0.0, 0.0, 1.0]
+        ],
+        "stableMaskAreaPixels": 109334,
+        "stableMaskIndex": 0,
+        "status": "accepted",
+        "viewId": "anchor-front"
+      },
+      {
+        "cameraToWorld": [
+          [0.0, 0.0, -1.0, 3.200000047683716],
+          [-0.0, 1.0, 0.0, 0.0],
+          [1.0, 0.0, 0.0, 0.3100000023841858],
+          [0.0, 0.0, 0.0, 1.0]
+        ],
+        "stableMaskAreaPixels": 58085,
+        "stableMaskIndex": 1,
+        "status": "accepted",
+        "viewId": "side-right"
+      },
+      {
+        "cameraToWorld": [
+          [0.0, -0.0, 1.0, -3.200000047683716],
+          [0.0, 1.0, 0.0, 0.0],
+          [-1.0, 0.0, 0.0, 0.3100000023841858],
+          [0.0, 0.0, 0.0, 1.0]
+        ],
+        "stableMaskAreaPixels": 58451,
+        "stableMaskIndex": 2,
+        "status": "accepted",
+        "viewId": "side-left"
+      },
+      {
+        "cameraToWorld": [
+          [-1.0, 0.0, 0.0, 0.0],
+          [0.0, 1.0, 0.0, 0.0],
+          [0.0, 0.0, -1.0, 3.200000047683716],
+          [0.0, 0.0, 0.0, 1.0]
+        ],
+        "stableMaskAreaPixels": 0,
+        "stableMaskIndex": 3,
+        "status": "accepted",
+        "viewId": "rear"
+      }
+    ]
+  },
+  "manifestDigest": "sha256:9fc1cb6cdd135f58f384bc2aee10cc576b3f1cc653e3ceec493d36f43b88c24e",
+  "manifestKind": "depth-classified-negative-evidence-input/experimental-reference-v1",
+  "sceneId": "controlled-front-back-overlap/v2",
+  "sceneSnapshot": {
+    "format": "controlled-overlap-ply/no-class-label-v1",
+    "gaussianCount": 16384,
+    "path": "controlled-overlap/controlled_front_back_overlap_prediction_input.ply",
+    "sha256": "sha256:0f31c4f659bf02f5927f132b38703005f1ffd82a019ee58cff277696b18e51bf"
+  },
+  "schemaVersion": 1,
+  "stableMasks": {
+    "archiveKeys": ["masks"],
+    "dtype": "bool",
+    "path": "controlled-overlap/frame-set-v1/mask-set-v1/masks.npz",
+    "sha256": "sha256:fb117b62a0120dcab60f6ede886daab7d43c188eef5b04c1b08940e07416a261",
+    "shape": [4, 512, 512],
+    "tensorKey": "masks"
+  }
+}

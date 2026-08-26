@@ -1,0 +1,75 @@
+{
+  "configurationDigest": "sha256:14e6b0768dda631df4c823e38462fc84fcf993649f63f4f8cc8e0f16db009eaa",
+  "depthMomentValidityPolicy": {
+    "minimumM0": 0.00392156862745098,
+    "policyId": "depth-moment-minimum-m0/qualified-v1"
+  },
+  "experimentId": "v2ax-depth-classified-negative-evidence/experimental-reference-v1",
+  "measurementPolicy": {
+    "bufferWriteMeasurement": "logical-output-channel-elements",
+    "latencyStatistic": "median",
+    "measuredRuns": 3,
+    "peakResetOwner": "locked-renderer-call",
+    "peakVramMeasurement": "torch.cuda.max_memory_allocated",
+    "peakVramStatistic": "maximum",
+    "totalComposition": "derived-sum-of-component-medians/max-of-component-peaks",
+    "warmupRuns": 1
+  },
+  "predictionProtocol": {
+    "baselineMethodId": "production-single-negative-mass/baseline-v1",
+    "baselineMustBePersistedFirst": true,
+    "groundTruthAccess": "independent-scorer-only"
+  },
+  "recommendationChoices": [
+    "retain-experimental",
+    "propose-promotion-issue",
+    "delete"
+  ],
+  "relationConfigs": [
+    {
+      "absoluteBand": 0.01,
+      "relationId": "front-near-behind/cwed-variance-v1",
+      "relativeCwedBand": 0.01,
+      "schemaVersion": 1,
+      "standardDeviationMultiplier": 1.0
+    }
+  ],
+  "scenes": [
+    {
+      "groundTruthAccess": "independent-scorer-only",
+      "predictionInputManifest": "controlled-overlap/depth_classified_negative_evidence_prediction_input.json",
+      "predictionInputManifestSha256": "sha256:1ec2f022ba44c71f06060ffabdcded40395859307dd6c520efb4c6fcf290bdc9",
+      "sceneId": "controlled-front-back-overlap/v2",
+      "seeds": ["controlled-overlap-seed-1"],
+      "thinOrEdgeGroundTruth": "unavailable-in-fixture"
+    }
+  ],
+  "schemaVersion": 1,
+  "status": "sealed-configuration",
+  "variantMethods": [
+    {
+      "behindCoefficient": 0.0,
+      "frontCoefficient": 1.0,
+      "invalidDepthCoefficient": 1.0,
+      "methodId": "front-near-preserve-behind-suppress/experimental-reference-v1",
+      "nearCoefficient": 1.0,
+      "schemaVersion": 1
+    },
+    {
+      "behindCoefficient": 0.25,
+      "frontCoefficient": 1.0,
+      "invalidDepthCoefficient": 1.0,
+      "methodId": "front-near-preserve-behind-quarter/experimental-reference-v1",
+      "nearCoefficient": 1.0,
+      "schemaVersion": 1
+    },
+    {
+      "behindCoefficient": 0.5,
+      "frontCoefficient": 0.5,
+      "invalidDepthCoefficient": 1.0,
+      "methodId": "near-emphasis-symmetric-half/experimental-reference-v1",
+      "nearCoefficient": 1.0,
+      "schemaVersion": 1
+    }
+  ]
+}

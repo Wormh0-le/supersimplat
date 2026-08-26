@@ -224,6 +224,7 @@ class TypedReferenceRasterization:
     alpha: Any
     contributor_ids: Any
     contributor_weights: Any
+    projected_depth_rows: Any
     stable_ids: Any
     peak_vram_bytes: int | None = None
 
@@ -243,6 +244,7 @@ class _LockedTensorRasterization:
     alpha: Any
     contributor_ids: Any | None
     contributor_weights: Any | None
+    projected_depth_rows: Any
     peak_vram_bytes: int
     contributor_error: MaskSessionError | None = None
 
@@ -581,6 +583,7 @@ class LockedGsplatBackend:
             alpha=rasterized.alpha[0, ..., 0],
             contributor_ids=rasterized.contributor_ids[0],
             contributor_weights=rasterized.contributor_weights[0],
+            projected_depth_rows=rasterized.projected_depth_rows,
             stable_ids=_stable_id_tensor(torch, stable_ids, rasterized.alpha.device),
             peak_vram_bytes=rasterized.peak_vram_bytes,
         )
@@ -703,6 +706,7 @@ class LockedGsplatBackend:
             alpha=raster_alpha,
             contributor_ids=contributor_ids,
             contributor_weights=contributor_weights,
+            projected_depth_rows=direct_rgb.projected_depth_rows,
             peak_vram_bytes=max(
                 int(torch.cuda.max_memory_allocated(device)),
                 direct_rgb.telemetry.peak_vram_bytes,

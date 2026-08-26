@@ -16,15 +16,14 @@ import statistics
 import time
 from typing import Mapping
 
-from selection_service_companion.controlled_overlap_benchmark import (
-    build_controlled_overlap_snapshot,
-)
 from selection_service_companion.depth_classified_negative_evidence_benchmark import (
     BASELINE_METHOD_ID,
+    build_depth_classified_negative_evidence_prediction_snapshot,
     create_baseline_run_record,
     create_experiment_input_identity,
     create_variant_run_record,
     load_depth_classified_negative_evidence_configuration,
+    load_depth_classified_negative_evidence_prediction_input,
     persist_baseline_run_record,
     persist_sidecar_failure,
     persist_variant_run_record,
@@ -32,8 +31,14 @@ from selection_service_companion.depth_classified_negative_evidence_benchmark im
     seal_depth_classified_negative_evidence_prediction,
 )
 from selection_service_companion.depth_classified_negative_evidence_experiment import (
+    ProjectedDepthRowsRecord,
     build_depth_classified_negative_evidence_sidecar,
+    exact_projected_depth_rows_equal,
     replay_depth_classified_negative_evidence,
+)
+from selection_service_companion.depth_moment_qualification import (
+    DepthMomentInternalCapability,
+    load_internal_depth_moment_capability,
 )
 from selection_service_companion.depth_moment_readout import (
     DepthMomentReadoutRecord,
@@ -74,6 +79,9 @@ from selection_service_companion.renderer_runtime import (
 
 SCRIPT_ROOT = Path(__file__).resolve().parent
 COMPANION_ROOT = SCRIPT_ROOT.parent
+_PRODUCTION_MASS_ATOL = 2e-6
+_PRODUCTION_MASS_RTOL = 1e-5
+
 DEFAULT_CONFIGURATION = (
     COMPANION_ROOT
     / "tests/fixtures/ai-select-v1/depth-classified-negative-evidence-v1.json"
@@ -135,6 +143,92 @@ def _tensor_digest(label: str, *tensors: object) -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
+def _benchmark_implementation_digest() -> str:
+    files = (
+        Path(__file__).resolve(),
+        COMPANION_ROOT
+        / "src/selection_service_companion/depth_classified_negative_evidence_benchmark.py",
+        COMPANION_ROOT
+        / "src/selection_service_companion/depth_classified_negative_evidence_experiment.py",
+        COMPANION_ROOT / "src/selection_service_companion/gsplat_renderer.py",
+        COMPANION_ROOT
+        / "src/selection_service_companion/direct_gaussian_evidence.py",
+    )
+    return canonical_json_digest(
+        {path.relative_to(COMPANION_ROOT).as_posix(): _sha256(path) for path in files}
+    )
+
+
+def _buffer_writes(**channels: int) -> dict[str, int]:
+    return {**channels, "total": sum(channels.values())}
+
+
+def _cost_stage(
+    *,
+    stage_id: str,
+    latency_ms: float,
+    start_vram_bytes: int | None,
+    peak_vram_bytes: int | None,
+    end_vram_bytes: int | None,
+    retained_inputs: list[str],
+    retained_outputs: list[str],
+    buffer_writes: dict[str, int],
+    measurement_composition: str = "median-of-whole-stage-runs",
+) -> dict[str, object]:
+    return {
+        "stageId": stage_id,
+        "costKind": "measured-stage",
+        "measurementComposition": measurement_composition,
+        "latencyMilliseconds": latency_ms,
+        "startVramBytes": start_vram_bytes,
+        "peakVramBytes": peak_vram_bytes,
+        "endVramBytes": end_vram_bytes,
+        "retainedInputs": retained_inputs,
+        "retainedOutputsThroughReturn": retained_outputs,
+        "bufferWrites": buffer_writes,
+    }
+
+
+def _cost_measurement(
+    measurement: Mapping[str, object],
+    *,
+    components: list[dict[str, object]],
+    total_stage_id: str,
+) -> dict[str, object]:
+    latency = sum(float(stage["latencyMilliseconds"]) for stage in components)
+    peaks = [
+        int(stage["peakVramBytes"])
+        for stage in components
+        if stage["peakVramBytes"] is not None
+    ]
+    writes = sum(int(stage["bufferWrites"]["total"]) for stage in components)
+    total = {
+        "stageId": total_stage_id,
+        "costKind": "derived-total",
+        "measurementComposition": "sum-of-components/max-of-components",
+        "latencyMilliseconds": latency,
+        "startVramBytes": None,
+        "peakVramBytes": max(peaks) if peaks else 0,
+        "endVramBytes": None,
+        "retainedInputs": [],
+        "retainedOutputsThroughReturn": [],
+        "bufferWrites": _buffer_writes(componentStageWrites=writes),
+    }
+    return {
+        "measurementBoundary": {
+            "policyId": "audited-component-cost/experimental-reference-v1",
+            "warmupRuns": measurement["warmupRuns"],
+            "measuredRuns": measurement["measuredRuns"],
+            "latencyStatistic": measurement["latencyStatistic"],
+            "peakVramStatistic": measurement["peakVramStatistic"],
+            "peakResetOwner": measurement["peakResetOwner"],
+            "bufferWriteMetric": measurement["bufferWriteMeasurement"],
+            "totalComposition": measurement["totalComposition"],
+        },
+        "stages": [*components, total],
+    }
+
+
 def _camera(
     frame: Mapping[str, object], frame_set: Mapping[str, object]
 ) -> dict[str, object]:
@@ -143,12 +237,12 @@ def _camera(
     width, height = (int(value) for value in frame_set["resolution"])
     if width <= 0 or height <= 0:
         raise ValueError("the configured Frame Set resolution is invalid")
-    c2w = np.asarray(frame["camera_to_world"], dtype=np.float32)
+    c2w = np.asarray(frame["cameraToWorld"], dtype=np.float32)
     if c2w.shape != (4, 4) or not np.isfinite(c2w).all():
         raise ValueError("the configured CameraBinding is invalid")
     w2c = np.linalg.inv(c2w).astype(np.float32)
     focal = width / (
-        2.0 * math.tan(math.radians(float(frame_set["horizontal_fov_degrees"])) / 2.0)
+        2.0 * math.tan(math.radians(float(frame_set["horizontalFovDegrees"])) / 2.0)
     )
     return {
         "model": "pinhole",
@@ -195,18 +289,8 @@ def _png_digest(rgb_bytes: bytes, width: int, height: int) -> str:
     return f"sha256:{hashlib.sha256(output.getvalue()).hexdigest()}"
 
 
-def _scene(configuration: Mapping[str, object], scene_id: str) -> dict[str, object]:
-    matches = [
-        scene for scene in configuration["scenes"] if scene["sceneId"] == scene_id
-    ]
-    if len(matches) != 1:
-        raise ValueError(f"the sealed configuration has no unique scene {scene_id!r}")
-    return deepcopy(matches[0])
-
-
 def _accepted_frames(
     frame_set: Mapping[str, object],
-    mask_set: Mapping[str, object],
     masks: object,
 ) -> list[tuple[dict[str, object], object]]:
     import numpy as np
@@ -215,30 +299,25 @@ def _accepted_frames(
     width, height = (int(value) for value in frame_set["resolution"])
     if mask_tensor.ndim != 3 or mask_tensor.shape[1:] != (height, width):
         raise ValueError("the Stable Mask tensor does not match the Frame Set")
-    frames = {int(frame["frame_index"]): frame for frame in frame_set["frames"]}
     result: list[tuple[dict[str, object], object]] = []
-    for mask_frame in mask_set["frames"]:
-        if mask_frame["status"] != "accepted":
+    for frame in frame_set["views"]:
+        if frame["status"] != "accepted":
             continue
-        frame_index = int(mask_frame["frame_index"])
-        frame = frames.get(frame_index)
-        mask_index = int(mask_frame["binary_mask_index"])
+        mask_index = int(frame["stableMaskIndex"])
         mask_area = (
             int(mask_tensor[mask_index].sum())
             if 0 <= mask_index < len(mask_tensor)
             else -1
         )
         if (
-            frame is None
-            or frame["candidate_id"] != mask_frame["candidate_id"]
-            or not 0 <= mask_index < len(mask_tensor)
-            or mask_area != int(mask_frame["mask_area_pixels"])
+            not 0 <= mask_index < len(mask_tensor)
+            or mask_area != int(frame["stableMaskAreaPixels"])
         ):
-            raise ValueError("the Frame Set and Stable Mask Set identity disagree")
+            raise ValueError("the sealed View and Stable Mask identity disagree")
         # A zero-area observation is unobserved, not negative Evidence.
         if mask_area == 0:
             continue
-        result.append((deepcopy(frame), mask_tensor[mask_index]))
+        result.append((deepcopy(dict(frame)), mask_tensor[mask_index]))
     if not result:
         raise ValueError("the sealed scene has no accepted Stable Masks")
     return result
@@ -253,7 +332,7 @@ def _current_input(
     stable_mask_digest: str,
     evidence_policy_digest: str,
     stable_ids: list[int],
-    target_count: int,
+    evidence_working_set: Mapping[str, object],
 ) -> dict[str, object]:
     dependency = {
         "splatId": "controlled-overlap",
@@ -278,13 +357,6 @@ def _current_input(
         **render_working_set_payload,
         "renderWorkingSetToken": canonical_json_digest(render_working_set_payload),
     }
-    evidence_working_set = create_evidence_working_set(
-        {
-            "targetSplatId": "controlled-overlap",
-            "coreTargetStableIds": stable_ids[:target_count],
-            "contextStableGaussianIds": stable_ids[target_count:],
-        }
-    )
     return {
         "requestBinding": request_binding,
         "targetSplatId": "controlled-overlap",
@@ -323,15 +395,14 @@ def _render_baseline_view(
     backend: LockedGsplatBackend,
     snapshot: Mapping[str, object],
     stable_ids: list[int],
-    target_count: int,
+    evidence_working_set: Mapping[str, object],
     camera: Mapping[str, object],
     view_id: str,
     mask_artifact: Mapping[str, object],
-    depth_policy: DepthMomentValidityPolicy,
     warmup_runs: int,
     measured_runs: int,
 ) -> dict[str, object]:
-    """Measure and retain one unchanged production single-N result."""
+    """Measure one production single-N View with depth moments disabled."""
 
     import torch
 
@@ -344,8 +415,15 @@ def _render_baseline_view(
     sorted_ids = sorted(stable_ids)
     direct = None
     direct_times: list[float] = []
+    starts: list[int] = []
+    peaks: list[int] = []
+    ends: list[int] = []
     for run_index in range(warmup_runs + measured_runs):
+        # Each repetition starts from the declared retained inputs, not the
+        # previous repetition's output tensors.
+        direct = None
         torch.cuda.synchronize()
+        start_allocated = int(torch.cuda.memory_allocated())
         started = time.perf_counter()
         direct = backend.rasterize_direct_evidence_typed(
             snapshot=snapshot,
@@ -356,12 +434,18 @@ def _render_baseline_view(
             evidence_stable_ids=sorted_ids,
             target_stable_ids=sorted_ids,
             pixel_weights=pixel_weights,
-            depth_moments_enabled=True,
+            depth_moments_enabled=False,
         )
         torch.cuda.synchronize()
+        elapsed = (time.perf_counter() - started) * 1000.0
+        if direct.depth_moments is not None:
+            raise ValueError("the production baseline unexpectedly wrote depth moments")
         if run_index >= warmup_runs:
-            direct_times.append((time.perf_counter() - started) * 1000.0)
-    assert direct is not None and direct.depth_moments is not None
+            direct_times.append(elapsed)
+            starts.append(start_allocated)
+            peaks.append(int(direct.telemetry.peak_vram_bytes))
+            ends.append(int(torch.cuda.memory_allocated()))
+    assert direct is not None
 
     camera_digest = canonical_json_digest(camera)
     current_input = _current_input(
@@ -372,29 +456,23 @@ def _render_baseline_view(
         stable_mask_digest=str(mask_artifact["digest"]),
         evidence_policy_digest=str(evidence_policy["evidencePolicyDigest"]),
         stable_ids=sorted_ids,
-        target_count=target_count,
+        evidence_working_set=evidence_working_set,
     )
     admitted = admit_gaussian_evidence(current_input)
     if admitted.get("status") != "admitted":
         raise RuntimeError(f"the production baseline identity was rejected: {admitted}")
+    masses = {
+        "positiveMass": direct.positive_mass.detach().cpu().tolist(),
+        "negativeMass": direct.negative_mass.detach().cpu().tolist(),
+        "visibleMass": direct.visible_mass.detach().cpu().tolist(),
+        "boundaryMass": direct.boundary_mass.detach().cpu().tolist(),
+    }
     baseline_artifact = create_gaussian_evidence_artifact(
-        admitted["admission"],
-        {
-            "positiveMass": direct.positive_mass.detach().cpu().tolist(),
-            "negativeMass": direct.negative_mass.detach().cpu().tolist(),
-            "visibleMass": direct.visible_mass.detach().cpu().tolist(),
-            "boundaryMass": direct.boundary_mass.detach().cpu().tolist(),
-        },
+        admitted["admission"], masses
     )
-    identity = create_depth_moment_readout_identity(
-        admitted["admission"],
-        render_stable_ids_by_projected_row=stable_ids,
-        policy=depth_policy,
-        width=width,
-        height=height,
-        direct_evidence_abi_version=DIRECT_EVIDENCE_ABI_VERSION,
-        direct_evidence_source_revision=DIRECT_EVIDENCE_SOURCE_REVISION,
-        direct_evidence_runtime_build_id=DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+    projected_depth_rows = ProjectedDepthRowsRecord(
+        rows=direct.projected_depth_rows,
+        stable_ids_by_projected_row=stable_ids,
     )
     return {
         "camera": deepcopy(camera),
@@ -402,45 +480,161 @@ def _render_baseline_view(
         "maskArtifact": deepcopy(mask_artifact),
         "pixelWeights": pixel_weights,
         "currentInput": current_input,
+        "admission": admitted["admission"],
         "baselineArtifact": baseline_artifact,
-        "baselineNegativeMass": direct.negative_mass,
-        "directServiceRgbDigest": direct.service_rgb_digest,
-        "depthReadout": DepthMomentReadoutRecord(
-            identity=identity,
-            raw_depth_moments=direct.depth_moments,
-            policy=depth_policy,
-            telemetry=DepthMomentTelemetry(
-                depth_moment_buffer_bytes=direct.telemetry.depth_moment_buffer_bytes,
-                peak_vram_bytes=direct.telemetry.peak_vram_bytes,
-            ),
+        "baselineMassTensors": {
+            "positiveMass": direct.positive_mass.detach().cpu().clone(),
+            "negativeMass": direct.negative_mass.detach().cpu().clone(),
+            "visibleMass": direct.visible_mass.detach().cpu().clone(),
+            "boundaryMass": direct.boundary_mass.detach().cpu().clone(),
+        },
+        "baselineStableGaussianIds": direct.stable_gaussian_ids,
+        "baselineBoundaryContactStableGaussianIds": (
+            direct.boundary_contact_stable_gaussian_ids
         ),
-        "directLatencyMilliseconds": statistics.median(direct_times),
-        "directPeakVramBytes": int(direct.telemetry.peak_vram_bytes),
+        "directServiceRgbDigest": direct.service_rgb_digest,
+        "directServiceRgbBytes": direct.service_rgb_bytes,
+        "projectedDepthRows": projected_depth_rows,
+        "latencyMilliseconds": statistics.median(direct_times),
+        "startVramBytes": max(starts),
+        "peakVramBytes": max(peaks),
+        "endVramBytes": max(ends),
     }
 
 
-def _projected_depth_rows(
-    snapshot: Mapping[str, object], camera: Mapping[str, object]
-) -> object:
-    """Project Gaussian centers by row; this is not a pixel depth raster."""
+def _acquire_cwed_for_view(
+    *,
+    backend: LockedGsplatBackend,
+    snapshot: Mapping[str, object],
+    stable_ids: list[int],
+    baseline: Mapping[str, object],
+    depth_capability: DepthMomentInternalCapability,
+    warmup_runs: int,
+    measured_runs: int,
+) -> dict[str, object]:
+    """Acquire CWED from a second exact Direct call and prove baseline parity."""
 
     import torch
 
-    gaussians = snapshot.get("gaussians")
-    if not isinstance(gaussians, list) or not gaussians:
-        raise ValueError("the Scene Snapshot has no projected-row geometry")
-    positions = torch.tensor(
-        [gaussian["mean"] for gaussian in gaussians],
-        dtype=torch.float32,
-        device="cuda",
-    )
-    world_to_camera = torch.tensor(
-        camera["worldToCamera"], dtype=torch.float32, device="cuda"
-    ).reshape(4, 4)
-    depths = (positions @ world_to_camera[2, :3] + world_to_camera[2, 3]).contiguous()
-    if not bool(torch.isfinite(depths).all().item()):
-        raise ValueError("the projected Gaussian center depth is non-finite")
-    return depths
+    mask_artifact = baseline["maskArtifact"]
+    width = int(mask_artifact["width"])
+    height = int(mask_artifact["height"])
+    sorted_ids = sorted(stable_ids)
+    direct = None
+    readout = None
+    projected_depth_rows = None
+    times: list[float] = []
+    starts: list[int] = []
+    peaks: list[int] = []
+    ends: list[int] = []
+    for run_index in range(warmup_runs + measured_runs):
+        direct = None
+        readout = None
+        projected_depth_rows = None
+        direct_channels = None
+        torch.cuda.synchronize()
+        start_allocated = int(torch.cuda.memory_allocated())
+        started = time.perf_counter()
+        direct = backend.rasterize_direct_evidence_typed(
+            snapshot=snapshot,
+            camera=baseline["camera"],
+            width=width,
+            height=height,
+            render_stable_ids=stable_ids,
+            evidence_stable_ids=sorted_ids,
+            target_stable_ids=sorted_ids,
+            pixel_weights=baseline["pixelWeights"],
+            depth_moments_enabled=True,
+        )
+        if direct.depth_moments is None:
+            raise ValueError("the shared CWED stage did not return depth moments")
+        projected_depth_rows = ProjectedDepthRowsRecord(
+            rows=direct.projected_depth_rows,
+            stable_ids_by_projected_row=stable_ids,
+        )
+        if not depth_capability.supports_execution(
+            width=width,
+            height=height,
+            render_gaussian_count=direct.telemetry.projected_gaussian_count,
+            evidence_gaussian_count=len(sorted_ids),
+            intersection_count=direct.telemetry.intersection_count,
+        ):
+            raise ValueError("the CWED operation exceeds its qualified envelope")
+        identity = create_depth_moment_readout_identity(
+            baseline["admission"],
+            render_stable_ids_by_projected_row=stable_ids,
+            capability=depth_capability,
+            width=width,
+            height=height,
+        )
+        readout = DepthMomentReadoutRecord(
+            identity=identity,
+            raw_depth_moments=direct.depth_moments,
+            policy=depth_capability.policy,
+            telemetry=DepthMomentTelemetry(
+                depth_moment_buffer_bytes=direct.telemetry.depth_moment_buffer_bytes,
+                peak_vram_bytes=direct.telemetry.peak_vram_bytes,
+                projected_gaussian_count=direct.telemetry.projected_gaussian_count,
+                evidence_gaussian_count=len(sorted_ids),
+                intersection_count=direct.telemetry.intersection_count,
+            ),
+        )
+        direct_channels = {
+            "positiveMass": direct.positive_mass,
+            "negativeMass": direct.negative_mass,
+            "visibleMass": direct.visible_mass,
+            "boundaryMass": direct.boundary_mass,
+        }
+        mismatches: list[str] = []
+        if direct.service_rgb_digest != baseline["directServiceRgbDigest"]:
+            mismatches.append("serviceRgbDigest")
+        if direct.service_rgb_bytes != baseline["directServiceRgbBytes"]:
+            mismatches.append("serviceRgbBytes")
+        if direct.stable_gaussian_ids != baseline["baselineStableGaussianIds"]:
+            mismatches.append("stableGaussianIds")
+        if (
+            direct.boundary_contact_stable_gaussian_ids
+            != baseline["baselineBoundaryContactStableGaussianIds"]
+        ):
+            mismatches.append("boundaryContactStableGaussianIds")
+        mismatches.extend(
+            name
+            for name, tensor in direct_channels.items()
+            if not torch.allclose(
+                tensor.detach().cpu(),
+                baseline["baselineMassTensors"][name],
+                rtol=_PRODUCTION_MASS_RTOL,
+                atol=_PRODUCTION_MASS_ATOL,
+            )
+        )
+        if not exact_projected_depth_rows_equal(
+            projected_depth_rows, baseline["projectedDepthRows"]
+        ):
+            mismatches.append("exactProjectedDepthRowsOrRowMapping")
+        if mismatches:
+            raise ValueError(
+                "the CWED acquisition does not share the sealed production input, "
+                "exact projected depths, or mass-equivalent output: "
+                f"{', '.join(mismatches)}"
+            )
+        torch.cuda.synchronize()
+        elapsed = (time.perf_counter() - started) * 1000.0
+        if run_index >= warmup_runs:
+            times.append(elapsed)
+            starts.append(start_allocated)
+            peaks.append(int(torch.cuda.max_memory_allocated()))
+            ends.append(int(torch.cuda.memory_allocated()))
+    assert direct is not None and readout is not None and projected_depth_rows is not None
+    return {
+        "direct": direct,
+        "depthReadout": readout,
+        "projectedDepthRows": projected_depth_rows,
+        "baselineArtifactDigest": baseline["baselineArtifact"]["artifactDigest"],
+        "latencyMilliseconds": statistics.median(times),
+        "startVramBytes": max(starts),
+        "peakVramBytes": max(peaks),
+        "endVramBytes": max(ends),
+    }
 
 
 def _build_sidecar_for_view(
@@ -449,24 +643,35 @@ def _build_sidecar_for_view(
     snapshot: Mapping[str, object],
     stable_ids: list[int],
     baseline: Mapping[str, object],
+    cwed: Mapping[str, object],
     relation_config: Mapping[str, object],
     warmup_runs: int,
     measured_runs: int,
 ) -> dict[str, object]:
-    """Measure a reconciled complete-Contributor experimental sidecar."""
+    """Measure the reference Contributor/classification stage against exact depths."""
 
     import torch
 
     mask_artifact = baseline["maskArtifact"]
     width = int(mask_artifact["width"])
     height = int(mask_artifact["height"])
-    projected_depths = _projected_depth_rows(snapshot, baseline["camera"])
     sorted_ids = sorted(stable_ids)
     sidecar = None
     times: list[float] = []
-    torch.cuda.reset_peak_memory_stats()
+    starts: list[int] = []
+    peaks: list[int] = []
+    ends: list[int] = []
+    contributor_ids_elements = 0
+    contributor_weights_elements = 0
+    baseline_negative_mass = baseline["baselineMassTensors"]["negativeMass"].to(
+        cwed["direct"].negative_mass.device
+    )
     for run_index in range(warmup_runs + measured_runs):
+        reference = None
+        reference_depth_rows = None
+        sidecar = None
         torch.cuda.synchronize()
+        start_allocated = int(torch.cuda.memory_allocated())
         started = time.perf_counter()
         reference = backend.rasterize_reference_evidence_typed(
             snapshot=snapshot,
@@ -475,51 +680,69 @@ def _build_sidecar_for_view(
             height=height,
             stable_ids=stable_ids,
         )
-        if reference.service_rgb_digest != baseline["directServiceRgbDigest"]:
+        reference_depth_rows = ProjectedDepthRowsRecord(
+            rows=reference.projected_depth_rows,
+            stable_ids_by_projected_row=stable_ids,
+        )
+        if (
+            reference.service_rgb_digest != baseline["directServiceRgbDigest"]
+            or tuple(reference.stable_ids.detach().cpu().tolist()) != tuple(stable_ids)
+            or not exact_projected_depth_rows_equal(
+                reference_depth_rows, cwed["projectedDepthRows"]
+            )
+        ):
             raise ValueError(
-                "the reference Contributor stream does not match baseline RGB"
+                "the reference Contributor stage does not share the baseline/CWED projected rows"
             )
         accepted_sequence_digest = _tensor_digest(
             "accepted-contribution-sequence/v1",
             reference.stable_ids,
             reference.contributor_ids,
             reference.contributor_weights,
-            projected_depths,
+            reference_depth_rows.rows,
         )
         sidecar = build_depth_classified_negative_evidence_sidecar(
             relation_config=relation_config,
-            depth_readout=baseline["depthReadout"],
-            stable_ids_by_projected_row=stable_ids,
+            depth_readout=cwed["depthReadout"],
+            projected_depth_rows=reference_depth_rows,
             evidence_stable_ids=sorted_ids,
             contributor_row_ids=reference.contributor_ids.contiguous(),
             contributor_weights=reference.contributor_weights.contiguous(),
-            projected_depth_by_row=projected_depths,
             negative_pixel_weights=baseline["pixelWeights"][2][1],
-            baseline_negative_mass=baseline["baselineNegativeMass"],
-            baseline_artifact_digest=str(
-                baseline["baselineArtifact"]["artifactDigest"]
-            ),
+            baseline_negative_mass=baseline_negative_mass,
+            baseline_artifact_digest=str(cwed["baselineArtifactDigest"]),
             accepted_contribution_sequence_digest=accepted_sequence_digest,
         )
         torch.cuda.synchronize()
+        elapsed = (time.perf_counter() - started) * 1000.0
         if run_index >= warmup_runs:
-            times.append((time.perf_counter() - started) * 1000.0)
+            times.append(elapsed)
+            starts.append(start_allocated)
+            peaks.append(int(torch.cuda.max_memory_allocated()))
+            ends.append(int(torch.cuda.memory_allocated()))
+        contributor_ids_elements = int(reference.contributor_ids.numel())
+        contributor_weights_elements = int(reference.contributor_weights.numel())
     assert sidecar is not None
     return {
         "sidecar": sidecar,
         "latencyMilliseconds": statistics.median(times),
-        "peakVramBytes": int(torch.cuda.max_memory_allocated()),
+        "startVramBytes": max(starts),
+        "peakVramBytes": max(peaks),
+        "endVramBytes": max(ends),
+        "referenceContributorIdElements": contributor_ids_elements,
+        "referenceContributorWeightElements": contributor_weights_elements,
     }
 
 
 def predict(arguments: argparse.Namespace) -> dict[str, object]:
-    import numpy as np
     import torch
 
-    configuration = load_depth_classified_negative_evidence_configuration(
-        arguments.configuration
+    prediction_input = load_depth_classified_negative_evidence_prediction_input(
+        arguments.configuration,
+        scene_id=arguments.scene_id,
     )
-    scene = _scene(configuration, arguments.scene_id)
+    configuration = prediction_input["configuration"]
+    scene = prediction_input["scene"]
     if arguments.seed not in scene["seeds"]:
         raise ValueError("the requested seed is not in the sealed scene configuration")
     if arguments.output.exists():
@@ -530,21 +753,29 @@ def predict(arguments: argparse.Namespace) -> dict[str, object]:
             f"the locked renderer runtime is unavailable: {runtime_status.message}"
         )
 
-    configuration_root = arguments.configuration.resolve().parent
-    snapshot_path = configuration_root / scene["sceneSnapshot"]
-    frame_set_path = configuration_root / scene["frameSetManifest"]
-    mask_set_path = configuration_root / scene["stableMaskManifest"]
-    masks_path = configuration_root / scene["stableMasks"]
-    snapshot = build_controlled_overlap_snapshot(snapshot_path)
-    stable_ids = [int(value) for value in validate_supported_snapshot(snapshot)]
-    fixture_manifest = json.loads(
-        (configuration_root / scene["fixtureManifest"]).read_text(encoding="utf-8")
+    snapshot_path = prediction_input["sceneSnapshotPath"]
+    masks_path = prediction_input["stableMasksPath"]
+    input_manifest = prediction_input["manifest"]
+    snapshot = build_depth_classified_negative_evidence_prediction_snapshot(
+        snapshot_path
     )
-    target_count = int(fixture_manifest["targetCount"])
-    frame_set = json.loads(frame_set_path.read_text(encoding="utf-8"))
-    mask_set = json.loads(mask_set_path.read_text(encoding="utf-8"))
-    with np.load(masks_path, allow_pickle=False) as archive:
-        frames = _accepted_frames(frame_set, mask_set, archive["masks"])
+    stable_ids = [int(value) for value in validate_supported_snapshot(snapshot)]
+    working_set_policy = prediction_input["evidenceWorkingSet"]
+    if working_set_policy["coreStableGaussianIdsSource"] != (
+        "validated-scene-snapshot-order"
+    ):
+        raise ValueError("the prediction Working Set source is unsupported")
+    evidence_working_set = create_evidence_working_set(
+        {
+            "targetSplatId": str(snapshot["sceneId"]),
+            "coreTargetStableIds": stable_ids,
+            "contextStableGaussianIds": list(
+                working_set_policy["contextStableGaussianIds"]
+            ),
+        }
+    )
+    frame_set = prediction_input["frameSet"]
+    frames = _accepted_frames(frame_set, prediction_input["stableMasks"])
 
     relation_config = configuration["relationConfigs"][0]
     depth_policy_config = configuration["depthMomentValidityPolicy"]
@@ -552,24 +783,28 @@ def predict(arguments: argparse.Namespace) -> dict[str, object]:
         policy_id=str(depth_policy_config["policyId"]),
         minimum_m0=float(depth_policy_config["minimumM0"]),
     )
+    depth_capability = load_internal_depth_moment_capability()
+    if depth_capability.status != "ready" or depth_capability.policy != depth_policy:
+        raise RuntimeError(
+            "the benchmark requires the exact checked CWED qualification capability"
+        )
     measurement = configuration["measurementPolicy"]
+    warmup_runs = int(measurement["warmupRuns"])
+    measured_runs = int(measurement["measuredRuns"])
     backend = LockedGsplatBackend()
-    torch.cuda.reset_peak_memory_stats()
     per_view: dict[str, dict[str, object]] = {}
     for frame, mask in frames:
-        view_id = str(frame["candidate_id"])
-        mask_input = _mask_artifact(mask)
+        view_id = str(frame["viewId"])
         per_view[view_id] = _render_baseline_view(
             backend=backend,
             snapshot=snapshot,
             stable_ids=stable_ids,
-            target_count=target_count,
+            evidence_working_set=evidence_working_set,
             camera=_camera(frame, frame_set),
             view_id=view_id,
-            mask_artifact=mask_input,
-            depth_policy=depth_policy,
-            warmup_runs=int(measurement["warmupRuns"]),
-            measured_runs=int(measurement["measuredRuns"]),
+            mask_artifact=_mask_artifact(mask),
+            warmup_runs=warmup_runs,
+            measured_runs=measured_runs,
         )
 
     view_ids = sorted(per_view)
@@ -590,18 +825,29 @@ def predict(arguments: argparse.Namespace) -> dict[str, object]:
         "views": baseline_views,
     }
     aggregation_policy = default_reference_aggregation_policy()
-    baseline_aggregation = aggregate_reference_gaussian_evidence(
-        aggregation_input, aggregation_policy
-    )
+    baseline_aggregation = None
+    baseline_replay_times: list[float] = []
+    for run_index in range(warmup_runs + measured_runs):
+        started = time.perf_counter()
+        baseline_aggregation = aggregate_reference_gaussian_evidence(
+            aggregation_input, aggregation_policy
+        )
+        if run_index >= warmup_runs:
+            baseline_replay_times.append((time.perf_counter() - started) * 1000.0)
+    assert baseline_aggregation is not None
     baseline_candidate = _candidate_replay(baseline_aggregation)
+
+    camera_digests = {
+        view_id: per_view[view_id]["cameraDigest"] for view_id in view_ids
+    }
     input_identity = create_experiment_input_identity(
         scene_snapshot_digest=_sha256(snapshot_path),
-        camera_bindings_digest=canonical_json_digest(
-            {view_id: per_view[view_id]["cameraDigest"] for view_id in view_ids}
-        ),
+        camera_bindings_digest=canonical_json_digest(camera_digests),
         stable_masks_digest=_sha256(masks_path),
         working_sets_digest=canonical_json_digest(
             {
+                "policyId": working_set_policy["policyId"],
+                "policyDigest": working_set_policy["policyDigest"],
                 "evidenceWorkingSet": first_input["evidenceWorkingSet"],
                 "renderWorkingSets": [
                     per_view[view_id]["currentInput"]["renderWorkingSet"]
@@ -610,6 +856,10 @@ def predict(arguments: argparse.Namespace) -> dict[str, object]:
             }
         ),
         renderer_runtime_digest=DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+        prediction_input_manifest_sha256=_sha256(
+            prediction_input["manifestPath"]
+        ),
+        prediction_input_manifest_digest=str(input_manifest["manifestDigest"]),
         deterministic_seed=arguments.seed,
     )
     runtime_source = {
@@ -624,11 +874,61 @@ def predict(arguments: argparse.Namespace) -> dict[str, object]:
         "torchVersion": torch.__version__,
         "cudaVersion": str(torch.version.cuda),
         "gsplatSourceCommit": EXPECTED_GSPLAT_SOURCE_COMMIT,
+        "benchmarkImplementationDigest": _benchmark_implementation_digest(),
     }
-    baseline_latency_ms = sum(
-        float(per_view[view_id]["directLatencyMilliseconds"]) for view_id in view_ids
+    width, height = (int(value) for value in frame_set["resolution"])
+    pixel_count = len(view_ids) * width * height
+    gaussian_count = len(view_ids) * len(stable_ids)
+    production_stage = _cost_stage(
+        stage_id="productionBaseline",
+        latency_ms=sum(
+            float(per_view[view_id]["latencyMilliseconds"]) for view_id in view_ids
+        ),
+        start_vram_bytes=max(
+            int(per_view[view_id]["startVramBytes"]) for view_id in view_ids
+        ),
+        peak_vram_bytes=max(
+            int(per_view[view_id]["peakVramBytes"]) for view_id in view_ids
+        ),
+        end_vram_bytes=max(
+            int(per_view[view_id]["endVramBytes"]) for view_id in view_ids
+        ),
+        retained_inputs=[
+            "labelFreeSceneSnapshot",
+            "cameraBindings",
+            "stableMasks",
+            "wholeTargetSplatEvidenceWorkingSet",
+        ],
+        retained_outputs=[
+            "productionGaussianEvidenceArtifacts",
+            "exactProjectedDepthRowsRecords",
+        ],
+        measurement_composition="sum-of-per-view-medians/max-of-per-view-allocations",
+        buffer_writes=_buffer_writes(
+            authoritativeRgb=pixel_count * 3,
+            rasterAlpha=pixel_count,
+            positiveMass=gaussian_count,
+            negativeMass=gaussian_count,
+            visibleMass=gaussian_count,
+            boundaryMass=gaussian_count,
+            exactProjectedDepthRows=gaussian_count,
+        ),
     )
-    production_negative_writes = len(view_ids) * len(stable_ids)
+    baseline_replay_stage = _cost_stage(
+        stage_id="baselineCandidateReplay",
+        latency_ms=statistics.median(baseline_replay_times),
+        start_vram_bytes=None,
+        peak_vram_bytes=None,
+        end_vram_bytes=None,
+        retained_inputs=["productionGaussianEvidenceArtifacts"],
+        retained_outputs=["baselineCandidateReplay"],
+        buffer_writes=_buffer_writes(candidateClassifications=len(stable_ids)),
+    )
+    baseline_cost = _cost_measurement(
+        measurement,
+        components=[production_stage, baseline_replay_stage],
+        total_stage_id="productionBaselineTotal",
+    )
     baseline_record = create_baseline_run_record(
         input_identity=input_identity,
         baseline_artifact_digests=[
@@ -637,21 +937,15 @@ def predict(arguments: argparse.Namespace) -> dict[str, object]:
         ],
         candidate_replay=baseline_candidate,
         runtime_source=runtime_source,
-        timing_and_vram={
-            "latencyMilliseconds": baseline_latency_ms,
-            "peakVramBytes": max(
-                int(per_view[view_id]["directPeakVramBytes"]) for view_id in view_ids
-            ),
-        },
-        buffer_writes={
-            "productionNegativeMass": production_negative_writes,
-            "classifiedSidecar": 0,
-            "total": production_negative_writes,
-        },
+        cost_measurement=baseline_cost,
     )
 
     arguments.output.mkdir(parents=True)
     _write_json(arguments.output / "configuration.json", configuration)
+    _write_text(
+        arguments.output / "prediction-input-manifest.json",
+        prediction_input["manifestPath"].read_text(encoding="utf-8"),
+    )
     _write_json(
         arguments.output / "baseline-artifacts.json",
         {
@@ -663,17 +957,29 @@ def predict(arguments: argparse.Namespace) -> dict[str, object]:
     )
     persist_baseline_run_record(arguments.output, baseline_record)
 
+    cwed_results: dict[str, dict[str, object]] = {}
     sidecar_results: dict[str, dict[str, object]] = {}
     try:
+        for view_id in view_ids:
+            cwed_results[view_id] = _acquire_cwed_for_view(
+                backend=backend,
+                snapshot=snapshot,
+                stable_ids=stable_ids,
+                baseline=per_view[view_id],
+                depth_capability=depth_capability,
+                warmup_runs=warmup_runs,
+                measured_runs=measured_runs,
+            )
         for view_id in view_ids:
             sidecar_results[view_id] = _build_sidecar_for_view(
                 backend=backend,
                 snapshot=snapshot,
                 stable_ids=stable_ids,
                 baseline=per_view[view_id],
+                cwed=cwed_results[view_id],
                 relation_config=relation_config,
-                warmup_runs=int(measurement["warmupRuns"]),
-                measured_runs=int(measurement["measuredRuns"]),
+                warmup_runs=warmup_runs,
+                measured_runs=measured_runs,
             )
     except Exception as error:
         failure_path = persist_sidecar_failure(
@@ -696,12 +1002,90 @@ def predict(arguments: argparse.Namespace) -> dict[str, object]:
     }
     for view_id, sidecar in sidecars_by_view_id.items():
         _write_json(arguments.output / "sidecars" / f"{view_id}.json", sidecar)
+    cwed_stage = _cost_stage(
+        stage_id="sharedCwedReadoutAcquisition",
+        latency_ms=sum(
+            float(cwed_results[view_id]["latencyMilliseconds"])
+            for view_id in view_ids
+        ),
+        start_vram_bytes=max(
+            int(cwed_results[view_id]["startVramBytes"]) for view_id in view_ids
+        ),
+        peak_vram_bytes=max(
+            int(cwed_results[view_id]["peakVramBytes"]) for view_id in view_ids
+        ),
+        end_vram_bytes=max(
+            int(cwed_results[view_id]["endVramBytes"]) for view_id in view_ids
+        ),
+        retained_inputs=[
+            "sealedProductionBaselineIdentity",
+            "exactProjectedDepthRowsRecords",
+        ],
+        retained_outputs=["depthMomentReadouts", "cwedMassEquivalentDirectResults"],
+        measurement_composition="sum-of-per-view-medians/max-of-per-view-allocations",
+        buffer_writes=_buffer_writes(
+            authoritativeRgb=pixel_count * 3,
+            rasterAlpha=pixel_count,
+            positiveMass=gaussian_count,
+            negativeMass=gaussian_count,
+            visibleMass=gaussian_count,
+            boundaryMass=gaussian_count,
+            exactProjectedDepthRows=gaussian_count,
+            depthMomentM0=pixel_count,
+            depthMomentM1=pixel_count,
+            depthMomentM2=pixel_count,
+            ownedRawDepthMoments=pixel_count * 3,
+            readoutValid=pixel_count,
+            readoutCwed=pixel_count,
+            readoutVariance=pixel_count,
+        ),
+    )
+    reference_stage = _cost_stage(
+        stage_id="referenceContributorAndClassificationSidecar",
+        latency_ms=sum(
+            float(sidecar_results[view_id]["latencyMilliseconds"])
+            for view_id in view_ids
+        ),
+        start_vram_bytes=max(
+            int(sidecar_results[view_id]["startVramBytes"])
+            for view_id in view_ids
+        ),
+        peak_vram_bytes=max(
+            int(sidecar_results[view_id]["peakVramBytes"])
+            for view_id in view_ids
+        ),
+        end_vram_bytes=max(
+            int(sidecar_results[view_id]["endVramBytes"]) for view_id in view_ids
+        ),
+        retained_inputs=[
+            "sealedProductionBaselineIdentity",
+            "depthMomentReadouts",
+            "exactProjectedDepthRowsRecords",
+        ],
+        retained_outputs=["classifiedDiagnosticSidecars"],
+        measurement_composition="sum-of-per-view-medians/max-of-per-view-allocations",
+        buffer_writes=_buffer_writes(
+            authoritativeRgb=pixel_count * 3,
+            rasterAlpha=pixel_count,
+            referenceContributorIds=sum(
+                int(sidecar_results[view_id]["referenceContributorIdElements"])
+                for view_id in view_ids
+            ),
+            referenceContributorWeights=sum(
+                int(sidecar_results[view_id]["referenceContributorWeightElements"])
+                for view_id in view_ids
+            ),
+            exactProjectedDepthRows=gaussian_count,
+            frontNegativeMass=gaussian_count,
+            nearNegativeMass=gaussian_count,
+            behindNegativeMass=gaussian_count,
+            invalidDepthNegativeMass=gaussian_count,
+        ),
+    )
     for ordinal, method in enumerate(configuration["variantMethods"]):
         replay = None
         replay_times: list[float] = []
-        for run_index in range(
-            int(measurement["warmupRuns"]) + int(measurement["measuredRuns"])
-        ):
+        for run_index in range(warmup_runs + measured_runs):
             replay_started = time.perf_counter()
             replay = replay_depth_classified_negative_evidence(
                 aggregation_input=aggregation_input,
@@ -709,25 +1093,40 @@ def predict(arguments: argparse.Namespace) -> dict[str, object]:
                 replay_config=method,
                 aggregation_policy=aggregation_policy,
             )
-            if run_index >= int(measurement["warmupRuns"]):
+            if run_index >= warmup_runs:
                 replay_times.append((time.perf_counter() - replay_started) * 1000.0)
         assert replay is not None
-        replay_ms = statistics.median(replay_times)
         _write_json(
             arguments.output / "candidate-replays" / f"variant-{ordinal:03d}.json",
             replay,
         )
-        channel_elements = len(view_ids) * len(stable_ids)
-        writes = {
-            "front": channel_elements,
-            "near": channel_elements,
-            "behind": channel_elements,
-            "invalidDepth": channel_elements,
-        }
-        classified_writes = sum(writes.values())
-        writes["productionNegativeMass"] = production_negative_writes
-        writes["classifiedSidecar"] = classified_writes
-        writes["total"] = production_negative_writes + classified_writes
+        variant_replay_stage = _cost_stage(
+            stage_id="variantCandidateReplay",
+            latency_ms=statistics.median(replay_times),
+            start_vram_bytes=None,
+            peak_vram_bytes=None,
+            end_vram_bytes=None,
+            retained_inputs=[
+                "productionGaussianEvidenceArtifacts",
+                "classifiedDiagnosticSidecars",
+            ],
+            retained_outputs=["variantCandidateReplay"],
+            buffer_writes=_buffer_writes(
+                reweightedNegativeMass=gaussian_count,
+                candidateClassifications=len(stable_ids),
+            ),
+        )
+        variant_cost = _cost_measurement(
+            measurement,
+            components=[
+                production_stage,
+                baseline_replay_stage,
+                cwed_stage,
+                reference_stage,
+                variant_replay_stage,
+            ],
+            total_stage_id="shadowExperimentTotal",
+        )
         record = create_variant_run_record(
             input_identity=input_identity,
             replay_config=method,
@@ -737,19 +1136,7 @@ def predict(arguments: argparse.Namespace) -> dict[str, object]:
             ],
             candidate_replay=replay,
             runtime_source=runtime_source,
-            timing_and_vram={
-                "latencyMilliseconds": baseline_latency_ms
-                + sum(
-                    float(sidecar_results[view_id]["latencyMilliseconds"])
-                    for view_id in view_ids
-                )
-                + replay_ms,
-                "peakVramBytes": max(
-                    int(sidecar_results[view_id]["peakVramBytes"])
-                    for view_id in view_ids
-                ),
-            },
-            buffer_writes=writes,
+            cost_measurement=variant_cost,
         )
         persist_variant_run_record(arguments.output, record, ordinal=ordinal)
     seal = seal_depth_classified_negative_evidence_prediction(
@@ -777,7 +1164,13 @@ def report(arguments: argparse.Namespace) -> str:
     )
     scores = [json.loads(path.read_text(encoding="utf-8")) for path in arguments.scores]
     expected_trials = {
-        (scene["sceneSnapshotSha256"], seed)
+        (
+            load_depth_classified_negative_evidence_prediction_input(
+                arguments.configuration,
+                scene_id=str(scene["sceneId"]),
+            )["manifest"]["sceneSnapshot"]["sha256"],
+            seed,
+        )
         for scene in configuration["scenes"]
         for seed in scene["seeds"]
     }
@@ -834,7 +1227,7 @@ def report(arguments: argparse.Namespace) -> str:
         "",
         "## Trial results",
         "",
-        "| Scene digest | Seed | Method | Precision | Recall | Distractor leaks | Thin/edge retention | Latency ms | Peak VRAM bytes | Buffer writes | Gate |",
+        "| Scene digest | Seed | Method | Precision | Recall | Distractor leaks | Thin/edge retention | Derived total latency ms | Max component peak VRAM bytes | Logical output elements | Gate |",
         "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for score in scores:
@@ -842,6 +1235,7 @@ def report(arguments: argparse.Namespace) -> str:
         for method in score["methods"]:
             metrics = method["metrics"]
             thin = metrics["thinOrEdgeRetention"]
+            total_cost = method["costMeasurement"]["stages"][-1]
             lines.append(
                 "| "
                 + " | ".join(
@@ -853,9 +1247,9 @@ def report(arguments: argparse.Namespace) -> str:
                         f"{float(metrics['targetRecall']):.6f}",
                         str(metrics["distractorLeakageCount"]),
                         "unavailable" if thin is None else f"{float(thin):.6f}",
-                        f"{float(method['timingAndVram']['latencyMilliseconds']):.3f}",
-                        str(method["timingAndVram"]["peakVramBytes"]),
-                        str(method["bufferWrites"]["total"]),
+                        f"{float(total_cost['latencyMilliseconds']):.3f}",
+                        str(total_cost["peakVramBytes"]),
+                        str(total_cost["bufferWrites"]["total"]),
                         "pass" if method["qualityGatePassed"] else "fail",
                     ]
                 )
@@ -864,11 +1258,46 @@ def report(arguments: argparse.Namespace) -> str:
     lines.extend(
         [
             "",
+            "## Audited cost components",
+            "",
+            "GPU-stage latencies are sums of per-View medians and GPU allocations are maxima across the identically reset per-View calls; Candidate replay latencies are whole-stage medians. Method totals are derived sums of component values and maximum component peaks, not paired end-to-end samples. The production total is moments-off Direct Evidence plus baseline Candidate aggregation; each shadow total adds CWED/readout acquisition, reference Contributor/classification, and its own replay.",
+            "",
+            "| Seed | Method | Stage | Kind | Composition | Latency ms | Start / peak / end VRAM bytes | Logical output elements | Retained outputs |",
+            "|---|---|---|---|---|---:|---|---:|---|",
+        ]
+    )
+    for score in scores:
+        seed = score["inputIdentity"]["deterministicSeed"]
+        for method in score["methods"]:
+            method_id = method["method"]["methodId"]
+            for stage in method["costMeasurement"]["stages"]:
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        [
+                            str(seed),
+                            str(method_id),
+                            str(stage["stageId"]),
+                            str(stage["costKind"]),
+                            str(stage["measurementComposition"]),
+                            f"{float(stage['latencyMilliseconds']):.3f}",
+                            f"{stage['startVramBytes']} / {stage['peakVramBytes']} / {stage['endVramBytes']}",
+                            str(stage["bufferWrites"]["total"]),
+                            ", ".join(stage["retainedOutputsThroughReturn"]) or "none",
+                        ]
+                    )
+                    + " |"
+                )
+    lines.extend(
+        [
+            "",
             "## Isolation verdict",
             "",
             "- The unchanged single-`negativeMass` baseline was persisted and sealed first.",
+            "- Prediction opened one allowlisted input manifest, a label-free Scene Snapshot, and a masks-only NPZ; no Ground Truth-bearing fixture manifest was reachable.",
             "- Every classified sidecar and Candidate replay used the same input identity digest as the baseline.",
-            "- Ground Truth was opened only by the independent scorer after prediction hash verification.",
+            "- Baseline Direct Evidence ran with moments off; the CWED call proved exact RGB, Stable-ID row, and projected-depth parity plus production-tolerance P/N/V/boundary parity before sidecar use.",
+            "- Ground Truth was opened only by the independent scorer after prediction input/output graph hash and canonical-digest verification.",
             "- Variant quality cannot rescue or alter baseline pass/fail.",
             "- Production Evidence, readiness, Runtime Profile, Candidate binding, and orchestration remain unchanged.",
             "",

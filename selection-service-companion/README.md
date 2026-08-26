@@ -428,6 +428,28 @@ production single-`negativeMass` baseline, then writes separate
 never changes production Evidence, readiness, Runtime Profile, Candidate
 binding, or orchestration.
 
+Prediction opens only the configuration's allowlisted
+`depth_classified_negative_evidence_prediction_input.json`: a label-free PLY,
+inline CameraBindings, and a masks-only NPZ. The Evidence Working Set is the
+validated whole Scene Snapshot with no `targetCount` split. The production
+baseline executes Direct Evidence with depth moments disabled. A separate
+qualified CWED acquisition and the reference Contributor stage must prove the
+same RGB identity, Stable-ID row mapping, and exact pinned gsplat
+`meta["depths"]` tensor digest before classification; mass channels must remain
+within the production conservation tolerance.
+
+Costs are recorded as audited GPU sums of per-View medians (with maxima of
+identically reset per-View start/peak/end allocation boundaries), whole-stage
+Candidate-replay medians, and logical output-element writes: production baseline,
+baseline Candidate replay, shared CWED/readout acquisition, reference
+Contributor plus sidecar classification, and variant Candidate replay. The
+reported method total is explicitly derived (sum of component medians, maximum
+component peak), not presented as a paired end-to-end sample. The prediction
+seal indexes the prediction-input manifest, baseline bundle, every sidecar, and
+every Candidate replay by relative path and file SHA-256; canonical artifact
+digests and source bindings are revalidated before the scorer first opens
+Ground Truth.
+
 From the repository root, run the locked-GPU prediction without a Ground Truth
 argument:
 

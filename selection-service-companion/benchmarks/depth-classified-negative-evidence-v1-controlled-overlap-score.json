@@ -7,18 +7,88 @@
   "inputIdentity": {
     "cameraBindingsDigest": "sha256:5aafe0bc8e7d1a8b430b7212fbec8f14b0131fc9df722b3381505692964e8153",
     "deterministicSeed": "controlled-overlap-seed-1",
+    "predictionInputManifestDigest": "sha256:9fc1cb6cdd135f58f384bc2aee10cc576b3f1cc653e3ceec493d36f43b88c24e",
+    "predictionInputManifestSha256": "sha256:1ec2f022ba44c71f06060ffabdcded40395859307dd6c520efb4c6fcf290bdc9",
     "rendererRuntimeDigest": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
-    "sceneSnapshotDigest": "sha256:cb238cb771f8a662e79a7dfe3de79c623810457fc0486aa8f2177964ad36aa6e",
+    "sceneSnapshotDigest": "sha256:0f31c4f659bf02f5927f132b38703005f1ffd82a019ee58cff277696b18e51bf",
     "stableMasksDigest": "sha256:fb117b62a0120dcab60f6ede886daab7d43c188eef5b04c1b08940e07416a261",
-    "workingSetsDigest": "sha256:25f448eba450fe81559a501df434ed6401bb59e55a12c963699fe11354a511c6"
+    "workingSetsDigest": "sha256:a6c5aa4f969dd4c81a8ffe6c9b7ebdad219b2a7172ad489e3cdb008108a6fb60"
   },
-  "inputIdentityDigest": "sha256:9c1556a9f5c40d287d2ae84fb89b6363e580b9b0e0382f66ef6016b7829ccf38",
+  "inputIdentityDigest": "sha256:791cddbf44eb8b1bf01d7aefb1d8d15f21949e069076690b70f62e68eecdd539",
   "methods": [
     {
-      "bufferWrites": {
-        "classifiedSidecar": 0,
-        "productionNegativeMass": 49152,
-        "total": 49152
+      "costMeasurement": {
+        "measurementBoundary": {
+          "bufferWriteMetric": "logical-output-channel-elements",
+          "latencyStatistic": "median",
+          "measuredRuns": 3,
+          "peakResetOwner": "locked-renderer-call",
+          "peakVramStatistic": "maximum",
+          "policyId": "audited-component-cost/experimental-reference-v1",
+          "totalComposition": "derived-sum-of-component-medians/max-of-component-peaks",
+          "warmupRuns": 1
+        },
+        "stages": [
+          {
+            "bufferWrites": {
+              "authoritativeRgb": 2359296,
+              "boundaryMass": 49152,
+              "exactProjectedDepthRows": 49152,
+              "negativeMass": 49152,
+              "positiveMass": 49152,
+              "rasterAlpha": 786432,
+              "total": 3391488,
+              "visibleMass": 49152
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": 13172736,
+            "latencyMilliseconds": 833.850938026444,
+            "measurementComposition": "sum-of-per-view-medians/max-of-per-view-allocations",
+            "peakVramBytes": 21169664,
+            "retainedInputs": [
+              "labelFreeSceneSnapshot",
+              "cameraBindings",
+              "stableMasks",
+              "wholeTargetSplatEvidenceWorkingSet"
+            ],
+            "retainedOutputsThroughReturn": [
+              "productionGaussianEvidenceArtifacts",
+              "exactProjectedDepthRowsRecords"
+            ],
+            "stageId": "productionBaseline",
+            "startVramBytes": 8650752
+          },
+          {
+            "bufferWrites": {
+              "candidateClassifications": 16384,
+              "total": 16384
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": null,
+            "latencyMilliseconds": 421.029789999011,
+            "measurementComposition": "median-of-whole-stage-runs",
+            "peakVramBytes": null,
+            "retainedInputs": ["productionGaussianEvidenceArtifacts"],
+            "retainedOutputsThroughReturn": ["baselineCandidateReplay"],
+            "stageId": "baselineCandidateReplay",
+            "startVramBytes": null
+          },
+          {
+            "bufferWrites": {
+              "componentStageWrites": 3407872,
+              "total": 3407872
+            },
+            "costKind": "derived-total",
+            "endVramBytes": null,
+            "latencyMilliseconds": 1254.880728025455,
+            "measurementComposition": "sum-of-components/max-of-components",
+            "peakVramBytes": 21169664,
+            "retainedInputs": [],
+            "retainedOutputsThroughReturn": [],
+            "stageId": "productionBaselineTotal",
+            "startVramBytes": null
+          }
+        ]
       },
       "method": {
         "coefficients": null,
@@ -39,9 +109,10 @@
         "thinOrEdgeRetentionAvailable": false
       },
       "qualityGatePassed": false,
-      "recordDigest": "sha256:866c95ddff79f29a31cb53e6f36e47e3c43eed53615e21329d1cca01a3eaafc5",
+      "recordDigest": "sha256:62df61042f0f7a9e76e47ee71938b5eaf349d0798fc2d9550fd188431034393e",
       "recordKind": "depth-classified-negative-evidence-baseline/experimental-reference",
       "runtimeSource": {
+        "benchmarkImplementationDigest": "sha256:94223feba27228626aae5e977c4b6a55378098f35b1574eb74f12c44afd37814",
         "computeCapability": "8.9",
         "cudaVersion": "12.8",
         "directEvidenceAbiVersion": "supersimplat-direct-evidence-abi/v3",
@@ -51,21 +122,161 @@
         "gsplatSourceCommit": "77ab983ffe43420b2131669cb35776b883ca4c3c",
         "rendererRuntimeDigest": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
         "torchVersion": "2.11.0+cu128"
-      },
-      "timingAndVram": {
-        "latencyMilliseconds": 727.2443649981142,
-        "peakVramBytes": 43320832
       }
     },
     {
-      "bufferWrites": {
-        "behind": 49152,
-        "classifiedSidecar": 196608,
-        "front": 49152,
-        "invalidDepth": 49152,
-        "near": 49152,
-        "productionNegativeMass": 49152,
-        "total": 245760
+      "costMeasurement": {
+        "measurementBoundary": {
+          "bufferWriteMetric": "logical-output-channel-elements",
+          "latencyStatistic": "median",
+          "measuredRuns": 3,
+          "peakResetOwner": "locked-renderer-call",
+          "peakVramStatistic": "maximum",
+          "policyId": "audited-component-cost/experimental-reference-v1",
+          "totalComposition": "derived-sum-of-component-medians/max-of-component-peaks",
+          "warmupRuns": 1
+        },
+        "stages": [
+          {
+            "bufferWrites": {
+              "authoritativeRgb": 2359296,
+              "boundaryMass": 49152,
+              "exactProjectedDepthRows": 49152,
+              "negativeMass": 49152,
+              "positiveMass": 49152,
+              "rasterAlpha": 786432,
+              "total": 3391488,
+              "visibleMass": 49152
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": 13172736,
+            "latencyMilliseconds": 833.850938026444,
+            "measurementComposition": "sum-of-per-view-medians/max-of-per-view-allocations",
+            "peakVramBytes": 21169664,
+            "retainedInputs": [
+              "labelFreeSceneSnapshot",
+              "cameraBindings",
+              "stableMasks",
+              "wholeTargetSplatEvidenceWorkingSet"
+            ],
+            "retainedOutputsThroughReturn": [
+              "productionGaussianEvidenceArtifacts",
+              "exactProjectedDepthRowsRecords"
+            ],
+            "stageId": "productionBaseline",
+            "startVramBytes": 8650752
+          },
+          {
+            "bufferWrites": {
+              "candidateClassifications": 16384,
+              "total": 16384
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": null,
+            "latencyMilliseconds": 421.029789999011,
+            "measurementComposition": "median-of-whole-stage-runs",
+            "peakVramBytes": null,
+            "retainedInputs": ["productionGaussianEvidenceArtifacts"],
+            "retainedOutputsThroughReturn": ["baselineCandidateReplay"],
+            "stageId": "baselineCandidateReplay",
+            "startVramBytes": null
+          },
+          {
+            "bufferWrites": {
+              "authoritativeRgb": 2359296,
+              "boundaryMass": 49152,
+              "depthMomentM0": 786432,
+              "depthMomentM1": 786432,
+              "depthMomentM2": 786432,
+              "exactProjectedDepthRows": 49152,
+              "negativeMass": 49152,
+              "ownedRawDepthMoments": 2359296,
+              "positiveMass": 49152,
+              "rasterAlpha": 786432,
+              "readoutCwed": 786432,
+              "readoutValid": 786432,
+              "readoutVariance": 786432,
+              "total": 10469376,
+              "visibleMass": 49152
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": 51576832,
+            "latencyMilliseconds": 1034.5771519787377,
+            "measurementComposition": "sum-of-per-view-medians/max-of-per-view-allocations",
+            "peakVramBytes": 60489728,
+            "retainedInputs": [
+              "sealedProductionBaselineIdentity",
+              "exactProjectedDepthRowsRecords"
+            ],
+            "retainedOutputsThroughReturn": [
+              "depthMomentReadouts",
+              "cwedMassEquivalentDirectResults"
+            ],
+            "stageId": "sharedCwedReadoutAcquisition",
+            "startVramBytes": 37289984
+          },
+          {
+            "bufferWrites": {
+              "authoritativeRgb": 2359296,
+              "behindNegativeMass": 49152,
+              "exactProjectedDepthRows": 49152,
+              "frontNegativeMass": 49152,
+              "invalidDepthNegativeMass": 49152,
+              "nearNegativeMass": 49152,
+              "rasterAlpha": 786432,
+              "referenceContributorIds": 96731136,
+              "referenceContributorWeights": 96731136,
+              "total": 196853760
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": 367460352,
+            "latencyMilliseconds": 1992.4343840102665,
+            "measurementComposition": "sum-of-per-view-medians/max-of-per-view-allocations",
+            "peakVramBytes": 4553768960,
+            "retainedInputs": [
+              "sealedProductionBaselineIdentity",
+              "depthMomentReadouts",
+              "exactProjectedDepthRowsRecords"
+            ],
+            "retainedOutputsThroughReturn": ["classifiedDiagnosticSidecars"],
+            "stageId": "referenceContributorAndClassificationSidecar",
+            "startVramBytes": 51642368
+          },
+          {
+            "bufferWrites": {
+              "candidateClassifications": 16384,
+              "reweightedNegativeMass": 49152,
+              "total": 65536
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": null,
+            "latencyMilliseconds": 771.6362380015198,
+            "measurementComposition": "median-of-whole-stage-runs",
+            "peakVramBytes": null,
+            "retainedInputs": [
+              "productionGaussianEvidenceArtifacts",
+              "classifiedDiagnosticSidecars"
+            ],
+            "retainedOutputsThroughReturn": ["variantCandidateReplay"],
+            "stageId": "variantCandidateReplay",
+            "startVramBytes": null
+          },
+          {
+            "bufferWrites": {
+              "componentStageWrites": 210796544,
+              "total": 210796544
+            },
+            "costKind": "derived-total",
+            "endVramBytes": null,
+            "latencyMilliseconds": 5053.528502015979,
+            "measurementComposition": "sum-of-components/max-of-components",
+            "peakVramBytes": 4553768960,
+            "retainedInputs": [],
+            "retainedOutputsThroughReturn": [],
+            "stageId": "shadowExperimentTotal",
+            "startVramBytes": null
+          }
+        ]
       },
       "method": {
         "behindCoefficient": 0.0,
@@ -90,9 +301,10 @@
         "thinOrEdgeRetentionAvailable": false
       },
       "qualityGatePassed": false,
-      "recordDigest": "sha256:3c6a7af483cb6127816104a3aabd62b0b6aca9cd83d756c90763802537b0d447",
+      "recordDigest": "sha256:5de342be4af29ec786822d9b1b9df139c5250df71139db49aee06ad2f64fb922",
       "recordKind": "depth-classified-negative-evidence-variant/experimental-reference",
       "runtimeSource": {
+        "benchmarkImplementationDigest": "sha256:94223feba27228626aae5e977c4b6a55378098f35b1574eb74f12c44afd37814",
         "computeCapability": "8.9",
         "cudaVersion": "12.8",
         "directEvidenceAbiVersion": "supersimplat-direct-evidence-abi/v3",
@@ -102,21 +314,161 @@
         "gsplatSourceCommit": "77ab983ffe43420b2131669cb35776b883ca4c3c",
         "rendererRuntimeDigest": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
         "torchVersion": "2.11.0+cu128"
-      },
-      "timingAndVram": {
-        "latencyMilliseconds": 3481.7003780008235,
-        "peakVramBytes": 4527751168
       }
     },
     {
-      "bufferWrites": {
-        "behind": 49152,
-        "classifiedSidecar": 196608,
-        "front": 49152,
-        "invalidDepth": 49152,
-        "near": 49152,
-        "productionNegativeMass": 49152,
-        "total": 245760
+      "costMeasurement": {
+        "measurementBoundary": {
+          "bufferWriteMetric": "logical-output-channel-elements",
+          "latencyStatistic": "median",
+          "measuredRuns": 3,
+          "peakResetOwner": "locked-renderer-call",
+          "peakVramStatistic": "maximum",
+          "policyId": "audited-component-cost/experimental-reference-v1",
+          "totalComposition": "derived-sum-of-component-medians/max-of-component-peaks",
+          "warmupRuns": 1
+        },
+        "stages": [
+          {
+            "bufferWrites": {
+              "authoritativeRgb": 2359296,
+              "boundaryMass": 49152,
+              "exactProjectedDepthRows": 49152,
+              "negativeMass": 49152,
+              "positiveMass": 49152,
+              "rasterAlpha": 786432,
+              "total": 3391488,
+              "visibleMass": 49152
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": 13172736,
+            "latencyMilliseconds": 833.850938026444,
+            "measurementComposition": "sum-of-per-view-medians/max-of-per-view-allocations",
+            "peakVramBytes": 21169664,
+            "retainedInputs": [
+              "labelFreeSceneSnapshot",
+              "cameraBindings",
+              "stableMasks",
+              "wholeTargetSplatEvidenceWorkingSet"
+            ],
+            "retainedOutputsThroughReturn": [
+              "productionGaussianEvidenceArtifacts",
+              "exactProjectedDepthRowsRecords"
+            ],
+            "stageId": "productionBaseline",
+            "startVramBytes": 8650752
+          },
+          {
+            "bufferWrites": {
+              "candidateClassifications": 16384,
+              "total": 16384
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": null,
+            "latencyMilliseconds": 421.029789999011,
+            "measurementComposition": "median-of-whole-stage-runs",
+            "peakVramBytes": null,
+            "retainedInputs": ["productionGaussianEvidenceArtifacts"],
+            "retainedOutputsThroughReturn": ["baselineCandidateReplay"],
+            "stageId": "baselineCandidateReplay",
+            "startVramBytes": null
+          },
+          {
+            "bufferWrites": {
+              "authoritativeRgb": 2359296,
+              "boundaryMass": 49152,
+              "depthMomentM0": 786432,
+              "depthMomentM1": 786432,
+              "depthMomentM2": 786432,
+              "exactProjectedDepthRows": 49152,
+              "negativeMass": 49152,
+              "ownedRawDepthMoments": 2359296,
+              "positiveMass": 49152,
+              "rasterAlpha": 786432,
+              "readoutCwed": 786432,
+              "readoutValid": 786432,
+              "readoutVariance": 786432,
+              "total": 10469376,
+              "visibleMass": 49152
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": 51576832,
+            "latencyMilliseconds": 1034.5771519787377,
+            "measurementComposition": "sum-of-per-view-medians/max-of-per-view-allocations",
+            "peakVramBytes": 60489728,
+            "retainedInputs": [
+              "sealedProductionBaselineIdentity",
+              "exactProjectedDepthRowsRecords"
+            ],
+            "retainedOutputsThroughReturn": [
+              "depthMomentReadouts",
+              "cwedMassEquivalentDirectResults"
+            ],
+            "stageId": "sharedCwedReadoutAcquisition",
+            "startVramBytes": 37289984
+          },
+          {
+            "bufferWrites": {
+              "authoritativeRgb": 2359296,
+              "behindNegativeMass": 49152,
+              "exactProjectedDepthRows": 49152,
+              "frontNegativeMass": 49152,
+              "invalidDepthNegativeMass": 49152,
+              "nearNegativeMass": 49152,
+              "rasterAlpha": 786432,
+              "referenceContributorIds": 96731136,
+              "referenceContributorWeights": 96731136,
+              "total": 196853760
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": 367460352,
+            "latencyMilliseconds": 1992.4343840102665,
+            "measurementComposition": "sum-of-per-view-medians/max-of-per-view-allocations",
+            "peakVramBytes": 4553768960,
+            "retainedInputs": [
+              "sealedProductionBaselineIdentity",
+              "depthMomentReadouts",
+              "exactProjectedDepthRowsRecords"
+            ],
+            "retainedOutputsThroughReturn": ["classifiedDiagnosticSidecars"],
+            "stageId": "referenceContributorAndClassificationSidecar",
+            "startVramBytes": 51642368
+          },
+          {
+            "bufferWrites": {
+              "candidateClassifications": 16384,
+              "reweightedNegativeMass": 49152,
+              "total": 65536
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": null,
+            "latencyMilliseconds": 762.8510370122967,
+            "measurementComposition": "median-of-whole-stage-runs",
+            "peakVramBytes": null,
+            "retainedInputs": [
+              "productionGaussianEvidenceArtifacts",
+              "classifiedDiagnosticSidecars"
+            ],
+            "retainedOutputsThroughReturn": ["variantCandidateReplay"],
+            "stageId": "variantCandidateReplay",
+            "startVramBytes": null
+          },
+          {
+            "bufferWrites": {
+              "componentStageWrites": 210796544,
+              "total": 210796544
+            },
+            "costKind": "derived-total",
+            "endVramBytes": null,
+            "latencyMilliseconds": 5044.743301026756,
+            "measurementComposition": "sum-of-components/max-of-components",
+            "peakVramBytes": 4553768960,
+            "retainedInputs": [],
+            "retainedOutputsThroughReturn": [],
+            "stageId": "shadowExperimentTotal",
+            "startVramBytes": null
+          }
+        ]
       },
       "method": {
         "behindCoefficient": 0.25,
@@ -141,9 +493,10 @@
         "thinOrEdgeRetentionAvailable": false
       },
       "qualityGatePassed": false,
-      "recordDigest": "sha256:3cfd06fb743a14d5fface1a7e2ba8b91dc8e563db0acd623837c7a02c64cf90b",
+      "recordDigest": "sha256:7ba225fb8710a4e24a7b5db24a8be1fcdffc0c70f5e5605a12a39153189aae58",
       "recordKind": "depth-classified-negative-evidence-variant/experimental-reference",
       "runtimeSource": {
+        "benchmarkImplementationDigest": "sha256:94223feba27228626aae5e977c4b6a55378098f35b1574eb74f12c44afd37814",
         "computeCapability": "8.9",
         "cudaVersion": "12.8",
         "directEvidenceAbiVersion": "supersimplat-direct-evidence-abi/v3",
@@ -153,21 +506,161 @@
         "gsplatSourceCommit": "77ab983ffe43420b2131669cb35776b883ca4c3c",
         "rendererRuntimeDigest": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
         "torchVersion": "2.11.0+cu128"
-      },
-      "timingAndVram": {
-        "latencyMilliseconds": 3472.6376680009707,
-        "peakVramBytes": 4527751168
       }
     },
     {
-      "bufferWrites": {
-        "behind": 49152,
-        "classifiedSidecar": 196608,
-        "front": 49152,
-        "invalidDepth": 49152,
-        "near": 49152,
-        "productionNegativeMass": 49152,
-        "total": 245760
+      "costMeasurement": {
+        "measurementBoundary": {
+          "bufferWriteMetric": "logical-output-channel-elements",
+          "latencyStatistic": "median",
+          "measuredRuns": 3,
+          "peakResetOwner": "locked-renderer-call",
+          "peakVramStatistic": "maximum",
+          "policyId": "audited-component-cost/experimental-reference-v1",
+          "totalComposition": "derived-sum-of-component-medians/max-of-component-peaks",
+          "warmupRuns": 1
+        },
+        "stages": [
+          {
+            "bufferWrites": {
+              "authoritativeRgb": 2359296,
+              "boundaryMass": 49152,
+              "exactProjectedDepthRows": 49152,
+              "negativeMass": 49152,
+              "positiveMass": 49152,
+              "rasterAlpha": 786432,
+              "total": 3391488,
+              "visibleMass": 49152
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": 13172736,
+            "latencyMilliseconds": 833.850938026444,
+            "measurementComposition": "sum-of-per-view-medians/max-of-per-view-allocations",
+            "peakVramBytes": 21169664,
+            "retainedInputs": [
+              "labelFreeSceneSnapshot",
+              "cameraBindings",
+              "stableMasks",
+              "wholeTargetSplatEvidenceWorkingSet"
+            ],
+            "retainedOutputsThroughReturn": [
+              "productionGaussianEvidenceArtifacts",
+              "exactProjectedDepthRowsRecords"
+            ],
+            "stageId": "productionBaseline",
+            "startVramBytes": 8650752
+          },
+          {
+            "bufferWrites": {
+              "candidateClassifications": 16384,
+              "total": 16384
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": null,
+            "latencyMilliseconds": 421.029789999011,
+            "measurementComposition": "median-of-whole-stage-runs",
+            "peakVramBytes": null,
+            "retainedInputs": ["productionGaussianEvidenceArtifacts"],
+            "retainedOutputsThroughReturn": ["baselineCandidateReplay"],
+            "stageId": "baselineCandidateReplay",
+            "startVramBytes": null
+          },
+          {
+            "bufferWrites": {
+              "authoritativeRgb": 2359296,
+              "boundaryMass": 49152,
+              "depthMomentM0": 786432,
+              "depthMomentM1": 786432,
+              "depthMomentM2": 786432,
+              "exactProjectedDepthRows": 49152,
+              "negativeMass": 49152,
+              "ownedRawDepthMoments": 2359296,
+              "positiveMass": 49152,
+              "rasterAlpha": 786432,
+              "readoutCwed": 786432,
+              "readoutValid": 786432,
+              "readoutVariance": 786432,
+              "total": 10469376,
+              "visibleMass": 49152
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": 51576832,
+            "latencyMilliseconds": 1034.5771519787377,
+            "measurementComposition": "sum-of-per-view-medians/max-of-per-view-allocations",
+            "peakVramBytes": 60489728,
+            "retainedInputs": [
+              "sealedProductionBaselineIdentity",
+              "exactProjectedDepthRowsRecords"
+            ],
+            "retainedOutputsThroughReturn": [
+              "depthMomentReadouts",
+              "cwedMassEquivalentDirectResults"
+            ],
+            "stageId": "sharedCwedReadoutAcquisition",
+            "startVramBytes": 37289984
+          },
+          {
+            "bufferWrites": {
+              "authoritativeRgb": 2359296,
+              "behindNegativeMass": 49152,
+              "exactProjectedDepthRows": 49152,
+              "frontNegativeMass": 49152,
+              "invalidDepthNegativeMass": 49152,
+              "nearNegativeMass": 49152,
+              "rasterAlpha": 786432,
+              "referenceContributorIds": 96731136,
+              "referenceContributorWeights": 96731136,
+              "total": 196853760
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": 367460352,
+            "latencyMilliseconds": 1992.4343840102665,
+            "measurementComposition": "sum-of-per-view-medians/max-of-per-view-allocations",
+            "peakVramBytes": 4553768960,
+            "retainedInputs": [
+              "sealedProductionBaselineIdentity",
+              "depthMomentReadouts",
+              "exactProjectedDepthRowsRecords"
+            ],
+            "retainedOutputsThroughReturn": ["classifiedDiagnosticSidecars"],
+            "stageId": "referenceContributorAndClassificationSidecar",
+            "startVramBytes": 51642368
+          },
+          {
+            "bufferWrites": {
+              "candidateClassifications": 16384,
+              "reweightedNegativeMass": 49152,
+              "total": 65536
+            },
+            "costKind": "measured-stage",
+            "endVramBytes": null,
+            "latencyMilliseconds": 758.3763330039801,
+            "measurementComposition": "median-of-whole-stage-runs",
+            "peakVramBytes": null,
+            "retainedInputs": [
+              "productionGaussianEvidenceArtifacts",
+              "classifiedDiagnosticSidecars"
+            ],
+            "retainedOutputsThroughReturn": ["variantCandidateReplay"],
+            "stageId": "variantCandidateReplay",
+            "startVramBytes": null
+          },
+          {
+            "bufferWrites": {
+              "componentStageWrites": 210796544,
+              "total": 210796544
+            },
+            "costKind": "derived-total",
+            "endVramBytes": null,
+            "latencyMilliseconds": 5040.268597018439,
+            "measurementComposition": "sum-of-components/max-of-components",
+            "peakVramBytes": 4553768960,
+            "retainedInputs": [],
+            "retainedOutputsThroughReturn": [],
+            "stageId": "shadowExperimentTotal",
+            "startVramBytes": null
+          }
+        ]
       },
       "method": {
         "behindCoefficient": 0.5,
@@ -192,9 +685,10 @@
         "thinOrEdgeRetentionAvailable": false
       },
       "qualityGatePassed": false,
-      "recordDigest": "sha256:34522c1595a1e8dd88d3e8386e5a02074e3702d067a92efba809d3b57b4236a1",
+      "recordDigest": "sha256:f25af1a12c919c7ecb5fd19f4d467d527e36cbfd04e4118383dea8d1ec6179cb",
       "recordKind": "depth-classified-negative-evidence-variant/experimental-reference",
       "runtimeSource": {
+        "benchmarkImplementationDigest": "sha256:94223feba27228626aae5e977c4b6a55378098f35b1574eb74f12c44afd37814",
         "computeCapability": "8.9",
         "cudaVersion": "12.8",
         "directEvidenceAbiVersion": "supersimplat-direct-evidence-abi/v3",
@@ -204,14 +698,10 @@
         "gsplatSourceCommit": "77ab983ffe43420b2131669cb35776b883ca4c3c",
         "rendererRuntimeDigest": "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
         "torchVersion": "2.11.0+cu128"
-      },
-      "timingAndVram": {
-        "latencyMilliseconds": 3478.191483000046,
-        "peakVramBytes": 4527751168
       }
     }
   ],
-  "predictionManifestSha256": "sha256:66224db481bfef74f89d634ebb92641232a7412546c370714358debfed23a8d7",
+  "predictionManifestSha256": "sha256:f7e7a52c78d6c1246097df9362fdb2644183c6a39914ff10ae546ac03fdd60a3",
   "schemaVersion": 1,
   "scorePolicy": {
     "maximumDistractorLeakageCount": 81,

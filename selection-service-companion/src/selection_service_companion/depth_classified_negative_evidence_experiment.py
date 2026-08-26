@@ -9,8 +9,9 @@ sidecar without changing the production single ``negativeMass`` artifact.
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass, field
 import math
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from .depth_moment_readout import (
     DepthMomentReadoutRecord,
@@ -107,6 +108,106 @@ def _validated_relation_config(value: object) -> dict[str, object]:
     }
 
 
+def projected_depth_rows_digest(value: object) -> str:
+    """Digest the exact pinned gsplat projected-depth tensor by row."""
+
+    import hashlib
+    import json
+
+    tensor = _tensor(value, label="exact projected depth rows")
+    owned = tensor.detach().contiguous().cpu()
+    digest = hashlib.sha256(b"exact-pinned-projected-depth-rows/v1")
+    digest.update(str(owned.dtype).encode("ascii"))
+    digest.update(json.dumps(list(owned.shape)).encode("ascii"))
+    digest.update(owned.numpy().tobytes(order="C"))
+    return f"sha256:{digest.hexdigest()}"
+
+
+@dataclass(frozen=True, init=False)
+class ProjectedDepthRowsRecord:
+    """Owned exact projected depths plus their Stable-ID row identity."""
+
+    stable_ids_by_projected_row: tuple[int, ...]
+    projected_row_mapping_digest: str
+    tensor_digest: str
+    dtype: str
+    shape: tuple[int, ...]
+    device_type: str
+    _rows: Any = field(repr=False, compare=False)
+
+    def __init__(
+        self,
+        *,
+        rows: object,
+        stable_ids_by_projected_row: Sequence[int],
+    ) -> None:
+        import torch
+
+        stable_ids = _validated_stable_ids(
+            stable_ids_by_projected_row, "projected-depth row mapping"
+        )
+        tensor = _tensor(rows, label="exact projected depth rows")
+        if (
+            tensor.dtype != torch.float32
+            or tensor.ndim != 1
+            or tensor.numel() != len(stable_ids)
+            or not tensor.is_contiguous()
+            or not bool(torch.isfinite(tensor).all().item())
+        ):
+            raise DepthClassifiedNegativeEvidenceExperimentError(
+                "exact projected depth rows must be finite contiguous float32 [N]."
+            )
+        owned = tensor.detach().clone().contiguous()
+        object.__setattr__(self, "stable_ids_by_projected_row", stable_ids)
+        object.__setattr__(
+            self,
+            "projected_row_mapping_digest",
+            projected_row_mapping_digest(stable_ids),
+        )
+        object.__setattr__(self, "tensor_digest", projected_depth_rows_digest(owned))
+        object.__setattr__(self, "dtype", str(owned.dtype))
+        object.__setattr__(self, "shape", tuple(int(value) for value in owned.shape))
+        object.__setattr__(self, "device_type", owned.device.type)
+        object.__setattr__(self, "_rows", owned)
+
+    @property
+    def rows(self) -> Any:
+        return self._rows.clone()
+
+    def validate(self) -> bool:
+        return (
+            self.projected_row_mapping_digest
+            == projected_row_mapping_digest(self.stable_ids_by_projected_row)
+            and self.tensor_digest == projected_depth_rows_digest(self._rows)
+            and self.dtype == str(self._rows.dtype)
+            and self.shape == tuple(int(value) for value in self._rows.shape)
+            and self.device_type == self._rows.device.type
+        )
+
+
+def exact_projected_depth_rows_equal(
+    left: ProjectedDepthRowsRecord,
+    right: ProjectedDepthRowsRecord,
+) -> bool:
+    """Return strict same-source equality for two pinned projected-row records."""
+
+    import torch
+
+    return (
+        isinstance(left, ProjectedDepthRowsRecord)
+        and isinstance(right, ProjectedDepthRowsRecord)
+        and left.validate()
+        and right.validate()
+        and left.stable_ids_by_projected_row == right.stable_ids_by_projected_row
+        and left.projected_row_mapping_digest == right.projected_row_mapping_digest
+        and left.tensor_digest == right.tensor_digest
+        and left.dtype == right.dtype
+        and left.shape == right.shape
+        and left.device_type == right.device_type
+        and torch.equal(left.rows, right.rows)
+    )
+
+
 def _tensor(value: object, *, label: str) -> object:
     try:
         import torch
@@ -125,11 +226,10 @@ def build_depth_classified_negative_evidence_sidecar(
     *,
     relation_config: object,
     depth_readout: DepthMomentReadoutRecord,
-    stable_ids_by_projected_row: Sequence[int],
+    projected_depth_rows: ProjectedDepthRowsRecord,
     evidence_stable_ids: Sequence[int],
     contributor_row_ids: object,
     contributor_weights: object,
-    projected_depth_by_row: object,
     negative_pixel_weights: object,
     baseline_negative_mass: object,
     baseline_artifact_digest: str,
@@ -145,9 +245,14 @@ def build_depth_classified_negative_evidence_sidecar(
     import torch
 
     config = _validated_relation_config(relation_config)
-    projected_stable_ids = _validated_stable_ids(
-        stable_ids_by_projected_row, "projected-row mapping"
-    )
+    if (
+        not isinstance(projected_depth_rows, ProjectedDepthRowsRecord)
+        or not projected_depth_rows.validate()
+    ):
+        raise DepthClassifiedNegativeEvidenceExperimentError(
+            "the experiment requires an immutable exact projected-depth row record."
+        )
+    projected_stable_ids = projected_depth_rows.stable_ids_by_projected_row
     evidence_ids = _validated_stable_ids(evidence_stable_ids, "Evidence Working Set")
     if (
         not isinstance(depth_readout, DepthMomentReadoutRecord)
@@ -157,14 +262,15 @@ def build_depth_classified_negative_evidence_sidecar(
             "the experiment requires a complete immutable Depth Moment Readout."
         )
     if (
-        projected_row_mapping_digest(projected_stable_ids)
+        projected_depth_rows.projected_row_mapping_digest
         != depth_readout.identity.projected_row_mapping_digest
     ):
         raise DepthClassifiedNegativeEvidenceExperimentError(
             "the projected-row mapping does not match the Depth Moment Readout."
         )
-    if not _is_digest(baseline_artifact_digest) or not _is_digest(
-        accepted_contribution_sequence_digest
+    if (
+        not _is_digest(baseline_artifact_digest)
+        or not _is_digest(accepted_contribution_sequence_digest)
     ):
         raise DepthClassifiedNegativeEvidenceExperimentError(
             "the baseline and accepted contribution sequence require SHA-256 identities."
@@ -172,7 +278,7 @@ def build_depth_classified_negative_evidence_sidecar(
 
     contributor_ids = _tensor(contributor_row_ids, label="accepted contributor row IDs")
     contribution = _tensor(contributor_weights, label="accepted contributor weights")
-    projected_depths = _tensor(projected_depth_by_row, label="projected depth rows")
+    projected_depths = projected_depth_rows.rows
     negative_weights = _tensor(negative_pixel_weights, label="negative pixel weights")
     baseline = _tensor(baseline_negative_mass, label="production baseline negativeMass")
     if (
@@ -209,6 +315,10 @@ def build_depth_classified_negative_evidence_sidecar(
     if not finite_nonnegative:
         raise DepthClassifiedNegativeEvidenceExperimentError(
             "the experimental masses, weights, and projected depths must be finite and non-negative."
+        )
+    if projected_depth_rows_digest(projected_depths) != projected_depth_rows.tensor_digest:
+        raise DepthClassifiedNegativeEvidenceExperimentError(
+            "the classified relation did not consume the bound exact pinned projected-depth rows."
         )
 
     device = contribution.device
@@ -291,6 +401,7 @@ def build_depth_classified_negative_evidence_sidecar(
         "relationConfig": deepcopy(config),
         "baselineArtifactDigest": baseline_artifact_digest,
         "acceptedContributionSequenceDigest": accepted_contribution_sequence_digest,
+        "exactProjectedDepthRowsDigest": projected_depth_rows.tensor_digest,
         "depthMomentReadoutDigest": depth_readout.readout_digest,
         "depthMomentIdentity": depth_readout.identity.identity_payload(),
         "stableGaussianIds": list(evidence_ids),
@@ -301,7 +412,7 @@ def build_depth_classified_negative_evidence_sidecar(
             "maximumAbsoluteError": max_absolute_error,
             "passed": conservation_passed,
         },
-        "bufferWrites": {
+        "classificationContributionCounts": {
             **write_counts,
             "total": sum(write_counts.values()),
         },
@@ -319,6 +430,7 @@ def _validated_sidecar(value: object) -> dict[str, object]:
         "relationConfig",
         "baselineArtifactDigest",
         "acceptedContributionSequenceDigest",
+        "exactProjectedDepthRowsDigest",
         "depthMomentReadoutDigest",
         "depthMomentIdentity",
         "stableGaussianIds",
@@ -327,7 +439,7 @@ def _validated_sidecar(value: object) -> dict[str, object]:
         "behindNegativeMass",
         "invalidDepthNegativeMass",
         "baselineMassConservation",
-        "bufferWrites",
+        "classificationContributionCounts",
         "artifactDigest",
     }
     if (
@@ -346,6 +458,18 @@ def _validated_sidecar(value: object) -> dict[str, object]:
     if canonical_json_digest(payload) != value.get("artifactDigest"):
         raise DepthClassifiedNegativeEvidenceExperimentError(
             "the depth-classified sidecar digest does not match its payload."
+        )
+    if any(
+        not _is_digest(value.get(name))
+        for name in (
+            "baselineArtifactDigest",
+            "acceptedContributionSequenceDigest",
+            "exactProjectedDepthRowsDigest",
+            "depthMomentReadoutDigest",
+        )
+    ):
+        raise DepthClassifiedNegativeEvidenceExperimentError(
+            "the depth-classified sidecar source identities are invalid."
         )
     stable_ids = _validated_stable_ids(
         value["stableGaussianIds"], "sidecar Evidence Working Set"
@@ -376,8 +500,37 @@ def _validated_sidecar(value: object) -> dict[str, object]:
         raise DepthClassifiedNegativeEvidenceExperimentError(
             "the sidecar did not conserve the production negativeMass baseline."
         )
+    counts = value["classificationContributionCounts"]
+    count_keys = {
+        "frontNegativeMass",
+        "nearNegativeMass",
+        "behindNegativeMass",
+        "invalidDepthNegativeMass",
+    }
+    if (
+        not isinstance(counts, Mapping)
+        or set(counts) != {*count_keys, "total"}
+        or any(
+            isinstance(counts[name], bool)
+            or not isinstance(counts[name], int)
+            or counts[name] < 0
+            for name in count_keys
+        )
+        or counts.get("total") != sum(int(counts[name]) for name in count_keys)
+    ):
+        raise DepthClassifiedNegativeEvidenceExperimentError(
+            "the sidecar classification contribution counts are invalid."
+        )
     _validated_relation_config(value["relationConfig"])
     return deepcopy(dict(value))
+
+
+def validate_depth_classified_negative_evidence_sidecar(
+    value: object,
+) -> dict[str, object]:
+    """Validate one persisted classified sidecar before Ground Truth access."""
+
+    return _validated_sidecar(value)
 
 
 def validate_depth_classified_replay_config(value: object) -> dict[str, object]:
@@ -424,6 +577,83 @@ def validate_depth_classified_replay_config(value: object) -> dict[str, object]:
             )
         result[name] = float(raw)
     return result
+
+
+def validate_depth_classified_candidate_replay(value: object) -> dict[str, object]:
+    """Validate the complete persisted Candidate replay artifact."""
+
+    expected_keys = {
+        "schemaVersion",
+        "artifactKind",
+        "method",
+        "relationConfig",
+        "aggregationPolicy",
+        "sourceBaselineArtifactDigests",
+        "sourceSidecarDigests",
+        "aggregationResultDigest",
+        "selectedStableGaussianIds",
+        "rejectedStableGaussianIds",
+        "uncertainStableGaussianIds",
+        "candidateInputStableGaussianIds",
+        "replayDigest",
+    }
+    if (
+        not isinstance(value, Mapping)
+        or set(value) != expected_keys
+        or value.get("schemaVersion") != EXPERIMENTAL_SCHEMA_VERSION
+        or value.get("artifactKind") != EXPERIMENTAL_REPLAY_ARTIFACT_KIND
+        or not _is_digest(value.get("replayDigest"))
+    ):
+        raise DepthClassifiedNegativeEvidenceExperimentError(
+            "the persisted Candidate replay is incomplete or unsupported."
+        )
+    payload = {
+        key: deepcopy(item) for key, item in value.items() if key != "replayDigest"
+    }
+    if canonical_json_digest(payload) != value["replayDigest"]:
+        raise DepthClassifiedNegativeEvidenceExperimentError(
+            "the persisted Candidate replay digest does not match its payload."
+        )
+    validate_depth_classified_replay_config(value["method"])
+    _validated_relation_config(value["relationConfig"])
+    if not isinstance(value["aggregationPolicy"], Mapping) or not _is_digest(
+        value["aggregationResultDigest"]
+    ):
+        raise DepthClassifiedNegativeEvidenceExperimentError(
+            "the persisted Candidate replay aggregation identity is invalid."
+        )
+    for name in ("sourceBaselineArtifactDigests", "sourceSidecarDigests"):
+        digests = value[name]
+        if (
+            not isinstance(digests, list)
+            or not digests
+            or any(not _is_digest(digest) for digest in digests)
+        ):
+            raise DepthClassifiedNegativeEvidenceExperimentError(
+                "the persisted Candidate replay source graph is invalid."
+            )
+    def candidate_ids(name: str, label: str) -> tuple[int, ...]:
+        candidate = value[name]
+        if candidate == []:
+            return ()
+        return _validated_stable_ids(candidate, label)
+
+    selected = candidate_ids("selectedStableGaussianIds", "selected Candidate IDs")
+    rejected = candidate_ids("rejectedStableGaussianIds", "rejected Candidate IDs")
+    uncertain = candidate_ids("uncertainStableGaussianIds", "uncertain Candidate IDs")
+    candidate_input = candidate_ids(
+        "candidateInputStableGaussianIds", "Candidate input IDs"
+    )
+    if (
+        set(selected) & set(rejected)
+        or set(selected) & set(uncertain)
+        or set(rejected) & set(uncertain)
+        or candidate_input != selected
+    ):
+        raise DepthClassifiedNegativeEvidenceExperimentError(
+            "the persisted Candidate replay classifications are inconsistent."
+        )
+    return deepcopy(dict(value))
 
 
 def replay_depth_classified_negative_evidence(
@@ -569,11 +799,13 @@ def replay_depth_classified_negative_evidence(
 
 __all__ = [
     "DepthClassifiedNegativeEvidenceExperimentError",
+    "ProjectedDepthRowsRecord",
     "EXPERIMENTAL_ARTIFACT_KIND",
     "EXPERIMENTAL_RELATION_ID",
     "EXPERIMENTAL_REPLAY_ARTIFACT_KIND",
     "EXPERIMENTAL_SCHEMA_VERSION",
     "build_depth_classified_negative_evidence_sidecar",
+    "projected_depth_rows_digest",
     "replay_depth_classified_negative_evidence",
     "validate_depth_classified_replay_config",
 ]

@@ -25,6 +25,7 @@ CONSERVATIVE_SEED_RECORD_SCHEMA_VERSION: Final = 1
 CONSERVATIVE_SEED_RECORD_KIND: Final = (
     "conservative-seed-s0/experimental-shadow"
 )
+_MAX_SAFE_INTEGER: Final = (1 << 53) - 1
 _MAX_STABLE_GAUSSIAN_ID: Final = (1 << 32) - 1
 _POLICY_KEYS: Final = {
     "schemaVersion",
@@ -46,6 +47,7 @@ _OUTCOMES: Final = {
     "filtered-conflict",
     "filtered-disconnected",
     "gross-outlier",
+    "unevaluated",
 }
 
 
@@ -54,10 +56,23 @@ class ConservativeSeedError(ValueError):
 
 
 def _finite_number(value: object) -> bool:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except OverflowError:
+        return False
+
+
+def _nonempty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _nonnegative_safe_integer(value: object) -> bool:
     return (
-        isinstance(value, (int, float))
+        isinstance(value, int)
         and not isinstance(value, bool)
-        and math.isfinite(float(value))
+        and 0 <= value <= _MAX_SAFE_INTEGER
     )
 
 
@@ -304,7 +319,9 @@ def _components(
 
 
 def _component_summary(
-    component: list[dict[str, object]], classification: str
+    component: list[dict[str, object]],
+    classification: str,
+    normalized_distance_from_primary: float,
 ) -> dict[str, object]:
     stable_ids = [int(row["stableGaussianId"]) for row in component]
     identity = {"stableGaussianIds": stable_ids}
@@ -316,6 +333,7 @@ def _component_summary(
         "totalNegativeMass": sum(float(row["negativeMass"]) for row in component),
         "totalVisibleMass": sum(float(row["visibleMass"]) for row in component),
         "maximumScale": max(float(row["scale"]) for row in component),
+        "normalizedDistanceFromPrimary": normalized_distance_from_primary,
         "classification": classification,
     }
 
@@ -365,9 +383,10 @@ def evaluate_conservative_seed_shadow(
         not is_gaussian_evidence_artifact(evidence_artifact)
         or not isinstance(evidence_artifact, Mapping)
         or evidence_artifact.get("evidenceBackendKind") != "production-direct"
+        or evidence_artifact.get("viewId") != "anchor-view"
     ):
         raise ConservativeSeedError(
-            "Conservative Seed requires one exact production Direct Evidence artifact."
+            "Conservative Seed requires one exact Anchor production Direct Evidence artifact."
         )
     geometry = _validated_geometry(target_geometry)
     validated_policy = validate_conservative_seed_policy(policy)
@@ -442,6 +461,24 @@ def evaluate_conservative_seed_shadow(
             "componentId": None,
         })
 
+    evidence_id_set = set(evidence_ids)
+    unevaluated_ids = sorted(set(target_ids) - evidence_id_set)
+    per_gaussian.extend({
+        "stableGaussianId": int(stable_id),
+        "positiveMass": None,
+        "negativeMass": None,
+        "visibleMass": None,
+        "positiveRatio": None,
+        "conflictRatio": None,
+        "outcome": "unevaluated",
+        "reasons": [
+            "outside-evidence-working-set",
+            "semantic-disposition-unknown",
+        ],
+        "componentId": None,
+    } for stable_id in unevaluated_ids)
+    per_gaussian.sort(key=lambda row: int(row["stableGaussianId"]))
+
     components, comparisons = _components(
         candidates,
         float(validated_policy["connectivityScaleMultiplier"]),
@@ -450,10 +487,14 @@ def evaluate_conservative_seed_shadow(
     summaries: list[dict[str, object]] = []
     by_id = {int(row["stableGaussianId"]): row for row in per_gaussian}
     for component in components:
+        normalized_distance_from_primary = (
+            0.0
+            if component is primary or primary is None
+            else _normalized_component_distance(component, primary)
+        )
         gross_outlier = (
-            primary is not None
-            and component is not primary
-            and _normalized_component_distance(component, primary)
+            component is not primary
+            and normalized_distance_from_primary
             > float(validated_policy["grossOutlierScaleMultiplier"])
         )
         material_satellite = (
@@ -472,7 +513,11 @@ def evaluate_conservative_seed_shadow(
             if material_satellite
             else "filtered-disconnected"
         )
-        summary = _component_summary(component, classification)
+        summary = _component_summary(
+            component,
+            classification,
+            normalized_distance_from_primary,
+        )
         summaries.append(summary)
         for candidate in component:
             row = by_id[int(candidate["stableGaussianId"])]
@@ -547,6 +592,7 @@ def evaluate_conservative_seed_shadow(
         "coreCandidateStableGaussianIds": core_ids,
         "satelliteStableGaussianIds": satellite_ids,
         "filteredStableGaussianIds": filtered_ids,
+        "unevaluatedStableGaussianIds": unevaluated_ids,
         "perGaussianSupport": per_gaussian,
         "componentSummaries": summaries,
     }
@@ -581,6 +627,7 @@ def is_conservative_seed_shadow_record(value: object) -> bool:
         "coreCandidateStableGaussianIds",
         "satelliteStableGaussianIds",
         "filteredStableGaussianIds",
+        "unevaluatedStableGaussianIds",
         "perGaussianSupport",
         "componentSummaries",
         "recordDigest",
@@ -599,6 +646,88 @@ def is_conservative_seed_shadow_record(value: object) -> bool:
             or not value["targetSplatId"].strip()
         ):
             return False
+        request_binding = value["requestBinding"]
+        anchor_identity = value["anchorViewIdentity"]
+        evidence_identity = value["evidenceIdentity"]
+        if (
+            not isinstance(request_binding, Mapping)
+            or set(request_binding)
+            != {"targetContextId", "contextRevision", "dependencyToken"}
+            or not _nonempty_string(request_binding["targetContextId"])
+            or not _nonnegative_safe_integer(request_binding["contextRevision"])
+        ):
+            return False
+        dependency_token = request_binding["dependencyToken"]
+        dependency_keys = {
+            "splatId",
+            "renderStateToken",
+            "geometryToken",
+            "gaussianIdentityToken",
+            "worldTransformToken",
+        }
+        if (
+            not isinstance(dependency_token, Mapping)
+            or set(dependency_token) != dependency_keys
+            or any(
+                not _nonempty_string(dependency_token[key])
+                for key in dependency_keys
+            )
+            or dependency_token["splatId"] != value["targetSplatId"]
+        ):
+            return False
+        anchor_keys = {
+            "viewId",
+            "cameraBindingDigest",
+            "rgbDigest",
+            "stableMaskDigest",
+        }
+        if (
+            not isinstance(anchor_identity, Mapping)
+            or set(anchor_identity) != anchor_keys
+            or anchor_identity["viewId"] != "anchor-view"
+            or any(
+                not _digest(anchor_identity[key])
+                for key in (
+                    "cameraBindingDigest",
+                    "rgbDigest",
+                    "stableMaskDigest",
+                )
+            )
+        ):
+            return False
+        evidence_keys = {
+            "artifactDigest",
+            "evidencePolicyDigest",
+            "renderWorkingSetToken",
+            "evidenceWorkingSetToken",
+            "rasterImplementationId",
+            "evidenceBackendKind",
+            "evidenceBackendId",
+            "runtimeBuildId",
+        }
+        if (
+            not isinstance(evidence_identity, Mapping)
+            or set(evidence_identity) != evidence_keys
+            or evidence_identity["evidenceBackendKind"] != "production-direct"
+            or any(
+                not _digest(evidence_identity[key])
+                for key in (
+                    "artifactDigest",
+                    "evidencePolicyDigest",
+                    "renderWorkingSetToken",
+                    "evidenceWorkingSetToken",
+                )
+            )
+            or any(
+                not _nonempty_string(evidence_identity[key])
+                for key in (
+                    "rasterImplementationId",
+                    "evidenceBackendId",
+                    "runtimeBuildId",
+                )
+            )
+        ):
+            return False
         policy = validate_conservative_seed_policy(value["seedPolicy"])
         if policy["policyDigest"] != value["seedPolicyDigest"]:
             return False
@@ -607,34 +736,319 @@ def is_conservative_seed_shadow_record(value: object) -> bool:
         core = value["coreCandidateStableGaussianIds"]
         satellite = value["satelliteStableGaussianIds"]
         filtered = value["filteredStableGaussianIds"]
-        if not all(
-            _sorted_unique_stable_ids(ids)
-            for ids in (target_ids, admitted, core, satellite, filtered)
-        ):
-            return False
+        unevaluated = value["unevaluatedStableGaussianIds"]
         if (
-            set(core) & set(satellite)
-            or set(admitted) != set(core) | set(satellite)
-            or set(admitted) & set(filtered)
-            or not (set(admitted) | set(filtered)).issubset(set(target_ids))
-        ):
-            return False
-        rows = value["perGaussianSupport"]
-        if (
-            not isinstance(rows, list)
-            or [row.get("stableGaussianId") for row in rows if isinstance(row, Mapping)]
-            != sorted(set(admitted) | set(filtered))
-            or any(
-                not isinstance(row, Mapping)
-                or row.get("outcome") not in _OUTCOMES
-                or not isinstance(row.get("reasons"), list)
-                for row in rows
+            not _sorted_unique_stable_ids(target_ids, allow_empty=False)
+            or not all(
+                _sorted_unique_stable_ids(ids)
+                for ids in (admitted, core, satellite, filtered, unevaluated)
             )
         ):
             return False
+        target_set = set(target_ids)
+        admitted_set = set(admitted)
+        core_set = set(core)
+        satellite_set = set(satellite)
+        filtered_set = set(filtered)
+        unevaluated_set = set(unevaluated)
+        if (
+            core_set & satellite_set
+            or admitted_set != core_set | satellite_set
+            or admitted_set & filtered_set
+            or admitted_set & unevaluated_set
+            or filtered_set & unevaluated_set
+            or (admitted_set | filtered_set | unevaluated_set) != target_set
+        ):
+            return False
+
+        rows = value["perGaussianSupport"]
+        row_keys = {
+            "stableGaussianId",
+            "positiveMass",
+            "negativeMass",
+            "visibleMass",
+            "positiveRatio",
+            "conflictRatio",
+            "outcome",
+            "reasons",
+            "componentId",
+        }
+        expected_reasons = {
+            "core-candidate": [
+                "support-thresholds-passed",
+                "primary-connected-component",
+            ],
+            "satellite": [
+                "support-thresholds-passed",
+                "material-disconnected-component",
+            ],
+            "filtered-low-visibility": [
+                "insufficient-visible-mass",
+                "semantic-disposition-unknown",
+            ],
+            "filtered-low-positive-ratio": [
+                "positive-support-ratio-below-minimum",
+            ],
+            "filtered-conflict": ["negative-or-conflict-mass-above-bound"],
+            "filtered-disconnected": [
+                "support-thresholds-passed",
+                "disconnected-component-below-admission",
+            ],
+            "gross-outlier": [
+                "support-thresholds-passed",
+                "distance-from-primary-exceeds-gross-outlier-bound",
+            ],
+            "unevaluated": [
+                "outside-evidence-working-set",
+                "semantic-disposition-unknown",
+            ],
+        }
+        if (
+            not isinstance(rows, list)
+            or len(rows) != len(target_ids)
+            or any(not isinstance(row, Mapping) for row in rows)
+            or [row["stableGaussianId"] for row in rows] != target_ids
+        ):
+            return False
+        rows_by_id: dict[int, Mapping[str, object]] = {}
+        component_row_ids: set[int] = set()
+        for row in rows:
+            assert isinstance(row, Mapping)
+            if set(row) != row_keys:
+                return False
+            stable_id = row["stableGaussianId"]
+            outcome = row["outcome"]
+            reasons = row["reasons"]
+            if (
+                not _stable_id(stable_id)
+                or outcome not in _OUTCOMES
+                or reasons != expected_reasons[outcome]
+            ):
+                return False
+            assert isinstance(stable_id, int)
+            if outcome == "core-candidate":
+                expected_set = core_set
+            elif outcome == "satellite":
+                expected_set = satellite_set
+            elif outcome == "unevaluated":
+                expected_set = unevaluated_set
+            else:
+                expected_set = filtered_set
+            if stable_id not in expected_set:
+                return False
+            component_id = row["componentId"]
+            if outcome == "unevaluated":
+                if (
+                    any(
+                        row[name] is not None
+                        for name in (
+                            "positiveMass",
+                            "negativeMass",
+                            "visibleMass",
+                            "positiveRatio",
+                            "conflictRatio",
+                        )
+                    )
+                    or component_id is not None
+                ):
+                    return False
+            else:
+                masses = [
+                    row["positiveMass"],
+                    row["negativeMass"],
+                    row["visibleMass"],
+                    row["positiveRatio"],
+                    row["conflictRatio"],
+                ]
+                if any(
+                    not _finite_number(number) or float(number) < 0.0
+                    for number in masses
+                ):
+                    return False
+                visible_mass = float(row["visibleMass"])
+                expected_positive_ratio = (
+                    float(row["positiveMass"]) / visible_mass
+                    if visible_mass > 0.0
+                    else 0.0
+                )
+                expected_conflict_ratio = (
+                    float(row["negativeMass"]) / visible_mass
+                    if visible_mass > 0.0
+                    else 0.0
+                )
+                if (
+                    float(row["positiveRatio"]) != expected_positive_ratio
+                    or float(row["conflictRatio"]) != expected_conflict_ratio
+                ):
+                    return False
+                component_outcomes = {
+                    "core-candidate",
+                    "satellite",
+                    "filtered-disconnected",
+                    "gross-outlier",
+                }
+                if visible_mass < float(policy["minimumVisibleMass"]):
+                    threshold_outcome = "filtered-low-visibility"
+                elif (
+                    float(row["negativeMass"])
+                    > float(policy["maximumNegativeMass"])
+                    or expected_conflict_ratio
+                    > float(policy["maximumConflictRatio"])
+                ):
+                    threshold_outcome = "filtered-conflict"
+                elif expected_positive_ratio < float(
+                    policy["minimumPositiveRatio"]
+                ):
+                    threshold_outcome = "filtered-low-positive-ratio"
+                else:
+                    threshold_outcome = None
+                if (
+                    threshold_outcome is not None
+                    and outcome != threshold_outcome
+                ) or (
+                    threshold_outcome is None
+                    and outcome not in component_outcomes
+                ):
+                    return False
+                if outcome in component_outcomes:
+                    if not _digest(component_id):
+                        return False
+                    component_row_ids.add(stable_id)
+                elif component_id is not None:
+                    return False
+            rows_by_id[stable_id] = row
+
+        summaries = value["componentSummaries"]
+        summary_keys = {
+            "componentId",
+            "stableGaussianIds",
+            "gaussianCount",
+            "totalPositiveMass",
+            "totalNegativeMass",
+            "totalVisibleMass",
+            "maximumScale",
+            "normalizedDistanceFromPrimary",
+            "classification",
+        }
+        classification_outcome = {
+            "core": "core-candidate",
+            "satellite": "satellite",
+            "filtered-disconnected": "filtered-disconnected",
+            "gross-outlier": "gross-outlier",
+        }
+        if not isinstance(summaries, list):
+            return False
+        summarized_ids: set[int] = set()
+        previous_first_id: int | None = None
+        seen_component_ids: set[str] = set()
+        for summary in summaries:
+            if not isinstance(summary, Mapping) or set(summary) != summary_keys:
+                return False
+            component_id = summary["componentId"]
+            stable_ids = summary["stableGaussianIds"]
+            classification = summary["classification"]
+            if (
+                not _digest(component_id)
+                or component_id in seen_component_ids
+                or not _sorted_unique_stable_ids(stable_ids, allow_empty=False)
+                or classification not in classification_outcome
+                or not isinstance(summary["gaussianCount"], int)
+                or isinstance(summary["gaussianCount"], bool)
+                or summary["gaussianCount"] != len(stable_ids)
+                or any(
+                    not _finite_number(summary[name])
+                    or float(summary[name]) < 0.0
+                    for name in (
+                        "totalPositiveMass",
+                        "totalNegativeMass",
+                        "totalVisibleMass",
+                    )
+                )
+                or component_id
+                != route_b_artifact_digest({"stableGaussianIds": stable_ids})
+                or any(stable_id in summarized_ids for stable_id in stable_ids)
+                or not set(stable_ids).issubset(component_row_ids)
+                or not _finite_number(summary["maximumScale"])
+                or float(summary["maximumScale"]) <= 0.0
+                or not _finite_number(
+                    summary["normalizedDistanceFromPrimary"]
+                )
+                or float(summary["normalizedDistanceFromPrimary"]) < 0.0
+            ):
+                return False
+            material_component = (
+                summary["gaussianCount"]
+                >= int(policy["minimumSatelliteGaussianCount"])
+                and float(summary["totalPositiveMass"])
+                >= float(policy["minimumSatellitePositiveMass"])
+            )
+            normalized_distance = float(
+                summary["normalizedDistanceFromPrimary"]
+            )
+            if classification == "core":
+                if normalized_distance != 0.0:
+                    return False
+            else:
+                if normalized_distance <= float(
+                    policy["connectivityScaleMultiplier"]
+                ):
+                    return False
+                expected_classification = (
+                    "gross-outlier"
+                    if normalized_distance
+                    > float(policy["grossOutlierScaleMultiplier"])
+                    else "satellite"
+                    if material_component
+                    else "filtered-disconnected"
+                )
+                if classification != expected_classification:
+                    return False
+            first_id = stable_ids[0]
+            if previous_first_id is not None and first_id <= previous_first_id:
+                return False
+            previous_first_id = first_id
+            seen_component_ids.add(component_id)
+            summarized_ids.update(stable_ids)
+            component_rows = [rows_by_id[stable_id] for stable_id in stable_ids]
+            if (
+                any(row["componentId"] != component_id for row in component_rows)
+                or any(
+                    row["outcome"] != classification_outcome[classification]
+                    for row in component_rows
+                )
+                or summary["totalPositiveMass"]
+                != sum(float(row["positiveMass"]) for row in component_rows)
+                or summary["totalNegativeMass"]
+                != sum(float(row["negativeMass"]) for row in component_rows)
+                or summary["totalVisibleMass"]
+                != sum(float(row["visibleMass"]) for row in component_rows)
+            ):
+                return False
+        if summarized_ids != component_row_ids:
+            return False
+        if summaries:
+            primary_summary = min(
+                summaries,
+                key=lambda summary: (
+                    -float(summary["totalPositiveMass"]),
+                    -float(summary["totalVisibleMass"]),
+                    tuple(int(stable_id) for stable_id in summary["stableGaussianIds"]),
+                ),
+            )
+            core_summaries = [
+                summary
+                for summary in summaries
+                if summary["classification"] == "core"
+            ]
+            if (
+                len(core_summaries) != 1
+                or core_summaries[0]["componentId"]
+                != primary_summary["componentId"]
+            ):
+                return False
         payload = {key: deepcopy(item) for key, item in value.items() if key != "recordDigest"}
         return value["recordDigest"] == route_b_artifact_digest(payload)
-    except (ConservativeSeedError, KeyError, TypeError, ValueError):
+    except (ConservativeSeedError, KeyError, OverflowError, TypeError, ValueError):
         return False
 
 

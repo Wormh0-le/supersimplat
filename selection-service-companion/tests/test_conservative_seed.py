@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Iterator
+from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
@@ -24,6 +25,7 @@ from selection_service_companion.conservative_seed import (
     evaluate_conservative_seed_shadow,
     is_conservative_seed_shadow_record,
 )
+from selection_service_companion.digests import route_b_artifact_digest
 from selection_service_companion.direct_gaussian_evidence import (
     DIRECT_EVIDENCE_BACKEND_ID,
     DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
@@ -67,6 +69,7 @@ def artifact(
     positive: list[float],
     negative: list[float],
     visible: list[float],
+    view_id: str = "anchor-view",
 ) -> dict[str, object]:
     dependency = {
         "splatId": "splat-1",
@@ -88,7 +91,7 @@ def artifact(
         },
         "targetSplatId": "splat-1",
         "view": {
-            "viewId": "anchor-view",
+            "viewId": view_id,
             "renderStatus": "ready",
             "participation": "included",
             "cameraBindingDigest": digest("a"),
@@ -248,8 +251,22 @@ class DirectEvidenceFixtureRenderer(GsplatContributorRenderer):
         super().__init__(backend=object())  # type: ignore[arg-type]
         self.artifact: dict[str, object] | None = None
 
-    def compute_direct_evidence(self, **_kwargs: object) -> dict[str, object]:
-        assert self.artifact is not None
+    def compute_direct_evidence(self, **kwargs: object) -> dict[str, object]:
+        admission_input = kwargs.get("admission_input")
+        admitted = admit_gaussian_evidence(admission_input)
+        admission = admitted.get("admission")
+        assert admitted["status"] == "admitted"
+        assert isinstance(admission, dict)
+        stable_ids = admission["stableGaussianIds"]
+        assert isinstance(stable_ids, list)
+        self.artifact = create_gaussian_evidence_artifact(
+            admission,
+            {
+                "positiveMass": [0.9] * len(stable_ids),
+                "negativeMass": [0.01] * len(stable_ids),
+                "visibleMass": [1.0] * len(stable_ids),
+            },
+        )
         return self.artifact
 
 
@@ -311,6 +328,7 @@ class ConservativeSeedEvaluatorTests(unittest.TestCase):
             clock_ns=clock(0, 1),
         )["record"]
 
+        self.assertTrue(is_conservative_seed_shadow_record(record))
         self.assertEqual(record["coreCandidateStableGaussianIds"], [7, 9])
         self.assertEqual(record["satelliteStableGaussianIds"], [12])
         self.assertEqual(record["admittedStableGaussianIds"], [7, 9, 12])
@@ -369,6 +387,7 @@ class ConservativeSeedEvaluatorTests(unittest.TestCase):
             clock_ns=clock(0, 1),
         )["record"]
 
+        self.assertTrue(is_conservative_seed_shadow_record(record))
         self.assertEqual(record["coreCandidateStableGaussianIds"], [7])
         self.assertEqual(record["satelliteStableGaussianIds"], [])
         self.assertEqual(record["filteredStableGaussianIds"], [9])
@@ -397,12 +416,31 @@ class ConservativeSeedEvaluatorTests(unittest.TestCase):
             clock_ns=clock(0, 1),
         )["record"]
 
+        self.assertTrue(is_conservative_seed_shadow_record(record))
         self.assertEqual(record["targetStableGaussianIds"], [7, 9, 42])
         self.assertEqual(record["admittedStableGaussianIds"], [7])
         self.assertEqual(record["filteredStableGaussianIds"], [9])
+        self.assertEqual(record["unevaluatedStableGaussianIds"], [42])
         self.assertEqual(
             record["perGaussianSupport"][1]["outcome"],
             "filtered-disconnected",
+        )
+        self.assertEqual(
+            record["perGaussianSupport"][2],
+            {
+                "stableGaussianId": 42,
+                "positiveMass": None,
+                "negativeMass": None,
+                "visibleMass": None,
+                "positiveRatio": None,
+                "conflictRatio": None,
+                "outcome": "unevaluated",
+                "reasons": [
+                    "outside-evidence-working-set",
+                    "semantic-disposition-unknown",
+                ],
+                "componentId": None,
+            },
         )
         self.assertEqual(
             record["componentSummaries"][1]["classification"],
@@ -448,6 +486,188 @@ class ConservativeSeedEvaluatorTests(unittest.TestCase):
             first["timingTelemetry"], permuted["timingTelemetry"]
         )
 
+    def test_validator_rejects_rehashed_component_semantic_inconsistency(self) -> None:
+        record = evaluate_conservative_seed_shadow(
+            evidence_artifact=artifact(
+                stable_ids=[7, 9],
+                positive=[0.9, 0.85],
+                negative=[0.01, 0.02],
+                visible=[1.0, 1.0],
+            ),
+            target_geometry=geometry([
+                (7, (0.0, 0.0, 0.0)),
+                (9, (2.0, 0.0, 0.0)),
+            ]),
+            policy=policy(),
+            clock_ns=clock(0, 1),
+        )["record"]
+        tampered = deepcopy(record)
+        tampered["componentSummaries"][0]["classification"] = "satellite"
+        payload = {
+            key: deepcopy(value)
+            for key, value in tampered.items()
+            if key != "recordDigest"
+        }
+        tampered["recordDigest"] = route_b_artifact_digest(payload)
+        coordinated = deepcopy(record)
+        coordinated["coreCandidateStableGaussianIds"] = []
+        coordinated["satelliteStableGaussianIds"] = [7, 9]
+        coordinated["componentSummaries"][0]["classification"] = "satellite"
+        for row in coordinated["perGaussianSupport"]:
+            row["outcome"] = "satellite"
+            row["reasons"] = [
+                "support-thresholds-passed",
+                "material-disconnected-component",
+            ]
+        coordinated_payload = {
+            key: deepcopy(value)
+            for key, value in coordinated.items()
+            if key != "recordDigest"
+        }
+        coordinated["recordDigest"] = route_b_artifact_digest(
+            coordinated_payload
+        )
+        threshold_tampered = deepcopy(record)
+        threshold_row = threshold_tampered["perGaussianSupport"][0]
+        threshold_row.update({
+            "positiveMass": 0.04,
+            "negativeMass": 0.0,
+            "visibleMass": 0.05,
+            "positiveRatio": 0.8,
+            "conflictRatio": 0.0,
+        })
+        threshold_summary = threshold_tampered["componentSummaries"][0]
+        threshold_summary["totalPositiveMass"] = sum(
+            row["positiveMass"]
+            for row in threshold_tampered["perGaussianSupport"]
+        )
+        threshold_summary["totalNegativeMass"] = sum(
+            row["negativeMass"]
+            for row in threshold_tampered["perGaussianSupport"]
+        )
+        threshold_summary["totalVisibleMass"] = sum(
+            row["visibleMass"]
+            for row in threshold_tampered["perGaussianSupport"]
+        )
+        threshold_payload = {
+            key: deepcopy(value)
+            for key, value in threshold_tampered.items()
+            if key != "recordDigest"
+        }
+        threshold_tampered["recordDigest"] = route_b_artifact_digest(
+            threshold_payload
+        )
+        overflowed = deepcopy(record)
+        overflowed["componentSummaries"][0]["maximumScale"] = 10**10000
+        nested_overflow = deepcopy(record)
+        nested_overflow["requestBinding"]["contextRevision"] = 10**10000
+
+        self.assertFalse(is_conservative_seed_shadow_record(tampered))
+        self.assertFalse(is_conservative_seed_shadow_record(coordinated))
+        self.assertFalse(is_conservative_seed_shadow_record(threshold_tampered))
+        self.assertFalse(is_conservative_seed_shadow_record(overflowed))
+        self.assertFalse(is_conservative_seed_shadow_record(nested_overflow))
+
+    def test_validator_rejects_rehashed_noncomponent_and_identity_drift(self) -> None:
+        record = evaluate_conservative_seed_shadow(
+            evidence_artifact=artifact(
+                stable_ids=[7, 9],
+                positive=[0.9, 0.01],
+                negative=[0.01, 0.0],
+                visible=[1.0, 0.05],
+            ),
+            target_geometry=geometry([
+                (7, (0.0, 0.0, 0.0)),
+                (9, (2.0, 0.0, 0.0)),
+            ]),
+            policy=policy(),
+            clock_ns=clock(0, 1),
+        )["record"]
+        noncomponent_id = deepcopy(record)
+        noncomponent_id["perGaussianSupport"][1]["componentId"] = "garbage"
+        identity_drift = deepcopy(record)
+        identity_drift["anchorViewIdentity"]["viewId"] = "generated-view-1"
+        dependency_drift = deepcopy(record)
+        dependency_drift["requestBinding"]["dependencyToken"][
+            "splatId"
+        ] = "other-splat"
+        for candidate in (noncomponent_id, identity_drift, dependency_drift):
+            payload = {
+                key: deepcopy(value)
+                for key, value in candidate.items()
+                if key != "recordDigest"
+            }
+            candidate["recordDigest"] = route_b_artifact_digest(payload)
+            self.assertFalse(is_conservative_seed_shadow_record(candidate))
+
+    def test_validator_rejects_rehashed_gross_outlier_reclassification(self) -> None:
+        record = evaluate_conservative_seed_shadow(
+            evidence_artifact=artifact(
+                stable_ids=[7, 9],
+                positive=[0.9, 0.8],
+                negative=[0.01, 0.01],
+                visible=[1.0, 0.9],
+            ),
+            target_geometry=geometry([
+                (7, (0.0, 0.0, 0.0)),
+                (9, (8.0, 0.0, 0.0)),
+            ]),
+            policy=policy(),
+            clock_ns=clock(0, 1),
+        )["record"]
+        self.assertEqual(
+            record["componentSummaries"][1][
+                "normalizedDistanceFromPrimary"
+            ],
+            8.0,
+        )
+        tampered = deepcopy(record)
+        tampered["satelliteStableGaussianIds"] = []
+        tampered["admittedStableGaussianIds"] = [7]
+        tampered["filteredStableGaussianIds"] = [9]
+        tampered["componentSummaries"][1]["classification"] = "gross-outlier"
+        tampered_row = tampered["perGaussianSupport"][1]
+        tampered_row["outcome"] = "gross-outlier"
+        tampered_row["reasons"] = [
+            "support-thresholds-passed",
+            "distance-from-primary-exceeds-gross-outlier-bound",
+        ]
+        payload = {
+            key: deepcopy(value)
+            for key, value in tampered.items()
+            if key != "recordDigest"
+        }
+        tampered["recordDigest"] = route_b_artifact_digest(payload)
+
+        self.assertFalse(is_conservative_seed_shadow_record(tampered))
+
+    def test_validator_rejects_rehashed_target_partition_hole(self) -> None:
+        record = evaluate_conservative_seed_shadow(
+            evidence_artifact=artifact(
+                stable_ids=[7, 9],
+                positive=[0.9, 0.85],
+                negative=[0.01, 0.02],
+                visible=[1.0, 1.0],
+            ),
+            target_geometry=geometry([
+                (7, (0.0, 0.0, 0.0)),
+                (9, (2.0, 0.0, 0.0)),
+                (42, (20.0, 0.0, 0.0)),
+            ]),
+            policy=policy(),
+            clock_ns=clock(0, 1),
+        )["record"]
+        tampered = deepcopy(record)
+        tampered["unevaluatedStableGaussianIds"] = []
+        payload = {
+            key: deepcopy(value)
+            for key, value in tampered.items()
+            if key != "recordDigest"
+        }
+        tampered["recordDigest"] = route_b_artifact_digest(payload)
+
+        self.assertFalse(is_conservative_seed_shadow_record(tampered))
+
     def test_policy_validation_rejects_unversioned_or_tampered_values(self) -> None:
         with self.assertRaisesRegex(ConservativeSeedError, "experimental S0"):
             policy({"policyId": "conservative-seed-s0/production-v1"})
@@ -492,9 +712,22 @@ class ConservativeSeedEvaluatorTests(unittest.TestCase):
             visible=[1.0],
         )
         malformed["artifactDigest"] = digest("f")
-        with self.assertRaisesRegex(ConservativeSeedError, "exact production"):
+        with self.assertRaisesRegex(ConservativeSeedError, "exact Anchor"):
             evaluate_conservative_seed_shadow(
                 evidence_artifact=malformed,
+                target_geometry=geometry([(7, (0.0, 0.0, 0.0))]),
+                policy=policy(),
+                clock_ns=clock(0, 1),
+            )
+        with self.assertRaisesRegex(ConservativeSeedError, "exact Anchor"):
+            evaluate_conservative_seed_shadow(
+                evidence_artifact=artifact(
+                    stable_ids=[7],
+                    positive=[0.9],
+                    negative=[0.01],
+                    visible=[1.0],
+                    view_id="generated-view-1",
+                ),
                 target_geometry=geometry([(7, (0.0, 0.0, 0.0))]),
                 policy=policy(),
                 clock_ns=clock(0, 1),
@@ -594,24 +827,19 @@ class ConservativeSeedIntegrationTests(unittest.TestCase):
             "evidenceBackendId": DIRECT_EVIDENCE_BACKEND_ID,
             "runtimeBuildId": DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
         }
-        admission = admit_gaussian_evidence(self.current_input)
-        assert admission["status"] == "admitted"
-        self.renderer.artifact = create_gaussian_evidence_artifact(
-            admission["admission"],
-            {
-                "positiveMass": [0.9],
-                "negativeMass": [0.01],
-                "visibleMass": [1.0],
-            },
-        )
 
     def tearDown(self) -> None:
         self.state.release_runtime_state()
         self.temporary_directory.cleanup()
 
-    def request(self) -> dict[str, object]:
-        return {
-            "evidenceAttemptId": "evidence-attempt-1",
+    def request(
+        self,
+        *,
+        evidence_attempt_id: str = "evidence-attempt-1",
+        cached_artifact: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        request: dict[str, object] = {
+            "evidenceAttemptId": evidence_attempt_id,
             "sceneId": self.manifest.scene_id,
             "sceneVersion": self.manifest.scene_version,
             "renderConfigVersion": "supersplat-effective-rgb-v1",
@@ -619,6 +847,9 @@ class ConservativeSeedIntegrationTests(unittest.TestCase):
             "cameraBinding": self.camera,
             "stableMask": self.stable_mask,
         }
+        if cached_artifact is not None:
+            request["cachedArtifact"] = cached_artifact
+        return request
 
     def test_opt_in_consumes_the_exact_published_anchor_artifact_only_in_shadow(self) -> None:
         enabled = self.state.opt_in_conservative_seed_shadow(
@@ -634,34 +865,140 @@ class ConservativeSeedIntegrationTests(unittest.TestCase):
 
         self.assertEqual(enabled["status"], "enabled")
         self.assertEqual(response["artifact"], self.renderer.artifact)
+        self.assertEqual(response["viewId"], "anchor-view")
         self.assertFalse(response["reused"])
         self.assertNotIn("conservativeSeed", response)
         self.assertEqual(shadow["status"], "available")
+        self.assertEqual(shadow["bindingDigest"], enabled["bindingDigest"])
         self.assertEqual(
             shadow["record"]["evidenceIdentity"]["artifactDigest"],
             self.renderer.artifact["artifactDigest"],
         )
         self.assertEqual(shadow["record"]["targetStableGaussianIds"], [7])
         self.assertEqual(
-            shadow["record"]["anchorViewIdentity"]["stableMaskDigest"],
-            self.stable_mask["digest"],
+            shadow["record"]["anchorViewIdentity"],
+            {
+                "viewId": "anchor-view",
+                "cameraBindingDigest": self.current_input["view"][
+                    "cameraBindingDigest"
+                ],
+                "rgbDigest": self.current_input["view"]["rgbDigest"],
+                "stableMaskDigest": self.stable_mask["digest"],
+            },
+        )
+        self.assertEqual(
+            shadow["record"]["evidenceIdentity"]["evidenceBackendId"],
+            DIRECT_EVIDENCE_BACKEND_ID,
         )
         self.assertEqual(
             shadow["timingTelemetry"]["evaluatedGaussianCount"], 1
         )
+
+    def test_new_policy_discards_stale_result_and_reevaluates_same_artifact(self) -> None:
+        first_policy = policy()
+        first_enabled = self.state.opt_in_conservative_seed_shadow(
+            current_anchor_input=self.current_input,
+            policy=first_policy,
+        )
+        self.state.produce_ai_select_direct_evidence(self.request())
+        assert self.renderer.artifact is not None
+        artifact_digest = self.renderer.artifact["artifactDigest"]
+        first = self.state.conservative_seed_shadow_result(artifact_digest)
+        self.assertEqual(first["bindingDigest"], first_enabled["bindingDigest"])
+        self.assertEqual(first["record"]["admittedStableGaussianIds"], [7])
+
+        second_policy = policy({"minimumPositiveRatio": 0.95})
+        second_enabled = self.state.opt_in_conservative_seed_shadow(
+            current_anchor_input=self.current_input,
+            policy=second_policy,
+        )
+        self.assertNotEqual(
+            first_enabled["bindingDigest"], second_enabled["bindingDigest"]
+        )
+        self.assertEqual(
+            self.state.conservative_seed_shadow_result(artifact_digest),
+            {"status": "unavailable"},
+        )
+
+        response = self.state.produce_ai_select_direct_evidence(
+            self.request(
+                evidence_attempt_id="evidence-attempt-2",
+                cached_artifact=self.renderer.artifact,
+            )
+        )
+        second = self.state.conservative_seed_shadow_result(artifact_digest)
+
+        self.assertTrue(response["reused"])
+        self.assertEqual(second["bindingDigest"], second_enabled["bindingDigest"])
+        self.assertEqual(
+            second["record"]["seedPolicyDigest"],
+            second_policy["policyDigest"],
+        )
+        self.assertEqual(second["record"]["admittedStableGaussianIds"], [])
+        self.assertEqual(second["record"]["filteredStableGaussianIds"], [7])
+
+    def test_fresh_registration_retries_a_previous_shadow_failure(self) -> None:
+        experimental_policy = policy()
+        first_enabled = self.state.opt_in_conservative_seed_shadow(
+            current_anchor_input=self.current_input,
+            policy=experimental_policy,
+        )
+        with patch(
+            "selection_service_companion.state.evaluate_conservative_seed_shadow",
+            side_effect=MemoryError("injected transient shadow failure"),
+        ):
+            self.state.produce_ai_select_direct_evidence(self.request())
+        assert self.renderer.artifact is not None
+        artifact_digest = self.renderer.artifact["artifactDigest"]
+        failed = self.state.conservative_seed_shadow_result(artifact_digest)
+        self.assertEqual(failed["status"], "failed-closed")
+        self.assertEqual(failed["bindingDigest"], first_enabled["bindingDigest"])
+
+        second_enabled = self.state.opt_in_conservative_seed_shadow(
+            current_anchor_input=self.current_input,
+            policy=experimental_policy,
+        )
+        self.assertEqual(
+            self.state.conservative_seed_shadow_result(artifact_digest),
+            {"status": "unavailable"},
+        )
+        self.state.produce_ai_select_direct_evidence(
+            self.request(
+                evidence_attempt_id="evidence-attempt-2",
+                cached_artifact=self.renderer.artifact,
+            )
+        )
+        retried = self.state.conservative_seed_shadow_result(artifact_digest)
+
+        self.assertEqual(retried["status"], "available")
+        self.assertEqual(retried["bindingDigest"], second_enabled["bindingDigest"])
+
+    def test_opt_in_rejects_non_anchor_production_direct_input(self) -> None:
+        generated_view_input = deepcopy(self.current_input)
+        generated_view_input["view"]["viewId"] = "generated-view-1"
+        self.assertEqual(
+            admit_gaussian_evidence(generated_view_input)["status"],
+            "admitted",
+        )
+
+        with self.assertRaisesRegex(ValueError, "Anchor"):
+            self.state.opt_in_conservative_seed_shadow(
+                current_anchor_input=generated_view_input,
+                policy=policy(),
+            )
 
     def test_shadow_failure_preserves_the_published_production_artifact(self) -> None:
         self.state.opt_in_conservative_seed_shadow(
             current_anchor_input=self.current_input,
             policy=policy(),
         )
-        assert self.renderer.artifact is not None
 
         with patch(
             "selection_service_companion.state.evaluate_conservative_seed_shadow",
             side_effect=MemoryError("injected shadow failure"),
         ):
             response = self.state.produce_ai_select_direct_evidence(self.request())
+        assert self.renderer.artifact is not None
 
         shadow = self.state.conservative_seed_shadow_result(
             self.renderer.artifact["artifactDigest"]
@@ -676,8 +1013,8 @@ class ConservativeSeedIntegrationTests(unittest.TestCase):
         self.assertEqual(shadow["failureType"], "MemoryError")
 
     def test_default_off_and_disable_keep_shadow_out_of_production_consumers(self) -> None:
-        assert self.renderer.artifact is not None
         response = self.state.produce_ai_select_direct_evidence(self.request())
+        assert self.renderer.artifact is not None
         artifact_digest = self.renderer.artifact["artifactDigest"]
 
         self.assertEqual(

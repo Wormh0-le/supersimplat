@@ -2467,6 +2467,7 @@ class CompanionState:
             admitted.get("status") != "admitted"
             or not isinstance(admission, dict)
             or admission.get("evidenceBackendKind") != "production-direct"
+            or admission.get("viewId") != "anchor-view"
         ):
             raise ValueError(
                 "Conservative Seed shadow opt-in requires exact current Anchor production Direct Evidence input."
@@ -2483,6 +2484,8 @@ class CompanionState:
         )
         with self._session_lock:
             self._conservative_seed_shadow_registration = registration
+            self._conservative_seed_shadow_results.clear()
+            self._conservative_seed_shadow_failures.clear()
         return {
             "status": "enabled",
             "bindingDigest": registration.binding_digest,
@@ -2505,11 +2508,20 @@ class CompanionState:
         if not isinstance(artifact_digest, str):
             return {"status": "unavailable"}
         with self._session_lock:
+            registration = self._conservative_seed_shadow_registration
+            if registration is None:
+                return {"status": "unavailable"}
             result = self._conservative_seed_shadow_results.get(artifact_digest)
             failure = self._conservative_seed_shadow_failures.get(artifact_digest)
-            if result is not None:
+            if (
+                result is not None
+                and result.get("bindingDigest") == registration.binding_digest
+            ):
                 return {"status": "available", **deepcopy(result)}
-            if failure is not None:
+            if (
+                failure is not None
+                and failure.get("bindingDigest") == registration.binding_digest
+            ):
                 return deepcopy(failure)
         return {"status": "unavailable"}
 
@@ -2594,9 +2606,10 @@ class CompanionState:
             return
         with self._session_lock:
             if self._conservative_seed_shadow_registration is registration:
-                self._conservative_seed_shadow_results[artifact_digest] = deepcopy(
-                    evaluation
-                )
+                self._conservative_seed_shadow_results[artifact_digest] = {
+                    "bindingDigest": registration.binding_digest,
+                    **deepcopy(evaluation),
+                }
                 while (
                     len(self._conservative_seed_shadow_results)
                     > AI_SELECT_ASYNC_ARTIFACT_ADMISSION_LIMIT

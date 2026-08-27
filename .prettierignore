@@ -3,3 +3,5 @@ package-lock.json
 build
 # Keep the hand-aligned spherical-harmonic coefficient tables readable.
 src/sh-utils.ts
+# Preserve the byte-sealed V2AX prediction-input manifest SHA-256.
+selection-service-companion/tests/fixtures/ai-select-v1/controlled-overlap/depth_classified_negative_evidence_prediction_input.json

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import hashlib
@@ -34,6 +35,12 @@ from .camera_binding import (
     camera_binding_digest as _route_b_camera_binding_digest,
     parse_camera_binding,
 )
+from .conservative_seed import (
+    ConservativeSeedError,
+    create_conservative_seed_target_geometry,
+    evaluate_conservative_seed_shadow,
+    validate_conservative_seed_policy,
+)
 from .candidate_re_lift import (
     CandidateReLiftError,
     produce_production_candidate_re_lift,
@@ -48,6 +55,8 @@ from .direct_gaussian_evidence import (
 from .lift_readiness import default_lift_readiness_policy
 from .evidence import ContributorRenderer, build_evidence_snapshot
 from .gaussian_evidence_contract import (
+    admit_gaussian_evidence,
+    gaussian_evidence_artifact_matches_admission,
     is_current_gaussian_evidence_artifact,
     is_gaussian_evidence_admission_input,
 )
@@ -510,6 +519,49 @@ def _target_planes_from_spatial_working_set(
     return planes
 
 
+def _conservative_seed_target_geometry_rows(
+    snapshot: PackedBinarySceneSnapshot | SpatialWorkingSet,
+    target_splat_id: str,
+) -> list[dict[str, object]]:
+    """Read target Stable IDs, centers, and declared log scales without torch."""
+
+    row_offset, row_count = _authoritative_target_row_range(
+        snapshot, target_splat_id
+    )
+    row_end = row_offset + row_count
+    rows: list[dict[str, object]] = []
+    if isinstance(snapshot, PackedBinarySceneSnapshot):
+        stable_ids = snapshot.field("stableIds").cast("I")
+        means = snapshot.field("means").cast("f")
+        log_scales = snapshot.field("logScales").cast("f")
+        for index in range(row_offset, row_end):
+            rows.append({
+                "stableGaussianId": int(stable_ids[index]),
+                "center": [float(means[index * 3 + axis]) for axis in range(3)],
+                "logScales": [
+                    float(log_scales[index * 3 + axis]) for axis in range(3)
+                ],
+            })
+        return rows
+
+    for chunk in snapshot.chunks:
+        ordinals = chunk.field("globalOrdinals").cast("I")
+        stable_ids = chunk.field("stableIds").cast("I")
+        means = chunk.field("means").cast("f")
+        log_scales = chunk.field("logScales").cast("f")
+        for index, ordinal in enumerate(ordinals):
+            if not row_offset <= int(ordinal) < row_end:
+                continue
+            rows.append({
+                "stableGaussianId": int(stable_ids[index]),
+                "center": [float(means[index * 3 + axis]) for axis in range(3)],
+                "logScales": [
+                    float(log_scales[index * 3 + axis]) for axis in range(3)
+                ],
+            })
+    return rows
+
+
 @dataclass
 class AnchorRenderAdmission:
     """One private, replayable Anchor publication reserved by request binding."""
@@ -739,6 +791,15 @@ class AsyncArtifactAdmission:
     completed: Event = field(default_factory=Event)
     publication: str | None = None
     failure: tuple[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class ConservativeSeedShadowRegistration:
+    """One exact Anchor Evidence admission explicitly enabled for shadow S0."""
+
+    admission: dict[str, object]
+    policy: dict[str, object]
+    binding_digest: str
 
 
 @dataclass(frozen=True)
@@ -1240,6 +1301,19 @@ class CompanionState:
         repr=False,
     )
     _direct_evidence_admissions: dict[str, AsyncArtifactAdmission] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _conservative_seed_shadow_registration: (
+        ConservativeSeedShadowRegistration | None
+    ) = field(default=None, init=False, repr=False)
+    _conservative_seed_shadow_results: dict[str, dict[str, object]] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _conservative_seed_shadow_failures: dict[str, dict[str, object]] = field(
         default_factory=dict,
         init=False,
         repr=False,
@@ -2379,6 +2453,158 @@ class CompanionState:
         )
         return response
 
+    def opt_in_conservative_seed_shadow(
+        self,
+        *,
+        current_anchor_input: object,
+        policy: object,
+    ) -> dict[str, object]:
+        """Enable S0 only for one exact admitted Anchor Evidence identity."""
+
+        admitted = admit_gaussian_evidence(current_anchor_input)
+        admission = admitted.get("admission")
+        if (
+            admitted.get("status") != "admitted"
+            or not isinstance(admission, dict)
+            or admission.get("evidenceBackendKind") != "production-direct"
+        ):
+            raise ValueError(
+                "Conservative Seed shadow opt-in requires exact current Anchor production Direct Evidence input."
+            )
+        validated_policy = validate_conservative_seed_policy(policy)
+        binding_payload = {
+            "admission": admission,
+            "policyDigest": validated_policy["policyDigest"],
+        }
+        registration = ConservativeSeedShadowRegistration(
+            admission=deepcopy(admission),
+            policy=deepcopy(validated_policy),
+            binding_digest=_route_b_artifact_digest(binding_payload),
+        )
+        with self._session_lock:
+            self._conservative_seed_shadow_registration = registration
+        return {
+            "status": "enabled",
+            "bindingDigest": registration.binding_digest,
+            "policyDigest": validated_policy["policyDigest"],
+        }
+
+    def disable_conservative_seed_shadow(self) -> None:
+        """Disable evaluation and remove every disposable shadow record."""
+
+        with self._session_lock:
+            self._conservative_seed_shadow_registration = None
+            self._conservative_seed_shadow_results.clear()
+            self._conservative_seed_shadow_failures.clear()
+
+    def conservative_seed_shadow_result(
+        self, artifact_digest: object
+    ) -> dict[str, object]:
+        """Return one internal shadow result without exposing it on the wire."""
+
+        if not isinstance(artifact_digest, str):
+            return {"status": "unavailable"}
+        with self._session_lock:
+            result = self._conservative_seed_shadow_results.get(artifact_digest)
+            failure = self._conservative_seed_shadow_failures.get(artifact_digest)
+            if result is not None:
+                return {"status": "available", **deepcopy(result)}
+            if failure is not None:
+                return deepcopy(failure)
+        return {"status": "unavailable"}
+
+    def _evaluate_conservative_seed_shadow_after_publication(
+        self,
+        *,
+        artifact: object,
+        scene_snapshot: PackedBinarySceneSnapshot | SpatialWorkingSet,
+        scene_id: str,
+        scene_version: str,
+        camera_binding: Mapping[str, object],
+    ) -> None:
+        with self._session_lock:
+            registration = self._conservative_seed_shadow_registration
+        if (
+            registration is None
+            or not gaussian_evidence_artifact_matches_admission(
+                artifact, registration.admission
+            )
+            or not isinstance(artifact, Mapping)
+        ):
+            return
+        artifact_digest = artifact.get("artifactDigest")
+        if not isinstance(artifact_digest, str):
+            return
+        with self._session_lock:
+            if (
+                artifact_digest in self._conservative_seed_shadow_results
+                or artifact_digest in self._conservative_seed_shadow_failures
+            ):
+                return
+        try:
+            geometry_snapshot = scene_snapshot
+            if isinstance(scene_snapshot, SpatialWorkingSet):
+                geometry_snapshot = self._spatial_scene_store.full_working_set(
+                    scene_id,
+                    scene_version,
+                    camera_binding,
+                )
+            target_splat_id = artifact.get("targetSplatId")
+            if not isinstance(target_splat_id, str):
+                raise ConservativeSeedError(
+                    "Conservative Seed artifact target identity is invalid."
+                )
+            geometry = create_conservative_seed_target_geometry(
+                target_splat_id=target_splat_id,
+                rows=_conservative_seed_target_geometry_rows(
+                    geometry_snapshot,
+                    target_splat_id,
+                ),
+            )
+            evaluation = evaluate_conservative_seed_shadow(
+                evidence_artifact=artifact,
+                target_geometry=geometry,
+                policy=registration.policy,
+            )
+        except Exception as error:
+            request_binding = registration.admission.get("requestBinding")
+            target_context_id = (
+                request_binding.get("targetContextId")
+                if isinstance(request_binding, Mapping)
+                else None
+            )
+            failure: dict[str, object] = {
+                "status": "failed-closed",
+                "reason": "conservative-seed-shadow-evaluation-failed",
+                "artifactDigest": artifact_digest,
+                "bindingDigest": registration.binding_digest,
+                "targetContextId": target_context_id,
+                "failureType": type(error).__name__,
+            }
+            with self._session_lock:
+                if self._conservative_seed_shadow_registration is registration:
+                    self._conservative_seed_shadow_failures[artifact_digest] = failure
+                    while (
+                        len(self._conservative_seed_shadow_failures)
+                        > AI_SELECT_ASYNC_ARTIFACT_ADMISSION_LIMIT
+                    ):
+                        self._conservative_seed_shadow_failures.pop(
+                            next(iter(self._conservative_seed_shadow_failures))
+                        )
+            return
+        with self._session_lock:
+            if self._conservative_seed_shadow_registration is registration:
+                self._conservative_seed_shadow_results[artifact_digest] = deepcopy(
+                    evaluation
+                )
+                while (
+                    len(self._conservative_seed_shadow_results)
+                    > AI_SELECT_ASYNC_ARTIFACT_ADMISSION_LIMIT
+                ):
+                    self._conservative_seed_shadow_results.pop(
+                        next(iter(self._conservative_seed_shadow_results))
+                    )
+
     def produce_ai_select_direct_evidence(
         self,
         request: Mapping[str, object],
@@ -2598,6 +2824,13 @@ class CompanionState:
                 operation_id=operation_id,
                 response=response,
             )
+            self._evaluate_conservative_seed_shadow_after_publication(
+                artifact=cached,
+                scene_snapshot=scene_snapshot,
+                scene_id=scene_id,
+                scene_version=scene_version,
+                camera_binding=immutable_camera_binding,
+            )
             return response
         try:
             try:
@@ -2674,6 +2907,13 @@ class CompanionState:
             admissions=self._direct_evidence_admissions,
             operation_id=operation_id,
             response=response,
+        )
+        self._evaluate_conservative_seed_shadow_after_publication(
+            artifact=artifact,
+            scene_snapshot=scene_snapshot,
+            scene_id=scene_id,
+            scene_version=scene_version,
+            camera_binding=immutable_camera_binding,
         )
         return response
 
@@ -5564,6 +5804,9 @@ class CompanionState:
         self._generated_view_mask_admissions.clear()
         self._image_instance_mask_admissions.clear()
         self._direct_evidence_admissions.clear()
+        self._conservative_seed_shadow_registration = None
+        self._conservative_seed_shadow_results.clear()
+        self._conservative_seed_shadow_failures.clear()
         self._candidate_re_lift_admissions.clear()
         self._generated_view_prompt_admissions.clear()
         self._route_b_prompt_records.clear()
@@ -5600,6 +5843,30 @@ class CompanionState:
                 }
                 admissions.clear()
                 admissions.update(retained)
+            registration = self._conservative_seed_shadow_registration
+            registration_binding = (
+                registration.admission.get("requestBinding")
+                if registration is not None
+                else None
+            )
+            if (
+                isinstance(registration_binding, Mapping)
+                and registration_binding.get("targetContextId") == target_context_id
+            ):
+                self._conservative_seed_shadow_registration = None
+            self._conservative_seed_shadow_results = {
+                key: value
+                for key, value in self._conservative_seed_shadow_results.items()
+                if not isinstance(value.get("record"), Mapping)
+                or not isinstance(value["record"].get("requestBinding"), Mapping)
+                or value["record"]["requestBinding"].get("targetContextId")
+                != target_context_id
+            }
+            self._conservative_seed_shadow_failures = {
+                key: value
+                for key, value in self._conservative_seed_shadow_failures.items()
+                if value.get("targetContextId") != target_context_id
+            }
             self._route_b_prompt_records = {
                 key: value
                 for key, value in self._route_b_prompt_records.items()

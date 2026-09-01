@@ -345,7 +345,7 @@ the locked renderer runtime. Regenerate the checked qualification record from
 the repository root with:
 
 ```sh
-rtk uv run --project selection-service-companion --locked --extra renderer \
+uv run --project selection-service-companion --locked --extra renderer \
   --python 3.12 python \
   selection-service-companion/scripts/benchmark_v2a4_cwed_qualification.py
 ```

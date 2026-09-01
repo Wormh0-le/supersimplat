@@ -4,8 +4,7 @@ SuperSimPlat extends the upstream SuperSplat browser editor with AI Select, an o
 
 ## Essentials
 
-- Prefix every agent-run external shell command with `rtk`, including each command in a chain.
-- `rtk npm test` is the integrated TypeScript typecheck and repository test entry point, including Companion tests; there is no standalone typecheck script.
+- `npm test` is the integrated TypeScript typecheck and repository test entry point, including Companion tests; there is no standalone typecheck script.
 - AI Select v2.0 planning authority lives in [Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37). Parent capability Issues #38–#47 are reviewed envelopes, not agent-ready implementation tickets. Before implementation, read #37 plus the exact child stage Issue, its comments, dependencies, and validation contract. Implement only a child Issue explicitly linked from #37 and labeled `ready-for-agent`.
 
 ## Progressive guidance

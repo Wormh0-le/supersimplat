@@ -20,8 +20,7 @@ docs/agents/
 ├── issue-tracker.md
 └── triage-labels.md
 .codex/
-├── codebase-memory-mcp.md
-└── RTK.md
+└── codebase-memory-mcp.md
 ```
 
 ## Placement rules

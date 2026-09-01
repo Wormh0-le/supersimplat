@@ -6,7 +6,7 @@ Use `codebase-memory-mcp` when its project and index generation are available an
 
 Treat graph results as candidate evidence. Confirm material findings in source, tests, or runtime behavior, especially for dynamic dispatch, event wiring, plugin registration, protocol validation, and browser/Companion boundaries.
 
-Use `rtk rg` and direct reads for:
+Use `rg` and direct reads for:
 
 - literals, errors, logs, configuration keys, comments, and documentation;
 - shell scripts and other non-code files;

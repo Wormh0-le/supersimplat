@@ -1,13 +1,13 @@
 # GitHub Issue Workflow
 
-Read this file for issue operations, triage labels, PR identification, or Wayfinder work. Issues and PRDs live as GitHub issues; use `rtk gh` from the repository clone.
+Read this file for issue operations, triage labels, PR identification, or Wayfinder work. Issues and PRDs live as GitHub issues; use `gh` from the repository clone.
 
 ## Repository conventions
 
 - GitHub issues, not pull requests, are the feature-request, planning, and triage surface.
 - When a skill says to publish to the issue tracker, create an issue.
 - When a skill says to fetch a ticket, read the issue body, comments, labels, assignees, and blockers.
-- GitHub shares issue and PR numbers. For an ambiguous `#<n>`, try `rtk gh pr view <n>` and fall back to `rtk gh issue view <n>`.
+- GitHub shares issue and PR numbers. For an ambiguous `#<n>`, try `gh pr view <n>` and fall back to `gh issue view <n>`.
 - Use CLI help for ordinary create/read/comment/edit/close syntax instead of maintaining a command catalog here.
 
 Use only these canonical triage labels:

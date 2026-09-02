@@ -20,15 +20,21 @@ from selection_service_companion.target_scope_state import (
     TargetScopeStateIncompatibilityError,
     TargetScopeStateTransitionError,
     TargetScopeStateValidationError,
+    admit_target_scope_discovery_sources,
     bootstrap_target_scope_state_from_seed,
     canonical_target_scope_state_bytes,
+    create_target_scope_boundary_contact_shadow_source,
     create_target_scope_component_policy,
+    create_target_scope_discovery_policy,
+    create_target_scope_discovery_source,
+    create_target_scope_observation_shadow_source,
     create_target_scope_subcomponent_decision,
     is_target_scope_state,
     revise_target_scope_state,
     restore_target_scope_state,
     rotate_target_scope_epoch,
     target_scope_state_identity,
+    validate_target_scope_discovery_source,
 )
 
 
@@ -43,6 +49,21 @@ def component_policy() -> dict[str, object]:
             "policyId": "target-scope-components/experimental-shadow-v1",
             "adjacencyScaleMultiplier": 2.0,
             "boundsScaleMultiplier": 1.0,
+        }
+    )
+
+
+def discovery_policy(
+    *,
+    maximum_sources: int = 8,
+    maximum_stable_ids: int = 16,
+) -> dict[str, object]:
+    return create_target_scope_discovery_policy(
+        {
+            "schemaVersion": 1,
+            "policyId": "target-scope-discovery/experimental-shadow-v1",
+            "maximumSourceRecordsPerEpoch": maximum_sources,
+            "maximumAdmittedStableGaussianIdsPerEpoch": maximum_stable_ids,
         }
     )
 
@@ -153,6 +174,80 @@ def seed_record(
     return record
 
 
+def discovery_source(
+    state: dict[str, object],
+    *,
+    source_kind: str,
+    stable_ids: list[int],
+    marker: str,
+    minimum: tuple[float, float, float],
+    maximum: tuple[float, float, float],
+    view_ids: list[str] | None = None,
+) -> dict[str, object]:
+    return create_target_scope_discovery_source(
+        {
+            "schemaVersion": 1,
+            "sourceKind": source_kind,
+            "targetSplatId": state["targetSplatId"],
+            "dependencyToken": state["requestBinding"]["dependencyToken"],  # type: ignore[index]
+            "scopeEpochId": state["scopeEpochId"],
+            "targetGeometryDigest": state["targetGeometryDigest"],
+            "componentPolicyDigest": state["componentPolicyDigest"],
+            "discoveryPolicyDigest": state["discoveryPolicyDigest"],
+            "sourceArtifactIds": [f"artifact-{marker}"],
+            "sourceViewIds": view_ids or [f"view-{marker}"],
+            "sourceArtifactDigests": [digest(marker)],
+            "admittedStableGaussianIds": stable_ids,
+            "spatialBounds": {
+                "minimum": list(minimum),
+                "maximum": list(maximum),
+            },
+            "reason": f"fixture-{source_kind}",
+        }
+    )
+
+
+def admit_discovery_ids(
+    state: dict[str, Any],
+    geometry: dict[str, object],
+    *,
+    stable_ids: list[int],
+    marker: str,
+    source_kind: str = "reviewed-target-local-spatial-support",
+) -> tuple[dict[str, Any], str]:
+    rows = geometry["rows"]
+    assert isinstance(rows, list)
+    centers_by_id = {
+        int(row["stableGaussianId"]): row["center"]
+        for row in rows
+        if isinstance(row, dict)
+    }
+    centers = [centers_by_id[stable_id] for stable_id in stable_ids]
+    source = discovery_source(
+        state,
+        source_kind=source_kind,
+        stable_ids=stable_ids,
+        marker=marker,
+        minimum=(
+            min(float(center[0]) for center in centers) - 0.25,
+            min(float(center[1]) for center in centers) - 0.25,
+            min(float(center[2]) for center in centers) - 0.25,
+        ),
+        maximum=(
+            max(float(center[0]) for center in centers) + 0.25,
+            max(float(center[1]) for center in centers) + 0.25,
+            max(float(center[2]) for center in centers) + 0.25,
+        ),
+    )
+    admitted = admit_target_scope_discovery_sources(
+        previous_state=state,
+        target_geometry=geometry,
+        request_binding=state["requestBinding"],
+        sources=[source],
+    )
+    return admitted, str(source["sourceDigest"])
+
+
 class TargetScopeStateTests(unittest.TestCase):
     def test_revision_zero_preserves_the_complete_seed_partition(self) -> None:
         geometry = target_geometry(
@@ -176,6 +271,7 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
 
         self.assertTrue(is_target_scope_state(state))
@@ -222,6 +318,7 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
         source = digest("9")
 
@@ -333,6 +430,78 @@ class TargetScopeStateTests(unittest.TestCase):
         for stable_id in (2, 3):
             for role in ("core", "active", "rejected", "context"):
                 with self.subTest(stable_id=stable_id, role=role):
+                    if role == "core":
+                        with self.assertRaisesRegex(
+                            TargetScopeStateTransitionError,
+                            "must enter active Frontier before Core",
+                        ):
+                            revise_target_scope_state(
+                                previous_state=state,
+                                target_geometry=geometry,
+                                request_binding=state["requestBinding"],
+                                core_stable_gaussian_ids=[1, stable_id],
+                                active_frontier=[],
+                                rejected_frontier=[],
+                                required_context_stable_gaussian_ids=[],
+                                revision_provenance={
+                                    "kind": "new-observation",
+                                    "reason": "invalid-direct-core-introduction",
+                                    "sourceDigests": [source],
+                                },
+                            )
+                        continue
+                    if role == "active":
+                        with self.assertRaisesRegex(
+                            TargetScopeStateTransitionError,
+                            "fresh authoritative observation or discovery source",
+                        ):
+                            revise_target_scope_state(
+                                previous_state=state,
+                                target_geometry=geometry,
+                                request_binding=state["requestBinding"],
+                                core_stable_gaussian_ids=[1],
+                                active_frontier=[
+                                    {
+                                        "stableGaussianIds": [stable_id],
+                                        "state": "new",
+                                        "provenanceDigests": [source],
+                                    }
+                                ],
+                                rejected_frontier=[],
+                                required_context_stable_gaussian_ids=[],
+                                revision_provenance={
+                                    "kind": "new-observation",
+                                    "reason": "invalid-direct-active-introduction",
+                                    "sourceDigests": [source],
+                                },
+                            )
+                        continue
+                    if role == "rejected":
+                        with self.assertRaisesRegex(
+                            TargetScopeStateTransitionError,
+                            "must originate in active Frontier",
+                        ):
+                            revise_target_scope_state(
+                                previous_state=state,
+                                target_geometry=geometry,
+                                request_binding=state["requestBinding"],
+                                core_stable_gaussian_ids=[1],
+                                active_frontier=[],
+                                rejected_frontier=[
+                                    {
+                                        "stableGaussianIds": [stable_id],
+                                        "state": "rejected",
+                                        "provenanceDigests": [source],
+                                    }
+                                ],
+                                required_context_stable_gaussian_ids=[],
+                                revision_provenance={
+                                    "kind": "scope-transition",
+                                    "reason": "invalid-direct-rejected-introduction",
+                                    "sourceDigests": [source],
+                                },
+                            )
+                        continue
                     if role == "context":
                         tampered = deepcopy(state)
                         tampered["requiredContextStableGaussianIds"] = [stable_id]
@@ -385,7 +554,7 @@ class TargetScopeStateTests(unittest.TestCase):
                                 ),
                                 required_context_stable_gaussian_ids=[],
                                 revision_provenance={
-                                    "kind": "scope-transition",
+                                    "kind": "new-observation",
                                     "reason": "coordinated-revision-zero-tamper",
                                     "sourceDigests": [source],
                                 },
@@ -420,11 +589,13 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=first_seed,
             target_geometry=first_geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
         second = bootstrap_target_scope_state_from_seed(
             seed_record=second_seed,
             target_geometry=second_geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
 
         self.assertEqual(
@@ -474,6 +645,7 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
         tampered = deepcopy(state)
         components = []
@@ -574,27 +746,10 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
-        source = digest("d")
-        revision_one = revise_target_scope_state(
-            previous_state=revision_zero,
-            target_geometry=geometry,
-            request_binding=revision_zero["requestBinding"],
-            core_stable_gaussian_ids=[1],
-            active_frontier=[
-                {
-                    "stableGaussianIds": [2],
-                    "state": "new",
-                    "provenanceDigests": [source],
-                }
-            ],
-            rejected_frontier=[],
-            required_context_stable_gaussian_ids=[],
-            revision_provenance={
-                "kind": "scope-transition",
-                "reason": "introduce-frontier-component",
-                "sourceDigests": [source],
-            },
+        revision_one, source = admit_discovery_ids(
+            revision_zero, geometry, stable_ids=[2], marker="d"
         )
 
         def resign_component(tampered: dict[str, Any]) -> None:
@@ -690,6 +845,7 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
         self.assertEqual(state["coreStableGaussianIds"], [])
         self.assertTrue(is_target_scope_state(state))
@@ -711,6 +867,7 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=admitted_seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
         overlap["requiredContextStableGaussianIds"] = [1]
         payload = {key: value for key, value in overlap.items() if key != "stateDigest"}
@@ -748,29 +905,12 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
         request_binding = deepcopy(revision_zero["requestBinding"])
         request_binding["contextRevision"] = 3
-        source = digest("f")
-        revision_one = revise_target_scope_state(
-            previous_state=revision_zero,
-            target_geometry=geometry,
-            request_binding=request_binding,
-            core_stable_gaussian_ids=[2, 1],
-            active_frontier=[
-                {
-                    "stableGaussianIds": [5, 3, 4],
-                    "state": "new",
-                    "provenanceDigests": [source],
-                }
-            ],
-            rejected_frontier=[],
-            required_context_stable_gaussian_ids=[],
-            revision_provenance={
-                "kind": "new-observation",
-                "reason": "core-external-support",
-                "sourceDigests": [source],
-            },
+        revision_one, source = admit_discovery_ids(
+            revision_zero, geometry, stable_ids=[3, 4, 5], marker="f"
         )
         self.assertEqual(revision_one["scopeRevision"], 1)
         self.assertEqual(
@@ -1050,27 +1190,10 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=empty_seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
-        first_source = digest("6")
-        parent = revise_target_scope_state(
-            previous_state=revision_zero,
-            target_geometry=geometry,
-            request_binding=revision_zero["requestBinding"],
-            core_stable_gaussian_ids=[],
-            active_frontier=[
-                {
-                    "stableGaussianIds": [1, 2, 3],
-                    "state": "new",
-                    "provenanceDigests": [first_source],
-                }
-            ],
-            rejected_frontier=[],
-            required_context_stable_gaussian_ids=[4],
-            revision_provenance={
-                "kind": "scope-transition",
-                "reason": "introduce-connected-frontier",
-                "sourceDigests": [first_source],
-            },
+        parent, first_source = admit_discovery_ids(
+            revision_zero, geometry, stable_ids=[1, 2, 3], marker="6"
         )
         parent_component = parent["activeFrontierComponents"][0]
         second_source = digest("7")
@@ -1083,157 +1206,22 @@ class TargetScopeStateTests(unittest.TestCase):
                 previous_state=parent,
                 target_geometry=geometry,
                 request_binding=parent["requestBinding"],
-                core_stable_gaussian_ids=[],
+                core_stable_gaussian_ids=[1],
                 active_frontier=[
                     {
-                        "stableGaussianIds": [1, 2],
+                        "stableGaussianIds": [2, 3],
                         "state": "observing",
                         "provenanceDigests": [first_source, second_source],
                     }
                 ],
                 rejected_frontier=[],
-                required_context_stable_gaussian_ids=[3, 4],
+                required_context_stable_gaussian_ids=[4],
                 revision_provenance={
                     "kind": "scope-transition",
-                    "reason": "partial-component-to-context",
+                    "reason": "unreviewed-subcomponent-split",
                     "sourceDigests": [second_source],
                 },
             )
-
-        shrink_decision = create_target_scope_subcomponent_decision(
-            {
-                "schemaVersion": 1,
-                "policyId": (
-                    "target-scope-subcomponents/explicit-stable-id-partition-v1"
-                ),
-                "parentComponentId": parent_component["componentId"],
-                "parentStableGaussianIds": [1, 2, 3],
-                "childStableGaussianIdPartitions": [[1, 2], [3]],
-                "provenanceDigests": [second_source],
-            }
-        )
-        mismatched_decision = create_target_scope_subcomponent_decision(
-            {
-                "schemaVersion": 1,
-                "policyId": (
-                    "target-scope-subcomponents/explicit-stable-id-partition-v1"
-                ),
-                "parentComponentId": parent_component["componentId"],
-                "parentStableGaussianIds": [1, 2, 3],
-                "childStableGaussianIdPartitions": [[1, 2], [3]],
-                "provenanceDigests": [digest("e")],
-            }
-        )
-        with self.assertRaisesRegex(
-            TargetScopeStateTransitionError,
-            "requires an exact versioned subcomponent decision",
-        ):
-            revise_target_scope_state(
-                previous_state=parent,
-                target_geometry=geometry,
-                request_binding=parent["requestBinding"],
-                core_stable_gaussian_ids=[],
-                active_frontier=[
-                    {
-                        "stableGaussianIds": [1, 2],
-                        "state": "observing",
-                        "provenanceDigests": [first_source, second_source],
-                    }
-                ],
-                rejected_frontier=[],
-                required_context_stable_gaussian_ids=[3, 4],
-                revision_provenance={
-                    "kind": "scope-transition",
-                    "reason": "mismatched-decision-provenance",
-                    "sourceDigests": [second_source],
-                },
-                subcomponent_decisions=[mismatched_decision],
-            )
-        shrunk = revise_target_scope_state(
-            previous_state=parent,
-            target_geometry=geometry,
-            request_binding=parent["requestBinding"],
-            core_stable_gaussian_ids=[],
-            active_frontier=[
-                {
-                    "stableGaussianIds": [1, 2],
-                    "state": "observing",
-                    "provenanceDigests": [first_source, second_source],
-                }
-            ],
-            rejected_frontier=[],
-            required_context_stable_gaussian_ids=[3, 4],
-            revision_provenance={
-                "kind": "scope-transition",
-                "reason": "reviewed-partial-component-to-context",
-                "sourceDigests": [second_source],
-            },
-            subcomponent_decisions=[shrink_decision],
-        )
-        shrink_record = next(
-            record
-            for record in shrunk["componentLineageLedger"]
-            if record["toScopeRevision"] == 2
-        )
-        self.assertEqual(shrink_record["retiredStableGaussianIds"], [3])
-        self.assertTrue(is_target_scope_state(shrunk))
-
-        with self.assertRaisesRegex(
-            TargetScopeStateTransitionError,
-            "requires an exact versioned subcomponent decision",
-        ):
-            revise_target_scope_state(
-                previous_state=parent,
-                target_geometry=geometry,
-                request_binding=parent["requestBinding"],
-                core_stable_gaussian_ids=[],
-                active_frontier=[],
-                rejected_frontier=[],
-                required_context_stable_gaussian_ids=[1, 4],
-                revision_provenance={
-                    "kind": "scope-transition",
-                    "reason": "unreviewed-full-component-retirement",
-                    "sourceDigests": [second_source],
-                },
-            )
-        retirement_decision = create_target_scope_subcomponent_decision(
-            {
-                "schemaVersion": 1,
-                "policyId": (
-                    "target-scope-subcomponents/explicit-stable-id-partition-v1"
-                ),
-                "parentComponentId": parent_component["componentId"],
-                "parentStableGaussianIds": [1, 2, 3],
-                "childStableGaussianIdPartitions": [[1], [2, 3]],
-                "provenanceDigests": [second_source],
-            }
-        )
-        retired = revise_target_scope_state(
-            previous_state=parent,
-            target_geometry=geometry,
-            request_binding=parent["requestBinding"],
-            core_stable_gaussian_ids=[],
-            active_frontier=[],
-            rejected_frontier=[],
-            required_context_stable_gaussian_ids=[1, 4],
-            revision_provenance={
-                "kind": "scope-transition",
-                "reason": "reviewed-full-component-retirement",
-                "sourceDigests": [second_source],
-            },
-            subcomponent_decisions=[retirement_decision],
-        )
-        retirement_record = next(
-            record
-            for record in retired["componentLineageLedger"]
-            if record["toScopeRevision"] == 2
-            and record["parentComponentIds"] == [parent_component["componentId"]]
-        )
-        self.assertEqual(retirement_record["retiredToContextStableGaussianIds"], [1])
-        self.assertEqual(
-            retirement_record["retiredOutOfScopeStableGaussianIds"], [2, 3]
-        )
-        self.assertTrue(is_target_scope_state(retired))
 
         split_decision = create_target_scope_subcomponent_decision(
             {
@@ -1247,114 +1235,68 @@ class TargetScopeStateTests(unittest.TestCase):
                 "provenanceDigests": [second_source],
             }
         )
-        split_with_added_support = revise_target_scope_state(
+        split = revise_target_scope_state(
             previous_state=parent,
             target_geometry=geometry,
             request_binding=parent["requestBinding"],
             core_stable_gaussian_ids=[1],
             active_frontier=[
                 {
-                    "stableGaussianIds": [2, 3, 4],
+                    "stableGaussianIds": [2, 3],
                     "state": "observing",
                     "provenanceDigests": [first_source, second_source],
                 }
             ],
             rejected_frontier=[],
-            required_context_stable_gaussian_ids=[],
+            required_context_stable_gaussian_ids=[4],
             revision_provenance={
                 "kind": "scope-transition",
-                "reason": "reviewed-split-with-new-support",
+                "reason": "reviewed-subcomponent-split",
                 "sourceDigests": [second_source],
             },
             subcomponent_decisions=[split_decision],
         )
         split_record = next(
             record
-            for record in split_with_added_support["componentLineageLedger"]
-            if record["toScopeRevision"] == 2
+            for record in split["componentLineageLedger"]
+            if record["toScopeRevision"] == 2 and record["relation"] == "split"
         )
-        self.assertEqual(split_record["introducedStableGaussianIds"], [4])
-        self.assertTrue(is_target_scope_state(split_with_added_support))
+        self.assertEqual(split_record["sharedStableGaussianIds"], [1, 2, 3])
+        self.assertEqual(split_record["introducedStableGaussianIds"], [])
+        self.assertEqual(split_record["retiredStableGaussianIds"], [])
+        self.assertTrue(is_target_scope_state(split))
 
-        admitted_seed = seed_record(
-            stable_ids=[1, 2, 3, 4],
-            positive=[0.9, 0.9, 0.1, 0.1],
-            negative=[0.0, 0.0, 0.0, 0.0],
-            visible=[1.0, 1.0, 1.0, 1.0],
-            geometry=geometry,
-        )
-        admitted_zero = bootstrap_target_scope_state_from_seed(
-            seed_record=admitted_seed,
-            target_geometry=geometry,
-            component_policy=component_policy(),
-        )
-        merge_parent = revise_target_scope_state(
-            previous_state=admitted_zero,
-            target_geometry=geometry,
-            request_binding=admitted_zero["requestBinding"],
-            core_stable_gaussian_ids=[1, 2],
-            active_frontier=[
-                {
-                    "stableGaussianIds": [3, 4],
-                    "state": "new",
-                    "provenanceDigests": [first_source],
-                }
-            ],
-            rejected_frontier=[],
-            required_context_stable_gaussian_ids=[],
-            revision_provenance={
-                "kind": "scope-transition",
-                "reason": "introduce-merge-parent",
-                "sourceDigests": [first_source],
-            },
-        )
-        merge_frontier = merge_parent["activeFrontierComponents"][0]
         with self.assertRaisesRegex(
             TargetScopeStateTransitionError,
-            "requires an exact versioned subcomponent decision",
+            "fresh authoritative observation or discovery source",
         ):
             revise_target_scope_state(
-                previous_state=merge_parent,
+                previous_state=split,
                 target_geometry=geometry,
-                request_binding=merge_parent["requestBinding"],
-                core_stable_gaussian_ids=[1, 2, 3],
-                active_frontier=[],
+                request_binding=split["requestBinding"],
+                core_stable_gaussian_ids=[1],
+                active_frontier=[
+                    {
+                        "stableGaussianIds": [2, 3, 4],
+                        "state": "observing",
+                        "provenanceDigests": [first_source, second_source, digest("8")],
+                    }
+                ],
                 rejected_frontier=[],
-                required_context_stable_gaussian_ids=[4],
+                required_context_stable_gaussian_ids=[],
                 revision_provenance={
-                    "kind": "scope-transition",
-                    "reason": "unreviewed-partial-merge",
-                    "sourceDigests": [second_source],
+                    "kind": "new-observation",
+                    "reason": "invalid-unversioned-added-support",
+                    "sourceDigests": [digest("8")],
                 },
             )
-        merge_decision = create_target_scope_subcomponent_decision(
-            {
-                "schemaVersion": 1,
-                "policyId": (
-                    "target-scope-subcomponents/explicit-stable-id-partition-v1"
-                ),
-                "parentComponentId": merge_frontier["componentId"],
-                "parentStableGaussianIds": [3, 4],
-                "childStableGaussianIdPartitions": [[3], [4]],
-                "provenanceDigests": [second_source],
-            }
+
+        admitted_context, _ = admit_discovery_ids(
+            split, geometry, stable_ids=[4], marker="9"
         )
-        merged = revise_target_scope_state(
-            previous_state=merge_parent,
-            target_geometry=geometry,
-            request_binding=merge_parent["requestBinding"],
-            core_stable_gaussian_ids=[1, 2, 3],
-            active_frontier=[],
-            rejected_frontier=[],
-            required_context_stable_gaussian_ids=[4],
-            revision_provenance={
-                "kind": "scope-transition",
-                "reason": "reviewed-partial-merge",
-                "sourceDigests": [second_source],
-            },
-            subcomponent_decisions=[merge_decision],
-        )
-        self.assertTrue(is_target_scope_state(merged))
+        self.assertEqual(admitted_context["activeFrontierStableGaussianIds"], [2, 3, 4])
+        self.assertEqual(admitted_context["requiredContextStableGaussianIds"], [])
+        self.assertTrue(is_target_scope_state(admitted_context))
 
     def test_core_shrink_requires_epoch_rotation_and_restoration_is_exact(self) -> None:
         geometry = target_geometry(
@@ -1375,29 +1317,12 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
         request_binding = deepcopy(revision_zero["requestBinding"])
         request_binding["contextRevision"] = 3
-        source = digest("2")
-        revision_one = revise_target_scope_state(
-            previous_state=revision_zero,
-            target_geometry=geometry,
-            request_binding=request_binding,
-            core_stable_gaussian_ids=[1, 2],
-            active_frontier=[
-                {
-                    "stableGaussianIds": [3],
-                    "state": "new",
-                    "provenanceDigests": [source],
-                }
-            ],
-            rejected_frontier=[],
-            required_context_stable_gaussian_ids=[],
-            revision_provenance={
-                "kind": "new-observation",
-                "reason": "new-included-observation",
-                "sourceDigests": [source],
-            },
+        revision_one, source = admit_discovery_ids(
+            revision_zero, geometry, stable_ids=[3], marker="2"
         )
         self.assertEqual(revision_one["scopeEpochId"], revision_zero["scopeEpochId"])
         before_failed_transition = canonical_target_scope_state_bytes(revision_one)
@@ -1514,6 +1439,7 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
         rotated = rotate_target_scope_epoch(
             previous_state=bootstrap,
@@ -1614,6 +1540,7 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=unevaluated_seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
         request_tamper = deepcopy(state)
         request_tamper["requestBinding"]["contextRevision"] += 1
@@ -1665,27 +1592,10 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
-        source_one = digest("a")
-        revision_one = revise_target_scope_state(
-            previous_state=revision_zero,
-            target_geometry=geometry,
-            request_binding=revision_zero["requestBinding"],
-            core_stable_gaussian_ids=[],
-            active_frontier=[
-                {
-                    "stableGaussianIds": [1, 2],
-                    "state": "new",
-                    "provenanceDigests": [source_one],
-                }
-            ],
-            rejected_frontier=[],
-            required_context_stable_gaussian_ids=[],
-            revision_provenance={
-                "kind": "scope-transition",
-                "reason": "introduce-connected-frontier",
-                "sourceDigests": [source_one],
-            },
+        revision_one, source_one = admit_discovery_ids(
+            revision_zero, geometry, stable_ids=[1, 2], marker="a"
         )
         parent = revision_one["activeFrontierComponents"][0]
         source_two = digest("b")
@@ -1710,10 +1620,16 @@ class TargetScopeStateTests(unittest.TestCase):
                 {
                     "stableGaussianIds": [1],
                     "state": "observing",
-                    "provenanceDigests": [source_two],
+                    "provenanceDigests": sorted([source_one, source_two]),
                 }
             ],
-            rejected_frontier=[],
+            rejected_frontier=[
+                {
+                    "stableGaussianIds": [2],
+                    "state": "rejected",
+                    "provenanceDigests": sorted([source_one, source_two]),
+                }
+            ],
             required_context_stable_gaussian_ids=[],
             revision_provenance={
                 "kind": "scope-transition",
@@ -1731,7 +1647,13 @@ class TargetScopeStateTests(unittest.TestCase):
             if record["toScopeRevision"] == 2
         )
         parent_reference = deepcopy(original_record["parentMemberships"][0])
-        child_reference = deepcopy(original_record["childMemberships"][0])
+        child_reference = deepcopy(
+            next(
+                reference
+                for reference in original_record["childMemberships"]
+                if reference["stableGaussianIds"] == [1]
+            )
+        )
         child_reference["provenanceDigests"] = [source_two]
         retire_payload = {
             "schemaVersion": 1,
@@ -1846,6 +1768,7 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
 
         self.assertTrue(is_target_scope_state(state))
@@ -1877,6 +1800,7 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
         )
         with self.assertRaises(TargetScopeStateValidationError):
             revise_target_scope_state(
@@ -1922,19 +1846,23 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=seed,
             target_geometry=geometry,
             component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
+        )
+        active, discovery_source_digest = admit_discovery_ids(
+            revision_zero, geometry, stable_ids=[2], marker="5"
         )
         source = digest("6")
         revised = revise_target_scope_state(
-            previous_state=revision_zero,
+            previous_state=active,
             target_geometry=geometry,
-            request_binding=revision_zero["requestBinding"],
+            request_binding=active["requestBinding"],
             core_stable_gaussian_ids=[1],
             active_frontier=[],
             rejected_frontier=[
                 {
                     "stableGaussianIds": [2],
                     "state": "rejected",
-                    "provenanceDigests": [source],
+                    "provenanceDigests": sorted([discovery_source_digest, source]),
                 }
             ],
             required_context_stable_gaussian_ids=[3],
@@ -1949,8 +1877,25 @@ class TargetScopeStateTests(unittest.TestCase):
         self.assertEqual(revised["requiredContextStableGaussianIds"], [3])
         self.assertEqual(revised["rejectedFrontierComponents"][0]["state"], "rejected")
         self.assertEqual(revised["rejectedFrontierLedger"][0]["event"], "rejected")
-        self.assertEqual(revised["discoveryEnvelopeLedger"], [])
+        self.assertEqual(len(revised["discoveryEnvelopeLedger"]), 1)
         self.assertTrue(is_target_scope_state(revised))
+        with self.assertRaisesRegex(
+            TargetScopeStateTransitionError, "cannot become Core or required Context"
+        ):
+            revise_target_scope_state(
+                previous_state=revised,
+                target_geometry=geometry,
+                request_binding=revised["requestBinding"],
+                core_stable_gaussian_ids=[1],
+                active_frontier=[],
+                rejected_frontier=[],
+                required_context_stable_gaussian_ids=[2, 3],
+                revision_provenance={
+                    "kind": "scope-transition",
+                    "reason": "invalid-rejected-to-context",
+                    "sourceDigests": [digest("a")],
+                },
+            )
         tampered_event_state = deepcopy(revised)
         tampered_event = tampered_event_state["rejectedFrontierLedger"][0]
         tampered_event["componentDigest"] = digest("c")
@@ -1966,6 +1911,26 @@ class TargetScopeStateTests(unittest.TestCase):
         }
         tampered_event_state["stateDigest"] = route_b_artifact_digest(tampered_payload)
         self.assertFalse(is_target_scope_state(tampered_event_state))
+        out_of_range_history = deepcopy(revised)
+        out_of_range_event = out_of_range_history["rejectedFrontierLedger"][-1]
+        out_of_range_event["scopeRevision"] = 999
+        out_of_range_event_payload = {
+            key: value
+            for key, value in out_of_range_event.items()
+            if key != "eventDigest"
+        }
+        out_of_range_event["eventDigest"] = route_b_artifact_digest(
+            out_of_range_event_payload
+        )
+        out_of_range_payload = {
+            key: value
+            for key, value in out_of_range_history.items()
+            if key != "stateDigest"
+        }
+        out_of_range_history["stateDigest"] = route_b_artifact_digest(
+            out_of_range_payload
+        )
+        self.assertFalse(is_target_scope_state(out_of_range_history))
         retired_rejection = revise_target_scope_state(
             previous_state=revised,
             target_geometry=geometry,
@@ -1981,6 +1946,82 @@ class TargetScopeStateTests(unittest.TestCase):
             },
         )
         self.assertTrue(is_target_scope_state(retired_rejection))
+        post_retirement = revise_target_scope_state(
+            previous_state=retired_rejection,
+            target_geometry=geometry,
+            request_binding=retired_rejection["requestBinding"],
+            core_stable_gaussian_ids=[1],
+            active_frontier=[],
+            rejected_frontier=[],
+            required_context_stable_gaussian_ids=[3],
+            revision_provenance={
+                "kind": "scope-transition",
+                "reason": "post-retirement-history-fixture",
+                "sourceDigests": [digest("f")],
+            },
+        )
+        tampered_history = deepcopy(post_retirement)
+        retirement_snapshot = tampered_history["scopeRevisionLedger"][-2]
+        retirement_snapshot["requiredContextStableGaussianIds"] = [2, 3]
+        retirement_snapshot_payload = {
+            key: value
+            for key, value in retirement_snapshot.items()
+            if key != "scopeRevisionDigest"
+        }
+        retirement_snapshot["scopeRevisionDigest"] = route_b_artifact_digest(
+            retirement_snapshot_payload
+        )
+        history_payload = {
+            key: value
+            for key, value in tampered_history.items()
+            if key != "stateDigest"
+        }
+        tampered_history["stateDigest"] = route_b_artifact_digest(history_payload)
+        self.assertFalse(is_target_scope_state(tampered_history))
+        with self.assertRaisesRegex(
+            TargetScopeStateTransitionError, "cannot become Core or required Context"
+        ):
+            revise_target_scope_state(
+                previous_state=retired_rejection,
+                target_geometry=geometry,
+                request_binding=retired_rejection["requestBinding"],
+                core_stable_gaussian_ids=[1],
+                active_frontier=[],
+                rejected_frontier=[],
+                required_context_stable_gaussian_ids=[2, 3],
+                revision_provenance={
+                    "kind": "scope-transition",
+                    "reason": "invalid-retired-rejection-laundering",
+                    "sourceDigests": [digest("8")],
+                },
+            )
+        retired_recovery = create_target_scope_observation_shadow_source(
+            target_scope_state=retired_rejection,
+            observation={
+                "status": "user-confirmed",
+                "sourceKind": "user-confirmed-expert-recovery",
+                "artifactId": "retired-expert-observation",
+                "artifactDigest": digest("9"),
+                "viewIds": ["retired-expert-view"],
+                "supportedStableGaussianIds": [2],
+                "spatialBounds": {
+                    "minimum": [2.75, -0.25, -0.25],
+                    "maximum": [3.25, 0.25, 0.25],
+                },
+                "reason": "user-confirmed-retired-recovery",
+            },
+        )
+        reopened_retired = admit_target_scope_discovery_sources(
+            previous_state=retired_rejection,
+            target_geometry=geometry,
+            request_binding=retired_rejection["requestBinding"],
+            sources=[retired_recovery],
+        )
+        self.assertEqual(reopened_retired["activeFrontierStableGaussianIds"], [2])
+        self.assertEqual(
+            [event["event"] for event in reopened_retired["rejectedFrontierLedger"]],
+            ["rejected", "reopened"],
+        )
         missing_historical_event = deepcopy(retired_rejection)
         missing_historical_event["rejectedFrontierLedger"] = []
         missing_event_payload = {
@@ -2017,25 +2058,20 @@ class TargetScopeStateTests(unittest.TestCase):
                 },
             )
 
-        reopened = revise_target_scope_state(
+        recovery_source = discovery_source(
+            revised,
+            source_kind="user-confirmed-expert-recovery",
+            stable_ids=[2],
+            marker="7",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(3.25, 0.25, 0.25),
+            view_ids=["expert-view"],
+        )
+        reopened = admit_target_scope_discovery_sources(
             previous_state=revised,
             target_geometry=geometry,
             request_binding=revised["requestBinding"],
-            core_stable_gaussian_ids=[1],
-            active_frontier=[
-                {
-                    "stableGaussianIds": [2],
-                    "state": "reopened",
-                    "provenanceDigests": [digest("7")],
-                }
-            ],
-            rejected_frontier=[],
-            required_context_stable_gaussian_ids=[3],
-            revision_provenance={
-                "kind": "scope-transition",
-                "reason": "component-reopen-fixture",
-                "sourceDigests": [digest("7")],
-            },
+            sources=[recovery_source],
         )
         self.assertEqual(reopened["rejectedFrontierStableGaussianIds"], [])
         self.assertEqual(reopened["activeFrontierStableGaussianIds"], [2])
@@ -2043,7 +2079,8 @@ class TargetScopeStateTests(unittest.TestCase):
             [event["event"] for event in reopened["rejectedFrontierLedger"]],
             ["rejected", "reopened"],
         )
-        self.assertEqual(reopened["discoveryEnvelopeLedger"], [])
+        self.assertEqual(reopened["discoveryEnvelopeLedger"][-1], recovery_source)
+        self.assertEqual(len(reopened["discoveryEnvelopeLedger"]), 2)
         self.assertTrue(is_target_scope_state(reopened))
 
         broken_history = deepcopy(reopened)
@@ -2064,6 +2101,775 @@ class TargetScopeStateTests(unittest.TestCase):
         payload = {key: value for key, value in invalid.items() if key != "stateDigest"}
         invalid["stateDigest"] = route_b_artifact_digest(payload)
         self.assertFalse(is_target_scope_state(invalid))
+
+    def test_discovery_source_families_are_bounded_deduped_and_deterministic(
+        self,
+    ) -> None:
+        geometry = target_geometry(
+            [
+                (1, (0.0, 0.0, 0.0)),
+                (2, (3.0, 0.0, 0.0)),
+                (3, (6.0, 0.0, 0.0)),
+                (4, (9.0, 0.0, 0.0)),
+                (5, (12.0, 0.0, 0.0)),
+                (6, (15.0, 0.0, 0.0)),
+            ]
+        )
+        seed = seed_record(
+            stable_ids=[1, 2, 3, 4, 5, 6],
+            positive=[0.9, 0.1, 0.1, 0.1, 0.1, 0.1],
+            negative=[0.0] * 6,
+            visible=[1.0] * 6,
+            geometry=geometry,
+        )
+        initial = bootstrap_target_scope_state_from_seed(
+            seed_record=seed,
+            target_geometry=geometry,
+            component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
+        )
+        negative_zero_bounds = discovery_source(
+            initial,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[1],
+            marker="0",
+            minimum=(-0.0, -0.0, -0.0),
+            maximum=(0.0, 0.0, 0.0),
+        )
+        positive_zero_bounds = discovery_source(
+            initial,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[1],
+            marker="0",
+            minimum=(0.0, 0.0, 0.0),
+            maximum=(0.0, 0.0, 0.0),
+        )
+        self.assertEqual(negative_zero_bounds, positive_zero_bounds)
+        source_specs = [
+            ("evidence-working-set-boundary-contact", 2, "a", ["view-a"]),
+            ("core-external-included-positive-support", 3, "b", ["view-b"]),
+            ("coherent-cross-view-support", 4, "c", ["view-c1", "view-c2"]),
+            ("reviewed-target-local-spatial-support", 5, "d", ["anchor-view"]),
+            ("user-confirmed-expert-recovery", 6, "e", ["view-e"]),
+        ]
+        sources = [
+            discovery_source(
+                initial,
+                source_kind=source_kind,
+                stable_ids=[stable_id],
+                marker=marker,
+                minimum=(stable_id * 3.0 - 3.25, -0.25, -0.25),
+                maximum=(stable_id * 3.0 - 2.75, 0.25, 0.25),
+                view_ids=view_ids,
+            )
+            for source_kind, stable_id, marker, view_ids in source_specs
+        ]
+        zero_wire_payload = {
+            key: deepcopy(value)
+            for key, value in sources[0].items()
+            if key != "sourceDigest"
+        }
+        zero_wire_payload["spatialBounds"] = {
+            "minimum": [2.75, 0.0, 0.0],
+            "maximum": [3.25, 0.0, 0.0],
+        }
+        sources[0] = create_target_scope_discovery_source(zero_wire_payload)
+        coherent_payload = {
+            key: deepcopy(value)
+            for key, value in sources[2].items()
+            if key != "sourceDigest"
+        }
+        coherent_payload["sourceViewIds"] = list(
+            reversed(coherent_payload["sourceViewIds"])  # type: ignore[arg-type]
+        )
+        recreated_coherent = create_target_scope_discovery_source(coherent_payload)
+        self.assertEqual(recreated_coherent, sources[2])
+        for source in sources:
+            self.assertEqual(validate_target_scope_discovery_source(source), source)
+
+        forward = admit_target_scope_discovery_sources(
+            previous_state=initial,
+            target_geometry=geometry,
+            request_binding=initial["requestBinding"],
+            sources=[sources[1], sources[0], sources[4], sources[2], sources[3]],
+        )
+        reverse = admit_target_scope_discovery_sources(
+            previous_state=initial,
+            target_geometry=geometry,
+            request_binding=initial["requestBinding"],
+            sources=list(reversed(sources)),
+        )
+        self.assertEqual(
+            canonical_target_scope_state_bytes(forward),
+            canonical_target_scope_state_bytes(reverse),
+        )
+        signed_zero_tamper = deepcopy(forward)
+        zero_source = next(
+            record
+            for record in signed_zero_tamper["discoveryEnvelopeLedger"]
+            if record["sourceDigest"] == sources[0]["sourceDigest"]
+        )
+        zero_source["spatialBounds"]["minimum"][1] = -0.0
+        self.assertEqual(signed_zero_tamper["stateDigest"], forward["stateDigest"])
+        self.assertFalse(is_target_scope_state(signed_zero_tamper))
+        self.assertEqual(forward["coreStableGaussianIds"], [1])
+        self.assertEqual(forward["activeFrontierStableGaussianIds"], [2, 3, 4, 5, 6])
+        self.assertEqual(forward["rejectedFrontierStableGaussianIds"], [])
+        self.assertEqual(forward["requiredContextStableGaussianIds"], [])
+        self.assertEqual(
+            [record["sourceKind"] for record in forward["discoveryEnvelopeLedger"]],
+            [
+                record["sourceKind"]
+                for record in sorted(
+                    sources, key=lambda record: str(record["sourceDigest"])
+                )
+            ],
+        )
+        self.assertTrue(
+            all(
+                component["state"] == "new"
+                for component in forward["activeFrontierComponents"]
+            )
+        )
+        replay = admit_target_scope_discovery_sources(
+            previous_state=forward,
+            target_geometry=geometry,
+            request_binding=forward["requestBinding"],
+            sources=[sources[0], sources[0]],
+        )
+        self.assertEqual(replay["scopeRevision"], forward["scopeRevision"])
+        self.assertEqual(
+            canonical_target_scope_state_bytes(replay),
+            canonical_target_scope_state_bytes(forward),
+        )
+
+    def test_discovery_budget_and_epoch_reset_fail_closed_without_partial_state(
+        self,
+    ) -> None:
+        geometry = target_geometry(
+            [
+                (1, (0.0, 0.0, 0.0)),
+                (2, (3.0, 0.0, 0.0)),
+                (3, (6.0, 0.0, 0.0)),
+            ]
+        )
+        seed = seed_record(
+            stable_ids=[1, 2, 3],
+            positive=[0.9, 0.1, 0.1],
+            negative=[0.0, 0.0, 0.0],
+            visible=[1.0, 1.0, 1.0],
+            geometry=geometry,
+        )
+        policy = discovery_policy(maximum_sources=1, maximum_stable_ids=1)
+        initial = bootstrap_target_scope_state_from_seed(
+            seed_record=seed,
+            target_geometry=geometry,
+            component_policy=component_policy(),
+            discovery_policy=policy,
+        )
+        with self.assertRaisesRegex(
+            TargetScopeStateTransitionError,
+            "fresh authoritative observation or discovery source",
+        ):
+            revise_target_scope_state(
+                previous_state=initial,
+                target_geometry=geometry,
+                request_binding=initial["requestBinding"],
+                core_stable_gaussian_ids=[1],
+                active_frontier=[
+                    {
+                        "stableGaussianIds": [2],
+                        "state": "new",
+                        "provenanceDigests": [digest("f")],
+                    }
+                ],
+                rejected_frontier=[],
+                required_context_stable_gaussian_ids=[],
+                revision_provenance={
+                    "kind": "scope-transition",
+                    "reason": "invalid-unbound-frontier-introduction",
+                    "sourceDigests": [digest("f")],
+                },
+            )
+        contextual = revise_target_scope_state(
+            previous_state=initial,
+            target_geometry=geometry,
+            request_binding=initial["requestBinding"],
+            core_stable_gaussian_ids=[1],
+            active_frontier=[],
+            rejected_frontier=[],
+            required_context_stable_gaussian_ids=[2],
+            revision_provenance={
+                "kind": "scope-transition",
+                "reason": "context-before-discovery-fixture",
+                "sourceDigests": [digest("0")],
+            },
+        )
+        context_source = discovery_source(
+            contextual,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[2],
+            marker="9",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(3.25, 0.25, 0.25),
+        )
+        admitted_from_context = admit_target_scope_discovery_sources(
+            previous_state=contextual,
+            target_geometry=geometry,
+            request_binding=contextual["requestBinding"],
+            sources=[context_source],
+        )
+        self.assertEqual(admitted_from_context["activeFrontierStableGaussianIds"], [2])
+        self.assertEqual(admitted_from_context["requiredContextStableGaussianIds"], [])
+        first = discovery_source(
+            initial,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[2],
+            marker="a",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(3.25, 0.25, 0.25),
+        )
+        admitted = admit_target_scope_discovery_sources(
+            previous_state=initial,
+            target_geometry=geometry,
+            request_binding=initial["requestBinding"],
+            sources=[first, first],
+        )
+        self.assertEqual(len(admitted["discoveryEnvelopeLedger"]), 1)
+        self.assertEqual(admitted["activeFrontierStableGaussianIds"], [2])
+
+        duplicate = admit_target_scope_discovery_sources(
+            previous_state=admitted,
+            target_geometry=geometry,
+            request_binding=admitted["requestBinding"],
+            sources=[first],
+        )
+        self.assertEqual(duplicate["stateDigest"], admitted["stateDigest"])
+        before_invalid = canonical_target_scope_state_bytes(admitted)
+        second = discovery_source(
+            admitted,
+            source_kind="core-external-included-positive-support",
+            stable_ids=[2],
+            marker="b",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(3.25, 0.25, 0.25),
+        )
+        with self.assertRaisesRegex(
+            TargetScopeStateTransitionError, "source-record budget"
+        ):
+            admit_target_scope_discovery_sources(
+                previous_state=admitted,
+                target_geometry=geometry,
+                request_binding=admitted["requestBinding"],
+                sources=[second],
+            )
+        over_stable_id_budget = discovery_source(
+            initial,
+            source_kind="coherent-cross-view-support",
+            stable_ids=[2, 3],
+            marker="c",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(6.25, 0.25, 0.25),
+            view_ids=["view-c1", "view-c2"],
+        )
+        with self.assertRaisesRegex(
+            TargetScopeStateTransitionError, "Stable Gaussian ID budget"
+        ):
+            admit_target_scope_discovery_sources(
+                previous_state=initial,
+                target_geometry=geometry,
+                request_binding=initial["requestBinding"],
+                sources=[over_stable_id_budget],
+            )
+        out_of_target = discovery_source(
+            initial,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[99],
+            marker="d",
+            minimum=(0.0, 0.0, 0.0),
+            maximum=(100.0, 100.0, 100.0),
+        )
+        with self.assertRaisesRegex(TargetScopeStateTransitionError, "target-bounded"):
+            admit_target_scope_discovery_sources(
+                previous_state=initial,
+                target_geometry=geometry,
+                request_binding=initial["requestBinding"],
+                sources=[out_of_target],
+            )
+        spatially_unbounded = {
+            key: deepcopy(value)
+            for key, value in first.items()
+            if key != "sourceDigest"
+        }
+        spatially_unbounded["spatialBounds"] = {
+            "minimum": [float("-inf"), 0.0, 0.0],
+            "maximum": [float("inf"), 1.0, 1.0],
+        }
+        with self.assertRaisesRegex(TargetScopeStateValidationError, "spatial bounds"):
+            create_target_scope_discovery_source(spatially_unbounded)
+        out_of_bounds = discovery_source(
+            initial,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[2],
+            marker="e",
+            minimum=(20.0, -0.25, -0.25),
+            maximum=(21.0, 0.25, 0.25),
+        )
+        with self.assertRaisesRegex(
+            TargetScopeStateTransitionError, "spatially bounded"
+        ):
+            admit_target_scope_discovery_sources(
+                previous_state=initial,
+                target_geometry=geometry,
+                request_binding=initial["requestBinding"],
+                sources=[out_of_bounds],
+            )
+        self.assertEqual(canonical_target_scope_state_bytes(admitted), before_invalid)
+
+        rotated = rotate_target_scope_epoch(
+            previous_state=admitted,
+            seed_record=seed,
+            target_geometry=geometry,
+            component_policy=component_policy(),
+            discovery_policy=policy,
+            reason="authoritative-stable-mask-correction",
+            source_digests=[digest("f")],
+        )
+        self.assertEqual(rotated["discoveryEnvelopeLedger"], [])
+        fresh = discovery_source(
+            rotated,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[2],
+            marker="a",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(3.25, 0.25, 0.25),
+        )
+        reset_admission = admit_target_scope_discovery_sources(
+            previous_state=rotated,
+            target_geometry=geometry,
+            request_binding=rotated["requestBinding"],
+            sources=[fresh],
+        )
+        self.assertEqual(len(reset_admission["discoveryEnvelopeLedger"]), 1)
+
+    def test_rejected_frontier_reopens_only_with_new_discovery_provenance(
+        self,
+    ) -> None:
+        geometry = target_geometry(
+            [
+                (1, (0.0, 0.0, 0.0)),
+                (2, (3.0, 0.0, 0.0)),
+                (3, (4.0, 0.0, 0.0)),
+            ]
+        )
+        seed = seed_record(
+            stable_ids=[1, 2, 3],
+            positive=[0.9, 0.1, 0.1],
+            negative=[0.0, 0.0, 0.0],
+            visible=[1.0, 1.0, 1.0],
+            geometry=geometry,
+        )
+        initial = bootstrap_target_scope_state_from_seed(
+            seed_record=seed,
+            target_geometry=geometry,
+            component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
+        )
+        first = discovery_source(
+            initial,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[2],
+            marker="a",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(3.25, 0.25, 0.25),
+        )
+        discovered = admit_target_scope_discovery_sources(
+            previous_state=initial,
+            target_geometry=geometry,
+            request_binding=initial["requestBinding"],
+            sources=[first],
+        )
+        first_digest = str(first["sourceDigest"])
+        rejected = revise_target_scope_state(
+            previous_state=discovered,
+            target_geometry=geometry,
+            request_binding=discovered["requestBinding"],
+            core_stable_gaussian_ids=[1],
+            active_frontier=[],
+            rejected_frontier=[
+                {
+                    "stableGaussianIds": [2],
+                    "state": "rejected",
+                    "provenanceDigests": sorted([first_digest, digest("b")]),
+                }
+            ],
+            required_context_stable_gaussian_ids=[3],
+            revision_provenance={
+                "kind": "scope-transition",
+                "reason": "component-rejection-fixture",
+                "sourceDigests": [digest("b")],
+            },
+        )
+        self.assertEqual(len(rejected["discoveryEnvelopeLedger"]), 1)
+        self.assertEqual(rejected["requiredContextStableGaussianIds"], [3])
+        metadata_variant_payload = {
+            key: deepcopy(value)
+            for key, value in first.items()
+            if key != "sourceDigest"
+        }
+        metadata_variant_payload["reason"] = "metadata-only-rewording"
+        metadata_variant = create_target_scope_discovery_source(
+            metadata_variant_payload
+        )
+        metadata_replay = admit_target_scope_discovery_sources(
+            previous_state=rejected,
+            target_geometry=geometry,
+            request_binding=rejected["requestBinding"],
+            sources=[metadata_variant],
+        )
+        self.assertEqual(metadata_replay["stateDigest"], rejected["stateDigest"])
+        self.assertEqual(metadata_replay["rejectedFrontierStableGaussianIds"], [2])
+        self.assertEqual(len(metadata_replay["discoveryEnvelopeLedger"]), 1)
+        with self.assertRaisesRegex(
+            TargetScopeStateTransitionError,
+            "new authoritative observation or discovery source",
+        ):
+            revise_target_scope_state(
+                previous_state=rejected,
+                target_geometry=geometry,
+                request_binding=rejected["requestBinding"],
+                core_stable_gaussian_ids=[1],
+                active_frontier=[
+                    {
+                        "stableGaussianIds": [2],
+                        "state": "reopened",
+                        "provenanceDigests": sorted([first_digest, digest("b")]),
+                    }
+                ],
+                rejected_frontier=[],
+                required_context_stable_gaussian_ids=[3],
+                revision_provenance={
+                    "kind": "new-observation",
+                    "reason": "unchanged-observation-replay",
+                    "sourceDigests": [first_digest],
+                },
+            )
+
+        fresh_observation_digest = digest("e")
+        with self.assertRaisesRegex(
+            TargetScopeStateTransitionError,
+            "new authoritative observation or discovery source",
+        ):
+            revise_target_scope_state(
+                previous_state=rejected,
+                target_geometry=geometry,
+                request_binding=rejected["requestBinding"],
+                core_stable_gaussian_ids=[1],
+                active_frontier=[
+                    {
+                        "stableGaussianIds": [2],
+                        "state": "reopened",
+                        "provenanceDigests": sorted(
+                            [first_digest, digest("b"), fresh_observation_digest]
+                        ),
+                    }
+                ],
+                rejected_frontier=[],
+                required_context_stable_gaussian_ids=[3],
+                revision_provenance={
+                    "kind": "new-observation",
+                    "reason": "unversioned-observation-recovery",
+                    "sourceDigests": [fresh_observation_digest],
+                },
+            )
+        merged_recovery_source = discovery_source(
+            rejected,
+            source_kind="user-confirmed-expert-recovery",
+            stable_ids=[2, 3],
+            marker="d",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(4.25, 0.25, 0.25),
+            view_ids=["expert-merged-view"],
+        )
+        merged_recovery = admit_target_scope_discovery_sources(
+            previous_state=rejected,
+            target_geometry=geometry,
+            request_binding=rejected["requestBinding"],
+            sources=[merged_recovery_source],
+        )
+        self.assertEqual(merged_recovery["activeFrontierStableGaussianIds"], [2, 3])
+        self.assertEqual(merged_recovery["requiredContextStableGaussianIds"], [])
+        self.assertEqual(
+            merged_recovery["activeFrontierComponents"][0]["state"], "reopened"
+        )
+        self.assertEqual(
+            [event["event"] for event in merged_recovery["rejectedFrontierLedger"]],
+            ["rejected", "reopened"],
+        )
+        recovery = create_target_scope_observation_shadow_source(
+            target_scope_state=rejected,
+            observation={
+                "status": "user-confirmed",
+                "sourceKind": "user-confirmed-expert-recovery",
+                "artifactId": "expert-observation-c",
+                "artifactDigest": digest("c"),
+                "viewIds": ["expert-view"],
+                "supportedStableGaussianIds": [2],
+                "spatialBounds": {
+                    "minimum": [2.75, -0.25, -0.25],
+                    "maximum": [3.25, 0.25, 0.25],
+                },
+                "reason": "user-confirmed-expert-recovery",
+            },
+        )
+        reopened = admit_target_scope_discovery_sources(
+            previous_state=rejected,
+            target_geometry=geometry,
+            request_binding=rejected["requestBinding"],
+            sources=[recovery],
+        )
+        self.assertEqual(reopened["activeFrontierStableGaussianIds"], [2])
+        self.assertEqual(reopened["rejectedFrontierStableGaussianIds"], [])
+        self.assertEqual(
+            reopened["discoveryEnvelopeLedger"][:-1],
+            rejected["discoveryEnvelopeLedger"],
+        )
+        self.assertEqual(reopened["requiredContextStableGaussianIds"], [3])
+        self.assertEqual(reopened["activeFrontierComponents"][0]["state"], "reopened")
+        self.assertEqual(
+            [event["event"] for event in reopened["rejectedFrontierLedger"]],
+            ["rejected", "reopened"],
+        )
+        duplicate = admit_target_scope_discovery_sources(
+            previous_state=reopened,
+            target_geometry=geometry,
+            request_binding=reopened["requestBinding"],
+            sources=[recovery],
+        )
+        self.assertEqual(duplicate["stateDigest"], reopened["stateDigest"])
+
+    def test_s1_or_technical_failure_cannot_erase_discovered_support(self) -> None:
+        geometry = target_geometry(
+            [
+                (1, (0.0, 0.0, 0.0)),
+                (2, (3.0, 0.0, 0.0)),
+            ]
+        )
+        seed = seed_record(
+            stable_ids=[1, 2],
+            positive=[0.9, 0.1],
+            negative=[0.0, 0.0],
+            visible=[1.0, 1.0],
+            geometry=geometry,
+        )
+        initial = bootstrap_target_scope_state_from_seed(
+            seed_record=seed,
+            target_geometry=geometry,
+            component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
+        )
+        source = discovery_source(
+            initial,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[2],
+            marker="a",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(3.25, 0.25, 0.25),
+        )
+        discovered = admit_target_scope_discovery_sources(
+            previous_state=initial,
+            target_geometry=geometry,
+            request_binding=initial["requestBinding"],
+            sources=[source],
+        )
+        before_failure = canonical_target_scope_state_bytes(discovered)
+        for failure_kind in (
+            "low-visibility",
+            "low-support",
+            "s1-failure",
+            "s1-depth-unavailable",
+            "technical-failure",
+        ):
+            with (
+                self.subTest(failure_kind=failure_kind),
+                self.assertRaisesRegex(
+                    TargetScopeStateTransitionError, "cannot reject or erase"
+                ),
+            ):
+                revise_target_scope_state(
+                    previous_state=discovered,
+                    target_geometry=geometry,
+                    request_binding=discovered["requestBinding"],
+                    core_stable_gaussian_ids=[1],
+                    active_frontier=[],
+                    rejected_frontier=[
+                        {
+                            "stableGaussianIds": [2],
+                            "state": "rejected",
+                            "provenanceDigests": [source["sourceDigest"]],
+                        }
+                    ],
+                    required_context_stable_gaussian_ids=[],
+                    revision_provenance={
+                        "kind": failure_kind,
+                        "reason": "failed-observation-must-not-remove-support",
+                        "sourceDigests": [digest("b")],
+                    },
+                )
+        with self.assertRaisesRegex(
+            TargetScopeStateTransitionError, "must remain Core, active Frontier"
+        ):
+            revise_target_scope_state(
+                previous_state=discovered,
+                target_geometry=geometry,
+                request_binding=discovered["requestBinding"],
+                core_stable_gaussian_ids=[1],
+                active_frontier=[],
+                rejected_frontier=[],
+                required_context_stable_gaussian_ids=[],
+                revision_provenance={
+                    "kind": "scope-transition",
+                    "reason": "invalid-unrecorded-retirement",
+                    "sourceDigests": [digest("c")],
+                },
+            )
+        with self.assertRaisesRegex(
+            TargetScopeStateTransitionError, "promote it out of active Frontier"
+        ):
+            revise_target_scope_state(
+                previous_state=discovered,
+                target_geometry=geometry,
+                request_binding=discovered["requestBinding"],
+                core_stable_gaussian_ids=[1, 2],
+                active_frontier=[],
+                rejected_frontier=[],
+                required_context_stable_gaussian_ids=[],
+                revision_provenance={
+                    "kind": "technical-failure",
+                    "reason": "invalid-failure-promotion",
+                    "sourceDigests": [digest("d")],
+                },
+            )
+        rejection_digest = digest("e")
+        valid_rejection = revise_target_scope_state(
+            previous_state=discovered,
+            target_geometry=geometry,
+            request_binding=discovered["requestBinding"],
+            core_stable_gaussian_ids=[1],
+            active_frontier=[],
+            rejected_frontier=[
+                {
+                    "stableGaussianIds": [2],
+                    "state": "rejected",
+                    "provenanceDigests": sorted(
+                        [str(source["sourceDigest"]), rejection_digest]
+                    ),
+                }
+            ],
+            required_context_stable_gaussian_ids=[],
+            revision_provenance={
+                "kind": "scope-transition",
+                "reason": "valid-rejection-before-coordinated-tamper",
+                "sourceDigests": [rejection_digest],
+            },
+        )
+        tampered_failure = deepcopy(valid_rejection)
+        tampered_provenance = tampered_failure["revisionProvenanceLedger"][-1]
+        tampered_provenance["kind"] = "technical-failure"
+        provenance_payload = {
+            key: value
+            for key, value in tampered_provenance.items()
+            if key != "revisionProvenanceDigest"
+        }
+        tampered_provenance["revisionProvenanceDigest"] = route_b_artifact_digest(
+            provenance_payload
+        )
+        tampered_failure["provenance"] = deepcopy(tampered_provenance)
+        tampered_failure["provenanceDigest"] = tampered_provenance[
+            "revisionProvenanceDigest"
+        ]
+        state_payload = {
+            key: value
+            for key, value in tampered_failure.items()
+            if key != "stateDigest"
+        }
+        tampered_failure["stateDigest"] = route_b_artifact_digest(state_payload)
+        self.assertFalse(is_target_scope_state(tampered_failure))
+        self.assertEqual(canonical_target_scope_state_bytes(discovered), before_failure)
+        self.assertEqual(discovered["activeFrontierStableGaussianIds"], [2])
+        self.assertEqual(len(discovered["discoveryEnvelopeLedger"]), 1)
+
+    def test_shadow_adapters_create_bound_boundary_and_observation_sources(
+        self,
+    ) -> None:
+        geometry = target_geometry(
+            [
+                (1, (0.0, 0.0, 0.0)),
+                (2, (3.0, 0.0, 0.0)),
+                (3, (6.0, 0.0, 0.0)),
+            ]
+        )
+        seed = seed_record(
+            stable_ids=[1, 2, 3],
+            positive=[0.9, 0.1, 0.1],
+            negative=[0.0, 0.0, 0.0],
+            visible=[1.0, 1.0, 1.0],
+            geometry=geometry,
+        )
+        initial = bootstrap_target_scope_state_from_seed(
+            seed_record=seed,
+            target_geometry=geometry,
+            component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
+        )
+        boundary = create_target_scope_boundary_contact_shadow_source(
+            target_scope_state=initial,
+            boundary_result={
+                "status": "failed-closed",
+                "reason": "evidence-working-set-boundary-contact",
+                "contactStableGaussianIds": [2],
+            },
+            source_artifact={
+                "artifactId": "working-set-boundary:view-a",
+                "artifactDigest": digest("a"),
+                "viewId": "view-a",
+            },
+            spatial_bounds={
+                "minimum": [2.75, -0.25, -0.25],
+                "maximum": [3.25, 0.25, 0.25],
+            },
+        )
+        observation = create_target_scope_observation_shadow_source(
+            target_scope_state=initial,
+            observation={
+                "status": "included-stable",
+                "sourceKind": "core-external-included-positive-support",
+                "artifactId": "evidence:view-b",
+                "artifactDigest": digest("b"),
+                "viewIds": ["view-b"],
+                "supportedStableGaussianIds": [3],
+                "spatialBounds": {
+                    "minimum": [5.75, -0.25, -0.25],
+                    "maximum": [6.25, 0.25, 0.25],
+                },
+                "reason": "new-included-stable-positive-support",
+            },
+        )
+        self.assertEqual(
+            boundary["sourceKind"], "evidence-working-set-boundary-contact"
+        )
+        self.assertEqual(
+            observation["sourceKind"],
+            "core-external-included-positive-support",
+        )
+        admitted = admit_target_scope_discovery_sources(
+            previous_state=initial,
+            target_geometry=geometry,
+            request_binding=initial["requestBinding"],
+            sources=[observation, boundary],
+        )
+        self.assertEqual(admitted["activeFrontierStableGaussianIds"], [2, 3])
+        self.assertEqual(len(admitted["discoveryEnvelopeLedger"]), 2)
 
 
 if __name__ == "__main__":

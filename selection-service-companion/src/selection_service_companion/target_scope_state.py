@@ -30,7 +30,7 @@ _validated_state_digest_lock = Lock()
 
 
 TARGET_SCOPE_COMPONENT_POLICY_SCHEMA_VERSION: Final = 1
-TARGET_SCOPE_STATE_SCHEMA_VERSION: Final = 1
+TARGET_SCOPE_STATE_SCHEMA_VERSION: Final = 2
 TARGET_SCOPE_STATE_KIND: Final = "target-scope-state/experimental-shadow"
 _MAX_SAFE_INTEGER: Final = (1 << 53) - 1
 _MAX_STABLE_GAUSSIAN_ID: Final = (1 << 32) - 1
@@ -41,6 +41,49 @@ _POLICY_KEYS: Final = {
     "policyId",
     "adjacencyScaleMultiplier",
     "boundsScaleMultiplier",
+}
+TARGET_SCOPE_DISCOVERY_POLICY_SCHEMA_VERSION: Final = 1
+TARGET_SCOPE_DISCOVERY_SOURCE_SCHEMA_VERSION: Final = 1
+_DISCOVERY_POLICY_KEYS: Final = {
+    "schemaVersion",
+    "policyId",
+    "maximumSourceRecordsPerEpoch",
+    "maximumAdmittedStableGaussianIdsPerEpoch",
+}
+_DISCOVERY_SOURCE_KINDS: Final = {
+    "evidence-working-set-boundary-contact",
+    "core-external-included-positive-support",
+    "coherent-cross-view-support",
+    "reviewed-target-local-spatial-support",
+    "user-confirmed-expert-recovery",
+}
+_DISCOVERY_SOURCE_KEYS: Final = {
+    "schemaVersion",
+    "sourceKind",
+    "targetSplatId",
+    "dependencyToken",
+    "scopeEpochId",
+    "targetGeometryDigest",
+    "componentPolicyDigest",
+    "discoveryPolicyDigest",
+    "sourceArtifactIds",
+    "sourceViewIds",
+    "sourceArtifactDigests",
+    "admittedStableGaussianIds",
+    "spatialBounds",
+    "reason",
+}
+_NON_REJECTION_DISCOVERY_KINDS: Final = {
+    "low-visibility",
+    "low-support",
+    "s1-failure",
+    "s1-depth-unavailable",
+    "technical-failure",
+}
+_TARGET_SCOPE_REVISION_KINDS: Final = {
+    "new-observation",
+    "scope-transition",
+    *_NON_REJECTION_DISCOVERY_KINDS,
 }
 _SUBCOMPONENT_DECISION_POLICY_ID: Final = (
     "target-scope-subcomponents/explicit-stable-id-partition-v1"
@@ -78,6 +121,8 @@ _STATE_KEYS: Final = {
     "seedRecord",
     "componentPolicy",
     "componentPolicyDigest",
+    "discoveryPolicy",
+    "discoveryPolicyDigest",
     "componentLineageLedger",
     "subcomponentDecisionLedger",
     "scopeRevisionLedger",
@@ -259,6 +304,227 @@ def _canonical_digest_list(
             f"{label} provenance digests are invalid."
         )
     return sorted(cast(list[str], digests))
+
+
+def _canonical_string_list(
+    value: object,
+    *,
+    label: str,
+    allow_empty: bool = False,
+) -> list[str]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise TargetScopeStateValidationError(f"{label} values are invalid.")
+    strings = list(value)
+    if (
+        (not allow_empty and not strings)
+        or any(
+            not isinstance(item, str) or not item.strip() or item != item.strip()
+            for item in strings
+        )
+        or len(strings) != len(set(strings))
+    ):
+        raise TargetScopeStateValidationError(f"{label} values are invalid.")
+    return sorted(cast(list[str], strings))
+
+
+def _validated_dependency_token(value: object) -> dict[str, str]:
+    dependency_keys = {
+        "splatId",
+        "renderStateToken",
+        "geometryToken",
+        "gaussianIdentityToken",
+        "worldTransformToken",
+    }
+    if (
+        not isinstance(value, Mapping)
+        or set(value) != dependency_keys
+        or any(not _nonempty_string(value.get(key)) for key in dependency_keys)
+    ):
+        raise TargetScopeStateValidationError(
+            "Target Scope dependency token is invalid."
+        )
+    return cast(dict[str, str], deepcopy(dict(value)))
+
+
+def _canonical_spatial_bounds(value: object) -> dict[str, list[float]]:
+    if not isinstance(value, Mapping) or set(value) != {"minimum", "maximum"}:
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery spatial bounds are invalid."
+        )
+    canonical: dict[str, list[float]] = {}
+    for name in ("minimum", "maximum"):
+        vector = value.get(name)
+        if (
+            not isinstance(vector, Sequence)
+            or isinstance(vector, (str, bytes))
+            or len(vector) != 3
+            or any(not _finite_number(item) for item in vector)
+        ):
+            raise TargetScopeStateValidationError(
+                "Target Scope discovery spatial bounds are invalid."
+            )
+        canonical[name] = [
+            0.0 if float(item) == 0.0 else float(item) for item in vector
+        ]
+    if any(
+        canonical["minimum"][axis] > canonical["maximum"][axis] for axis in range(3)
+    ):
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery spatial bounds are invalid."
+        )
+    return canonical
+
+
+def create_target_scope_discovery_policy(value: object) -> dict[str, object]:
+    """Create one finite experimental Discovery Envelope budget policy."""
+
+    if not isinstance(value, Mapping) or set(value) != _DISCOVERY_POLICY_KEYS:
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery policy is incomplete or has unknown fields."
+        )
+    policy_id = value.get("policyId")
+    maximum_sources = value.get("maximumSourceRecordsPerEpoch")
+    maximum_stable_ids = value.get("maximumAdmittedStableGaussianIdsPerEpoch")
+    prefix = "target-scope-discovery/experimental-shadow-v"
+    if (
+        value.get("schemaVersion") != TARGET_SCOPE_DISCOVERY_POLICY_SCHEMA_VERSION
+        or not isinstance(policy_id, str)
+        or not policy_id.startswith(prefix)
+        or not policy_id.removeprefix(prefix).isdigit()
+        or not _nonnegative_safe_integer(maximum_sources)
+        or int(cast(int, maximum_sources)) <= 0
+        or not _nonnegative_safe_integer(maximum_stable_ids)
+        or int(cast(int, maximum_stable_ids)) <= 0
+        or int(cast(int, maximum_stable_ids)) > _MAX_STABLE_GAUSSIAN_ID + 1
+    ):
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery policy identity or budget is invalid."
+        )
+    payload: dict[str, object] = {
+        "schemaVersion": TARGET_SCOPE_DISCOVERY_POLICY_SCHEMA_VERSION,
+        "policyId": policy_id,
+        "maximumSourceRecordsPerEpoch": int(cast(int, maximum_sources)),
+        "maximumAdmittedStableGaussianIdsPerEpoch": int(cast(int, maximum_stable_ids)),
+    }
+    return {**payload, "policyDigest": route_b_artifact_digest(payload)}
+
+
+def validate_target_scope_discovery_policy(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping) or set(value) != _DISCOVERY_POLICY_KEYS | {
+        "policyDigest"
+    }:
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery policy is invalid."
+        )
+    expected = create_target_scope_discovery_policy(
+        {key: value[key] for key in _DISCOVERY_POLICY_KEYS}
+    )
+    if value.get("policyDigest") != expected["policyDigest"]:
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery policy digest is invalid."
+        )
+    return expected
+
+
+def create_target_scope_discovery_source(value: object) -> dict[str, object]:
+    """Create one canonical, epoch-bound seed-independent discovery source."""
+
+    if not isinstance(value, Mapping) or set(value) != _DISCOVERY_SOURCE_KEYS:
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery source is incomplete or has unknown fields."
+        )
+    source_kind = value.get("sourceKind")
+    target_splat_id = value.get("targetSplatId")
+    reason = value.get("reason")
+    if (
+        value.get("schemaVersion") != TARGET_SCOPE_DISCOVERY_SOURCE_SCHEMA_VERSION
+        or source_kind not in _DISCOVERY_SOURCE_KINDS
+        or not _nonempty_string(target_splat_id)
+        or not _digest(value.get("scopeEpochId"))
+        or not _digest(value.get("targetGeometryDigest"))
+        or not _digest(value.get("componentPolicyDigest"))
+        or not _digest(value.get("discoveryPolicyDigest"))
+        or not isinstance(reason, str)
+        or not reason.strip()
+    ):
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery source identity is invalid."
+        )
+    dependency = _validated_dependency_token(value.get("dependencyToken"))
+    if dependency["splatId"] != target_splat_id:
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery source target dependency is invalid."
+        )
+    artifact_ids = _canonical_string_list(
+        value.get("sourceArtifactIds"), label="Discovery source artifact"
+    )
+    view_ids = _canonical_string_list(
+        value.get("sourceViewIds"), label="Discovery source View"
+    )
+    artifact_digests = _canonical_digest_list(
+        value.get("sourceArtifactDigests"), label="Discovery source artifact"
+    )
+    admitted_ids = _canonical_stable_ids(
+        value.get("admittedStableGaussianIds"),
+        label="Discovery source",
+        allow_empty=False,
+    )
+    if source_kind == "coherent-cross-view-support" and len(view_ids) < 2:
+        raise TargetScopeStateValidationError(
+            "Coherent cross-View discovery requires at least two Views."
+        )
+    payload: dict[str, object] = {
+        "schemaVersion": TARGET_SCOPE_DISCOVERY_SOURCE_SCHEMA_VERSION,
+        "sourceKind": source_kind,
+        "targetSplatId": target_splat_id,
+        "dependencyToken": dependency,
+        "scopeEpochId": value["scopeEpochId"],
+        "targetGeometryDigest": value["targetGeometryDigest"],
+        "componentPolicyDigest": value["componentPolicyDigest"],
+        "discoveryPolicyDigest": value["discoveryPolicyDigest"],
+        "sourceArtifactIds": artifact_ids,
+        "sourceViewIds": view_ids,
+        "sourceArtifactDigests": artifact_digests,
+        "admittedStableGaussianIds": admitted_ids,
+        "spatialBounds": _canonical_spatial_bounds(value.get("spatialBounds")),
+        "reason": reason.strip(),
+    }
+    return {**payload, "sourceDigest": route_b_artifact_digest(payload)}
+
+
+def validate_target_scope_discovery_source(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping) or set(value) != _DISCOVERY_SOURCE_KEYS | {
+        "sourceDigest"
+    }:
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery source is invalid."
+        )
+    expected = create_target_scope_discovery_source(
+        {key: value[key] for key in _DISCOVERY_SOURCE_KEYS}
+    )
+    if value.get("sourceDigest") != expected["sourceDigest"]:
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery source digest is invalid."
+        )
+    bounds = cast(Mapping[str, Sequence[float]], value["spatialBounds"])
+    if any(
+        float(coordinate) == 0.0 and math.copysign(1.0, float(coordinate)) < 0.0
+        for vector in bounds.values()
+        for coordinate in vector
+    ):
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery source spatial bounds are not canonical."
+        )
+    return expected
+
+
+def _discovery_source_authority_digest(source: Mapping[str, Any]) -> str:
+    payload = {
+        key: deepcopy(value)
+        for key, value in source.items()
+        if key not in {"reason", "sourceDigest"}
+    }
+    return route_b_artifact_digest(payload)
 
 
 def _validated_request_binding(value: object) -> dict[str, Any]:
@@ -1006,44 +1272,63 @@ def _append_rejected_frontier_events(
     rejected_components: list[dict[str, Any]],
     active_components: list[dict[str, Any]],
     scope_revision: int,
+    authorized_reopen_sources: Mapping[str, set[int]],
 ) -> list[dict[str, Any]]:
     latest_by_component: dict[str, Mapping[str, Any]] = {}
     for event in previous_ledger:
         latest_by_component[str(event["componentId"])] = event
+    latest_rejections = [
+        event for event in latest_by_component.values() if event["event"] == "rejected"
+    ]
+
+    reopen_pairs: list[tuple[Mapping[str, Any], dict[str, Any]]] = []
     for component in active_components:
-        previous_event = latest_by_component.get(str(component["componentId"]))
-        if (
-            previous_event is not None
-            and previous_event["event"] == "rejected"
-            and component["state"] != "reopened"
+        component_ids = set(component["stableGaussianIds"])
+        overlapping_rejections = [
+            event
+            for event in latest_rejections
+            if component_ids & set(event["stableGaussianIds"])
+        ]
+        if any(
+            not set(event["stableGaussianIds"]).issubset(component_ids)
+            for event in overlapping_rejections
+        ):
+            raise TargetScopeStateTransitionError(
+                "A rejected Frontier component requires complete component provenance to reopen."
+            )
+        if overlapping_rejections and (
+            component["state"] != "reopened"
+            or component["stateEnteredScopeRevision"] != scope_revision
         ):
             raise TargetScopeStateTransitionError(
                 "A rejected Frontier component must explicitly reopen."
             )
-    candidates = [
-        component
-        for component in rejected_components + active_components
-        if component["state"] in {"rejected", "reopened"}
-        and component["stateEnteredScopeRevision"] == scope_revision
-    ]
+        if (
+            component["state"] == "reopened"
+            and component["stateEnteredScopeRevision"] == scope_revision
+            and not overlapping_rejections
+        ):
+            raise TargetScopeStateTransitionError(
+                "Rejected Frontier event history is invalid."
+            )
+        reopen_pairs.extend((event, component) for event in overlapping_rejections)
+
     appended: list[dict[str, Any]] = []
-    for component in candidates:
+    for component in rejected_components:
+        if (
+            component["state"] != "rejected"
+            or component["stateEnteredScopeRevision"] != scope_revision
+        ):
+            continue
         component_id = str(component["componentId"])
         previous_event = latest_by_component.get(component_id)
-        if (
-            component["state"] == "rejected"
-            and previous_event is not None
-            and previous_event["event"] != "reopened"
-        ) or (
-            component["state"] == "reopened"
-            and (previous_event is None or previous_event["event"] != "rejected")
-        ):
+        if previous_event is not None and previous_event["event"] != "reopened":
             raise TargetScopeStateTransitionError(
                 "Rejected Frontier event history is invalid."
             )
         payload: dict[str, object] = {
             "schemaVersion": 1,
-            "event": component["state"],
+            "event": "rejected",
             "scopeRevision": scope_revision,
             "componentId": component_id,
             "stableGaussianIds": deepcopy(component["stableGaussianIds"]),
@@ -1053,17 +1338,35 @@ def _append_rejected_frontier_events(
                 previous_event["eventDigest"] if previous_event is not None else None
             ),
         }
-        event = {**payload, "eventDigest": route_b_artifact_digest(payload)}
-        appended.append(event)
-        latest_by_component[component_id] = event
-    ledger = deepcopy(previous_ledger) + appended
-    ledger.sort(
-        key=lambda event: (
-            int(event["scopeRevision"]),
-            str(event["eventDigest"]),
+        appended.append({**payload, "eventDigest": route_b_artifact_digest(payload)})
+
+    for previous_event, component in reopen_pairs:
+        new_provenance = set(component["provenanceDigests"]) - set(
+            previous_event["provenanceDigests"]
         )
-    )
-    return ledger
+        authorized_ids = {
+            stable_id
+            for source_digest in new_provenance
+            for stable_id in authorized_reopen_sources.get(source_digest, set())
+        }
+        if not set(previous_event["stableGaussianIds"]).issubset(authorized_ids):
+            raise TargetScopeStateTransitionError(
+                "A rejected Frontier component requires a new authoritative observation or discovery source to reopen."
+            )
+        payload = {
+            "schemaVersion": 1,
+            "event": "reopened",
+            "scopeRevision": scope_revision,
+            "componentId": previous_event["componentId"],
+            "stableGaussianIds": deepcopy(previous_event["stableGaussianIds"]),
+            "componentDigest": component["componentDigest"],
+            "provenanceDigests": deepcopy(component["provenanceDigests"]),
+            "previousEventDigest": previous_event["eventDigest"],
+        }
+        appended.append({**payload, "eventDigest": route_b_artifact_digest(payload)})
+
+    appended.sort(key=lambda event: str(event["eventDigest"]))
+    return [*deepcopy(previous_ledger), *appended]
 
 
 def _seed_partition(seed_record: Mapping[str, Any]) -> dict[str, Any]:
@@ -1087,6 +1390,7 @@ def _epoch_binding(
     target_splat_id: str,
     target_geometry_digest: str,
     component_policy_digest: str,
+    discovery_policy_digest: str,
     epoch_origin_digest: str,
     previous_scope_epoch_id: str | None,
 ) -> dict[str, Any]:
@@ -1097,6 +1401,7 @@ def _epoch_binding(
         "dependencyToken": deepcopy(request_binding["dependencyToken"]),
         "targetGeometryDigest": target_geometry_digest,
         "componentPolicyDigest": component_policy_digest,
+        "discoveryPolicyDigest": discovery_policy_digest,
         "epochOriginDigest": epoch_origin_digest,
         "previousScopeEpochId": previous_scope_epoch_id,
     }
@@ -1111,6 +1416,7 @@ def _scope_revision_snapshot(
     active_ids: list[int],
     rejected_ids: list[int],
     context_ids: list[int],
+    discovery_source_digests: list[str],
 ) -> dict[str, Any]:
     payload: dict[str, object] = {
         "schemaVersion": 1,
@@ -1120,6 +1426,7 @@ def _scope_revision_snapshot(
         "activeFrontierStableGaussianIds": list(active_ids),
         "rejectedFrontierStableGaussianIds": list(rejected_ids),
         "requiredContextStableGaussianIds": list(context_ids),
+        "discoverySourceDigests": sorted(set(discovery_source_digests)),
     }
     return {
         **payload,
@@ -1150,6 +1457,7 @@ def _build_state(
     scope_revision_ledger: list[dict[str, Any]],
     revision_provenance_ledger: list[dict[str, Any]],
     provenance: Mapping[str, Any],
+    discovery_policy: Mapping[str, Any],
     discovery_envelope_ledger: list[dict[str, Any]],
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
@@ -1177,6 +1485,8 @@ def _build_state(
         "seedRecord": deepcopy(seed_record),
         "componentPolicy": deepcopy(policy),
         "componentPolicyDigest": policy["policyDigest"],
+        "discoveryPolicy": deepcopy(discovery_policy),
+        "discoveryPolicyDigest": discovery_policy["policyDigest"],
         "componentLineageLedger": lineage_ledger,
         "subcomponentDecisionLedger": subcomponent_decision_ledger,
         "scopeRevisionLedger": scope_revision_ledger,
@@ -1197,6 +1507,7 @@ def bootstrap_target_scope_state_from_seed(
     seed_record: object,
     target_geometry: object,
     component_policy: object,
+    discovery_policy: object,
 ) -> dict[str, Any]:
     """Create experimental Scope revision zero from one accepted S0 record."""
 
@@ -1211,6 +1522,10 @@ def bootstrap_target_scope_state_from_seed(
     policy = cast(
         dict[str, Any],
         validate_target_scope_component_policy(component_policy),
+    )
+    discovery = cast(
+        dict[str, Any],
+        validate_target_scope_discovery_policy(discovery_policy),
     )
     if (
         seed.get("targetSplatId") != geometry["targetSplatId"]
@@ -1263,6 +1578,7 @@ def bootstrap_target_scope_state_from_seed(
         target_splat_id=str(geometry["targetSplatId"]),
         target_geometry_digest=str(geometry["geometryDigest"]),
         component_policy_digest=str(policy["policyDigest"]),
+        discovery_policy_digest=str(discovery["policyDigest"]),
         epoch_origin_digest=seed_digest,
         previous_scope_epoch_id=None,
     )
@@ -1293,15 +1609,17 @@ def bootstrap_target_scope_state_from_seed(
                 active_ids=[],
                 rejected_ids=[],
                 context_ids=[],
+                discovery_source_digests=[],
             )
         ],
         revision_provenance_ledger=[provenance],
         provenance=provenance,
+        discovery_policy=discovery,
         discovery_envelope_ledger=[],
     )
 
 
-def revise_target_scope_state(
+def _revise_target_scope_state(
     *,
     previous_state: object,
     target_geometry: object,
@@ -1312,6 +1630,8 @@ def revise_target_scope_state(
     required_context_stable_gaussian_ids: object,
     revision_provenance: object,
     subcomponent_decisions: object = None,
+    discovery_envelope_ledger: object = None,
+    authorized_reopen_digests: object = None,
 ) -> dict[str, Any]:
     """Publish one immutable, monotonic revision inside the current epoch."""
 
@@ -1332,6 +1652,46 @@ def revise_target_scope_state(
     policy = cast(
         dict[str, Any],
         validate_target_scope_component_policy(previous["componentPolicy"]),
+    )
+    discovery = cast(
+        dict[str, Any],
+        validate_target_scope_discovery_policy(previous["discoveryPolicy"]),
+    )
+    raw_discovery_ledger = (
+        previous["discoveryEnvelopeLedger"]
+        if discovery_envelope_ledger is None
+        else discovery_envelope_ledger
+    )
+    if not isinstance(raw_discovery_ledger, Sequence) or isinstance(
+        raw_discovery_ledger, (str, bytes)
+    ):
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery Envelope ledger is invalid."
+        )
+    ledger = [
+        validate_target_scope_discovery_source(source)
+        for source in raw_discovery_ledger
+    ]
+    previous_discovery_ledger = cast(
+        list[dict[str, object]], previous["discoveryEnvelopeLedger"]
+    )
+    if (
+        len(ledger) < len(previous_discovery_ledger)
+        or ledger[: len(previous_discovery_ledger)] != previous_discovery_ledger
+    ):
+        raise TargetScopeStateTransitionError(
+            "The Target Scope discovery Envelope ledger is append-only within an epoch."
+        )
+    if len({str(source["sourceDigest"]) for source in ledger}) != len(ledger):
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery Envelope source digests are duplicated."
+        )
+    reopen_digests = set(
+        _canonical_digest_list(
+            [] if authorized_reopen_digests is None else authorized_reopen_digests,
+            label="Frontier reopen",
+            allow_empty=True,
+        )
     )
     binding = _validated_request_binding(request_binding)
     previous_binding = cast(Mapping[str, Any], previous["requestBinding"])
@@ -1354,7 +1714,7 @@ def revise_target_scope_state(
     kind = revision_provenance.get("kind")
     reason = revision_provenance.get("reason")
     if (
-        kind not in {"new-observation", "scope-transition"}
+        kind not in _TARGET_SCOPE_REVISION_KINDS
         or not isinstance(reason, str)
         or not reason.strip()
     ):
@@ -1387,7 +1747,6 @@ def revise_target_scope_state(
         set(source_digests)
         | {str(decision["decisionDigest"]) for decision in decisions}
     )
-
     target_ids = set(previous["targetStableGaussianIds"])
     core_ids = _canonical_stable_ids(core_stable_gaussian_ids, label="Core")
     context_ids = _canonical_stable_ids(
@@ -1416,6 +1775,98 @@ def revise_target_scope_state(
     if not set(previous["coreStableGaussianIds"]).issubset(core_ids):
         raise TargetScopeStateTransitionError(
             "Core cannot shrink inside one Scope Epoch."
+        )
+    latest_rejection_events: dict[str, Mapping[str, Any]] = {}
+    for event in cast(list[Mapping[str, Any]], previous["rejectedFrontierLedger"]):
+        latest_rejection_events[str(event["componentId"])] = event
+    rejected_ledger_tail_ids = {
+        int(stable_id)
+        for event in latest_rejection_events.values()
+        if event["event"] == "rejected"
+        for stable_id in event["stableGaussianIds"]
+    }
+    requested_reopened_ids = {
+        int(stable_id)
+        for group in active_groups
+        if group["state"] == "reopened"
+        for stable_id in group["stableGaussianIds"]
+    }
+    reopened_history_sources = {
+        str(source_digest)
+        for event in latest_rejection_events.values()
+        if event["event"] == "rejected"
+        and set(event["stableGaussianIds"]).issubset(requested_reopened_ids)
+        for source_digest in event["provenanceDigests"]
+    }
+    source_digests = sorted(set(source_digests) | reopened_history_sources)
+    previous_active_ids = set(previous["activeFrontierStableGaussianIds"])
+    introduced_core_ids = set(core_ids) - set(previous["coreStableGaussianIds"])
+    if not introduced_core_ids.issubset(previous_active_ids):
+        raise TargetScopeStateTransitionError(
+            "New support must enter active Frontier before Core."
+        )
+    introduced_rejected_ids = set(rejected_ids) - set(
+        previous["rejectedFrontierStableGaussianIds"]
+    )
+    if not introduced_rejected_ids.issubset(previous_active_ids):
+        raise TargetScopeStateTransitionError(
+            "New rejected Frontier support must originate in active Frontier."
+        )
+    introduced_active_ids = (
+        set(active_ids) - previous_active_ids - rejected_ledger_tail_ids
+    )
+    previous_discovery_sources = {
+        str(source["sourceDigest"])
+        for source in cast(list[Mapping[str, Any]], previous["discoveryEnvelopeLedger"])
+    }
+    new_discovery_sources = {
+        str(source["sourceDigest"]) for source in ledger
+    } - previous_discovery_sources
+    new_discovery_authorities = {
+        str(source["sourceDigest"]): {
+            int(stable_id)
+            for stable_id in cast(list[int], source["admittedStableGaussianIds"])
+        }
+        for source in ledger
+        if str(source["sourceDigest"]) in new_discovery_sources
+    }
+    if not reopen_digests.issubset(new_discovery_authorities):
+        raise TargetScopeStateValidationError(
+            "Frontier reopen authority must name a newly appended discovery source."
+        )
+    if introduced_active_ids and any(
+        not any(
+            source_digest in set(group["provenanceDigests"])
+            and stable_id in admitted_ids
+            for source_digest, admitted_ids in new_discovery_authorities.items()
+        )
+        for group in active_groups
+        for stable_id in introduced_active_ids & set(group["stableGaussianIds"])
+    ):
+        raise TargetScopeStateTransitionError(
+            "New active Frontier support requires a fresh authoritative observation or discovery source."
+        )
+    if rejected_ledger_tail_ids & (set(core_ids) | set(context_ids)):
+        raise TargetScopeStateTransitionError(
+            "Rejected Frontier support cannot become Core or required Context."
+        )
+    envelope_ids = {
+        int(stable_id)
+        for source in cast(list[Mapping[str, Any]], previous["discoveryEnvelopeLedger"])
+        for stable_id in source["admittedStableGaussianIds"]
+    }
+    protected_active = envelope_ids & set(previous["activeFrontierStableGaussianIds"])
+    if not protected_active.issubset(
+        set(core_ids) | set(active_ids) | set(rejected_ids)
+    ):
+        raise TargetScopeStateTransitionError(
+            "Active Discovery Envelope support must remain Core, active Frontier, or rejected Frontier."
+        )
+    if kind in _NON_REJECTION_DISCOVERY_KINDS and not protected_active.issubset(
+        set(active_ids)
+    ):
+        raise TargetScopeStateTransitionError(
+            "Low support, S1/depth absence, or technical failure cannot reject or erase Discovery Envelope support or promote it out of active Frontier."
         )
 
     scope_revision = int(previous["scopeRevision"]) + 1
@@ -1467,6 +1918,10 @@ def revise_target_scope_state(
         rejected_components=rejected_components,
         active_components=active_components,
         scope_revision=scope_revision,
+        authorized_reopen_sources={
+            source_digest: new_discovery_authorities[source_digest]
+            for source_digest in reopen_digests
+        },
     )
     previous_provenance = cast(Mapping[str, Any], previous["provenance"])
     provenance_payload: dict[str, object] = {
@@ -1522,6 +1977,9 @@ def revise_target_scope_state(
                 active_ids=active_ids,
                 rejected_ids=rejected_ids,
                 context_ids=context_ids,
+                discovery_source_digests=[
+                    str(source["sourceDigest"]) for source in ledger
+                ],
             ),
         ],
         revision_provenance_ledger=[
@@ -1529,7 +1987,405 @@ def revise_target_scope_state(
             deepcopy(provenance),
         ],
         provenance=provenance,
-        discovery_envelope_ledger=[],
+        discovery_policy=discovery,
+        discovery_envelope_ledger=ledger,
+    )
+
+
+def revise_target_scope_state(
+    *,
+    previous_state: object,
+    target_geometry: object,
+    request_binding: object,
+    core_stable_gaussian_ids: object,
+    active_frontier: object,
+    rejected_frontier: object,
+    required_context_stable_gaussian_ids: object,
+    revision_provenance: object,
+    subcomponent_decisions: object = None,
+) -> dict[str, Any]:
+    """Publish one ordinary immutable revision inside the current Scope Epoch."""
+
+    return _revise_target_scope_state(
+        previous_state=previous_state,
+        target_geometry=target_geometry,
+        request_binding=request_binding,
+        core_stable_gaussian_ids=core_stable_gaussian_ids,
+        active_frontier=active_frontier,
+        rejected_frontier=rejected_frontier,
+        required_context_stable_gaussian_ids=required_context_stable_gaussian_ids,
+        revision_provenance=revision_provenance,
+        subcomponent_decisions=subcomponent_decisions,
+    )
+
+
+def _target_scope_discovery_source_payload(
+    state: Mapping[str, Any],
+) -> dict[str, object]:
+    request_binding = cast(Mapping[str, Any], state["requestBinding"])
+    return {
+        "schemaVersion": TARGET_SCOPE_DISCOVERY_SOURCE_SCHEMA_VERSION,
+        "targetSplatId": state["targetSplatId"],
+        "dependencyToken": deepcopy(request_binding["dependencyToken"]),
+        "scopeEpochId": state["scopeEpochId"],
+        "targetGeometryDigest": state["targetGeometryDigest"],
+        "componentPolicyDigest": state["componentPolicyDigest"],
+        "discoveryPolicyDigest": state["discoveryPolicyDigest"],
+    }
+
+
+def create_target_scope_boundary_contact_shadow_source(
+    *,
+    target_scope_state: object,
+    boundary_result: object,
+    source_artifact: object,
+    spatial_bounds: object,
+) -> dict[str, object]:
+    """Adapt one existing Working Set boundary result for shadow admission only."""
+
+    if not is_target_scope_state(target_scope_state) or not isinstance(
+        target_scope_state, Mapping
+    ):
+        raise TargetScopeStateValidationError(
+            "Boundary-contact shadow discovery requires a valid Target Scope State."
+        )
+    if not isinstance(boundary_result, Mapping):
+        raise TargetScopeStateValidationError(
+            "Boundary-contact shadow discovery result is invalid."
+        )
+    status = boundary_result.get("status")
+    if not (
+        status == "expanded"
+        or (
+            status == "failed-closed"
+            and boundary_result.get("reason") == "evidence-working-set-boundary-contact"
+        )
+    ):
+        raise TargetScopeStateValidationError(
+            "Boundary-contact shadow discovery requires explicit boundary contact."
+        )
+    if not isinstance(source_artifact, Mapping) or set(source_artifact) != {
+        "artifactId",
+        "artifactDigest",
+        "viewId",
+    }:
+        raise TargetScopeStateValidationError(
+            "Boundary-contact shadow discovery artifact is invalid."
+        )
+    payload = {
+        **_target_scope_discovery_source_payload(target_scope_state),
+        "sourceKind": "evidence-working-set-boundary-contact",
+        "sourceArtifactIds": [source_artifact.get("artifactId")],
+        "sourceViewIds": [source_artifact.get("viewId")],
+        "sourceArtifactDigests": [source_artifact.get("artifactDigest")],
+        "admittedStableGaussianIds": boundary_result.get("contactStableGaussianIds"),
+        "spatialBounds": spatial_bounds,
+        "reason": "evidence-working-set-boundary-contact",
+    }
+    return create_target_scope_discovery_source(payload)
+
+
+def create_target_scope_observation_shadow_source(
+    *,
+    target_scope_state: object,
+    observation: object,
+) -> dict[str, object]:
+    """Adapt one synthetic Included/User-Confirmed observation for shadow use."""
+
+    if not is_target_scope_state(target_scope_state) or not isinstance(
+        target_scope_state, Mapping
+    ):
+        raise TargetScopeStateValidationError(
+            "Observation shadow discovery requires a valid Target Scope State."
+        )
+    expected_keys = {
+        "status",
+        "sourceKind",
+        "artifactId",
+        "artifactDigest",
+        "viewIds",
+        "supportedStableGaussianIds",
+        "spatialBounds",
+        "reason",
+    }
+    if not isinstance(observation, Mapping) or set(observation) != expected_keys:
+        raise TargetScopeStateValidationError(
+            "Observation shadow discovery input is invalid."
+        )
+    source_kind = observation.get("sourceKind")
+    status = observation.get("status")
+    valid_status = (
+        source_kind
+        in {
+            "core-external-included-positive-support",
+            "coherent-cross-view-support",
+        }
+        and status == "included-stable"
+    ) or (
+        source_kind == "user-confirmed-expert-recovery" and status == "user-confirmed"
+    )
+    if not valid_status:
+        raise TargetScopeStateValidationError(
+            "Observation shadow discovery authority is invalid."
+        )
+    payload = {
+        **_target_scope_discovery_source_payload(target_scope_state),
+        "sourceKind": source_kind,
+        "sourceArtifactIds": [observation.get("artifactId")],
+        "sourceViewIds": observation.get("viewIds"),
+        "sourceArtifactDigests": [observation.get("artifactDigest")],
+        "admittedStableGaussianIds": observation.get("supportedStableGaussianIds"),
+        "spatialBounds": observation.get("spatialBounds"),
+        "reason": observation.get("reason"),
+    }
+    return create_target_scope_discovery_source(payload)
+
+
+def admit_target_scope_discovery_sources(
+    *,
+    previous_state: object,
+    target_geometry: object,
+    request_binding: object,
+    sources: object,
+) -> dict[str, Any]:
+    """Atomically admit a deterministic batch into the shadow Envelope/Frontier."""
+
+    if not is_target_scope_state(previous_state) or not isinstance(
+        previous_state, Mapping
+    ):
+        raise TargetScopeStateValidationError("Previous Target Scope State is invalid.")
+    if not isinstance(sources, Sequence) or isinstance(sources, (str, bytes)):
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery admission sources are invalid."
+        )
+    canonical_by_digest: dict[str, dict[str, object]] = {}
+    for source in sources:
+        canonical = validate_target_scope_discovery_source(source)
+        canonical_by_digest[str(canonical["sourceDigest"])] = canonical
+    if not canonical_by_digest:
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery admission requires at least one source."
+        )
+    canonical_by_authority: dict[str, dict[str, object]] = {}
+    for source in sorted(
+        canonical_by_digest.values(), key=lambda item: str(item["sourceDigest"])
+    ):
+        canonical_by_authority.setdefault(
+            _discovery_source_authority_digest(source), source
+        )
+
+    previous = cast(Mapping[str, Any], previous_state)
+    geometry = _validated_geometry(target_geometry)
+    binding = _validated_request_binding(request_binding)
+    if (
+        geometry["targetSplatId"] != previous["targetSplatId"]
+        or geometry["geometryDigest"] != previous["targetGeometryDigest"]
+        or geometry["stableGaussianIds"] != previous["targetStableGaussianIds"]
+        or binding["targetContextId"] != previous["requestBinding"]["targetContextId"]
+        or binding["dependencyToken"] != previous["requestBinding"]["dependencyToken"]
+        or int(binding["contextRevision"])
+        < int(previous["requestBinding"]["contextRevision"])
+    ):
+        raise TargetScopeStateIncompatibilityError(
+            "Target Scope discovery admission does not match the current epoch."
+        )
+    expected_identity = {
+        "targetSplatId": previous["targetSplatId"],
+        "dependencyToken": previous["requestBinding"]["dependencyToken"],
+        "scopeEpochId": previous["scopeEpochId"],
+        "targetGeometryDigest": previous["targetGeometryDigest"],
+        "componentPolicyDigest": previous["componentPolicyDigest"],
+        "discoveryPolicyDigest": previous["discoveryPolicyDigest"],
+    }
+    target_ids = set(previous["targetStableGaussianIds"])
+    rows_by_id = {int(row["stableGaussianId"]): row for row in geometry["rows"]}
+    for source in canonical_by_digest.values():
+        if any(source[key] != value for key, value in expected_identity.items()):
+            raise TargetScopeStateIncompatibilityError(
+                "Target Scope discovery source identity does not match the epoch."
+            )
+        admitted_ids = cast(list[int], source["admittedStableGaussianIds"])
+        if not set(admitted_ids).issubset(target_ids):
+            raise TargetScopeStateTransitionError(
+                "Target Scope discovery admission must be target-bounded."
+            )
+        bounds = cast(Mapping[str, list[float]], source["spatialBounds"])
+        if any(
+            float(rows_by_id[stable_id]["center"][axis])
+            < float(bounds["minimum"][axis])
+            or float(rows_by_id[stable_id]["center"][axis])
+            > float(bounds["maximum"][axis])
+            for stable_id in admitted_ids
+            for axis in range(3)
+        ):
+            raise TargetScopeStateTransitionError(
+                "Target Scope discovery admission must be spatially bounded."
+            )
+
+    prior_ledger = cast(list[dict[str, object]], previous["discoveryEnvelopeLedger"])
+    prior_authorities = {
+        _discovery_source_authority_digest(source) for source in prior_ledger
+    }
+    new_sources = sorted(
+        (
+            source
+            for authority_digest, source in canonical_by_authority.items()
+            if authority_digest not in prior_authorities
+        ),
+        key=lambda source: str(source["sourceDigest"]),
+    )
+    if not new_sources:
+        return deepcopy(dict(previous))
+    policy = cast(Mapping[str, Any], previous["discoveryPolicy"])
+    if len(prior_ledger) + len(new_sources) > int(
+        policy["maximumSourceRecordsPerEpoch"]
+    ):
+        raise TargetScopeStateTransitionError(
+            "Target Scope discovery source-record budget is exhausted."
+        )
+    ledger = [*deepcopy(prior_ledger), *deepcopy(new_sources)]
+    envelope_ids = {
+        int(stable_id)
+        for source in ledger
+        for stable_id in cast(list[int], source["admittedStableGaussianIds"])
+    }
+    if len(envelope_ids) > int(policy["maximumAdmittedStableGaussianIdsPerEpoch"]):
+        raise TargetScopeStateTransitionError(
+            "Target Scope discovery Stable Gaussian ID budget is exhausted."
+        )
+    admitted_ids = {
+        int(stable_id)
+        for source in new_sources
+        for stable_id in cast(list[int], source["admittedStableGaussianIds"])
+    }
+    core_ids = set(previous["coreStableGaussianIds"])
+    context_ids = set(previous["requiredContextStableGaussianIds"])
+    if admitted_ids & core_ids:
+        raise TargetScopeStateTransitionError(
+            "Discovery sources must enter active Frontier, never Core directly."
+        )
+    context_ids -= admitted_ids
+
+    previous_active = cast(list[dict[str, Any]], previous["activeFrontierComponents"])
+    previous_rejected = cast(
+        list[dict[str, Any]], previous["rejectedFrontierComponents"]
+    )
+    current_rejected_by_id = {
+        str(component["componentId"]): component for component in previous_rejected
+    }
+    latest_rejection_events: dict[str, Mapping[str, Any]] = {}
+    for event in cast(list[Mapping[str, Any]], previous["rejectedFrontierLedger"]):
+        latest_rejection_events[str(event["componentId"])] = event
+    reopenable_rejections = [
+        current_rejected_by_id.get(component_id)
+        or {
+            "componentId": component_id,
+            "stableGaussianIds": deepcopy(event["stableGaussianIds"]),
+            "state": "rejected",
+            "provenanceDigests": deepcopy(event["provenanceDigests"]),
+        }
+        for component_id, event in latest_rejection_events.items()
+        if event["event"] == "rejected"
+    ]
+    for component in reopenable_rejections:
+        component_ids = set(component["stableGaussianIds"])
+        if component_ids & admitted_ids and not component_ids.issubset(admitted_ids):
+            raise TargetScopeStateTransitionError(
+                "A rejected Frontier component requires complete component provenance to reopen."
+            )
+    reopened_ids = {
+        int(stable_id)
+        for component in reopenable_rejections
+        if set(component["stableGaussianIds"]).issubset(admitted_ids)
+        for stable_id in component["stableGaussianIds"]
+    }
+    reopenable_ids = {
+        int(stable_id)
+        for component in reopenable_rejections
+        for stable_id in component["stableGaussianIds"]
+    }
+    new_ids = (
+        admitted_ids - set(previous["activeFrontierStableGaussianIds"]) - reopenable_ids
+    )
+    active_ids = sorted(
+        set(previous["activeFrontierStableGaussianIds"]) | admitted_ids | reopened_ids
+    )
+    active_partitions = _component_skeletons(
+        geometry=geometry,
+        policy=cast(Mapping[str, Any], previous["componentPolicy"]),
+        stable_ids=active_ids,
+        state="partition",
+        provenance_digests=[],
+    )
+    active_groups: list[dict[str, object]] = []
+    all_previous_components = [*previous_active, *reopenable_rejections]
+    for partition in active_partitions:
+        partition_ids = set(partition["stableGaussianIds"])
+        prior_components = [
+            component
+            for component in all_previous_components
+            if partition_ids & set(component["stableGaussianIds"])
+        ]
+        source_digests = {
+            str(source["sourceDigest"])
+            for source in new_sources
+            if partition_ids & set(cast(list[int], source["admittedStableGaussianIds"]))
+        }
+        provenance_digests = sorted(
+            source_digests
+            | {
+                str(provenance_digest)
+                for component in prior_components
+                for provenance_digest in component["provenanceDigests"]
+            }
+        )
+        if partition_ids & reopened_ids:
+            state = "reopened"
+        elif partition_ids & new_ids:
+            state = "new"
+        else:
+            prior_states = {
+                str(component["state"])
+                for component in prior_components
+                if component["state"] in _ACTIVE_FRONTIER_STATES
+            }
+            if len(prior_states) != 1:
+                raise TargetScopeStateTransitionError(
+                    "Discovery admission cannot ambiguously merge active Frontier states."
+                )
+            state = prior_states.pop()
+        active_groups.append(
+            {
+                "stableGaussianIds": deepcopy(partition["stableGaussianIds"]),
+                "state": state,
+                "provenanceDigests": provenance_digests,
+            }
+        )
+    rejected_groups = [
+        {
+            "stableGaussianIds": deepcopy(component["stableGaussianIds"]),
+            "state": "rejected",
+            "provenanceDigests": deepcopy(component["provenanceDigests"]),
+        }
+        for component in previous_rejected
+        if not set(component["stableGaussianIds"]).issubset(reopened_ids)
+    ]
+    new_source_digests = sorted(str(source["sourceDigest"]) for source in new_sources)
+    return _revise_target_scope_state(
+        previous_state=previous,
+        target_geometry=geometry,
+        request_binding=binding,
+        core_stable_gaussian_ids=sorted(core_ids),
+        active_frontier=active_groups,
+        rejected_frontier=rejected_groups,
+        required_context_stable_gaussian_ids=sorted(context_ids),
+        revision_provenance={
+            "kind": "scope-transition",
+            "reason": "bounded-discovery-envelope-admission",
+            "sourceDigests": new_source_digests,
+        },
+        discovery_envelope_ledger=ledger,
+        authorized_reopen_digests=new_source_digests,
     )
 
 
@@ -1539,6 +2395,7 @@ def rotate_target_scope_epoch(
     seed_record: object,
     target_geometry: object,
     component_policy: object,
+    discovery_policy: object = None,
     reason: object,
     source_digests: object,
 ) -> dict[str, Any]:
@@ -1568,9 +2425,15 @@ def rotate_target_scope_epoch(
         seed_record=seed,
         target_geometry=target_geometry,
         component_policy=component_policy,
+        discovery_policy=(
+            previous["discoveryPolicy"]
+            if discovery_policy is None
+            else discovery_policy
+        ),
     )
     geometry = _validated_geometry(target_geometry)
     policy = cast(Mapping[str, Any], replacement["componentPolicy"])
+    discovery = cast(Mapping[str, Any], replacement["discoveryPolicy"])
     binding = cast(Mapping[str, Any], replacement["requestBinding"])
     seed_digest = str(seed["recordDigest"])
     all_sources = sorted(set(sources) | {seed_digest})
@@ -1598,6 +2461,7 @@ def rotate_target_scope_epoch(
         target_splat_id=str(replacement["targetSplatId"]),
         target_geometry_digest=str(replacement["targetGeometryDigest"]),
         component_policy_digest=str(replacement["componentPolicyDigest"]),
+        discovery_policy_digest=str(replacement["discoveryPolicyDigest"]),
         epoch_origin_digest=epoch_origin_digest,
         previous_scope_epoch_id=str(previous["scopeEpochId"]),
     )
@@ -1649,10 +2513,12 @@ def rotate_target_scope_epoch(
                 active_ids=[],
                 rejected_ids=[],
                 context_ids=[],
+                discovery_source_digests=[],
             )
         ],
         revision_provenance_ledger=[provenance],
         provenance=provenance,
+        discovery_policy=discovery,
         discovery_envelope_ledger=[],
     )
 
@@ -2067,6 +2933,26 @@ def _lineage_ledger_is_valid(
             or (not child_refs and len(parent_refs) != 1)
         ):
             return False
+        to_revision_number = int(to_revision)
+        if to_revision_number > 0:
+            snapshot = scope_revision_ledger[to_revision_number]
+            introduced_set = set(introduced_ids)
+            if introduced_set & (
+                set(snapshot["coreStableGaussianIds"])
+                | set(snapshot["rejectedFrontierStableGaussianIds"])
+            ):
+                return False
+            introduced_active = introduced_set & set(
+                snapshot["activeFrontierStableGaussianIds"]
+            )
+            previous_discovery_sources = set(
+                scope_revision_ledger[to_revision_number - 1]["discoverySourceDigests"]
+            )
+            new_discovery_sources = (
+                set(snapshot["discoverySourceDigests"]) - previous_discovery_sources
+            )
+            if introduced_active and not new_discovery_sources:
+                return False
         if parent_refs and child_refs:
             connected_groups = _connected_index_groups(
                 len(parent_refs) + len(child_refs),
@@ -2333,6 +3219,9 @@ def _rejected_ledger_is_valid(
     lineage_ledger: list[Mapping[str, Any]],
     geometry: Mapping[str, Any],
     policy: Mapping[str, Any],
+    scope_revision_ledger: list[Mapping[str, Any]],
+    discovery_sources_by_digest: Mapping[str, Mapping[str, Any]],
+    forbidden_rejected_ids: set[int],
 ) -> bool:
     if not isinstance(value, list):
         return False
@@ -2345,6 +3234,7 @@ def _rejected_ledger_is_valid(
     ):
         return False
     component_history: dict[tuple[int, str], dict[str, Any]] = {}
+    components_by_revision: dict[int, list[dict[str, Any]]] = {}
     for record in lineage_ledger:
         revision = int(record["toScopeRevision"])
         for reference in record["childMemberships"]:
@@ -2365,12 +3255,16 @@ def _rejected_ledger_is_valid(
                 "createdAtScopeRevision": reference["createdAtScopeRevision"],
                 "stateEnteredScopeRevision": reference["stateEnteredScopeRevision"],
             }
-            component_history[(revision, str(reference["componentId"]))] = {
+            component = {
                 **component_payload,
                 "componentDigest": route_b_artifact_digest(component_payload),
             }
+            component_history[(revision, str(reference["componentId"]))] = component
+            components_by_revision.setdefault(revision, []).append(component)
+
     observed: set[str] = set()
-    observed_state_entries: set[tuple[int, str, str]] = set()
+    observed_rejections: set[tuple[int, str]] = set()
+    reopened_children: set[tuple[int, str]] = set()
     tail_by_component: dict[str, Mapping[str, Any]] = {}
     for event in value:
         if not isinstance(event, Mapping) or set(event) != {
@@ -2388,30 +3282,94 @@ def _rejected_ledger_is_valid(
         payload = {
             key: deepcopy(item) for key, item in event.items() if key != "eventDigest"
         }
+        event_revision = int(event["scopeRevision"])
+        if (
+            not _nonnegative_safe_integer(event["scopeRevision"])
+            or event_revision > scope_revision
+        ):
+            return False
         component_id = str(event["componentId"])
-        previous_digest = event["previousEventDigest"]
         previous_event = tail_by_component.get(component_id)
-        expected_component = component_history.get(
-            (int(event["scopeRevision"]), component_id)
+        previous_digest = event["previousEventDigest"]
+        event_ids = set(event["stableGaussianIds"])
+        tracking_skeletons = _component_skeletons(
+            geometry=geometry,
+            policy=policy,
+            stable_ids=event["stableGaussianIds"],
+            state=event["event"],
+            provenance_digests=event["provenanceDigests"],
         )
+        if len(tracking_skeletons) != 1 or (
+            tracking_skeletons[0]["componentId"] != component_id
+        ):
+            return False
+
+        matching_component: dict[str, Any] | None = None
+        if event["event"] == "rejected":
+            candidate = component_history.get((event_revision, component_id))
+            if (
+                candidate is not None
+                and candidate["state"] == "rejected"
+                and candidate["stateEnteredScopeRevision"] == event_revision
+            ):
+                matching_component = candidate
+        else:
+            candidates = [
+                component
+                for component in components_by_revision.get(event_revision, [])
+                if component["state"] == "reopened"
+                and component["stateEnteredScopeRevision"] == event_revision
+                and event_ids.issubset(set(component["stableGaussianIds"]))
+                and component["componentDigest"] == event["componentDigest"]
+                and component["provenanceDigests"] == event["provenanceDigests"]
+            ]
+            if len(candidates) == 1:
+                matching_component = candidates[0]
+
+        previous_discovery_sources = (
+            set(scope_revision_ledger[event_revision - 1]["discoverySourceDigests"])
+            if event_revision > 0
+            else set()
+        )
+        new_discovery_sources = (
+            set(scope_revision_ledger[event_revision]["discoverySourceDigests"])
+            - previous_discovery_sources
+        )
+        new_event_provenance = set(event["provenanceDigests"]) - (
+            set(previous_event["provenanceDigests"])
+            if previous_event is not None
+            else set()
+        )
+        authorized_reopen_ids = {
+            int(stable_id)
+            for source_digest in new_event_provenance & new_discovery_sources
+            for stable_id in discovery_sources_by_digest[source_digest][
+                "admittedStableGaussianIds"
+            ]
+        }
+        reopen_is_authorized = event_ids.issubset(authorized_reopen_ids)
         if (
             event["schemaVersion"] != 1
             or event["event"] not in {"rejected", "reopened"}
-            or expected_component is None
-            or expected_component["state"] != event["event"]
-            or int(event["scopeRevision"])
-            != int(expected_component["stateEnteredScopeRevision"])
-            or expected_component["stableGaussianIds"] != event["stableGaussianIds"]
-            or expected_component["componentDigest"] != event["componentDigest"]
-            or expected_component["provenanceDigests"] != event["provenanceDigests"]
+            or matching_component is None
+            or (
+                event["event"] == "rejected"
+                and (
+                    matching_component["stableGaussianIds"]
+                    != event["stableGaussianIds"]
+                    or matching_component["componentDigest"] != event["componentDigest"]
+                    or matching_component["provenanceDigests"]
+                    != event["provenanceDigests"]
+                )
+            )
             or not _nonnegative_safe_integer(event["scopeRevision"])
-            or int(event["scopeRevision"]) > scope_revision
+            or event_revision > scope_revision
             or not _digest(event["componentId"])
             or not _sorted_stable_ids(
                 event["stableGaussianIds"],
                 allow_empty=False,
             )
-            or not set(event["stableGaussianIds"]).issubset(target_ids)
+            or not event_ids.issubset(target_ids)
             or not _digest(event["componentDigest"])
             or not isinstance(event["provenanceDigests"], list)
             or not event["provenanceDigests"]
@@ -2429,6 +3387,7 @@ def _rejected_ledger_is_valid(
                 event["event"] == "reopened"
                 and (previous_event is None or previous_event["event"] != "rejected")
             )
+            or (event["event"] == "reopened" and not reopen_is_authorized)
             or (
                 previous_event is not None
                 and event["stableGaussianIds"] != previous_event["stableGaussianIds"]
@@ -2437,21 +3396,80 @@ def _rejected_ledger_is_valid(
             or event["eventDigest"] != route_b_artifact_digest(payload)
         ):
             return False
-        digest_value = str(event["eventDigest"])
-        observed.add(digest_value)
+        observed.add(str(event["eventDigest"]))
         tail_by_component[component_id] = event
-        observed_state_entries.add(
-            (int(event["scopeRevision"]), component_id, str(event["event"]))
-        )
+        if event["event"] == "rejected":
+            observed_rejections.add((event_revision, component_id))
+        else:
+            reopened_children.add(
+                (event_revision, str(matching_component["componentId"]))
+            )
 
-    expected_state_entries = {
-        (revision, component_id, str(component["state"]))
+    expected_rejections = {
+        (revision, component_id)
         for (revision, component_id), component in component_history.items()
-        if component["state"] in {"rejected", "reopened"}
+        if component["state"] == "rejected"
         and int(component["stateEnteredScopeRevision"]) == revision
     }
-    if observed_state_entries != expected_state_entries:
+    if observed_rejections != expected_rejections:
         return False
+    expected_reopened_children = {
+        (revision, component_id)
+        for (revision, component_id), component in component_history.items()
+        if component["state"] == "reopened"
+        and int(component["stateEnteredScopeRevision"]) == revision
+    }
+    if reopened_children != expected_reopened_children:
+        return False
+
+    for revision, component_id in expected_reopened_children:
+        component = component_history[(revision, component_id)]
+        prior_tails: dict[str, Mapping[str, Any]] = {}
+        for event in value:
+            if int(event["scopeRevision"]) >= revision:
+                break
+            prior_tails[str(event["componentId"])] = event
+        expected_parent_ids = {
+            parent_id
+            for parent_id, event in prior_tails.items()
+            if event["event"] == "rejected"
+            and set(event["stableGaussianIds"]).issubset(
+                set(component["stableGaussianIds"])
+            )
+        }
+        observed_parent_ids = {
+            str(event["componentId"])
+            for event in value
+            if int(event["scopeRevision"]) == revision
+            and event["event"] == "reopened"
+            and event["componentDigest"] == component["componentDigest"]
+        }
+        if not expected_parent_ids or observed_parent_ids != expected_parent_ids:
+            return False
+
+    historical_tails: dict[str, Mapping[str, Any]] = {}
+    event_index = 0
+    for revision, snapshot in enumerate(scope_revision_ledger):
+        while (
+            event_index < len(value)
+            and int(value[event_index]["scopeRevision"]) <= revision
+        ):
+            event = cast(Mapping[str, Any], value[event_index])
+            historical_tails[str(event["componentId"])] = event
+            event_index += 1
+        historical_rejected_ids = {
+            int(stable_id)
+            for event in historical_tails.values()
+            if event["event"] == "rejected"
+            for stable_id in cast(list[int], event["stableGaussianIds"])
+        }
+        if historical_rejected_ids & (
+            set(snapshot["coreStableGaussianIds"])
+            | set(snapshot["activeFrontierStableGaussianIds"])
+            | set(snapshot["requiredContextStableGaussianIds"])
+        ):
+            return False
+
     for component in rejected_components:
         tail = tail_by_component.get(str(component["componentId"]))
         if (
@@ -2461,13 +3479,28 @@ def _rejected_ledger_is_valid(
         ):
             return False
     for component in active_components:
-        tail = tail_by_component.get(str(component["componentId"]))
-        if tail is not None and tail["event"] == "rejected":
+        component_ids = set(component["stableGaussianIds"])
+        overlapping_tails = [
+            event
+            for event in tail_by_component.values()
+            if component_ids & set(event["stableGaussianIds"])
+        ]
+        if any(event["event"] == "rejected" for event in overlapping_tails):
             return False
-        if component["state"] == "reopened" and (
-            tail is None or tail["event"] != "reopened"
+        if component["state"] == "reopened" and not any(
+            event["event"] == "reopened"
+            and set(event["stableGaussianIds"]).issubset(component_ids)
+            for event in overlapping_tails
         ):
             return False
+    rejected_tail_ids = {
+        int(stable_id)
+        for event in tail_by_component.values()
+        if event["event"] == "rejected"
+        for stable_id in event["stableGaussianIds"]
+    }
+    if rejected_tail_ids & forbidden_rejected_ids:
+        return False
     return True
 
 
@@ -2499,8 +3532,7 @@ def _provenance_is_valid(
         not in {
             "seed-shadow-bootstrap",
             "epoch-rotation",
-            "new-observation",
-            "scope-transition",
+            *_TARGET_SCOPE_REVISION_KINDS,
         }
         or not _nonempty_string(value["reason"])
         or not _digest(value["epochOriginDigest"])
@@ -2537,7 +3569,7 @@ def _provenance_is_valid(
         }
         return value["epochOriginDigest"] == route_b_artifact_digest(rotation_payload)
     return (
-        kind in {"new-observation", "scope-transition"}
+        kind in _TARGET_SCOPE_REVISION_KINDS
         and value["reason"] not in _EPOCH_ROTATION_REASONS
         and _digest(value["previousStateDigest"])
     )
@@ -2554,10 +3586,14 @@ def _scope_revision_ledger_is_valid(
     current_active_ids: list[int],
     current_rejected_ids: list[int],
     current_context_ids: list[int],
+    current_discovery_source_digests: list[str],
 ) -> bool:
     if not isinstance(value, list) or len(value) != scope_revision + 1:
         return False
     previous_core: set[int] = set()
+    previous_active: set[int] = set()
+    previous_rejected: set[int] = set()
+    previous_discovery_sources: set[str] = set()
     previous_context_revision = -1
     for revision, snapshot in enumerate(value):
         if not isinstance(snapshot, Mapping) or set(snapshot) != {
@@ -2568,6 +3604,7 @@ def _scope_revision_ledger_is_valid(
             "activeFrontierStableGaussianIds",
             "rejectedFrontierStableGaussianIds",
             "requiredContextStableGaussianIds",
+            "discoverySourceDigests",
             "scopeRevisionDigest",
         }:
             return False
@@ -2579,6 +3616,8 @@ def _scope_revision_ledger_is_valid(
             snapshot["requiredContextStableGaussianIds"],
         ]
         role_sets = [set(ids) for ids in role_ids]
+        discovery_sources = snapshot["discoverySourceDigests"]
+        discovery_source_set = set(discovery_sources)
         payload = {
             key: deepcopy(item)
             for key, item in snapshot.items()
@@ -2602,10 +3641,21 @@ def _scope_revision_ledger_is_valid(
                 for right in range(left + 1, len(role_sets))
             )
             or not previous_core.issubset(role_sets[0])
+            or (
+                revision > 0
+                and not (role_sets[2] - previous_rejected).issubset(previous_active)
+            )
+            or not isinstance(discovery_sources, list)
+            or discovery_sources != sorted(set(discovery_sources))
+            or any(not _digest(item) for item in discovery_sources)
+            or not previous_discovery_sources.issubset(discovery_source_set)
             or snapshot["scopeRevisionDigest"] != route_b_artifact_digest(payload)
         ):
             return False
         previous_core = role_sets[0]
+        previous_active = role_sets[1]
+        previous_rejected = role_sets[2]
+        previous_discovery_sources = discovery_source_set
         previous_context_revision = int(snapshot_binding["contextRevision"])
     current = value[-1]
     return (
@@ -2614,6 +3664,146 @@ def _scope_revision_ledger_is_valid(
         and current["activeFrontierStableGaussianIds"] == current_active_ids
         and current["rejectedFrontierStableGaussianIds"] == current_rejected_ids
         and current["requiredContextStableGaussianIds"] == current_context_ids
+        and current["discoverySourceDigests"] == current_discovery_source_digests
+    )
+
+
+def _discovery_envelope_ledger_is_valid(
+    value: object,
+    *,
+    scope_epoch_id: str,
+    target_splat_id: str,
+    dependency_token: Mapping[str, Any],
+    target_geometry_digest: str,
+    component_policy_digest: str,
+    discovery_policy: Mapping[str, Any],
+    geometry: Mapping[str, Any],
+    scope_revision_ledger: list[Mapping[str, Any]],
+    revision_provenance_ledger: list[Mapping[str, Any]],
+) -> bool:
+    if not isinstance(value, list):
+        return False
+    validated: list[dict[str, object]] = []
+    try:
+        validated = [validate_target_scope_discovery_source(item) for item in value]
+    except TargetScopeStateError:
+        return False
+    source_digests = [str(source["sourceDigest"]) for source in validated]
+    authority_digests = [
+        _discovery_source_authority_digest(source) for source in validated
+    ]
+    if (
+        value != validated
+        or len(source_digests) != len(set(source_digests))
+        or len(authority_digests) != len(set(authority_digests))
+        or len(validated) > int(discovery_policy["maximumSourceRecordsPerEpoch"])
+    ):
+        return False
+    target_ids = set(geometry["stableGaussianIds"])
+    rows_by_id = {int(row["stableGaussianId"]): row for row in geometry["rows"]}
+    admitted_union: set[int] = set()
+    for source in validated:
+        admitted_ids = cast(list[int], source["admittedStableGaussianIds"])
+        bounds = cast(Mapping[str, list[float]], source["spatialBounds"])
+        if (
+            source["targetSplatId"] != target_splat_id
+            or source["dependencyToken"] != dependency_token
+            or source["scopeEpochId"] != scope_epoch_id
+            or source["targetGeometryDigest"] != target_geometry_digest
+            or source["componentPolicyDigest"] != component_policy_digest
+            or source["discoveryPolicyDigest"] != discovery_policy["policyDigest"]
+            or not set(admitted_ids).issubset(target_ids)
+        ):
+            return False
+        for stable_id in admitted_ids:
+            center = rows_by_id[stable_id]["center"]
+            if any(
+                float(center[axis]) < float(bounds["minimum"][axis])
+                or float(center[axis]) > float(bounds["maximum"][axis])
+                for axis in range(3)
+            ):
+                return False
+        admitted_union.update(admitted_ids)
+    if len(admitted_union) > int(
+        discovery_policy["maximumAdmittedStableGaussianIdsPerEpoch"]
+    ):
+        return False
+
+    known_sources: set[str] = set()
+    expected_source_digests: list[str] = []
+    source_by_digest = {str(source["sourceDigest"]): source for source in validated}
+    for revision, snapshot in enumerate(scope_revision_ledger):
+        snapshot_sources = set(snapshot["discoverySourceDigests"])
+        new_sources = snapshot_sources - known_sources
+        if revision > 0:
+            previous_envelope_ids = {
+                int(stable_id)
+                for source_digest in known_sources
+                for stable_id in cast(
+                    list[int],
+                    source_by_digest[source_digest]["admittedStableGaussianIds"],
+                )
+            }
+            protected_active_ids = previous_envelope_ids & set(
+                scope_revision_ledger[revision - 1]["activeFrontierStableGaussianIds"]
+            )
+            current_active_ids = set(snapshot["activeFrontierStableGaussianIds"])
+            current_scoped_ids = (
+                set(snapshot["coreStableGaussianIds"])
+                | current_active_ids
+                | set(snapshot["rejectedFrontierStableGaussianIds"])
+            )
+            if not protected_active_ids.issubset(current_scoped_ids):
+                return False
+            if revision_provenance_ledger[revision][
+                "kind"
+            ] in _NON_REJECTION_DISCOVERY_KINDS and not protected_active_ids.issubset(
+                current_active_ids
+            ):
+                return False
+        if (
+            not snapshot_sources.issubset(source_by_digest)
+            or (revision == 0 and snapshot_sources)
+            or not new_sources.issubset(
+                set(revision_provenance_ledger[revision]["sourceDigests"])
+            )
+        ):
+            return False
+        active_ids = set(snapshot["activeFrontierStableGaussianIds"])
+        core_ids = set(snapshot["coreStableGaussianIds"])
+        context_ids = set(snapshot["requiredContextStableGaussianIds"])
+        newly_admitted_ids = {
+            int(stable_id)
+            for source_digest in new_sources
+            for stable_id in cast(
+                list[int],
+                source_by_digest[source_digest]["admittedStableGaussianIds"],
+            )
+        }
+        if revision > 0:
+            newly_active_ids = active_ids - set(
+                scope_revision_ledger[revision - 1]["activeFrontierStableGaussianIds"]
+            )
+            if not newly_active_ids.issubset(newly_admitted_ids):
+                return False
+        for source_digest in new_sources:
+            admitted_ids = set(
+                cast(
+                    list[int],
+                    source_by_digest[source_digest]["admittedStableGaussianIds"],
+                )
+            )
+            if (
+                not admitted_ids.issubset(active_ids)
+                or admitted_ids & core_ids
+                or admitted_ids & context_ids
+            ):
+                return False
+        expected_source_digests.extend(sorted(new_sources))
+        known_sources = snapshot_sources
+    return (
+        known_sources == set(source_digests)
+        and source_digests == expected_source_digests
     )
 
 
@@ -2722,6 +3912,12 @@ def _state_payload_at_revision(
     rejected_components = [
         component for component in components if component["state"] == "rejected"
     ]
+    snapshot_source_digests = set(snapshot["discoverySourceDigests"])
+    discovery_prefix = [
+        deepcopy(source)
+        for source in cast(list[Mapping[str, Any]], value["discoveryEnvelopeLedger"])
+        if source["sourceDigest"] in snapshot_source_digests
+    ]
     provenance = deepcopy(provenance_ledger[revision])
     return {
         "schemaVersion": TARGET_SCOPE_STATE_SCHEMA_VERSION,
@@ -2737,7 +3933,7 @@ def _state_payload_at_revision(
         "targetStableGaussianIds": deepcopy(value["targetStableGaussianIds"]),
         "coreStableGaussianIds": deepcopy(snapshot["coreStableGaussianIds"]),
         "coreComponents": core_components,
-        "discoveryEnvelopeLedger": [],
+        "discoveryEnvelopeLedger": discovery_prefix,
         "activeFrontierStableGaussianIds": deepcopy(
             snapshot["activeFrontierStableGaussianIds"]
         ),
@@ -2754,6 +3950,8 @@ def _state_payload_at_revision(
         "seedRecord": deepcopy(value["seedRecord"]),
         "componentPolicy": deepcopy(value["componentPolicy"]),
         "componentPolicyDigest": value["componentPolicyDigest"],
+        "discoveryPolicy": deepcopy(value["discoveryPolicy"]),
+        "discoveryPolicyDigest": value["discoveryPolicyDigest"],
         "componentLineageLedger": lineage_prefix,
         "subcomponentDecisionLedger": decision_prefix,
         "scopeRevisionLedger": deepcopy(scope_ledger[: revision + 1]),
@@ -2806,6 +4004,7 @@ def is_target_scope_state(value: object) -> bool:
             or not _nonnegative_safe_integer(value["scopeRevision"])
             or not _digest(value["targetGeometryDigest"])
             or not _digest(value["componentPolicyDigest"])
+            or not _digest(value["discoveryPolicyDigest"])
             or not _digest(value["provenanceDigest"])
             or not _digest(value["stateDigest"])
             or not _nonempty_string(value["targetSplatId"])
@@ -2831,6 +4030,7 @@ def is_target_scope_state(value: object) -> bool:
             "dependencyToken",
             "targetGeometryDigest",
             "componentPolicyDigest",
+            "discoveryPolicyDigest",
             "epochOriginDigest",
             "previousScopeEpochId",
         }:
@@ -2842,6 +4042,7 @@ def is_target_scope_state(value: object) -> bool:
             or epoch_binding["dependencyToken"] != request_binding["dependencyToken"]
             or epoch_binding["targetGeometryDigest"] != value["targetGeometryDigest"]
             or epoch_binding["componentPolicyDigest"] != value["componentPolicyDigest"]
+            or epoch_binding["discoveryPolicyDigest"] != value["discoveryPolicyDigest"]
             or not _digest(epoch_binding["epochOriginDigest"])
             or (
                 epoch_binding["previousScopeEpochId"] is not None
@@ -2910,7 +4111,13 @@ def is_target_scope_state(value: object) -> bool:
         component_ids = [str(component["componentId"]) for component in components]
         if len(component_ids) != len(set(component_ids)):
             return False
-        if value["discoveryEnvelopeLedger"] != []:
+        discovery_policy = validate_target_scope_discovery_policy(
+            value["discoveryPolicy"]
+        )
+        if (
+            discovery_policy["policyDigest"] != value["discoveryPolicyDigest"]
+            or value["discoveryPolicy"] != discovery_policy
+        ):
             return False
         seed_partition = value["seedPartition"]
         seed_record = value["seedRecord"]
@@ -2942,6 +4149,12 @@ def is_target_scope_state(value: object) -> bool:
             or value["subcomponentDecisionLedger"] != []
         ):
             return False
+        discovery_envelope_ledger = value["discoveryEnvelopeLedger"]
+        if not isinstance(discovery_envelope_ledger, list):
+            return False
+        discovery_source_digests = [
+            str(record["sourceDigest"]) for record in discovery_envelope_ledger
+        ]
         scope_revision_ledger = value["scopeRevisionLedger"]
         if not _scope_revision_ledger_is_valid(
             scope_revision_ledger,
@@ -2953,6 +4166,7 @@ def is_target_scope_state(value: object) -> bool:
             current_active_ids=active_ids,
             current_rejected_ids=rejected_ids,
             current_context_ids=context_ids,
+            current_discovery_source_digests=sorted(discovery_source_digests),
         ):
             return False
         genesis_scope = scope_revision_ledger[0]
@@ -2962,6 +4176,7 @@ def is_target_scope_state(value: object) -> bool:
             or genesis_scope["activeFrontierStableGaussianIds"] != []
             or genesis_scope["rejectedFrontierStableGaussianIds"] != []
             or genesis_scope["requiredContextStableGaussianIds"] != []
+            or genesis_scope["discoverySourceDigests"] != []
         ):
             return False
         decision_ledger = value["subcomponentDecisionLedger"]
@@ -2987,6 +4202,21 @@ def is_target_scope_state(value: object) -> bool:
             or value["provenanceDigest"] != provenance["revisionProvenanceDigest"]
             or epoch_binding["epochOriginDigest"]
             != provenance_ledger[0]["epochOriginDigest"]
+        ):
+            return False
+        if not _discovery_envelope_ledger_is_valid(
+            discovery_envelope_ledger,
+            scope_epoch_id=str(value["scopeEpochId"]),
+            target_splat_id=str(value["targetSplatId"]),
+            dependency_token=cast(
+                Mapping[str, Any], request_binding["dependencyToken"]
+            ),
+            target_geometry_digest=str(value["targetGeometryDigest"]),
+            component_policy_digest=str(value["componentPolicyDigest"]),
+            discovery_policy=discovery_policy,
+            geometry=geometry,
+            scope_revision_ledger=cast(list[Mapping[str, Any]], scope_revision_ledger),
+            revision_provenance_ledger=cast(list[Mapping[str, Any]], provenance_ledger),
         ):
             return False
         if not _lineage_ledger_is_valid(
@@ -3016,6 +4246,12 @@ def is_target_scope_state(value: object) -> bool:
             ),
             geometry=geometry,
             policy=policy,
+            scope_revision_ledger=cast(list[Mapping[str, Any]], scope_revision_ledger),
+            discovery_sources_by_digest={
+                str(source["sourceDigest"]): cast(Mapping[str, Any], source)
+                for source in discovery_envelope_ledger
+            },
+            forbidden_rejected_ids=set(core_ids) | set(context_ids),
         ):
             return False
         if not _historical_state_chain_is_valid(
@@ -3073,6 +4309,7 @@ def target_scope_state_identity(value: object) -> dict[str, object]:
         ),
         "targetGeometryDigest": value["targetGeometryDigest"],
         "componentPolicyDigest": value["componentPolicyDigest"],
+        "discoveryPolicyDigest": value["discoveryPolicyDigest"],
         "provenanceDigest": value["provenanceDigest"],
         "seedRecordDigest": seed_partition["recordDigest"],
     }
@@ -3099,14 +4336,21 @@ def restore_target_scope_state(
 
 __all__ = [
     "TARGET_SCOPE_STATE_KIND",
+    "TARGET_SCOPE_DISCOVERY_POLICY_SCHEMA_VERSION",
+    "TARGET_SCOPE_DISCOVERY_SOURCE_SCHEMA_VERSION",
     "TargetScopeStateError",
     "TargetScopeStateIncompatibilityError",
     "TargetScopeStateInternalError",
     "TargetScopeStateTransitionError",
     "TargetScopeStateValidationError",
+    "admit_target_scope_discovery_sources",
     "bootstrap_target_scope_state_from_seed",
     "canonical_target_scope_state_bytes",
     "create_target_scope_component_policy",
+    "create_target_scope_boundary_contact_shadow_source",
+    "create_target_scope_discovery_policy",
+    "create_target_scope_discovery_source",
+    "create_target_scope_observation_shadow_source",
     "create_target_scope_subcomponent_decision",
     "is_target_scope_state",
     "restore_target_scope_state",
@@ -3114,5 +4358,7 @@ __all__ = [
     "rotate_target_scope_epoch",
     "target_scope_state_identity",
     "validate_target_scope_component_policy",
+    "validate_target_scope_discovery_policy",
+    "validate_target_scope_discovery_source",
     "validate_target_scope_subcomponent_decision",
 ]

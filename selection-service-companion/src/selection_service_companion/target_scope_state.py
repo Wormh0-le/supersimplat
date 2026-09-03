@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
+from itertools import product
 import json
 import math
 from threading import Lock
@@ -21,6 +22,10 @@ from .conservative_seed import (
     is_conservative_seed_shadow_record,
 )
 from .digests import route_b_artifact_digest
+from .gaussian_evidence_contract import (
+    is_evidence_working_set,
+    resolve_evidence_working_set_boundary,
+)
 
 
 _VALIDATED_STATE_DIGEST_CACHE_LIMIT: Final = 256
@@ -30,7 +35,7 @@ _validated_state_digest_lock = Lock()
 
 
 TARGET_SCOPE_COMPONENT_POLICY_SCHEMA_VERSION: Final = 1
-TARGET_SCOPE_STATE_SCHEMA_VERSION: Final = 2
+TARGET_SCOPE_STATE_SCHEMA_VERSION: Final = 3
 TARGET_SCOPE_STATE_KIND: Final = "target-scope-state/experimental-shadow"
 _MAX_SAFE_INTEGER: Final = (1 << 53) - 1
 _MAX_STABLE_GAUSSIAN_ID: Final = (1 << 32) - 1
@@ -42,22 +47,89 @@ _POLICY_KEYS: Final = {
     "adjacencyScaleMultiplier",
     "boundsScaleMultiplier",
 }
-TARGET_SCOPE_DISCOVERY_POLICY_SCHEMA_VERSION: Final = 1
-TARGET_SCOPE_DISCOVERY_SOURCE_SCHEMA_VERSION: Final = 1
+TARGET_SCOPE_DISCOVERY_POLICY_SCHEMA_VERSION: Final = 2
+TARGET_SCOPE_DISCOVERY_SOURCE_SCHEMA_VERSION: Final = 2
+_DISCOVERY_DOMAIN_SCHEMA_VERSION: Final = 2
 _DISCOVERY_POLICY_KEYS: Final = {
     "schemaVersion",
     "policyId",
     "maximumSourceRecordsPerEpoch",
     "maximumAdmittedStableGaussianIdsPerEpoch",
+    "discoveryDomain",
 }
-_DISCOVERY_SOURCE_KINDS: Final = {
-    "evidence-working-set-boundary-contact",
-    "core-external-included-positive-support",
-    "coherent-cross-view-support",
-    "reviewed-target-local-spatial-support",
-    "user-confirmed-expert-recovery",
+_DISCOVERY_DOMAIN_KEYS: Final = {
+    "schemaVersion",
+    "domainId",
+    "targetGeometryHint",
+    "spatialBounds",
+    "maximumSourceExtent",
+    "maximumDomainDistanceScaleMultiplier",
+    "gaussianSupportScaleMultiplier",
 }
-_DISCOVERY_SOURCE_KEYS: Final = {
+_DISCOVERY_ARTIFACT_REF_KEYS: Final = {
+    "schemaVersion",
+    "artifactKind",
+    "artifactId",
+    "artifactDigest",
+    "viewIds",
+}
+_DISCOVERY_AUTHORITY_COMMON_KEYS: Final = {
+    "schemaVersion",
+    "authorityKind",
+    "producerId",
+    "status",
+    "resultDigest",
+    "derivationPolicyDigest",
+    "authorityEvidence",
+}
+_DISCOVERY_SOURCE_AUTHORITY: Final = {
+    "evidence-working-set-boundary-contact": {
+        "authorityKind": "boundary-contact-result",
+        "producerPrefix": "evidence-working-set-boundary-resolver/",
+        "statuses": {"expanded", "failed-closed-boundary-contact"},
+        "artifactKind": "gaussian-evidence-artifact",
+        "minimumArtifacts": 1,
+        "maximumArtifacts": 1,
+        "requiresStableAuthority": False,
+    },
+    "core-external-included-positive-support": {
+        "authorityKind": "included-stable-observation",
+        "producerPrefix": "included-stable-observation/",
+        "statuses": {"included-stable"},
+        "artifactKind": "included-stable-observation",
+        "minimumArtifacts": 1,
+        "maximumArtifacts": 1,
+        "requiresStableAuthority": True,
+    },
+    "coherent-cross-view-support": {
+        "authorityKind": "coherent-included-stable-result",
+        "producerPrefix": "coherent-included-stable-support/",
+        "statuses": {"included-stable"},
+        "artifactKind": "included-stable-observation",
+        "minimumArtifacts": 2,
+        "maximumArtifacts": 8,
+        "requiresStableAuthority": True,
+    },
+    "reviewed-target-local-spatial-support": {
+        "authorityKind": "reviewed-target-local-support",
+        "producerPrefix": "reviewed-target-local-support/",
+        "statuses": {"reviewed"},
+        "artifactKind": "target-geometry-hint-review",
+        "minimumArtifacts": 1,
+        "maximumArtifacts": 1,
+        "requiresStableAuthority": False,
+    },
+    "user-confirmed-expert-recovery": {
+        "authorityKind": "user-confirmed-decision",
+        "producerPrefix": "user-confirmed-decision/",
+        "statuses": {"user-confirmed"},
+        "artifactKind": "user-confirmed-decision",
+        "minimumArtifacts": 1,
+        "maximumArtifacts": 1,
+        "requiresStableAuthority": True,
+    },
+}
+_DISCOVERY_SOURCE_INPUT_KEYS: Final = {
     "schemaVersion",
     "sourceKind",
     "targetSplatId",
@@ -66,12 +138,17 @@ _DISCOVERY_SOURCE_KEYS: Final = {
     "targetGeometryDigest",
     "componentPolicyDigest",
     "discoveryPolicyDigest",
-    "sourceArtifactIds",
-    "sourceViewIds",
-    "sourceArtifactDigests",
+    "discoveryDomainDigest",
+    "sourceArtifactRefs",
+    "sourceAuthority",
     "admittedStableGaussianIds",
     "spatialBounds",
     "reason",
+}
+_DISCOVERY_SOURCE_KEYS: Final = _DISCOVERY_SOURCE_INPUT_KEYS | {
+    "sourceAuthorityDigest",
+    "derivedResultDigest",
+    "sourceRecordDigest",
 }
 _NON_REJECTION_DISCOVERY_KINDS: Final = {
     "low-visibility",
@@ -193,6 +270,17 @@ def _finite_number(value: object) -> bool:
         return math.isfinite(float(value))
     except OverflowError:
         return False
+
+
+def _contains_negative_zero(value: object) -> bool:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        numeric = float(value)
+        return numeric == 0.0 and math.copysign(1.0, numeric) < 0.0
+    if isinstance(value, Mapping):
+        return any(_contains_negative_zero(item) for item in value.values())
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return any(_contains_negative_zero(item) for item in value)
+    return False
 
 
 def _clamp_finite(value: float) -> float:
@@ -375,8 +463,121 @@ def _canonical_spatial_bounds(value: object) -> dict[str, list[float]]:
     return canonical
 
 
+def _canonical_domain_target_geometry_hint(
+    value: object,
+) -> dict[str, object] | None:
+    if value is None:
+        return None
+    expected_keys = {
+        "schemaVersion",
+        "producerId",
+        "targetSplatId",
+        "sourceArtifactDigest",
+        "center",
+        "extent",
+        "authorityDigest",
+    }
+    if not isinstance(value, Mapping) or set(value) != expected_keys:
+        raise TargetScopeStateValidationError(
+            "Discovery domain Target Geometry Hint authority is invalid."
+        )
+    center = value.get("center")
+    extent = value.get("extent")
+    if (
+        value.get("schemaVersion") != 1
+        or value.get("producerId") != "target-geometry-hint-domain/v1"
+        or not _nonempty_string(value.get("targetSplatId"))
+        or not _digest(value.get("sourceArtifactDigest"))
+        or not isinstance(center, Sequence)
+        or isinstance(center, (str, bytes))
+        or len(center) != 3
+        or any(not _finite_number(coordinate) for coordinate in center)
+        or not isinstance(extent, Sequence)
+        or isinstance(extent, (str, bytes))
+        or len(extent) != 3
+        or any(
+            not _finite_number(coordinate) or float(coordinate) <= 0.0
+            for coordinate in extent
+        )
+    ):
+        raise TargetScopeStateValidationError(
+            "Discovery domain Target Geometry Hint authority is invalid."
+        )
+    payload: dict[str, object] = {
+        "schemaVersion": 1,
+        "producerId": "target-geometry-hint-domain/v1",
+        "targetSplatId": value["targetSplatId"],
+        "sourceArtifactDigest": value["sourceArtifactDigest"],
+        "center": [
+            0.0 if float(coordinate) == 0.0 else float(coordinate)
+            for coordinate in center
+        ],
+        "extent": [float(coordinate) for coordinate in extent],
+    }
+    canonical = {**payload, "authorityDigest": route_b_artifact_digest(payload)}
+    if value != canonical:
+        raise TargetScopeStateValidationError(
+            "Discovery domain Target Geometry Hint authority is invalid."
+        )
+    return canonical
+
+
+def _canonical_discovery_domain(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping) or frozenset(value) not in {
+        frozenset(_DISCOVERY_DOMAIN_KEYS),
+        frozenset(_DISCOVERY_DOMAIN_KEYS | {"domainDigest"}),
+    }:
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery domain is invalid."
+        )
+    domain_id = value.get("domainId")
+    target_geometry_hint = _canonical_domain_target_geometry_hint(
+        value.get("targetGeometryHint")
+    )
+    extent = value.get("maximumSourceExtent")
+    domain_distance_multiplier = value.get("maximumDomainDistanceScaleMultiplier")
+    support_multiplier = value.get("gaussianSupportScaleMultiplier")
+    if (
+        value.get("schemaVersion") != _DISCOVERY_DOMAIN_SCHEMA_VERSION
+        or not isinstance(domain_id, str)
+        or not domain_id.startswith("target-local-discovery-domain/")
+        or "/v" not in domain_id
+        or not domain_id.rsplit("/v", 1)[-1].isdigit()
+        or not isinstance(extent, Sequence)
+        or isinstance(extent, (str, bytes))
+        or len(extent) != 3
+        or any(not _finite_number(item) or float(item) <= 0.0 for item in extent)
+        or not _finite_number(domain_distance_multiplier)
+        or float(cast(float, domain_distance_multiplier)) <= 0.0
+        or float(cast(float, domain_distance_multiplier)) > 256.0
+        or not _finite_number(support_multiplier)
+        or float(cast(float, support_multiplier)) <= 0.0
+        or float(cast(float, support_multiplier)) > 16.0
+    ):
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery domain identity or extent is invalid."
+        )
+    payload: dict[str, object] = {
+        "schemaVersion": _DISCOVERY_DOMAIN_SCHEMA_VERSION,
+        "domainId": domain_id,
+        "targetGeometryHint": target_geometry_hint,
+        "spatialBounds": _canonical_spatial_bounds(value.get("spatialBounds")),
+        "maximumSourceExtent": [float(item) for item in extent],
+        "maximumDomainDistanceScaleMultiplier": float(
+            cast(float, domain_distance_multiplier)
+        ),
+        "gaussianSupportScaleMultiplier": float(cast(float, support_multiplier)),
+    }
+    canonical = {**payload, "domainDigest": route_b_artifact_digest(payload)}
+    if "domainDigest" in value and value["domainDigest"] != canonical["domainDigest"]:
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery domain digest is invalid."
+        )
+    return canonical
+
+
 def create_target_scope_discovery_policy(value: object) -> dict[str, object]:
-    """Create one finite experimental Discovery Envelope budget policy."""
+    """Create one finite, target-local Discovery Envelope policy."""
 
     if not isinstance(value, Mapping) or set(value) != _DISCOVERY_POLICY_KEYS:
         raise TargetScopeStateValidationError(
@@ -400,11 +601,13 @@ def create_target_scope_discovery_policy(value: object) -> dict[str, object]:
         raise TargetScopeStateValidationError(
             "Target Scope discovery policy identity or budget is invalid."
         )
+    domain = _canonical_discovery_domain(value.get("discoveryDomain"))
     payload: dict[str, object] = {
         "schemaVersion": TARGET_SCOPE_DISCOVERY_POLICY_SCHEMA_VERSION,
         "policyId": policy_id,
         "maximumSourceRecordsPerEpoch": int(cast(int, maximum_sources)),
         "maximumAdmittedStableGaussianIdsPerEpoch": int(cast(int, maximum_stable_ids)),
+        "discoveryDomain": domain,
     }
     return {**payload, "policyDigest": route_b_artifact_digest(payload)}
 
@@ -419,17 +622,285 @@ def validate_target_scope_discovery_policy(value: object) -> dict[str, object]:
     expected = create_target_scope_discovery_policy(
         {key: value[key] for key in _DISCOVERY_POLICY_KEYS}
     )
-    if value.get("policyDigest") != expected["policyDigest"]:
+    if (
+        _contains_negative_zero(value)
+        or value.get("policyDigest") != expected["policyDigest"]
+        or value != expected
+    ):
         raise TargetScopeStateValidationError(
             "Target Scope discovery policy digest is invalid."
         )
     return expected
 
 
-def create_target_scope_discovery_source(value: object) -> dict[str, object]:
-    """Create one canonical, epoch-bound seed-independent discovery source."""
+def _canonical_discovery_artifact_refs(
+    value: object, *, source_kind: str
+) -> list[dict[str, object]]:
+    authority_contract = _DISCOVERY_SOURCE_AUTHORITY[source_kind]
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery artifact references are invalid."
+        )
+    references: list[dict[str, object]] = []
+    for reference in value:
+        if (
+            not isinstance(reference, Mapping)
+            or set(reference) != _DISCOVERY_ARTIFACT_REF_KEYS
+        ):
+            raise TargetScopeStateValidationError(
+                "Target Scope discovery artifact reference is invalid."
+            )
+        if (
+            reference.get("schemaVersion") != 1
+            or reference.get("artifactKind") != authority_contract["artifactKind"]
+            or not _nonempty_string(reference.get("artifactId"))
+            or not _digest(reference.get("artifactDigest"))
+        ):
+            raise TargetScopeStateValidationError(
+                "Target Scope discovery artifact identity is invalid."
+            )
+        references.append(
+            {
+                "schemaVersion": 1,
+                "artifactKind": reference["artifactKind"],
+                "artifactId": str(reference["artifactId"]).strip(),
+                "artifactDigest": reference["artifactDigest"],
+                "viewIds": _canonical_string_list(
+                    reference.get("viewIds"), label="Discovery artifact View"
+                ),
+            }
+        )
+    minimum = int(authority_contract["minimumArtifacts"])
+    maximum = int(authority_contract["maximumArtifacts"])
+    artifact_ids = [str(reference["artifactId"]) for reference in references]
+    artifact_digests = [str(reference["artifactDigest"]) for reference in references]
+    if (
+        not minimum <= len(references) <= maximum
+        or len(artifact_ids) != len(set(artifact_ids))
+        or len(artifact_digests) != len(set(artifact_digests))
+    ):
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery artifact cardinality is invalid."
+        )
+    references.sort(key=route_b_artifact_digest)
+    if source_kind == "coherent-cross-view-support":
+        coherent_view_lists = [
+            cast(list[str], reference["viewIds"]) for reference in references
+        ]
+        coherent_views = {view_ids[0] for view_ids in coherent_view_lists if view_ids}
+        if any(len(view_ids) != 1 for view_ids in coherent_view_lists) or len(
+            coherent_views
+        ) != len(references):
+            raise TargetScopeStateValidationError(
+                "Coherent cross-View discovery requires two bound Views."
+            )
+    return references
 
-    if not isinstance(value, Mapping) or set(value) != _DISCOVERY_SOURCE_KEYS:
+
+def _canonical_boundary_contact_result(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise TargetScopeStateValidationError(
+            "Boundary-contact authority result is invalid."
+        )
+    status = value.get("status")
+    if status == "failed-closed":
+        if (
+            set(value) != {"status", "reason", "contactStableGaussianIds"}
+            or value.get("reason") != "evidence-working-set-boundary-contact"
+        ):
+            raise TargetScopeStateValidationError(
+                "Boundary-contact authority result is invalid."
+            )
+        return {
+            "status": "failed-closed",
+            "reason": "evidence-working-set-boundary-contact",
+            "contactStableGaussianIds": _canonical_stable_ids(
+                value.get("contactStableGaussianIds"),
+                label="Boundary-contact result",
+                allow_empty=False,
+            ),
+        }
+    if status == "expanded":
+        if set(value) != {
+            "status",
+            "contactStableGaussianIds",
+            "evidenceWorkingSet",
+        } or not is_evidence_working_set(value.get("evidenceWorkingSet")):
+            raise TargetScopeStateValidationError(
+                "Boundary-contact authority result is invalid."
+            )
+        contact_ids = _canonical_stable_ids(
+            value.get("contactStableGaussianIds"),
+            label="Boundary-contact result",
+            allow_empty=False,
+        )
+        evidence_working_set = cast(Mapping[str, Any], value["evidenceWorkingSet"])
+        if not set(contact_ids).issubset(
+            set(cast(list[int], evidence_working_set["stableGaussianIds"]))
+        ):
+            raise TargetScopeStateValidationError(
+                "Expanded boundary authority does not cover contact support."
+            )
+        return {
+            "status": "expanded",
+            "contactStableGaussianIds": contact_ids,
+            "evidenceWorkingSet": deepcopy(dict(evidence_working_set)),
+        }
+    raise TargetScopeStateValidationError(
+        "Boundary-contact authority result is invalid."
+    )
+
+
+def _canonical_boundary_resolver_input(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise TargetScopeStateValidationError(
+            "Boundary-contact resolver input is invalid."
+        )
+    replay_result = resolve_evidence_working_set_boundary(value)
+    try:
+        _canonical_boundary_contact_result(replay_result)
+    except TargetScopeStateValidationError as error:
+        raise TargetScopeStateValidationError(
+            "Boundary-contact resolver input is invalid."
+        ) from error
+    return deepcopy(dict(value))
+
+
+def _canonical_boundary_resolver_binding(value: object) -> dict[str, object]:
+    expected_keys = {
+        "schemaVersion",
+        "targetSplatId",
+        "dependencyToken",
+        "renderWorkingSetToken",
+        "evidenceWorkingSetToken",
+    }
+    if (
+        not isinstance(value, Mapping)
+        or value.get("schemaVersion") != 1
+        or set(value) != expected_keys
+        or not _nonempty_string(value.get("targetSplatId"))
+        or not _digest(value.get("renderWorkingSetToken"))
+        or not _digest(value.get("evidenceWorkingSetToken"))
+    ):
+        raise TargetScopeStateValidationError(
+            "Boundary-contact resolver binding is invalid."
+        )
+    canonical = {key: deepcopy(value[key]) for key in sorted(expected_keys)}
+    canonical["dependencyToken"] = _validated_dependency_token(
+        value.get("dependencyToken")
+    )
+    return canonical
+
+
+def _canonical_discovery_authority(
+    value: object, *, source_kind: str
+) -> dict[str, object]:
+    contract = _DISCOVERY_SOURCE_AUTHORITY[source_kind]
+    expected_keys = set(_DISCOVERY_AUTHORITY_COMMON_KEYS)
+    evidence_keys = {
+        "schemaVersion",
+        "producerId",
+        "status",
+        "derivationPolicyDigest",
+        "sourceArtifactRefs",
+    }
+    if bool(contract["requiresStableAuthority"]):
+        expected_keys |= {"participation", "stableMaskDigest"}
+        evidence_keys |= {"participation", "stableMaskDigest"}
+    if source_kind == "evidence-working-set-boundary-contact":
+        evidence_keys |= {"boundaryBinding", "boundaryInput", "boundaryResult"}
+    if not isinstance(value, Mapping) or set(value) != expected_keys:
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery source authority is incomplete."
+        )
+    producer_id = value.get("producerId")
+    evidence = value.get("authorityEvidence")
+    if (
+        value.get("schemaVersion") != 1
+        or value.get("authorityKind") != contract["authorityKind"]
+        or value.get("status") not in contract["statuses"]
+        or not isinstance(producer_id, str)
+        or not producer_id.startswith(str(contract["producerPrefix"]))
+        or "/v" not in producer_id
+        or not producer_id.rsplit("/v", 1)[-1].isdigit()
+        or not _digest(value.get("resultDigest"))
+        or not _digest(value.get("derivationPolicyDigest"))
+        or not isinstance(evidence, Mapping)
+        or set(evidence) != evidence_keys
+        or evidence.get("schemaVersion") != 1
+        or evidence.get("producerId") != producer_id
+        or evidence.get("status") != value.get("status")
+        or evidence.get("derivationPolicyDigest") != value.get("derivationPolicyDigest")
+        or (
+            bool(contract["requiresStableAuthority"])
+            and (
+                value.get("participation") != "included"
+                or not _digest(value.get("stableMaskDigest"))
+                or evidence.get("participation") != value.get("participation")
+                or evidence.get("stableMaskDigest") != value.get("stableMaskDigest")
+            )
+        )
+    ):
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery source authority is invalid."
+        )
+    canonical_evidence = deepcopy(dict(cast(Mapping[str, Any], evidence)))
+    canonical_evidence["sourceArtifactRefs"] = _canonical_discovery_artifact_refs(
+        evidence.get("sourceArtifactRefs"), source_kind=source_kind
+    )
+    if source_kind == "evidence-working-set-boundary-contact":
+        canonical_evidence["boundaryBinding"] = _canonical_boundary_resolver_binding(
+            evidence.get("boundaryBinding")
+        )
+        canonical_input = _canonical_boundary_resolver_input(
+            evidence.get("boundaryInput")
+        )
+        canonical_evidence["boundaryInput"] = canonical_input
+        canonical_evidence["boundaryResult"] = _canonical_boundary_contact_result(
+            evidence.get("boundaryResult")
+        )
+        replay_result = _canonical_boundary_contact_result(
+            resolve_evidence_working_set_boundary(canonical_input)
+        )
+        boundary_binding = cast(
+            Mapping[str, Any], canonical_evidence["boundaryBinding"]
+        )
+        render_working_set = cast(
+            Mapping[str, Any], canonical_input["renderWorkingSet"]
+        )
+        evidence_working_set = cast(
+            Mapping[str, Any], canonical_input["evidenceWorkingSet"]
+        )
+        if (
+            canonical_evidence["boundaryResult"] != replay_result
+            or render_working_set["dependencyToken"]
+            != boundary_binding["dependencyToken"]
+            or render_working_set["targetSplatId"] != boundary_binding["targetSplatId"]
+            or evidence_working_set["targetSplatId"]
+            != boundary_binding["targetSplatId"]
+            or render_working_set["renderWorkingSetToken"]
+            != boundary_binding["renderWorkingSetToken"]
+            or evidence_working_set["evidenceWorkingSetToken"]
+            != boundary_binding["evidenceWorkingSetToken"]
+        ):
+            raise TargetScopeStateValidationError(
+                "Boundary-contact authority does not replay against its binding."
+            )
+    if evidence != canonical_evidence or value.get(
+        "resultDigest"
+    ) != route_b_artifact_digest(canonical_evidence):
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery authority result digest is invalid."
+        )
+    canonical = {key: deepcopy(value[key]) for key in sorted(expected_keys)}
+    canonical["authorityEvidence"] = canonical_evidence
+    return canonical
+
+
+def _create_target_scope_discovery_source(value: object) -> dict[str, object]:
+    """Create one typed, epoch-bound seed-independent discovery source."""
+
+    if not isinstance(value, Mapping) or set(value) != _DISCOVERY_SOURCE_INPUT_KEYS:
         raise TargetScopeStateValidationError(
             "Target Scope discovery source is incomplete or has unknown fields."
         )
@@ -438,14 +909,16 @@ def create_target_scope_discovery_source(value: object) -> dict[str, object]:
     reason = value.get("reason")
     if (
         value.get("schemaVersion") != TARGET_SCOPE_DISCOVERY_SOURCE_SCHEMA_VERSION
-        or source_kind not in _DISCOVERY_SOURCE_KINDS
+        or not isinstance(source_kind, str)
+        or source_kind not in _DISCOVERY_SOURCE_AUTHORITY
         or not _nonempty_string(target_splat_id)
+        or not isinstance(reason, str)
+        or not reason.strip()
         or not _digest(value.get("scopeEpochId"))
         or not _digest(value.get("targetGeometryDigest"))
         or not _digest(value.get("componentPolicyDigest"))
         or not _digest(value.get("discoveryPolicyDigest"))
-        or not isinstance(reason, str)
-        or not reason.strip()
+        or not _digest(value.get("discoveryDomainDigest"))
     ):
         raise TargetScopeStateValidationError(
             "Target Scope discovery source identity is invalid."
@@ -455,25 +928,41 @@ def create_target_scope_discovery_source(value: object) -> dict[str, object]:
         raise TargetScopeStateValidationError(
             "Target Scope discovery source target dependency is invalid."
         )
-    artifact_ids = _canonical_string_list(
-        value.get("sourceArtifactIds"), label="Discovery source artifact"
+    references = _canonical_discovery_artifact_refs(
+        value.get("sourceArtifactRefs"), source_kind=source_kind
     )
-    view_ids = _canonical_string_list(
-        value.get("sourceViewIds"), label="Discovery source View"
+    authority = _canonical_discovery_authority(
+        value.get("sourceAuthority"), source_kind=source_kind
     )
-    artifact_digests = _canonical_digest_list(
-        value.get("sourceArtifactDigests"), label="Discovery source artifact"
-    )
+    authority_evidence = cast(Mapping[str, Any], authority["authorityEvidence"])
+    if authority_evidence["sourceArtifactRefs"] != references:
+        raise TargetScopeStateValidationError(
+            "Discovery source artifacts do not match authority evidence."
+        )
+    if source_kind == "evidence-working-set-boundary-contact":
+        boundary_binding = cast(
+            Mapping[str, Any], authority_evidence["boundaryBinding"]
+        )
+        if (
+            boundary_binding["targetSplatId"] != target_splat_id
+            or boundary_binding["dependencyToken"] != dependency
+        ):
+            raise TargetScopeStateValidationError(
+                "Boundary-contact authority binding does not match discovery target."
+            )
     admitted_ids = _canonical_stable_ids(
         value.get("admittedStableGaussianIds"),
         label="Discovery source",
         allow_empty=False,
     )
-    if source_kind == "coherent-cross-view-support" and len(view_ids) < 2:
-        raise TargetScopeStateValidationError(
-            "Coherent cross-View discovery requires at least two Views."
-        )
-    payload: dict[str, object] = {
+    if source_kind == "evidence-working-set-boundary-contact":
+        boundary_result = cast(Mapping[str, Any], authority_evidence["boundaryResult"])
+        if admitted_ids != boundary_result["contactStableGaussianIds"]:
+            raise TargetScopeStateValidationError(
+                "Boundary-contact authority IDs do not match derived support."
+            )
+    bounds = _canonical_spatial_bounds(value.get("spatialBounds"))
+    authority_payload: dict[str, object] = {
         "schemaVersion": TARGET_SCOPE_DISCOVERY_SOURCE_SCHEMA_VERSION,
         "sourceKind": source_kind,
         "targetSplatId": target_splat_id,
@@ -482,49 +971,49 @@ def create_target_scope_discovery_source(value: object) -> dict[str, object]:
         "targetGeometryDigest": value["targetGeometryDigest"],
         "componentPolicyDigest": value["componentPolicyDigest"],
         "discoveryPolicyDigest": value["discoveryPolicyDigest"],
-        "sourceArtifactIds": artifact_ids,
-        "sourceViewIds": view_ids,
-        "sourceArtifactDigests": artifact_digests,
-        "admittedStableGaussianIds": admitted_ids,
-        "spatialBounds": _canonical_spatial_bounds(value.get("spatialBounds")),
-        "reason": reason.strip(),
+        "discoveryDomainDigest": value["discoveryDomainDigest"],
+        "sourceArtifactRefs": references,
+        "sourceAuthority": authority,
     }
-    return {**payload, "sourceDigest": route_b_artifact_digest(payload)}
+    source_authority_digest = route_b_artifact_digest(authority_payload)
+    derived_payload: dict[str, object] = {
+        "sourceAuthorityDigest": source_authority_digest,
+        "admittedStableGaussianIds": admitted_ids,
+        "spatialBounds": bounds,
+    }
+    derived_result_digest = route_b_artifact_digest(derived_payload)
+    record_payload: dict[str, object] = {
+        **authority_payload,
+        "sourceAuthorityDigest": source_authority_digest,
+        "admittedStableGaussianIds": admitted_ids,
+        "spatialBounds": bounds,
+        "reason": reason.strip(),
+        "derivedResultDigest": derived_result_digest,
+    }
+    return {
+        **record_payload,
+        "sourceRecordDigest": route_b_artifact_digest(record_payload),
+    }
 
 
-def validate_target_scope_discovery_source(value: object) -> dict[str, object]:
-    if not isinstance(value, Mapping) or set(value) != _DISCOVERY_SOURCE_KEYS | {
-        "sourceDigest"
-    }:
+def _validate_target_scope_discovery_source(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping) or set(value) != _DISCOVERY_SOURCE_KEYS:
         raise TargetScopeStateValidationError(
             "Target Scope discovery source is invalid."
         )
-    expected = create_target_scope_discovery_source(
-        {key: value[key] for key in _DISCOVERY_SOURCE_KEYS}
+    expected = _create_target_scope_discovery_source(
+        {key: value[key] for key in _DISCOVERY_SOURCE_INPUT_KEYS}
     )
-    if value.get("sourceDigest") != expected["sourceDigest"]:
-        raise TargetScopeStateValidationError(
-            "Target Scope discovery source digest is invalid."
-        )
     bounds = cast(Mapping[str, Sequence[float]], value["spatialBounds"])
-    if any(
+    if value != expected or any(
         float(coordinate) == 0.0 and math.copysign(1.0, float(coordinate)) < 0.0
         for vector in bounds.values()
         for coordinate in vector
     ):
         raise TargetScopeStateValidationError(
-            "Target Scope discovery source spatial bounds are not canonical."
+            "Target Scope discovery source record is not canonical."
         )
     return expected
-
-
-def _discovery_source_authority_digest(source: Mapping[str, Any]) -> str:
-    payload = {
-        key: deepcopy(value)
-        for key, value in source.items()
-        if key not in {"reason", "sourceDigest"}
-    }
-    return route_b_artifact_digest(payload)
 
 
 def _validated_request_binding(value: object) -> dict[str, Any]:
@@ -1542,6 +2031,16 @@ def bootstrap_target_scope_state_from_seed(
         )
     seed_digest = str(seed["recordDigest"])
     core_ids = list(seed["admittedStableGaussianIds"])
+    rows_by_id = {int(row["stableGaussianId"]): row for row in geometry["rows"]}
+    if not _discovery_domain_is_target_local(
+        core_stable_ids=core_ids,
+        target_splat_id=str(geometry["targetSplatId"]),
+        policy=discovery,
+        rows_by_id=rows_by_id,
+    ):
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery domain must be target-local to initial Core or bind a Target Geometry Hint."
+        )
     core_skeletons = _component_skeletons(
         geometry=geometry,
         policy=policy,
@@ -1669,7 +2168,7 @@ def _revise_target_scope_state(
             "Target Scope discovery Envelope ledger is invalid."
         )
     ledger = [
-        validate_target_scope_discovery_source(source)
+        _validate_target_scope_discovery_source(source)
         for source in raw_discovery_ledger
     ]
     previous_discovery_ledger = cast(
@@ -1682,9 +2181,13 @@ def _revise_target_scope_state(
         raise TargetScopeStateTransitionError(
             "The Target Scope discovery Envelope ledger is append-only within an epoch."
         )
-    if len({str(source["sourceDigest"]) for source in ledger}) != len(ledger):
+    if len({str(source["sourceRecordDigest"]) for source in ledger}) != len(ledger):
         raise TargetScopeStateValidationError(
             "Target Scope discovery Envelope source digests are duplicated."
+        )
+    if len({str(source["sourceAuthorityDigest"]) for source in ledger}) != len(ledger):
+        raise TargetScopeStateValidationError(
+            "Target Scope discovery Envelope authorities are duplicated."
         )
     reopen_digests = set(
         _canonical_digest_list(
@@ -1816,19 +2319,19 @@ def _revise_target_scope_state(
         set(active_ids) - previous_active_ids - rejected_ledger_tail_ids
     )
     previous_discovery_sources = {
-        str(source["sourceDigest"])
+        str(source["sourceRecordDigest"])
         for source in cast(list[Mapping[str, Any]], previous["discoveryEnvelopeLedger"])
     }
     new_discovery_sources = {
-        str(source["sourceDigest"]) for source in ledger
+        str(source["sourceRecordDigest"]) for source in ledger
     } - previous_discovery_sources
     new_discovery_authorities = {
-        str(source["sourceDigest"]): {
+        str(source["sourceRecordDigest"]): {
             int(stable_id)
             for stable_id in cast(list[int], source["admittedStableGaussianIds"])
         }
         for source in ledger
-        if str(source["sourceDigest"]) in new_discovery_sources
+        if str(source["sourceRecordDigest"]) in new_discovery_sources
     }
     if not reopen_digests.issubset(new_discovery_authorities):
         raise TargetScopeStateValidationError(
@@ -1978,7 +2481,7 @@ def _revise_target_scope_state(
                 rejected_ids=rejected_ids,
                 context_ids=context_ids,
                 discovery_source_digests=[
-                    str(source["sourceDigest"]) for source in ledger
+                    str(source["sourceRecordDigest"]) for source in ledger
                 ],
             ),
         ],
@@ -2023,6 +2526,8 @@ def _target_scope_discovery_source_payload(
     state: Mapping[str, Any],
 ) -> dict[str, object]:
     request_binding = cast(Mapping[str, Any], state["requestBinding"])
+    discovery_policy = cast(Mapping[str, Any], state["discoveryPolicy"])
+    discovery_domain = cast(Mapping[str, Any], discovery_policy["discoveryDomain"])
     return {
         "schemaVersion": TARGET_SCOPE_DISCOVERY_SOURCE_SCHEMA_VERSION,
         "targetSplatId": state["targetSplatId"],
@@ -2031,6 +2536,7 @@ def _target_scope_discovery_source_payload(
         "targetGeometryDigest": state["targetGeometryDigest"],
         "componentPolicyDigest": state["componentPolicyDigest"],
         "discoveryPolicyDigest": state["discoveryPolicyDigest"],
+        "discoveryDomainDigest": discovery_domain["domainDigest"],
     }
 
 
@@ -2038,10 +2544,13 @@ def create_target_scope_boundary_contact_shadow_source(
     *,
     target_scope_state: object,
     boundary_result: object,
+    boundary_input: object,
+    boundary_binding: object,
     source_artifact: object,
     spatial_bounds: object,
+    reason: object,
 ) -> dict[str, object]:
-    """Adapt one existing Working Set boundary result for shadow admission only."""
+    """Bind one versioned Working Set boundary result for shadow admission."""
 
     if not is_target_scope_state(target_scope_state) or not isinstance(
         target_scope_state, Mapping
@@ -2049,40 +2558,103 @@ def create_target_scope_boundary_contact_shadow_source(
         raise TargetScopeStateValidationError(
             "Boundary-contact shadow discovery requires a valid Target Scope State."
         )
-    if not isinstance(boundary_result, Mapping):
+    canonical_result = _canonical_boundary_contact_result(boundary_result)
+    canonical_input = _canonical_boundary_resolver_input(boundary_input)
+    replay_result = _canonical_boundary_contact_result(
+        resolve_evidence_working_set_boundary(canonical_input)
+    )
+    if canonical_result != replay_result:
         raise TargetScopeStateValidationError(
-            "Boundary-contact shadow discovery result is invalid."
+            "Boundary-contact result does not replay from its resolver input."
         )
-    status = boundary_result.get("status")
-    if not (
-        status == "expanded"
-        or (
-            status == "failed-closed"
-            and boundary_result.get("reason") == "evidence-working-set-boundary-contact"
-        )
+    canonical_binding = _canonical_boundary_resolver_binding(boundary_binding)
+    state_request_binding = cast(
+        Mapping[str, Any], target_scope_state["requestBinding"]
+    )
+    if (
+        canonical_binding["targetSplatId"] != target_scope_state["targetSplatId"]
+        or canonical_binding["dependencyToken"]
+        != state_request_binding["dependencyToken"]
     ):
         raise TargetScopeStateValidationError(
-            "Boundary-contact shadow discovery requires explicit boundary contact."
+            "Boundary-contact resolver binding does not match Target Scope State."
         )
+    input_render_working_set = cast(
+        Mapping[str, Any], canonical_input["renderWorkingSet"]
+    )
+    input_evidence_working_set = cast(
+        Mapping[str, Any], canonical_input["evidenceWorkingSet"]
+    )
+    if (
+        input_render_working_set["dependencyToken"]
+        != canonical_binding["dependencyToken"]
+        or input_render_working_set["targetSplatId"]
+        != canonical_binding["targetSplatId"]
+        or input_evidence_working_set["targetSplatId"]
+        != canonical_binding["targetSplatId"]
+        or input_render_working_set["renderWorkingSetToken"]
+        != canonical_binding["renderWorkingSetToken"]
+        or input_evidence_working_set["evidenceWorkingSetToken"]
+        != canonical_binding["evidenceWorkingSetToken"]
+    ):
+        raise TargetScopeStateValidationError(
+            "Boundary-contact resolver input does not match its binding."
+        )
+    canonical_status = (
+        "failed-closed-boundary-contact"
+        if canonical_result["status"] == "failed-closed"
+        else "expanded"
+    )
     if not isinstance(source_artifact, Mapping) or set(source_artifact) != {
         "artifactId",
         "artifactDigest",
-        "viewId",
+        "viewIds",
     }:
         raise TargetScopeStateValidationError(
             "Boundary-contact shadow discovery artifact is invalid."
         )
+    source_artifact_refs = _canonical_discovery_artifact_refs(
+        [
+            {
+                "schemaVersion": 1,
+                "artifactKind": "gaussian-evidence-artifact",
+                **source_artifact,
+            }
+        ],
+        source_kind="evidence-working-set-boundary-contact",
+    )
+    producer_id = "evidence-working-set-boundary-resolver/v1"
+    derivation_policy_digest = route_b_artifact_digest(
+        {"schemaVersion": 1, "producerId": producer_id}
+    )
+    authority_evidence = {
+        "schemaVersion": 1,
+        "producerId": producer_id,
+        "status": canonical_status,
+        "derivationPolicyDigest": derivation_policy_digest,
+        "sourceArtifactRefs": source_artifact_refs,
+        "boundaryBinding": canonical_binding,
+        "boundaryInput": canonical_input,
+        "boundaryResult": canonical_result,
+    }
     payload = {
         **_target_scope_discovery_source_payload(target_scope_state),
         "sourceKind": "evidence-working-set-boundary-contact",
-        "sourceArtifactIds": [source_artifact.get("artifactId")],
-        "sourceViewIds": [source_artifact.get("viewId")],
-        "sourceArtifactDigests": [source_artifact.get("artifactDigest")],
-        "admittedStableGaussianIds": boundary_result.get("contactStableGaussianIds"),
+        "sourceArtifactRefs": source_artifact_refs,
+        "sourceAuthority": {
+            "schemaVersion": 1,
+            "authorityKind": "boundary-contact-result",
+            "producerId": producer_id,
+            "status": canonical_status,
+            "resultDigest": route_b_artifact_digest(authority_evidence),
+            "derivationPolicyDigest": derivation_policy_digest,
+            "authorityEvidence": authority_evidence,
+        },
+        "admittedStableGaussianIds": canonical_result["contactStableGaussianIds"],
         "spatialBounds": spatial_bounds,
-        "reason": "evidence-working-set-boundary-contact",
+        "reason": reason,
     }
-    return create_target_scope_discovery_source(payload)
+    return _create_target_scope_discovery_source(payload)
 
 
 def create_target_scope_observation_shadow_source(
@@ -2090,7 +2662,7 @@ def create_target_scope_observation_shadow_source(
     target_scope_state: object,
     observation: object,
 ) -> dict[str, object]:
-    """Adapt one synthetic Included/User-Confirmed observation for shadow use."""
+    """Bind one typed Included/User-Confirmed observation for shadow use."""
 
     if not is_target_scope_state(target_scope_state) or not isinstance(
         target_scope_state, Mapping
@@ -2099,46 +2671,302 @@ def create_target_scope_observation_shadow_source(
             "Observation shadow discovery requires a valid Target Scope State."
         )
     expected_keys = {
+        "schemaVersion",
         "status",
         "sourceKind",
-        "artifactId",
-        "artifactDigest",
-        "viewIds",
+        "producerId",
+        "derivationPolicyDigest",
+        "artifactRefs",
+        "participation",
+        "stableMaskDigest",
         "supportedStableGaussianIds",
         "spatialBounds",
         "reason",
     }
-    if not isinstance(observation, Mapping) or set(observation) != expected_keys:
+    if (
+        not isinstance(observation, Mapping)
+        or set(observation) != expected_keys
+        or observation.get("schemaVersion") != 1
+    ):
         raise TargetScopeStateValidationError(
             "Observation shadow discovery input is invalid."
         )
     source_kind = observation.get("sourceKind")
     status = observation.get("status")
-    valid_status = (
-        source_kind
-        in {
-            "core-external-included-positive-support",
-            "coherent-cross-view-support",
-        }
-        and status == "included-stable"
-    ) or (
-        source_kind == "user-confirmed-expert-recovery" and status == "user-confirmed"
-    )
-    if not valid_status:
+    if source_kind not in _DISCOVERY_SOURCE_AUTHORITY:
         raise TargetScopeStateValidationError(
-            "Observation shadow discovery authority is invalid."
+            "Observation shadow discovery source family is invalid."
         )
+    contract = _DISCOVERY_SOURCE_AUTHORITY[str(source_kind)]
+    if not bool(contract["requiresStableAuthority"]):
+        raise TargetScopeStateValidationError(
+            "Observation shadow discovery source family is invalid."
+        )
+    artifact_refs = observation.get("artifactRefs")
+    if (
+        not isinstance(artifact_refs, Sequence)
+        or isinstance(artifact_refs, (str, bytes))
+        or any(
+            not isinstance(reference, Mapping)
+            or set(reference) != {"artifactId", "artifactDigest", "viewIds"}
+            for reference in artifact_refs
+        )
+    ):
+        raise TargetScopeStateValidationError(
+            "Observation shadow discovery artifacts are invalid."
+        )
+    source_artifact_refs = _canonical_discovery_artifact_refs(
+        [
+            {
+                "schemaVersion": 1,
+                "artifactKind": contract["artifactKind"],
+                **reference,
+            }
+            for reference in artifact_refs
+        ],
+        source_kind=str(source_kind),
+    )
+    authority_evidence = {
+        "schemaVersion": 1,
+        "producerId": observation.get("producerId"),
+        "status": status,
+        "derivationPolicyDigest": observation.get("derivationPolicyDigest"),
+        "sourceArtifactRefs": source_artifact_refs,
+        "participation": observation.get("participation"),
+        "stableMaskDigest": observation.get("stableMaskDigest"),
+    }
     payload = {
         **_target_scope_discovery_source_payload(target_scope_state),
         "sourceKind": source_kind,
-        "sourceArtifactIds": [observation.get("artifactId")],
-        "sourceViewIds": observation.get("viewIds"),
-        "sourceArtifactDigests": [observation.get("artifactDigest")],
+        "sourceArtifactRefs": source_artifact_refs,
+        "sourceAuthority": {
+            "schemaVersion": 1,
+            "authorityKind": contract["authorityKind"],
+            "producerId": observation.get("producerId"),
+            "status": status,
+            "resultDigest": route_b_artifact_digest(authority_evidence),
+            "derivationPolicyDigest": observation.get("derivationPolicyDigest"),
+            "participation": observation.get("participation"),
+            "stableMaskDigest": observation.get("stableMaskDigest"),
+            "authorityEvidence": authority_evidence,
+        },
         "admittedStableGaussianIds": observation.get("supportedStableGaussianIds"),
         "spatialBounds": observation.get("spatialBounds"),
         "reason": observation.get("reason"),
     }
-    return create_target_scope_discovery_source(payload)
+    return _create_target_scope_discovery_source(payload)
+
+
+def create_target_scope_reviewed_support_shadow_source(
+    *,
+    target_scope_state: object,
+    review: object,
+) -> dict[str, object]:
+    """Bind one versioned target-local support review for shadow use."""
+
+    if not is_target_scope_state(target_scope_state) or not isinstance(
+        target_scope_state, Mapping
+    ):
+        raise TargetScopeStateValidationError(
+            "Reviewed support discovery requires a valid Target Scope State."
+        )
+    expected_keys = {
+        "schemaVersion",
+        "status",
+        "producerId",
+        "derivationPolicyDigest",
+        "artifactRef",
+        "supportedStableGaussianIds",
+        "spatialBounds",
+        "reason",
+    }
+    if (
+        not isinstance(review, Mapping)
+        or set(review) != expected_keys
+        or review.get("schemaVersion") != 1
+    ):
+        raise TargetScopeStateValidationError(
+            "Reviewed support discovery input is invalid."
+        )
+    artifact_ref = review.get("artifactRef")
+    if not isinstance(artifact_ref, Mapping) or set(artifact_ref) != {
+        "artifactId",
+        "artifactDigest",
+        "viewIds",
+    }:
+        raise TargetScopeStateValidationError(
+            "Reviewed support discovery artifact is invalid."
+        )
+    source_artifact_refs = _canonical_discovery_artifact_refs(
+        [
+            {
+                "schemaVersion": 1,
+                "artifactKind": "target-geometry-hint-review",
+                **artifact_ref,
+            }
+        ],
+        source_kind="reviewed-target-local-spatial-support",
+    )
+    authority_evidence = {
+        "schemaVersion": 1,
+        "producerId": review.get("producerId"),
+        "status": review.get("status"),
+        "derivationPolicyDigest": review.get("derivationPolicyDigest"),
+        "sourceArtifactRefs": source_artifact_refs,
+    }
+    payload = {
+        **_target_scope_discovery_source_payload(target_scope_state),
+        "sourceKind": "reviewed-target-local-spatial-support",
+        "sourceArtifactRefs": source_artifact_refs,
+        "sourceAuthority": {
+            "schemaVersion": 1,
+            "authorityKind": "reviewed-target-local-support",
+            "producerId": review.get("producerId"),
+            "status": review.get("status"),
+            "resultDigest": route_b_artifact_digest(authority_evidence),
+            "derivationPolicyDigest": review.get("derivationPolicyDigest"),
+            "authorityEvidence": authority_evidence,
+        },
+        "admittedStableGaussianIds": review.get("supportedStableGaussianIds"),
+        "spatialBounds": review.get("spatialBounds"),
+        "reason": review.get("reason"),
+    }
+    return _create_target_scope_discovery_source(payload)
+
+
+def _discovery_domain_is_target_local(
+    *,
+    core_stable_ids: Sequence[int],
+    target_splat_id: str,
+    policy: Mapping[str, Any],
+    rows_by_id: Mapping[int, Mapping[str, Any]],
+) -> bool:
+    domain = cast(Mapping[str, Any], policy["discoveryDomain"])
+    anchor_ids = list(core_stable_ids)
+    domain_bounds = cast(Mapping[str, list[float]], domain["spatialBounds"])
+    corners = tuple(
+        product(
+            *(
+                (
+                    float(domain_bounds["minimum"][axis]),
+                    float(domain_bounds["maximum"][axis]),
+                )
+                for axis in range(3)
+            )
+        )
+    )
+    distance_multiplier = float(domain["maximumDomainDistanceScaleMultiplier"])
+    hint = domain.get("targetGeometryHint")
+    if hint is not None and (
+        not isinstance(hint, Mapping) or hint["targetSplatId"] != target_splat_id
+    ):
+        return False
+    hint_local = False
+    if isinstance(hint, Mapping):
+        hint_center = cast(list[float], hint["center"])
+        hint_extent = cast(list[float], hint["extent"])
+        hint_local = all(
+            all(
+                abs(corner[axis] - float(hint_center[axis]))
+                <= float(hint_extent[axis]) * distance_multiplier
+                for axis in range(3)
+            )
+            for corner in corners
+        )
+    core_local = bool(anchor_ids) and any(
+        all(
+            all(
+                abs(
+                    corner[axis]
+                    - float(cast(list[float], rows_by_id[stable_id]["center"])[axis])
+                )
+                <= math.exp(
+                    max(
+                        float(value)
+                        for value in cast(
+                            list[float], rows_by_id[stable_id]["logScales"]
+                        )
+                    )
+                )
+                * distance_multiplier
+                for axis in range(3)
+            )
+            for corner in corners
+        )
+        for stable_id in anchor_ids
+    )
+    return hint_local or core_local
+
+
+def _gaussian_support_within_discovery_domain(
+    *,
+    stable_ids: Sequence[int],
+    policy: Mapping[str, Any],
+    rows_by_id: Mapping[int, Mapping[str, Any]],
+) -> bool:
+    domain = cast(Mapping[str, Any], policy["discoveryDomain"])
+    domain_bounds = cast(Mapping[str, list[float]], domain["spatialBounds"])
+    support_multiplier = float(domain["gaussianSupportScaleMultiplier"])
+    for stable_id in stable_ids:
+        row = rows_by_id[stable_id]
+        center = cast(list[float], row["center"])
+        support = (
+            math.exp(max(float(value) for value in cast(list[float], row["logScales"])))
+            * support_multiplier
+        )
+        if any(
+            float(center[axis]) - support < float(domain_bounds["minimum"][axis])
+            or float(center[axis]) + support > float(domain_bounds["maximum"][axis])
+            for axis in range(3)
+        ):
+            return False
+    return True
+
+
+def _validate_discovery_source_spatial_domain(
+    *,
+    source: Mapping[str, Any],
+    policy: Mapping[str, Any],
+    rows_by_id: Mapping[int, Mapping[str, Any]],
+) -> None:
+    domain = cast(Mapping[str, Any], policy["discoveryDomain"])
+    domain_bounds = cast(Mapping[str, list[float]], domain["spatialBounds"])
+    source_bounds = cast(Mapping[str, list[float]], source["spatialBounds"])
+    maximum_extent = cast(list[float], domain["maximumSourceExtent"])
+    admitted_ids = cast(list[int], source["admittedStableGaussianIds"])
+    if source["discoveryDomainDigest"] != domain["domainDigest"]:
+        raise TargetScopeStateIncompatibilityError(
+            "Target Scope discovery source domain does not match the epoch."
+        )
+    if any(
+        float(source_bounds["minimum"][axis]) < float(domain_bounds["minimum"][axis])
+        or float(source_bounds["maximum"][axis]) > float(domain_bounds["maximum"][axis])
+        or float(source_bounds["maximum"][axis]) - float(source_bounds["minimum"][axis])
+        > float(maximum_extent[axis])
+        for axis in range(3)
+    ):
+        raise TargetScopeStateTransitionError(
+            "Target Scope discovery source bounds exceed the target-local domain."
+        )
+    if any(
+        float(rows_by_id[stable_id]["center"][axis])
+        < float(source_bounds["minimum"][axis])
+        or float(rows_by_id[stable_id]["center"][axis])
+        > float(source_bounds["maximum"][axis])
+        for stable_id in admitted_ids
+        for axis in range(3)
+    ):
+        raise TargetScopeStateTransitionError(
+            "Target Scope discovery admission must be spatially bounded."
+        )
+    if not _gaussian_support_within_discovery_domain(
+        stable_ids=admitted_ids,
+        policy=policy,
+        rows_by_id=rows_by_id,
+    ):
+        raise TargetScopeStateTransitionError(
+            "Target Scope discovery Gaussian support exceeds the target-local domain."
+        )
 
 
 def admit_target_scope_discovery_sources(
@@ -2158,22 +2986,30 @@ def admit_target_scope_discovery_sources(
         raise TargetScopeStateValidationError(
             "Target Scope discovery admission sources are invalid."
         )
-    canonical_by_digest: dict[str, dict[str, object]] = {}
+    canonical_by_record: dict[str, dict[str, object]] = {}
     for source in sources:
-        canonical = validate_target_scope_discovery_source(source)
-        canonical_by_digest[str(canonical["sourceDigest"])] = canonical
-    if not canonical_by_digest:
+        canonical = _validate_target_scope_discovery_source(source)
+        canonical_by_record[str(canonical["sourceRecordDigest"])] = canonical
+    if not canonical_by_record:
         raise TargetScopeStateValidationError(
             "Target Scope discovery admission requires at least one source."
         )
     canonical_by_authority: dict[str, dict[str, object]] = {}
     for source in sorted(
-        canonical_by_digest.values(), key=lambda item: str(item["sourceDigest"])
+        canonical_by_record.values(),
+        key=lambda item: str(item["sourceRecordDigest"]),
     ):
-        canonical_by_authority.setdefault(
-            _discovery_source_authority_digest(source), source
-        )
-
+        authority_digest = str(source["sourceAuthorityDigest"])
+        previous_authority = canonical_by_authority.get(authority_digest)
+        if (
+            previous_authority is not None
+            and previous_authority["derivedResultDigest"]
+            != source["derivedResultDigest"]
+        ):
+            raise TargetScopeStateTransitionError(
+                "One discovery authority cannot produce conflicting derived support."
+            )
+        canonical_by_authority[authority_digest] = source
     previous = cast(Mapping[str, Any], previous_state)
     geometry = _validated_geometry(target_geometry)
     binding = _validated_request_binding(request_binding)
@@ -2189,6 +3025,8 @@ def admit_target_scope_discovery_sources(
         raise TargetScopeStateIncompatibilityError(
             "Target Scope discovery admission does not match the current epoch."
         )
+    policy = cast(Mapping[str, Any], previous["discoveryPolicy"])
+    domain = cast(Mapping[str, Any], policy["discoveryDomain"])
     expected_identity = {
         "targetSplatId": previous["targetSplatId"],
         "dependencyToken": previous["requestBinding"]["dependencyToken"],
@@ -2196,10 +3034,11 @@ def admit_target_scope_discovery_sources(
         "targetGeometryDigest": previous["targetGeometryDigest"],
         "componentPolicyDigest": previous["componentPolicyDigest"],
         "discoveryPolicyDigest": previous["discoveryPolicyDigest"],
+        "discoveryDomainDigest": domain["domainDigest"],
     }
     target_ids = set(previous["targetStableGaussianIds"])
     rows_by_id = {int(row["stableGaussianId"]): row for row in geometry["rows"]}
-    for source in canonical_by_digest.values():
+    for source in canonical_by_record.values():
         if any(source[key] != value for key, value in expected_identity.items()):
             raise TargetScopeStateIncompatibilityError(
                 "Target Scope discovery source identity does not match the epoch."
@@ -2209,34 +3048,31 @@ def admit_target_scope_discovery_sources(
             raise TargetScopeStateTransitionError(
                 "Target Scope discovery admission must be target-bounded."
             )
-        bounds = cast(Mapping[str, list[float]], source["spatialBounds"])
-        if any(
-            float(rows_by_id[stable_id]["center"][axis])
-            < float(bounds["minimum"][axis])
-            or float(rows_by_id[stable_id]["center"][axis])
-            > float(bounds["maximum"][axis])
-            for stable_id in admitted_ids
-            for axis in range(3)
-        ):
-            raise TargetScopeStateTransitionError(
-                "Target Scope discovery admission must be spatially bounded."
-            )
+        _validate_discovery_source_spatial_domain(
+            source=source,
+            policy=policy,
+            rows_by_id=rows_by_id,
+        )
 
     prior_ledger = cast(list[dict[str, object]], previous["discoveryEnvelopeLedger"])
-    prior_authorities = {
-        _discovery_source_authority_digest(source) for source in prior_ledger
+    prior_by_authority = {
+        str(source["sourceAuthorityDigest"]): source for source in prior_ledger
     }
-    new_sources = sorted(
-        (
-            source
-            for authority_digest, source in canonical_by_authority.items()
-            if authority_digest not in prior_authorities
-        ),
-        key=lambda source: str(source["sourceDigest"]),
-    )
+    new_sources: list[dict[str, object]] = []
+    for authority_digest, source in canonical_by_authority.items():
+        prior_source = prior_by_authority.get(authority_digest)
+        if (
+            prior_source is not None
+            and prior_source["derivedResultDigest"] != source["derivedResultDigest"]
+        ):
+            raise TargetScopeStateTransitionError(
+                "Discovery authority reuse cannot change derived Stable IDs or bounds."
+            )
+        if prior_source is None:
+            new_sources.append(source)
+    new_sources.sort(key=lambda source: str(source["sourceRecordDigest"]))
     if not new_sources:
         return deepcopy(dict(previous))
-    policy = cast(Mapping[str, Any], previous["discoveryPolicy"])
     if len(prior_ledger) + len(new_sources) > int(
         policy["maximumSourceRecordsPerEpoch"]
     ):
@@ -2327,7 +3163,7 @@ def admit_target_scope_discovery_sources(
             if partition_ids & set(component["stableGaussianIds"])
         ]
         source_digests = {
-            str(source["sourceDigest"])
+            str(source["sourceRecordDigest"])
             for source in new_sources
             if partition_ids & set(cast(list[int], source["admittedStableGaussianIds"]))
         }
@@ -2370,7 +3206,9 @@ def admit_target_scope_discovery_sources(
         for component in previous_rejected
         if not set(component["stableGaussianIds"]).issubset(reopened_ids)
     ]
-    new_source_digests = sorted(str(source["sourceDigest"]) for source in new_sources)
+    new_source_digests = sorted(
+        str(source["sourceRecordDigest"]) for source in new_sources
+    )
     return _revise_target_scope_state(
         previous_state=previous,
         target_geometry=geometry,
@@ -3685,13 +4523,11 @@ def _discovery_envelope_ledger_is_valid(
         return False
     validated: list[dict[str, object]] = []
     try:
-        validated = [validate_target_scope_discovery_source(item) for item in value]
+        validated = [_validate_target_scope_discovery_source(item) for item in value]
     except TargetScopeStateError:
         return False
-    source_digests = [str(source["sourceDigest"]) for source in validated]
-    authority_digests = [
-        _discovery_source_authority_digest(source) for source in validated
-    ]
+    source_digests = [str(source["sourceRecordDigest"]) for source in validated]
+    authority_digests = [str(source["sourceAuthorityDigest"]) for source in validated]
     if (
         value != validated
         or len(source_digests) != len(set(source_digests))
@@ -3704,7 +4540,6 @@ def _discovery_envelope_ledger_is_valid(
     admitted_union: set[int] = set()
     for source in validated:
         admitted_ids = cast(list[int], source["admittedStableGaussianIds"])
-        bounds = cast(Mapping[str, list[float]], source["spatialBounds"])
         if (
             source["targetSplatId"] != target_splat_id
             or source["dependencyToken"] != dependency_token
@@ -3712,17 +4547,19 @@ def _discovery_envelope_ledger_is_valid(
             or source["targetGeometryDigest"] != target_geometry_digest
             or source["componentPolicyDigest"] != component_policy_digest
             or source["discoveryPolicyDigest"] != discovery_policy["policyDigest"]
+            or source["discoveryDomainDigest"]
+            != discovery_policy["discoveryDomain"]["domainDigest"]
             or not set(admitted_ids).issubset(target_ids)
         ):
             return False
-        for stable_id in admitted_ids:
-            center = rows_by_id[stable_id]["center"]
-            if any(
-                float(center[axis]) < float(bounds["minimum"][axis])
-                or float(center[axis]) > float(bounds["maximum"][axis])
-                for axis in range(3)
-            ):
-                return False
+        try:
+            _validate_discovery_source_spatial_domain(
+                source=source,
+                policy=discovery_policy,
+                rows_by_id=rows_by_id,
+            )
+        except TargetScopeStateError:
+            return False
         admitted_union.update(admitted_ids)
     if len(admitted_union) > int(
         discovery_policy["maximumAdmittedStableGaussianIdsPerEpoch"]
@@ -3731,7 +4568,9 @@ def _discovery_envelope_ledger_is_valid(
 
     known_sources: set[str] = set()
     expected_source_digests: list[str] = []
-    source_by_digest = {str(source["sourceDigest"]): source for source in validated}
+    source_by_digest = {
+        str(source["sourceRecordDigest"]): source for source in validated
+    }
     for revision, snapshot in enumerate(scope_revision_ledger):
         snapshot_sources = set(snapshot["discoverySourceDigests"])
         new_sources = snapshot_sources - known_sources
@@ -3916,7 +4755,7 @@ def _state_payload_at_revision(
     discovery_prefix = [
         deepcopy(source)
         for source in cast(list[Mapping[str, Any]], value["discoveryEnvelopeLedger"])
-        if source["sourceDigest"] in snapshot_source_digests
+        if source["sourceRecordDigest"] in snapshot_source_digests
     ]
     provenance = deepcopy(provenance_ledger[revision])
     return {
@@ -4140,6 +4979,16 @@ def is_target_scope_state(value: object) -> bool:
             )
         ):
             return False
+        rows_by_id = {int(row["stableGaussianId"]): row for row in geometry["rows"]}
+        if not _discovery_domain_is_target_local(
+            core_stable_ids=cast(
+                list[int], seed_partition["admittedStableGaussianIds"]
+            ),
+            target_splat_id=str(geometry["targetSplatId"]),
+            policy=discovery_policy,
+            rows_by_id=rows_by_id,
+        ):
+            return False
         if scope_revision == 0 and (
             core_ids != seed_partition["admittedStableGaussianIds"]
             or active_ids != []
@@ -4153,7 +5002,7 @@ def is_target_scope_state(value: object) -> bool:
         if not isinstance(discovery_envelope_ledger, list):
             return False
         discovery_source_digests = [
-            str(record["sourceDigest"]) for record in discovery_envelope_ledger
+            str(record["sourceRecordDigest"]) for record in discovery_envelope_ledger
         ]
         scope_revision_ledger = value["scopeRevisionLedger"]
         if not _scope_revision_ledger_is_valid(
@@ -4248,7 +5097,7 @@ def is_target_scope_state(value: object) -> bool:
             policy=policy,
             scope_revision_ledger=cast(list[Mapping[str, Any]], scope_revision_ledger),
             discovery_sources_by_digest={
-                str(source["sourceDigest"]): cast(Mapping[str, Any], source)
+                str(source["sourceRecordDigest"]): cast(Mapping[str, Any], source)
                 for source in discovery_envelope_ledger
             },
             forbidden_rejected_ids=set(core_ids) | set(context_ids),
@@ -4349,8 +5198,8 @@ __all__ = [
     "create_target_scope_component_policy",
     "create_target_scope_boundary_contact_shadow_source",
     "create_target_scope_discovery_policy",
-    "create_target_scope_discovery_source",
     "create_target_scope_observation_shadow_source",
+    "create_target_scope_reviewed_support_shadow_source",
     "create_target_scope_subcomponent_decision",
     "is_target_scope_state",
     "restore_target_scope_state",
@@ -4359,6 +5208,5 @@ __all__ = [
     "target_scope_state_identity",
     "validate_target_scope_component_policy",
     "validate_target_scope_discovery_policy",
-    "validate_target_scope_discovery_source",
     "validate_target_scope_subcomponent_decision",
 ]

@@ -13,6 +13,7 @@ from selection_service_companion.gaussian_evidence_contract import (
     admit_gaussian_evidence,
     create_evidence_working_set,
     create_gaussian_evidence_artifact,
+    resolve_evidence_working_set_boundary,
 )
 from selection_service_companion.digests import route_b_artifact_digest
 from selection_service_companion.target_scope_state import (
@@ -26,20 +27,37 @@ from selection_service_companion.target_scope_state import (
     create_target_scope_boundary_contact_shadow_source,
     create_target_scope_component_policy,
     create_target_scope_discovery_policy,
-    create_target_scope_discovery_source,
     create_target_scope_observation_shadow_source,
+    create_target_scope_reviewed_support_shadow_source,
     create_target_scope_subcomponent_decision,
     is_target_scope_state,
     revise_target_scope_state,
     restore_target_scope_state,
     rotate_target_scope_epoch,
     target_scope_state_identity,
-    validate_target_scope_discovery_source,
+    validate_target_scope_discovery_policy,
 )
 
 
 def digest(letter: str) -> str:
     return f"sha256:{letter * 64}"
+
+
+def domain_target_geometry_hint(
+    *,
+    target_splat_id: str = "splat-1",
+    center: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    extent: tuple[float, float, float] = (1.0, 1.0, 1.0),
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "schemaVersion": 1,
+        "producerId": "target-geometry-hint-domain/v1",
+        "targetSplatId": target_splat_id,
+        "sourceArtifactDigest": digest("8"),
+        "center": list(center),
+        "extent": list(extent),
+    }
+    return {**payload, "authorityDigest": route_b_artifact_digest(payload)}
 
 
 def component_policy() -> dict[str, object]:
@@ -57,27 +75,50 @@ def discovery_policy(
     *,
     maximum_sources: int = 8,
     maximum_stable_ids: int = 16,
+    domain_minimum: tuple[float, float, float] = (-64.0, -64.0, -64.0),
+    domain_maximum: tuple[float, float, float] = (64.0, 64.0, 64.0),
+    maximum_source_extent: tuple[float, float, float] = (16.0, 16.0, 16.0),
+    maximum_domain_distance_scale_multiplier: float = 128.0,
+    gaussian_support_scale_multiplier: float = 1.0,
+    target_geometry_hint: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return create_target_scope_discovery_policy(
         {
-            "schemaVersion": 1,
-            "policyId": "target-scope-discovery/experimental-shadow-v1",
+            "schemaVersion": 2,
+            "policyId": "target-scope-discovery/experimental-shadow-v2",
             "maximumSourceRecordsPerEpoch": maximum_sources,
             "maximumAdmittedStableGaussianIdsPerEpoch": maximum_stable_ids,
+            "discoveryDomain": {
+                "schemaVersion": 2,
+                "domainId": "target-local-discovery-domain/fixture/v2",
+                "targetGeometryHint": target_geometry_hint,
+                "spatialBounds": {
+                    "minimum": list(domain_minimum),
+                    "maximum": list(domain_maximum),
+                },
+                "maximumSourceExtent": list(maximum_source_extent),
+                "maximumDomainDistanceScaleMultiplier": (
+                    maximum_domain_distance_scale_multiplier
+                ),
+                "gaussianSupportScaleMultiplier": gaussian_support_scale_multiplier,
+            },
         }
     )
 
 
 def target_geometry(
     rows: list[tuple[int, tuple[float, float, float]]],
+    *,
+    log_scales_by_id: dict[int, tuple[float, float, float]] | None = None,
 ) -> dict[str, object]:
+    scales = log_scales_by_id or {}
     return create_conservative_seed_target_geometry(
         target_splat_id="splat-1",
         rows=[
             {
                 "stableGaussianId": stable_id,
                 "center": list(center),
-                "logScales": [0.0, 0.0, 0.0],
+                "logScales": list(scales.get(stable_id, (0.0, 0.0, 0.0))),
             }
             for stable_id, center in rows
         ],
@@ -183,27 +224,122 @@ def discovery_source(
     minimum: tuple[float, float, float],
     maximum: tuple[float, float, float],
     view_ids: list[str] | None = None,
+    reason: str | None = None,
 ) -> dict[str, object]:
-    return create_target_scope_discovery_source(
+    views = view_ids or (
+        [f"view-{marker}-a", f"view-{marker}-b"]
+        if source_kind == "coherent-cross-view-support"
+        else [f"view-{marker}"]
+    )
+    artifact_refs = [
         {
-            "schemaVersion": 1,
-            "sourceKind": source_kind,
-            "targetSplatId": state["targetSplatId"],
-            "dependencyToken": state["requestBinding"]["dependencyToken"],  # type: ignore[index]
-            "scopeEpochId": state["scopeEpochId"],
-            "targetGeometryDigest": state["targetGeometryDigest"],
-            "componentPolicyDigest": state["componentPolicyDigest"],
-            "discoveryPolicyDigest": state["discoveryPolicyDigest"],
-            "sourceArtifactIds": [f"artifact-{marker}"],
-            "sourceViewIds": view_ids or [f"view-{marker}"],
-            "sourceArtifactDigests": [digest(marker)],
-            "admittedStableGaussianIds": stable_ids,
-            "spatialBounds": {
-                "minimum": list(minimum),
-                "maximum": list(maximum),
-            },
-            "reason": f"fixture-{source_kind}",
+            "artifactId": f"artifact-{marker}-{index}",
+            "artifactDigest": route_b_artifact_digest(
+                {"marker": marker, "artifactIndex": index}
+            ),
+            "viewIds": [view_id]
+            if source_kind == "coherent-cross-view-support"
+            else views,
         }
+        for index, view_id in enumerate(
+            views if source_kind == "coherent-cross-view-support" else views[:1]
+        )
+    ]
+    spatial_bounds = {
+        "minimum": list(minimum),
+        "maximum": list(maximum),
+    }
+    source_reason = reason or f"{source_kind}:{marker}"
+    producer_id = {
+        "evidence-working-set-boundary-contact": (
+            "evidence-working-set-boundary-resolver/v1"
+        ),
+        "core-external-included-positive-support": ("included-stable-observation/v1"),
+        "coherent-cross-view-support": "coherent-included-stable-support/v1",
+        "reviewed-target-local-spatial-support": "reviewed-target-local-support/v1",
+        "user-confirmed-expert-recovery": "user-confirmed-decision/v1",
+    }[source_kind]
+    derivation_policy_digest = route_b_artifact_digest({"producer": producer_id})
+    if source_kind == "evidence-working-set-boundary-contact":
+        request_binding = state["requestBinding"]
+        assert isinstance(request_binding, dict)
+        core_ids = state["coreStableGaussianIds"]
+        assert isinstance(core_ids, list)
+        render_working_set = {
+            "targetSplatId": state["targetSplatId"],
+            "dependencyToken": request_binding["dependencyToken"],
+            "cameraBindingDigest": digest("d"),
+            "renderWorkingSetToken": route_b_artifact_digest(
+                {"marker": marker, "kind": "render-working-set"}
+            ),
+            "stableGaussianIds": sorted(set(core_ids) | set(stable_ids)),
+            "completeness": "complete",
+        }
+        evidence_working_set = create_evidence_working_set(
+            {
+                "targetSplatId": state["targetSplatId"],
+                "coreTargetStableIds": core_ids,
+                "contextStableGaussianIds": [],
+            }
+        )
+        boundary_input = {
+            "renderWorkingSet": render_working_set,
+            "evidenceWorkingSet": evidence_working_set,
+            "boundaryStableGaussianIds": stable_ids,
+            "resolution": "fail-closed",
+        }
+        return create_target_scope_boundary_contact_shadow_source(
+            target_scope_state=state,
+            boundary_result=resolve_evidence_working_set_boundary(boundary_input),
+            boundary_input=boundary_input,
+            boundary_binding={
+                "schemaVersion": 1,
+                "targetSplatId": state["targetSplatId"],
+                "dependencyToken": request_binding["dependencyToken"],
+                "renderWorkingSetToken": render_working_set["renderWorkingSetToken"],
+                "evidenceWorkingSetToken": evidence_working_set[
+                    "evidenceWorkingSetToken"
+                ],
+            },
+            source_artifact=artifact_refs[0],
+            spatial_bounds=spatial_bounds,
+            reason=source_reason,
+        )
+    if source_kind == "reviewed-target-local-spatial-support":
+        return create_target_scope_reviewed_support_shadow_source(
+            target_scope_state=state,
+            review={
+                "schemaVersion": 1,
+                "status": "reviewed",
+                "producerId": producer_id,
+                "derivationPolicyDigest": derivation_policy_digest,
+                "artifactRef": artifact_refs[0],
+                "supportedStableGaussianIds": stable_ids,
+                "spatialBounds": spatial_bounds,
+                "reason": source_reason,
+            },
+        )
+    return create_target_scope_observation_shadow_source(
+        target_scope_state=state,
+        observation={
+            "schemaVersion": 1,
+            "status": (
+                "user-confirmed"
+                if source_kind == "user-confirmed-expert-recovery"
+                else "included-stable"
+            ),
+            "sourceKind": source_kind,
+            "producerId": producer_id,
+            "derivationPolicyDigest": derivation_policy_digest,
+            "artifactRefs": artifact_refs,
+            "participation": "included",
+            "stableMaskDigest": route_b_artifact_digest(
+                {"marker": marker, "kind": "stable-mask"}
+            ),
+            "supportedStableGaussianIds": stable_ids,
+            "spatialBounds": spatial_bounds,
+            "reason": source_reason,
+        },
     )
 
 
@@ -245,7 +381,7 @@ def admit_discovery_ids(
         request_binding=state["requestBinding"],
         sources=[source],
     )
-    return admitted, str(source["sourceDigest"])
+    return admitted, str(source["sourceRecordDigest"])
 
 
 class TargetScopeStateTests(unittest.TestCase):
@@ -845,10 +981,17 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=seed,
             target_geometry=geometry,
             component_policy=component_policy(),
-            discovery_policy=discovery_policy(),
+            discovery_policy=discovery_policy(
+                target_geometry_hint=domain_target_geometry_hint()
+            ),
         )
         self.assertEqual(state["coreStableGaussianIds"], [])
         self.assertTrue(is_target_scope_state(state))
+        negative_hint_state: dict[str, Any] = deepcopy(state)
+        negative_hint_state["discoveryPolicy"]["discoveryDomain"]["targetGeometryHint"][
+            "center"
+        ][0] = -0.0
+        self.assertFalse(is_target_scope_state(negative_hint_state))
 
         foreign = deepcopy(state)
         foreign["requiredContextStableGaussianIds"] = [2]
@@ -1190,7 +1333,9 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=empty_seed,
             target_geometry=geometry,
             component_policy=component_policy(),
-            discovery_policy=discovery_policy(),
+            discovery_policy=discovery_policy(
+                target_geometry_hint=domain_target_geometry_hint()
+            ),
         )
         parent, first_source = admit_discovery_ids(
             revision_zero, geometry, stable_ids=[1, 2, 3], marker="6"
@@ -1592,7 +1737,9 @@ class TargetScopeStateTests(unittest.TestCase):
             seed_record=seed,
             target_geometry=geometry,
             component_policy=component_policy(),
-            discovery_policy=discovery_policy(),
+            discovery_policy=discovery_policy(
+                target_geometry_hint=domain_target_geometry_hint()
+            ),
         )
         revision_one, source_one = admit_discovery_ids(
             revision_zero, geometry, stable_ids=[1, 2], marker="a"
@@ -1995,21 +2142,14 @@ class TargetScopeStateTests(unittest.TestCase):
                     "sourceDigests": [digest("8")],
                 },
             )
-        retired_recovery = create_target_scope_observation_shadow_source(
-            target_scope_state=retired_rejection,
-            observation={
-                "status": "user-confirmed",
-                "sourceKind": "user-confirmed-expert-recovery",
-                "artifactId": "retired-expert-observation",
-                "artifactDigest": digest("9"),
-                "viewIds": ["retired-expert-view"],
-                "supportedStableGaussianIds": [2],
-                "spatialBounds": {
-                    "minimum": [2.75, -0.25, -0.25],
-                    "maximum": [3.25, 0.25, 0.25],
-                },
-                "reason": "user-confirmed-retired-recovery",
-            },
+        retired_recovery = discovery_source(
+            retired_rejection,
+            source_kind="user-confirmed-expert-recovery",
+            stable_ids=[2],
+            marker="9",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(3.25, 0.25, 0.25),
+            view_ids=["retired-expert-view"],
         )
         reopened_retired = admit_target_scope_discovery_sources(
             previous_state=retired_rejection,
@@ -2164,29 +2304,83 @@ class TargetScopeStateTests(unittest.TestCase):
             )
             for source_kind, stable_id, marker, view_ids in source_specs
         ]
-        zero_wire_payload = {
-            key: deepcopy(value)
-            for key, value in sources[0].items()
-            if key != "sourceDigest"
-        }
-        zero_wire_payload["spatialBounds"] = {
-            "minimum": [2.75, 0.0, 0.0],
-            "maximum": [3.25, 0.0, 0.0],
-        }
-        sources[0] = create_target_scope_discovery_source(zero_wire_payload)
-        coherent_payload = {
-            key: deepcopy(value)
-            for key, value in sources[2].items()
-            if key != "sourceDigest"
-        }
-        coherent_payload["sourceViewIds"] = list(
-            reversed(coherent_payload["sourceViewIds"])  # type: ignore[arg-type]
+        reason_variant = discovery_source(
+            initial,
+            source_kind="evidence-working-set-boundary-contact",
+            stable_ids=[2],
+            marker="a",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(3.25, 0.25, 0.25),
+            view_ids=["view-a"],
+            reason="same authority with corrected operator note",
         )
-        recreated_coherent = create_target_scope_discovery_source(coherent_payload)
-        self.assertEqual(recreated_coherent, sources[2])
+        self.assertEqual(
+            reason_variant["sourceAuthorityDigest"],
+            sources[0]["sourceAuthorityDigest"],
+        )
+        self.assertNotEqual(
+            reason_variant["sourceRecordDigest"], sources[0]["sourceRecordDigest"]
+        )
+        view_order_forward = discovery_source(
+            initial,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[5],
+            marker="view-order",
+            minimum=(11.75, -0.25, -0.25),
+            maximum=(12.25, 0.25, 0.25),
+            view_ids=["view-z", "view-a"],
+        )
+        view_order_reverse = discovery_source(
+            initial,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[5],
+            marker="view-order",
+            minimum=(11.75, -0.25, -0.25),
+            maximum=(12.25, 0.25, 0.25),
+            view_ids=["view-a", "view-z"],
+        )
+        self.assertEqual(view_order_forward, view_order_reverse)
+        expected_authorities = {
+            "evidence-working-set-boundary-contact": (
+                "boundary-contact-result",
+                "failed-closed-boundary-contact",
+            ),
+            "core-external-included-positive-support": (
+                "included-stable-observation",
+                "included-stable",
+            ),
+            "coherent-cross-view-support": (
+                "coherent-included-stable-result",
+                "included-stable",
+            ),
+            "reviewed-target-local-spatial-support": (
+                "reviewed-target-local-support",
+                "reviewed",
+            ),
+            "user-confirmed-expert-recovery": (
+                "user-confirmed-decision",
+                "user-confirmed",
+            ),
+        }
         for source in sources:
-            self.assertEqual(validate_target_scope_discovery_source(source), source)
-
+            self.assertIn("sourceAuthority", source)
+            self.assertIn("sourceArtifactRefs", source)
+            self.assertIn("sourceAuthorityDigest", source)
+            self.assertIn("derivedResultDigest", source)
+            self.assertIn("sourceRecordDigest", source)
+            self.assertNotIn("sourceArtifactIds", source)
+            self.assertNotIn("sourceArtifactDigests", source)
+            authority = source["sourceAuthority"]
+            assert isinstance(authority, dict)
+            evidence = authority["authorityEvidence"]
+            assert isinstance(evidence, dict)
+            self.assertEqual(
+                authority["resultDigest"], route_b_artifact_digest(evidence)
+            )
+            self.assertEqual(
+                (authority["authorityKind"], authority["status"]),
+                expected_authorities[str(source["sourceKind"])],
+            )
         forward = admit_target_scope_discovery_sources(
             previous_state=initial,
             target_geometry=geometry,
@@ -2207,7 +2401,7 @@ class TargetScopeStateTests(unittest.TestCase):
         zero_source = next(
             record
             for record in signed_zero_tamper["discoveryEnvelopeLedger"]
-            if record["sourceDigest"] == sources[0]["sourceDigest"]
+            if record["sourceRecordDigest"] == sources[0]["sourceRecordDigest"]
         )
         zero_source["spatialBounds"]["minimum"][1] = -0.0
         self.assertEqual(signed_zero_tamper["stateDigest"], forward["stateDigest"])
@@ -2221,7 +2415,7 @@ class TargetScopeStateTests(unittest.TestCase):
             [
                 record["sourceKind"]
                 for record in sorted(
-                    sources, key=lambda record: str(record["sourceDigest"])
+                    sources, key=lambda record: str(record["sourceRecordDigest"])
                 )
             ],
         )
@@ -2235,13 +2429,516 @@ class TargetScopeStateTests(unittest.TestCase):
             previous_state=forward,
             target_geometry=geometry,
             request_binding=forward["requestBinding"],
-            sources=[sources[0], sources[0]],
+            sources=[sources[0], sources[0], reason_variant],
         )
         self.assertEqual(replay["scopeRevision"], forward["scopeRevision"])
         self.assertEqual(
             canonical_target_scope_state_bytes(replay),
             canonical_target_scope_state_bytes(forward),
         )
+
+    def test_discovery_authority_binds_artifact_pairs_and_derived_support(
+        self,
+    ) -> None:
+        geometry = target_geometry(
+            [
+                (1, (0.0, 0.0, 0.0)),
+                (2, (3.0, 0.0, 0.0)),
+                (3, (6.0, 0.0, 0.0)),
+            ]
+        )
+        seed = seed_record(
+            stable_ids=[1, 2, 3],
+            positive=[0.9, 0.1, 0.1],
+            negative=[0.0, 0.0, 0.0],
+            visible=[1.0, 1.0, 1.0],
+            geometry=geometry,
+        )
+        initial = bootstrap_target_scope_state_from_seed(
+            seed_record=seed,
+            target_geometry=geometry,
+            component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
+        )
+        flat_fabrication = {
+            "schemaVersion": 2,
+            "sourceKind": "reviewed-target-local-spatial-support",
+            "admittedStableGaussianIds": [2],
+            "reason": "invented-authority",
+        }
+        with self.assertRaises(TargetScopeStateValidationError):
+            admit_target_scope_discovery_sources(
+                previous_state=initial,
+                target_geometry=geometry,
+                request_binding=initial["requestBinding"],
+                sources=[flat_fabrication],
+            )
+
+        authoritative = discovery_source(
+            initial,
+            source_kind="coherent-cross-view-support",
+            stable_ids=[2],
+            marker="paired-authority",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(3.25, 0.25, 0.25),
+            view_ids=["view-left", "view-right"],
+        )
+        with self.assertRaisesRegex(
+            TargetScopeStateValidationError, "artifact cardinality"
+        ):
+            create_target_scope_observation_shadow_source(
+                target_scope_state=initial,
+                observation={
+                    "schemaVersion": 1,
+                    "status": "included-stable",
+                    "sourceKind": "coherent-cross-view-support",
+                    "producerId": "coherent-included-stable-support/v1",
+                    "derivationPolicyDigest": digest("f"),
+                    "artifactRefs": [
+                        {
+                            "artifactId": "coherent-left",
+                            "artifactDigest": digest("a"),
+                            "viewIds": ["view-left"],
+                        },
+                        {
+                            "artifactId": "coherent-right",
+                            "artifactDigest": digest("a"),
+                            "viewIds": ["view-right"],
+                        },
+                    ],
+                    "participation": "included",
+                    "stableMaskDigest": digest("e"),
+                    "supportedStableGaussianIds": [2],
+                    "spatialBounds": {
+                        "minimum": [2.75, -0.25, -0.25],
+                        "maximum": [3.25, 0.25, 0.25],
+                    },
+                    "reason": "duplicate-coherent-artifact",
+                },
+            )
+
+        def pair_bound_source(
+            artifact_refs: list[dict[str, object]],
+        ) -> dict[str, object]:
+            return create_target_scope_observation_shadow_source(
+                target_scope_state=initial,
+                observation={
+                    "schemaVersion": 1,
+                    "status": "included-stable",
+                    "sourceKind": "coherent-cross-view-support",
+                    "producerId": "coherent-included-stable-support/v1",
+                    "derivationPolicyDigest": digest("f"),
+                    "artifactRefs": artifact_refs,
+                    "participation": "included",
+                    "stableMaskDigest": digest("e"),
+                    "supportedStableGaussianIds": [2],
+                    "spatialBounds": {
+                        "minimum": [2.75, -0.25, -0.25],
+                        "maximum": [3.25, 0.25, 0.25],
+                    },
+                    "reason": "pair-association-fixture",
+                },
+            )
+
+        paired = pair_bound_source(
+            [
+                {
+                    "artifactId": "paired-left",
+                    "artifactDigest": digest("a"),
+                    "viewIds": ["view-left"],
+                },
+                {
+                    "artifactId": "paired-right",
+                    "artifactDigest": digest("b"),
+                    "viewIds": ["view-right"],
+                },
+            ]
+        )
+        reversed_pair_order = pair_bound_source(
+            [
+                {
+                    "artifactId": "paired-right",
+                    "artifactDigest": digest("b"),
+                    "viewIds": ["view-right"],
+                },
+                {
+                    "artifactId": "paired-left",
+                    "artifactDigest": digest("a"),
+                    "viewIds": ["view-left"],
+                },
+            ]
+        )
+        self.assertEqual(paired, reversed_pair_order)
+        pair_swapped = pair_bound_source(
+            [
+                {
+                    "artifactId": "paired-left",
+                    "artifactDigest": digest("b"),
+                    "viewIds": ["view-left"],
+                },
+                {
+                    "artifactId": "paired-right",
+                    "artifactDigest": digest("a"),
+                    "viewIds": ["view-right"],
+                },
+            ]
+        )
+        self.assertNotEqual(
+            paired["sourceAuthorityDigest"], pair_swapped["sourceAuthorityDigest"]
+        )
+        view_swapped = pair_bound_source(
+            [
+                {
+                    "artifactId": "paired-left",
+                    "artifactDigest": digest("a"),
+                    "viewIds": ["view-right"],
+                },
+                {
+                    "artifactId": "paired-right",
+                    "artifactDigest": digest("b"),
+                    "viewIds": ["view-left"],
+                },
+            ]
+        )
+        self.assertNotEqual(
+            paired["sourceAuthorityDigest"], view_swapped["sourceAuthorityDigest"]
+        )
+        conflicting = discovery_source(
+            initial,
+            source_kind="coherent-cross-view-support",
+            stable_ids=[3],
+            marker="paired-authority",
+            minimum=(5.75, -0.25, -0.25),
+            maximum=(6.25, 0.25, 0.25),
+            view_ids=["view-left", "view-right"],
+        )
+        self.assertEqual(
+            authoritative["sourceAuthorityDigest"],
+            conflicting["sourceAuthorityDigest"],
+        )
+        self.assertNotEqual(
+            authoritative["derivedResultDigest"],
+            conflicting["derivedResultDigest"],
+        )
+        bounds_conflicting = discovery_source(
+            initial,
+            source_kind="coherent-cross-view-support",
+            stable_ids=[2],
+            marker="paired-authority",
+            minimum=(2.5, -0.5, -0.5),
+            maximum=(3.5, 0.5, 0.5),
+            view_ids=["view-left", "view-right"],
+        )
+        self.assertEqual(
+            authoritative["sourceAuthorityDigest"],
+            bounds_conflicting["sourceAuthorityDigest"],
+        )
+        self.assertNotEqual(
+            authoritative["derivedResultDigest"],
+            bounds_conflicting["derivedResultDigest"],
+        )
+        with self.assertRaisesRegex(
+            TargetScopeStateTransitionError, "conflicting derived support"
+        ):
+            admit_target_scope_discovery_sources(
+                previous_state=initial,
+                target_geometry=geometry,
+                request_binding=initial["requestBinding"],
+                sources=[authoritative, bounds_conflicting],
+            )
+        with self.assertRaisesRegex(
+            TargetScopeStateTransitionError, "conflicting derived support"
+        ):
+            admit_target_scope_discovery_sources(
+                previous_state=initial,
+                target_geometry=geometry,
+                request_binding=initial["requestBinding"],
+                sources=[authoritative, conflicting],
+            )
+
+        admitted = admit_target_scope_discovery_sources(
+            previous_state=initial,
+            target_geometry=geometry,
+            request_binding=initial["requestBinding"],
+            sources=[authoritative],
+        )
+        with self.assertRaisesRegex(TargetScopeStateTransitionError, "authority reuse"):
+            admit_target_scope_discovery_sources(
+                previous_state=admitted,
+                target_geometry=geometry,
+                request_binding=admitted["requestBinding"],
+                sources=[conflicting],
+            )
+
+        swapped_pair = deepcopy(authoritative)
+        swapped_refs = swapped_pair["sourceArtifactRefs"]
+        assert isinstance(swapped_refs, list)
+        assert all(isinstance(reference, dict) for reference in swapped_refs)
+        swapped_refs[0]["artifactDigest"], swapped_refs[1]["artifactDigest"] = (
+            swapped_refs[1]["artifactDigest"],
+            swapped_refs[0]["artifactDigest"],
+        )
+        missing_pair = deepcopy(authoritative)
+        missing_refs = missing_pair["sourceArtifactRefs"]
+        assert isinstance(missing_refs, list)
+        assert isinstance(missing_refs[0], dict)
+        del missing_refs[0]["artifactDigest"]
+        extra_digest = deepcopy(authoritative)
+        extra_refs = extra_digest["sourceArtifactRefs"]
+        assert isinstance(extra_refs, list)
+        assert isinstance(extra_refs[0], dict)
+        extra_refs[0]["extraArtifactDigest"] = digest("f")
+        for tampered in (swapped_pair, missing_pair, extra_digest):
+            with self.assertRaises(TargetScopeStateValidationError):
+                admit_target_scope_discovery_sources(
+                    previous_state=initial,
+                    target_geometry=geometry,
+                    request_binding=initial["requestBinding"],
+                    sources=[tampered],
+                )
+
+    def test_discovery_domain_requires_component_locality_or_hint_authority(
+        self,
+    ) -> None:
+        bridge_geometry = target_geometry(
+            [
+                (1, (-10.0, 0.0, 0.0)),
+                (2, (10.0, 0.0, 0.0)),
+            ]
+        )
+        bridge_seed = seed_record(
+            stable_ids=[1, 2],
+            positive=[0.9, 0.9],
+            negative=[0.0, 0.0],
+            visible=[1.0, 1.0],
+            geometry=bridge_geometry,
+        )
+        with self.assertRaisesRegex(
+            TargetScopeStateValidationError, "target-local to initial Core"
+        ):
+            bootstrap_target_scope_state_from_seed(
+                seed_record=bridge_seed,
+                target_geometry=bridge_geometry,
+                component_policy=component_policy(),
+                discovery_policy=discovery_policy(
+                    domain_minimum=(-10.0, -1.0, -1.0),
+                    domain_maximum=(10.0, 1.0, 1.0),
+                    maximum_domain_distance_scale_multiplier=1.0,
+                ),
+            )
+
+        corner_geometry = target_geometry(
+            [
+                (1, (0.0, 10.0, 0.0)),
+                (2, (10.0, 0.0, 0.0)),
+            ]
+        )
+        corner_seed = seed_record(
+            stable_ids=[1, 2],
+            positive=[0.9, 0.9],
+            negative=[0.0, 0.0],
+            visible=[1.0, 1.0],
+            geometry=corner_geometry,
+        )
+        with self.assertRaisesRegex(
+            TargetScopeStateValidationError, "target-local to initial Core"
+        ):
+            bootstrap_target_scope_state_from_seed(
+                seed_record=corner_seed,
+                target_geometry=corner_geometry,
+                component_policy=component_policy(),
+                discovery_policy=discovery_policy(
+                    domain_minimum=(9.5, 9.5, -0.5),
+                    domain_maximum=(10.5, 10.5, 0.5),
+                    maximum_domain_distance_scale_multiplier=1.0,
+                ),
+            )
+
+        hint_authorized = bootstrap_target_scope_state_from_seed(
+            seed_record=corner_seed,
+            target_geometry=corner_geometry,
+            component_policy=component_policy(),
+            discovery_policy=discovery_policy(
+                domain_minimum=(9.5, 9.5, -0.5),
+                domain_maximum=(10.5, 10.5, 0.5),
+                maximum_domain_distance_scale_multiplier=1.0,
+                target_geometry_hint=domain_target_geometry_hint(
+                    center=(10.0, 10.0, 0.0)
+                ),
+            ),
+        )
+        self.assertTrue(is_target_scope_state(hint_authorized))
+        with self.assertRaisesRegex(
+            TargetScopeStateValidationError, "Target Geometry Hint"
+        ):
+            bootstrap_target_scope_state_from_seed(
+                seed_record=corner_seed,
+                target_geometry=corner_geometry,
+                component_policy=component_policy(),
+                discovery_policy=discovery_policy(
+                    domain_minimum=(9.5, 9.5, -0.5),
+                    domain_maximum=(10.5, 10.5, 0.5),
+                    maximum_domain_distance_scale_multiplier=1.0,
+                    target_geometry_hint=domain_target_geometry_hint(
+                        target_splat_id="other-splat",
+                        center=(10.0, 10.0, 0.0),
+                    ),
+                ),
+            )
+        canonical_zero_policy: dict[str, Any] = discovery_policy(
+            domain_minimum=(0.0, 0.0, 0.0),
+            domain_maximum=(1.0, 1.0, 1.0),
+            target_geometry_hint=domain_target_geometry_hint(center=(0.5, 0.5, 0.5)),
+        )
+        negative_domain_zero = deepcopy(canonical_zero_policy)
+        negative_domain_zero["discoveryDomain"]["spatialBounds"]["minimum"][0] = -0.0
+        with self.assertRaises(TargetScopeStateValidationError):
+            validate_target_scope_discovery_policy(negative_domain_zero)
+        negative_hint_zero = deepcopy(canonical_zero_policy)
+        negative_hint_zero["discoveryDomain"]["targetGeometryHint"]["center"][0] = -0.0
+        with self.assertRaises(TargetScopeStateValidationError):
+            validate_target_scope_discovery_policy(negative_hint_zero)
+        empty_geometry = target_geometry(
+            [
+                (1, (0.0, 0.0, 0.0)),
+                (2, (1000.0, 0.0, 0.0)),
+            ]
+        )
+        empty_seed = seed_record(
+            stable_ids=[1, 2],
+            positive=[0.1, 0.1],
+            negative=[0.0, 0.0],
+            visible=[1.0, 1.0],
+            geometry=empty_geometry,
+        )
+        with self.assertRaisesRegex(
+            TargetScopeStateValidationError, "Target Geometry Hint"
+        ):
+            bootstrap_target_scope_state_from_seed(
+                seed_record=empty_seed,
+                target_geometry=empty_geometry,
+                component_policy=component_policy(),
+                discovery_policy=discovery_policy(
+                    domain_minimum=(990.0, -10.0, -10.0),
+                    domain_maximum=(1010.0, 10.0, 10.0),
+                ),
+            )
+        with self.assertRaisesRegex(
+            TargetScopeStateValidationError, "Target Geometry Hint"
+        ):
+            bootstrap_target_scope_state_from_seed(
+                seed_record=empty_seed,
+                target_geometry=empty_geometry,
+                component_policy=component_policy(),
+                discovery_policy=discovery_policy(
+                    domain_minimum=(990.0, -10.0, -10.0),
+                    domain_maximum=(1010.0, 10.0, 10.0),
+                    target_geometry_hint=domain_target_geometry_hint(),
+                ),
+            )
+
+    def test_discovery_domain_rejects_huge_far_and_large_support_sources(
+        self,
+    ) -> None:
+        geometry = target_geometry(
+            [
+                (1, (0.0, 0.0, 0.0)),
+                (2, (-10.0, 0.0, 0.0)),
+                (3, (1000.0, 0.0, 0.0)),
+                (4, (60.0, 0.0, 0.0)),
+            ],
+            log_scales_by_id={4: (-10.0, 2.0, -10.0)},
+        )
+        seed = seed_record(
+            stable_ids=[1, 2, 3, 4],
+            positive=[0.9, 0.1, 0.1, 0.1],
+            negative=[0.0, 0.0, 0.0, 0.0],
+            visible=[1.0, 1.0, 1.0, 1.0],
+            geometry=geometry,
+        )
+        with self.assertRaisesRegex(
+            TargetScopeStateValidationError, "target-local to initial Core"
+        ):
+            bootstrap_target_scope_state_from_seed(
+                seed_record=seed,
+                target_geometry=geometry,
+                component_policy=component_policy(),
+                discovery_policy=discovery_policy(
+                    domain_minimum=(900.0, -64.0, -64.0),
+                    domain_maximum=(1100.0, 64.0, 64.0),
+                ),
+            )
+        initial = bootstrap_target_scope_state_from_seed(
+            seed_record=seed,
+            target_geometry=geometry,
+            component_policy=component_policy(),
+            discovery_policy=discovery_policy(),
+        )
+        rear_support = discovery_source(
+            initial,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[2],
+            marker="rear-support",
+            minimum=(-10.25, -0.25, -0.25),
+            maximum=(-9.75, 0.25, 0.25),
+        )
+        admitted = admit_target_scope_discovery_sources(
+            previous_state=initial,
+            target_geometry=geometry,
+            request_binding=initial["requestBinding"],
+            sources=[rear_support],
+        )
+        self.assertEqual(admitted["activeFrontierStableGaussianIds"], [2])
+
+        huge_bounds = discovery_source(
+            initial,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[2],
+            marker="huge-bounds",
+            minimum=(-1e300, -1e300, -1e300),
+            maximum=(1e300, 1e300, 1e300),
+        )
+        with self.assertRaisesRegex(TargetScopeStateTransitionError, "bounds exceed"):
+            admit_target_scope_discovery_sources(
+                previous_state=initial,
+                target_geometry=geometry,
+                request_binding=initial["requestBinding"],
+                sources=[huge_bounds],
+            )
+
+        far_away = discovery_source(
+            initial,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[3],
+            marker="far-away",
+            minimum=(999.75, -0.25, -0.25),
+            maximum=(1000.25, 0.25, 0.25),
+        )
+        with self.assertRaisesRegex(TargetScopeStateTransitionError, "bounds exceed"):
+            admit_target_scope_discovery_sources(
+                previous_state=initial,
+                target_geometry=geometry,
+                request_binding=initial["requestBinding"],
+                sources=[far_away],
+            )
+
+        large_support = discovery_source(
+            initial,
+            source_kind="reviewed-target-local-spatial-support",
+            stable_ids=[4],
+            marker="large-support",
+            minimum=(59.75, -0.25, -0.25),
+            maximum=(60.25, 0.25, 0.25),
+        )
+        with self.assertRaisesRegex(
+            TargetScopeStateTransitionError, "Gaussian support exceeds"
+        ):
+            admit_target_scope_discovery_sources(
+                previous_state=initial,
+                target_geometry=geometry,
+                request_binding=initial["requestBinding"],
+                sources=[large_support],
+            )
 
     def test_discovery_budget_and_epoch_reset_fail_closed_without_partial_state(
         self,
@@ -2396,17 +3093,15 @@ class TargetScopeStateTests(unittest.TestCase):
                 request_binding=initial["requestBinding"],
                 sources=[out_of_target],
             )
-        spatially_unbounded = {
-            key: deepcopy(value)
-            for key, value in first.items()
-            if key != "sourceDigest"
-        }
-        spatially_unbounded["spatialBounds"] = {
-            "minimum": [float("-inf"), 0.0, 0.0],
-            "maximum": [float("inf"), 1.0, 1.0],
-        }
         with self.assertRaisesRegex(TargetScopeStateValidationError, "spatial bounds"):
-            create_target_scope_discovery_source(spatially_unbounded)
+            discovery_source(
+                initial,
+                source_kind="reviewed-target-local-spatial-support",
+                stable_ids=[2],
+                marker="invalid-spatial-bounds",
+                minimum=(float("-inf"), 0.0, 0.0),
+                maximum=(float("inf"), 1.0, 1.0),
+            )
         out_of_bounds = discovery_source(
             initial,
             source_kind="reviewed-target-local-spatial-support",
@@ -2489,7 +3184,7 @@ class TargetScopeStateTests(unittest.TestCase):
             request_binding=initial["requestBinding"],
             sources=[first],
         )
-        first_digest = str(first["sourceDigest"])
+        first_digest = str(first["sourceRecordDigest"])
         rejected = revise_target_scope_state(
             previous_state=discovered,
             target_geometry=geometry,
@@ -2512,15 +3207,7 @@ class TargetScopeStateTests(unittest.TestCase):
         )
         self.assertEqual(len(rejected["discoveryEnvelopeLedger"]), 1)
         self.assertEqual(rejected["requiredContextStableGaussianIds"], [3])
-        metadata_variant_payload = {
-            key: deepcopy(value)
-            for key, value in first.items()
-            if key != "sourceDigest"
-        }
-        metadata_variant_payload["reason"] = "metadata-only-rewording"
-        metadata_variant = create_target_scope_discovery_source(
-            metadata_variant_payload
-        )
+        metadata_variant = deepcopy(first)
         metadata_replay = admit_target_scope_discovery_sources(
             previous_state=rejected,
             target_geometry=geometry,
@@ -2606,21 +3293,14 @@ class TargetScopeStateTests(unittest.TestCase):
             [event["event"] for event in merged_recovery["rejectedFrontierLedger"]],
             ["rejected", "reopened"],
         )
-        recovery = create_target_scope_observation_shadow_source(
-            target_scope_state=rejected,
-            observation={
-                "status": "user-confirmed",
-                "sourceKind": "user-confirmed-expert-recovery",
-                "artifactId": "expert-observation-c",
-                "artifactDigest": digest("c"),
-                "viewIds": ["expert-view"],
-                "supportedStableGaussianIds": [2],
-                "spatialBounds": {
-                    "minimum": [2.75, -0.25, -0.25],
-                    "maximum": [3.25, 0.25, 0.25],
-                },
-                "reason": "user-confirmed-expert-recovery",
-            },
+        recovery = discovery_source(
+            rejected,
+            source_kind="user-confirmed-expert-recovery",
+            stable_ids=[2],
+            marker="c",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(3.25, 0.25, 0.25),
+            view_ids=["expert-view"],
         )
         reopened = admit_target_scope_discovery_sources(
             previous_state=rejected,
@@ -2647,6 +3327,70 @@ class TargetScopeStateTests(unittest.TestCase):
             sources=[recovery],
         )
         self.assertEqual(duplicate["stateDigest"], reopened["stateDigest"])
+        second_rejection_digest = digest("6")
+        active_provenance = reopened["activeFrontierComponents"][0]["provenanceDigests"]
+        rerejected = revise_target_scope_state(
+            previous_state=reopened,
+            target_geometry=geometry,
+            request_binding=reopened["requestBinding"],
+            core_stable_gaussian_ids=[1],
+            active_frontier=[],
+            rejected_frontier=[
+                {
+                    "stableGaussianIds": [2],
+                    "state": "rejected",
+                    "provenanceDigests": sorted(
+                        [*active_provenance, second_rejection_digest]
+                    ),
+                }
+            ],
+            required_context_stable_gaussian_ids=[3],
+            revision_provenance={
+                "kind": "scope-transition",
+                "reason": "second-component-rejection-fixture",
+                "sourceDigests": [second_rejection_digest],
+            },
+        )
+        altered_recovery = discovery_source(
+            rerejected,
+            source_kind="user-confirmed-expert-recovery",
+            stable_ids=[2, 3],
+            marker="c",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(4.25, 0.25, 0.25),
+            view_ids=["expert-view"],
+        )
+        self.assertEqual(
+            recovery["sourceAuthorityDigest"],
+            altered_recovery["sourceAuthorityDigest"],
+        )
+        with self.assertRaisesRegex(TargetScopeStateTransitionError, "authority reuse"):
+            admit_target_scope_discovery_sources(
+                previous_state=rerejected,
+                target_geometry=geometry,
+                request_binding=rerejected["requestBinding"],
+                sources=[altered_recovery],
+            )
+        fresh_second_recovery = discovery_source(
+            rerejected,
+            source_kind="user-confirmed-expert-recovery",
+            stable_ids=[2],
+            marker="fresh-second-recovery",
+            minimum=(2.75, -0.25, -0.25),
+            maximum=(3.25, 0.25, 0.25),
+            view_ids=["fresh-second-expert-view"],
+        )
+        second_reopened = admit_target_scope_discovery_sources(
+            previous_state=rerejected,
+            target_geometry=geometry,
+            request_binding=rerejected["requestBinding"],
+            sources=[fresh_second_recovery],
+        )
+        self.assertEqual(second_reopened["activeFrontierStableGaussianIds"], [2])
+        self.assertEqual(
+            [event["event"] for event in second_reopened["rejectedFrontierLedger"]],
+            ["rejected", "reopened", "rejected", "reopened"],
+        )
 
     def test_s1_or_technical_failure_cannot_erase_discovered_support(self) -> None:
         geometry = target_geometry(
@@ -2706,7 +3450,7 @@ class TargetScopeStateTests(unittest.TestCase):
                         {
                             "stableGaussianIds": [2],
                             "state": "rejected",
-                            "provenanceDigests": [source["sourceDigest"]],
+                            "provenanceDigests": [source["sourceRecordDigest"]],
                         }
                     ],
                     required_context_stable_gaussian_ids=[],
@@ -2762,7 +3506,7 @@ class TargetScopeStateTests(unittest.TestCase):
                     "stableGaussianIds": [2],
                     "state": "rejected",
                     "provenanceDigests": sorted(
-                        [str(source["sourceDigest"]), rejection_digest]
+                        [str(source["sourceRecordDigest"]), rejection_digest]
                     ),
                 }
             ],
@@ -2822,42 +3566,204 @@ class TargetScopeStateTests(unittest.TestCase):
             component_policy=component_policy(),
             discovery_policy=discovery_policy(),
         )
+        evidence_working_set = create_evidence_working_set(
+            {
+                "targetSplatId": "splat-1",
+                "coreTargetStableIds": [1],
+                "contextStableGaussianIds": [],
+            }
+        )
+        render_working_set = {
+            "targetSplatId": "splat-1",
+            "dependencyToken": initial["requestBinding"]["dependencyToken"],
+            "cameraBindingDigest": digest("d"),
+            "renderWorkingSetToken": digest("e"),
+            "stableGaussianIds": [1, 2, 3],
+            "completeness": "complete",
+        }
+        boundary_input = {
+            "renderWorkingSet": render_working_set,
+            "evidenceWorkingSet": evidence_working_set,
+            "boundaryStableGaussianIds": [2],
+            "resolution": "fail-closed",
+        }
+        actual_boundary_result = resolve_evidence_working_set_boundary(boundary_input)
         boundary = create_target_scope_boundary_contact_shadow_source(
             target_scope_state=initial,
-            boundary_result={
-                "status": "failed-closed",
-                "reason": "evidence-working-set-boundary-contact",
-                "contactStableGaussianIds": [2],
+            boundary_result=actual_boundary_result,
+            boundary_input=boundary_input,
+            boundary_binding={
+                "schemaVersion": 1,
+                "targetSplatId": "splat-1",
+                "dependencyToken": initial["requestBinding"]["dependencyToken"],
+                "renderWorkingSetToken": render_working_set["renderWorkingSetToken"],
+                "evidenceWorkingSetToken": evidence_working_set[
+                    "evidenceWorkingSetToken"
+                ],
             },
             source_artifact={
                 "artifactId": "working-set-boundary:view-a",
                 "artifactDigest": digest("a"),
-                "viewId": "view-a",
+                "viewIds": ["view-a"],
             },
             spatial_bounds={
                 "minimum": [2.75, -0.25, -0.25],
                 "maximum": [3.25, 0.25, 0.25],
             },
+            reason="working-set-boundary-contact",
         )
+        mismatched_contact_ids = deepcopy(boundary)
+        mismatched_contact_ids["admittedStableGaussianIds"] = [3]
+        mismatched_contact_ids["derivedResultDigest"] = route_b_artifact_digest(
+            {
+                "sourceAuthorityDigest": mismatched_contact_ids[
+                    "sourceAuthorityDigest"
+                ],
+                "admittedStableGaussianIds": [3],
+                "spatialBounds": mismatched_contact_ids["spatialBounds"],
+            }
+        )
+        mismatched_payload = {
+            key: value
+            for key, value in mismatched_contact_ids.items()
+            if key != "sourceRecordDigest"
+        }
+        mismatched_contact_ids["sourceRecordDigest"] = route_b_artifact_digest(
+            mismatched_payload
+        )
+        with self.assertRaisesRegex(
+            TargetScopeStateValidationError, "IDs do not match derived support"
+        ):
+            admit_target_scope_discovery_sources(
+                previous_state=initial,
+                target_geometry=geometry,
+                request_binding=initial["requestBinding"],
+                sources=[mismatched_contact_ids],
+            )
+        other_evidence_working_set = create_evidence_working_set(
+            {
+                "targetSplatId": "other-splat",
+                "coreTargetStableIds": [1],
+                "contextStableGaussianIds": [],
+            }
+        )
+        other_render_working_set = {
+            **render_working_set,
+            "targetSplatId": "other-splat",
+            "renderWorkingSetToken": digest("f"),
+        }
+        other_boundary_input = {
+            "renderWorkingSet": other_render_working_set,
+            "evidenceWorkingSet": other_evidence_working_set,
+            "boundaryStableGaussianIds": [2],
+            "resolution": "fail-closed",
+        }
+        with self.assertRaisesRegex(
+            TargetScopeStateValidationError, "does not match Target Scope State"
+        ):
+            create_target_scope_boundary_contact_shadow_source(
+                target_scope_state=initial,
+                boundary_result=resolve_evidence_working_set_boundary(
+                    other_boundary_input
+                ),
+                boundary_input=other_boundary_input,
+                boundary_binding={
+                    "schemaVersion": 1,
+                    "targetSplatId": "other-splat",
+                    "dependencyToken": initial["requestBinding"]["dependencyToken"],
+                    "renderWorkingSetToken": other_render_working_set[
+                        "renderWorkingSetToken"
+                    ],
+                    "evidenceWorkingSetToken": other_evidence_working_set[
+                        "evidenceWorkingSetToken"
+                    ],
+                },
+                source_artifact={
+                    "artifactId": "working-set-boundary:view-a",
+                    "artifactDigest": digest("a"),
+                    "viewIds": ["view-a"],
+                },
+                spatial_bounds={
+                    "minimum": [2.75, -0.25, -0.25],
+                    "maximum": [3.25, 0.25, 0.25],
+                },
+                reason="foreign-working-set-boundary-contact",
+            )
+        stale_dependency = deepcopy(initial["requestBinding"]["dependencyToken"])
+        stale_dependency["geometryToken"] = "stale-geometry-token"
+        stale_render_working_set = {
+            **render_working_set,
+            "dependencyToken": stale_dependency,
+            "renderWorkingSetToken": digest("7"),
+        }
+        stale_boundary_input = {
+            "renderWorkingSet": stale_render_working_set,
+            "evidenceWorkingSet": evidence_working_set,
+            "boundaryStableGaussianIds": [2],
+            "resolution": "fail-closed",
+        }
+        with self.assertRaisesRegex(
+            TargetScopeStateValidationError, "does not match its binding"
+        ):
+            create_target_scope_boundary_contact_shadow_source(
+                target_scope_state=initial,
+                boundary_result=resolve_evidence_working_set_boundary(
+                    stale_boundary_input
+                ),
+                boundary_input=stale_boundary_input,
+                boundary_binding={
+                    "schemaVersion": 1,
+                    "targetSplatId": "splat-1",
+                    "dependencyToken": initial["requestBinding"]["dependencyToken"],
+                    "renderWorkingSetToken": stale_render_working_set[
+                        "renderWorkingSetToken"
+                    ],
+                    "evidenceWorkingSetToken": evidence_working_set[
+                        "evidenceWorkingSetToken"
+                    ],
+                },
+                source_artifact={
+                    "artifactId": "working-set-boundary:view-a",
+                    "artifactDigest": digest("a"),
+                    "viewIds": ["view-a"],
+                },
+                spatial_bounds={
+                    "minimum": [2.75, -0.25, -0.25],
+                    "maximum": [3.25, 0.25, 0.25],
+                },
+                reason="stale-working-set-boundary-contact",
+            )
         observation = create_target_scope_observation_shadow_source(
             target_scope_state=initial,
             observation={
+                "schemaVersion": 1,
                 "status": "included-stable",
                 "sourceKind": "core-external-included-positive-support",
-                "artifactId": "evidence:view-b",
-                "artifactDigest": digest("b"),
-                "viewIds": ["view-b"],
+                "producerId": "included-stable-observation/v1",
+                "derivationPolicyDigest": digest("9"),
+                "artifactRefs": [
+                    {
+                        "artifactId": "evidence:view-b",
+                        "artifactDigest": digest("b"),
+                        "viewIds": ["view-b"],
+                    }
+                ],
+                "participation": "included",
+                "stableMaskDigest": digest("c"),
                 "supportedStableGaussianIds": [3],
                 "spatialBounds": {
                     "minimum": [5.75, -0.25, -0.25],
                     "maximum": [6.25, 0.25, 0.25],
                 },
-                "reason": "new-included-stable-positive-support",
+                "reason": "included-stable-support",
             },
         )
         self.assertEqual(
             boundary["sourceKind"], "evidence-working-set-boundary-contact"
         )
+        boundary_authority = boundary["sourceAuthority"]
+        assert isinstance(boundary_authority, dict)
+        self.assertEqual(boundary_authority["status"], "failed-closed-boundary-contact")
         self.assertEqual(
             observation["sourceKind"],
             "core-external-included-positive-support",

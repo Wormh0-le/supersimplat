@@ -6,7 +6,7 @@ on:
         branches: [main, ai-select-v1]
         paths-ignore: ['README.md', 'LICENSE']
     pull_request:
-        branches: [main]
+        branches: [main, ai-select-v1]
         paths-ignore: ['README.md', 'LICENSE']
 
 concurrency:
@@ -44,11 +44,47 @@ jobs:
               with:
                   enable-cache: true
 
+            - name: Record CPU verification boundary
+              shell: bash
+              env:
+                  PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+                  PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+              run: |
+                  mkdir -p "$RUNNER_TEMP/ci-evidence"
+                  {
+                      printf 'run=%s attempt=%s event=%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_EVENT_NAME"
+                      printf 'event_sha=%s pr_head=%s pr_base=%s\n' "$GITHUB_SHA" "$PR_HEAD_SHA" "$PR_BASE_SHA"
+                      printf 'checkout_sha='
+                      git rev-parse HEAD
+                      printf '\nVerification scope: TypeScript and Companion base CPU/contracts; not locked-GPU qualification.\n'
+                      node --version
+                      npm --version
+                      python --version
+                      uv --version
+                      printf '\nInput checksums:\n'
+                      sha256sum package.json package-lock.json selection-service-companion/pyproject.toml selection-service-companion/uv.lock
+                      printf '\nTracked Companion tests:\n'
+                      git ls-files 'selection-service-companion/tests/test_*.py'
+                  } | tee "$RUNNER_TEMP/ci-evidence/boundary.txt"
+
             - name: Install
               run: npm ci
 
             - name: Test
-              run: npm test
+              shell: bash
+              run: |
+                  set -o pipefail
+                  trap 'result=$?; printf "%s\n" "$result" > "$RUNNER_TEMP/ci-evidence/test-exit-code.txt"' EXIT
+                  npm test 2>&1 | tee "$RUNNER_TEMP/ci-evidence/npm-test.log"
+
+            - name: Preserve CPU test evidence
+              if: ${{ always() }}
+              uses: actions/upload-artifact@v7
+              with:
+                  name: cpu-test-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.node-version }}
+                  path: ${{ runner.temp }}/ci-evidence/
+                  if-no-files-found: warn
+                  retention-days: 14
 
     build:
         name: Build

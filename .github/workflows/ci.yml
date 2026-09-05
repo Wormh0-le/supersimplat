@@ -6,7 +6,7 @@ on:
         branches: [main, ai-select-v1]
         paths-ignore: ['README.md', 'LICENSE']
     pull_request:
-        branches: [main]
+        branches: [main, ai-select-v1]
         paths-ignore: ['README.md', 'LICENSE']
 
 concurrency:
@@ -44,11 +44,74 @@ jobs:
               with:
                   enable-cache: true
 
+            - name: Record CPU verification boundary
+              shell: bash
+              env:
+                  PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+                  PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+              run: |
+                  mkdir -p "$RUNNER_TEMP/ci-evidence"
+                  {
+                      printf 'run=%s attempt=%s event=%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_EVENT_NAME"
+                      printf 'event_sha=%s pr_head=%s pr_base=%s\n' "$GITHUB_SHA" "$PR_HEAD_SHA" "$PR_BASE_SHA"
+                      printf 'checkout_sha='
+                      git rev-parse HEAD
+                      printf '\nVerification scope: TypeScript and Companion CPU/contracts with locked renderer dependencies; not CUDA/SAM GPU qualification.\n'
+                      node --version
+                      npm --version
+                      python --version
+                      uv --version
+                      printf '\nInput checksums:\n'
+                      sha256sum package.json package-lock.json selection-service-companion/pyproject.toml selection-service-companion/uv.lock
+                      printf '\nTracked Companion tests:\n'
+                      git ls-files 'selection-service-companion/tests/test_*.py'
+                  } | tee "$RUNNER_TEMP/ci-evidence/boundary.txt"
+
             - name: Install
               run: npm ci
 
+            # CPU tensor/snapshot tests still need torch, numpy and Pillow.
+            # Use the existing lock; defer gsplat CUDA compilation on this CPU runner.
+            - name: Install locked Companion test dependencies
+              shell: bash
+              env:
+                  BUILD_NO_CUDA: '1'
+              run: |
+                  uv sync --project selection-service-companion --locked --python 3.12.12 --extra renderer 2>&1 | tee "$RUNNER_TEMP/ci-evidence/companion-install.log"
+
+            - name: Verify installed CPU test environment
+              shell: bash
+              run: |
+                  uv run --project selection-service-companion --locked --python 3.12 python - <<'PY' | tee "$RUNNER_TEMP/ci-evidence/python-runtime.txt"
+                  from importlib.metadata import distribution, version
+                  import numpy
+                  import PIL
+                  import torch
+
+                  for package in ("torch", "numpy", "pillow", "gsplat"):
+                      print(f"{package}={version(package)}")
+                  print(f"gsplat_source={distribution('gsplat').read_text('direct_url.json')}")
+                  print(f"torch_cuda_build={torch.version.cuda}")
+                  print(f"cuda_available={torch.cuda.is_available()}")
+                  print("CUDA kernels and SAM model inference are not qualified by this CPU job.")
+                  PY
+                  git diff --exit-code -- package.json package-lock.json selection-service-companion/pyproject.toml selection-service-companion/uv.lock
+
             - name: Test
-              run: npm test
+              shell: bash
+              run: |
+                  set -o pipefail
+                  trap 'result=$?; printf "%s\n" "$result" > "$RUNNER_TEMP/ci-evidence/test-exit-code.txt"' EXIT
+                  npm test 2>&1 | tee "$RUNNER_TEMP/ci-evidence/npm-test.log"
+
+            - name: Preserve CPU test evidence
+              if: ${{ always() }}
+              uses: actions/upload-artifact@v7
+              with:
+                  name: cpu-test-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.node-version }}
+                  path: ${{ runner.temp }}/ci-evidence/
+                  if-no-files-found: warn
+                  retention-days: 14
 
     build:
         name: Build

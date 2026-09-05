@@ -8,6 +8,22 @@ Use [`package.json`](../../package.json) for repository scripts and [`selection-
 
 `npm test` is the integrated TypeScript typecheck and repository test gate, including Companion tests; there is no standalone typecheck script. Use runner-supported targeting when available. Install dependencies or initialize submodules only when affected work requires them. Disable browser network and service-worker caching when manually validating rebuilt frontend code.
 
+### CPU CI prerequisites
+
+The base Companion package intentionally has no dependencies. The full test suite nevertheless exercises CPU tensor, binary snapshot, image, and spatial validation paths that require the existing locked `renderer` extra (including torch, NumPy, and Pillow). A fresh base-only environment is not a valid full-suite test environment.
+
+On a CPU-only CI/development host, reproduce the workflow from the repository root:
+
+```sh
+npm ci
+BUILD_NO_CUDA=1 uv sync --project selection-service-companion --locked --python 3.12.12 --extra renderer
+npm test
+```
+
+`BUILD_NO_CUDA=1` applies only to installation on that CPU host: it defers gsplat extension compilation, without changing the pinned source, torch wheel, or `uv.lock`. It does not make a CPU run a renderer qualification. Do not carry this CPU setup over as the operator's GPU installation procedure; use the Companion README for that procedure. Keep GPU/model prerequisites and existing optional skips explicit; never skip an applicable required GPU test to turn a qualification green.
+
+The CI workflow records the actual checkout SHA (the merge SHA for a PR), head/base identities, lock hashes, installed Python packages, raw integrated test output, and exit code in its `cpu-test-*` artifact. Read that artifact when a log summary disagrees with the checked-out source. A missing exit-code file means the Test step did not finish or was not reached, not that it passed. Test failures remain failures through `pipefail`; Build and Lint/locales are separate jobs. Do not claim branch protection or locked-GPU success from these CPU checks.
+
 ## Choose validation by affected seam
 
 The following paths are alternatives unless a change spans multiple seams; they are not a cumulative checklist for every edit.

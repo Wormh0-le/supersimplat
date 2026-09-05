@@ -1,6 +1,6 @@
 # Agent Guidance Structure
 
-The root `AGENTS.md` is a small routing index. Task-specific rules live here so an agent loads only the branch relevant to its work.
+The root `AGENTS.md` routes repository-specific guidance. General operating policy belongs in the global contract; task-specific project rules live here.
 
 ## Layout
 
@@ -10,6 +10,7 @@ docs/agents/
 ├── README.md
 ├── domain.md
 ├── architecture.md
+├── code-discovery.md
 ├── lifecycle-and-protocol.md
 ├── editor-typescript.md
 ├── companion-python.md
@@ -19,17 +20,16 @@ docs/agents/
 ├── chinese-writing.md
 ├── issue-tracker.md
 └── triage-labels.md
-.codex/
-└── codebase-memory-mcp.md
 ```
 
 ## Placement rules
 
-- Keep only the project description, mandatory cross-task commands, and context pointers in root `AGENTS.md`.
+- Keep the project description, essential scope boundaries, and task triggers in root `AGENTS.md`.
+- Keep guidance model-independent. Align with the global contract through project-specific constraints rather than copying its defaults or adding model-specific rituals.
 - Put a rule in exactly one task-specific file; link across files instead of repeating it.
 - Write every root pointer as a trigger: name the kind of task that requires the linked file.
 - Prefer repository configuration and `--help` output over copied command catalogs unless the copy records a project-specific constraint.
-- Put stable domain vocabulary in root `CONTEXT.md`.
-- Put current AI Select v2.0 authority, status, dependencies, decomposition, and readiness in GitHub [Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37) and its exact child Issues.
-- Treat the pre-migration specifications, ADRs, feature documents, tickets, reviews, benchmarks, and `.scratch` records as immutable Git history at merge commit [`504e888`](https://github.com/Wormh0-le/supersimplat/tree/504e8885b87575761dc2e367e520b7dfba46884b), reached through links in #37. Do not restore them as a second current control plane.
+- Follow [Documentation and traceability](documentation.md) for artifact ownership and [Domain authority](domain.md) for specification precedence and implementation eligibility. Keep mutable status in the owning Issues.
 - `docs/agents/**` is the only retained `docs/**` subtree. Add a new guidance file only when a distinct task branch cannot be routed clearly to an existing file.
+
+When changing guidance, check the affected task routes, local link targets, and consistency with the global contract. Preserve project invariants and distinguish a required gate from workflow advice.

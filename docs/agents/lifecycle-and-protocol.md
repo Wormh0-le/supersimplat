@@ -1,6 +1,6 @@
 # Lifecycle and Protocol Invariants
 
-Amended v2.0 is the target; implemented v1.3 remains runtime until an explicit reviewed cutover. Before implementing v2 work, read [Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37) and the exact child stage Issue. Parent Issues #38–#47 are never sufficient implementation authorization; the child must be linked from #37 and labeled `ready-for-agent`.
+These are amended v2.0 target invariants. Follow [Domain authority](domain.md) for implementation eligibility and the distinction between target and shipped behavior.
 
 ## Acquisition identities and Journal
 

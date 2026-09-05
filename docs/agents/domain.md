@@ -11,7 +11,13 @@ Read this file for AI Select behavior, terminology, scope, or current authority.
 5. Root `CONTEXT.md` for stable vocabulary where it does not conflict with #37 or the relevant current Issue.
 6. Affected code, tests, runtime locks, and benchmark evidence.
 
-The shipped runtime remains implemented v1.3 until an explicit reviewed cutover. Parent Issues #38–#47 are not implementation-ready. Root `CONTEXT.md` still contains historical v2 draft passages pending controlled consolidation; where they conflict with accepted Amendments or current Issues, the authority order above wins.
+The production baseline remains v1.3 until each explicit qualified v2 cutover. Establish which stages have landed and which gates are active from current Issues and affected code; a target specification does not establish shipped behavior. Where historical draft passages in `CONTEXT.md` conflict with accepted Amendments or current Issues, the authority order above wins.
+
+## Implementation gate
+
+Before implementing a v2 stage, read #37, the relevant parent map, and the exact child Issue, including comments, dependencies, migration boundary, and validation contract. Implement only an open child linked from #37, labeled `ready-for-agent`, and eligible at the current frontier with its blockers closed or explicitly resolved by accepted authority.
+
+`ready-for-agent` describes contract completeness, not dependency readiness. Parent Issues #38–#47 are capability maps even when they carry that label; execute their eligible child stages. Follow [GitHub workflow](issue-tracker.md) for claiming and closing work. If the gate is unmet or authority conflicts, identify the specific blocker and continue independent authorized work.
 
 ## Stable domain model
 

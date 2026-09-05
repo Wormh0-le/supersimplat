@@ -4,7 +4,7 @@ Read this file for runtime ownership, cross-runtime contracts, repository seams,
 
 ## Runtime baseline
 
-The amended v2.0 architecture indexed by [Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37) is the target. The code remains the implemented v1.3 runtime until exact child stages land through explicit capability, schema, policy, production-identity, calibration, and cutover gates.
+Follow [Domain authority](domain.md) for the target specification, implementation gate, and production baseline. Use current stage evidence and code to establish active capability, schema, policy, production-identity, calibration, and cutover gates.
 
 ## Runtime ownership
 

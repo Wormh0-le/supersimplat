@@ -2,33 +2,11 @@
 
 Read this file for project commands, validation scope, builds, GPU evidence, or completion claims. Apply the global test-authoring policy; this file adds only SuperSimPlat-specific checks.
 
-## Commands
+## Command authority
 
-Install browser dependencies:
+Use [`package.json`](../../package.json) for repository scripts and [`selection-service-companion/README.md`](../../selection-service-companion/README.md) for the locked renderer/CUDA/SAM environment and installation procedure.
 
-```sh
-npm ci
-```
-
-Initialize submodules only when affected work requires them:
-
-```sh
-git submodule update --init --recursive
-```
-
-Run the development server with `npm run develop`, then open `http://localhost:3000`. Disable browser network and service-worker caching when manually validating rebuilt frontend code.
-
-Available repository gates are:
-
-```sh
-npm run lint
-npm run lint:locales
-npm test
-npm run build
-npm run test:companion
-```
-
-`npm test` is the repository-level TypeScript typecheck/test gate and includes Companion tests. Use runner-supported targeting when available; do not invent unsupported scripts. For renderer, CUDA, Generated View, Evidence/Lifting, or SAM work, use the locked environment documented in `selection-service-companion/README.md`.
+`npm test` is the integrated TypeScript typecheck and repository test gate, including Companion tests; there is no standalone typecheck script. Use runner-supported targeting when available. Install dependencies or initialize submodules only when affected work requires them. Disable browser network and service-worker caching when manually validating rebuilt frontend code.
 
 ## Choose validation by affected seam
 

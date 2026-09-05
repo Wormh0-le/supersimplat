@@ -1,32 +1,31 @@
 # Lifecycle and Protocol Invariants
 
-These are amended v2.0 target invariants. Follow [Domain authority](domain.md) for implementation eligibility and the distinction between target and shipped behavior.
+Read [Domain authority](domain.md) for current scope and the distinction between target behavior and shipped implementation. The retained Q10/Q11 user contract lives in Issue #37.
 
-## Acquisition identities and Journal
+## Requests and bounded acquisition
 
-- Preserve endpoint attempt IDs under Series → Attempt → Iteration.
-- Browser owns the append-only Decision Journal and deterministic budget transitions.
-- Same-attempt replay never reranks or debits again; fresh retry uses new identity and budget.
-- Cancel closes the Acquisition Attempt publication gate immediately; late results are discarded.
-- Suspend resumes the same Attempt only from an exact compatible Journal boundary with remaining budget.
-- Continue Acquisition is a fresh Attempt under the current Series cap.
+Bind requests/results to the actual target, dependency/input revision, relevant View/artifacts, and endpoint attempt identity. Accept a result only while the current controller still expects that exact work. Exact duplicate publication is idempotent; conflicting duplicates fail closed. Keep accepted artifacts immutable.
 
-## Candidate publication
+Browser-owned serial control may use current immutable state, a request/result index, concrete counters, and an ordinary exportable event log. A full hash-chained Decision Journal, generic prepaid cost ledger, and exact historical-run replay after cache loss are not first-release requirements.
 
-- Candidate publication consumes one immutable Candidate Publication Snapshot.
-- Eligibility requires exact current Stable observations/Evidence, converged non-oscillating Consensus, current Scope with no material delta, current readiness/policies, and complete production identity.
-- Only eligible `Ready + ready-low-gain` auto-publishes.
-- Forced-terminal Ready requires `Use Ready Candidate`; eligible Limited requires `Use Limited Candidate`.
-- Not Ready, scope-advanced, unresolved Scope-budget exhaustion, non-converged, oscillating, stale, Suspended, incomplete, and late results cannot publish.
-- Explicit Use actions are idempotent Candidate Publication Attempts and do not recompute.
-- Re-Lift recomputes exact current Stable inputs and never restarts acquisition.
-- Candidate publication is atomic and never self-applies Native Selection.
+Bound successful observations, total attempts including failures, retries, any enabled refinement/recompute, and cumulative work across Continue. Duplicate delivery must not consume twice. Actual latency and timeout support diagnostics/safe stopping, not transient semantic reranking.
 
-## Prior Candidate and application
+Cancel closes the running attempt's mutation and automatic-publication gates immediately; transport cancellation is best effort. Late results cannot revive it. Preserve independently valid completed artifacts and the prior inspectable Candidate.
 
-- Starting acquisition alone does not stale a prior Candidate.
-- While an Attempt runs, the Candidate remains inspectable but Set/Add/Remove/Intersect from it are temporarily blocked.
-- A bound Stable observation, Participation, Scope, dependency, or policy change applies normal staleness.
-- Cancel may restore application of a still-current prior Candidate.
+Pause precedes authoritative editing. One-click auto-Pause retains and revalidates the original intent, executes it once at a safe boundary, and remains paused. Passive inspection does not pause. Resume requires compatible unchanged input, retained execution state, and remaining limits; changed input or terminal recovery uses an explicit fresh Continue attempt. Continue never resets cumulative protection into unbounded work.
 
-Stable Mask, Participation, raw Evidence, Scope, Consensus, Candidate, and Native Selection remain distinct authorities.
+Cache loss or incompatible restoration may require a diagnosed stop and a new explicit attempt. Do not call new computation an exact Resume. Preserve existing exact dependency/Undo restoration where it is actually supported; never remap stale artifacts to make recovery appear successful.
+
+## Candidate publication and application
+
+Publication consumes a complete immutable snapshot of exact current qualified computation and Stable inputs. Scope, roles, Evidence, readiness, and policy/runtime identity must agree. A development-only single-pass result has no production publication authority. If an iterative solver is enabled, non-convergence or oscillation remains ineligible; never invent a converged flag for another method.
+
+Only eligible `Ready + ready-low-gain` normal success auto-publishes. Eligible forced Ready and Limited require distinct `Use Ready Candidate` and `Use Limited Candidate` consent. Use actions bind the existing snapshot, are idempotent, and do not recompute. Not Ready, stale, suspended, incomplete, late, or Scope-mismatched results cannot publish regardless of user consent.
+
+Re-Lift recomputes exact current Stable inputs; it neither accepts an old snapshot nor starts/resumes acquisition. Eligible Ready may publish as that user-requested computation; Limited still requires separate consent.
+
+Only a complete still-compatible snapshot committed before Cancel may later support a new explicit publication attempt. Cancel itself and post-Cancel work never create publication authority. Replacement is atomic and failures preserve the previous result.
+
+Starting acquisition alone does not stale the prior Candidate. It remains inspectable while its Native Set/Add/Remove/Intersect operations are temporarily blocked. A real bound-input change causes ordinary staleness. Cancel or a safe terminal boundary restores application only if the Candidate remains exact current.
+
+Candidate publication never applies Native Selection or changes Native EditHistory. Stable Mask, Participation, raw Evidence, derived Scope/Consensus, Candidate, and Native Selection remain distinct.

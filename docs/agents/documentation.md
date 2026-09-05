@@ -1,29 +1,26 @@
 # Project Documentation and Traceability
 
-Read this file when changing agent guidance, `CONTEXT.md`, GitHub Issue authority, accepted decisions, comments, historical links, or traceability. For guidance placement and maintenance, also read [Agent guidance structure](README.md).
+Read this file when changing guidance, vocabulary, current planning, or historical records. Also read [Agent guidance structure](README.md).
 
-## Artifact ownership
+## Ownership
 
-- Root `CONTEXT.md` owns stable domain vocabulary. It does not own implementation status, readiness, counts, paths, numeric calibration, or active decomposition.
-- GitHub [Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37) owns the current AI Select v2.0 authority index, decision status, parent dependency frontier, implementation gate, and immutable links to the accepted specification record.
-- Parent Issues #38–#47 own capability maps and their decomposition frontiers.
-- Exact child Issues own active TDD stages, inputs/outputs, dependencies, migration boundary, validation, and readiness. [Domain authority](domain.md) defines implementation eligibility.
-- Explicitly accepted Issue comments may record a new decision; reconcile the owning Issue body and #37 when the durable status or graph changes.
-- Commit [`504e888`](https://github.com/Wormh0-le/supersimplat/tree/504e8885b87575761dc2e367e520b7dfba46884b) is the immutable migration snapshot for removed specifications, ADRs, feature documents, tickets, reviews, benchmarks, and `.scratch` evidence.
-- `docs/agents/**` owns agent guidance only. Do not recreate a second current spec/ticket/ADR control plane under `docs/**`.
+- [Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37) owns the current product contract, accepted simplification, retained user behavior, outcome roadmap, rolling queue, and explicit supersedes mapping.
+- Active queue issues own concrete scope, blockers, necessary inputs, acceptance evidence, and implementation status. Outcome tracks and conditional research are not a second executable backlog.
+- Root `CONTEXT.md` owns stable vocabulary, not task counts, readiness, production parameter values, release status, or detailed implementation plans.
+- `docs/agents/**` owns task-specific agent guidance. `.interface-design/system.md` owns reusable interface/layout rules.
 
-Update only the artifact whose owned claim changed. Do not edit #37 or a capability Issue for a code-only detail that leaves its contract, graph, calibration, or readiness unchanged.
+Do not restore deleted specs, ADRs, reviews, tickets, or `.scratch` as a parallel current control plane. Historical specifications remain reachable through immutable commit `504e8885b87575761dc2e367e520b7dfba46884b`; the pre-simplification repository is `b76aa99c0545988f3807677105052260e476cbce`.
 
-## Feature and decision lifecycle
+## Lifecycle
 
-- New product or architectural decisions belong in the narrowest owning Issue and must be linked from #37 when they change the global map.
-- Stable terminology may be consolidated into `CONTEXT.md`; do not copy active decomposition or mutable status into the glossary.
-- Preserve historical acceptance records through immutable commit links rather than restoring deleted planning files.
-- For authorized feature closeout, close the exact child Issue with evidence, update the parent checklist/frontier, and update #37 only when parent/global status changed.
-- If implementation reveals a contract conflict, stop at the fail-closed boundary and reopen the decision in the owning Issue instead of silently changing code or glossary text.
+A material decision names the problem, chosen simplification, retained behavior, and explicit supersedes scope in #37. Update the owning active slice and relevant guidance, not every historical document. Do not let an old specification override a later accepted scope decision.
 
-For local comments, use comments only for non-obvious authority, identity, atomicity, fail-closed behavior, or trust boundaries. Link to the owning Issue rather than duplicating broad rationale.
+Superseded unimplemented issues close as `not_planned`, with a title routing to their replacement in #37 and no ready label. Their original bodies/comments may remain intact for traceability; historical ready/blocker wording is not current authority. Preserved Q10/Q11 behavior remains required even when its original planning ticket is archived. Do not mark cancelled plans completed or erase previous acceptance evidence.
+
+Feature completion needs evidence, not a closed dependency alone. Update the completed slice and current queue; do not maintain the retired parent graphs. Distinguish code review, actual test execution, runtime qualification, and permission to activate production.
 
 ## Validation
 
-Check affected domain terminology against `CONTEXT.md` and current Issue authority; for guidance-only changes, check rule ownership, task routing, and consistency with the global contract. Verify changed links, commands, schemas, examples, Issue relationships, labels, and acceptance evidence as applicable. Follow [Project verification](execution-and-verification.md) for validation scope.
+For content-only changes, check current authority, retained behaviors, links, terminology, Issue status/replacement mapping, label meaning, and consistency with the active queue. Check the diff contains no unintended executable change. Use [Project verification](execution-and-verification.md); do not claim runtime testing from documentation checks.
+
+Keep rationale short and tied to the actual failure or user outcome. Avoid adding a new process document for every internal implementation step.

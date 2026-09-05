@@ -1,15 +1,15 @@
 # Triage Labels
 
-The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker.
+Map skill triage roles to these repository labels.
 
-| Label in mattpocock/skills | Label in our tracker | Meaning                                  |
-| -------------------------- | -------------------- | ---------------------------------------- |
-| `needs-triage`             | `needs-triage`       | Maintainer needs to evaluate this issue  |
-| `needs-info`               | `needs-info`         | Waiting on reporter for more information |
-| `ready-for-agent`          | `ready-for-agent`    | Fully specified, ready for an AFK agent  |
-| `ready-for-human`          | `ready-for-human`    | Requires human implementation            |
-| `wontfix`                  | `wontfix`            | Will not be actioned                     |
+| Skill role | Repository label | Meaning |
+| --- | --- | --- |
+| `needs-triage` | `needs-triage` | Scope or disposition still needs evaluation. |
+| `needs-info` | `needs-info` | A concrete required input is missing. |
+| `ready-for-agent` | `ready-for-agent` | Specified, open, in the current queue, unblocked, and inputs available. |
+| `ready-for-human` | `ready-for-human` | The next executable step requires a human. |
+| `wontfix` | `wontfix` | The requested work will not be pursued. |
 
-When a skill mentions a role, use the corresponding label string from this table.
+Prepared/blocked work is not ready merely because its contract is detailed. Record its blockers in the body and remove `ready-for-agent`. Roadmap outcomes and conditional research remain unlabelled as ready.
 
-Edit the right-hand column to match whatever vocabulary the repository actually uses.
+A superseded plan closes with reason `not_planned` and a replacement pointer, not `completed`; its useful requirements may be retained under the new owner. Completed acceptance records remain historical evidence. Do not use old closed issues carrying historical ready text as implementation permission.

@@ -1,34 +1,35 @@
 # AI Select Domain Authority
 
-Read this file for AI Select behavior, terminology, scope, or current authority.
+Read this file for behavior, terminology, scope, or implementation eligibility.
 
-## Authority order
+## Current authority
 
-1. Final Spec v2.0 Amendments 009→001 and the unamended v2.0 baseline, preserved through the immutable links in [Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37).
-2. #37 for current decision status, dependency frontier, implementation gates, and cutover state.
-3. The relevant parent capability Issue #38–#47 and any exact child stage Issue; an explicitly accepted decision comment may refine that Issue without silently rewriting history.
-4. Non-conflicting historical ADR decisions referenced by those Issues at migration snapshot [`504e888`](https://github.com/Wormh0-le/supersimplat/tree/504e8885b87575761dc2e367e520b7dfba46884b).
-5. Root `CONTEXT.md` for stable vocabulary where it does not conflict with #37 or the relevant current Issue.
-6. Affected code, tests, runtime locks, and benchmark evidence.
+[Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37) owns the accepted product contract, simplification decision, preserved Q10/Q11 behavior, and rolling queue. Read its current body before following an older document.
 
-The production baseline remains v1.3 until each explicit qualified v2 cutover. Establish which stages have landed and which gates are active from current Issues and affected code; a target specification does not establish shipped behavior. Where historical draft passages in `CONTEXT.md` conflict with accepted Amendments or current Issues, the authority order above wins.
+Authority order:
 
-## Implementation gate
+1. The accepted current decisions in #37, including its explicit supersedes and retained-behavior sections.
+2. The relevant active queue issue, its accepted decisions, actual blockers, and evidence.
+3. Unchanged product requirements and accepted implementation contracts retained by #37.
+4. Historical specifications, amendments, ADRs, and superseded issues for rationale only where compatible.
+5. Root `CONTEXT.md` for stable vocabulary and these task-specific guides.
 
-Before implementing a v2 stage, read #37, the relevant parent map, and the exact child Issue, including comments, dependencies, migration boundary, and validation contract. Implement only an open child linked from #37, labeled `ready-for-agent`, and eligible at the current frontier with its blockers closed or explicitly resolved by accepted authority.
+The 2026-09-05 simplification replaces mandatory execution of the old V2A–V2J graph. #39–#47 and #57–#112 are historical planning records; their retained ready/blocker/cutover wording does not authorize work. Completed #38 and #49–#56 retain their accepted history. A planning closure is not an implementation acceptance.
 
-`ready-for-agent` describes contract completeness, not dependency readiness. Parent Issues #38–#47 are capability maps even when they carry that label; execute their eligible child stages. Follow [GitHub workflow](issue-tracker.md) for claiming and closing work. If the gate is unmet or authority conflicts, identify the specific blocker and continue independent authorized work.
+Shipped behavior remains v1.3 until a qualified explicit cutover. Establish active behavior from affected code, current gates, and evidence, not from target-spec language or issue counts.
 
-## Stable domain model
+## Rolling implementation gate
 
-- Automatic bounded acquisition is the default; terminal or paused Expert Recovery retains Add Observation and Continue Acquisition.
-- Seed is a prior; Core, seed-independent Discovery Envelope, reversible component Frontier, and Context are distinct.
-- q/s Consensus is deterministic, bounded, regional, and non-executable.
-- View Utility uses a finite layered pool and a hybrid prospective probe; only the selected winner receives formal acquisition.
-- Browser owns Acquisition Series/Attempt/Iteration state, Decision Journal, and deterministic budgets.
-- Candidate publication uses two gates: exact Publication Eligibility plus Readiness/terminal/consent class.
-- Only eligible Ready-low-gain normal success auto-publishes; eligible forced Ready and Limited require explicit state-specific actions.
-- Re-Lift recomputes exact current Stable inputs and is not an alias for accepting an existing terminal snapshot.
-- A running Attempt may block Candidate application without making the prior Candidate stale.
-- Candidate and Native Selection remain separate; Candidate never self-applies.
-- Evidence/Workflow, Spatial Authoring, and Selection Application are responsibility layers inside one continuous editor workspace.
+Implement a feature slice only when it is open, listed in #37's current queue, labeled `ready-for-agent`, and actually unblocked with required inputs available. Read its body and comments before claiming it. Only the next few executable slices receive that label; roadmap outcomes, missing-data work, and conditional research do not.
+
+Keep a slice small and demonstrable through a real consumer. Internal TDD steps are not automatically separate issues. A blocked slice does not authorize reviving an old dependency graph or silently inventing fixtures, policies, or product behavior. State the concrete blocker and continue independent authorized work.
+
+Documentation, investigation, and expressly authorized maintenance do not need a new feature ticket. Follow [GitHub workflow](issue-tracker.md) for tracker writes and claims.
+
+## Scope discipline
+
+Preserve input identity, complete occlusion, unknown-versus-background semantics, seed-external discovery, atomic replacement, bounded work, late-result refusal, and explicit Native application. Preserve the accepted Candidate consent and Q11 interaction behavior.
+
+S1, sophisticated Reliability, iterative feedback, LOO, and elaborate Debt/hysteresis are conditional mechanisms, not a mandatory bundle. A new mechanism needs a concrete failure case and a minimal comparison showing value. Uniform-weight single-pass diagnostics remain a development/shadow baseline, not a production Candidate or a fake converged solver.
+
+Do not restore full hash-chain journals, generic resource-accounting frameworks, or cross-restart exact-run replay as default prerequisites. Simplification is not permission to weaken real protocol validation or existing accepted tensor-integrity proof.

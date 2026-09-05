@@ -1,29 +1,21 @@
 # GitHub Issue Workflow
 
-Read this file for issue operations, triage labels, PR identification, or Wayfinder work. Issues and PRDs live as GitHub issues. Prefer `gh` from the repository clone when available; otherwise use an exposed GitHub integration or read public authority through the browser. Reading authority and workflow guidance does not itself authorize publishing or changing tracker state.
+Issues are the product-planning and implementation-tracking surface. Prefer `gh` from a clone when available; otherwise use the exposed GitHub integration. Reading guidance does not itself authorize writes.
 
-## Repository conventions
+## Current queue
 
-- GitHub issues, not pull requests, are the feature-request, planning, and triage surface.
-- When a skill says to publish to the issue tracker, create an issue.
-- When a skill says to fetch a ticket, read the issue body, comments, labels, assignees, and blockers.
-- GitHub shares issue and PR numbers. For an ambiguous `#<n>`, try `gh pr view <n>` and fall back to `gh issue view <n>`.
-- Use CLI help for ordinary create/read/comment/edit/close syntax instead of maintaining a command catalog here.
+Read [Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37) and the exact active slice, including comments, labels, inputs, and blockers. Follow [Domain authority](domain.md). The retired V2A–V2J parent/child graph is not an executable queue.
 
-Use the canonical triage labels in [Triage labels](triage-labels.md).
+`ready-for-agent` means fully specified AND currently unblocked with the necessary inputs available. Only a few near-term slices receive it. Prepared/blocked work records its concrete blocker without this label. Do not label roadmap tracks or conditional experiments ready.
 
-## AI Select v2.0
+Claim one open, ready, unassigned slice listed in the current queue. A slice should explain the observable outcome, why it matters now, minimal end-to-end behavior, exclusions, evidence, and real blockers. Keep TDD and PRs small; do not create an issue for each constructor, reducer, or red/green step.
 
-- [Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37) is the current specification/Wayfinder entry point.
-- Apply the [Domain authority implementation gate](domain.md#implementation-gate); parent capability maps organize child execution regardless of their labels.
-- Decomposition creates small child Issues linked from #37 and their parent. The child body owns exact scope, dependencies, identities, migration, tests, evidence, and non-goals.
-- When GitHub native sub-issues or dependency edges are unavailable, retain `Part of #<map>` and `Blocked by: #<n>` in the body and keep #37's task list/dependency spine current.
+## Dependencies and closeout
 
-## Wayfinder
+Use native dependencies when available; otherwise state `Blocked by: #n` and any data/runtime prerequisite in the active issue. Avoid inferring implementation readiness merely because a predecessor was closed as superseded.
 
-- A map is one issue; its body owns Notes, Decisions-so-far, Fog, and the ordered frontier index.
-- A child ticket is a GitHub sub-issue. If sub-issues are unavailable, link it from the map task list and put `Part of #<map>` at the top of the child.
-- Use native issue dependencies for blocking. If unavailable, record `Blocked by: #<n>`.
-- Choose an open, unblocked, unassigned child from the owning map's current frontier; preserve any explicitly supported parallel frontiers.
-- Claim a ticket by assigning it to yourself.
-- For authorized closeout, follow [Documentation and traceability](documentation.md#feature-and-decision-lifecycle) and record durable evidence in the owning Issue.
+For authorized closeout, attach exact implementation/review/test evidence and update the current #37 queue. Use `completed` only for accepted delivery. Use `not_planned` for superseded plans, retain their history, route their titles to #37, and remove ready labels. See [Documentation and traceability](documentation.md).
+
+GitHub shares issue/PR numbers; resolve an ambiguous number before writing. Preserve in-flight work and unrelated labels/state. When an implementation reveals a research question, record the concrete counterexample and smallest comparison in #37 rather than resurrecting every old research ticket.
+
+Follow [Triage labels](triage-labels.md). New scopes or tracker writes must be authorized by the user or current accepted workflow.

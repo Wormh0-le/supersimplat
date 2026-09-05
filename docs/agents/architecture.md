@@ -1,66 +1,31 @@
 # Architecture and Change Routing
 
-Read this file for runtime ownership, cross-runtime contracts, repository seams, vendored code, or migration work.
-
-## Runtime baseline
-
-Follow [Domain authority](domain.md) for the target specification, implementation gate, and production baseline. Use current stage evidence and code to establish active capability, schema, policy, production-identity, calibration, and cutover gates.
+Read this file for runtime ownership, cross-runtime contracts, repository seams, or migration. [Domain authority](domain.md) determines current scope; old stage maps are historical.
 
 ## Runtime ownership
 
-### Browser editor
+The Browser owns the editor's product state: Current Target Context, Views, published Mask versions, Participation, Candidate presentation/publication, user-authored CameraBindings, acquisition control, and Native Selection/EditHistory. It validates Companion-derived membership and readiness; it does not invent a Candidate independently of valid computation. Generated observations must not move the Editor Camera.
 
-The Browser owns user-visible product state and orchestration:
+The operator-run Companion owns locked rendering, SAM inference, geometry hints, raw Evidence, and the computation actually adopted by the current slice. Derived caches are disposable and target/input-bound. The Companion does not autonomously advance a product session or become a persistent semantic-object database.
 
-- scene/splat state, Stable Gaussian IDs, and current-index mapping;
-- Current Target Context, AI Views, Mask versions, Participation, Candidate, and Uncertain presentation;
-- editor-authored CameraBindings and validation/registration of planner-produced bindings;
-- acquisition Series/Attempt/Iteration state, Decision Journal, progress/cancel presentation, and per-step request driving after their exact stages land;
-- Native Selection, EditHistory, and explicit Candidate application.
+Use one numerical-update owner, one Scope/result commit-and-recompute coordinator, and one domain-to-UI projection at each relevant boundary. Keep a small independent reference oracle where it tests correctness; do not rebuild the same production update in multiple modules to satisfy old ticket headings.
 
-The Browser may consume Companion-computed readiness and stop reasons, but it does not compute or publish a Candidate independently.
+## Existing seams
 
-### Selection Service Companion
+Browser AI Select code belongs under `src/ai-select/`; UI remains in its established surfaces. Reuse the serial controller/queue and explicit stale-result guards after checking their contracts. Native mutations stay in the existing selection/tool/EditHistory paths. Companion code and tests live under `selection-service-companion/`. Vendored sources under `thirdparty/` remain pinned.
 
-The Companion owns computation and disposable runtime state:
-
-- locked authoritative gsplat rendering and same-decision Direct Evidence;
-- SAM inference, TargetGeometryHint, Generated-View planning/rendering, and assessment;
-- v2 Seed, Consensus, Reliability, weighted aggregation, View Utility, and Lift Readiness computation after their child stages land;
-- request-scoped or loop-scoped derived caches keyed by exact target/dependency/policy identity;
-- capacity, cleanup, and reference Contributor diagnostics.
-
-Companion caches never become user-visible target persistence. No stage may introduce a Companion-autonomous product session without a new accepted decision in the owning Issue.
-
-## Repository seams
-
-- New browser product work converges under `src/ai-select/`.
-- Existing generated-view control is a migration source, not proof that the v2 loop contract is already implemented.
-- `src/ai-select/mask-service.ts` remains the compatibility boundary for the retained proposal wire envelope until an exact migration stage changes it.
-- Native mutation remains in existing selection/tool/edit-history paths.
-- Companion implementation and tests live under `selection-service-companion/`.
-- `thirdparty/sam3`, `thirdparty/gsplat`, and `thirdparty/splat_analyzer` are pinned upstream sources.
-
-Use code discovery before writing paths into durable guidance or an executable child Issue.
+The retained proposal wire envelope in `mask-service.ts` is a compatibility boundary, not permission to restore a multi-result product workflow. Discover actual callers and producers before defining a new interface or recording a path in an implementation issue.
 
 ## Cross-runtime changes
 
-When a Browser/Companion contract changes, inspect and update the complete vertical slice:
+Follow the whole exercised boundary: TypeScript domain and wire types, runtime validation, transport, Python parsing, computation/artifact construction, identity migration, and tests on both sides. Reject incompatible input rather than making one side permissive. Do not create transport schemas for internal arrays that have no Browser consumer.
 
-1. TypeScript domain/wire types;
-2. editor-side runtime validation and transport;
-3. Python route parsing and validation;
-4. Companion orchestration/state/artifact construction;
-5. schema and production-identity migration;
-6. TypeScript, Python, replay, and failure tests;
-7. the owning child Issue and #37 only when their contract, graph, calibration, or readiness changed.
+Prefer a small vertical slice with an actual input and inspectable output. Existing Scope/history machinery can be encapsulated; it need not be reimplemented by every consumer. Do not begin a wholesale rewrite merely to reduce line count.
 
-Both sides must fail closed. Do not make one side permissive to compensate for the other.
+## Migration and release
 
-## Migration discipline
+Keep development/reference/shadow identities separate from production. Preserve the existing path until the replacement is qualified. Coordinate product activation and rollback; internal capabilities must agree, but every helper does not need an independent product-level qualification framework.
 
-- Use tracer-bullet stages; do not implement a parent V2 capability Issue as one large change.
-- Preserve v1.3 production behavior behind explicit gates until the replacement stage is calibrated and promoted.
-- Experimental policy IDs do not satisfy production readiness.
-- Calibration, policy freeze, production-identity rotation, final cutover, rollback, and release qualification require explicit owners in #37 and the exact child graph.
-- Reuse Stable IDs, SceneSnapshot, authoritative RGB, Direct Evidence, model adapters, generated-view primitives, native selection/history, and benchmark infrastructure only after checking the current code contract.
+Real source/runtime/ABI changes still require corresponding validation and identity rotation. Never reinterpret old artifacts under new policy or mix q/s computed for an old Scope with new roles. A Scope change invalidates dependent results and requires recomputation by the single coordinator.
+
+Current request/state checks, bounded counters, and exportable diagnostics may implement lifecycle safety without a universal event-sourcing platform. Any stronger infrastructure promise must have a current requirement and evidence, not just a historical ticket.

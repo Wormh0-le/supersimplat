@@ -20,6 +20,24 @@ uv run --locked --extra renderer --extra sam3 selection-service install \
   --lock-file ./uv.lock
 ```
 
+`pyproject.toml` and `uv.lock` are the installation source of truth. The
+current renderer pin is gsplat `1.6.0` at Git revision
+`90d7b4b349e379ccf9ee6a8cef76aa40f48bb32e`. The first `uv sync` may compile
+gsplat's CUDA extension from source and can take a long time, especially on a
+low-resource machine. Keep the Companion `.venv` and uv's build cache so later
+installs can reuse them; a slow build is not a runtime qualification result.
+
+For CPU-only development or documentation checks, installation may defer the
+CUDA extension build:
+
+```sh
+BUILD_NO_CUDA=1 uv sync --python 3.12.12 --locked --extra renderer
+```
+
+This CPU setup is not a GPU renderer or #115 acceptance run. A GPU operator
+should use the normal locked command above and record the actual GPU/runtime
+facts when performing a real check.
+
 The `install` command hashes the supplied `uv.lock` and re-verifies that exact
 file before the Companion starts. It records the selected release and lock
 digest in the operator's local Companion state; it does not download a model
@@ -180,6 +198,15 @@ artifact.
 
 The operator supplies an already acquired checkpoint and a Model Manifest. The
 manifest's `checkpointDigest` must match the checkpoint's SHA-256 digest.
+
+Checkpoint acquisition, model files, and their local manifest are operator
+environment configuration. They are not downloaded or committed by this
+repository, and #115 does not add a separate model-version or model-hash test;
+the README command below is the complete installation entry point. The
+prepared #115 input bundle already contains the exported RGB/mask artifacts,
+so installing SAM3 or rerunning mask generation is not required to inspect
+that bundle. The required joint A/B human review remains an operator gate
+before the bundle can be treated as #115 acceptance input.
 
 ```sh
 uv run --locked --extra renderer --extra sam3 selection-service models install \

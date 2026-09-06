@@ -97,7 +97,6 @@ class CompanionControlPlaneTests(unittest.TestCase):
             capabilities["referenceCandidateReLift"]["runtimeBuildId"],
             "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
         )
-        self.assertEqual(capabilities["renderer"]["status"], "unavailable")
 
     def test_keeps_the_reference_point_adapter_out_of_production_capabilities(self) -> None:
         self.install_model(adapter_id="point-mask-v1", model_name="Point Mask v1")

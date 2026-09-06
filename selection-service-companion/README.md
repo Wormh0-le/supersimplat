@@ -23,10 +23,12 @@ uv run --locked --extra renderer --extra sam3 selection-service install \
 The `install` command hashes the supplied `uv.lock` and re-verifies that exact
 file before the Companion starts. It records the selected release and lock
 digest in the operator's local Companion state; it does not download a model
-or modify the editor. The renderer runtime is accepted only when the running
-process reports Python 3.12.12, PyTorch 2.11.0+cu128, CUDA 12.8, and gsplat
-1.5.3 installed from source commit
-`77ab983ffe43420b2131669cb35776b883ca4c3c`.
+or modify the editor. Renderer availability checks CUDA, importability, and Companion-local package
+ownership. It no longer rejects different Python/PyTorch/CUDA/gsplat versions,
+Git revisions, or an operator-registered lock merely for differing from the
+historical baseline. The installed lock is still hashed and reverified before
+startup. Availability does not qualify a different runtime for production
+Evidence or aggregation; record actual runtime facts with input exports.
 
 ## Render authoritative RGB with optional reference Contributor diagnostics
 

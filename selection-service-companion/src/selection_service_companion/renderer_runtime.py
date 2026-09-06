@@ -193,7 +193,7 @@ class CurrentProcessGsplatInspection:
 
 
 class GsplatRuntime:
-    """Validate the fixed first-release gsplat/CUDA runtime baseline."""
+    """Check installed renderer availability without enforcing historical versions."""
 
     def __init__(self, inspection: GsplatRuntimeInspection) -> None:
         self._inspection = inspection
@@ -209,38 +209,20 @@ class GsplatRuntime:
             return RendererRuntimeStatus.unavailable(
                 f"The locked gsplat/CUDA runtime supports {EXPECTED_OPERATING_SYSTEM} only."
             )
-        if facts.python_version != EXPECTED_PYTHON_VERSION:
-            return RendererRuntimeStatus.unavailable(
-                f"Python {EXPECTED_PYTHON_VERSION} is required for the locked gsplat/CUDA runtime."
-            )
         if facts.torch_inspection_error is not None:
             return RendererRuntimeStatus.unavailable(
                 f"PyTorch runtime inspection failed ({facts.torch_inspection_error})."
-            )
-        if facts.torch_version != EXPECTED_TORCH_VERSION:
-            return RendererRuntimeStatus.unavailable(
-                f"PyTorch {EXPECTED_TORCH_VERSION} is required for the locked gsplat/CUDA runtime."
             )
         if facts.gsplat_inspection_error is not None:
             return RendererRuntimeStatus.unavailable(
                 f"gsplat runtime inspection failed ({facts.gsplat_inspection_error})."
             )
-        if facts.cuda_version != EXPECTED_CUDA_VERSION or not facts.cuda_available:
+        if not facts.cuda_available or facts.cuda_version is None:
             return RendererRuntimeStatus.unavailable(
-                f"CUDA {EXPECTED_CUDA_VERSION} must be available to the locked gsplat runtime."
+                "CUDA must be available to the gsplat runtime."
             )
-        if facts.gsplat_version != EXPECTED_GSPLAT_VERSION:
-            return RendererRuntimeStatus.unavailable(
-                f"gsplat {EXPECTED_GSPLAT_VERSION} is required for the locked Companion runtime."
-            )
-        if _normalise_source_url(facts.gsplat_source_url) != EXPECTED_GSPLAT_SOURCE_URL:
-            return RendererRuntimeStatus.unavailable(
-                "gsplat must be installed from the locked Git source, not an unpinned local source."
-            )
-        if facts.gsplat_source_commit != EXPECTED_GSPLAT_SOURCE_COMMIT:
-            return RendererRuntimeStatus.unavailable(
-                "gsplat must be installed from the locked source commit."
-            )
+        if facts.torch_version is None or facts.gsplat_version is None:
+            return RendererRuntimeStatus.unavailable("PyTorch and gsplat must be installed.")
         for package_name, package_path in (
             ("PyTorch", facts.torch_package_path),
             ("gsplat", facts.gsplat_package_path),
@@ -252,7 +234,7 @@ class GsplatRuntime:
                 return RendererRuntimeStatus.unavailable(
                     f"{package_name} must be installed inside the Companion runtime; packages outside it are not used."
                 )
-        return RendererRuntimeStatus.ready(cuda_version=EXPECTED_CUDA_VERSION)
+        return RendererRuntimeStatus.ready(cuda_version=facts.cuda_version)
 
 
 @dataclass(frozen=True)

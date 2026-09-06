@@ -109,26 +109,12 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
             (
                 "missing CUDA",
                 replace(expected, cuda_available=False),
-                "CUDA 12.8",
+                "CUDA",
             ),
             (
                 "missing gsplat",
                 replace(expected, gsplat_version=None),
-                "gsplat 1.5.3",
-            ),
-            (
-                "different source commit",
-                replace(expected, gsplat_source_commit="different-commit"),
-                "locked source commit",
-            ),
-            (
-                "local source without immutable VCS identity",
-                replace(
-                    expected,
-                    gsplat_source_url="file:///workspace/thirdparty/gsplat",
-                    gsplat_source_commit=None,
-                ),
-                "locked Git source",
+                "gsplat must be installed",
             ),
             (
                 "SAM3 reference environment",
@@ -171,6 +157,14 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                 ]
                 self.assertEqual(capability["status"], "unavailable")
                 self.assertIn(expected_message, capability["message"])
+
+    def test_different_versions_and_source_are_available_without_claiming_old_cuda(self) -> None:
+        facts = replace(self.locked_runtime_facts(), python_version="3.13.1",
+                        torch_version="2.12.0", cuda_version="13.0", gsplat_version="1.6.0",
+                        gsplat_source_commit="operator-source", gsplat_source_url=None)
+        status = GsplatRuntime(StaticGsplatRuntimeInspection(facts)).status()
+        self.assertEqual(status.status, "ready")
+        self.assertEqual(status.cuda_version, "13.0")
 
     def test_default_readiness_inspects_the_current_companion_process(self) -> None:
         torch_module = SimpleNamespace(
@@ -297,7 +291,7 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
             self.assertEqual(capability["status"], "unavailable")
             self.assertIn("inspection failed", capability["message"])
 
-    def test_readiness_rejects_a_noncanonical_release_lock(self) -> None:
+    def test_readiness_accepts_an_operator_registered_release_lock(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             state = CompanionState(
                 Path(directory) / "state",
@@ -312,8 +306,7 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
 
             capability = state.capabilities(["https://editor.example"])["renderer"]
 
-            self.assertEqual(capability["status"], "unavailable")
-            self.assertIn("canonical Companion lock", capability["message"])
+            self.assertEqual(capability["status"], "ready")
 
 
 if __name__ == "__main__":

@@ -131,7 +131,6 @@ from .proposal_ranking import (
     decide_proposals,
 )
 from .renderer_runtime import (
-    EXPECTED_RENDERER_LOCK_DIGEST,
     RendererRuntime,
     current_renderer_runtime,
 )
@@ -8671,17 +8670,10 @@ class CompanionState:
         }
 
     def _renderer_capability(self, release: dict[str, str]) -> dict[str, Any]:
-        lock_identity_matches = release["lockDigest"] == EXPECTED_RENDERER_LOCK_DIGEST
         runtime = self.renderer_runtime.status()
         renderer = self.contributor_renderer
         renderer_capability: dict[str, Any]
-        if not lock_identity_matches:
-            renderer_capability = {
-                "id": "gsplat",
-                "status": "unavailable",
-                "message": "The installed release does not use the canonical Companion lock for this renderer baseline.",
-            }
-        elif runtime.status != "ready":
+        if runtime.status != "ready":
             renderer_capability = {
                 "id": "gsplat",
                 "status": "unavailable",

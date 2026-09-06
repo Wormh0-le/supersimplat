@@ -336,14 +336,6 @@ class PocRunRecordTests(unittest.TestCase):
                 value = {**value, "recordBindings": self.complete_bindings()}
             artifact.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
             artifacts[name] = artifact
-        lock_digest = "sha256:" + hashlib.sha256(
-            artifacts["dependencyLock"].read_bytes()
-        ).hexdigest()
-        runtime = json.loads(artifacts["runtimeManifest"].read_text(encoding="utf-8"))
-        runtime["release"] = {"lockDigest": lock_digest}
-        artifacts["runtimeManifest"].write_text(
-            json.dumps(runtime, sort_keys=True), encoding="utf-8"
-        )
         return artifacts
 
     def test_seals_a_complete_prediction_before_ground_truth_is_available(self) -> None:
@@ -778,8 +770,6 @@ class PocRunRecordTests(unittest.TestCase):
     def test_seals_a_preview_with_internal_generated_view_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            lock_file = root / "uv.lock"
-            lock_file.write_text("locked", encoding="utf-8")
             publication = SimpleNamespace(
                 bindings={"requestId": "request-1", "frameSetVersion": "frames-final"},
                 frame_set={"frameSetVersion": "frames-final"},
@@ -823,7 +813,6 @@ class PocRunRecordTests(unittest.TestCase):
                 },
                 model_manifest={"digest": "sha256:model"},
                 runtime_manifest={"gpu": "locked-gpu"},
-                dependency_lock=lock_file,
                 render_policy={"renderConfigVersion": "supersplat-effective-rgb-v1"},
                 correction_outcomes=[{"round": 0, "terminalState": "complete"}],
                 timing_and_vram={"previewSeconds": 1.25, "peakVramBytes": 1024},

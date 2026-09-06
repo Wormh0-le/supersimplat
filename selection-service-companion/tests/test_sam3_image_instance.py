@@ -419,8 +419,6 @@ class Sam3ImageInstanceAdapterTests(unittest.TestCase):
             'digest': 'sha256:manifest-v1',
             'adapterId': SAM3_IMAGE_INSTANCE_ADAPTER_ID,
             'runtimeConfigDigest': SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
-            'checkpointDigest': f'sha256:{"2" * 64}',
-            'sourceCommit': 'sam3-source-v1',
             'weightsPath': '/models/sam3-image.pt',
         }
         self.rgb_png = b'\x89PNG\r\n\x1a\nfake-rgb-bytes'

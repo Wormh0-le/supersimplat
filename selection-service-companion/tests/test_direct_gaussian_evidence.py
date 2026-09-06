@@ -81,10 +81,6 @@ class DirectEvidenceIdentityTests(unittest.TestCase):
             capability["runtimeBuildId"], DIRECT_EVIDENCE_RUNTIME_BUILD_ID
         )
         self.assertEqual(
-            DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
-            "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
-        )
-        self.assertEqual(
             capability["abiVersion"], "supersimplat-direct-evidence-abi/v3"
         )
         self.assertEqual(

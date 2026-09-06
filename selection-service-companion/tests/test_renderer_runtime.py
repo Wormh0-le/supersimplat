@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-import json
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -14,7 +13,6 @@ from selection_service_companion.direct_gaussian_evidence import (
     DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
 )
 from selection_service_companion.renderer_runtime import (
-    EXPECTED_RENDERER_LOCK_DIGEST,
     GsplatRuntime,
     GsplatRuntimeFacts,
     RendererRuntimeStatus,
@@ -37,13 +35,7 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
         return GsplatRuntimeFacts(
             environment_prefix=Path("/opt/supersplat/.venv"),
             operating_system="Linux",
-            python_version="3.12.12",
-            torch_version="2.11.0+cu128",
-            cuda_version="12.8",
             cuda_available=True,
-            gsplat_version="1.6.0",
-            gsplat_source_url="https://github.com/nerfstudio-project/gsplat.git",
-            gsplat_source_commit="90d7b4b349e379ccf9ee6a8cef76aa40f48bb32e",
             torch_package_path=Path(
                 "/opt/supersplat/.venv/lib/python3.12/site-packages/torch/__init__.py"
             ),
@@ -61,7 +53,7 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                 Path(directory) / "state",
                 contributor_renderer=StaticContributorRenderer({}),
                 renderer_runtime=StaticRendererRuntime(
-                    RendererRuntimeStatus.ready(cuda_version="12.8")
+                    RendererRuntimeStatus.ready()
                 ),
             )
             self.install_canonical_release(state)
@@ -71,14 +63,13 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                 {
                     "id": "gsplat",
                     "status": "ready",
-                    "cudaVersion": "12.8",
                     "rgbRendererVersion": "gsplat-direct-evidence-rgb/v1",
                     "rasterImplementationId": DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
                     "runtimeBuildId": DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
                 },
             )
 
-    def test_capabilities_verify_the_locked_gsplat_runtime_before_ready(self) -> None:
+    def test_capabilities_advertise_gsplat_after_runtime_availability_check(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             state = CompanionState(
                 Path(directory) / "state",
@@ -96,7 +87,6 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                 {
                     "id": "gsplat",
                     "status": "ready",
-                    "cudaVersion": "12.8",
                     "rgbRendererVersion": "gsplat-direct-evidence-rgb/v1",
                     "rasterImplementationId": DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
                     "runtimeBuildId": DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
@@ -113,7 +103,7 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
             ),
             (
                 "missing gsplat",
-                replace(expected, gsplat_version=None),
+                replace(expected, gsplat_package_path=None),
                 "gsplat must be installed",
             ),
             (
@@ -158,37 +148,15 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                 self.assertEqual(capability["status"], "unavailable")
                 self.assertIn(expected_message, capability["message"])
 
-    def test_different_versions_and_source_are_available_without_claiming_old_cuda(self) -> None:
-        facts = replace(self.locked_runtime_facts(), python_version="3.13.1",
-                        torch_version="2.12.0", cuda_version="13.0", gsplat_version="1.6.0",
-                        gsplat_source_commit="operator-source", gsplat_source_url=None)
-        status = GsplatRuntime(StaticGsplatRuntimeInspection(facts)).status()
-        self.assertEqual(status.status, "ready")
-        self.assertEqual(status.cuda_version, "13.0")
-
     def test_default_readiness_inspects_the_current_companion_process(self) -> None:
         torch_module = SimpleNamespace(
-            __version__="2.11.0+cu128",
             __file__="/opt/supersplat/.venv/lib/python3.12/site-packages/torch/__init__.py",
-            version=SimpleNamespace(cuda="12.8"),
             cuda=SimpleNamespace(is_available=lambda: True),
         )
         gsplat_distribution = SimpleNamespace(
-            version="1.6.0",
             locate_file=lambda name: Path(
                 "/opt/supersplat/.venv/lib/python3.12/site-packages"
             ),
-            read_text=lambda name: json.dumps(
-                {
-                    "url": "https://github.com/nerfstudio-project/gsplat.git",
-                    "vcs_info": {
-                        "vcs": "git",
-                        "commit_id": "90d7b4b349e379ccf9ee6a8cef76aa40f48bb32e",
-                    },
-                }
-            )
-            if name == "direct_url.json"
-            else None,
         )
 
         def import_runtime_module(name: str):
@@ -203,7 +171,6 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as directory,
             patch("importlib.metadata.distribution", return_value=gsplat_distribution),
-            patch("platform.python_version", return_value="3.12.12"),
             patch("sys.prefix", "/opt/supersplat/.venv"),
             patch("importlib.import_module", side_effect=import_runtime_module),
         ):
@@ -217,7 +184,6 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                 {
                     "id": "gsplat",
                     "status": "ready",
-                    "cudaVersion": "12.8",
                     "rgbRendererVersion": "gsplat-direct-evidence-rgb/v1",
                     "rasterImplementationId": DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
                     "runtimeBuildId": DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
@@ -226,34 +192,21 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
 
     def test_readiness_rejects_a_shadowed_gsplat_module(self) -> None:
         torch_module = SimpleNamespace(
-            __version__="2.11.0+cu128",
             __file__="/opt/supersplat/.venv/lib/python3.12/site-packages/torch/__init__.py",
-            version=SimpleNamespace(cuda="12.8"),
             cuda=SimpleNamespace(is_available=lambda: True),
         )
         gsplat_module = SimpleNamespace(
             __file__="/workspace/thirdparty/sam3/.venv/lib/python3.12/site-packages/gsplat/__init__.py"
         )
         gsplat_distribution = SimpleNamespace(
-            version="1.6.0",
             locate_file=lambda name: Path(
                 "/opt/supersplat/.venv/lib/python3.12/site-packages"
-            ),
-            read_text=lambda name: json.dumps(
-                {
-                    "url": "https://github.com/nerfstudio-project/gsplat.git",
-                    "vcs_info": {
-                        "vcs": "git",
-                        "commit_id": "90d7b4b349e379ccf9ee6a8cef76aa40f48bb32e",
-                    },
-                }
             ),
         )
 
         with (
             tempfile.TemporaryDirectory() as directory,
             patch("importlib.metadata.distribution", return_value=gsplat_distribution),
-            patch("platform.python_version", return_value="3.12.12"),
             patch("platform.system", return_value="Linux"),
             patch("sys.prefix", "/opt/supersplat/.venv"),
             patch(
@@ -290,24 +243,6 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
 
             self.assertEqual(capability["status"], "unavailable")
             self.assertIn("inspection failed", capability["message"])
-
-    def test_readiness_accepts_an_operator_registered_release_lock(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            state = CompanionState(
-                Path(directory) / "state",
-                contributor_renderer=StaticContributorRenderer({}),
-                renderer_runtime=StaticRendererRuntime(
-                    RendererRuntimeStatus.ready(cuda_version="12.8")
-                ),
-            )
-            arbitrary_lock = Path(directory) / "uv.lock"
-            arbitrary_lock.write_text("not the release lock\n", encoding="utf-8")
-            state.install_release("0.1.0", arbitrary_lock)
-
-            capability = state.capabilities(["https://editor.example"])["renderer"]
-
-            self.assertEqual(capability["status"], "ready")
-
 
 if __name__ == "__main__":
     unittest.main()

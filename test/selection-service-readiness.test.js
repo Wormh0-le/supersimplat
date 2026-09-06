@@ -34,7 +34,6 @@ const {
 
 const editorOrigin = 'https://editor.example';
 const activeModelDigest = 'sha256:model-v1';
-const checkpointDigest = `sha256:${'4'.repeat(64)}`;
 const runtimeConfigDigest = `sha256:${'5'.repeat(64)}`;
 const runtimeBuildId =
     'sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f';
@@ -73,14 +72,11 @@ const productionIdentity = () => {
                         adapterId: 'sam3-image-instance/v1',
                         digest: activeModelDigest,
                         modelName: 'SAM 3 Image Instance',
-                        checkpointDigest,
-                        sourceCommit: 'sam3-source-commit',
                         runtimeConfigDigest,
                         weightsBundled: false
                     })
                 )
                 .digest('hex')}`,
-            checkpointDigest,
             runtimeConfigDigest
         },
         prompt: {
@@ -161,7 +157,6 @@ const capabilities = (overrides = {}) => ({
     renderer: {
         id: 'gsplat',
         status: 'ready',
-        cudaVersion: '12.8',
         rgbRendererVersion: 'gsplat-direct-evidence-rgb/v1',
         rasterImplementationId: 'supersimplat-gsplat-direct-evidence/v1',
         runtimeBuildId: runtimeBuildId
@@ -188,9 +183,6 @@ const capabilities = (overrides = {}) => ({
             'sha256:dd40059d5bdd9fa9a06e6a9752f77775084ca1924878bf7a3c4504a46b89242e',
         abiVersion: 'supersimplat-direct-evidence-abi/v3',
         runtimeBuildId: runtimeBuildId,
-        torchVersion: '2.11.0+cu128',
-        cudaVersion: '12.8',
-        gsplatSourceCommit: '90d7b4b349e379ccf9ee6a8cef76aa40f48bb32e',
         supportedComputeCapabilities: ['8.9'],
         accumulation: 'global-atomic-baseline',
         buildFlags: [
@@ -222,8 +214,6 @@ const capabilities = (overrides = {}) => ({
         digest: activeModelDigest,
         adapterId: 'sam3-image-instance/v1',
         modelName: 'SAM 3 Image Instance',
-        checkpointDigest,
-        sourceCommit: 'sam3-source-commit',
         runtimeConfigDigest,
         weightsBundled: false,
         initialized: true

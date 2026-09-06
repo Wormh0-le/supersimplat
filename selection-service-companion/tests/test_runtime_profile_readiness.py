@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -84,7 +83,6 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
     ) -> dict[str, object]:
         weights = self.directory / f"{digest.replace(':', '-')}.pt"
         weights.write_bytes(digest.encode("utf-8"))
-        checkpoint_digest = hashlib.sha256(weights.read_bytes()).hexdigest()
         manifest = self.directory / f"{digest.replace(':', '-')}.json"
         manifest.write_text(
             json.dumps(
@@ -92,8 +90,6 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
                     "digest": digest,
                     "adapterId": adapter_id,
                     "modelName": f"Historical {digest}",
-                    "checkpointDigest": f"sha256:{checkpoint_digest}",
-                    "sourceCommit": "historical-source",
                     "licenseName": "test",
                     "licenseUrl": "https://example.invalid/license",
                     "runtimeConfigDigest": runtime_config_digest,
@@ -213,7 +209,6 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
         renderer = {
             "id": "gsplat",
             "status": "ready",
-            "cudaVersion": "12.8",
             "rgbRendererVersion": "gsplat-direct-evidence-rgb/v1",
             "rasterImplementationId": direct["rasterImplementationId"],
             "runtimeBuildId": direct["runtimeBuildId"],

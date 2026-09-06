@@ -17,12 +17,6 @@ from typing import Any, Final, Iterable, Sequence
 
 from .depth_moments import validate_depth_moment_tensor
 from .masking import MaskSessionError
-from .renderer_runtime import (
-    EXPECTED_CUDA_VERSION,
-    EXPECTED_GSPLAT_SOURCE_COMMIT,
-    EXPECTED_RENDERER_LOCK_DIGEST,
-    EXPECTED_TORCH_VERSION,
-)
 
 
 DIRECT_EVIDENCE_ABI_VERSION: Final = "supersimplat-direct-evidence-abi/v3"
@@ -51,10 +45,6 @@ def _runtime_build_id() -> str:
     payload = "|".join((
         DIRECT_EVIDENCE_ABI_VERSION,
         DIRECT_EVIDENCE_SOURCE_REVISION,
-        EXPECTED_RENDERER_LOCK_DIGEST,
-        EXPECTED_TORCH_VERSION,
-        EXPECTED_CUDA_VERSION,
-        EXPECTED_GSPLAT_SOURCE_COMMIT,
         "cc=8.9",
         ",".join(DIRECT_EVIDENCE_BUILD_FLAGS),
     ))
@@ -191,9 +181,6 @@ def direct_evidence_capability() -> dict[str, object]:
         "expectedSourceRevision": DIRECT_EVIDENCE_SOURCE_REVISION,
         "abiVersion": DIRECT_EVIDENCE_ABI_VERSION,
         "runtimeBuildId": DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
-        "torchVersion": EXPECTED_TORCH_VERSION,
-        "cudaVersion": EXPECTED_CUDA_VERSION,
-        "gsplatSourceCommit": EXPECTED_GSPLAT_SOURCE_COMMIT,
         "supportedComputeCapabilities": [
             f"{major}.{minor}"
             for major, minor in DIRECT_EVIDENCE_SUPPORTED_COMPUTE_CAPABILITIES

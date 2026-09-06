@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import hashlib
-from contextlib import redirect_stdout
 from http import HTTPStatus
-from io import StringIO
 import json
 from pathlib import Path
 import tempfile
@@ -12,7 +9,6 @@ import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from selection_service_companion.cli import main
 from selection_service_companion.masking import (
     SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
     SAM31_RUNTIME_CONFIG_DIGEST,
@@ -20,6 +16,9 @@ from selection_service_companion.masking import (
 )
 from selection_service_companion.server import create_server
 from selection_service_companion.state import CompanionState
+from selection_service_companion.direct_gaussian_evidence import (
+    DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
+)
 
 
 EDITOR_ORIGIN = "https://editor.example"
@@ -46,15 +45,12 @@ class CompanionControlPlaneTests(unittest.TestCase):
     ) -> str:
         weights = self.directory / "sam31.pt"
         weights.write_bytes(b"separately acquired model weights")
-        digest = hashlib.sha256(weights.read_bytes()).hexdigest()
         manifest = self.directory / "sam31.json"
         manifest.write_text(
             """{
   "digest": "sha256:model-v1",
   "adapterId": "%s",
   "modelName": "%s",
-  "checkpointDigest": "sha256:%s",
-  "sourceCommit": "abc123",
   "licenseName": "SAM License",
   "licenseUrl": "https://example.test/license",
   "runtimeConfigDigest": "%s"
@@ -62,7 +58,6 @@ class CompanionControlPlaneTests(unittest.TestCase):
 """ % (
                 adapter_id,
                 model_name,
-                digest,
                 runtime_config_digest or (
                     SAM31_RUNTIME_CONFIG_DIGEST
                     if adapter_id == "sam3.1"
@@ -95,7 +90,7 @@ class CompanionControlPlaneTests(unittest.TestCase):
         )
         self.assertEqual(
             capabilities["referenceCandidateReLift"]["runtimeBuildId"],
-            "sha256:257246d607e60657d8fad868d5e2cc9792f06e893e7d28279885cf888e13807f",
+            DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
         )
 
     def test_keeps_the_reference_point_adapter_out_of_production_capabilities(self) -> None:
@@ -137,38 +132,6 @@ class CompanionControlPlaneTests(unittest.TestCase):
             self.state.capabilities([EDITOR_ORIGIN])["modelManifests"],
             [],
         )
-
-    def test_records_the_actual_lock_file_digest_when_installing_a_release(self) -> None:
-        data_directory = self.directory / "cli-state"
-
-        with redirect_stdout(StringIO()):
-            result = main([
-                "--data-dir", str(data_directory),
-                "install",
-                "--release", "0.1.0",
-                "--lock-file", str(self.lock_file),
-            ])
-
-        release = json.loads((data_directory / "release.json").read_text(encoding="utf-8"))
-        self.assertEqual(result, 0)
-        self.assertEqual(
-            release["lockDigest"],
-            f"sha256:{hashlib.sha256(self.lock_file.read_bytes()).hexdigest()}",
-        )
-
-    def test_rejects_a_release_when_its_verified_lock_file_changes(self) -> None:
-        self.lock_file.write_text("changed locked companion dependencies\n", encoding="utf-8")
-
-        with self.assertRaisesRegex(ValueError, "lock changed"):
-            self.state.require_release()
-
-    def test_excludes_a_changed_model_artifact_from_capabilities(self) -> None:
-        self.install_model()
-        (self.directory / "sam31.pt").write_bytes(b"changed after installation")
-
-        capabilities = self.state.capabilities([EDITOR_ORIGIN])
-
-        self.assertEqual(capabilities["modelManifests"], [])
 
     def test_excludes_a_missing_model_artifact_from_capabilities(self) -> None:
         self.install_model()

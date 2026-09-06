@@ -1783,7 +1783,7 @@ class GsplatContributorRenderer:
             )
         if current_renderer_runtime().status().status != 'ready':
             raise ReferenceGaussianEvidenceError(
-                'AI Select reference Contributor requires the verified locked runtime.',
+                'AI Select reference Contributor requires an available Companion runtime.',
                 code='referenceRuntimeUnavailable',
             )
         render_working_set = admission_input.get('renderWorkingSet')
@@ -1940,7 +1940,7 @@ class GsplatContributorRenderer:
             )
         if current_renderer_runtime().status().status != "ready":
             raise ReferenceGaussianEvidenceError(
-                "AI Select Direct Evidence requires the verified locked runtime.",
+                "AI Select Direct Evidence requires an available Companion runtime.",
                 code="directEvidenceRuntimeUnavailable",
             )
         render_working_set = admission_input.get("renderWorkingSet")

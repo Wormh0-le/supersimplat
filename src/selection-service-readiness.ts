@@ -163,7 +163,6 @@ interface SelectionServiceHealth {
 interface SelectionServiceRendererCapability {
     id: string;
     status: SelectionServiceRendererStatus;
-    cudaVersion?: string;
     rgbRendererVersion?: string;
     rasterImplementationId?: string;
     runtimeBuildId?: string;
@@ -198,8 +197,6 @@ interface SelectionServiceModelManifest {
     digest: string;
     adapterId: string;
     modelName: string;
-    checkpointDigest: string;
-    sourceCommit: string;
     runtimeConfigDigest: string;
     weightsBundled: boolean;
     initialized: boolean;
@@ -229,9 +226,6 @@ interface SelectionServiceDirectEvidenceCapability {
     readonly expectedSourceRevision: string;
     readonly abiVersion: string;
     readonly runtimeBuildId: string;
-    readonly torchVersion: string;
-    readonly cudaVersion: string;
-    readonly gsplatSourceCommit: string;
     readonly supportedComputeCapabilities: readonly string[];
     readonly accumulation: 'global-atomic-baseline';
     readonly buildFlags: readonly string[];
@@ -259,7 +253,6 @@ interface SelectionServiceProductionIdentityRecord {
         adapterId: string;
         manifestId: string;
         manifestRecordDigest: string;
-        checkpointDigest: string;
         runtimeConfigDigest: string;
     }>;
     readonly prompt: Readonly<{
@@ -480,7 +473,6 @@ const copyCapabilities = (
     renderer: {
         id: capabilities.renderer.id,
         status: capabilities.renderer.status,
-        cudaVersion: capabilities.renderer.cudaVersion,
         rgbRendererVersion: capabilities.renderer.rgbRendererVersion,
         rasterImplementationId: capabilities.renderer.rasterImplementationId,
         runtimeBuildId: capabilities.renderer.runtimeBuildId,
@@ -554,8 +546,6 @@ const copyCapabilities = (
         digest: capabilities.activeModelManifest.digest,
         adapterId: capabilities.activeModelManifest.adapterId,
         modelName: capabilities.activeModelManifest.modelName,
-        checkpointDigest: capabilities.activeModelManifest.checkpointDigest,
-        sourceCommit: capabilities.activeModelManifest.sourceCommit,
         runtimeConfigDigest:
             capabilities.activeModelManifest.runtimeConfigDigest,
         weightsBundled: capabilities.activeModelManifest.weightsBundled,
@@ -724,8 +714,6 @@ const modelManifestIdentityDigest = (
                 adapterId: manifest.adapterId,
                 digest: manifest.digest,
                 modelName: manifest.modelName,
-                checkpointDigest: manifest.checkpointDigest,
-                sourceCommit: manifest.sourceCommit,
                 runtimeConfigDigest: manifest.runtimeConfigDigest,
                 weightsBundled: manifest.weightsBundled
             })
@@ -773,7 +761,6 @@ const validateProductionIdentity = (
             'adapterId',
             'manifestId',
             'manifestRecordDigest',
-            'checkpointDigest',
             'runtimeConfigDigest'
         ]) ||
         !isRecord(record.prompt) ||
@@ -814,7 +801,6 @@ const validateProductionIdentity = (
         record.model.adapterId,
         record.model.manifestId,
         record.model.manifestRecordDigest,
-        record.model.checkpointDigest,
         record.model.runtimeConfigDigest,
         record.prompt.compilerPolicyVersion,
         record.prompt.adapterCapabilityDigest,
@@ -839,7 +825,6 @@ const validateProductionIdentity = (
         ![
             record.prompt.adapterCapabilityDigest,
             record.model.manifestRecordDigest,
-            record.model.checkpointDigest,
             record.model.runtimeConfigDigest,
             record.renderer.runtimeBuildId,
             record.prompt.synthesisPolicyDigest,
@@ -936,10 +921,6 @@ const validateCapabilities = (
             directEvidence.sourceRevision ||
         !isNonEmptyString(directEvidence.abiVersion) ||
         !isNonEmptyString(directEvidence.runtimeBuildId) ||
-        directEvidence.torchVersion !== '2.11.0+cu128' ||
-        directEvidence.cudaVersion !== '12.8' ||
-        directEvidence.gsplatSourceCommit !==
-            '90d7b4b349e379ccf9ee6a8cef76aa40f48bb32e' ||
         !Array.isArray(directEvidence.supportedComputeCapabilities) ||
         !directEvidence.supportedComputeCapabilities.every(
             (value) => typeof value === 'string' && /^\d+\.\d+$/.test(value)
@@ -995,8 +976,6 @@ const validateCapabilities = (
         !isNonEmptyString(value.activeModelManifest.digest) ||
         !isNonEmptyString(value.activeModelManifest.adapterId) ||
         !isNonEmptyString(value.activeModelManifest.modelName) ||
-        !isDigest(value.activeModelManifest.checkpointDigest) ||
-        !isNonEmptyString(value.activeModelManifest.sourceCommit) ||
         !isDigest(value.activeModelManifest.runtimeConfigDigest) ||
         typeof value.activeModelManifest.weightsBundled !== 'boolean' ||
         typeof value.activeModelManifest.initialized !== 'boolean'
@@ -1600,7 +1579,6 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             record.model.manifestId !== modelManifest.digest ||
             record.model.manifestRecordDigest !==
                 modelManifestIdentityDigest(modelManifest) ||
-            record.model.checkpointDigest !== modelManifest.checkpointDigest ||
             record.model.runtimeConfigDigest !==
                 modelManifest.runtimeConfigDigest ||
             record.prompt.compilerPolicyVersion !==

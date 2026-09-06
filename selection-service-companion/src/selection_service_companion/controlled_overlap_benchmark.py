@@ -8,7 +8,6 @@ from io import BytesIO
 import json
 import math
 from pathlib import Path
-import platform
 import struct
 import tempfile
 from threading import Event, Thread
@@ -128,7 +127,6 @@ def seal_preview_prediction(
     prompt_log_source: Mapping[str, object],
     model_manifest: Mapping[str, object],
     runtime_manifest: Mapping[str, object],
-    dependency_lock: Path,
     render_policy: Mapping[str, object],
     correction_outcomes: Sequence[Mapping[str, object]],
     timing_and_vram: Mapping[str, object],
@@ -194,7 +192,6 @@ def seal_preview_prediction(
             "timingAndVram": bound(timing_and_vram),
             "internalDiagnostics": bound(internal_diagnostics),
         },
-        dependency_lock=dependency_lock,
         bindings=bindings,
     )
 
@@ -427,7 +424,6 @@ def _run_controlled_overlap_prediction(
     frozen_source = _frozen_prompt_log_source(prompt_log_path)
     state = CompanionState(state_directory)
     release = state.require_release()
-    dependency_lock = _verified_release_lock(release)
     available_models = [
         model
         for model in state.available_models()
@@ -537,9 +533,6 @@ def _run_controlled_overlap_prediction(
         "protocolVersion": PROTOCOL_VERSION,
         "release": release,
         "renderer": capabilities.get("renderer"),
-        "python": platform.python_version(),
-        "torch": torch.__version__,
-        "cudaRuntime": torch.version.cuda,
         "gpu": torch.cuda.get_device_name(0),
         "executionProfile": {
             "browser": "not-applicable (standalone CLI benchmark)",
@@ -572,7 +565,6 @@ def _run_controlled_overlap_prediction(
         prompt_log_source=frozen_source,
         model_manifest=public_model_manifest,
         runtime_manifest=runtime_manifest,
-        dependency_lock=dependency_lock,
         render_policy=_preview_render_policy(
             publication.bindings.get("renderConfigVersion")
         ),
@@ -655,10 +647,8 @@ def _seal_failed_controlled_overlap_prediction(
         if len(models) == 1
         else {"status": "unavailable", "modelCount": len(models)}
     )
-    dependency_lock: Path | None = None
     try:
-        release: object = state.require_release()
-        dependency_lock = _verified_release_lock(release)
+        release: Mapping[str, object] = state.require_release()
     except ValueError as release_error:
         release = {"status": "unavailable", "message": str(release_error)}
     unavailable = {
@@ -683,7 +673,6 @@ def _seal_failed_controlled_overlap_prediction(
             "companionVersion": PACKAGE_VERSION,
             "protocolVersion": PROTOCOL_VERSION,
             "release": release,
-            "python": platform.python_version(),
         },
         "renderPolicy": _preview_render_policy("supersplat-effective-rgb-v1"),
         "correctionOutcomes": [
@@ -700,11 +689,6 @@ def _seal_failed_controlled_overlap_prediction(
             "message": str(error),
         },
     }
-    if dependency_lock is None:
-        values["dependencyLock"] = {
-            "status": "unavailable",
-            "reason": "no verified installed release lock",
-        }
     failure_bindings = {
         "trialId": f"controlled-overlap:{deterministic_seed}",
         "protocolVersion": PROTOCOL_VERSION,
@@ -737,21 +721,8 @@ def _seal_failed_controlled_overlap_prediction(
     return _materialize_and_seal(
         output_directory,
         values=values,
-        dependency_lock=dependency_lock,
         bindings=failure_bindings,
     )
-
-
-def _verified_release_lock(release: Mapping[str, object]) -> Path:
-    lock_file = release.get("lockFile")
-    lock_digest = release.get("lockDigest")
-    if not isinstance(lock_file, str) or not isinstance(lock_digest, str):
-        raise PocRunRecordError("installed release lock identity is incomplete")
-    path = Path(lock_file)
-    actual = f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
-    if actual != lock_digest:
-        raise PocRunRecordError("installed release lock digest does not match")
-    return path
 
 
 class _CudaMemorySampler:
@@ -793,7 +764,6 @@ def _materialize_and_seal(
     output_directory: Path,
     *,
     values: Mapping[str, object],
-    dependency_lock: Path | None,
     bindings: Mapping[str, object],
 ) -> SealedPrediction:
     output_directory.parent.mkdir(parents=True, exist_ok=True)
@@ -803,7 +773,7 @@ def _materialize_and_seal(
         root = Path(temporary)
         artifacts: dict[str, Path] = {}
         for name, value in values.items():
-            if isinstance(value, dict) and name != "dependencyLock":
+            if isinstance(value, dict):
                 value = {**value, "recordBindings": dict(bindings)}
             path = root / f"{name}.json"
             path.write_text(
@@ -811,8 +781,6 @@ def _materialize_and_seal(
                 encoding="utf-8",
             )
             artifacts[name] = path
-        if dependency_lock is not None:
-            artifacts["dependencyLock"] = dependency_lock
         return seal_prediction(
             output_directory,
             artifacts=artifacts,

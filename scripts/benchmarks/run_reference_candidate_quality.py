@@ -437,8 +437,6 @@ def main() -> None:
                 REFERENCE_EVIDENCE_RASTER_IMPLEMENTATION_ID
             ),
             "evidenceBackendId": REFERENCE_CONTRIBUTOR_EVIDENCE_BACKEND_ID,
-            "torchVersion": torch.__version__,
-            "cudaVersion": torch.version.cuda,
             "gpuName": device.name,
             "peakVramBytes": renderer.peak_vram_bytes,
         },

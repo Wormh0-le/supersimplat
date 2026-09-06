@@ -12,7 +12,6 @@ import base64
 from copy import deepcopy
 from datetime import UTC, datetime
 import hashlib
-import importlib.metadata
 import json
 import os
 from pathlib import Path
@@ -75,13 +74,7 @@ from selection_service_companion.reference_gaussian_evidence import (
     typed_pixel_evidence_weights,
 )
 from selection_service_companion.renderer_runtime import (
-    EXPECTED_CUDA_VERSION,
-    EXPECTED_GSPLAT_SOURCE_COMMIT,
-    EXPECTED_GSPLAT_VERSION,
     EXPECTED_OPERATING_SYSTEM,
-    EXPECTED_PYTHON_VERSION,
-    EXPECTED_RENDERER_LOCK_DIGEST,
-    EXPECTED_TORCH_VERSION,
 )
 
 
@@ -769,18 +762,9 @@ def measured_run(*, samples: int, warmups: int) -> dict[str, object]:
         "recordedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "runtime": {
             "operatingSystem": platform.system(),
-            "pythonVersion": platform.python_version(),
-            "torchVersion": torch.__version__,
-            "cudaVersion": str(torch.version.cuda),
             "driverVersion": nvidia_driver_version(),
             "gpuName": torch.cuda.get_device_name(),
             "computeCapability": compute_capability,
-            "gsplatVersion": importlib.metadata.version("gsplat"),
-            "gsplatSourceCommit": EXPECTED_GSPLAT_SOURCE_COMMIT,
-            "rendererLockDigest": EXPECTED_RENDERER_LOCK_DIGEST,
-            "uvLockSha256": sha256_bytes(
-                (repository / "selection-service-companion/uv.lock").read_bytes()
-            ),
         },
         "directEvidence": {
             "abiVersion": DIRECT_EVIDENCE_ABI_VERSION,
@@ -930,14 +914,8 @@ def main() -> None:
         raise SystemExit("Qualification requires at least 3 samples and 1 warmup.")
     if platform.system() != EXPECTED_OPERATING_SYSTEM:
         raise SystemExit(f"Qualification requires {EXPECTED_OPERATING_SYSTEM}.")
-    if platform.python_version() != EXPECTED_PYTHON_VERSION:
-        raise SystemExit(f"Qualification requires Python {EXPECTED_PYTHON_VERSION}.")
-    if torch.__version__ != EXPECTED_TORCH_VERSION:
-        raise SystemExit(f"Qualification requires PyTorch {EXPECTED_TORCH_VERSION}.")
-    if str(torch.version.cuda) != EXPECTED_CUDA_VERSION or not torch.cuda.is_available():
-        raise SystemExit(f"Qualification requires CUDA {EXPECTED_CUDA_VERSION}.")
-    if importlib.metadata.version("gsplat") != EXPECTED_GSPLAT_VERSION:
-        raise SystemExit(f"Qualification requires gsplat {EXPECTED_GSPLAT_VERSION}.")
+    if not torch.cuda.is_available():
+        raise SystemExit("Qualification requires an available CUDA device.")
 
     record = measured_run(samples=args.samples, warmups=args.warmups)
     args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -72,7 +72,6 @@ from selection_service_companion.reference_gaussian_evidence_aggregation import 
     default_reference_aggregation_policy,
 )
 from selection_service_companion.renderer_runtime import (
-    EXPECTED_GSPLAT_SOURCE_COMMIT,
     current_renderer_runtime,
 )
 
@@ -871,9 +870,6 @@ def predict(arguments: argparse.Namespace) -> dict[str, object]:
         "computeCapability": ".".join(
             str(value) for value in torch.cuda.get_device_capability()
         ),
-        "torchVersion": torch.__version__,
-        "cudaVersion": str(torch.version.cuda),
-        "gsplatSourceCommit": EXPECTED_GSPLAT_SOURCE_COMMIT,
         "benchmarkImplementationDigest": _benchmark_implementation_digest(),
     }
     width, height = (int(value) for value in frame_set["resolution"])
@@ -1223,7 +1219,6 @@ def report(arguments: argparse.Namespace) -> str:
             for score in scores
         ],
         f"- GPU: `{scores[0]['methods'][0]['runtimeSource']['gpuName']}` (compute capability `{scores[0]['methods'][0]['runtimeSource']['computeCapability']}`).",
-        f"- Runtime: torch `{scores[0]['methods'][0]['runtimeSource']['torchVersion']}`, CUDA `{scores[0]['methods'][0]['runtimeSource']['cudaVersion']}`, gsplat source `{scores[0]['methods'][0]['runtimeSource']['gsplatSourceCommit']}`.",
         "",
         "## Trial results",
         "",

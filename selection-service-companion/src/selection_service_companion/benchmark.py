@@ -27,7 +27,6 @@ REQUIRED_PREDICTION_ARTIFACTS = (
     "coverageReport",
     "modelManifest",
     "runtimeManifest",
-    "dependencyLock",
     "renderPolicy",
     "correctionOutcomes",
     "timingAndVram",
@@ -331,7 +330,6 @@ def _validate_complete_identity(
     mask_set = artifact("maskSet")
     evidence = artifact("evidenceSnapshot")
     model = artifact("modelManifest")
-    runtime = artifact("runtimeManifest")
     expected = {
         "sceneId": scene.get("sceneId"),
         "sceneVersion": scene.get("sceneVersion"),
@@ -362,8 +360,6 @@ def _validate_complete_identity(
                 f"prediction binding does not match Evidence Snapshot: {name}"
             )
     for name in REQUIRED_PREDICTION_ARTIFACTS:
-        if name == "dependencyLock":
-            continue
         value = artifact(name)
         if value.get("recordBindings") != bindings:
             raise PocRunRecordError(
@@ -374,15 +370,6 @@ def _validate_complete_identity(
         render_policy=artifact("renderPolicy"),
         evidence_snapshot=evidence,
     )
-    release = runtime.get("release")
-    lock_record = artifacts["dependencyLock"]
-    if (
-        not isinstance(release, dict)
-        or release.get("lockDigest") != lock_record.get("sha256")
-    ):
-        raise PocRunRecordError(
-            "dependency lock does not match the runtime release identity"
-        )
 
 
 def _validate_policy_bindings(

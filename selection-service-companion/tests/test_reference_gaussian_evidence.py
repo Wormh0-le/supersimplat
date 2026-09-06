@@ -712,7 +712,7 @@ class ReferenceGaussianEvidenceTests(unittest.TestCase):
         stale_snapshot["sceneVersion"] = digest("e")
         renderer = GsplatContributorRenderer(backend=LockedGsplatBackend())
         ready_runtime = StaticRendererRuntime(
-            RendererRuntimeStatus.ready(cuda_version="12.8")
+            RendererRuntimeStatus.ready()
         )
 
         with (
@@ -742,7 +742,7 @@ class ReferenceGaussianEvidenceTests(unittest.TestCase):
         admitted_input = locked_admission_input(mask, policy, binding, digest("b"))
         renderer = GsplatContributorRenderer(backend=LockedGsplatBackend())
         ready_runtime = StaticRendererRuntime(
-            RendererRuntimeStatus.ready(cuda_version="12.8")
+            RendererRuntimeStatus.ready()
         )
 
         with (

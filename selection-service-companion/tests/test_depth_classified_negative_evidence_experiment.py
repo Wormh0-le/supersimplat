@@ -333,9 +333,6 @@ def locked_runtime_source() -> dict[str, object]:
         "rendererRuntimeDigest": digest("e"),
         "gpuName": "Locked Test GPU",
         "computeCapability": "8.9",
-        "torchVersion": "2.11.0+cu128",
-        "cudaVersion": "12.8",
-        "gsplatSourceCommit": "7" * 40,
         "benchmarkImplementationDigest": digest("8"),
     }
 

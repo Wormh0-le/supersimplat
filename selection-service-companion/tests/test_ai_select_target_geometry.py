@@ -324,15 +324,12 @@ class TargetGeometryRouteTests(unittest.TestCase):
 
         weights = self.directory / 'sam31.pt'
         weights.write_bytes(b'separately acquired sam3.1 weights')
-        checkpoint_digest = hashlib.sha256(weights.read_bytes()).hexdigest()
         manifest = self.directory / 'sam31.json'
         manifest.write_text(
             json.dumps({
                 'digest': 'sha256:sam31-v1',
                 'adapterId': 'sam3.1',
                 'modelName': 'SAM 3.1',
-                'checkpointDigest': f'sha256:{checkpoint_digest}',
-                'sourceCommit': 'sam3-source-v1',
                 'licenseName': 'SAM License',
                 'licenseUrl': 'https://example.test/sam-license',
                 'runtimeConfigDigest': SAM31_RUNTIME_CONFIG_DIGEST,

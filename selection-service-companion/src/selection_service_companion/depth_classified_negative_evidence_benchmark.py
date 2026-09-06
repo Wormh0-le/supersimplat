@@ -61,9 +61,6 @@ _RUNTIME_SOURCE_KEYS = {
     "rendererRuntimeDigest",
     "gpuName",
     "computeCapability",
-    "torchVersion",
-    "cudaVersion",
-    "gsplatSourceCommit",
     "benchmarkImplementationDigest",
 }
 _MEASUREMENT_BOUNDARY_KEYS = {
@@ -314,15 +311,7 @@ def _validated_runtime_source(value: object) -> dict[str, object]:
             for name in (
                 "gpuName",
                 "computeCapability",
-                "torchVersion",
-                "cudaVersion",
-                "gsplatSourceCommit",
             )
-        )
-        or len(result["gsplatSourceCommit"]) != 40
-        or any(
-            character not in "0123456789abcdef"
-            for character in result["gsplatSourceCommit"]
         )
     ):
         raise DepthClassifiedNegativeEvidenceBenchmarkError(

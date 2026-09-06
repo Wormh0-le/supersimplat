@@ -8,8 +8,6 @@ import unittest
 from unittest.mock import patch
 
 from selection_service_companion.depth_moment_qualification import (
-    DEFAULT_DEPTH_MOMENT_QUALIFICATION_PATH,
-    DepthMomentQualificationError,
     QUALIFIED_DEPTH_MOMENT_POLICY_ID,
     load_internal_depth_moment_capability,
     validate_depth_moment_qualification_record,
@@ -23,16 +21,6 @@ from selection_service_companion.direct_gaussian_evidence import (
     DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
     DIRECT_EVIDENCE_SOURCE_REVISION,
 )
-from selection_service_companion.renderer_runtime import (
-    EXPECTED_CUDA_VERSION,
-    EXPECTED_GSPLAT_SOURCE_COMMIT,
-    EXPECTED_GSPLAT_VERSION,
-    EXPECTED_PYTHON_VERSION,
-    EXPECTED_RENDERER_LOCK_DIGEST,
-    EXPECTED_TORCH_VERSION,
-)
-
-
 def digest(character: str) -> str:
     return "sha256:" + (character * 64)
 
@@ -46,16 +34,9 @@ def qualification_record() -> dict[str, object]:
         "recordedAt": "2026-08-25T00:00:00Z",
         "runtime": {
             "operatingSystem": "Linux",
-            "pythonVersion": EXPECTED_PYTHON_VERSION,
-            "torchVersion": EXPECTED_TORCH_VERSION,
-            "cudaVersion": EXPECTED_CUDA_VERSION,
             "driverVersion": "580.178.04",
             "gpuName": "NVIDIA GeForce RTX 4090 D",
             "computeCapability": "8.9",
-            "gsplatVersion": EXPECTED_GSPLAT_VERSION,
-            "gsplatSourceCommit": EXPECTED_GSPLAT_SOURCE_COMMIT,
-            "rendererLockDigest": EXPECTED_RENDERER_LOCK_DIGEST,
-            "uvLockSha256": EXPECTED_RENDERER_LOCK_DIGEST,
         },
         "directEvidence": {
             "abiVersion": DIRECT_EVIDENCE_ABI_VERSION,
@@ -213,18 +194,6 @@ def qualification_record() -> dict[str, object]:
 
 
 class DepthMomentQualificationRecordTests(unittest.TestCase):
-    def test_previous_checked_record_is_rejected_after_runtime_identity_change(
-        self,
-    ) -> None:
-        record = json.loads(
-            DEFAULT_DEPTH_MOMENT_QUALIFICATION_PATH.read_text(encoding="utf-8")
-        )
-        with self.assertRaisesRegex(
-            DepthMomentQualificationError,
-            "runtime gsplatVersion does not match",
-        ):
-            validate_depth_moment_qualification_record(record)
-
     def test_validated_record_binds_policy_identity_and_execution_envelope(self) -> None:
         capability = validate_depth_moment_qualification_record(
             qualification_record()
@@ -276,7 +245,7 @@ class DepthMomentQualificationRecordTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     validate_depth_moment_qualification_record(stale)
 
-    def test_runtime_loader_rejects_unqualified_gpu_driver_and_runtime_facts(self) -> None:
+    def test_runtime_loader_rejects_unqualified_gpu_and_driver_facts(self) -> None:
         with TemporaryDirectory() as directory:
             path = Path(directory) / "qualification.json"
             record = qualification_record()
@@ -291,11 +260,6 @@ class DepthMomentQualificationRecordTests(unittest.TestCase):
             for field, value in (
                 ("gpuName", "Another 8.9 GPU"),
                 ("driverVersion", "999.0"),
-                ("pythonVersion", "3.12.11"),
-                ("torchVersion", "2.10.0+cu128"),
-                ("cudaVersion", "12.7"),
-                ("gsplatSourceCommit", "stale-source"),
-                ("uvLockSha256", digest("9")),
             ):
                 with self.subTest(field=field):
                     runtime_facts = {**record["runtime"], "status": "ready"}

@@ -171,19 +171,15 @@ class AISelectMaskTests(unittest.TestCase):
         state: CompanionState,
         *,
         digest: str = 'sha256:sam3-image-v1',
-        source_commit: str = 'sam3-source-v1',
     ) -> str:
         weights = self.directory / 'sam3-image.pt'
         weights.write_bytes(b'separately acquired sam3 image weights')
-        checkpoint_digest = hashlib.sha256(weights.read_bytes()).hexdigest()
         manifest = self.directory / f'{digest.replace(":", "-")}.json'
         manifest.write_text(
             json.dumps({
                 'digest': digest,
                 'adapterId': ADAPTER_ID,
                 'modelName': 'SAM 3 Image',
-                'checkpointDigest': f'sha256:{checkpoint_digest}',
-                'sourceCommit': source_commit,
                 'licenseName': 'SAM License',
                 'licenseUrl': 'https://example.test/sam-license',
                 'runtimeConfigDigest': SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
@@ -547,15 +543,12 @@ class AISelectMaskTests(unittest.TestCase):
     def test_reports_an_incompatible_model_manifest(self) -> None:
         weights = self.directory / 'unknown-adapter.bin'
         weights.write_bytes(b'separately acquired unknown adapter weights')
-        checkpoint_digest = hashlib.sha256(weights.read_bytes()).hexdigest()
         manifest = self.directory / 'unknown-adapter.json'
         manifest.write_text(
             json.dumps({
                 'digest': 'sha256:unknown-adapter-v1',
                 'adapterId': 'unknown-adapter',
                 'modelName': 'Unknown Adapter v1',
-                'checkpointDigest': f'sha256:{checkpoint_digest}',
-                'sourceCommit': 'unknown-adapter-source-v1',
                 'licenseName': 'MIT',
                 'licenseUrl': 'https://example.test/unknown-adapter-license',
                 'runtimeConfigDigest': 'sha256:unknown-adapter-runtime-v1',
@@ -572,15 +565,12 @@ class AISelectMaskTests(unittest.TestCase):
     def test_a_sam31_manifest_fails_closed_on_the_current_route(self) -> None:
         weights = self.directory / 'sam31-legacy.pt'
         weights.write_bytes(b'separately acquired legacy sam3.1 weights')
-        checkpoint_digest = hashlib.sha256(weights.read_bytes()).hexdigest()
         manifest = self.directory / 'sam31-legacy.json'
         manifest.write_text(
             json.dumps({
                 'digest': 'sha256:sam31-legacy-v1',
                 'adapterId': 'sam3.1',
                 'modelName': 'SAM 3.1 multiplex',
-                'checkpointDigest': f'sha256:{checkpoint_digest}',
-                'sourceCommit': 'sam3-source-v1',
                 'licenseName': 'SAM License',
                 'licenseUrl': 'https://example.test/sam-license',
                 'runtimeConfigDigest': SAM31_RUNTIME_CONFIG_DIGEST,
@@ -1114,26 +1104,6 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertEqual(len(replacement_runtime.set_image_calls), 1)
         self.assertIsNone(replacement_runtime.predict_calls[0]['mask_input'])
         self.assertEqual(self.state._logits_store.__len__(), 1)
-
-    def test_an_adapter_runtime_change_invalidates_the_ref(self) -> None:
-        first = self.state.produce_ai_select_mask(self.request_body())
-        ref = first['proposalSet']['proposals'][0]['logitsRef']
-        replacement_manifest = self.install_sam3_image_manifest(
-            self.state,
-            digest='sha256:sam3-image-v2',
-            source_commit='sam3-source-v2',
-        )
-
-        response = self.state.produce_ai_select_mask(
-            self.refinement_request(
-                ref, model_manifest_digest=replacement_manifest
-            )
-        )
-
-        self.assertEqual(
-            response['proposalSet']['diagnostics'], {'refinementFallback': True}
-        )
-        self.assertIsNone(self.runtime.predict_calls[1]['mask_input'])
 
     def test_an_rgb_change_invalidates_the_ref(self) -> None:
         first = self.state.produce_ai_select_mask(self.request_body())

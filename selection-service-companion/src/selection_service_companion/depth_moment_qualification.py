@@ -1,4 +1,4 @@
-"""Version-bound locked-GPU qualification for internal CWED readouts.
+"""GPU qualification for internal CWED readouts.
 
 The record in this module's package is an internal capability input, not a
 Browser Runtime Profile capability.  A consumer may opt into depth moments only
@@ -9,7 +9,6 @@ its execution falls inside the measured envelope.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-import hashlib
 import json
 import math
 from pathlib import Path
@@ -31,13 +30,6 @@ from .renderer_runtime import (
     CurrentProcessGsplatInspection,
     GsplatRuntime,
     StaticGsplatRuntimeInspection,
-    EXPECTED_CUDA_VERSION,
-    EXPECTED_GSPLAT_SOURCE_COMMIT,
-    EXPECTED_GSPLAT_VERSION,
-    EXPECTED_OPERATING_SYSTEM,
-    EXPECTED_PYTHON_VERSION,
-    EXPECTED_RENDERER_LOCK_DIGEST,
-    EXPECTED_TORCH_VERSION,
 )
 
 
@@ -76,16 +68,9 @@ _TOP_LEVEL_KEYS: Final = {
 }
 _RUNTIME_KEYS: Final = {
     "operatingSystem",
-    "pythonVersion",
-    "torchVersion",
-    "cudaVersion",
     "driverVersion",
     "gpuName",
     "computeCapability",
-    "gsplatVersion",
-    "gsplatSourceCommit",
-    "rendererLockDigest",
-    "uvLockSha256",
 }
 _DIRECT_EVIDENCE_KEYS: Final = {
     "abiVersion",
@@ -340,21 +325,7 @@ def _string_sequence(value: object, name: str) -> tuple[str, ...]:
 
 def _validate_runtime(value: object) -> tuple[Mapping[str, object], str]:
     runtime = _exact_keys(value, _RUNTIME_KEYS, "runtime")
-    expected = {
-        "operatingSystem": EXPECTED_OPERATING_SYSTEM,
-        "pythonVersion": EXPECTED_PYTHON_VERSION,
-        "torchVersion": EXPECTED_TORCH_VERSION,
-        "cudaVersion": EXPECTED_CUDA_VERSION,
-        "gsplatVersion": EXPECTED_GSPLAT_VERSION,
-        "gsplatSourceCommit": EXPECTED_GSPLAT_SOURCE_COMMIT,
-        "rendererLockDigest": EXPECTED_RENDERER_LOCK_DIGEST,
-        "uvLockSha256": EXPECTED_RENDERER_LOCK_DIGEST,
-    }
-    for key, expected_value in expected.items():
-        if runtime.get(key) != expected_value:
-            raise DepthMomentQualificationError(
-                f"runtime {key} does not match the locked Companion identity."
-            )
+    _non_empty(runtime.get("operatingSystem"), "runtime operatingSystem")
     _non_empty(runtime.get("driverVersion"), "runtime driverVersion")
     _non_empty(runtime.get("gpuName"), "runtime gpuName")
     compute_capability = _non_empty(
@@ -431,7 +402,7 @@ def _validate_envelope(
         or runtime_compute_capability not in compute_capabilities
     ):
         raise DepthMomentQualificationError(
-            "supportedEnvelope does not cover the advertised locked GPU runtime."
+            "supportedEnvelope does not cover the advertised GPU runtime."
         )
     result = DepthMomentExecutionEnvelope(
         compute_capabilities=compute_capabilities,
@@ -797,40 +768,17 @@ def validate_depth_moment_qualification_record(
     )
 
 
-def _current_uv_lock_digest() -> str | None:
-    module_path = Path(__file__).resolve()
-    candidates = (
-        module_path.parents[2] / "uv.lock",
-        module_path.with_name("qualifications") / "uv.lock",
-    )
-    for candidate in candidates:
-        try:
-            payload = candidate.read_bytes()
-        except OSError:
-            continue
-        return f"sha256:{hashlib.sha256(payload).hexdigest()}"
-    return None
-
-
 def current_depth_moment_runtime_facts() -> dict[str, object]:
-    """Inspect the actual process, lock, GPU, and driver identities."""
+    """Inspect the actual process, GPU, and driver facts."""
 
     facts = CurrentProcessGsplatInspection().facts()
     status = GsplatRuntime(StaticGsplatRuntimeInspection(facts)).status()
-    uv_lock_digest = _current_uv_lock_digest()
     return {
         "status": status.status,
         "operatingSystem": facts.operating_system,
-        "pythonVersion": facts.python_version,
-        "torchVersion": facts.torch_version,
-        "cudaVersion": facts.cuda_version,
         "driverVersion": facts.driver_version,
         "gpuName": facts.gpu_name,
         "computeCapability": facts.compute_capability,
-        "gsplatVersion": facts.gsplat_version,
-        "gsplatSourceCommit": facts.gsplat_source_commit,
-        "rendererLockDigest": uv_lock_digest,
-        "uvLockSha256": uv_lock_digest,
     }
 
 

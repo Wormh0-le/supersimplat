@@ -31,7 +31,7 @@ def _parser() -> argparse.ArgumentParser:
 
     models = commands.add_parser("models", help="manage separately installed Model Manifests")
     model_commands = models.add_subparsers(dest="models_command", required=True)
-    model_install = model_commands.add_parser("install", help="verify and register externally stored weights")
+    model_install = model_commands.add_parser("install", help="register externally stored weights")
     model_install.add_argument("--manifest", type=Path, required=True)
     model_install.add_argument("--weights", type=Path, required=True)
 
@@ -57,7 +57,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if arguments.command == "install":
             state.install_release(arguments.release, arguments.lock_file)
-            print(f"recorded and verified locked Companion release {arguments.release}")
+            print(f"recorded Companion release {arguments.release}")
             return 0
 
         if arguments.command == "models" and arguments.models_command == "install":

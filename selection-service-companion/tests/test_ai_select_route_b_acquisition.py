@@ -182,7 +182,6 @@ class RouteBAcquisitionTests(unittest.TestCase):
         self.state.install_release('0.1.0', lock_file)
         weights = self.directory / 'sam3-image.pt'
         weights.write_bytes(b'separately acquired sam3 image weights')
-        checkpoint_digest = hashlib.sha256(weights.read_bytes()).hexdigest()
         self.model_manifest_digest = 'sha256:' + ('a' * 64)
         manifest = self.directory / 'sam3-image.json'
         manifest.write_text(
@@ -190,8 +189,6 @@ class RouteBAcquisitionTests(unittest.TestCase):
                 'digest': self.model_manifest_digest,
                 'adapterId': SAM3_IMAGE_INSTANCE_ADAPTER_ID,
                 'modelName': 'SAM 3 Image',
-                'checkpointDigest': f'sha256:{checkpoint_digest}',
-                'sourceCommit': 'sam3-source-v1',
                 'licenseName': 'SAM License',
                 'licenseUrl': 'https://example.test/sam-license',
                 'runtimeConfigDigest': SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,

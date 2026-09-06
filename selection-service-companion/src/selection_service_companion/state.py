@@ -290,8 +290,6 @@ MODEL_MANIFEST_IDENTITY_FIELDS = (
     "digest",
     "adapterId",
     "modelName",
-    "checkpointDigest",
-    "sourceCommit",
     "licenseName",
     "licenseUrl",
     "runtimeConfigDigest",
@@ -1047,22 +1045,6 @@ def _write_json(path: Path, value: Any) -> None:
     os.replace(temporary, path)
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _normalise_sha256(value: str, field_name: str = "checkpointDigest") -> str:
-    prefix = "sha256:"
-    digest = value[len(prefix):] if value.startswith(prefix) else value
-    if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest.lower()):
-        raise ValueError(f"{field_name} must be a SHA-256 digest")
-    return digest.lower()
-
-
 def _anchor_string(value: object, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f'AI Select Anchor {field_name} must be a non-empty string')
@@ -1452,12 +1434,10 @@ class CompanionState:
         if not lock_file.is_file():
             raise ValueError(f"locked dependency file does not exist: {lock_file}")
 
-        lock_digest = _sha256(lock_file)
         _write_json(
             self.release_path,
             {
                 "release": release,
-                "lockDigest": f"sha256:{lock_digest}",
                 "lockFile": str(lock_file.resolve()),
                 "installedAt": datetime.now(UTC).isoformat(),
             },
@@ -1468,26 +1448,17 @@ class CompanionState:
         if (
             not isinstance(release, dict)
             or not isinstance(release.get("release"), str)
-            or not isinstance(release.get("lockDigest"), str)
             or not isinstance(release.get("lockFile"), str)
         ):
             raise ValueError("no locked Companion release is installed; run selection-service install first")
 
         lock_file = Path(release["lockFile"])
-        try:
-            expected_digest = _normalise_sha256(release["lockDigest"], "lockDigest")
-            actual_digest = _sha256(lock_file)
-        except (OSError, ValueError) as error:
+        if not lock_file.is_file():
             raise ValueError(
-                "the installed Companion release lock cannot be verified; run selection-service install again"
-            ) from error
-        if actual_digest != expected_digest:
-            raise ValueError(
-                "the installed Companion release lock changed; run selection-service install again"
+                "the installed Companion lock file does not exist; run selection-service install again"
             )
         return {
             "release": release["release"],
-            "lockDigest": f"sha256:{expected_digest}",
             "lockFile": str(lock_file),
         }
 
@@ -1509,8 +1480,6 @@ class CompanionState:
             "digest",
             "adapterId",
             "modelName",
-            "checkpointDigest",
-            "sourceCommit",
             "licenseName",
             "licenseUrl",
             "runtimeConfigDigest",
@@ -1533,17 +1502,10 @@ class CompanionState:
                 "the SAM 3 Image Model Manifest runtimeConfigDigest does not match the pinned Companion runtime configuration"
             )
 
-        expected_digest = _normalise_sha256(manifest["checkpointDigest"])
-        actual_digest = _sha256(weights_path)
-        if actual_digest != expected_digest:
-            raise ValueError("model checkpoint digest does not match the supplied Model Manifest")
-
         model = {
             "digest": manifest["digest"],
             "adapterId": manifest["adapterId"],
             "modelName": manifest["modelName"],
-            "checkpointDigest": f"sha256:{actual_digest}",
-            "sourceCommit": manifest["sourceCommit"],
             "licenseName": manifest["licenseName"],
             "licenseUrl": manifest["licenseUrl"],
             "runtimeConfigDigest": manifest["runtimeConfigDigest"],
@@ -1564,7 +1526,7 @@ class CompanionState:
                 raise ValueError(
                     "a Model Manifest digest is immutable and cannot be reinstalled with different content"
                 )
-            # A second verified copy of the same checkpoint may restore a
+            # A second copy of the same model may restore a
             # missing artifact at a new path, but cannot alter the manifest
             # identity pinned by active sessions.
             model = {
@@ -1682,7 +1644,7 @@ class CompanionState:
         release = self._process_release()
         model = self.resolve_active_model_manifest()
         provider = self._image_instance_provider_capability(model)
-        renderer = self._renderer_capability(release)
+        renderer = self._renderer_capability()
         direct_evidence = direct_evidence_capability()
         production_candidate = self._production_candidate_re_lift_capability(
             direct_evidence
@@ -1726,8 +1688,6 @@ class CompanionState:
                 "digest": model["digest"],
                 "adapterId": model["adapterId"],
                 "modelName": model["modelName"],
-                "checkpointDigest": model["checkpointDigest"],
-                "sourceCommit": model["sourceCommit"],
                 "runtimeConfigDigest": model["runtimeConfigDigest"],
                 "weightsBundled": False,
                 "initialized": provider["status"] == "ready",
@@ -1794,12 +1754,9 @@ class CompanionState:
                     "adapterId": model["adapterId"],
                     "digest": model["digest"],
                     "modelName": model["modelName"],
-                    "checkpointDigest": model["checkpointDigest"],
-                    "sourceCommit": model["sourceCommit"],
                     "runtimeConfigDigest": model["runtimeConfigDigest"],
                     "weightsBundled": False,
                 }),
-                "checkpointDigest": model["checkpointDigest"],
                 "runtimeConfigDigest": model["runtimeConfigDigest"],
             },
             "prompt": {
@@ -1852,10 +1809,10 @@ class CompanionState:
         }
 
     def _current_production_identity_digest(self) -> str:
-        release = self._process_release()
+        self._process_release()
         model = self.resolve_active_model_manifest()
         provider = self._image_instance_provider_capability(model)
-        renderer = self._renderer_capability(release)
+        renderer = self._renderer_capability()
         direct_evidence = direct_evidence_capability()
         production_candidate = self._production_candidate_re_lift_capability(
             direct_evidence
@@ -4097,7 +4054,7 @@ class CompanionState:
         return response
 
     def _adapter_runtime_digest(self, model: Mapping[str, Any]) -> str:
-        """Bind adapter, compiler, runtime, checkpoint, and source identity."""
+        """Bind adapter, compiler, and runtime configuration identity."""
 
         cache_key = str(model.get('digest', ''))
         with self._session_lock:
@@ -4108,8 +4065,6 @@ class CompanionState:
             'adapterId': model.get('adapterId'),
             'compilerPolicyVersion': SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION,
             'runtimeConfigDigest': model.get('runtimeConfigDigest'),
-            'checkpointDigest': model.get('checkpointDigest'),
-            'sourceCommit': model.get('sourceCommit'),
         })
         with self._session_lock:
             self._adapter_runtime_digests[cache_key] = digest
@@ -8558,8 +8513,7 @@ class CompanionState:
     def _model_artifact_is_current(self, model: dict[str, Any]) -> bool:
         try:
             weights_path = Path(model["weightsPath"])
-            expected_digest = _normalise_sha256(model["checkpointDigest"])
-            return weights_path.is_file() and _sha256(weights_path) == expected_digest
+            return weights_path.is_file()
         except (KeyError, OSError, TypeError, ValueError):
             return False
 
@@ -8624,7 +8578,7 @@ class CompanionState:
                 "weightsBundled": False,
                 "promptCapabilities": prompt_capabilities,
             })
-        renderer_capability = self._renderer_capability(release)
+        renderer_capability = self._renderer_capability()
         return {
             "protocolVersion": PROTOCOL_VERSION,
             "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}+{release['release']}",
@@ -8669,7 +8623,7 @@ class CompanionState:
             'runtimeBuildId': REFERENCE_EVIDENCE_RUNTIME_BUILD_ID,
         }
 
-    def _renderer_capability(self, release: dict[str, str]) -> dict[str, Any]:
+    def _renderer_capability(self) -> dict[str, Any]:
         runtime = self.renderer_runtime.status()
         renderer = self.contributor_renderer
         renderer_capability: dict[str, Any]
@@ -8680,20 +8634,16 @@ class CompanionState:
                 "message": runtime.message
                 or "The gsplat/CUDA runtime is unavailable in this Companion environment.",
             }
-            if runtime.cuda_version is not None:
-                renderer_capability["cudaVersion"] = runtime.cuda_version
         elif renderer is None:
             renderer_capability = {
                 "id": "gsplat",
                 "status": "unavailable",
-                "cudaVersion": runtime.cuda_version,
-                "message": "The locked gsplat/CUDA runtime is verified, but this Companion release has no production Contributor renderer.",
+                "message": "The gsplat/CUDA runtime is available, but this Companion release has no production Contributor renderer.",
             }
         else:
             renderer_capability = {
                 "id": renderer.renderer_id,
                 "status": "ready",
-                "cudaVersion": runtime.cuda_version,
                 "rgbRendererVersion": AI_SELECT_RGB_RENDERER_VERSION,
                 "rasterImplementationId": AI_SELECT_RASTER_IMPLEMENTATION_ID,
                 "runtimeBuildId": AI_SELECT_RUNTIME_BUILD_ID,
@@ -8710,10 +8660,10 @@ class CompanionState:
         if not getattr(renderer, "requires_locked_runtime", False):
             return renderer
         try:
-            release = self.require_release()
+            self.require_release()
         except ValueError as error:
             raise MaskSessionError("rendererUnavailable", str(error)) from error
-        capability = self._renderer_capability(release)
+        capability = self._renderer_capability()
         if capability["status"] != "ready":
             raise MaskSessionError(
                 "rendererUnavailable",

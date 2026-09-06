@@ -45,7 +45,7 @@ torch = { index = "pytorch-cu128" }
 torchvision = { index = "pytorch-cu128" }
 
 [tool.uv.extra-build-dependencies]
-gsplat = ["torch"]
+gsplat = ["torch==2.11.0+cu128"]
 
 [[tool.uv.index]]
 name = "pytorch-cu128"

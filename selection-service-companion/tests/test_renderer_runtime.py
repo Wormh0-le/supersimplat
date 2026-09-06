@@ -41,9 +41,9 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
             torch_version="2.11.0+cu128",
             cuda_version="12.8",
             cuda_available=True,
-            gsplat_version="1.5.3",
+            gsplat_version="1.6.0",
             gsplat_source_url="https://github.com/nerfstudio-project/gsplat.git",
-            gsplat_source_commit="77ab983ffe43420b2131669cb35776b883ca4c3c",
+            gsplat_source_commit="90d7b4b349e379ccf9ee6a8cef76aa40f48bb32e",
             torch_package_path=Path(
                 "/opt/supersplat/.venv/lib/python3.12/site-packages/torch/__init__.py"
             ),
@@ -174,7 +174,7 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
             cuda=SimpleNamespace(is_available=lambda: True),
         )
         gsplat_distribution = SimpleNamespace(
-            version="1.5.3",
+            version="1.6.0",
             locate_file=lambda name: Path(
                 "/opt/supersplat/.venv/lib/python3.12/site-packages"
             ),
@@ -183,7 +183,7 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                     "url": "https://github.com/nerfstudio-project/gsplat.git",
                     "vcs_info": {
                         "vcs": "git",
-                        "commit_id": "77ab983ffe43420b2131669cb35776b883ca4c3c",
+                        "commit_id": "90d7b4b349e379ccf9ee6a8cef76aa40f48bb32e",
                     },
                 }
             )
@@ -235,7 +235,7 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
             __file__="/workspace/thirdparty/sam3/.venv/lib/python3.12/site-packages/gsplat/__init__.py"
         )
         gsplat_distribution = SimpleNamespace(
-            version="1.5.3",
+            version="1.6.0",
             locate_file=lambda name: Path(
                 "/opt/supersplat/.venv/lib/python3.12/site-packages"
             ),
@@ -244,7 +244,7 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                     "url": "https://github.com/nerfstudio-project/gsplat.git",
                     "vcs_info": {
                         "vcs": "git",
-                        "commit_id": "77ab983ffe43420b2131669cb35776b883ca4c3c",
+                        "commit_id": "90d7b4b349e379ccf9ee6a8cef76aa40f48bb32e",
                     },
                 }
             ),

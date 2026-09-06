@@ -939,7 +939,7 @@ const validateCapabilities = (
         directEvidence.torchVersion !== '2.11.0+cu128' ||
         directEvidence.cudaVersion !== '12.8' ||
         directEvidence.gsplatSourceCommit !==
-            '77ab983ffe43420b2131669cb35776b883ca4c3c' ||
+            '90d7b4b349e379ccf9ee6a8cef76aa40f48bb32e' ||
         !Array.isArray(directEvidence.supportedComputeCapabilities) ||
         !directEvidence.supportedComputeCapabilities.every(
             (value) => typeof value === 'string' && /^\d+\.\d+$/.test(value)

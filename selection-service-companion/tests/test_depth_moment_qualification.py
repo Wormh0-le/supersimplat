@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from selection_service_companion.depth_moment_qualification import (
     DEFAULT_DEPTH_MOMENT_QUALIFICATION_PATH,
+    DepthMomentQualificationError,
     QUALIFIED_DEPTH_MOMENT_POLICY_ID,
     load_internal_depth_moment_capability,
     validate_depth_moment_qualification_record,
@@ -29,11 +30,6 @@ from selection_service_companion.renderer_runtime import (
     EXPECTED_PYTHON_VERSION,
     EXPECTED_RENDERER_LOCK_DIGEST,
     EXPECTED_TORCH_VERSION,
-)
-
-
-EXPECTED_CHECKED_QUALIFICATION_DIGEST = (
-    "sha256:aafcb20c4c0d9e4376ef6c55c1744a23707c5e05ecb053a2d27e276af7e5bd4d"
 )
 
 
@@ -217,38 +213,17 @@ def qualification_record() -> dict[str, object]:
 
 
 class DepthMomentQualificationRecordTests(unittest.TestCase):
-    def test_checked_record_is_complete_and_loads_for_the_locked_gpu(self) -> None:
+    def test_previous_checked_record_is_rejected_after_runtime_identity_change(
+        self,
+    ) -> None:
         record = json.loads(
             DEFAULT_DEPTH_MOMENT_QUALIFICATION_PATH.read_text(encoding="utf-8")
         )
-        validated = validate_depth_moment_qualification_record(record)
-        direct = record["directEvidence"]
-        runtime = {
-            "status": "ready",
-            "abiVersion": direct["abiVersion"],
-            "sourceRevision": direct["sourceRevision"],
-            "runtimeBuildId": direct["runtimeBuildId"],
-            "detectedComputeCapability": record["runtime"]["computeCapability"],
-        }
-        with (
-            patch(
-                "selection_service_companion.depth_moment_qualification.current_depth_moment_runtime_facts",
-                return_value={**record["runtime"], "status": "ready"},
-            ),
-            patch(
-                "selection_service_companion.depth_moment_qualification.direct_evidence_capability",
-                return_value=runtime,
-            ),
+        with self.assertRaisesRegex(
+            DepthMomentQualificationError,
+            "runtime gsplatVersion does not match",
         ):
-            loaded = load_internal_depth_moment_capability()
-
-        self.assertEqual(
-            record["recordDigest"],
-            EXPECTED_CHECKED_QUALIFICATION_DIGEST,
-        )
-        self.assertEqual(validated.qualification_digest, record["recordDigest"])
-        self.assertEqual(loaded.status, "ready")
-        self.assertEqual(loaded.qualification_digest, record["recordDigest"])
+            validate_depth_moment_qualification_record(record)
 
     def test_validated_record_binds_policy_identity_and_execution_envelope(self) -> None:
         capability = validate_depth_moment_qualification_record(

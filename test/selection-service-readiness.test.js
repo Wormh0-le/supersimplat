@@ -190,7 +190,7 @@ const capabilities = (overrides = {}) => ({
         runtimeBuildId: runtimeBuildId,
         torchVersion: '2.11.0+cu128',
         cudaVersion: '12.8',
-        gsplatSourceCommit: '77ab983ffe43420b2131669cb35776b883ca4c3c',
+        gsplatSourceCommit: '90d7b4b349e379ccf9ee6a8cef76aa40f48bb32e',
         supportedComputeCapabilities: ['8.9'],
         accumulation: 'global-atomic-baseline',
         buildFlags: [

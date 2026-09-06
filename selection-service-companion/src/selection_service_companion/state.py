@@ -1,24 +1,23 @@
-"""Persistent, operator-owned release and model-installation state."""
+"""In-memory Companion state with ModelScope-backed model discovery."""
 
 from __future__ import annotations
 
 import base64
 import binascii
-from copy import deepcopy
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
 import hashlib
 import json
 import logging
 import math
-import os
-from pathlib import Path
 import secrets
 import struct
-from threading import Event, Lock
 import time
-from typing import Any, Callable, Mapping, Sequence
 import uuid
+from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
+from dataclasses import dataclass, field
+from pathlib import Path
+from threading import Event, Lock
+from typing import Any
 
 from . import PACKAGE_VERSION, PROTOCOL_VERSION
 from .anchor_timing import AnchorServerTiming
@@ -27,13 +26,20 @@ from .binary_scene_snapshot import (
     BinarySceneSnapshotUploadStore,
     ImmutableSnapshotConflict,
     PackedBinarySceneSnapshot,
-    SnapshotUploadError,
     SnapshotUploadAdmission,
     SnapshotUploadCommit,
+    SnapshotUploadError,
 )
 from .camera_binding import (
     camera_binding_digest as _route_b_camera_binding_digest,
+)
+from .camera_binding import (
     parse_camera_binding,
+)
+from .candidate_re_lift import (
+    CandidateReLiftError,
+    produce_production_candidate_re_lift,
+    validate_production_candidate_re_lift_snapshot_binding,
 )
 from .conservative_seed import (
     ConservativeSeedError,
@@ -41,10 +47,11 @@ from .conservative_seed import (
     evaluate_conservative_seed_shadow,
     validate_conservative_seed_policy,
 )
-from .candidate_re_lift import (
-    CandidateReLiftError,
-    produce_production_candidate_re_lift,
-    validate_production_candidate_re_lift_snapshot_binding,
+from .digests import (
+    canonical_json_digest as _canonical_json_digest,
+)
+from .digests import (
+    route_b_artifact_digest as _route_b_artifact_digest,
 )
 from .direct_gaussian_evidence import (
     DIRECT_EVIDENCE_BACKEND_ID,
@@ -52,13 +59,16 @@ from .direct_gaussian_evidence import (
     DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
     direct_evidence_capability,
 )
-from .lift_readiness import default_lift_readiness_policy
 from .evidence import ContributorRenderer, build_evidence_snapshot
 from .gaussian_evidence_contract import (
     admit_gaussian_evidence,
     gaussian_evidence_artifact_matches_admission,
     is_current_gaussian_evidence_artifact,
     is_gaussian_evidence_admission_input,
+)
+from .generated_view_planning import (
+    LEGACY_GENERATED_VIEW_MASK_POLICY_VERSION,
+    synthesize_legacy_view_prompts,
 )
 from .generated_views import (
     GENERATED_VIEW_RESOLUTIONS,
@@ -69,42 +79,12 @@ from .generated_views import (
     quality_gate_tracks,
 )
 from .gsplat_renderer import (
-    AnchorRenderArtifact,
-    GsplatContributorRenderer,
     REFERENCE_EVIDENCE_RASTER_IMPLEMENTATION_ID,
     REFERENCE_EVIDENCE_RUNTIME_BUILD_ID,
+    AnchorRenderArtifact,
+    GsplatContributorRenderer,
     production_gsplat_renderer,
     validate_supported_snapshot,
-)
-from .reference_gaussian_evidence import (
-    ReferenceGaussianEvidenceError,
-    default_reference_evidence_policy,
-    validate_stable_mask_artifact,
-)
-from .reference_gaussian_evidence_aggregation import (
-    default_reference_aggregation_policy,
-)
-from .masking import (
-    CompiledImagePromptProgram,
-    MaskProduction,
-    MaskSessionError,
-    POINT_MASK_PROMPT_COMPILER_POLICY_VERSION,
-    PromptableMaskAdapter,
-    RegisteredFrameSet,
-    SAM3_IMAGE_INSTANCE_ADAPTER_ID,
-    SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION,
-    SAM3_IMAGE_RUNTIME_CONFIG,
-    SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
-    SAM31_RUNTIME_CONFIG_DIGEST,
-    Sam3ImageCandidate,
-    Sam3ImageInstanceAdapter,
-    Sam3ImageProposalBatch,
-    Sam3ImageRefinementInput,
-    Sam3PointMaskAdapter,
-    compile_point_mask_prompt_program,
-    compile_sam3_image_prompt_program,
-    register_frame_set,
-    sam3_image_instance_capabilities,
 )
 from .image_instance_mask_contract import (
     ImageInstanceMaskContractError,
@@ -121,14 +101,41 @@ from .image_instance_prompt_synthesis import (
     prompt_synthesis_policy_digest,
     synthesize_image_instance_prompt,
 )
-from .generated_view_planning import (
-    LEGACY_GENERATED_VIEW_MASK_POLICY_VERSION,
-    synthesize_legacy_view_prompts,
+from .lift_readiness import default_lift_readiness_policy
+from .masking import (
+    POINT_MASK_PROMPT_COMPILER_POLICY_VERSION,
+    SAM3_IMAGE_INSTANCE_ADAPTER_ID,
+    SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION,
+    SAM3_IMAGE_RUNTIME_CONFIG,
+    SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
+    CompiledImagePromptProgram,
+    MaskProduction,
+    MaskSessionError,
+    PromptableMaskAdapter,
+    RegisteredFrameSet,
+    Sam3ImageCandidate,
+    Sam3ImageInstanceAdapter,
+    Sam3ImageProposalBatch,
+    Sam3ImageRefinementInput,
+    Sam3PointMaskAdapter,
+    compile_point_mask_prompt_program,
+    compile_sam3_image_prompt_program,
+    find_sam3_image_checkpoint,
+    register_frame_set,
+    sam3_image_instance_capabilities,
 )
 from .proposal_ranking import (
     RANKING_POLICY_VERSION,
     add_ranking_features,
     decide_proposals,
+)
+from .reference_gaussian_evidence import (
+    ReferenceGaussianEvidenceError,
+    default_reference_evidence_policy,
+    validate_stable_mask_artifact,
+)
+from .reference_gaussian_evidence_aggregation import (
+    default_reference_aggregation_policy,
 )
 from .renderer_runtime import (
     RendererRuntime,
@@ -149,17 +156,6 @@ from .support_probe import (
     count_observed_gaussians,
     probe_camera_from_renderer_camera,
 )
-from .view_assessment import (
-    AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
-    MaskReviewPrompt,
-    assess_local_view,
-    local_view_assessment_payload,
-    view_assessment_policy_digest,
-)
-from .digests import (
-    canonical_json_digest as _canonical_json_digest,
-    route_b_artifact_digest as _route_b_artifact_digest,
-)
 from .target_geometry import (
     AI_SELECT_LOCAL_KEY_VIEW_PLANNER_VERSION,
     AI_SELECT_TARGET_GEOMETRY_POLICY_VERSION,
@@ -174,7 +170,13 @@ from .target_geometry import (
     prompt_support_is_usable,
     target_geometry_policy_digest,
 )
-
+from .view_assessment import (
+    AI_SELECT_VIEW_ASSESSMENT_POLICY_VERSION,
+    MaskReviewPrompt,
+    assess_local_view,
+    local_view_assessment_payload,
+    view_assessment_policy_digest,
+)
 
 DEFAULT_STATE_DIRECTORY = Path.home() / ".local" / "state" / "supersplat-selection-service"
 AI_SELECT_RUNTIME_PROFILE_ID = "ai-select-static-image-instance/v1"
@@ -286,14 +288,14 @@ def _is_torch_out_of_memory(error: BaseException) -> bool:
         return False
     return isinstance(error, torch.OutOfMemoryError)
 
-MODEL_MANIFEST_IDENTITY_FIELDS = (
-    "digest",
-    "adapterId",
-    "modelName",
-    "licenseName",
-    "licenseUrl",
-    "runtimeConfigDigest",
-)
+CURRENT_SAM3_IMAGE_MODEL_MANIFEST = {
+    "digest": "operator-sam3-image-instance-v1",
+    "adapterId": SAM3_IMAGE_INSTANCE_ADAPTER_ID,
+    "modelName": "SAM 3 Image",
+    "licenseName": "SAM License",
+    "licenseUrl": "https://github.com/facebookresearch/sam3/blob/main/LICENSE",
+    "runtimeConfigDigest": SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
+}
 
 # The versioned identity of the authoritative RGB implementation. Ticket 20
 # replaces this seam with the FlashSplat-style same-decision kernel; the
@@ -1031,20 +1033,6 @@ class ResolvedPreviewFrameSet:
     staged_generated_preview: StagedGeneratedPreview | None = None
 
 
-def _read_json(path: Path, default: Any) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return default
-
-
-def _write_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(f"{path.suffix}.tmp")
-    temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
-
-
 def _anchor_string(value: object, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f'AI Select Anchor {field_name} must be a non-empty string')
@@ -1200,7 +1188,7 @@ def _prompt_capabilities_for_adapter(adapter_id: object) -> dict[str, object]:
 @dataclass
 class CompanionState:
     directory: Path
-    requested_active_model_manifest_digest: str | None = None
+    model_cache_root: Path | None = None
     _readiness_lock: Lock = field(default_factory=Lock, init=False, repr=False)
     _session_lock: Lock = field(default_factory=Lock, init=False, repr=False)
     _scene_lock: Lock = field(default_factory=Lock, init=False, repr=False)
@@ -1400,16 +1388,6 @@ class CompanionState:
         repr=False,
     )
     _companion_instance_id: str = field(init=False, repr=False)
-    _process_release_identity: dict[str, str] | None = field(
-        default=None,
-        init=False,
-        repr=False,
-    )
-    _active_model_manifest: dict[str, Any] | None = field(
-        default=None,
-        init=False,
-        repr=False,
-    )
 
     def __post_init__(self) -> None:
         self._companion_instance_id = secrets.token_urlsafe(24)
@@ -1420,228 +1398,39 @@ class CompanionState:
             self.directory / "runtime-spatial-scene-snapshots"
         )
 
-    @property
-    def release_path(self) -> Path:
-        return self.directory / "release.json"
-
-    @property
-    def models_path(self) -> Path:
-        return self.directory / "models.json"
-
-    def install_release(self, release: str, lock_file: Path) -> None:
-        if not release.strip():
-            raise ValueError("release must not be empty")
-        if not lock_file.is_file():
-            raise ValueError(f"locked dependency file does not exist: {lock_file}")
-
-        _write_json(
-            self.release_path,
-            {
-                "release": release,
-                "lockFile": str(lock_file.resolve()),
-                "installedAt": datetime.now(UTC).isoformat(),
-            },
-        )
-
-    def require_release(self) -> dict[str, str]:
-        release = _read_json(self.release_path, None)
-        if (
-            not isinstance(release, dict)
-            or not isinstance(release.get("release"), str)
-            or not isinstance(release.get("lockFile"), str)
-        ):
-            raise ValueError("no locked Companion release is installed; run selection-service install first")
-
-        lock_file = Path(release["lockFile"])
-        if not lock_file.is_file():
-            raise ValueError(
-                "the installed Companion lock file does not exist; run selection-service install again"
-            )
-        return {
-            "release": release["release"],
-            "lockFile": str(lock_file),
-        }
-
-    def install_model(self, manifest_path: Path, weights_path: Path) -> dict[str, Any]:
-        if not weights_path.is_file():
-            raise ValueError(f"model weights do not exist: {weights_path}")
-
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except FileNotFoundError as error:
-            raise ValueError(f"model manifest does not exist: {manifest_path}") from error
-        except json.JSONDecodeError as error:
-            raise ValueError(f"model manifest is not valid JSON: {manifest_path}") from error
-
-        if not isinstance(manifest, dict):
-            raise ValueError("model manifest must be a JSON object")
-
-        required = (
-            "digest",
-            "adapterId",
-            "modelName",
-            "licenseName",
-            "licenseUrl",
-            "runtimeConfigDigest",
-        )
-        missing = [key for key in required if not isinstance(manifest.get(key), str) or not manifest[key].strip()]
-        if missing:
-            raise ValueError(f"model manifest is missing required fields: {', '.join(missing)}")
-        if (
-            manifest["adapterId"] == "sam3.1"
-            and manifest["runtimeConfigDigest"] != SAM31_RUNTIME_CONFIG_DIGEST
-        ):
-            raise ValueError(
-                "the SAM 3.1 Model Manifest runtimeConfigDigest does not match the pinned Companion runtime configuration"
-            )
-        if (
-            manifest["adapterId"] == SAM3_IMAGE_INSTANCE_ADAPTER_ID
-            and manifest["runtimeConfigDigest"] != SAM3_IMAGE_RUNTIME_CONFIG_DIGEST
-        ):
-            raise ValueError(
-                "the SAM 3 Image Model Manifest runtimeConfigDigest does not match the pinned Companion runtime configuration"
-            )
-
-        model = {
-            "digest": manifest["digest"],
-            "adapterId": manifest["adapterId"],
-            "modelName": manifest["modelName"],
-            "licenseName": manifest["licenseName"],
-            "licenseUrl": manifest["licenseUrl"],
-            "runtimeConfigDigest": manifest["runtimeConfigDigest"],
-            "weightsPath": str(weights_path.resolve()),
-            "weightsBundled": False,
-            "installedAt": datetime.now(UTC).isoformat(),
-        }
-        models = self.models()
-        existing = next(
-            (available for available in models if available.get("digest") == model["digest"]),
-            None,
-        )
-        if existing is not None:
-            if any(
-                existing.get(field) != model[field]
-                for field in MODEL_MANIFEST_IDENTITY_FIELDS
-            ):
-                raise ValueError(
-                    "a Model Manifest digest is immutable and cannot be reinstalled with different content"
-                )
-            # A second copy of the same model may restore a
-            # missing artifact at a new path, but cannot alter the manifest
-            # identity pinned by active sessions.
-            model = {
-                **existing,
-                "weightsPath": model["weightsPath"],
-                "weightsBundled": False,
-                "installedAt": model["installedAt"],
-            }
-            models = [
-                model if available.get("digest") == model["digest"] else available
-                for available in models
-            ]
-        else:
-            models.append(model)
-        _write_json(self.models_path, models)
-        return model
-
-    def models(self) -> list[dict[str, Any]]:
-        models = _read_json(self.models_path, [])
-        if not isinstance(models, list):
-            return []
-        return [model for model in models if isinstance(model, dict)]
-
-    def available_models(self) -> list[dict[str, Any]]:
-        return [
-            model
-            for model in self.models()
-            if (
-                self._model_artifact_is_current(model)
-                and self._model_runtime_configuration_is_current(model)
-            )
-        ]
-
-    def configure_active_model_manifest(self, digest: str | None) -> None:
-        if digest is not None and not digest.strip():
-            raise ValueError("active Model Manifest digest must not be empty")
-        with self._readiness_lock:
-            if self._active_model_manifest is not None:
-                raise ValueError(
-                    "the process-lifetime Active Model Manifest is already resolved"
-                )
-            self.requested_active_model_manifest_digest = digest
-
-    def _process_release(self) -> dict[str, str]:
-        with self._readiness_lock:
-            cached = self._process_release_identity
-        if cached is not None:
-            return dict(cached)
-        release = self.require_release()
-        with self._readiness_lock:
-            if self._process_release_identity is None:
-                self._process_release_identity = dict(release)
-            return dict(self._process_release_identity)
-
     def health(self) -> dict[str, str]:
-        release = self._process_release()
         return {
             "status": "ok",
-            "serviceBuild": (
-                f"selection-service-companion/{PACKAGE_VERSION}"
-                f"+{release['release']}"
-            ),
+            "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}",
             "companionInstanceId": self._companion_instance_id,
         }
 
     def resolve_active_model_manifest(self) -> dict[str, Any]:
-        with self._readiness_lock:
-            active = self._active_model_manifest
-            requested_digest = self.requested_active_model_manifest_digest
-        if active is not None:
-            if (
-                self._model_artifact_is_current(active)
-                and self._model_runtime_configuration_is_current(active)
-            ):
-                return dict(active)
+        model = self._model_manifest_if_available()
+        if model is None:
+            cache = self.model_cache_root or (
+                Path.home() / '.cache' / 'modelscope' / 'models'
+            )
             raise ValueError(
-                "the process-lifetime Active Model Manifest is no longer available"
+                'SAM 3 Image model is not present in the ModelScope cache: '
+                f'{cache}'
             )
+        return model
 
-        available = self.available_models()
-        if requested_digest is None:
-            if len(available) == 0:
-                raise ValueError(
-                    "no compatible installed Model Manifest is available"
-                )
-            if len(available) != 1:
-                raise ValueError(
-                    "multiple compatible Model Manifests are installed; "
-                    "the operator must choose one at Companion startup"
-                )
-            selected = available[0]
-        else:
-            selected = next(
-                (
-                    model
-                    for model in available
-                    if model.get("digest") == requested_digest
-                ),
-                None,
-            )
-            if selected is None:
-                raise ValueError(
-                    "the operator-selected Active Model Manifest is unavailable"
-                )
-
-        with self._readiness_lock:
-            if self._active_model_manifest is None:
-                self._active_model_manifest = dict(selected)
-            return dict(self._active_model_manifest)
+    def _model_manifest_if_available(self) -> dict[str, Any] | None:
+        checkpoint = find_sam3_image_checkpoint(self.model_cache_root)
+        if checkpoint is None:
+            return None
+        return {
+            **CURRENT_SAM3_IMAGE_MODEL_MANIFEST,
+            'weightsPath': str(checkpoint),
+            'weightsBundled': False,
+        }
 
     def runtime_profile_capabilities(
         self,
         allowed_editor_origins: list[str],
     ) -> dict[str, Any]:
-        release = self._process_release()
         model = self.resolve_active_model_manifest()
         provider = self._image_instance_provider_capability(model)
         renderer = self._renderer_capability()
@@ -1651,10 +1440,7 @@ class CompanionState:
         )
         return {
             "protocolVersion": AI_SELECT_READINESS_PROTOCOL_VERSION,
-            "serviceBuild": (
-                f"selection-service-companion/{PACKAGE_VERSION}"
-                f"+{release['release']}"
-            ),
+            "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}",
             "companionInstanceId": self._companion_instance_id,
             "runtimeProfileId": AI_SELECT_RUNTIME_PROFILE_ID,
             "renderer": renderer,
@@ -1809,7 +1595,6 @@ class CompanionState:
         }
 
     def _current_production_identity_digest(self) -> str:
-        self._process_release()
         model = self.resolve_active_model_manifest()
         provider = self._image_instance_provider_capability(model)
         renderer = self._renderer_capability()
@@ -8214,17 +7999,6 @@ class CompanionState:
                 "Promptable-mask adapter diagnostics must be JSON-compatible.",
             ) from error
 
-    @staticmethod
-    def _model_runtime_configuration_is_current(model: dict[str, Any]) -> bool:
-        adapter_id = model.get("adapterId")
-        if adapter_id == "sam3.1":
-            return model.get("runtimeConfigDigest") == SAM31_RUNTIME_CONFIG_DIGEST
-        if adapter_id == SAM3_IMAGE_INSTANCE_ADAPTER_ID:
-            return (
-                model.get("runtimeConfigDigest") == SAM3_IMAGE_RUNTIME_CONFIG_DIGEST
-            )
-        return True
-
     def _require_frame_set(self, frame_set_version: str) -> RegisteredFrameSet:
         with self._frame_lock:
             frame_set = self._frame_sets.get(frame_set_version)
@@ -8242,25 +8016,18 @@ class CompanionState:
             raise MaskSessionError(
                 "invalidManifest", "A non-empty Model Manifest digest is required."
             )
-        model = next(
-            (
-                available
-                for available in self.available_models()
-                if available.get("digest") == model_manifest_digest
-            ),
-            None,
-        )
-        if model is None:
+        model = self._model_manifest_if_available()
+        if model is None or model.get("digest") != model_manifest_digest:
             raise MaskSessionError(
                 "modelUnavailable",
-                "The requested Model Manifest is unavailable or its separately installed weights cannot be verified.",
+                "The SAM 3 Image model is unavailable from the ModelScope cache.",
             )
         adapter_id = model.get("adapterId")
         adapter = self.mask_adapters.get(adapter_id)
         if adapter is None:
             raise MaskSessionError(
                 "incompatibleManifest",
-                "The installed Model Manifest selects a promptable-mask adapter that is unavailable in this Companion runtime.",
+                "The current Model Manifest selects a promptable-mask adapter that is unavailable in this Companion runtime.",
             )
         return model, adapter
 
@@ -8510,13 +8277,6 @@ class CompanionState:
             "invalidPromptLog", "A New Mask Set requires an Anchor View prompt."
         )
 
-    def _model_artifact_is_current(self, model: dict[str, Any]) -> bool:
-        try:
-            weights_path = Path(model["weightsPath"])
-            return weights_path.is_file()
-        except (KeyError, OSError, TypeError, ValueError):
-            return False
-
     def _validate_scene_snapshot(
         self, snapshot: dict[str, Any]
     ) -> tuple[str, str, list[int], str]:
@@ -8554,34 +8314,10 @@ class CompanionState:
             }
 
     def capabilities(self, allowed_editor_origins: list[str]) -> dict[str, Any]:
-        release = self.require_release()
-        manifests = []
-        for model in self.available_models():
-            if (
-                not all(key in model for key in ("digest", "adapterId", "modelName"))
-                or model["adapterId"] not in self.mask_adapters
-            ):
-                continue
-            try:
-                prompt_capabilities = _prompt_capabilities_for_adapter(
-                    model["adapterId"]
-                )
-            except MaskSessionError:
-                # Non-current fixtures (for example the legacy sam3.1
-                # Multiplex adapter) have no current Prompt capability
-                # contract and stay out of the advertised manifest list.
-                continue
-            manifests.append({
-                "digest": model["digest"],
-                "adapterId": model["adapterId"],
-                "modelName": model["modelName"],
-                "weightsBundled": False,
-                "promptCapabilities": prompt_capabilities,
-            })
         renderer_capability = self._renderer_capability()
         return {
             "protocolVersion": PROTOCOL_VERSION,
-            "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}+{release['release']}",
+            "serviceBuild": f"selection-service-companion/{PACKAGE_VERSION}",
             "renderer": renderer_capability,
             "directEvidence": direct_evidence_capability(),
             "referenceCandidateReLift": self._reference_candidate_re_lift_capability(),
@@ -8603,7 +8339,6 @@ class CompanionState:
                 "binarySceneSnapshotRegistrationV1",
                 "cameraAwareSpatialWorkingSetV1",
             ],
-            "modelManifests": manifests,
             "capacity": self._capacity(),
             "allowedEditorOrigins": allowed_editor_origins,
         }
@@ -8659,10 +8394,6 @@ class CompanionState:
             )
         if not getattr(renderer, "requires_locked_runtime", False):
             return renderer
-        try:
-            self.require_release()
-        except ValueError as error:
-            raise MaskSessionError("rendererUnavailable", str(error)) from error
         capability = self._renderer_capability()
         if capability["status"] != "ready":
             raise MaskSessionError(

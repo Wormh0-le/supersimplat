@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from .server import create_server
-from .state import CompanionState, DEFAULT_STATE_DIRECTORY
+from .state import DEFAULT_STATE_DIRECTORY, CompanionState
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -20,32 +20,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
-    install = commands.add_parser("install", help="record a locked Companion release")
-    install.add_argument("--release", required=True)
-    install.add_argument(
-        "--lock-file",
-        type=Path,
-        required=True,
-        help="the uv.lock file used to create the isolated Companion environment",
-    )
-
-    models = commands.add_parser("models", help="manage separately installed Model Manifests")
-    model_commands = models.add_subparsers(dest="models_command", required=True)
-    model_install = model_commands.add_parser("install", help="register externally stored weights")
-    model_install.add_argument("--manifest", type=Path, required=True)
-    model_install.add_argument("--weights", type=Path, required=True)
-
     start = commands.add_parser("start", help="start the operator-owned Companion control plane")
     start.add_argument("--endpoint", default="http://127.0.0.1:8787")
     start.add_argument("--profile", choices=("loopback", "trusted-lan"), default="loopback")
     start.add_argument("--allow-origin", action="append", default=[], required=True)
-    start.add_argument(
-        "--active-model-manifest",
-        help=(
-            "operator-selected Model Manifest digest; required when more than "
-            "one compatible manifest is installed"
-        ),
-    )
     start.add_argument("--cert", type=Path)
     start.add_argument("--key", type=Path)
     return parser
@@ -55,21 +33,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     state = CompanionState(arguments.data_dir)
     try:
-        if arguments.command == "install":
-            state.install_release(arguments.release, arguments.lock_file)
-            print(f"recorded Companion release {arguments.release}")
-            return 0
-
-        if arguments.command == "models" and arguments.models_command == "install":
-            model = state.install_model(arguments.manifest, arguments.weights)
-            print(f"installed separately stored Model Manifest {model['digest']}")
-            return 0
-
         if arguments.command == "start":
-            state.require_release()
-            state.configure_active_model_manifest(
-                arguments.active_model_manifest
-            )
             server = create_server(
                 state=state,
                 endpoint=arguments.endpoint,

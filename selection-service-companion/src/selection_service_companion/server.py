@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+import ipaddress
+import json
+import socket
+import ssl
 from dataclasses import dataclass
 from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-import ipaddress
-import json
-import socket
-import ssl
 from typing import Iterable
 from urllib.parse import unquote, urlparse
 
@@ -251,11 +251,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
 
         timing = AnchorServerTiming()
         try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error), server_timing=timing)
-            return
-        try:
             request = self._read_json_body()
             response = self._state.render_ai_select_anchor(request, timing=timing)
         except MaskSessionError as error:
@@ -284,11 +279,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         """Resolve Included Stable View Evidence and publish one Candidate."""
 
         try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
-        try:
             request = self._read_json_body()
             response = self._state.produce_ai_select_candidate_re_lift(request)
         except MaskSessionError as error:
@@ -313,11 +303,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         """Produce one compact production same-decision P/N/V artifact."""
 
         try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
-        try:
             request = self._read_json_body()
             response = self._state.produce_ai_select_direct_evidence(request)
         except MaskSessionError as error:
@@ -341,11 +326,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
     def _probe_ai_select_anchor_support(self) -> None:
         """Route the versioned mask-conditioned Gaussian support gate."""
 
-        try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
         try:
             request = self._read_json_body()
             response = self._state.probe_ai_select_anchor_support(request)
@@ -373,11 +353,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         """Route one planner-owned Generated View through the locked renderer."""
 
         timing = AnchorServerTiming()
-        try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error), server_timing=timing)
-            return
         try:
             request = self._read_json_body()
             response = self._state.render_ai_select_view(request, timing=timing)
@@ -407,11 +382,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         """Route the compact visible-surface Target Geometry Hint derivation."""
 
         try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
-        try:
             request = self._read_json_body()
             response = self._state.produce_ai_select_target_geometry_hint(request)
         except MaskSessionError as error:
@@ -437,11 +407,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
     def _plan_ai_select_local_key_views(self) -> None:
         """Route one bounded local Key-View batch planning request."""
 
-        try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
         try:
             request = self._read_json_body()
             response = self._state.plan_ai_select_local_key_views(request)
@@ -469,11 +434,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         """Route one geometry-guided static-image Prompt synthesis attempt."""
 
         try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
-        try:
             request = self._read_json_body()
             response = self._state.synthesize_ai_select_generated_view_prompt(request)
         except MaskSessionError as error:
@@ -497,11 +457,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
     def _produce_ai_select_image_instance_mask(self) -> None:
         """Route one independent, single-mask SAM 3 Image inference attempt."""
 
-        try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
         try:
             request = self._read_json_body()
             response = self._state.produce_ai_select_image_instance_mask(request)
@@ -527,11 +482,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         """Route one inference-produced Mask Review; no Stable mutation occurs."""
 
         try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
-        try:
             request = self._read_json_body()
             response = self._state.review_ai_select_image_instance_mask(request)
         except MaskSessionError as error:
@@ -555,11 +505,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
     def _produce_ai_select_mask_proposals(self) -> None:
         """Route one bound PromptState proposal request through the adapter."""
 
-        try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
         try:
             request = self._read_json_body()
             response = self._state.produce_ai_select_mask(request)
@@ -625,11 +570,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
 
     def _begin_binary_scene_snapshot_upload(self) -> None:
         try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
-        try:
             manifest = parse_binary_scene_snapshot_manifest(
                 self._read_json_body(maximum_bytes=2 * 1024 * 1024)
             )
@@ -665,11 +605,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
 
     def _register_spatial_scene_manifest(self) -> None:
         try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
-        try:
             manifest = parse_spatial_scene_manifest(
                 self._read_json_body(maximum_bytes=2 * 1024 * 1024)
             )
@@ -697,11 +632,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         )
 
     def _begin_spatial_scene_chunk_upload(self) -> None:
-        try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
         try:
             request = self._read_json_body(maximum_bytes=2 * 1024 * 1024)
             scene_id = request.get("sceneId")
@@ -745,11 +675,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
 
     def _upload_spatial_scene_chunk(self, upload_id: str, chunk_id: str) -> None:
         try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
-        try:
             if self.headers.get("Content-Type", "").split(";", 1)[0].lower() != "application/octet-stream":
                 raise SnapshotUploadError(
                     "Spatial Scene chunks must use application/octet-stream"
@@ -784,11 +709,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         )
 
     def _commit_spatial_scene_chunk_upload(self, upload_id: str) -> None:
-        try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
         try:
             self._read_json_body(maximum_bytes=1024)
             commit = self._state.commit_spatial_scene_chunk_upload(upload_id)
@@ -826,11 +746,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         self, upload_id: str, index: int
     ) -> None:
         try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
-        try:
             if self.headers.get("Content-Type", "").split(";", 1)[0].lower() != "application/octet-stream":
                 raise SnapshotUploadError(
                     "Binary Scene Snapshot chunks must use application/octet-stream"
@@ -867,11 +782,6 @@ class CompanionRequestHandler(BaseHTTPRequestHandler):
         )
 
     def _commit_binary_scene_snapshot_upload(self, upload_id: str) -> None:
-        try:
-            self._state.require_release()
-        except ValueError as error:
-            self._send_unavailable(str(error))
-            return
         try:
             self._read_json_body(maximum_bytes=1024)
             commit = self._state.commit_binary_scene_snapshot_upload(upload_id)

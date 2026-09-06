@@ -2,28 +2,28 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from http import HTTPStatus
 import json
-from pathlib import Path
 import struct
 import tempfile
-from threading import Thread
 import unittest
+import zlib
+from http import HTTPStatus
+from pathlib import Path
+from threading import Thread
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
-import zlib
 
 import numpy as np
 
 from selection_service_companion.digests import route_b_artifact_digest
+from selection_service_companion.image_instance_mask_contract import (
+    create_image_instance_prompt_artifact,
+)
 from selection_service_companion.image_instance_prompt_synthesis import (
     AI_SELECT_IMAGE_INSTANCE_PROMPT_SYNTHESIS_POLICY_VERSION,
     LimitedImageInstancePrompt,
     prompt_synthesis_policy_digest,
     synthesize_image_instance_prompt,
-)
-from selection_service_companion.image_instance_mask_contract import (
-    create_image_instance_prompt_artifact,
 )
 from selection_service_companion.masking import (
     SAM3_IMAGE_INSTANCE_ADAPTER_ID,
@@ -41,7 +41,6 @@ from selection_service_companion.target_geometry import (
     local_key_view_policy_digest,
     target_geometry_policy_digest,
 )
-
 
 EDITOR_ORIGIN = 'https://editor.example'
 CAMERA: dict[str, object] = {
@@ -176,26 +175,21 @@ class RouteBAcquisitionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.directory = Path(self.temporary_directory.name)
-        self.state = CompanionState(self.directory / 'state')
-        lock_file = self.directory / 'uv.lock'
-        lock_file.write_text('locked companion dependencies\n', encoding='utf-8')
-        self.state.install_release('0.1.0', lock_file)
-        weights = self.directory / 'sam3-image.pt'
-        weights.write_bytes(b'separately acquired sam3 image weights')
-        self.model_manifest_digest = 'sha256:' + ('a' * 64)
-        manifest = self.directory / 'sam3-image.json'
-        manifest.write_text(
-            json.dumps({
-                'digest': self.model_manifest_digest,
-                'adapterId': SAM3_IMAGE_INSTANCE_ADAPTER_ID,
-                'modelName': 'SAM 3 Image',
-                'licenseName': 'SAM License',
-                'licenseUrl': 'https://example.test/sam-license',
-                'runtimeConfigDigest': SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
-            }),
-            encoding='utf-8',
+        checkpoint = (
+            self.directory
+            / 'models'
+            / 'facebook--sam3'
+            / 'snapshots'
+            / 'master'
+            / 'sam3.pt'
         )
-        self.state.install_model(manifest, weights)
+        checkpoint.parent.mkdir(parents=True)
+        checkpoint.write_bytes(b'modelscope cache fixture')
+        self.state = CompanionState(
+            self.directory / 'state',
+            model_cache_root=self.directory / 'models',
+        )
+        self.model_manifest_digest = 'operator-sam3-image-instance-v1'
         self.runtime = FakeSam3ImageRuntime()
         self.state.mask_adapters[SAM3_IMAGE_INSTANCE_ADAPTER_ID] = (
             Sam3ImageInstanceAdapter(build_model=lambda _model: self.runtime)

@@ -6,18 +6,15 @@ distribution. It intentionally contains no model weights. The product server
 exposes only Final Spec v1.3 routes; frozen Object Selection helpers remain
 in-process for controlled historical benchmarks and have no HTTP surface.
 
-## Install a locked release
+## Install the Companion environment
 
-Use `uv` to create an isolated environment from a tagged, locked release. The
+Use `uv` to create an isolated environment from the repository's lock file. The
 renderer and SAM3 extras are installed into this Companion-owned `.venv`; do
 not activate or search `thirdparty/sam3/.venv`:
 
 ```sh
 cd selection-service-companion
 uv sync --python 3.12.12 --locked --extra renderer --extra sam3
-uv run --locked --extra renderer --extra sam3 selection-service install \
-  --release 0.1.0 \
-  --lock-file ./uv.lock
 ```
 
 `pyproject.toml` and `uv.lock` are the installation source of truth. The
@@ -38,20 +35,18 @@ This CPU setup is not a GPU renderer or #115 acceptance run. A GPU operator
 should use the normal locked command above and record the actual GPU/runtime
 facts when performing a real check.
 
-The `install` command records the selected release and lock-file path in the
-operator's local Companion state; uv consumes `pyproject.toml` and `uv.lock`
-during installation. The Companion does not download a model or modify the
-editor, and it does not compare dependency versions, source revisions, or lock
-file digests with values embedded in runtime code. Renderer availability checks
-CUDA, importability, and Companion-local package ownership. Availability does
-not qualify a runtime for production Evidence or aggregation; record actual
-runtime facts with input exports.
+`uv` consumes `pyproject.toml` and `uv.lock` during installation. The Companion
+does not download or register a model, modify the editor, or compare dependency
+versions, source revisions, or lock-file digests with values embedded in runtime
+code. Renderer availability checks CUDA, importability, and Companion-local
+package ownership. Availability does not qualify a runtime for production
+Evidence or aggregation; record actual runtime facts with input exports.
 
 ## Render authoritative RGB with optional reference Contributor diagnostics
 
-The production Companion registers its installed gsplat renderer by default,
-but advertises it as ready only after the configured release and current
-process pass the availability checks above. The renderer accepts only
+The production Companion registers its gsplat renderer by default, but
+advertises it as ready only after the current process passes the availability
+checks above. The renderer accepts only
 protocol-1 SuperSplat
 snapshots using `playcanvas-gsplat-classic`, opaque background, right-handed
 world coordinates, XYZW quaternions, the declared effective DC/SH schema, and
@@ -162,6 +157,30 @@ This is CPU reference aggregation/classification. It adds no browser route,
 does not publish a Candidate or mutate Native Selection, and is not Ticket 20
 production same-decision GPU Evidence.
 
+## Run the issue #115 Bonsai diagnostic
+
+The operator-only harness consumes the tracked A/B/C input archives and the
+current Companion process. It validates the shared binary Scene Snapshot,
+recomputes production Direct Evidence from the exported user-confirmed A/B
+masks, evaluates the frozen S0 shadow policy, creates the existing EWS
+Core/Context binding, performs one raw-mass A+B aggregation, and renders C for
+inspection only:
+
+```sh
+uv run --no-sync python scripts/run_issue_115_bonsai.py \
+  --input-directory ../data/issue-115-bonsai \
+  --output /secure/issue-115-bonsai-diagnostic.json
+```
+
+The command requires the real CUDA renderer and the SAM 3 checkpoint to be
+present in the ModelScope cache. It never generates replacement masks, uses C
+as fusion Evidence, publishes a Candidate, or changes editor state. The
+result records the input identities, policy, counts, timings, host/GPU peak
+resource readouts, and C's new/contamination/unknown inspection categories.
+The full historical TargetScopeState ledger is not run by this 1.24M-row
+diagnostic; the result marks that Scope/Domain acceptance item as incomplete
+and must not be read as a production qualification.
+
 ## Publish a reference Candidate atomically
 
 Ticket 14D's `create_reference_candidate_artifact` replays the exact current
@@ -193,30 +212,19 @@ current #115 acceptance gate. The repository has no independent stock-gsplat
 autograd Evidence producer, so the historical record declares that backend
 unavailable instead of synthesizing a labeled artifact.
 
-## Install a model separately
+## Use the ModelScope-cached SAM 3 model
 
-The operator supplies an already acquired checkpoint and a Model Manifest. The
-checkpoint path is external environment configuration. The Companion does not
-store checkpoint hashes or source-revision metadata, and it does not hash or
-verify the model file.
+ModelScope owns model acquisition. The Companion only checks for an existing
+SAM 3 checkpoint at
+`~/.cache/modelscope/models/facebook--sam3/snapshots/<revision>/sam3.pt` and
+passes that path to the official runtime. It never downloads, copies,
+registers, hashes, or otherwise qualifies the model file. There is no model
+installation command and no operator-selected model path.
 
-Checkpoint acquisition, model files, and their local manifest are operator
-environment configuration. They are not downloaded or committed by this
-repository, and #115 does not add a separate model-version or model-hash test;
-the README command below is the complete installation entry point. The
-prepared #115 input bundle already contains the exported RGB/mask artifacts,
-so installing SAM3 or rerunning mask generation is not required to inspect
-that bundle. The required joint A/B human review remains an operator gate
-before the bundle can be treated as #115 acceptance input.
-
-```sh
-uv run --locked --extra renderer --extra sam3 selection-service models install \
-  --manifest /secure/manifests/sam3-image.json \
-  --weights /secure/models/sam3.pt
-```
-
-The Companion records the manifest and external checkpoint path. It
-does not copy the checkpoint into the package or send a path to the editor.
+The prepared #115 input bundle already contains the exported RGB/mask
+artifacts, so installing SAM3 or rerunning mask generation is not required to
+inspect that bundle. The required joint A/B human review remains an operator
+gate before the bundle can be treated as #115 acceptance input.
 
 For `adapterId: "sam3-image-instance/v1"` (the current static instance
 adapter), `runtimeConfigDigest` must be
@@ -280,23 +288,14 @@ remains private only for frozen migration fixtures.
 ## Start the control plane
 
 The default profile listens only on loopback. The endpoint is deployment-owned;
-ordinary editor UI does not expose endpoint or model controls. When exactly one
-compatible Model Manifest is installed, the process resolves it automatically.
+ordinary editor UI does not expose endpoint or model controls. At startup the
+process resolves the fixed current SAM 3 Image adapter when its ModelScope
+checkpoint is present.
 
 ```sh
 uv run --locked --extra renderer --extra sam3 selection-service start \
   --endpoint http://127.0.0.1:8787 \
   --allow-origin https://editor.example
-```
-
-When multiple compatible manifests are installed, the operator must resolve
-the one process-lifetime Active Model Manifest explicitly:
-
-```sh
-uv run --locked --extra renderer --extra sam3 selection-service start \
-  --endpoint http://127.0.0.1:8787 \
-  --allow-origin https://editor.example \
-  --active-model-manifest sha256:operator-selected-manifest
 ```
 
 Trusted-LAN use must be explicit and HTTPS-only:
@@ -317,19 +316,18 @@ unspecified, and loopback listeners are rejected.
 
 This release exposes a lightweight `/health` heartbeat with one opaque
 process-lifetime `companionInstanceId`. `/capabilities` performs the heavier
-readiness protocol v2 Runtime Profile validation and returns one singular
-`activeModelManifest`;
-zero manifests fail unavailable and multiple manifests require the startup
-choice above. The browser runs `/capabilities` on first connection, recovery,
-or Instance replacement rather than on every heartbeat.
+readiness protocol v2 Runtime Profile validation and returns the singular
+fixed `activeModelManifest`; a missing ModelScope checkpoint reports the
+Companion as unavailable. The browser runs `/capabilities` on first
+connection, recovery, or Instance replacement rather than on every heartbeat.
 
 The current static instance adapter is `sam3-image-instance/v1`, built on the
 official SAM 3 Image instance-interaction path
 (`build_sam3_image_model(enable_inst_interactivity=True)` →
 `Sam3Processor.set_image` → `predict_inst`). It never instantiates the
 Multiplex video predictor or calls private tracker-head methods. The
-historical SAM 3.1 Multiplex-backed static shim is retired; a `sam3.1`
-manifest stays installable for frozen benchmark fixtures but never advertises
+historical SAM 3.1 Multiplex-backed static shim is retired; its adapter
+remains only for frozen in-process benchmark fixtures and never advertises
 Ready for the current `ai-select-static-image-instance/v1` profile.
 
 The current control plane exposes `/scene-snapshot-uploads/v1`, the AI Select
@@ -393,12 +391,11 @@ The frozen minimum M0 is `1/255`; this internal readout does not enter
 Identity, or Candidate identity. Work outside a newly measured envelope stays
 on ordinary single-N production Direct Evidence without a CWED readout.
 
-Run the opt-in locked real-model check with the operator-owned SAM 3 Image
+Run the opt-in locked real-model check with the ModelScope-cached SAM 3 Image
 checkpoint and CUDA:
 
 ```sh
-SUPERSPLAT_SAM3_IMAGE_GPU_CHECKPOINT=/secure/models/sam3.pt \
-  uv run --locked --extra sam3 python -m unittest discover \
+uv run --locked --extra sam3 python -m unittest discover \
   -s tests -p test_sam3_image_instance_gpu.py
 ```
 

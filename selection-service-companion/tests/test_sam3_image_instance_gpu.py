@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import hashlib
-from importlib.metadata import distribution
 import inspect
 import io
 import json
-import os
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 from PIL import Image
 
@@ -18,17 +16,20 @@ from selection_service_companion.masking import (
     Sam3ImageInstanceAdapter,
     Sam3ImageRefinementInput,
     compile_sam3_image_prompt_program,
+    find_sam3_image_checkpoint,
     sam3_image_instance_capabilities,
 )
 
 
-SAM3_SOURCE_COMMIT = '5dd401d1c5c1d5c3eedff06d41b77af824517619'
-CHECKPOINT_ENV = 'SUPERSPLAT_SAM3_IMAGE_GPU_CHECKPOINT'
-
-
 def _gpu_fixture_available() -> bool:
-    checkpoint = os.environ.get(CHECKPOINT_ENV)
-    if not checkpoint or not Path(checkpoint).is_file():
+    if find_sam3_image_checkpoint() is None:
+        return False
+    repository = Path(__file__).resolve().parents[2]
+    if not (
+        repository
+        / 'docs/benchmarks/fixtures/office/targets/clothes_rack/'
+        / 'frame-set-v1/frames/001-anchor.png'
+    ).is_file():
         return False
     try:
         import torch
@@ -60,18 +61,15 @@ class Sam3ImageStaticPathAuditTests(unittest.TestCase):
 
 @unittest.skipUnless(
     _gpu_fixture_available(),
-    f'locked SAM 3 Image GPU fixture requires {CHECKPOINT_ENV}',
+    'locked SAM 3 Image GPU fixture requires the ModelScope cache and office image fixture',
 )
 class Sam3ImageInstanceGpuTests(unittest.TestCase):
     """Locked-runtime proof for the official SAM 3 Image instance path."""
 
     def test_point_box_and_refinement_on_the_real_image_model(self) -> None:
-        checkpoint = Path(os.environ[CHECKPOINT_ENV])
-        direct_url = distribution('sam3').read_text('direct_url.json')
-        if direct_url is not None:
-            vcs_info = json.loads(direct_url).get('vcs_info')
-            if vcs_info is not None:
-                self.assertEqual(vcs_info['commit_id'], SAM3_SOURCE_COMMIT)
+        checkpoint = find_sam3_image_checkpoint()
+        self.assertIsNotNone(checkpoint)
+        assert checkpoint is not None
 
         repository = Path(__file__).resolve().parents[2]
         image_path = repository / (
@@ -216,7 +214,9 @@ class Sam3ImageInstanceGpuTests(unittest.TestCase):
     def test_locked_model_oom_fault_publishes_no_candidate_batch(self) -> None:
         import torch
 
-        checkpoint = Path(os.environ[CHECKPOINT_ENV])
+        checkpoint = find_sam3_image_checkpoint()
+        self.assertIsNotNone(checkpoint)
+        assert checkpoint is not None
         repository = Path(__file__).resolve().parents[2]
         rgb_png = (
             repository

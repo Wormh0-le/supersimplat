@@ -8,16 +8,16 @@ Selection state.
 
 from __future__ import annotations
 
-from copy import deepcopy
 import json
 import math
 import time
 from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
+from dataclasses import dataclass
 from typing import Final
 
 from .digests import route_b_artifact_digest
 from .gaussian_evidence_contract import is_gaussian_evidence_artifact
-
 
 CONSERVATIVE_SEED_POLICY_SCHEMA_VERSION: Final = 1
 CONSERVATIVE_SEED_TARGET_GEOMETRY_SCHEMA_VERSION: Final = 1
@@ -281,10 +281,72 @@ def _distance(left: Sequence[float], right: Sequence[float]) -> float:
     return math.sqrt(sum((left[index] - right[index]) ** 2 for index in range(3)))
 
 
-def _components(
+@dataclass(frozen=True)
+class _SpatialNode:
+    """A bounded exact broad-phase node for S0 component connectivity."""
+
+    minimum: tuple[float, float, float]
+    maximum: tuple[float, float, float]
+    indices: tuple[int, ...]
+    left: "_SpatialNode | None" = None
+    right: "_SpatialNode | None" = None
+
+
+_SPATIAL_LEAF_SIZE = 32
+
+
+def _spatial_node_bounds(
+    candidates: list[dict[str, object]], indices: Sequence[int]
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    minimum = [float("inf")] * 3
+    maximum = [float("-inf")] * 3
+    for index in indices:
+        center = candidates[index]["center"]
+        assert isinstance(center, Sequence)
+        for axis in range(3):
+            coordinate = float(center[axis])
+            minimum[axis] = min(minimum[axis], coordinate)
+            maximum[axis] = max(maximum[axis], coordinate)
+    return tuple(minimum), tuple(maximum)
+
+
+def _build_spatial_index(
+    candidates: list[dict[str, object]], indices: Sequence[int]
+) -> _SpatialNode:
+    minimum, maximum = _spatial_node_bounds(candidates, indices)
+    if len(indices) <= _SPATIAL_LEAF_SIZE:
+        return _SpatialNode(minimum, maximum, tuple(indices))
+    axis = max(range(3), key=lambda value: maximum[value] - minimum[value])
+    ordered = sorted(
+        indices,
+        key=lambda index: (
+            float(candidates[index]["center"][axis]),
+            int(candidates[index]["stableGaussianId"]),
+        ),
+    )
+    middle = len(ordered) // 2
+    return _SpatialNode(
+        minimum,
+        maximum,
+        (),
+        left=_build_spatial_index(candidates, ordered[:middle]),
+        right=_build_spatial_index(candidates, ordered[middle:]),
+    )
+
+
+def _components_spatial(
     candidates: list[dict[str, object]],
     multiplier: float,
 ) -> tuple[list[list[dict[str, object]]], int]:
+    """Find the exact same components with a spatial broad phase.
+
+    Candidates are visited in descending connectivity radius.  A candidate
+    therefore only needs to query later (no larger-radius) candidates using
+    its own radius.  The tree only skips nodes whose bounding box is outside
+    that radius; every surviving leaf pair still uses the original scalar
+    distance predicate.
+    """
+
     parent = list(range(len(candidates)))
 
     def find(index: int) -> int:
@@ -299,14 +361,52 @@ def _components(
         if left_root != right_root:
             parent[max(left_root, right_root)] = min(left_root, right_root)
 
+    radii = [
+        multiplier * float(candidate["scale"]) for candidate in candidates
+    ]
+    order = sorted(
+        range(len(candidates)),
+        key=lambda index: (
+            -radii[index],
+            int(candidates[index]["stableGaussianId"]),
+        ),
+    )
+    rank = [0] * len(candidates)
+    for position, index in enumerate(order):
+        rank[index] = position
+    root = _build_spatial_index(candidates, range(len(candidates)))
     comparisons = 0
-    for left_index, left in enumerate(candidates):
-        for right_index in range(left_index + 1, len(candidates)):
-            right = candidates[right_index]
-            comparisons += 1
-            threshold = multiplier * max(float(left["scale"]), float(right["scale"]))
-            if _distance(left["center"], right["center"]) <= threshold:
-                union(left_index, right_index)
+
+    def query(node: _SpatialNode, source_index: int, radius: float) -> None:
+        nonlocal comparisons
+        source_center = candidates[source_index]["center"]
+        assert isinstance(source_center, Sequence)
+        distance_to_bounds = 0.0
+        for axis in range(3):
+            coordinate = float(source_center[axis])
+            if coordinate < node.minimum[axis]:
+                distance_to_bounds += (node.minimum[axis] - coordinate) ** 2
+            elif coordinate > node.maximum[axis]:
+                distance_to_bounds += (coordinate - node.maximum[axis]) ** 2
+        if distance_to_bounds > radius * radius:
+            return
+        if node.indices:
+            for other_index in node.indices:
+                if rank[other_index] <= rank[source_index]:
+                    continue
+                other = candidates[other_index]
+                other_center = other["center"]
+                assert isinstance(other_center, Sequence)
+                comparisons += 1
+                if _distance(source_center, other_center) <= radius:
+                    union(source_index, other_index)
+            return
+        assert node.left is not None and node.right is not None
+        query(node.left, source_index, radius)
+        query(node.right, source_index, radius)
+
+    for source_index in order:
+        query(root, source_index, radii[source_index])
     grouped: dict[int, list[dict[str, object]]] = {}
     for index, candidate in enumerate(candidates):
         grouped.setdefault(find(index), []).append(candidate)
@@ -316,6 +416,13 @@ def _components(
     ]
     components.sort(key=lambda component: int(component[0]["stableGaussianId"]))
     return components, comparisons
+
+
+def _components(
+    candidates: list[dict[str, object]],
+    multiplier: float,
+) -> tuple[list[list[dict[str, object]]], int]:
+    return _components_spatial(candidates, multiplier)
 
 
 def _component_summary(

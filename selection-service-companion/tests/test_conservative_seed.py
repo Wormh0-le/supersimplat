@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import Iterator
-from copy import deepcopy
 import hashlib
 import json
-from pathlib import Path
+import math
 import struct
 import tempfile
 import unittest
+from collections.abc import Iterator
+from copy import deepcopy
+from pathlib import Path
 from unittest.mock import patch
 
 from selection_service_companion.binary_scene_snapshot import (
@@ -19,6 +20,7 @@ from selection_service_companion.binary_scene_snapshot import (
 from selection_service_companion.camera_binding import camera_binding_digest
 from selection_service_companion.conservative_seed import (
     ConservativeSeedError,
+    _components,
     canonical_conservative_seed_shadow_bytes,
     create_conservative_seed_policy,
     create_conservative_seed_target_geometry,
@@ -271,6 +273,48 @@ class DirectEvidenceFixtureRenderer(GsplatContributorRenderer):
 
 
 class ConservativeSeedEvaluatorTests(unittest.TestCase):
+    def test_spatial_connectivity_matches_small_quadratic_oracle(self) -> None:
+        candidates = [
+            {
+                "stableGaussianId": stable_id,
+                "center": [float(stable_id % 3) * 1.7, float(stable_id // 3), 0.0],
+                "scale": 0.2 + 0.1 * float(stable_id % 2),
+            }
+            for stable_id in range(8)
+        ]
+        expected: list[set[int]] = []
+        parent = list(range(len(candidates)))
+
+        def find(index: int) -> int:
+            while parent[index] != index:
+                parent[index] = parent[parent[index]]
+                index = parent[index]
+            return index
+
+        for left_index, left in enumerate(candidates):
+            for right_index in range(left_index + 1, len(candidates)):
+                right = candidates[right_index]
+                if math.dist(left["center"], right["center"]) <= 4.0 * max(
+                    left["scale"], right["scale"]
+                ):
+                    left_root = find(left_index)
+                    right_root = find(right_index)
+                    parent[max(left_root, right_root)] = min(left_root, right_root)
+        grouped: dict[int, set[int]] = {}
+        for index, candidate in enumerate(candidates):
+            grouped.setdefault(find(index), set()).add(
+                int(candidate["stableGaussianId"])
+            )
+        expected = sorted(grouped.values(), key=lambda group: min(group))
+
+        actual, comparisons = _components(candidates, 4.0)
+        actual_groups = [
+            {int(candidate["stableGaussianId"]) for candidate in component}
+            for component in actual
+        ]
+        self.assertEqual(actual_groups, expected)
+        self.assertLessEqual(comparisons, len(candidates) * (len(candidates) - 1) // 2)
+
     def test_admits_one_high_precision_connected_core(self) -> None:
         evidence = artifact(
             stable_ids=[7, 9],

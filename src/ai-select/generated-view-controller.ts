@@ -926,7 +926,7 @@ export class AISelectGeneratedViewController {
         }
         if (!this.supportsGeneratedViews()) {
             this.failPlanning(
-                'The Selection Service Companion does not advertise Target Geometry and local Key-View planning. Install the compatible locked Companion release, then refresh readiness.'
+                'The Selection Service Companion does not advertise Target Geometry and local Key-View planning. Use a compatible Companion environment, then refresh readiness.'
             );
             return;
         }

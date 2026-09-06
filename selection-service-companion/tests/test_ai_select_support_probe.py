@@ -513,9 +513,6 @@ class AnchorSupportProbeRouteTests(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         directory = Path(self.temporary_directory.name)
         self.state = CompanionState(directory / "state")
-        lock_file = directory / "uv.lock"
-        lock_file.write_text("locked companion dependencies\n", encoding="utf-8")
-        self.state.install_release("0.1.0", lock_file)
         self.payload, self.manifest = _binary_fixture()
         self.server = create_server(
             state=self.state,

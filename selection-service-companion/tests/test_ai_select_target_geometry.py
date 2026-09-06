@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from http import HTTPStatus
 import json
-from pathlib import Path
 import struct
 import tempfile
+import unittest
+from http import HTTPStatus
+from pathlib import Path
 from threading import Event, Thread
 from typing import Any
-import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -20,10 +20,7 @@ from selection_service_companion.binary_scene_snapshot import (
     binary_scene_snapshot_content_digest,
 )
 from selection_service_companion.digests import route_b_artifact_digest
-from selection_service_companion.masking import (
-    SAM31_RUNTIME_CONFIG_DIGEST,
-    Sam3PointMaskAdapter,
-)
+from selection_service_companion.masking import SAM3_IMAGE_INSTANCE_ADAPTER_ID
 from selection_service_companion.server import create_server
 from selection_service_companion.state import CompanionState
 from selection_service_companion.target_geometry import (
@@ -32,6 +29,27 @@ from selection_service_companion.target_geometry import (
     local_key_view_policy_digest,
     target_geometry_policy_digest,
 )
+
+
+class UnavailableSam3ImageInstanceAdapter:
+    def runtime_profile_capability(
+        self, model: dict[str, object]
+    ) -> dict[str, object]:
+        return {
+            'status': 'unavailable',
+            'authoritativeRgb': {
+                'artifact': True,
+                'companionReference': True,
+            },
+            'promptCapabilities': {
+                'positivePoints': True,
+                'negativePoints': True,
+                'positiveInstanceBox': True,
+                'previousLogitsRefinement': True,
+                'singlePointMultimask': False,
+            },
+            'message': 'test adapter is unavailable',
+        }
 
 
 EDITOR_ORIGIN = 'https://editor.example'
@@ -316,28 +334,24 @@ class TargetGeometryRouteTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.directory = Path(self.temporary_directory.name)
-        self.state = CompanionState(self.directory / 'state')
-        self.lock_file = self.directory / 'uv.lock'
-        self.lock_file.write_text('locked companion dependencies\n', encoding='utf-8')
-        self.state.install_release('0.1.0', self.lock_file)
-        self.payload, self.manifest = _binary_fixture()
-
-        weights = self.directory / 'sam31.pt'
-        weights.write_bytes(b'separately acquired sam3.1 weights')
-        manifest = self.directory / 'sam31.json'
-        manifest.write_text(
-            json.dumps({
-                'digest': 'sha256:sam31-v1',
-                'adapterId': 'sam3.1',
-                'modelName': 'SAM 3.1',
-                'licenseName': 'SAM License',
-                'licenseUrl': 'https://example.test/sam-license',
-                'runtimeConfigDigest': SAM31_RUNTIME_CONFIG_DIGEST,
-            }),
-            encoding='utf-8',
+        checkpoint = (
+            self.directory
+            / 'models'
+            / 'facebook--sam3'
+            / 'snapshots'
+            / 'master'
+            / 'sam3.pt'
         )
-        self.state.install_model(manifest, weights)
-        self.state.mask_adapters['sam3.1'] = Sam3PointMaskAdapter()
+        checkpoint.parent.mkdir(parents=True)
+        checkpoint.write_bytes(b'modelscope cache fixture')
+        self.state = CompanionState(
+            self.directory / 'state',
+            model_cache_root=self.directory / 'models',
+        )
+        self.state.mask_adapters[SAM3_IMAGE_INSTANCE_ADAPTER_ID] = (  # type: ignore[assignment]
+            UnavailableSam3ImageInstanceAdapter()
+        )
+        self.payload, self.manifest = _binary_fixture()
 
         self.server = create_server(
             state=self.state,

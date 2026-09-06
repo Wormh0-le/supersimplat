@@ -186,13 +186,13 @@ SuperSimPlat adds object-aware AI selection to the existing Gaussian editor. Thi
 
 ## Runtime and evaluation
 
-**Selection Service Companion** — Operator-installed local/trusted-LAN Python computation service. The Browser does not install/start/upgrade it, silently substitute models, or discover arbitrary endpoints. It is not a public multi-tenant backend.
+**Selection Service Companion** — Operator-run local/trusted-LAN Python computation service. The Browser does not install/start/upgrade it, silently substitute models, or discover arbitrary endpoints. It is not a public multi-tenant backend.
 
 **Availability / Readiness / Capacity** — User-facing connection compatibility, technical initialization/required capability validity, and ability to admit work. Reachable is not Ready; busy or task failure is not automatically globally unavailable.
 
 **Runtime Profile / Production Identity Record** — Required mutually compatible renderer, model, protocol, policy, and implementation identities for the adopted product path. Optional research is not automatically a required Browser capability.
 
-**Active Model Manifest / Model Installation** — Operator-resolved immutable model/checkpoint/source/license/configuration identity, versus separately installing verified weights. The Browser does not select from a model catalog or carry weights in its distribution.
+**Active Model Manifest / ModelScope cache** — The fixed current model/checkpoint/adapter/license/configuration identity exposed by the Companion when the operator's ModelScope cache contains the checkpoint. There is no Companion-side model catalog or model-install command; the Browser does not carry weights in its distribution.
 
 **Companion Instance ID** — One process lifetime, not a model/runtime/artifact digest. Process replacement can invalidate local RGB/logit/cache references while independently persisted masks keep their own identity.
 

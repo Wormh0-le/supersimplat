@@ -1,8 +1,0 @@
-{
-  "digest": "operator-sam3-image-instance-v1",
-  "adapterId": "sam3-image-instance/v1",
-  "modelName": "SAM 3 Image",
-  "licenseName": "SAM License",
-  "licenseUrl": "https://github.com/facebookresearch/sam3/blob/main/LICENSE",
-  "runtimeConfigDigest": "sha256:7105a575a8c72d6fafc8117917ad30edb9364f336851e6e86dd3ee357428857f"
-}

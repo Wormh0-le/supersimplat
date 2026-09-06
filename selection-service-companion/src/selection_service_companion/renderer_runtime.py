@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import importlib
-import importlib.metadata
-from pathlib import Path
 import platform
 import re
+import subprocess
 import sys
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, Protocol
-
 
 EXPECTED_OPERATING_SYSTEM = "Linux"
 
@@ -47,7 +46,6 @@ class GsplatRuntimeFacts:
     cuda_available: bool
     torch_package_path: Path | None = None
     gsplat_package_path: Path | None = None
-    gsplat_distribution_path: Path | None = None
     torch_inspection_error: str | None = None
     gsplat_inspection_error: str | None = None
     gpu_name: str | None = None
@@ -102,15 +100,12 @@ class CurrentProcessGsplatInspection:
             torch_inspection_error = type(error).__name__
 
         gsplat_package_path: Path | None = None
-        gsplat_distribution_path: Path | None = None
         gsplat_inspection_error: str | None = None
         try:
             gsplat = importlib.import_module("gsplat")
             module_path = getattr(gsplat, "__file__", None)
             if isinstance(module_path, str):
                 gsplat_package_path = Path(module_path)
-            distribution = importlib.metadata.distribution("gsplat")
-            gsplat_distribution_path = Path(distribution.locate_file(""))
         except Exception as error:
             gsplat_inspection_error = type(error).__name__
 
@@ -127,6 +122,29 @@ class CurrentProcessGsplatInspection:
                 driver_version = match.group(1)
         except OSError:
             driver_version = None
+        if driver_version is None:
+            try:
+                result = subprocess.run(
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=driver_version",
+                        "--format=csv,noheader",
+                    ],
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                    timeout=5,
+                )
+                driver_version = next(
+                    (
+                        line.strip()
+                        for line in result.stdout.splitlines()
+                        if line.strip()
+                    ),
+                    None,
+                )
+            except (OSError, subprocess.SubprocessError):
+                driver_version = None
 
         return GsplatRuntimeFacts(
             environment_prefix=Path(sys.prefix),
@@ -134,7 +152,6 @@ class CurrentProcessGsplatInspection:
             cuda_available=cuda_available,
             torch_package_path=torch_package_path,
             gsplat_package_path=gsplat_package_path,
-            gsplat_distribution_path=gsplat_distribution_path,
             torch_inspection_error=torch_inspection_error,
             gsplat_inspection_error=gsplat_inspection_error,
             gpu_name=gpu_name,
@@ -175,7 +192,6 @@ class GsplatRuntime:
         for package_name, package_path in (
             ("PyTorch", facts.torch_package_path),
             ("gsplat", facts.gsplat_package_path),
-            ("gsplat metadata", facts.gsplat_distribution_path),
         ):
             if package_path is None or not _is_within(
                 package_path, facts.environment_prefix

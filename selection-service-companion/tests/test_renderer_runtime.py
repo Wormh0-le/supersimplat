@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+import subprocess
+import tempfile
+import unittest
 from dataclasses import replace
 from pathlib import Path
-import tempfile
 from types import SimpleNamespace
-import unittest
 from unittest.mock import patch
 
-from selection_service_companion.evidence import StaticContributorRenderer
 from selection_service_companion.direct_gaussian_evidence import (
     DIRECT_EVIDENCE_RASTER_IMPLEMENTATION_ID,
     DIRECT_EVIDENCE_RUNTIME_BUILD_ID,
 )
+from selection_service_companion.evidence import StaticContributorRenderer
 from selection_service_companion.renderer_runtime import (
+    CurrentProcessGsplatInspection,
     GsplatRuntime,
     GsplatRuntimeFacts,
     RendererRuntimeStatus,
@@ -23,13 +25,6 @@ from selection_service_companion.state import CompanionState
 
 
 class RendererRuntimeReadinessTests(unittest.TestCase):
-    @staticmethod
-    def install_canonical_release(state: CompanionState) -> None:
-        state.install_release(
-            "0.1.0",
-            Path(__file__).resolve().parents[1] / "uv.lock",
-        )
-
     @staticmethod
     def locked_runtime_facts() -> GsplatRuntimeFacts:
         return GsplatRuntimeFacts(
@@ -42,9 +37,6 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
             gsplat_package_path=Path(
                 "/opt/supersplat/.venv/lib/python3.12/site-packages/gsplat/__init__.py"
             ),
-            gsplat_distribution_path=Path(
-                "/opt/supersplat/.venv/lib/python3.12/site-packages"
-            ),
         )
 
     def test_capabilities_advertise_gsplat_only_after_runtime_verification(self) -> None:
@@ -56,8 +48,6 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                     RendererRuntimeStatus.ready()
                 ),
             )
-            self.install_canonical_release(state)
-
             self.assertEqual(
                 state.capabilities(["https://editor.example"])["renderer"],
                 {
@@ -80,8 +70,6 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                     )
                 ),
             )
-            self.install_canonical_release(state)
-
             self.assertEqual(
                 state.capabilities(["https://editor.example"])["renderer"],
                 {
@@ -140,8 +128,6 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                         StaticGsplatRuntimeInspection(facts)
                     ),
                 )
-                self.install_canonical_release(state)
-
                 capability = state.capabilities(["https://editor.example"])[
                     "renderer"
                 ]
@@ -153,12 +139,6 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
             __file__="/opt/supersplat/.venv/lib/python3.12/site-packages/torch/__init__.py",
             cuda=SimpleNamespace(is_available=lambda: True),
         )
-        gsplat_distribution = SimpleNamespace(
-            locate_file=lambda name: Path(
-                "/opt/supersplat/.venv/lib/python3.12/site-packages"
-            ),
-        )
-
         def import_runtime_module(name: str):
             if name == "torch":
                 return torch_module
@@ -170,15 +150,12 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as directory,
-            patch("importlib.metadata.distribution", return_value=gsplat_distribution),
             patch("sys.prefix", "/opt/supersplat/.venv"),
             patch("importlib.import_module", side_effect=import_runtime_module),
         ):
             state = CompanionState(
                 Path(directory) / "state",
             )
-            self.install_canonical_release(state)
-
             self.assertEqual(
                 state.capabilities(["https://editor.example"])["renderer"],
                 {
@@ -190,6 +167,37 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                 },
             )
 
+    def test_driver_readout_falls_back_to_nvidia_smi(self) -> None:
+        torch_module = SimpleNamespace(
+            __file__="/opt/supersplat/.venv/lib/python3.12/site-packages/torch/__init__.py",
+            cuda=SimpleNamespace(is_available=lambda: False),
+        )
+        gsplat_module = SimpleNamespace(
+            __file__="/opt/supersplat/.venv/lib/python3.12/site-packages/gsplat/__init__.py"
+        )
+        with (
+            patch(
+                "importlib.import_module",
+                side_effect=lambda name: torch_module
+                if name == "torch"
+                else gsplat_module,
+            ),
+            patch.object(
+                Path,
+                "read_text",
+                side_effect=OSError("test has no procfs"),
+            ),
+            patch.object(
+                subprocess,
+                "run",
+                return_value=SimpleNamespace(stdout="610.62\n"),
+            ) as run,
+        ):
+            facts = CurrentProcessGsplatInspection().facts()
+
+        self.assertEqual(facts.driver_version, "610.62")
+        run.assert_called_once()
+
     def test_readiness_rejects_a_shadowed_gsplat_module(self) -> None:
         torch_module = SimpleNamespace(
             __file__="/opt/supersplat/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -198,15 +206,8 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
         gsplat_module = SimpleNamespace(
             __file__="/workspace/thirdparty/sam3/.venv/lib/python3.12/site-packages/gsplat/__init__.py"
         )
-        gsplat_distribution = SimpleNamespace(
-            locate_file=lambda name: Path(
-                "/opt/supersplat/.venv/lib/python3.12/site-packages"
-            ),
-        )
-
         with (
             tempfile.TemporaryDirectory() as directory,
-            patch("importlib.metadata.distribution", return_value=gsplat_distribution),
             patch("platform.system", return_value="Linux"),
             patch("sys.prefix", "/opt/supersplat/.venv"),
             patch(
@@ -220,8 +221,6 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
                 Path(directory) / "state",
                 contributor_renderer=StaticContributorRenderer({}),
             )
-            self.install_canonical_release(state)
-
             capability = state.capabilities(["https://editor.example"])["renderer"]
 
             self.assertEqual(capability["status"], "unavailable")
@@ -237,8 +236,6 @@ class RendererRuntimeReadinessTests(unittest.TestCase):
             ),
         ):
             state = CompanionState(Path(directory) / "state")
-            self.install_canonical_release(state)
-
             capability = state.capabilities(["https://editor.example"])["renderer"]
 
             self.assertEqual(capability["status"], "unavailable")

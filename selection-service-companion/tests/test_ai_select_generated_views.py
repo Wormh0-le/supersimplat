@@ -222,9 +222,6 @@ class GeneratedViewRenderTests(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.directory = Path(self.temporary_directory.name)
         self.state = CompanionState(self.directory / 'state')
-        lock_file = self.directory / 'uv.lock'
-        lock_file.write_text('locked companion dependencies\n', encoding='utf-8')
-        self.state.install_release('0.1.0', lock_file)
         self.payload, self.manifest = _binary_fixture()
         self.renderer = AnchorFixtureRenderer()
         self.state.contributor_renderer = self.renderer  # type: ignore[assignment]

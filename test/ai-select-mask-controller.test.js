@@ -817,11 +817,11 @@ test('a Companion incompleteMaskSet error is classified as an invalid artifact',
     assert.equal(mask.state.failureKind, 'maskArtifactInvalid');
 });
 
-test('a missing Model Manifest reports a Mask failure without touching RGB', async () => {
+test('a missing SAM 3 model reports a Mask failure without touching RGB', async () => {
     const { anchor, mask } = await setup({ modelManifestDigest: null });
     await mask.addPrompt({ xPx: 10, yPx: 12, polarity: 'include' });
     assert.equal(mask.state.requestStatus, 'failed');
-    assert.match(mask.state.errorMessage, /Model Manifest/);
+    assert.match(mask.state.errorMessage, /current SAM 3 model/);
     assert.equal(anchor.state.anchor.renderStatus, 'ready');
 });
 

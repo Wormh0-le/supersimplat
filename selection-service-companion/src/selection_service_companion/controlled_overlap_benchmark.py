@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from io import BytesIO
 import json
 import math
-from pathlib import Path
 import struct
 import tempfile
-from threading import Event, Thread
 import time
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from io import BytesIO
+from pathlib import Path
+from threading import Event, Thread
+from typing import Any
 
 from .benchmark import PocRunRecordError, SealedPrediction, seal_prediction
-
 
 _EXPECTED_PROPERTIES = (
     "property float x",
@@ -412,8 +412,8 @@ def _run_controlled_overlap_prediction(
         raise PocRunRecordError(
             "the controlled-overlap production Anchor must use the 1008-pixel policy baseline"
         )
-    from PIL import Image
     import torch
+    from PIL import Image
 
     from . import PACKAGE_VERSION, PROTOCOL_VERSION
     from .state import CompanionState
@@ -423,21 +423,18 @@ def _run_controlled_overlap_prediction(
     )
     frozen_source = _frozen_prompt_log_source(prompt_log_path)
     state = CompanionState(state_directory)
-    release = state.require_release()
-    available_models = [
-        model
-        for model in state.available_models()
-        if model.get("adapterId") == "sam3.1"
-        and (
-            model_manifest_digest is None
-            or model.get("digest") == model_manifest_digest
-        )
-    ]
-    if len(available_models) != 1:
+    try:
+        model = state.resolve_active_model_manifest()
+    except ValueError as error:
+        raise PocRunRecordError(str(error)) from error
+    if model_manifest_digest is not None and model["digest"] != model_manifest_digest:
         raise PocRunRecordError(
-            "the production trial requires exactly one matching installed SAM3.1 Model Manifest"
+            "the archived production trial's Model Manifest binding does not match the current SAM 3 Image model"
         )
-    model = available_models[0]
+    if model.get("adapterId") != "sam3.1":
+        raise PocRunRecordError(
+            "the archived SAM 3.1 production trial is not part of the current Companion path"
+        )
     renderer = state.contributor_renderer
     if renderer is None or not getattr(renderer, "requires_locked_runtime", False):
         raise PocRunRecordError(
@@ -531,7 +528,6 @@ def _run_controlled_overlap_prediction(
         "companionVersion": PACKAGE_VERSION,
         "serviceBuild": capabilities.get("serviceBuild"),
         "protocolVersion": PROTOCOL_VERSION,
-        "release": release,
         "renderer": capabilities.get("renderer"),
         "gpu": torch.cuda.get_device_name(0),
         "executionProfile": {
@@ -542,7 +538,7 @@ def _run_controlled_overlap_prediction(
     public_model_manifest = {
         key: value
         for key, value in model.items()
-        if key not in {"weightsPath", "installedAt"}
+        if key != "weightsPath"
     }
     quality_diagnostics = publication.coverage_report.get("qualityDiagnostics", {})
     internal_diagnostics = {
@@ -637,20 +633,16 @@ def _seal_failed_controlled_overlap_prediction(
         }
         frozen_revision = 1
     state = CompanionState(state_directory)
-    models = state.models()
-    model_manifest: object = (
-        {
-            key: value
-            for key, value in models[0].items()
-            if key not in {"weightsPath", "installedAt"}
-        }
-        if len(models) == 1
-        else {"status": "unavailable", "modelCount": len(models)}
-    )
     try:
-        release: Mapping[str, object] = state.require_release()
-    except ValueError as release_error:
-        release = {"status": "unavailable", "message": str(release_error)}
+        discovered_model = state.resolve_active_model_manifest()
+    except ValueError:
+        model_manifest: object = {"status": "unavailable"}
+    else:
+        model_manifest = {
+            key: value
+            for key, value in discovered_model.items()
+            if key != "weightsPath"
+        }
     unavailable = {
         "status": "unavailable",
         "terminalState": error_code,
@@ -672,7 +664,6 @@ def _seal_failed_controlled_overlap_prediction(
         "runtimeManifest": {
             "companionVersion": PACKAGE_VERSION,
             "protocolVersion": PROTOCOL_VERSION,
-            "release": release,
         },
         "renderPolicy": _preview_render_policy("supersplat-effective-rgb-v1"),
         "correctionOutcomes": [

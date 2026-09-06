@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass
 import hashlib
-import io
 import inspect
+import io
 import json
 import math
-from pathlib import Path
 import tempfile
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Protocol, Sequence
-
+from typing import Any, Protocol
 
 # The compiler is a capability-level contract: changing prompt ordering,
 # coordinate conversion, or composition changes the advertised capability
@@ -51,6 +51,24 @@ SAM3_IMAGE_RUNTIME_CONFIG_DIGEST = "sha256:" + hashlib.sha256(
         SAM3_IMAGE_RUNTIME_CONFIG, separators=(",", ":"), sort_keys=True
     ).encode("utf-8")
 ).hexdigest()
+
+# ModelScope owns model acquisition.  The Companion only discovers the
+# already-downloaded official SAM 3 snapshot; it never downloads, registers,
+# hashes, or otherwise qualifies the checkpoint.
+SAM3_IMAGE_MODELSCOPE_REPOSITORY = 'facebook--sam3'
+SAM3_IMAGE_CHECKPOINT_FILENAME = 'sam3.pt'
+
+
+def find_sam3_image_checkpoint(cache_root: Path | None = None) -> Path | None:
+    """Return an existing SAM 3 checkpoint from the ModelScope cache."""
+
+    root = cache_root or Path.home() / '.cache' / 'modelscope' / 'models'
+    snapshots = root / SAM3_IMAGE_MODELSCOPE_REPOSITORY / 'snapshots'
+    try:
+        candidates = sorted(snapshots.glob(f'*/{SAM3_IMAGE_CHECKPOINT_FILENAME}'))
+    except OSError:
+        return None
+    return next((candidate for candidate in candidates if candidate.is_file()), None)
 
 
 # Reserved legacy identity (non-current): the retired SAM 3.1 visual Prompt
@@ -1486,12 +1504,12 @@ class Sam3PointMaskAdapter:
 
 
 def _build_sam3_predictor(model: Mapping[str, Any]) -> Any:
-    """Load the optional operator-installed SAM runtime on demand."""
+    """Load the optional historical SAM runtime on demand."""
 
     weights_path = model.get("weightsPath")
     if not isinstance(weights_path, str) or not weights_path:
         raise MaskSessionError(
-            "modelUnavailable", "The SAM 3.1 Model Manifest has no verified checkpoint path."
+            "modelUnavailable", "The historical SAM 3.1 runtime has no checkpoint path."
         )
     try:
         from sam3.model_builder import build_sam3_multiplex_video_predictor
@@ -1719,21 +1737,21 @@ class _Sam3ImageModelRuntime:
 
 
 def _build_sam3_image_runtime(model: Mapping[str, Any]) -> _Sam3ImageModelRuntime:
-    """Load the optional operator-installed SAM 3 Image runtime on demand."""
+    """Load the optional ModelScope-cached SAM 3 Image runtime on demand."""
 
     weights_path = model.get('weightsPath')
     if not isinstance(weights_path, str) or not weights_path:
         raise MaskSessionError(
             'modelUnavailable',
-            'The SAM 3 Image Model Manifest has no verified checkpoint path.',
+            'The SAM 3 Image checkpoint was not found in the ModelScope cache.',
         )
     try:
-        from sam3.model_builder import build_sam3_image_model
         from sam3.model.sam3_image_processor import Sam3Processor
+        from sam3.model_builder import build_sam3_image_model
     except ImportError as error:
         raise MaskSessionError(
             'modelRuntimeUnavailable',
-            'SAM 3 Image is not installed in this Companion environment; install the matching runtime and retry.',
+            'SAM 3 Image is not installed in this Companion environment; install the Companion SAM3 extra and retry.',
         ) from error
     try:
         built = build_sam3_image_model(
@@ -1747,7 +1765,7 @@ def _build_sam3_image_runtime(model: Mapping[str, Any]) -> _Sam3ImageModelRuntim
     except Exception as error:
         raise MaskSessionError(
             'modelFailure',
-            'The SAM 3 Image checkpoint could not be initialized from the installed Model Manifest.',
+            'The SAM 3 Image checkpoint could not be initialized from the ModelScope cache.',
         ) from error
     return _Sam3ImageModelRuntime(built, Sam3Processor(built))
 
@@ -1758,7 +1776,7 @@ class Sam3ImageInstanceAdapter:
     The model builder is injectable so contract tests can substitute a fake
     runtime; the default builds the pinned official upstream
     ``build_sam3_image_model(enable_inst_interactivity=True)`` model and its
-    ``Sam3Processor``. The built model is cached per Model Manifest digest as
+    ``Sam3Processor``. The built model is cached per discovered checkpoint as
     Companion-local disposable state. Inference state and low-resolution
     logits never cross the browser boundary; only generic Mask bytes, scores,
     and opaque digest-bound references do. This adapter must never instantiate
@@ -2003,7 +2021,7 @@ class Sam3ImageInstanceAdapter:
         ):
             return self._runtime_cache
         runtime = self._build_model(model)
-        # A different Active Model Manifest deterministically replaces the
+        # A different discovered checkpoint deterministically replaces the
         # previous built runtime; Python finalization releases its GPU state.
         self._runtime_cache_key = cache_key
         self._runtime_cache = runtime

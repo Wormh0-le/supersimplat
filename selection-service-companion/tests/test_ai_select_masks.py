@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from http import HTTPStatus
 import json
-from pathlib import Path
 import tempfile
+import unittest
+from http import HTTPStatus
+from pathlib import Path
 from threading import Event, Thread
 from typing import Any
-import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -17,9 +17,8 @@ import numpy as np
 from selection_service_companion.masking import (
     MaskProduction,
     MaskSessionError,
-    SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
-    SAM31_RUNTIME_CONFIG_DIGEST,
     Sam3ImageInstanceAdapter,
+    sam3_image_instance_capabilities,
 )
 from selection_service_companion.proposal_ranking import (
     RANKING_POLICY_VERSION,
@@ -31,7 +30,6 @@ from selection_service_companion.state import (
     CompanionState,
     _proposal_identity_digest,
 )
-
 
 EDITOR_ORIGIN = 'https://editor.example'
 ADAPTER_ID = 'sam3-image-instance/v1'
@@ -139,11 +137,21 @@ class AISelectMaskTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.directory = Path(self.temporary_directory.name)
-        self.state = CompanionState(self.directory / 'state')
-        self.lock_file = self.directory / 'uv.lock'
-        self.lock_file.write_text('locked companion dependencies\n', encoding='utf-8')
-        self.state.install_release('0.1.0', self.lock_file)
-        self.model_manifest_digest = self.install_sam3_image_manifest(self.state)
+        self.checkpoint = (
+            self.directory
+            / 'models'
+            / 'facebook--sam3'
+            / 'snapshots'
+            / 'master'
+            / 'sam3.pt'
+        )
+        self.checkpoint.parent.mkdir(parents=True)
+        self.checkpoint.write_bytes(b'modelscope cache fixture')
+        self.state = CompanionState(
+            self.directory / 'state',
+            model_cache_root=self.directory / 'models',
+        )
+        self.model_manifest_digest = 'operator-sam3-image-instance-v1'
 
         self.runtime = FakeSam3ImageRuntime()
         self.state.mask_adapters[ADAPTER_ID] = Sam3ImageInstanceAdapter(
@@ -166,28 +174,6 @@ class AISelectMaskTests(unittest.TestCase):
         self.thread.join()
         self.temporary_directory.cleanup()
 
-    def install_sam3_image_manifest(
-        self,
-        state: CompanionState,
-        *,
-        digest: str = 'sha256:sam3-image-v1',
-    ) -> str:
-        weights = self.directory / 'sam3-image.pt'
-        weights.write_bytes(b'separately acquired sam3 image weights')
-        manifest = self.directory / f'{digest.replace(":", "-")}.json'
-        manifest.write_text(
-            json.dumps({
-                'digest': digest,
-                'adapterId': ADAPTER_ID,
-                'modelName': 'SAM 3 Image',
-                'licenseName': 'SAM License',
-                'licenseUrl': 'https://example.test/sam-license',
-                'runtimeConfigDigest': SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
-            }),
-            encoding='utf-8',
-        )
-        return state.install_model(manifest, weights)['digest']
-
     @staticmethod
     def prompt_state_digest(prompt_state: dict[str, object]) -> str:
         return _canonical_json_digest({
@@ -209,9 +195,7 @@ class AISelectMaskTests(unittest.TestCase):
             'boxes': [],
         }
         prompt_state['digest'] = self.prompt_state_digest(prompt_state)
-        prompt_capabilities = self.state.capabilities([EDITOR_ORIGIN])[
-            'modelManifests'
-        ][0]['promptCapabilities']
+        prompt_capabilities = sam3_image_instance_capabilities()
         return {
             'requestBinding': {
                 'targetContextId': 'context-1',
@@ -540,50 +524,6 @@ class AISelectMaskTests(unittest.TestCase):
         self.assertNotIn('proposalSet', payload)
         self.assertEqual(self.runtime.predict_calls, [])
 
-    def test_reports_an_incompatible_model_manifest(self) -> None:
-        weights = self.directory / 'unknown-adapter.bin'
-        weights.write_bytes(b'separately acquired unknown adapter weights')
-        manifest = self.directory / 'unknown-adapter.json'
-        manifest.write_text(
-            json.dumps({
-                'digest': 'sha256:unknown-adapter-v1',
-                'adapterId': 'unknown-adapter',
-                'modelName': 'Unknown Adapter v1',
-                'licenseName': 'MIT',
-                'licenseUrl': 'https://example.test/unknown-adapter-license',
-                'runtimeConfigDigest': 'sha256:unknown-adapter-runtime-v1',
-            }),
-            encoding='utf-8',
-        )
-        incompatible_digest = self.state.install_model(manifest, weights)['digest']
-        request = self.request_body()
-        request['modelManifestDigest'] = incompatible_digest
-
-        self.assert_mask_error(request, 'incompatibleManifest')
-        self.assertEqual(self.runtime.predict_calls, [])
-
-    def test_a_sam31_manifest_fails_closed_on_the_current_route(self) -> None:
-        weights = self.directory / 'sam31-legacy.pt'
-        weights.write_bytes(b'separately acquired legacy sam3.1 weights')
-        manifest = self.directory / 'sam31-legacy.json'
-        manifest.write_text(
-            json.dumps({
-                'digest': 'sha256:sam31-legacy-v1',
-                'adapterId': 'sam3.1',
-                'modelName': 'SAM 3.1 multiplex',
-                'licenseName': 'SAM License',
-                'licenseUrl': 'https://example.test/sam-license',
-                'runtimeConfigDigest': SAM31_RUNTIME_CONFIG_DIGEST,
-            }),
-            encoding='utf-8',
-        )
-        legacy_digest = self.state.install_model(manifest, weights)['digest']
-        request = self.request_body()
-        request['modelManifestDigest'] = legacy_digest
-
-        self.assert_mask_error(request, 'incompatibleManifest')
-        self.assertEqual(self.runtime.predict_calls, [])
-
     def test_rejects_a_stale_adapter_capability_identity(self) -> None:
         request = self.request_body()
         request['adapterCapabilityDigest'] = f'sha256:{"f" * 64}'
@@ -723,7 +663,7 @@ class AISelectMaskTests(unittest.TestCase):
         self.runtime.masks = [
             _mask_grid(*ACCEPTED_PIXELS),
             _mask_grid(*[(x, y) for y in range(5) for x in range(1, 6)]),
-            _mask_grid(*[(x, y) for y in range(6) for x in range(0, 7)]),
+            _mask_grid(*[(x, y) for y in range(6) for x in range(7)]),
             _mask_grid(*[(x, y) for y in range(1, 4) for x in range(1, 5)]),
         ]
         self.runtime.scores = [0.95, 0.9, 0.85, 0.8]
@@ -765,7 +705,7 @@ class AISelectMaskTests(unittest.TestCase):
         self.runtime.masks = [
             _mask_grid(*ACCEPTED_PIXELS),
             _mask_grid(*[(x, y) for y in range(5) for x in range(1, 6)]),
-            _mask_grid(*[(x, y) for y in range(6) for x in range(0, 7)]),
+            _mask_grid(*[(x, y) for y in range(6) for x in range(7)]),
         ]
         self.runtime.scores = [0.95, 0.9, 0.85]
 
@@ -1163,7 +1103,7 @@ class AISelectMaskTests(unittest.TestCase):
         self.runtime.masks = [
             _mask_grid(*ACCEPTED_PIXELS),
             _mask_grid(*[(x, y) for y in range(1, 5) for x in range(2, 6)]),
-            _mask_grid(*[(x, y) for y in range(2, 6) for x in range(0, 4)]),
+            _mask_grid(*[(x, y) for y in range(2, 6) for x in range(4)]),
         ]
         self.runtime.scores = [0.9, 0.8, 0.7]
 

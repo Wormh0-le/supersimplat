@@ -1235,7 +1235,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
                 diagnostic(
                     'invalidResponse',
                     'The Companion returned an invalid lightweight health response.',
-                    'Use a compatible locked Companion release.'
+                    'Use a compatible Companion environment.'
                 )
             );
             return false;
@@ -1331,7 +1331,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
                 diagnostic(
                     'invalidCapabilities',
                     'The Companion returned an incomplete Runtime Profile response.',
-                    'Use a compatible locked Companion release.'
+                    'Use a compatible Companion environment.'
                 ),
                 health
             );
@@ -1385,7 +1385,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             return diagnostic(
                 'protocolMismatch',
                 'The Companion protocol is incompatible with this editor.',
-                'Use the locked compatible Companion release.'
+                'Use the compatible Companion environment.'
             );
         }
         if (
@@ -1417,7 +1417,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             return diagnostic(
                 'rendererMismatch',
                 'The Companion authoritative renderer identity is incompatible.',
-                'Use the locked compatible Companion release.'
+                'Use the compatible Companion environment.'
             );
         }
 
@@ -1433,14 +1433,14 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             return diagnostic(
                 'modelWeightsBundled',
                 'The Active Model Manifest reports bundled model weights.',
-                'Use a separately installed, manifest-verified model artifact.'
+                'Place the SAM 3 checkpoint in the ModelScope cache.'
             );
         }
         if (modelManifest.adapterId !== this.requirements.modelAdapterId) {
             return diagnostic(
                 'modelAdapterMismatch',
                 'The Active Model Manifest is not the current SAM 3 Image instance adapter.',
-                'Install and activate the current SAM 3 Image Model Manifest.'
+                'Use the current SAM 3 Image Companion adapter.'
             );
         }
 
@@ -1503,7 +1503,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             return diagnostic(
                 'aiSelectAnchorUnsupported',
                 'Authoritative AI Select Anchor rendering is unavailable.',
-                'Use the compatible locked Companion release.'
+                'Use the compatible Companion environment.'
             );
         }
         if (
@@ -1552,7 +1552,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             return diagnostic(
                 'candidateReLiftUnsupported',
                 'Evidence-aware Candidate Re-Lift is unavailable.',
-                'Use the compatible locked Companion release.'
+                'Use the compatible Companion environment.'
             );
         }
         const productionIdentity = capabilities.productionIdentity;
@@ -1560,7 +1560,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             return diagnostic(
                 'candidateReLiftUnsupported',
                 'The production AI Select identity is unavailable.',
-                'Use the fully calibrated locked Companion release.'
+                'Use the current Companion environment.'
             );
         }
         const record = productionIdentity.record;
@@ -1622,7 +1622,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             return diagnostic(
                 'candidateReLiftUnsupported',
                 'The production AI Select identity is incompatible.',
-                'Use the fully calibrated locked Companion release.'
+                'Use the current Companion environment.'
             );
         }
         if (
@@ -1636,7 +1636,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             return diagnostic(
                 'maskProposalUnsupported',
                 'Current image-instance Mask production is unavailable.',
-                'Use the compatible locked Companion release.'
+                'Use the compatible Companion environment.'
             );
         }
         if (
@@ -1647,7 +1647,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
             return diagnostic(
                 'binarySceneSnapshotRegistrationUnsupported',
                 'Binary SceneSnapshot Registration v1 is unavailable.',
-                'Use the compatible locked Companion release.'
+                'Use the compatible Companion environment.'
             );
         }
 
@@ -1693,7 +1693,7 @@ class SelectionServiceReadiness implements SelectionServiceReadinessInterface {
                     return diagnostic(
                         'invalidResponse',
                         `The Companion returned an invalid ${operation} response.`,
-                        'Use a compatible locked Companion release.'
+                        'Use a compatible Companion environment.'
                     );
                 case 'http':
                     return diagnostic(

@@ -1,26 +1,28 @@
 from __future__ import annotations
 
 import json
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 from unittest.mock import patch
 
 import selection_service_companion.state as state_module
 from selection_service_companion.direct_gaussian_evidence import (
     direct_evidence_capability,
 )
-
-from selection_service_companion.masking import (
-    SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
-    SAM31_RUNTIME_CONFIG_DIGEST,
-    sam3_image_instance_capabilities,
-)
 from selection_service_companion.image_instance_prompt_synthesis import (
     prompt_synthesis_policy_digest,
 )
 from selection_service_companion.lift_readiness import (
     default_lift_readiness_policy,
+)
+from selection_service_companion.masking import (
+    sam3_image_instance_capabilities,
+)
+from selection_service_companion.state import (
+    AI_SELECT_READINESS_PROTOCOL_VERSION,
+    AI_SELECT_RUNTIME_PROFILE_ID,
+    CompanionState,
 )
 from selection_service_companion.target_geometry import (
     local_key_view_policy_digest,
@@ -29,12 +31,6 @@ from selection_service_companion.target_geometry import (
 from selection_service_companion.view_assessment import (
     view_assessment_policy_digest,
 )
-from selection_service_companion.state import (
-    AI_SELECT_READINESS_PROTOCOL_VERSION,
-    AI_SELECT_RUNTIME_PROFILE_ID,
-    CompanionState,
-)
-
 
 EDITOR_ORIGIN = "https://editor.example"
 
@@ -62,49 +58,57 @@ class ReadySam3ImageInstanceAdapter:
         }
 
 
+class UnavailableSam3ImageInstanceAdapter:
+    def runtime_profile_capability(
+        self, model: dict[str, object]
+    ) -> dict[str, object]:
+        return {
+            "status": "unavailable",
+            "authoritativeRgb": {
+                "artifact": True,
+                "companionReference": True,
+            },
+            "promptCapabilities": {
+                "positivePoints": True,
+                "negativePoints": True,
+                "positiveInstanceBox": True,
+                "previousLogitsRefinement": True,
+                "singlePointMultimask": False,
+            },
+            "message": "test adapter is unavailable",
+        }
+
+
 class RuntimeProfileReadinessTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = TemporaryDirectory()
         self.directory = Path(self.temporary_directory.name)
-        self.lock_file = self.directory / "uv.lock"
-        self.lock_file.write_text("locked", encoding="utf-8")
-        self.state = CompanionState(self.directory)
-        self.state.install_release("test", self.lock_file)
+        self.checkpoint = (
+            self.directory
+            / "models"
+            / "facebook--sam3"
+            / "snapshots"
+            / "master"
+            / "sam3.pt"
+        )
+        self.checkpoint.parent.mkdir(parents=True)
+        self.checkpoint.write_bytes(b"modelscope cache fixture")
+        self.state = CompanionState(
+            self.directory,
+            model_cache_root=self.directory / "models",
+        )
+        self.state.mask_adapters["sam3-image-instance/v1"] = (  # type: ignore[assignment]
+            UnavailableSam3ImageInstanceAdapter()
+        )
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
-    def install_model(
-        self,
-        digest: str,
-        *,
-        adapter_id: str = "sam3.1",
-        runtime_config_digest: str = SAM31_RUNTIME_CONFIG_DIGEST,
-    ) -> dict[str, object]:
-        weights = self.directory / f"{digest.replace(':', '-')}.pt"
-        weights.write_bytes(digest.encode("utf-8"))
-        manifest = self.directory / f"{digest.replace(':', '-')}.json"
-        manifest.write_text(
-            json.dumps(
-                {
-                    "digest": digest,
-                    "adapterId": adapter_id,
-                    "modelName": f"Historical {digest}",
-                    "licenseName": "test",
-                    "licenseUrl": "https://example.invalid/license",
-                    "runtimeConfigDigest": runtime_config_digest,
-                }
-            ),
-            encoding="utf-8",
-        )
-        return self.state.install_model(manifest, weights)
-
-    def test_lightweight_health_has_one_process_identity_and_reuses_release_validation(
+    def test_lightweight_health_has_one_process_identity(
         self,
     ) -> None:
         first = self.state.health()
         replacement = CompanionState(self.directory).health()
-        self.lock_file.write_text("changed after process validation", encoding="utf-8")
         second = self.state.health()
 
         self.assertEqual(first, second)
@@ -115,15 +119,14 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
             replacement["companionInstanceId"],
         )
 
-    def test_zero_installed_manifests_cannot_resolve_an_active_model(self) -> None:
-        with self.assertRaisesRegex(ValueError, "no compatible installed"):
+    def test_missing_modelscope_checkpoint_cannot_resolve_the_current_model(self) -> None:
+        self.checkpoint.unlink()
+        with self.assertRaisesRegex(ValueError, "not present in the ModelScope cache"):
             self.state.runtime_profile_capabilities([EDITOR_ORIGIN])
 
-    def test_exactly_one_manifest_resolves_automatically_and_crosses_singularly(
+    def test_modelscope_cache_resolves_the_fixed_current_model(
         self,
     ) -> None:
-        installed = self.install_model("sha256:historical-one")
-
         result = self.state.runtime_profile_capabilities([EDITOR_ORIGIN])
 
         self.assertEqual(
@@ -136,7 +139,7 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
         )
         self.assertEqual(
             result["activeModelManifest"]["digest"],
-            installed["digest"],
+            "operator-sam3-image-instance-v1",
         )
         self.assertNotIn("modelManifests", result)
         self.assertFalse(result["activeModelManifest"]["initialized"])
@@ -145,44 +148,9 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
             "unavailable",
         )
 
-    def test_multiple_manifests_require_an_explicit_operator_choice(self) -> None:
-        self.install_model("sha256:historical-one")
-        selected = self.install_model("sha256:historical-two")
-
-        with self.assertRaisesRegex(ValueError, "operator must choose"):
-            self.state.runtime_profile_capabilities([EDITOR_ORIGIN])
-
-        self.state.configure_active_model_manifest(selected["digest"])
-        result = self.state.runtime_profile_capabilities([EDITOR_ORIGIN])
-        self.assertEqual(
-            result["activeModelManifest"]["digest"],
-            selected["digest"],
-        )
-
-    def test_historical_provider_has_no_removed_prompt_capability_fields(
-        self,
-    ) -> None:
-        self.install_model("sha256:historical-one")
-
-        provider = self.state.runtime_profile_capabilities(
-            [EDITOR_ORIGIN]
-        )["imageInstanceProvider"]
-
-        self.assertTrue(provider["authoritativeRgb"]["artifact"])
-        self.assertFalse(provider["authoritativeRgb"]["companionReference"])
-        self.assertFalse(
-            provider["promptCapabilities"]["previousLogitsRefinement"]
-        )
-        self.assertNotIn("negativeBox", provider["promptCapabilities"])
-        self.assertNotIn("promptBrush", provider["promptCapabilities"])
-        self.assertNotIn("maskConstraints", provider["promptCapabilities"])
-        self.assertNotIn("text", provider["promptCapabilities"])
-
     def test_internal_cwed_qualification_does_not_enter_browser_runtime_profile(
         self,
     ) -> None:
-        self.install_model("sha256:historical-one")
-
         result = self.state.runtime_profile_capabilities([EDITOR_ORIGIN])
         serialized = json.dumps(result, sort_keys=True).lower()
 
@@ -198,11 +166,6 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
     ) -> None:
         adapter_id = "sam3-image-instance/v1"
         self.state.mask_adapters[adapter_id] = ReadySam3ImageInstanceAdapter()  # type: ignore[assignment]
-        self.install_model(
-            "sha256:sam3-image-instance",
-            adapter_id=adapter_id,
-            runtime_config_digest=SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
-        )
 
         direct = direct_evidence_capability()
         direct["status"] = "ready"
@@ -285,16 +248,9 @@ class RuntimeProfileReadinessTests(unittest.TestCase):
     def test_unavailable_current_adapter_omits_the_pass_through_digests(
         self,
     ) -> None:
-        adapter_id = "sam3-image-instance/v1"
         # The real adapter reports unavailable when the checkpoint cannot be
         # initialized in this environment; readiness must stay truthful and
         # must not advertise capability digests for a non-ready provider.
-        self.install_model(
-            "sha256:sam3-image-instance",
-            adapter_id=adapter_id,
-            runtime_config_digest=SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
-        )
-
         result = self.state.runtime_profile_capabilities([EDITOR_ORIGIN])
         provider = result["imageInstanceProvider"]
 

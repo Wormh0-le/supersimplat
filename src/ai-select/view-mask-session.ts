@@ -710,7 +710,7 @@ export class AISelectViewMaskSession implements AISelectMaskAuthoring {
         const modelManifestDigest = this.getModelManifestDigest();
         if (modelManifestDigest === null || modelManifestDigest.length === 0) {
             this.failMaskRequest(
-                'AI Select requires a configured Model Manifest before SAM mask production.'
+                'AI Select requires the current SAM 3 model before SAM mask production.'
             );
             return;
         }

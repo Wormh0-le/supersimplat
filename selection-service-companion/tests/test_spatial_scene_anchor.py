@@ -378,9 +378,6 @@ class SpatialSceneAnchorRouteTests(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         directory = Path(self.temporary_directory.name)
         self.state = CompanionState(directory / "state")
-        lock_file = directory / "uv.lock"
-        lock_file.write_text("locked companion dependencies\n", encoding="utf-8")
-        self.state.install_release("0.1.0", lock_file)
         self.renderer = SpatialAnchorRenderer()
         self.state.contributor_renderer = self.renderer  # type: ignore[assignment]
         self.server = create_server(

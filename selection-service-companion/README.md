@@ -410,35 +410,6 @@ Anchor route is bound by `targetContextId`, context revision, and dependency
 token; late browser results are discarded editor-side rather than relying on
 request cancellation for correctness.
 
-## Run the historical controlled-overlap reference trial
-
-This frozen benchmark runs prediction without giving the process a Ground
-Truth path. The command uses the installed locked release and historical SAM3.1
-Model Manifest, executes the real
-gsplat/CUDA Generated View path, and atomically publishes a hashed PoC Run
-Record only after all required artifacts are complete:
-
-```sh
-uv run --locked --extra renderer --extra sam3 python \
-  ../scripts/benchmarks/run_controlled_overlap_trial.py predict \
-  --output /secure/poc-runs/controlled-overlap-seed-1
-```
-
-Only after prediction is sealed, invoke the independent scorer with the
-frozen Ground Truth:
-
-```sh
-uv run --locked --extra renderer --extra sam3 python \
-  ../scripts/benchmarks/run_controlled_overlap_trial.py score \
-  --prediction /secure/poc-runs/controlled-overlap-seed-1 \
-  --ground-truth ../docs/benchmarks/fixtures/controlled-overlap/controlled_front_back_overlap_ground_truth.json \
-  --output /secure/poc-scores/controlled-overlap-seed-1.json
-```
-
-The scorer verifies the prediction seal and every artifact hash before it
-opens Ground Truth. The older deterministic one/two-view fixture outputs are
-diagnostic lifting evidence; they are not production acceptance records.
-
 ## Run the sealed depth-classified Negative Evidence experiment
 
 V2AX is a benchmark-only, nonblocking experiment. It first seals the unchanged

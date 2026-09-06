@@ -31,6 +31,58 @@ ISSUE_115_PRIOR_B: Final = 1.0
 ISSUE_115_EVIDENCE_TAU: Final = 1.0
 ISSUE_115_VISIBLE_TAU: Final = 1.0
 
+_AGGREGATION_RESULT_KEYS: Final = {
+    "schemaVersion",
+    "requestBinding",
+    "targetSplatId",
+    "aggregationPolicy",
+    "aggregationPolicyDigest",
+    "sourceEvidencePolicyDigest",
+    "classificationUniverseStableGaussianIds",
+    "classificationScopeStableGaussianIds",
+    "evidenceWorkingSet",
+    "evidenceWorkingSetToken",
+    "evidenceScopeStableGaussianIds",
+    "evidenceArtifactSet",
+    "evidenceArtifactSetDigest",
+    "referenceBackendIdentities",
+    "sourceEvidenceArtifacts",
+    "gaussians",
+    "selectedStableGaussianIds",
+    "rejectedStableGaussianIds",
+    "uncertainStableGaussianIds",
+    "outOfScopeStableGaussianIds",
+    "candidateInputStableGaussianIds",
+    "resultDigest",
+}
+_AGGREGATION_RECORD_KEYS: Final = {
+    "stableGaussianId",
+    "classification",
+    "uncertaintyReason",
+    "rawPositiveMass",
+    "rawNegativeMass",
+    "rawVisibleMass",
+    "effectivePositiveMass",
+    "effectiveNegativeMass",
+    "effectiveVisibleMass",
+    "observedViewIds",
+    "positiveSupportingViewIds",
+    "negativeSupportingViewIds",
+    "mixedViewIds",
+    "perView",
+}
+_PER_VIEW_RECORD_KEYS: Final = {
+    "viewId",
+    "artifactDigest",
+    "rawPositiveMass",
+    "rawNegativeMass",
+    "rawVisibleMass",
+    "effectivePositiveMass",
+    "effectiveNegativeMass",
+    "effectiveVisibleMass",
+    "normalizationScale",
+}
+
 
 class Issue115DiagnosticError(ValueError):
     """An issue #115 diagnostic input failed closed."""
@@ -60,6 +112,47 @@ def _sorted_ids(value: object, label: str) -> list[int]:
             f"{label} must be sorted, unique Stable Gaussian IDs."
         )
     return list(value)
+
+
+def _is_digest(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 71
+        and value.startswith("sha256:")
+        and all(character in "0123456789abcdef" for character in value[7:])
+    )
+
+
+def _is_sorted_id_shape(value: object, *, allow_empty: bool = True) -> bool:
+    return (
+        isinstance(value, list)
+        and (allow_empty or bool(value))
+        and all(
+            isinstance(stable_id, int)
+            and not isinstance(stable_id, bool)
+            and 0 <= stable_id <= 0xFFFFFFFF
+            for stable_id in value
+        )
+        and all(value[index - 1] < value[index] for index in range(1, len(value)))
+    )
+
+
+def _is_nonnegative_finite(value: object) -> bool:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        number = float(value)
+    except (OverflowError, TypeError, ValueError):
+        return False
+    return math.isfinite(number) and number >= 0.0
+
+
+def _is_view_id_list(value: object, expected: set[str]) -> bool:
+    return (
+        isinstance(value, list)
+        and all(isinstance(view_id, str) and view_id in expected for view_id in value)
+        and len(set(value)) == len(value)
+    )
 
 
 def _classify(
@@ -290,37 +383,198 @@ def _validate_c_inspection(
 
 
 def _is_aggregation_result_shape_valid(value: object) -> bool:
-    """Validate the existing result envelope without running aggregation again."""
+    """Validate the existing result envelope without running aggregation again.
 
-    if not isinstance(value, Mapping):
+    The complete aggregation validator rebuilds the numerical result to prove
+    semantic equivalence.  That would be a second aggregation pass for this
+    diagnostic, so this boundary instead checks the immutable envelope,
+    canonical result digest, source artifacts, and every consumed mass field.
+    """
+
+    if not isinstance(value, Mapping) or set(value) != _AGGREGATION_RESULT_KEYS:
         return False
-    policy = value.get("aggregationPolicy")
+    policy = value["aggregationPolicy"]
     expected_policy = reference_aggregation_policy(
         aggregation_mode=ISSUE_115_RAW_AGGREGATION_MODE
     )
-    sources = value.get("sourceEvidenceArtifacts")
-    evidence_working_set = value.get("evidenceWorkingSet")
-    universe = value.get("classificationUniverseStableGaussianIds")
-    scope = value.get("classificationScopeStableGaussianIds")
-    return (
-        policy == expected_policy
-        and value.get("aggregationPolicyDigest")
-        == expected_policy["aggregationPolicyDigest"]
-        and isinstance(value.get("requestBinding"), Mapping)
-        and isinstance(value.get("targetSplatId"), str)
-        and bool(value["targetSplatId"].strip())
-        and is_evidence_working_set(evidence_working_set)
-        and isinstance(evidence_working_set, Mapping)
-        and evidence_working_set.get("targetSplatId") == value["targetSplatId"]
-        and value.get("evidenceWorkingSetToken")
-        == evidence_working_set.get("evidenceWorkingSetToken")
-        and _sorted_ids(universe, "classification universe") == universe
-        and _sorted_ids(scope, "classification scope") == scope
-        and isinstance(sources, list)
-        and len(sources) == 2
-        and all(is_gaussian_evidence_artifact(source) for source in sources)
-        and isinstance(value.get("resultDigest"), str)
-    )
+    sources = value["sourceEvidenceArtifacts"]
+    evidence_working_set = value["evidenceWorkingSet"]
+    universe = value["classificationUniverseStableGaussianIds"]
+    scope = value["classificationScopeStableGaussianIds"]
+    if (
+        value["schemaVersion"] != 1
+        or policy != expected_policy
+        or value["aggregationPolicyDigest"]
+        != expected_policy["aggregationPolicyDigest"]
+        or not isinstance(value["requestBinding"], Mapping)
+        or not isinstance(value["targetSplatId"], str)
+        or not value["targetSplatId"].strip()
+        or not is_evidence_working_set(evidence_working_set)
+        or not isinstance(evidence_working_set, Mapping)
+        or evidence_working_set.get("targetSplatId") != value["targetSplatId"]
+        or value["evidenceWorkingSetToken"]
+        != evidence_working_set.get("evidenceWorkingSetToken")
+        or not _is_sorted_id_shape(universe, allow_empty=False)
+        or not _is_sorted_id_shape(scope, allow_empty=False)
+        or scope != universe
+        or value["evidenceScopeStableGaussianIds"]
+        != evidence_working_set.get("stableGaussianIds")
+        or not isinstance(sources, list)
+        or len(sources) != 2
+        or not all(is_gaussian_evidence_artifact(source) for source in sources)
+    ):
+        return False
+
+    source_by_view = {
+        source["viewId"]: source
+        for source in sources
+        if isinstance(source, Mapping) and isinstance(source.get("viewId"), str)
+    }
+    if len(source_by_view) != len(sources):
+        return False
+    source_view_ids = set(source_by_view)
+    if not source_view_ids or any(
+        source.get("requestBinding") != value["requestBinding"]
+        or source.get("targetSplatId") != value["targetSplatId"]
+        or source.get("evidenceWorkingSetToken")
+        != evidence_working_set.get("evidenceWorkingSetToken")
+        or source.get("stableGaussianIds")
+        != evidence_working_set.get("stableGaussianIds")
+        for source in sources
+    ):
+        return False
+    if value["sourceEvidencePolicyDigest"] != next(
+        iter(source_by_view.values())
+    )["evidencePolicyDigest"] or not _is_digest(
+        value["sourceEvidencePolicyDigest"]
+    ):
+        return False
+    if any(
+        source["evidencePolicyDigest"] != value["sourceEvidencePolicyDigest"]
+        for source in sources
+    ):
+        return False
+
+    expected_artifact_set = [
+        {
+            "viewId": view_id,
+            "artifactDigest": source_by_view[view_id]["artifactDigest"],
+        }
+        for view_id in sorted(source_by_view)
+    ]
+    if (
+        value["evidenceArtifactSet"] != expected_artifact_set
+        or value["evidenceArtifactSetDigest"]
+        != canonical_json_digest({"artifacts": expected_artifact_set})
+    ):
+        return False
+    expected_backend_identities = [
+        {
+            "rasterImplementationId": identity[0],
+            "evidenceBackendKind": identity[1],
+            "evidenceBackendId": identity[2],
+            "runtimeBuildId": identity[3],
+        }
+        for identity in sorted({
+            (
+                source["rasterImplementationId"],
+                source["evidenceBackendKind"],
+                source["evidenceBackendId"],
+                source["runtimeBuildId"],
+            )
+            for source in sources
+        })
+    ]
+    if value["referenceBackendIdentities"] != expected_backend_identities:
+        return False
+
+    records = value["gaussians"]
+    if not isinstance(records, list) or len(records) != len(universe):
+        return False
+    expected_by_class = {"selected": [], "rejected": [], "uncertain": []}
+    for stable_id, record in zip(universe, records, strict=True):
+        if not isinstance(record, Mapping) or set(record) != _AGGREGATION_RECORD_KEYS:
+            return False
+        if record["stableGaussianId"] != stable_id or record["classification"] not in {
+            "selected",
+            "rejected",
+            "uncertain",
+        }:
+            return False
+        classification = record["classification"]
+        reason = record["uncertaintyReason"]
+        if classification == "uncertain":
+            if not isinstance(reason, str) or not reason.strip():
+                return False
+        elif reason is not None:
+            return False
+        for name in (
+            "rawPositiveMass",
+            "rawNegativeMass",
+            "rawVisibleMass",
+            "effectivePositiveMass",
+            "effectiveNegativeMass",
+            "effectiveVisibleMass",
+        ):
+            if not _is_nonnegative_finite(record[name]):
+                return False
+        for name in (
+            "observedViewIds",
+            "positiveSupportingViewIds",
+            "negativeSupportingViewIds",
+            "mixedViewIds",
+        ):
+            if not _is_view_id_list(record[name], source_view_ids):
+                return False
+        per_view = record["perView"]
+        if not isinstance(per_view, list) or len(per_view) != len(sources):
+            return False
+        seen_per_view: set[str] = set()
+        for per_view_record in per_view:
+            if (
+                not isinstance(per_view_record, Mapping)
+                or set(per_view_record) != _PER_VIEW_RECORD_KEYS
+                or not isinstance(per_view_record["viewId"], str)
+                or per_view_record["viewId"] not in source_view_ids
+                or per_view_record["viewId"] in seen_per_view
+                or not _is_digest(per_view_record["artifactDigest"])
+                or not _is_nonnegative_finite(per_view_record["normalizationScale"])
+                or any(
+                    not _is_nonnegative_finite(per_view_record[name])
+                    for name in (
+                        "rawPositiveMass",
+                        "rawNegativeMass",
+                        "rawVisibleMass",
+                        "effectivePositiveMass",
+                        "effectiveNegativeMass",
+                        "effectiveVisibleMass",
+                    )
+                )
+            ):
+                return False
+            seen_per_view.add(per_view_record["viewId"])
+        expected_by_class[classification].append(stable_id)
+
+    if any(
+        value[key] != expected_by_class[classification]
+        for key, classification in (
+            ("selectedStableGaussianIds", "selected"),
+            ("rejectedStableGaussianIds", "rejected"),
+            ("uncertainStableGaussianIds", "uncertain"),
+        )
+    ) or value["outOfScopeStableGaussianIds"] != []:
+        return False
+    if value["candidateInputStableGaussianIds"] != value["selectedStableGaussianIds"]:
+        return False
+    result_payload = {
+        key: item for key, item in value.items() if key != "resultDigest"
+    }
+    try:
+        return _is_digest(value["resultDigest"]) and canonical_json_digest(
+            result_payload
+        ) == value["resultDigest"]
+    except (TypeError, ValueError):
+        return False
 
 
 def build_issue_115_diagnostics(

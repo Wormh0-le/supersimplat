@@ -7,11 +7,11 @@ import unittest
 import numpy as np
 
 from selection_service_companion.masking import (
-    MaskSessionError,
     POINT_MASK_PROMPT_COMPILER_POLICY_VERSION,
     SAM3_IMAGE_INSTANCE_ADAPTER_ID,
     SAM3_IMAGE_PROMPT_COMPILER_POLICY_VERSION,
     SAM3_IMAGE_RUNTIME_CONFIG_DIGEST,
+    MaskSessionError,
     Sam3ImageInstanceAdapter,
     Sam3ImageRefinementInput,
     compile_point_mask_prompt_program,
@@ -19,7 +19,6 @@ from selection_service_companion.masking import (
     resolve_multimask_output,
     sam3_image_instance_capabilities,
 )
-
 
 RGB_DIGEST = f'sha256:{"1" * 64}'
 IMAGE_WIDTH = 4
@@ -612,6 +611,21 @@ class Sam3ImageInstanceAdapterTests(unittest.TestCase):
                     )
                 self.assertEqual(error.exception.code, code)
         self.assertEqual(self.build_calls, [])
+
+    def test_runtime_cache_rebuilds_when_discovered_checkpoint_path_changes(self) -> None:
+        self.produce(self.program())
+
+        self.adapter.produce_proposals(
+            model={**self.model, 'weightsPath': '/models/new-sam3-image.pt'},
+            rgb_png=self.rgb_png,
+            width=IMAGE_WIDTH,
+            height=IMAGE_HEIGHT,
+            program=self.program(),
+            refinement=None,
+            cancelled=lambda: False,
+        )
+
+        self.assertEqual(len(self.build_calls), 2)
 
     def test_cancellation_before_inference_builds_and_publishes_nothing(self) -> None:
         with self.assertRaises(MaskSessionError) as error:

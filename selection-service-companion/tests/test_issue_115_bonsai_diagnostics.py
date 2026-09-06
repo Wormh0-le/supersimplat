@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import unittest
+from copy import deepcopy
 from typing import ClassVar
 from unittest.mock import patch
 
@@ -18,6 +19,7 @@ from selection_service_companion.gaussian_evidence_contract import (
 )
 from selection_service_companion.issue_115_bonsai_diagnostics import (
     aggregate_issue_115_diagnostics,
+    build_issue_115_diagnostics,
 )
 from selection_service_companion.reference_gaussian_evidence import (
     default_reference_evidence_policy,
@@ -209,6 +211,55 @@ class Issue115DiagnosticTests(unittest.TestCase):
                     "cameraBindingDigest": digest("c"),
                     "rgbDigest": digest("d"),
                     "visibleStableGaussianIds": [1, 4],
+                },
+            )
+
+    def test_diagnostic_rejects_tampered_aggregation_without_a_second_pass(self) -> None:
+        anchor_input, anchor_artifact = self.artifact(
+            view_id="anchor-view",
+            mask_letter="f",
+            positive=[1.0, 0.0, 0.0],
+            negative=[0.0, 0.0, 0.0],
+            visible=[1.0, 0.0, 0.0],
+            boundary=[0.0, 0.0, 0.0],
+        )
+        secondary_input, secondary_artifact = self.artifact(
+            view_id="view-b",
+            mask_letter="0",
+            positive=[0.0, 1.0, 0.0],
+            negative=[0.0, 0.0, 0.0],
+            visible=[0.0, 1.0, 0.0],
+            boundary=[0.0, 0.0, 0.0],
+        )
+        aggregation_result = diagnostics.aggregate_reference_gaussian_evidence(
+            {
+                "requestBinding": self.request_binding,
+                "targetSplatId": "bonsai-splat",
+                "classificationUniverseStableGaussianIds": self.stable_ids,
+                "classificationScopeStableGaussianIds": self.stable_ids,
+                "evidenceWorkingSet": self.working_set,
+                "views": [
+                    {"currentInput": anchor_input, "artifact": anchor_artifact},
+                    {"currentInput": secondary_input, "artifact": secondary_artifact},
+                ],
+            },
+            diagnostics.reference_aggregation_policy(
+                aggregation_mode=diagnostics.ISSUE_115_RAW_AGGREGATION_MODE
+            ),
+        )
+        tampered = deepcopy(aggregation_result)
+        records = tampered["gaussians"]
+        assert isinstance(records, list)
+        records[0].pop("effectivePositiveMass")
+
+        with self.assertRaises(ValueError):
+            build_issue_115_diagnostics(
+                aggregation_result=tampered,
+                c_inspection={
+                    "viewId": "view-c",
+                    "cameraBindingDigest": digest("c"),
+                    "rgbDigest": digest("d"),
+                    "visibleStableGaussianIds": self.stable_ids,
                 },
             )
 

@@ -43,6 +43,7 @@ from .gaussian_evidence_contract import (
 )
 from .gsplat_renderer import GsplatContributorRenderer, LockedGsplatBackend
 from .issue_115_bonsai_diagnostics import (
+    ISSUE_115_RAW_AGGREGATION_MODE,
     aggregate_issue_115_diagnostics,
 )
 from .masking import find_sam3_image_checkpoint
@@ -50,6 +51,7 @@ from .reference_gaussian_evidence import (
     default_reference_evidence_policy,
     validate_stable_mask_artifact,
 )
+from .reference_gaussian_evidence_aggregation import reference_aggregation_policy
 from .renderer_runtime import CurrentProcessGsplatInspection, current_renderer_runtime
 
 DEFAULT_S0_COMPARISON_BUDGET = 50_000_000
@@ -116,6 +118,20 @@ def _non_empty_string(value: object, label: str) -> str:
             f"{label} must be a non-empty string.", stage="input-validation"
         )
     return value
+
+
+def _digest(value: object, label: str) -> str:
+    result = _non_empty_string(value, label)
+    if (
+        len(result) != 71
+        or not result.startswith("sha256:")
+        or any(character not in "0123456789abcdef" for character in result[7:])
+    ):
+        raise Issue115BonsaiRunBlocked(
+            f"{label} must be a canonical SHA-256 digest.",
+            stage="input-validation",
+        )
+    return result
 
 
 def _sha256_bytes(payload: bytes) -> str:
@@ -242,6 +258,8 @@ def load_bonsai_input_package(
             expected_confirmation = "not-applicable" if role == "C" else "confirmed"
             if input_json.get("humanConfirmation") != expected_confirmation:
                 raise ValueError("input human confirmation is incomplete")
+            if input_json.get("rendererId") != "gsplat":
+                raise ValueError("input renderer identity is not gsplat")
             _non_empty_string(
                 input_json.get("targetDefinition"), "target definition"
             )
@@ -252,7 +270,7 @@ def load_bonsai_input_package(
                 request_binding.get("dependencyToken"), "dependency token"
             )
             _non_empty_string(dependency.get("splatId"), "target splat ID")
-            _non_empty_string(
+            _digest(
                 input_json.get("renderWorkingSetToken"),
                 "captured Render Working Set token",
             )
@@ -535,6 +553,9 @@ def _current_input(
         raise Issue115BonsaiRunBlocked(
             "A/B Direct Evidence requires an exported Stable Mask.", stage="human-review"
         )
+    # The exported token is retained in inputIdentity. This derived admission
+    # token is the packed snapshot identity that Direct Evidence validates
+    # against the bytes being rasterized.
     policy = default_reference_evidence_policy()
     dependency = request_binding.get("dependencyToken")
     if not isinstance(dependency, dict):
@@ -612,8 +633,7 @@ def _direct_evidence(
 
 
 def _support_ids(
-    artifact: Mapping[str, object], *, minimum_visible: float = 0.05,
-    minimum_evidence: float = 0.05, minimum_ratio: float = 0.8,
+    artifact: Mapping[str, object], *, policy: Mapping[str, object]
 ) -> list[int]:
     stable_ids = artifact.get("stableGaussianIds")
     positive = artifact.get("positiveMass")
@@ -627,6 +647,9 @@ def _support_ids(
     assert isinstance(positive, list)
     assert isinstance(negative, list)
     assert isinstance(visible, list)
+    minimum_visible = float(policy["minimumPerViewVisibleMass"])
+    minimum_evidence = float(policy["minimumPerViewEvidenceMass"])
+    minimum_ratio = float(policy["selectedPositiveRatioThreshold"])
     return sorted(
         int(stable_id)
         for stable_id, p_value, n_value, v_value in zip(
@@ -643,6 +666,7 @@ def _scope_setup(
     seed_record: Mapping[str, object],
     target_ids: Sequence[int],
     secondary_artifact: Mapping[str, object],
+    support_policy: Mapping[str, object],
 ) -> tuple[dict[str, object], dict[str, object], list[int]]:
     """Project S0 and B support onto the existing EWS role boundary.
 
@@ -660,7 +684,7 @@ def _scope_setup(
             "S0 produced no admitted core; Scope cannot be initialized.", stage="scope"
         )
     core_ids = sorted(int(value) for value in core_ids_value)
-    b_support = set(_support_ids(secondary_artifact))
+    b_support = set(_support_ids(secondary_artifact, policy=support_policy))
     new_support = sorted(b_support - set(core_ids))
     target_set = {int(value) for value in target_ids}
     if not set(core_ids).issubset(target_set) or not set(new_support).issubset(target_set):
@@ -688,6 +712,7 @@ def _scope_setup(
         ),
         "seedRecordDigest": seed_record["recordDigest"],
         "sourceProjectionDigest": source_projection_digest,
+        "supportPolicy": dict(support_policy),
         "coreCount": len(core_ids),
         "activeFrontierCount": len(new_support),
         "requiredContextCount": len(context_ids),
@@ -867,7 +892,9 @@ def _runtime_record() -> dict[str, object]:
     }
 
 
-def _package_identity(package: BonsaiInputPackage) -> dict[str, object]:
+def _package_identity(
+    package: BonsaiInputPackage, *, derived_render_working_set_token: str
+) -> dict[str, object]:
     rgb = package.input_json["rgb"]
     assert isinstance(rgb, dict)
     mask_digest = (
@@ -882,6 +909,7 @@ def _package_identity(package: BonsaiInputPackage) -> dict[str, object]:
         "sceneId": package.scene_manifest.scene_id,
         "sceneVersion": package.scene_manifest.scene_version,
         "capturedRenderWorkingSetToken": package.input_json["renderWorkingSetToken"],
+        "derivedRenderWorkingSetToken": derived_render_working_set_token,
         "cameraBindingDigest": camera_binding_digest(package.camera_binding),
         "rgbDigest": rgb["digest"],
         "maskDigest": mask_digest,
@@ -981,6 +1009,9 @@ def run_issue_115_bonsai_diagnostics(
             )
             renderer = GsplatContributorRenderer(backend=LockedGsplatBackend())
             evidence_policy = default_reference_evidence_policy()
+            aggregation_policy = reference_aggregation_policy(
+                aggregation_mode=ISSUE_115_RAW_AGGREGATION_MODE
+            )
             initial_a_input, initial_a, initial_a_timing = _direct_evidence(
                 renderer,
                 anchor,
@@ -1034,6 +1065,7 @@ def run_issue_115_bonsai_diagnostics(
                 seed_record=s0_record,
                 target_ids=target_ids,
                 secondary_artifact=initial_b,
+                support_policy=aggregation_policy,
             )
             scope_summary["wallNanoseconds"] = time.perf_counter_ns() - scope_started
             final_ews = _scope_evidence_working_set(
@@ -1101,7 +1133,13 @@ def run_issue_115_bonsai_diagnostics(
                 "diagnostic": diagnostic,
                 "inputIdentity": {
                     "targetDefinition": anchor.input_json["targetDefinition"],
-                    "packages": [_package_identity(packages[role]) for role in ("A", "B", "C")],
+                    "packages": [
+                        _package_identity(
+                            packages[role],
+                            derived_render_working_set_token=snapshot.content_digest,
+                        )
+                        for role in ("A", "B", "C")
+                    ],
                     "sceneSnapshot": {
                         "sceneId": snapshot.scene_id,
                         "sceneVersion": snapshot.scene_version,

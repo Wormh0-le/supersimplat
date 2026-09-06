@@ -2014,7 +2014,10 @@ class Sam3ImageInstanceAdapter:
         )
 
     def _require_runtime(self, model: Mapping[str, Any]) -> Any:
-        cache_key = str(model.get('digest') or model.get('weightsPath') or '')
+        # The manifest identifies the adapter contract; the discovered path
+        # identifies the checkpoint actually loaded by this process. Prefer
+        # the latter so a new ModelScope snapshot cannot reuse an old runtime.
+        cache_key = str(model.get('weightsPath') or model.get('digest') or '')
         if (
             self._runtime_cache_key == cache_key
             and self._runtime_cache is not None

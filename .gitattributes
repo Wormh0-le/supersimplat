@@ -1,0 +1,4 @@
+data/issue-115-bonsai/point_cloud.ply filter=lfs diff=lfs merge=lfs -text
+data/issue-115-bonsai/bonsai-A-input.zip filter=lfs diff=lfs merge=lfs -text
+data/issue-115-bonsai/bonsai-B-input.zip filter=lfs diff=lfs merge=lfs -text
+data/issue-115-bonsai/bonsai-C-inspection.zip filter=lfs diff=lfs merge=lfs -text

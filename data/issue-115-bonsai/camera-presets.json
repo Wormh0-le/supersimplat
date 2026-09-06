@@ -1,0 +1,189 @@
+{
+  "description": "Bonsai A/B input and C inspection camera proposal, not a completed supersimplat CameraBinding or #115 input manifest",
+  "status": "source metadata and matrix math checked; model bytes, rendered RGB, target visibility, masks and GPU execution not verified in this session",
+  "sourceRepository": "https://huggingface.co/datasets/dylanebert/3dgs",
+  "sourceRevision": "5dcc84adb951b67bb85acc05fa55c6fe5f038d58",
+  "sourceCameraFile": "bonsai/cameras.json",
+  "modelFile": "bonsai/point_cloud/iteration_30000/point_cloud.ply",
+  "publisherModelSHA256": "a16af6d8815498ffbf9eb5d5ee93f5bcc9dca34c4e3eb6f7a796ef9e97c0d273",
+  "publisherModelBytes": 308716644,
+  "conventions": {
+    "matrixStorage": "nested rows / row-major; matrices act on column vectors",
+    "cameraAxes": "OpenCV: +X right, +Y down, +Z forward",
+    "coordinateFrame": "unmodified source PLY coordinates",
+    "rotationMeaning": "source rotation is camera-to-world, not world-to-camera",
+    "principalPoint": "centered principal point following the original 3DGS projection convention; not additional measured calibration",
+    "imageScaling": "full-frame resize; fx and cx scale by W_new/W_old, fy and cy by H_new/H_old",
+    "units": "source reconstruction units, not asserted to be metres",
+    "stableIDs": "source PLY file SHA + unchanged row index can identify source rows; bind via the project Scene Snapshot mapping, do not assume editor IDs equal row indices"
+  },
+  "opticalAxisAngleDegrees": {
+    "A-B": 78.0112335823254,
+    "A-C": 41.06638450553996,
+    "B-C": 38.57641664228926
+  },
+  "views": [
+    {
+      "role": "A",
+      "participatesInFusion": true,
+      "purpose": "anchor input",
+      "sourceCameraId": 7,
+      "sourceImageName": "DSCF5621",
+      "cameraToWorld": [
+        [
+          0.9993803677772068, 0.027910160813670162, -0.021445359051550428,
+          0.19674533993421495
+        ],
+        [
+          -0.02794621343367118, 0.9996084712666231, -0.0013832305391984798,
+          1.7424939445765226
+        ],
+        [
+          0.02139835639049275, 0.001981690026201181, 0.9997690649587162,
+          -3.1319215686243034
+        ],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "worldToCamera": [
+        [
+          0.9993803677772068, -0.02794621343367118, 0.02139835639049275,
+          -0.08090934858739827
+        ],
+        [
+          0.027910160813670162, 0.9996084712666231, 0.001981690026201181,
+          -1.7410964044710027
+        ],
+        [
+          -0.021445359051550428, -0.0013832305391984798, 0.9997690649587162,
+          3.137827843482671
+        ],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sourceCalibration": {
+        "width": 3118,
+        "height": 2078,
+        "fx": 3222.7010797592447,
+        "fy": 3222.7010797592447,
+        "cx": 1559.0,
+        "cy": 1039.0
+      },
+      "proposedRender": {
+        "width": 1008,
+        "height": 672,
+        "K": [
+          [1041.8482002557148, 0, 504],
+          [0, 1042.182447352364, 336],
+          [0, 0, 1]
+        ]
+      }
+    },
+    {
+      "role": "B",
+      "participatesInFusion": true,
+      "purpose": "additional input; new target support must be checked on local render",
+      "sourceCameraId": 15,
+      "sourceImageName": "DSCF5685",
+      "cameraToWorld": [
+        [
+          0.0759137904724299, 0.20741573876794483, -0.9753029312615932,
+          4.076061199388371
+        ],
+        [
+          -0.6167485807542697, 0.7783377874441983, 0.11752223948710239,
+          1.2903109427403936
+        ],
+        [
+          0.7834910877308702, 0.592595139996792, 0.18700993422404186,
+          0.6546119019618828
+        ],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "worldToCamera": [
+        [
+          0.0759137904724299, -0.6167485807542697, 0.7834910877308702,
+          -0.02651440428601785
+        ],
+        [
+          0.20741573876794483, 0.7783377874441983, 0.592595139996792,
+          -2.237656840908758
+        ],
+        [
+          -0.9753029312615932, 0.11752223948710239, 0.18700993422404186,
+          3.7013352754113913
+        ],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sourceCalibration": {
+        "width": 3118,
+        "height": 2078,
+        "fx": 3222.7010797592447,
+        "fy": 3222.7010797592447,
+        "cx": 1559.0,
+        "cy": 1039.0
+      },
+      "proposedRender": {
+        "width": 1008,
+        "height": 672,
+        "K": [
+          [1041.8482002557148, 0, 504],
+          [0, 1042.182447352364, 336],
+          [0, 0, 1]
+        ]
+      }
+    },
+    {
+      "role": "C",
+      "participatesInFusion": false,
+      "purpose": "inspection only; excluded from inference, priors, scope and parameter tuning",
+      "sourceCameraId": 11,
+      "sourceImageName": "DSCF5653",
+      "cameraToWorld": [
+        [
+          0.6746649002054113, 0.3123524827957828, -0.6687773911565287,
+          2.840813222516746
+        ],
+        [
+          -0.479182752586132, 0.8745081863663723, -0.07496213445584277,
+          1.83501326518184
+        ],
+        [
+          0.5614366946101761, 0.3710409121235935, 0.7396739007668794,
+          -1.4502222651948369
+        ],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "worldToCamera": [
+        [
+          0.6746649002054113, -0.479182752586132, 0.5614366946101761,
+          -0.22308226680850196
+        ],
+        [
+          0.3123524827957828, 0.8745081863663723, 0.3710409121235935,
+          -1.9539773936447642
+        ],
+        [
+          -0.6687773911565287, -0.07496213445584277, 0.7396739007668794,
+          3.1101197267061815
+        ],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "sourceCalibration": {
+        "width": 3118,
+        "height": 2078,
+        "fx": 3222.7010797592447,
+        "fy": 3222.7010797592447,
+        "cx": 1559.0,
+        "cy": 1039.0
+      },
+      "proposedRender": {
+        "width": 1008,
+        "height": 672,
+        "K": [
+          [1041.8482002557148, 0, 504],
+          [0, 1042.182447352364, 336],
+          [0, 0, 1]
+        ]
+      }
+    }
+  ]
+}

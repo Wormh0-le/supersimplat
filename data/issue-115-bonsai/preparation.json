@@ -1,0 +1,56 @@
+{
+  "issue": 115,
+  "status": "complete",
+  "modelSHA256": "a16af6d8815498ffbf9eb5d5ee93f5bcc9dca34c4e3eb6f7a796ef9e97c0d273",
+  "views": [
+    {
+      "role": "A",
+      "sourceCameraId": 7,
+      "bindingDigest": "sha256:ce01dc5c25efbdafc940ea445c3cdd48300d9f755e6b618709997230df8438db",
+      "renderedRgbDigest": "sha256:f5a5561cb7f0134f9dd925f1679c41189e681335e2993f0fdef527abbd5712a4",
+      "archive": "bonsai-A-input.zip",
+      "samInitialStatus": "draft",
+      "humanConfirmation": "confirmed",
+      "participation": "fusion-input",
+      "composedBindingDigest": "sha256:18700ae1225a4eedb8f6bc226e2c7cf6b19b889661ac816041fb2b73fe1ddaa6",
+      "maskId": "mask-3",
+      "maskSource": "hybrid",
+      "maskDigest": "sha256:aa290ade7725a0d08b9649cd137c3de1ae698c7692556154f1b350b5210edb17",
+      "sceneSnapshotContentDigest": "sha256:e88f30a175f422fe04328d30020359d653acfc62754542f1f8acc7e1b21b5b4a"
+    },
+    {
+      "role": "B",
+      "sourceCameraId": 15,
+      "bindingDigest": "sha256:381cfe4d63a7a121e696d458240c7d6f30e2a32b6d576aebf94423a7545962aa",
+      "renderedRgbDigest": "sha256:d5e58a5c7aeab55a3ae46d62c1257446bc29a683a9674f14d12c83f18d28dda7",
+      "archive": "bonsai-B-input.zip",
+      "samInitialStatus": "draft",
+      "humanConfirmation": "confirmed",
+      "participation": "fusion-input",
+      "composedBindingDigest": "sha256:e693a8ddf8d5cd233e1133798ad5e56f991981fd581b48de742299f9e3493733",
+      "maskId": "mask-16",
+      "maskSource": "hybrid",
+      "maskDigest": "sha256:3f35fab9d1b65bc05852987b12dc3a80183124565f377944cad299a6bcc51fb0",
+      "sceneSnapshotContentDigest": "sha256:e88f30a175f422fe04328d30020359d653acfc62754542f1f8acc7e1b21b5b4a"
+    },
+    {
+      "role": "C",
+      "sourceCameraId": 11,
+      "bindingDigest": "sha256:4e29a2390ba1b118c6ef82301dff856d6637b5c9e649f40798d8cf58de490561",
+      "renderedRgbDigest": "sha256:191b0561ae5a6f570abf72c8ae917b2ad075e6092118fb85c4703c5dea78478a",
+      "archive": "bonsai-C-inspection.zip",
+      "humanConfirmation": "not-applicable",
+      "participation": "inspection-only"
+    }
+  ],
+  "cameraFrame": "source PLY; apply actual editor Splat world transform before render",
+  "clippingChoice": {
+    "near": 0.01,
+    "far": 1000,
+    "units": "source reconstruction units"
+  },
+  "target": "Bonsai plant and pot, excluding table and independent supporting furniture",
+  "runtimeStatus": "renderer-and-SAM-ready",
+  "humanConfirmation": "confirmed",
+  "lastColdStartSeconds": 136.019234677
+}

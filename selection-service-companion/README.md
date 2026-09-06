@@ -382,7 +382,8 @@ root with:
 ```sh
 uv run --project selection-service-companion --locked --extra renderer \
   --python 3.12 python \
-  selection-service-companion/scripts/benchmark_v2a4_cwed_qualification.py
+  selection-service-companion/scripts/benchmark_v2a4_cwed_qualification.py \
+  --output /secure/qualification-runs/depth-moment-cwed-current.json
 ```
 
 The current helper compares the actual process's operating system, GPU,

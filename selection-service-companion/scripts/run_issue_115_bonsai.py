@@ -20,7 +20,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--input-directory",
         type=Path,
-        default=Path("data/issue-115-bonsai"),
+        required=True,
+        help="operator-controlled directory containing the prepared A/B/C inputs",
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(

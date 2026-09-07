@@ -167,9 +167,9 @@ masks, evaluates the frozen S0 shadow policy, creates the existing EWS
 Core/Context binding, performs one raw-mass A+B aggregation, and renders C for
 inspection only:
 
-Provide the prepared input directory locally at the path below, or pass a
-different operator-controlled directory with `--input-directory`; the input
-archives are intentionally not tracked in this repository.
+Provide the prepared input directory locally and pass it through the required
+`--input-directory` option; the input archives are intentionally not tracked
+in this repository.
 
 ```sh
 uv run --no-sync python scripts/run_issue_115_bonsai.py \

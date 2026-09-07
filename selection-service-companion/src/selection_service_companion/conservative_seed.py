@@ -277,11 +277,25 @@ def _validated_geometry(value: object) -> dict[str, object]:
     return expected
 
 
+def _normalized_axis_delta(left: float, right: float, scale: float) -> float:
+    if left == right:
+        return 0.0
+    difference = left - right
+    if math.isfinite(difference):
+        return abs(difference) / scale
+    return abs(left) / scale + abs(right) / scale
+
+
 def _normalized_distance(
     left: Sequence[float], right: Sequence[float], scale: float
 ) -> float:
     return math.hypot(
-        *(left[index] / scale - right[index] / scale for index in range(3))
+        *(
+            _normalized_axis_delta(
+                float(left[index]), float(right[index]), scale
+            )
+            for index in range(3)
+        )
     )
 
 
@@ -338,7 +352,7 @@ def _build_spatial_index(
     )
 
 
-def _components_spatial(
+def compute_exact_spatial_components(
     candidates: list[dict[str, object]],
     multiplier: float,
 ) -> tuple[list[list[dict[str, object]]], int]:
@@ -425,21 +439,6 @@ def _components_spatial(
     ]
     components.sort(key=lambda component: int(component[0]["stableGaussianId"]))
     return components, comparisons
-
-
-def compute_exact_spatial_components(
-    candidates: list[dict[str, object]],
-    multiplier: float,
-) -> tuple[list[list[dict[str, object]]], int]:
-    """Return exact connectivity groups through the S0 spatial broad phase.
-
-    Each candidate must provide ``stableGaussianId``, ``center`` and ``scale``.
-    The returned groups retain the candidate records and stable-ID ordering;
-    the comparison count is telemetry for callers that need scale evidence.
-    """
-
-    return _components_spatial(candidates, multiplier)
-
 
 def _component_summary(
     component: list[dict[str, object]],

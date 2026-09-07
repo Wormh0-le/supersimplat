@@ -342,6 +342,25 @@ class ConservativeSeedEvaluatorTests(unittest.TestCase):
             [list(range(0, 34, 2)), list(range(1, 34, 2))],
         )
 
+        identical = [
+            {
+                "stableGaussianId": stable_id,
+                "center": [1.0e308, 0.0, 0.0],
+                "scale": 1.0e-308,
+            }
+            for stable_id in range(2)
+        ]
+        identical_components, _comparisons = compute_exact_spatial_components(
+            identical, 1.0
+        )
+        self.assertEqual(
+            [
+                [int(candidate["stableGaussianId"]) for candidate in component]
+                for component in identical_components
+            ],
+            [[0, 1]],
+        )
+
     def test_admits_one_high_precision_connected_core(self) -> None:
         evidence = artifact(
             stable_ids=[7, 9],

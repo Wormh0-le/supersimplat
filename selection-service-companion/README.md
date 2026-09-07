@@ -173,7 +173,7 @@ archives are intentionally not tracked in this repository.
 
 ```sh
 uv run --no-sync python scripts/run_issue_115_bonsai.py \
-  --input-directory ../data/issue-115-bonsai \
+  --input-directory /path/to/issue-115-bonsai \
   --output /secure/issue-115-bonsai-diagnostic.json
 ```
 

@@ -315,6 +315,28 @@ class ConservativeSeedEvaluatorTests(unittest.TestCase):
         self.assertEqual(actual_groups, expected)
         self.assertLessEqual(comparisons, len(candidates) * (len(candidates) - 1) // 2)
 
+    def test_spatial_connectivity_handles_large_finite_coordinates(self) -> None:
+        candidates = [
+            {
+                "stableGaussianId": stable_id,
+                "center": center,
+                "scale": 1.0,
+            }
+            for stable_id, center in enumerate(
+                ([1.0e200, 0.0, 0.0], [-1.0e200, 0.0, 0.0])
+            )
+        ]
+
+        components, _comparisons = compute_exact_spatial_components(candidates, 1.0)
+
+        self.assertEqual(
+            [
+                [int(candidate["stableGaussianId"]) for candidate in component]
+                for component in components
+            ],
+            [[0], [1]],
+        )
+
     def test_admits_one_high_precision_connected_core(self) -> None:
         evidence = artifact(
             stable_ids=[7, 9],

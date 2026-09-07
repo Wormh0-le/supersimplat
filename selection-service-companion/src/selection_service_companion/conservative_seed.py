@@ -278,7 +278,7 @@ def _validated_geometry(value: object) -> dict[str, object]:
 
 
 def _distance(left: Sequence[float], right: Sequence[float]) -> float:
-    return math.sqrt(sum((left[index] - right[index]) ** 2 for index in range(3)))
+    return math.hypot(*(left[index] - right[index] for index in range(3)))
 
 
 @dataclass(frozen=True)
@@ -416,13 +416,6 @@ def _components_spatial(
     ]
     components.sort(key=lambda component: int(component[0]["stableGaussianId"]))
     return components, comparisons
-
-
-def _components(
-    candidates: list[dict[str, object]],
-    multiplier: float,
-) -> tuple[list[list[dict[str, object]]], int]:
-    return compute_exact_spatial_components(candidates, multiplier)
 
 
 def compute_exact_spatial_components(
@@ -600,7 +593,7 @@ def evaluate_conservative_seed_shadow(
     } for stable_id in unevaluated_ids)
     per_gaussian.sort(key=lambda row: int(row["stableGaussianId"]))
 
-    components, comparisons = _components(
+    components, comparisons = compute_exact_spatial_components(
         candidates,
         float(validated_policy["connectivityScaleMultiplier"]),
     )

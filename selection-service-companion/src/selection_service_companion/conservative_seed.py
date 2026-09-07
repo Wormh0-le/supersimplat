@@ -277,8 +277,12 @@ def _validated_geometry(value: object) -> dict[str, object]:
     return expected
 
 
-def _distance(left: Sequence[float], right: Sequence[float]) -> float:
-    return math.hypot(*(left[index] - right[index] for index in range(3)))
+def _normalized_distance(
+    left: Sequence[float], right: Sequence[float], scale: float
+) -> float:
+    return math.hypot(
+        *(left[index] / scale - right[index] / scale for index in range(3))
+    )
 
 
 @dataclass(frozen=True)
@@ -381,14 +385,14 @@ def _components_spatial(
         nonlocal comparisons
         source_center = candidates[source_index]["center"]
         assert isinstance(source_center, Sequence)
-        distance_to_bounds = 0.0
+        gaps = [0.0] * 3
         for axis in range(3):
             coordinate = float(source_center[axis])
             if coordinate < node.minimum[axis]:
-                distance_to_bounds += (node.minimum[axis] - coordinate) ** 2
+                gaps[axis] = node.minimum[axis] - coordinate
             elif coordinate > node.maximum[axis]:
-                distance_to_bounds += (coordinate - node.maximum[axis]) ** 2
-        if distance_to_bounds > radius * radius:
+                gaps[axis] = coordinate - node.maximum[axis]
+        if math.hypot(*gaps) > radius:
             return
         if node.indices:
             for other_index in node.indices:
@@ -398,7 +402,12 @@ def _components_spatial(
                 other_center = other["center"]
                 assert isinstance(other_center, Sequence)
                 comparisons += 1
-                if _distance(source_center, other_center) <= radius:
+                other_scale = float(other["scale"])
+                scale = max(float(candidates[source_index]["scale"]), other_scale)
+                if (
+                    _normalized_distance(source_center, other_center, scale)
+                    <= multiplier
+                ):
                     union(source_index, other_index)
             return
         assert node.left is not None and node.right is not None
@@ -472,8 +481,11 @@ def _normalized_component_distance(
     right: list[dict[str, object]],
 ) -> float:
     return min(
-        _distance(left_row["center"], right_row["center"])
-        / max(float(left_row["scale"]), float(right_row["scale"]))
+        _normalized_distance(
+            left_row["center"],
+            right_row["center"],
+            max(float(left_row["scale"]), float(right_row["scale"])),
+        )
         for left_row in left
         for right_row in right
     )

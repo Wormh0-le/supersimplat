@@ -159,12 +159,17 @@ production same-decision GPU Evidence.
 
 ## Run the issue #115 Bonsai diagnostic
 
-The operator-only harness consumes the tracked A/B/C input archives and the
-current Companion process. It validates the shared binary Scene Snapshot,
+The operator-only harness consumes operator-provided local A/B/C input
+archives and the current Companion process. It validates the shared binary
+Scene Snapshot,
 recomputes production Direct Evidence from the exported user-confirmed A/B
 masks, evaluates the frozen S0 shadow policy, creates the existing EWS
 Core/Context binding, performs one raw-mass A+B aggregation, and renders C for
 inspection only:
+
+Provide the prepared input directory locally at the path below, or pass a
+different operator-controlled directory with `--input-directory`; the input
+archives are intentionally not tracked in this repository.
 
 ```sh
 uv run --no-sync python scripts/run_issue_115_bonsai.py \

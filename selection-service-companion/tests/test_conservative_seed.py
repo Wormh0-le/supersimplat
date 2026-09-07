@@ -20,8 +20,8 @@ from selection_service_companion.binary_scene_snapshot import (
 from selection_service_companion.camera_binding import camera_binding_digest
 from selection_service_companion.conservative_seed import (
     ConservativeSeedError,
-    _components,
     canonical_conservative_seed_shadow_bytes,
+    compute_exact_spatial_components,
     create_conservative_seed_policy,
     create_conservative_seed_target_geometry,
     evaluate_conservative_seed_shadow,
@@ -307,7 +307,7 @@ class ConservativeSeedEvaluatorTests(unittest.TestCase):
             )
         expected = sorted(grouped.values(), key=lambda group: min(group))
 
-        actual, comparisons = _components(candidates, 4.0)
+        actual, comparisons = compute_exact_spatial_components(candidates, 4.0)
         actual_groups = [
             {int(candidate["stableGaussianId"]) for candidate in component}
             for component in actual

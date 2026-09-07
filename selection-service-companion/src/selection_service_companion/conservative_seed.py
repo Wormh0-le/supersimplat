@@ -422,6 +422,20 @@ def _components(
     candidates: list[dict[str, object]],
     multiplier: float,
 ) -> tuple[list[list[dict[str, object]]], int]:
+    return compute_exact_spatial_components(candidates, multiplier)
+
+
+def compute_exact_spatial_components(
+    candidates: list[dict[str, object]],
+    multiplier: float,
+) -> tuple[list[list[dict[str, object]]], int]:
+    """Return exact connectivity groups through the S0 spatial broad phase.
+
+    Each candidate must provide ``stableGaussianId``, ``center`` and ``scale``.
+    The returned groups retain the candidate records and stable-ID ordering;
+    the comparison count is telemetry for callers that need scale evidence.
+    """
+
     return _components_spatial(candidates, multiplier)
 
 
@@ -1179,6 +1193,7 @@ __all__ = [
     "CONSERVATIVE_SEED_RECORD_KIND",
     "ConservativeSeedError",
     "canonical_conservative_seed_shadow_bytes",
+    "compute_exact_spatial_components",
     "create_conservative_seed_policy",
     "create_conservative_seed_target_geometry",
     "evaluate_conservative_seed_shadow",

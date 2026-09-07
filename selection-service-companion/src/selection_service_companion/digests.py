@@ -16,20 +16,15 @@ import struct
 from collections.abc import Mapping
 
 
-def _route_b_canonical_json(value: object) -> str:
-    """Encode JSON-compatible values with wire-round-trip-stable numbers.
-
-    The browser parses Companion responses as JavaScript Numbers before it
-    sends digest-bound artifacts back. JavaScript therefore turns values such
-    as ``1.0`` into ``1`` on the next ``JSON.stringify``. Encoding every
-    finite number by its IEEE-754 binary64 bits makes the digest independent of
-    that int/float spelling (and matches the browser's single Number value).
-    """
+def _route_b_update(hasher: "hashlib._Hash", value: object) -> None:
+    """Stream the Route B canonical encoding into one digest state."""
 
     if value is None:
-        return "null"
+        hasher.update(b"null")
+        return
     if isinstance(value, bool):
-        return "true" if value else "false"
+        hasher.update(b"true" if value else b"false")
+        return
     if isinstance(value, (int, float)):
         number = float(value)
         if not math.isfinite(number):
@@ -37,20 +32,35 @@ def _route_b_canonical_json(value: object) -> str:
         # JSON.stringify serializes -0 as 0; discard the sign for parity.
         if number == 0.0:
             number = 0.0
-        return f"n{struct.pack('>d', number).hex()}"
+        hasher.update(f"n{struct.pack('>d', number).hex()}".encode("ascii"))
+        return
     if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+        hasher.update(
+            json.dumps(value, ensure_ascii=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        )
+        return
     if isinstance(value, (list, tuple)):
-        return "[" + ",".join(_route_b_canonical_json(item) for item in value) + "]"
+        hasher.update(b"[")
+        for index, item in enumerate(value):
+            if index:
+                hasher.update(b",")
+            _route_b_update(hasher, item)
+        hasher.update(b"]")
+        return
     if isinstance(value, Mapping):
-        entries: list[str] = []
-        for key in sorted(value):
+        hasher.update(b"{")
+        for index, key in enumerate(sorted(value)):
             if not isinstance(key, str):
                 raise TypeError("Canonical JSON object keys must be strings")
-            entries.append(
-                f"{json.dumps(key, ensure_ascii=True)}:{_route_b_canonical_json(value[key])}"
-            )
-        return "{" + ",".join(entries) + "}"
+            if index:
+                hasher.update(b",")
+            hasher.update(json.dumps(key, ensure_ascii=True).encode("utf-8"))
+            hasher.update(b":")
+            _route_b_update(hasher, value[key])
+        hasher.update(b"}")
+        return
     raise TypeError("Canonical JSON payload contains an unsupported value")
 
 
@@ -66,8 +76,9 @@ def canonical_json_digest(payload: Mapping[str, object]) -> str:
 def route_b_artifact_digest(payload: Mapping[str, object]) -> str:
     """Digest Route B artifacts invariantly across browser JSON round trips."""
 
-    encoded = _route_b_canonical_json(payload).encode("utf-8")
-    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+    hasher = hashlib.sha256()
+    _route_b_update(hasher, payload)
+    return f"sha256:{hasher.hexdigest()}"
 
 
 __all__ = ["canonical_json_digest", "route_b_artifact_digest"]

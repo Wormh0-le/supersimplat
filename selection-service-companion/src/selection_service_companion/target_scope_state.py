@@ -8,16 +8,17 @@ readiness, Candidate, Browser protocol, or Native Selection behavior.
 
 from __future__ import annotations
 
+import json
+import math
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from itertools import product
-import json
-import math
 from threading import Lock
 from typing import Any, Final, cast
 
 from .conservative_seed import (
     ConservativeSeedError,
+    compute_exact_spatial_components,
     create_conservative_seed_target_geometry,
     is_conservative_seed_shadow_record,
 )
@@ -26,7 +27,6 @@ from .gaussian_evidence_contract import (
     is_evidence_working_set,
     resolve_evidence_working_set_boundary,
 )
-
 
 _VALIDATED_STATE_DIGEST_CACHE_LIMIT: Final = 256
 _validated_state_digests: set[str] = set()
@@ -1257,22 +1257,22 @@ def _connected_groups(
     rows: list[dict[str, Any]],
     adjacency_scale_multiplier: float,
 ) -> list[list[dict[str, Any]]]:
-    def adjacent(left_index: int, right_index: int) -> bool:
-        left = rows[left_index]
-        right = rows[right_index]
-        scale = max(
-            float(left["maximumScale"]),
-            float(right["maximumScale"]),
-        )
-        normalized_left = [float(coordinate) / scale for coordinate in left["center"]]
-        normalized_right = [float(coordinate) / scale for coordinate in right["center"]]
-        return (
-            math.dist(normalized_left, normalized_right) <= adjacency_scale_multiplier
-        )
-
+    candidates = [
+        {
+            "stableGaussianId": row["stableGaussianId"],
+            "center": row["center"],
+            "scale": row["maximumScale"],
+        }
+        for row in rows
+    ]
+    components, _comparisons = compute_exact_spatial_components(
+        candidates,
+        adjacency_scale_multiplier,
+    )
+    rows_by_id = {int(row["stableGaussianId"]): row for row in rows}
     return [
-        [rows[index] for index in group]
-        for group in _connected_index_groups(len(rows), adjacent)
+        [rows_by_id[int(candidate["stableGaussianId"])] for candidate in component]
+        for component in components
     ]
 
 

@@ -8,6 +8,24 @@ from selection_service_companion.digests import route_b_artifact_digest
 
 
 class RouteBArtifactDigestTests(unittest.TestCase):
+    def test_large_nested_payload_keeps_the_route_b_golden_digest(self) -> None:
+        payload = {
+            'schemaVersion': 1,
+            'target': 'scope',
+            'values': [
+                {
+                    'stableGaussianId': index,
+                    'center': [index * 0.125, -0.0, 1.0],
+                    'scale': 0.25,
+                }
+                for index in range(257)
+            ],
+        }
+        self.assertEqual(
+            route_b_artifact_digest(payload),
+            'sha256:db2db1783aaa2be480b369869eb0deb4006f3c836c99d8127b72fa81bbcc84a7',
+        )
+
     def test_integral_float_and_integer_have_the_same_digest(self) -> None:
         self.assertEqual(
             route_b_artifact_digest({'value': 1.0}),

@@ -71,12 +71,14 @@ await d.focus(); // 只调浏览相机；可继续自由旋转，Sphere Brush �
 | `03-ab.png` | 固定 A∪B 在 A/B 中的表现 |
 | `04-c-inspection.png` | 独立 C 的 draft 边界、A-only 和 A+B；不参与融合或调参 |
 
-另有真实编辑器 `browser.png`，可看 Native Selection 计数与保留的工具栏。`identity-ui.json` 核验 fixture 前后状态栏仍为完整模型、零原生选区/锁定/删除。推送此 spike 或手工触发 `Native AI Select baseline` workflow 并令 `browser=true`，会尝试生成同一 SHA 的 `native-teatime-browser-*` artifact（30 天保留）。远端使用 SwiftShader 软件 WebGPU，不代表硬件性能；必须检查 job 结果，失败 artifact 可能只有错误日志。`8fad7d1` 的远端及本地软件运行发生 device-lost；测试启动器禁用 GPU watchdog 后的结果见 PR，不把构建通过当成软件回放成功。
+另有真实编辑器 `browser.png`，可看 Native Selection 计数与保留的工具栏。`identity-ui.json` 核验 fixture 前后状态栏仍为完整模型、零原生选区/锁定/删除。硬件完整回放的精确 SHA 为 `7622ec58433aa17d0f7b8d507d473f14ed017957`（tracked diff 为空）：A=427、B=544、并集=641，六个阶段无非预期浏览器错误，八项失效/隔离/工具检查通过。
+
+手工触发 `Native AI Select baseline` workflow 并令 `browser=true`，会尝试生成同一 SHA 的 `native-teatime-browser-*` artifact（30 天保留）。软件 WebGPU **尚未回放成功**，不是硬件结果的替代：`8fad7d1` 和 `7622ec5` 的 CI 均在原生读回时 device-lost（[后一次日志](https://github.com/Wormh0-le/supersimplat/actions/runs/34689818655)）。本地 Linux Chromium 153.0.8010.12 / SwiftShader 可完成 PLY 导入，但 A capture 同样 device-lost，消息为 `A valid external Instance reference no longer exists`；禁用 watchdog 也未解决，已移除这个无效配置。没有缩减完整场景或更换后端来掩盖失败。软件回放因此仅手动运行；默认 CI 的绿灯只表示 build/lint/locales。
 
 具体失败和限制：
 
 - 原生门限 0 在 A 的全部 1,478 个苹果 Mask 像素上只命中 source row **2502665**，重复运行仍相同。该行 logit opacity=-3.265126（中心 alpha≈.03679），位置 `[-.8270288, 2.0386415, .1504044]`，log-scales `[-1.1319680,-1.7521006,-16.1265965]`。低透明度前景椭圆可以占满 ID，却几乎不贡献苹果的 RGB；picking 与 P/N/V 不等价。固定配置 `8fad7d1` 实测较低门限 1/255 得到 63 个实例，仍包含该污染行；每次报告都实际重测两个对照门限，不将中间运行的数量当常数。
-- 0.1 门限能形成可见苹果 Overlay，但它会漏掉低 alpha、有用的后方贡献和未被 A/B 看到的表面。A+B 的 C 图仍有红色未染区域及斑驳，不能将“Mask 像素都有 ID”解释为完整对象被选中。边缘染色可能略伸到桌面，当前没有三维 GT 定量污染率。
+- 0.1 门限能形成可见苹果 Overlay，但它会漏掉低 alpha、有用的后方贡献和未被 A/B 看到的表面。A+B 的 C 图仍有红色未染区域及斑驳，不能将“Mask 像素都有 ID”解释为完整对象被选中。实际编辑器近视图还显示苹果下方明显的青色拖尾/桌面污染；当前没有三维 GT 定量污染率。
 - 不跨 layer 推断完整遮挡：上游 picker 会过滤到单个 layer。此 harness 明确拒绝多 layer/锁定/编辑后的输入，而非静默减弱旧遮挡与输入身份保证。
 - 当前排序的深度量化和单 ID 舍弃其它贡献；alpha≥.1 不包含 incoming T。透明物体、精确 P/N/V、CWED 和旧 Direct Evidence 数值对照均未资格验证。
 - GPU 身份 fixture 用独立字面 world centers 核验 source-row、重复实例、实体非均匀变换与 palette 组合；核验 native SelectOp 锁定/Undo、删除压缩及恢复，主选择不变。该 fixture 不单独资格认证 sorter 的全体并列 ID 稳定性或生产 cloning。

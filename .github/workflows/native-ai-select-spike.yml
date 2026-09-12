@@ -37,7 +37,9 @@ jobs:
           path: /tmp/native-baseline/
           retention-days: 30
   browser:
-    if: github.event_name == 'push' || inputs.browser
+    # Full-scene SwiftShader currently loses its device; keep the repro explicit.
+    # A green build job is not browser qualification (see TEATIME.md / PR #118).
+    if: github.event_name == 'workflow_dispatch' && inputs.browser
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

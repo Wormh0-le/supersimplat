@@ -4,9 +4,10 @@ import { ElementType } from '../element';
 import { MappedReadFileSystem, PermutedChunkSource } from '../io';
 import type { Scene } from '../scene';
 import type { Splat } from '../splat';
-import { analyzeContribution, regressionTracePixels, traceContribution, type ContributionFrame, type ContributionAnalysis, type SupportRow } from './native-contribution-diagnostic';
-import { classifySupport, SUPPORT_POLICY, SUPPORT_RULE } from './native-contribution-reference';
+import { analyzeContribution, checkTiledContribution, plateTracePixels, regressionTracePixels, traceContribution, type ContributionFrame, type ContributionAnalysis, type SupportRow } from './native-contribution-diagnostic';
+import { classifySupport, SUPPORT_POLICY, SUPPORT_RULE, type TiledContributionOptions } from './native-contribution-reference';
 import { checkNativeIdentity } from './native-mask-identity-check';
+import { maskInputs, taskId, type MaskInput, type TaskId } from './native-mask-target';
 
 type Role = 'A' | 'B' | 'C';
 type View = {
@@ -76,6 +77,8 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
     let views: View[];
     let base: string;
     let manifest: any;
+    let target: TaskId = 'easy-apple';
+    let inputs: readonly MaskInput[];
     let generation = 0;
     let busy = false;
     let initialModel: Float32Array;
@@ -119,6 +122,8 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
         report.status = 'invalidated';
         report.generation = generation;
         frames.clear(); reviews.clear(); candidates.clear();
+        report.captures = {}; report.mappings = {}; report.reviews = {}; report.renderedOverlays = [];
+        delete report.counterexamples; delete report.unionInstances;
         invalidateContribution('A');
         displayedIds = null;
         if (splat) scene.projectedSplatRenderer.setDiagnosticOverlay(splat, null);
@@ -163,6 +168,8 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
         const view = views.find(v => v.role === role);
         if (!view) throw new Error('Unknown view');
         const epoch = generation;
+        const capturedTarget = target;
+        const input = inputs.find(m => m.role === role && m.task === capturedTarget);
         const { camera } = scene;
         const { width, height, intrinsicsPINHOLE: [fx] } = view.camera;
         const saved = {
@@ -240,7 +247,8 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
                 nativeSelectionUnchanged: true,
                 modelMatrix: Array.from(splat.entity.getWorldTransform().data),
                 render: 'WebGPU sorted alpha blend, SH3, linear tone mapping, exposure=1, black background, minPixelSize=0, footprint=1, near=.01 far=1000',
-                inputMask: `${role}.easy-apple.mask.png`,
+                taskId: capturedTarget,
+                inputMask: input.path,
                 overlayInstances: ids?.length ?? 0 };
             if (epoch !== generation) throw new Error('Scene changed during capture; evidence rejected');
             if (ids) {
@@ -249,11 +257,10 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
             }
 
             // C is fetched only after fusion has been frozen, and never enters map().
-            const response = await fetch(new URL(`${role}.easy-apple.mask.png`, base));
+            const response = await fetch(new URL(input.path, base));
             if (!response.ok) throw new Error('Mask fetch failed');
             const bytes = new Uint8Array(await response.arrayBuffer());
-            const expected = view.annotations.find(a => a.taskId === 'easy-apple')?.sha256;
-            if (expected && await sha256(bytes) !== expected) throw new Error('Source Mask hash mismatch');
+            if (await sha256(bytes) !== input.sha256) throw new Error('Source Mask hash mismatch');
             const bitmap = await createImageBitmap(new Blob([bytes]));
             if (bitmap.width !== width || bitmap.height !== height) throw new Error('Mask dimensions differ; no automatic resizing');
             const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
@@ -353,6 +360,13 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
                 manifest = JSON.parse(new TextDecoder().decode(manifestBytes));
                 if (manifest.schema !== 'ai-select-teatime-preparation/v1' || manifest.scene !== 'LERF-Mask/teatime') throw new Error('Unexpected benchmark');
                 views = manifest.views;
+                const bundleBytes = new Uint8Array(await (await fetch(new URL('bundle-report.json', base))).arrayBuffer());
+                inputs = maskInputs(JSON.parse(new TextDecoder().decode(bundleBytes)));
+                const bundleSHA256 = await sha256(bundleBytes);
+                for (const input of inputs) {
+                    const sourceHash = views.find(v => v.role === input.role)?.annotations.find(a => a.taskId === input.task)?.sha256;
+                    if (sourceHash && input.sha256 !== sourceHash) throw new Error('Bundle Mask differs from pinned source annotation');
+                }
                 const response = await fetch(new URL(plyURL, location.href));
                 if (!response.ok) throw new Error('PLY fetch failed');
                 const blob = await response.blob();
@@ -368,6 +382,8 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
                 if (splat.instances.sourceRow.some((row, i) => row !== i)) throw new Error('Imported instance/source row mismatch');
                 report.input = { plySHA256,
                     manifestSHA256,
+                    bundleSHA256,
+                    masks: inputs,
                     preparationCommit: '4265d862a81dd6f1895746d106425b19b8316ca6',
                     layerUid: splat.uid,
                     actualBytesHashedInBrowser: blob.size,
@@ -376,21 +392,57 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
                     training: manifest.modelSource.trainingCaveat,
                     ignored: manifest.modelSource.forbiddenSelectionInputs };
                 report.adapter = scene.graphicsDevice.deviceType;
+                report.taskId = target;
                 return report.input;
             });
         },
-        capture,
-        analyze(role: 'A' | 'B') {
+        setTarget(value: unknown) {
             checkScene();
-            if (busy || !['A', 'B'].includes(role) || !reviews.has(role) || !candidates.has(role) || !report.contributionChecks?.[role]?.passed ||
-                (role === 'B' && !contributionFrozen)) throw new Error('Trace must pass; use reviewed A/B only, with A rule frozen before B');
+            const next = taskId(value);
+            if (next === target) return target;
+            // Synchronous invalidation is allowed while a readback/evaluator is pending.
+            invalidate();
+            target = next; report.taskId = target; report.failures = [];
+            return target;
+        },
+        cancel: invalidate,
+        releaseSnapshot(role: Role) {
+            if (busy) throw new Error('Diagnostic is busy');
             const frame = frames.get(role);
-            if (!frame?.snapshot || !frame.nativeHalf) throw new Error('Recapture with contribution=true');
-            const result = analyzeContribution(frame as ContributionFrame);
-            contributionViews.set(role, result);
-            report.contributions ??= {};
-            report.contributions[role] = { ...result, snapshotCost: frame.snapshot.cost, rgbSHA256: report.captures[role].rgbSHA256 };
+            if (frame) {
+                delete frame.snapshot; delete frame.nativeHalf;
+            }
+        },
+        capture,
+        support(role: 'A' | 'B') {
+            const result = contributionViews.get(role);
+            if (!result) throw new Error('No complete support for view');
             return result;
+        },
+        analyze(role: 'A' | 'B', limits?: TiledContributionOptions['limits']) {
+            return serial(async () => {
+                checkScene();
+                if (!['A', 'B'].includes(role) || !reviews.has(role) || !candidates.has(role) || !report.contributionChecks?.[role]?.passed ||
+                    (role === 'B' && !contributionFrozen)) throw new Error('Trace must pass; use reviewed A/B only, with A rule frozen before B');
+                const frame = frames.get(role);
+                if (!frame?.snapshot || !frame.nativeHalf) throw new Error('Recapture with contribution=true');
+                const epoch = generation;
+                const result = await analyzeContribution(frame as ContributionFrame, [], { limits, isCurrent: () => epoch === generation });
+                if (epoch !== generation) throw new Error('Scene changed during contribution analysis');
+                contributionViews.set(role, result);
+                report.contributions ??= {};
+                report.contributions[role] = { ...result, snapshotCost: frame.snapshot.cost, rgbSHA256: report.captures[role].rgbSHA256 };
+                return result;
+            });
+        },
+        checkTiling(role: 'A' | 'B') {
+            return serial(async () => {
+                checkScene();
+                const frame = frames.get(role), epoch = generation;
+                if (!frame?.snapshot || !report.contributionChecks?.[role]?.passed) throw new Error('No qualified snapshot');
+                const sets = ['M0', 'M2'].map(name => contributionSelection(name as 'M0' | 'M2', 'A').ids);
+                return await checkTiledContribution(frame as ContributionFrame, sets, () => epoch === generation);
+            });
         },
         freezeContribution() {
             checkScene();
@@ -403,22 +455,26 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
             if (busy) throw new Error('Diagnostic is busy');
             return contributionSelection(name, mode);
         },
-        evaluateContribution(role: Role, mode: 'A' | 'AB') {
-            checkScene();
-            if (busy || !['A', 'B', 'C'].includes(role) || !report.contributionChecks?.[role]?.passed) throw new Error('No qualified contribution capture');
-            const frame = frames.get(role);
-            if (!frame?.snapshot || !frame.nativeHalf) throw new Error('Capture contribution snapshot first');
-            const methods = (['M0', 'M1', 'M2'] as const).map(name => ({ name, ...contributionSelection(name, mode) }));
-            const result = analyzeContribution(frame as ContributionFrame, methods.map(m => m.ids));
-            const baseline = new Set(methods[0].ids);
-            const comparison = methods.map((m, i) => {
-                const selected = new Set(m.ids);
-                return { ...m, metrics: result.metrics[i], added: m.ids.filter(id => !baseline.has(id)), removed: methods[0].ids.filter(id => !selected.has(id)) };
+        evaluateContribution(role: Role, mode: 'A' | 'AB', names: ('M0' | 'M1' | 'M2')[] = ['M0', 'M1', 'M2']) {
+            return serial(async () => {
+                checkScene();
+                if (!['A', 'B', 'C'].includes(role) || !report.contributionChecks?.[role]?.passed) throw new Error('No qualified contribution capture');
+                const frame = frames.get(role), epoch = generation;
+                if (!frame?.snapshot || !frame.nativeHalf) throw new Error('Capture contribution snapshot first');
+                if (!names.length || names[0] !== 'M0' || new Set(names).size !== names.length) throw new Error('Comparison requires distinct methods with M0 baseline');
+                const methods = names.map(name => ({ name, ...contributionSelection(name, mode) }));
+                const result = await analyzeContribution(frame as ContributionFrame, methods.map(m => m.ids), { isCurrent: () => epoch === generation });
+                if (epoch !== generation) throw new Error('Scene changed during contribution evaluation');
+                const baseline = new Set(methods[0].ids);
+                const comparison = methods.map((m, i) => {
+                    const selected = new Set(m.ids);
+                    return { ...m, metrics: result.metrics[i], added: m.ids.filter(id => !baseline.has(id)), removed: methods[0].ids.filter(id => !selected.has(id)) };
+                });
+                report.contributionEvaluations ??= {};
+                report.contributionEvaluations[`${role}.${mode}`] = { comparison, roi: result.roi, summary: result.summary, maxRGBA8Error: result.maxRGBA8Error, meanRGBA8Error: result.meanRGBA8Error, conservationError: result.conservationError };
+                // Q uses full original-scene T; no selected-only re-render.
+                return { ...report.contributionEvaluations[`${role}.${mode}`], qImages: result.qImages };
             });
-            report.contributionEvaluations ??= {};
-            report.contributionEvaluations[`${role}.${mode}`] = { comparison, roi: result.roi, summary: result.summary, maxRGBA8Error: result.maxRGBA8Error, meanRGBA8Error: result.meanRGBA8Error, conservationError: result.conservationError };
-            // Q uses full original-scene T; no selected-only re-render.
-            return { ...report.contributionEvaluations[`${role}.${mode}`], qImages: result.qImages };
         },
         contributionPositions() {
             return serial(async () => {
@@ -447,8 +503,8 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
                 const epoch = generation;
                 const frame = frames.get(role);
                 if (!frame?.snapshot || !frame.nativeHalf) throw new Error('Capture untinted contribution frame first');
-                const points = role === 'A' ? undefined : regressionTracePixels(frame as ContributionFrame);
-                const result = await traceContribution(frame as ContributionFrame, (scene.graphicsDevice as any).wgpu, points);
+                const points = role === 'A' ? (target === 'medium-plate' ? plateTracePixels(frame as ContributionFrame) : undefined) : regressionTracePixels(frame as ContributionFrame);
+                const result = await traceContribution(frame as ContributionFrame, (scene.graphicsDevice as any).wgpu, points, role === 'A');
                 if (epoch !== generation) throw new Error('Scene changed during contribution trace');
                 report.contributionChecks ??= {};
                 report.contributionChecks[role] = result;
@@ -459,7 +515,7 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
         review(role: 'A' | 'B', note: string) {
             if (busy || !frames.has(role) || !note.trim() || (role !== 'A' && role !== 'B')) throw new Error('Capture and inspect A/B alignment first');
             reviews.set(role, note);
-            report.reviews[role] = { note, status: 'development visual review; not User Confirmed', rgbSHA256: report.captures[role].rgbSHA256 };
+            report.reviews[role] = { taskId: target, maskSHA256: report.captures[role].maskSHA256, note, status: 'development visual review; not User Confirmed', rgbSHA256: report.captures[role].rgbSHA256 };
         },
         map(role: 'A' | 'B') {
             checkScene();

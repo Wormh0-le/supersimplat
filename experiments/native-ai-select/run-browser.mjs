@@ -6,7 +6,10 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 const [phase, outputArg, note] = process.argv.slice(2);
-if (!['a', 'review-a', 'review-b', 'contribution-a', 'contribution-review-a', 'contribution-review-b', 'identity', 'screenshot', 'guards'].includes(phase) || !outputArg) {
+const target = process.env.TASK_ID ?? 'easy-apple';
+if (!['easy-apple', 'medium-plate'].includes(target)) throw new Error('Unsupported TASK_ID');
+const methods = ['M0', 'M2'];
+if (!['a', 'review-a', 'review-b', 'contribution-a', 'contribution-review-a', 'contribution-review-b', 'identity', 'screenshot', 'guards', 'target-guards'].includes(phase) || !outputArg) {
     throw new Error('Usage: run-browser.mjs [contribution-]a|[contribution-]review-a|[contribution-]review-b|identity|screenshot|guards EXTERNAL_OUTPUT [review note]');
 }
 const output = resolve(outputArg);
@@ -27,8 +30,8 @@ page.on('pageerror', error => { errors.push(String(error)); console.error(error)
 page.on('console', message => {
     if (message.type() !== 'error') return;
     const value = message.text();
-    const guardErrors = ['Scene changed during Mask decoding; evidence rejected', 'Contribution capture requires raw appearance and no native selection or pending grade', 'Freeze A contribution rule before B/C capture'];
-    if (phase === 'guards' && value.includes('CommandQueue task failed') && guardErrors.some(expected => value.includes(expected))) expectedErrors.push(value);
+    const guardErrors = ['Scene changed during Mask decoding; evidence rejected', 'Contribution capture requires raw appearance and no native selection or pending grade', 'Freeze A contribution rule before B/C capture', 'Trace must pass; use reviewed A/B only', 'Incomplete contribution:', 'Scene changed during contribution analysis'];
+    if (['guards', 'target-guards'].includes(phase) && value.includes('CommandQueue task failed') && guardErrors.some(expected => value.includes(expected))) expectedErrors.push(value);
     else errors.push(value);
     console.error(value);
 });
@@ -43,12 +46,12 @@ const save = async (name, result) => {
     console.log(name, result.record);
 };
 const evaluate = async (role, mode) => {
-    const result = await call('evaluateContribution', role, mode);
-    for (let i = 0; i < 3; i++) await writeFile(resolve(output, `${role}.M${i}.${mode}.q.png`), Buffer.from(result.qImages[i].split(',')[1], 'base64'));
+    const result = await call('evaluateContribution', role, mode, methods);
+    for (let i = 0; i < result.comparison.length; i++) await writeFile(resolve(output, `${role}.${result.comparison[i].name}.${mode}.q.png`), Buffer.from(result.qImages[i].split(',')[1], 'base64'));
     console.log(role, mode, result.comparison.map(m => ({ method: m.name, instances: m.ids.length, ...m.metrics })), result.summary);
 };
 const overlays = async (role, mode) => {
-    for (const method of ['M0', 'M1', 'M2']) {
+    for (const method of methods) {
         const { ids } = await call('contributionIds', method, mode);
         await save(`${role}.${method}.${mode}`, await call('capture', role, ids));
     }
@@ -68,8 +71,11 @@ try {
         });
         await writeFile(resolve(output, 'gpu.json'), JSON.stringify(gpu, null, 2));
         console.log('loaded', await call('load', '/bundle/', '/point_cloud.ply'));
+        await call('setTarget', target);
         await save('A.native', await call('capture', 'A', null, phase === 'contribution-a'));
+        if ((await call('report')).taskId !== target) throw new Error('Runner target differs from live session');
     } else if (phase === 'contribution-review-a') {
+        if ((await call('report')).taskId !== target) throw new Error('Runner target differs from live session');
         if (!note) throw new Error('Supply actual A visual alignment review');
         await call('review', 'A', note);
         await call('map', 'A');
@@ -78,19 +84,36 @@ try {
         if (!trace.passed) throw new Error('Native contribution reconstruction gate FAILED; no selection comparison permitted');
         const first = await call('analyze', 'A');
         console.log('A analysis', first.summary);
+        const tiling = await call('checkTiling', 'A');
+        await writeFile(resolve(output, 'A.tiling-check.json'), JSON.stringify(tiling, null, 2));
+        if (!tiling.passed) throw new Error('A monolithic/tiled mismatch');
+        const warm = [first.summary];
+        for (let i = 0; i < 3; i++) warm.push((await call('analyze', 'A')).summary);
+        await writeFile(resolve(output, 'A.warm.json'), JSON.stringify(warm, null, 2));
         await evaluate('A', 'A');
         await overlays('A', 'A');
         console.log('frozen', await call('freezeContribution'));
         await save('B.native', await call('capture', 'B', null, true));
     } else if (phase === 'contribution-review-b') {
+        if ((await call('report')).taskId !== target) throw new Error('Runner target differs from live session');
         if (!note) throw new Error('Supply actual B visual alignment review');
         await call('review', 'B', note);
         await call('map', 'B');
         if (!(await call('trace', 'B')).passed) throw new Error('B native numerical regression failed');
-        console.log('B analysis', (await call('analyze', 'B')).summary);
+        const first = await call('analyze', 'B');
+        console.log('B analysis', first.summary);
+        if (target === 'easy-apple') {
+            const tiling = await call('checkTiling', 'B');
+            await writeFile(resolve(output, 'B.tiling-check.json'), JSON.stringify(tiling, null, 2));
+            if (!tiling.passed) throw new Error('B monolithic/tiled mismatch');
+        }
+        const warm = [first.summary];
+        for (let i = 0; i < 3; i++) warm.push((await call('analyze', 'B')).summary);
+        await writeFile(resolve(output, 'B.warm.json'), JSON.stringify(warm, null, 2));
         await call('contributionPositions');
         await evaluate('A', 'AB'); await evaluate('B', 'A'); await evaluate('B', 'AB');
         await overlays('A', 'AB'); await overlays('B', 'A'); await overlays('B', 'AB');
+        await call('releaseSnapshot', 'A'); await call('releaseSnapshot', 'B');
         const before = await call('contributionIds', 'M2', 'AB');
         await save('C.native', await call('capture', 'C', null, true));
         if (!(await call('trace', 'C')).passed) throw new Error('C native numerical regression failed');
@@ -115,6 +138,43 @@ try {
         await save('C.A-only', await call('capture', 'C', await call('ids', 'A')));
         await save('C.AB', await call('capture', 'C', ids));
         if (JSON.stringify(ids) !== JSON.stringify(await call('ids', 'AB'))) throw new Error('C changed fusion IDs');
+    } else if (phase === 'target-guards') {
+        const result = await page.evaluate(async () => {
+            const d = window.scene.events.invoke('nativeMaskDiagnostic');
+            const originalTarget = d.report().taskId;
+            const other = originalTarget === 'easy-apple' ? 'medium-plate' : 'easy-apple';
+            const rejected = async (fn, pattern) => { try { await fn(); return false; } catch (error) { return pattern.test(String(error)); } };
+            await d.capture('A', null, true);
+            d.review('A', 'Guard fixture only: replay of previously visually inspected A input; not User Confirmed');
+            d.map('A');
+            if (!(await d.trace('A')).passed) throw new Error('Guard source trace failed');
+            await d.analyze('A');
+            const complete = JSON.stringify(d.report().contributions.A), ids = JSON.stringify(d.ids('A'));
+            const capacityRejected = await rejected(() => d.analyze('A', { tilePixels: 512, records: 1 }), /Incomplete contribution.*record/);
+            const capacityPreservesComplete = complete === JSON.stringify(d.report().contributions.A) && ids === JSON.stringify(d.ids('A'));
+            const pending = rejected(() => d.analyze('A', { tilePixels: 512 }), /Incomplete contribution.*stale|Scene changed during contribution analysis/);
+            setTimeout(() => d.setTarget(other), 0);
+            const lateAnalysisRejected = await pending;
+            const r = d.report();
+            const switchClearsTargetEvidence = r.taskId === other && d.ids('AB').length === 0 && !r.contributions.A && !r.contributionTrace && !r.contributionFreeze && Object.keys(r.reviews).length === 0 && Object.keys(r.captures).length === 0 && r.renderedOverlays.length === 0 && Object.keys(r.contributionEvaluations ?? {}).length === 0;
+            const oldReviewRejected = await rejected(() => d.map('A'), /Only reviewed A\/B/);
+            const originalFetch = window.fetch;
+            let started, release;
+            const start = new Promise(resolve => { started = resolve; });
+            const gate = new Promise(resolve => { release = resolve; });
+            const path = r.input.masks.find(m => m.role === 'A' && m.task === other).path;
+            window.fetch = async (...args) => { if (String(args[0]).endsWith(path)) { started(); await gate; } return originalFetch(...args); };
+            let lateMaskRejected;
+            try {
+                const late = rejected(() => d.capture('A'), /Scene changed during Mask decoding/);
+                await start; d.setTarget(originalTarget); release(); lateMaskRejected = await late;
+            } finally { window.fetch = originalFetch; release?.(); }
+            const noPartialPublication = d.ids('AB').length === 0 && Object.keys(d.report().captures).length === 0;
+            return { capacityRejected, capacityPreservesComplete, lateAnalysisRejected, switchClearsTargetEvidence, oldReviewRejected, lateMaskRejected, noPartialPublication, flagsUnchanged: d.splat().instances.flags.every(v => v === 0) };
+        });
+        await writeFile(resolve(output, 'target-guards.json'), JSON.stringify(result, null, 2));
+        console.log(result);
+        if (Object.values(result).some(v => v !== true)) throw new Error('Target guard failed');
     } else if (phase === 'identity') {
         const statsBefore = await page.locator('.status-bar-stat-value').allTextContents();
         const identity = await call('checkIdentity');
@@ -134,7 +194,7 @@ try {
             const contributionGuards = {};
             if (api.report().contributions) {
                 const beforeContribution = JSON.stringify(api.contributionIds('M2', 'AB'));
-                const raw = api.analyze('B');
+                const raw = api.support('B');
                 contributionGuards.rawSupportImmutable = Object.isFrozen(raw.rows) && raw.rows.every(Object.isFrozen) && Object.isFrozen(raw.winnerIds);
                 contributionGuards.cCannotAnalyze = await rejects(() => api.analyze('C'));
                 contributionGuards.cCannotFuse = await rejects(() => api.contributionIds('M2', 'C'));
@@ -165,7 +225,7 @@ try {
             const start = new Promise(resolve => { started = resolve; });
             const gate = new Promise(resolve => { release = resolve; });
             window.fetch = async (...args) => {
-                if (String(args[0]).includes('A.easy-apple.mask.png')) { started(); await gate; }
+                if (String(args[0]).endsWith(api.report().input.masks.find(m => m.role === 'A' && m.task === api.report().taskId).path)) { started(); await gate; }
                 return originalFetch(...args);
             };
             let lateCaptureRejected;
@@ -199,12 +259,19 @@ try {
         const a = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
         return { vendor: a.info.vendor, architecture: a.info.architecture, device: a.info.device, description: a.info.description, limits: { maxBufferSize: a.limits.maxBufferSize, maxStorageBufferBindingSize: a.limits.maxStorageBufferBindingSize } };
     });
-    if (!['guards', 'identity'].includes(phase)) await writeFile(resolve(output, 'report.json'), JSON.stringify({
+    if (!['guards', 'target-guards', 'identity'].includes(phase)) await writeFile(resolve(output, 'report.json'), JSON.stringify({
         ...report, browser: browser.version(), adapter,
         sha: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
         dirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim(),
         executedAt: new Date().toISOString()
     }, null, 2) + '\n');
+} catch (error) {
+    await writeFile(resolve(output, `${phase}.failure.json`), JSON.stringify({
+        error: String(error), phase, taskId: target, report: await call('report'),
+        sha: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+        dirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim()
+    }, null, 2));
+    throw error;
 } finally {
     await writeFile(resolve(output, `${phase}.errors.json`), JSON.stringify({ unexpected: errors, expected: expectedErrors }, null, 2) + '\n');
     if (errors.length) process.exitCode = 1;

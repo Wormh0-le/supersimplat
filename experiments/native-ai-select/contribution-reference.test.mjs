@@ -214,3 +214,100 @@ test('identity gate rejects an omitted fully occluded layer despite identical RG
     assert.equal(compareTraceIdentity(gpu.toReversed(), gpu).drawOrderMatches, false);
     assert.equal(compareTraceIdentity(gpu.map(c => ({ ...c, drawSlot: 99 })), gpu).drawOrderMatches, false);
 });
+
+test('tiled horizontal bands preserve full-ROI raw evidence, seams, holes, traces and Q exactly', async () => {
+    const { runContribution, runContributionTiled, classifySupport } = await import('../../src/experiments/native-contribution-reference.ts');
+    for (const roi of [{ x: 0, y: 0, width: 31, height: 29 }, { x: 1, y: 2, width: 13, height: 23 }]) {
+        const s = snapshot(31, 29, 0x5000); // second ROI excludes both centers, not their footprints
+        const mask = new Uint8Array(31 * 29);
+        for (let y = 0; y < 22; y++) for (let x = 0; x < 19; x++) mask[y * 31 + x] = 1;
+        mask[8 * 31 + 8] = 0;
+        const traces = [[roi.x + 5, roi.y + 5], [roi.x, roi.y + roi.height - 1]];
+        const options = { selectionSets: [[0], [1], [0, 1]] };
+        const mono = runContribution(s, roi, mask, traces, options);
+        const tiled = await runContributionTiled(s, roi, mask, traces, { ...options, limits: { tilePixels: roi.width * 6 } });
+        for (const key of ['regions', 'total', 'finalT', 'rgba', 'winnerIds', 'selectedSums', 'stats', 'traces']) assert.deepEqual(tiled[key], mono[key], key);
+        for (const key of Object.keys(mono.summary).filter(k => k !== 'elapsedMs')) assert.deepEqual(tiled.summary[key], mono.summary[key], key);
+        assert.equal(tiled.summary.tiles, Math.ceil(roi.height / 6));
+        for (let id = 0; id < 2; id++) assert.deepEqual(classifySupport([{ positive: tiled.stats.positive[id], negative: tiled.stats.negative[id] }]), classifySupport([{ positive: mono.stats.positive[id], negative: mono.stats.negative[id] }]));
+    }
+});
+
+test('tiled fixed total/tile caps and cancellation never resolve partial evidence', async () => {
+    const { runContributionTiled, IncompleteContributionError, TILED_CONTRIBUTION_LIMITS } = await import('../../src/experiments/native-contribution-reference.ts');
+    const s = snapshot(25, 25, 0x5000);
+    const roi = { x: 0, y: 0, width: 25, height: 25 }, mask = new Uint8Array(625).fill(1);
+    for (const limits of [{ pixels: 624 }, { tilePixels: 24 }, { records: 1249, tilePixels: 125 }, { tilePixels: 125, tileRecords: 249 }, { elapsedMs: 0 }, { tileElapsedMs: 0 }, { bytes: 1 }, { traceRecords: 1 }]) {
+        await assert.rejects(runContributionTiled(s, roi, mask, [[12, 12]], { limits }), IncompleteContributionError);
+    }
+    const exact = await runContributionTiled(s, roi, mask, [[2, 2], [2, 7]], { limits: { records: 1250, tileRecords: 250, tilePixels: 125, traceRecords: 4, bytes: 43191 } });
+    assert.equal(exact.summary.typedArrayBytes, 43191);
+    assert.equal(exact.summary.records, 1250);
+    await assert.rejects(runContributionTiled(s, roi, mask, [[2, 2], [2, 7]], { limits: { tilePixels: 125, traceRecords: 3 } }), IncompleteContributionError);
+    for (const [key, value] of Object.entries(TILED_CONTRIBUTION_LIMITS)) {
+        await assert.rejects(runContributionTiled(s, roi, mask, [], { limits: { [key]: value + 1 } }), /hard ceiling/);
+        await assert.rejects(runContributionTiled(s, roi, mask, [], { limits: { [key]: NaN } }), /Invalid/);
+    }
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(runContributionTiled(s, roi, mask, [], { signal: controller.signal }), /Incomplete contribution.*cancel/);
+    await assert.rejects(runContributionTiled(s, roi, mask, [], { isCurrent: () => false }), /Incomplete contribution.*stale/);
+    // Timer must run at the first yield, even with just one (final) tile.
+    for (const tilePixels of [125, 625]) {
+        let current = true;
+        setTimeout(() => { current = false; }, 0);
+        await assert.rejects(runContributionTiled(s, roi, mask, [], { limits: { tilePixels }, isCurrent: () => current }), /Incomplete contribution.*stale/);
+        const during = new AbortController();
+        setTimeout(() => during.abort(), 0);
+        await assert.rejects(runContributionTiled(s, roi, mask, [], { limits: { tilePixels }, signal: during.signal }), /Incomplete contribution.*cancel/);
+    }
+});
+
+test('raw support crosses tile seams before classification; exact P=1 and ratio=.8 have no epsilon', async () => {
+    const { runContributionTiled, classifySupport } = await import('../../src/experiments/native-contribution-reference.ts');
+    const r = await runContributionTiled(snapshot(5, 6, 0x5000), { x: 0, y: 0, width: 5, height: 6 }, new Uint8Array(30).fill(1), [], { limits: { tilePixels: 15 }, selectionSets: [[0]] });
+    assert.equal(r.summary.positivePixels, 2); // y=2 and y=3, one in each band
+    const a = r.selectedSums[0][2 * 5 + 2], b = r.selectedSums[0][3 * 5 + 2];
+    assert.ok(a > 0 && a < 1 && b > 0 && b < 1);
+    assert.equal(classifySupport([{ positive: a, negative: 0 }]).selected, false);
+    assert.equal(classifySupport([{ positive: b, negative: 0 }]).selected, false);
+    assert.equal(r.stats.positive[0], a + b);
+    assert.equal(classifySupport([{ positive: r.stats.positive[0], negative: r.stats.negative[0] }]).selected, true);
+    assert.equal(classifySupport([{ positive: 1, negative: .25 }]).selected, true);
+    assert.equal(classifySupport([{ positive: 1 - Number.EPSILON, negative: 0 }]).selected, false);
+    assert.equal(classifySupport([{ positive: 1, negative: .25 + Number.EPSILON }]).selected, false);
+    assert.equal(classifySupport([{ positive: .5, negative: .125 }, { positive: .5, negative: .125 }]).selected, true);
+});
+
+test('actual plate ROI sizes fit tiled bounds without lifting the monolithic ceiling', async () => {
+    const { runContribution, runContributionTiled } = await import('../../src/experiments/native-contribution-reference.ts');
+    for (const [width, height] of [[155, 124], [177, 220], [268, 231], [256, 256]]) {
+        const s = snapshot(width, height);
+        s.count = 0;
+        const roi = { x: 0, y: 0, width, height }, mask = new Uint8Array(width * height);
+        if (mask.length > 20000) assert.throws(() => runContribution(s, roi, mask, []), /Incomplete contribution.*pixel/);
+        const r = await runContributionTiled(s, roi, mask, []);
+        assert.equal(r.summary.processedPixels, width * height);
+        assert.equal(r.summary.typedArrayBytes, 66 + width * height * 69);
+        assert.ok(r.finalT.every(t => t === 1));
+        assert.ok(r.total.every(t => t === 0));
+    }
+    await assert.rejects(runContributionTiled(snapshot(257, 256), { x: 0, y: 0, width: 257, height: 256 }, new Uint8Array(257 * 256), []), /Incomplete contribution.*pixel/);
+});
+
+test('tiled native identity checks, degenerates and fully occluded trace records remain complete', async () => {
+    const { runContribution, runContributionTiled } = await import('../../src/experiments/native-contribution-reference.ts');
+    const s = snapshot(5, 5, 0x5000), roi = { x: 0, y: 0, width: 5, height: 5 }, mask = new Uint8Array(25).fill(1);
+    s.cacheB[1] = 0x5000 | (255 << 16);
+    const r = await runContributionTiled(s, roi, mask, [[2, 2]], { limits: { tilePixels: 5 } });
+    assert.equal(r.traces[0].contributors.length, 2);
+    assert.equal(r.traces[0].contributors[1].w, 0);
+    assert.deepEqual(r.stats, runContribution(s, roi, mask, [[2, 2]]).stats);
+    s.order[1] = 0;
+    await assert.rejects(runContributionTiled(s, roi, mask, [], { limits: { tilePixels: 5 } }), /duplicate order/);
+    s.order[1] = 1;
+    s.cacheB[1] = 255 << 16;
+    const degenerate = await runContributionTiled(s, roi, mask, [], { limits: { tilePixels: 5 } });
+    assert.deepEqual(degenerate.summary.degenerateEntries, [1]);
+    assert.deepEqual(degenerate.stats, runContribution(s, roi, mask, []).stats);
+});

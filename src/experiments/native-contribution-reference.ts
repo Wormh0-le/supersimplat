@@ -42,6 +42,26 @@ export type ContributionOptions = {
     selectionSets?: readonly (readonly number[])[];
 };
 
+/** Tiled ceilings do not change numerical policy or the synchronous hard caps. */
+export const TILED_CONTRIBUTION_LIMITS = Object.freeze({
+    ...CONTRIBUTION_LIMITS,
+    pixels: 65536,
+    records: 80000000,
+    tilePixels: CONTRIBUTION_LIMITS.pixels,
+    tileRecords: CONTRIBUTION_LIMITS.records,
+    elapsedMs: 60000,
+    tileElapsedMs: 10000
+});
+export type TiledContributionOptions = Omit<ContributionOptions, 'limits'> & {
+    // Lower-only integer ceilings, copied/validated before allocation or evaluation.
+    // tilePixels chooses floor(tilePixels / ROI width) rows; a full row must fit.
+    // Wall limits include total setup/yields, but per-tile time excludes yields.
+    limits?: Partial<{ [K in keyof typeof TILED_CONTRIBUTION_LIMITS]: number }>;
+    signal?: AbortSignal;
+    /** False invalidates this snapshot's pending result. Called before work and after each yield. */
+    isCurrent?: () => boolean;
+};
+
 export const halfToFloat = (bits: number): number => {
     const sign = bits & 0x8000 ? -1 : 1;
     const exponent = (bits >>> 10) & 31;
@@ -128,16 +148,18 @@ const rasterTriangles = (cx: number, cy: number, ax: number, ay: number, bx: num
  * The caller must keep snapshot, mask and selection lists immutable during this call.
  * Typed-array bytes are exact, including scratch; bounded trace JS objects are not
  * misrepresented as measured bytes. No scene-sized JS objects or contribution matrix.
+ * @yields Number of completed horizontal bands (tiled calls only).
  */
-export const runContribution = (
+const contributionKernel = function *(
     snapshot: CacheSnapshot, roi: ROI, mask: Uint8Array,
-    tracePixels: readonly (readonly [number, number])[], options: ContributionOptions = {}
-) => {
+    tracePixels: readonly (readonly [number, number])[], options: TiledContributionOptions, tiled: boolean
+) {
     const started = performance.now();
-    const limits = { ...CONTRIBUTION_LIMITS, ...options.limits };
-    for (const key of Object.keys(CONTRIBUTION_LIMITS) as (keyof typeof CONTRIBUTION_LIMITS)[]) {
+    const ceilings = tiled ? TILED_CONTRIBUTION_LIMITS : { ...TILED_CONTRIBUTION_LIMITS, ...CONTRIBUTION_LIMITS };
+    const limits = { ...ceilings, ...options.limits };
+    for (const key of Object.keys(ceilings) as (keyof typeof ceilings)[]) {
         integer(limits[key], `limit ${key}`);
-        if (limits[key] > CONTRIBUTION_LIMITS[key]) throw new Error(`Invalid limit ${key}: exceeds hard ceiling`);
+        if (limits[key] > ceilings[key]) throw new Error(`Invalid limit ${key}: exceeds hard ceiling`);
     }
     const overflow = (reason: string): never => {
         throw new IncompleteContributionError(reason);
@@ -158,6 +180,8 @@ export const runContribution = (
     if (cacheA.length % 4) throw new Error('Invalid cacheA word count');
     const pixels = roi.width * roi.height;
     if (pixels > limits.pixels) overflow('pixel limit exceeded');
+    const bandRows = tiled ? Math.floor(limits.tilePixels / roi.width) : roi.height;
+    if (bandRows < 1) overflow('tile pixel limit cannot fit a full ROI row');
     if (tracePixels.length > limits.tracePixels) overflow('trace pixel limit exceeded');
     const sets = options.selectionSets ?? [];
     if (sets.length > limits.selectionSets) overflow('selection set limit exceeded');
@@ -241,105 +265,136 @@ export const runContribution = (
     const edge = Math.exp(-4);
     const cacheFloats = new Float32Array(cacheA.buffer, cacheA.byteOffset, cacheA.length);
     const f = Math.fround;
-    // Reverse the exact native draw order, including zero-weight/fully hidden layers.
-    for (let drawSlot = count - 1; drawSlot >= 0; drawSlot--) {
-        const entry = order[drawSlot];
-        const id = entry - entryBase + instanceBase;
-        if (entry < entryBase || entry >= cacheB.length || entry * 4 + 3 >= cacheA.length || id < instanceBase || id >= n) throw new Error(`Invalid cache/order identity at draw slot ${drawSlot}`);
-        if (touched[id] & 1) throw new Error(`Invalid duplicate order entry ${entry}`);
-        touched[id] |= 1;
-        const a = entry * 4;
-        const center = cacheA[a];
-        const axis = cacheA[a + 3];
-        const b = cacheB[entry];
-        const opacity = ((b >>> 16) & 255) / 255;
-        // The native vertex shader skips these before reading half axes.
-        if (opacity === 0) continue;
-        const cx = (1 + f(f(snorm16(center & 65535)) * f(1 + ndcMargin / width))) * width / 2;
-        const cy = (1 - f(f(snorm16(center >>> 16)) * f(1 + ndcMargin / height))) * height / 2;
-        const ax = halfToFloat(axis & 65535);
-        const ay = -halfToFloat(axis >>> 16);
-        const len2 = halfToFloat(b & 65535);
-        if (len2 === 0) {
-            // Native zero-width quad (including a nonfinite major axis) has no
-            // finite-area raster primitive. Report identities; verify native replay.
-            if (degenerateEntries.length === 64) overflow('degenerate identity report limit exceeded');
-            degenerateEntries.push(id);
-            continue;
-        }
-        if (!Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(len2) || len2 < 0) throw new Error(`Invalid nonfinite/negative cache axis at entry ${entry}: words=${cacheA.subarray(a, a + 4)},${b}, alpha=${opacity}`);
-        const len1 = Math.hypot(ax, ay);
-        if (len1 === 0 || len2 === 0) continue; // degenerate quad covers no area
-        // axis2 = len2 * normalize(nativeAxis1.y, -nativeAxis1.x), then flip Y.
-        const inverseLen = f(1 / Math.sqrt(f(f(ax * ax) + f(ay * ay))));
-        const bx = f(f(-ay * inverseLen) * len2);
-        const by = f(f(ax * inverseLen) * len2);
-        const extentX = Math.abs(ax) + Math.abs(bx);
-        const extentY = Math.abs(ay) + Math.abs(by);
-        const x0 = Math.max(roi.x, Math.ceil(cx - extentX - 0.51));
-        const x1 = Math.min(roi.x + roi.width - 1, Math.floor(cx + extentX - 0.49));
-        const y0 = Math.max(roi.y, Math.ceil(cy - extentY - 0.51));
-        const y1 = Math.min(roi.y + roi.height - 1, Math.floor(cy + extentY - 0.49));
-        if (x0 > x1 || y0 > y1) continue;
-        intersectingSplats++;
-        const depth = cacheFloats[a + 1];
-        if (!Number.isFinite(depth) || depth <= 0) throw new Error('Invalid perspective cache depth');
-        const triangles = rasterTriangles(cx, cy, ax, ay, bx, by, depth, width, height);
-        const packed = cacheA[a + 2];
-        const [cr, cg, cb] = cacheColor(packed);
-        for (let s = 0; s < selectedIds.length; s++) membership[s] = contains(selectedIds[s], id) ? 1 : 0;
-        for (let y = y0; y <= y1; y++) {
-            for (let x = x0; x <= x1; x++) {
-                let r = Infinity;
-                for (const tri of triangles) {
-                    if (tri.det === 0) continue;
-                    const dx = x + 0.5 - tri.a[0], dy = y + 0.5 - tri.a[1];
-                    const p = (tri.dy2 * dx - tri.dx2 * dy) / tri.det;
-                    const q = (tri.dx1 * dy - tri.dy1 * dx) / tri.det;
-                    if (p < 0 || q < 0 || p + q > 1) continue;
-                    const u = tri.a[2] + p * (tri.b[2] - tri.a[2]) + q * (tri.c[2] - tri.a[2]);
-                    const v = tri.a[3] + p * (tri.b[3] - tri.a[3]) + q * (tri.c[3] - tri.a[3]);
-                    r = u * u + v * v;
-                    break;
+    let tiles = 0;
+    for (let bandY = roi.y; bandY < roi.y + roi.height; bandY += bandRows) {
+        const bandEnd = Math.min(roi.y + roi.height, bandY + bandRows);
+        const tileStarted = performance.now();
+        const startRecords = records;
+        const checkTime = () => {
+            if (!tiled) return;
+            const now = performance.now();
+            if (now - started >= limits.elapsedMs) overflow('total wall-time limit exceeded');
+            if (now - tileStarted >= limits.tileElapsedMs) overflow('tile wall-time limit exceeded');
+        };
+        checkTime();
+        // Shared stats accumulate each ID in global row-major order, not rounded
+        // per-tile subtotals. All pixel arrays and policy regions are global.
+        const firstBand = bandY === roi.y;
+        // Reverse the exact native draw order, including zero-weight/fully hidden layers.
+        for (let drawSlot = count - 1; drawSlot >= 0; drawSlot--) {
+            if ((drawSlot & 1023) === 0) checkTime();
+            const entry = order[drawSlot];
+            const id = entry - entryBase + instanceBase;
+            if (entry < entryBase || entry >= cacheB.length || entry * 4 + 3 >= cacheA.length || id < instanceBase || id >= n) throw new Error(`Invalid cache/order identity at draw slot ${drawSlot}`);
+            if (firstBand) {
+                if (touched[id] & 1) throw new Error(`Invalid duplicate order entry ${entry}`);
+                touched[id] |= 1;
+            }
+            const a = entry * 4;
+            const center = cacheA[a];
+            const axis = cacheA[a + 3];
+            const b = cacheB[entry];
+            const opacity = ((b >>> 16) & 255) / 255;
+            // The native vertex shader skips these before reading half axes.
+            if (opacity === 0) continue;
+            const cx = (1 + f(f(snorm16(center & 65535)) * f(1 + ndcMargin / width))) * width / 2;
+            const cy = (1 - f(f(snorm16(center >>> 16)) * f(1 + ndcMargin / height))) * height / 2;
+            const ax = halfToFloat(axis & 65535);
+            const ay = -halfToFloat(axis >>> 16);
+            const len2 = halfToFloat(b & 65535);
+            if (len2 === 0) {
+                // Native zero-width quad (including a nonfinite major axis) has no
+                // finite-area raster primitive. Report identities; verify native replay.
+                if (firstBand) {
+                    if (degenerateEntries.length === 64) overflow('degenerate identity report limit exceeded');
+                    degenerateEntries.push(id);
                 }
-                if (r > 1) continue;
-                if (++records > limits.records) overflow('record limit exceeded');
-                if (!(touched[id] & 2)) {
-                    touched[id] |= 2;
-                    touchedCount++;
-                }
-                const p = (y - roi.y) * roi.width + x - roi.x;
-                const alpha = opacity * (Math.exp(-4 * r) - edge) / (1 - edge);
-                const T = finalT[p];
-                const w = T * alpha;
-                const trace = traceIndex[p];
-                if (trace !== -1) {
-                    if (++traceRecords > limits.traceRecords) overflow('trace record limit exceeded');
-                    traces[trace].contributors.push({ id, sourceRow: sourceRows[id], drawSlot, alpha, T, w });
-                }
-                total[p] += w;
-                finalT[p] = T * (1 - alpha);
-                rgba[p * 4] += w * cr;
-                rgba[p * 4 + 1] += w * cg;
-                rgba[p * 4 + 2] += w * cb;
-                rgba[p * 4 + 3] += w;
-                visible[id] += w;
-                if (regions[p] === 1) positive[id] += w;
-                if (regions[p] === 2) negative[id] += w;
-                if (mask[y * width + x]) {
-                    target[id] += w;
-                    if (w > best[p]) {
-                        best[p] = w;
-                        winnerIds[p] = id;
+                continue;
+            }
+            if (!Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(len2) || len2 < 0) throw new Error(`Invalid nonfinite/negative cache axis at entry ${entry}: words=${cacheA.subarray(a, a + 4)},${b}, alpha=${opacity}`);
+            const len1 = Math.hypot(ax, ay);
+            if (len1 === 0 || len2 === 0) continue; // degenerate quad covers no area
+            // axis2 = len2 * normalize(nativeAxis1.y, -nativeAxis1.x), then flip Y.
+            const inverseLen = f(1 / Math.sqrt(f(f(ax * ax) + f(ay * ay))));
+            const bx = f(f(-ay * inverseLen) * len2);
+            const by = f(f(ax * inverseLen) * len2);
+            const extentX = Math.abs(ax) + Math.abs(bx);
+            const extentY = Math.abs(ay) + Math.abs(by);
+            const x0 = Math.max(roi.x, Math.ceil(cx - extentX - 0.51));
+            const x1 = Math.min(roi.x + roi.width - 1, Math.floor(cx + extentX - 0.49));
+            const y0 = Math.max(roi.y, Math.ceil(cy - extentY - 0.51));
+            const y1 = Math.min(roi.y + roi.height - 1, Math.floor(cy + extentY - 0.49));
+            if (x0 > x1 || y0 > y1) continue;
+            if (firstBand) intersectingSplats++;
+            if (y0 >= bandEnd || y1 < bandY) continue;
+            const depth = cacheFloats[a + 1];
+            if (!Number.isFinite(depth) || depth <= 0) throw new Error('Invalid perspective cache depth');
+            const triangles = rasterTriangles(cx, cy, ax, ay, bx, by, depth, width, height);
+            const packed = cacheA[a + 2];
+            const [cr, cg, cb] = cacheColor(packed);
+            for (let s = 0; s < selectedIds.length; s++) membership[s] = contains(selectedIds[s], id) ? 1 : 0;
+            for (let y = Math.max(y0, bandY); y <= Math.min(y1, bandEnd - 1); y++) {
+                checkTime();
+                for (let x = x0; x <= x1; x++) {
+                    let r = Infinity;
+                    for (const tri of triangles) {
+                        if (tri.det === 0) continue;
+                        const dx = x + 0.5 - tri.a[0], dy = y + 0.5 - tri.a[1];
+                        const p = (tri.dy2 * dx - tri.dx2 * dy) / tri.det;
+                        const q = (tri.dx1 * dy - tri.dy1 * dx) / tri.det;
+                        if (p < 0 || q < 0 || p + q > 1) continue;
+                        const u = tri.a[2] + p * (tri.b[2] - tri.a[2]) + q * (tri.c[2] - tri.a[2]);
+                        const v = tri.a[3] + p * (tri.b[3] - tri.a[3]) + q * (tri.c[3] - tri.a[3]);
+                        r = u * u + v * v;
+                        break;
                     }
-                }
-                for (let s = 0; s < membership.length; s++) {
-                    if (membership[s]) selectedSums[s][p] += w;
+                    if (r > 1) continue;
+                    if (++records > limits.records) overflow('record limit exceeded');
+                    if (tiled && records - startRecords > limits.tileRecords) overflow('tile record limit exceeded');
+                    if (!(touched[id] & 2)) {
+                        touched[id] |= 2;
+                        touchedCount++;
+                    }
+                    const p = (y - roi.y) * roi.width + x - roi.x;
+                    const alpha = opacity * (Math.exp(-4 * r) - edge) / (1 - edge);
+                    const T = finalT[p];
+                    const w = T * alpha;
+                    const trace = traceIndex[p];
+                    if (trace !== -1) {
+                        if (++traceRecords > limits.traceRecords) overflow('trace record limit exceeded');
+                        traces[trace].contributors.push({ id, sourceRow: sourceRows[id], drawSlot, alpha, T, w });
+                    }
+                    total[p] += w;
+                    finalT[p] = T * (1 - alpha);
+                    rgba[p * 4] += w * cr;
+                    rgba[p * 4 + 1] += w * cg;
+                    rgba[p * 4 + 2] += w * cb;
+                    rgba[p * 4 + 3] += w;
+                    visible[id] += w;
+                    if (regions[p] === 1) positive[id] += w;
+                    if (regions[p] === 2) negative[id] += w;
+                    if (mask[y * width + x]) {
+                        target[id] += w;
+                        if (w > best[p]) {
+                            best[p] = w;
+                            winnerIds[p] = id;
+                        }
+                    }
+                    for (let s = 0; s < membership.length; s++) {
+                        if (membership[s]) selectedSums[s][p] += w;
+                    }
                 }
             }
         }
+        checkTime();
+        tiles++;
+        if (tiled) {
+            yield tiles;
+            if (performance.now() - started >= limits.elapsedMs) overflow('total wall-time limit exceeded');
+        }
     }
     for (let id = 0; id < n; id++) touched[id] >>>= 1;
+    if (tiled && performance.now() - started >= limits.elapsedMs) overflow('total wall-time limit exceeded');
     return {
         roi: { ...roi },
         total,
@@ -350,8 +405,53 @@ export const runContribution = (
         selectedSums,
         traces,
         stats: { positive, negative, visible, target, touched, sourceRows },
-        summary: { typedArrayBytes, elapsedMs: performance.now() - started, records, traceRecords, processedPixels: pixels, scannedSplats: count, intersectingSplats, touchedCount, positivePixels, negativePixels, targetPixels, degenerateEntries, truncated: false as const, residualBound: 0 as const }
+        summary: { ...(tiled ? { tiles } : {}), typedArrayBytes, elapsedMs: performance.now() - started, records, traceRecords, processedPixels: pixels, scannedSplats: count, intersectingSplats, touchedCount, positivePixels, negativePixels, targetPixels, degenerateEntries, truncated: false as const, residualBound: 0 as const }
     };
+};
+
+/** Synchronous, unchanged 20,000-pixel reference. */
+export const runContribution = (
+    snapshot: CacheSnapshot, roi: ROI, mask: Uint8Array,
+    tracePixels: readonly (readonly [number, number])[], options: ContributionOptions = {}
+) => {
+    const result = contributionKernel(snapshot, roi, mask, tracePixels, options, false).next();
+    if (!result.done) throw new Error('Unexpected synchronous contribution yield');
+    return result.value;
+};
+
+/**
+ * Full-width horizontal bands over ONE borrowed immutable snapshot/mask.
+ * Caller must retain immutable inputs until settlement (as for runContribution).
+ * Same global outputs, one scene-sized stats/scratch allocation, no per-tile
+ * n-sized arrays. Only raw support is accumulated; classification is the caller's.
+ * Yields the event loop after every band, including the last; never returns partials.
+ * Adds summary.tiles; scannedSplats remains the live payload count (traversed per
+ * band). typedArrayBytes is unchanged for an equal ROI/scene/selection-set input:
+ * 33*n + 69*pixels + 8*pixels*sets + 4*sum(selected ID counts) + sets.
+ * Snapshot buffers are borrowed, not included; JS heap and GPU memory are unmeasured.
+ * Time checks are cooperative (per row / 1024 draw slots), not preemptive deadlines.
+ */
+export const runContributionTiled = async (
+    snapshot: CacheSnapshot, roi: ROI, mask: Uint8Array,
+    tracePixels: readonly (readonly [number, number])[], options: TiledContributionOptions = {}
+) => {
+    const { signal, isCurrent } = options;
+    const checkCurrent = () => {
+        if (signal?.aborted) throw new IncompleteContributionError('cancelled');
+        if (isCurrent && !isCurrent()) throw new IncompleteContributionError('stale snapshot');
+    };
+    const kernel = contributionKernel(snapshot, roi, mask, tracePixels, options, true);
+    for (;;) {
+        checkCurrent();
+        const result = kernel.next();
+        if (result.done) {
+            checkCurrent();
+            return result.value;
+        }
+        await new Promise<void>((resolve) => {
+            setTimeout(resolve, 0);
+        });
+    }
 };
 
 export type ViewSupport = { readonly positive: number; readonly negative: number };

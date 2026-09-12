@@ -1,0 +1,33 @@
+name: Native AI Select baseline
+on:
+  workflow_dispatch:
+  push:
+    branches: [spike/supersplat-3.0-native-ai-select]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.x'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run lint:locales
+      - run: npm run build
+      - name: Record exact scope
+        run: |
+          mkdir -p /tmp/native-baseline
+          git rev-parse HEAD > /tmp/native-baseline/commit.txt
+          node --version > /tmp/native-baseline/node.txt
+          sha256sum package-lock.json > /tmp/native-baseline/lock.txt
+          echo 'Upstream build/lint only. AI Select port, native Evidence, browser SAM and GPU runtime validation not implemented or tested.' > /tmp/native-baseline/scope.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-baseline-${{ github.sha }}
+          path: /tmp/native-baseline/
+          retention-days: 30

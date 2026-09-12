@@ -198,3 +198,19 @@ test('zero-width native primitives are reported; other nonfinite axes reject', a
     s.cacheB[0] |= 0x3c00;
     assert.throws(() => runContribution(s, roi, mask, []), /nonfinite/);
 });
+
+test('identity gate rejects an omitted fully occluded layer despite identical RGB and T', async () => {
+    const { compareTraceIdentity } = await import('../../src/experiments/native-contribution-reference.ts');
+    const near = { id: 8, sourceRow: 80, alpha: 1, color: [1, 0, 0] };
+    const full = composeLayers([{ id: 3, sourceRow: 30, alpha: .5, color: [0, 1, 0] }, near]);
+    const omitted = composeLayers([near]);
+    assert.deepEqual(full.rgba, omitted.rgba);
+    assert.equal(full.finalT, omitted.finalT);
+    const gpu = full.contributors;
+    assert.equal(compareTraceIdentity(gpu, gpu).drawOrderMatches, true);
+    const mismatch = compareTraceIdentity([gpu[0]], gpu);
+    assert.deepEqual(mismatch.missingCPU, [3]);
+    assert.equal(mismatch.drawOrderMatches, false);
+    assert.equal(compareTraceIdentity(gpu.toReversed(), gpu).drawOrderMatches, false);
+    assert.equal(compareTraceIdentity(gpu.map(c => ({ ...c, drawSlot: 99 })), gpu).drawOrderMatches, false);
+});

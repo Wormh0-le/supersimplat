@@ -9,6 +9,14 @@ export class IncompleteContributionError extends Error {
     }
 }
 
+export const compareTraceIdentity = (cpu: readonly Pick<Contributor, 'id' | 'drawSlot'>[], gpuNearToFar: readonly Pick<Contributor, 'id' | 'drawSlot'>[]) => {
+    const cpuIds = new Set(cpu.map(c => c.id)), gpuIds = new Set(gpuNearToFar.map(c => c.id));
+    const missingCPU = gpuNearToFar.filter(c => !cpuIds.has(c.id)).map(c => c.id);
+    const extraCPU = cpu.filter(c => !gpuIds.has(c.id)).map(c => c.id);
+    const drawOrderMatches = cpu.length === gpuNearToFar.length && cpu.every((c, i) => c.id === gpuNearToFar[i].id && c.drawSlot === gpuNearToFar[i].drawSlot);
+    return { missingCPU, extraCPU, drawOrderMatches };
+};
+
 
 export type CacheSnapshot = {
     /** Full native cache textures: A has four u32 words, B one u32 per entry. */

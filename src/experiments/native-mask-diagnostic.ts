@@ -96,14 +96,30 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
         renderedOverlays: [],
         failures: [] };
 
+    const invalidateContribution = (role: Role) => {
+        const affected = role === 'A' ? ['A', 'B', 'C'] : role === 'B' ? ['B', 'C'] : ['C'];
+        for (const view of affected) {
+            if (report.contributionChecks) delete report.contributionChecks[view];
+            if (report.contributions) delete report.contributions[view];
+        }
+        if (role === 'A') {
+            contributionViews.clear(); contributionFrozen = false;
+            delete report.contributionTrace; delete report.contributionFreeze;
+        } else if (role === 'B') contributionViews.delete('B');
+        if (role !== 'C') delete report.contributionPositions;
+        for (const key of Object.keys(report.contributionEvaluations ?? {})) {
+            if (role === 'A' || key.startsWith('C.') || (role === 'B' && (key.startsWith('B.') || key.endsWith('.AB')))) {
+                delete report.contributionEvaluations[key];
+            }
+        }
+    };
+
     const invalidate = () => {
         generation++;
         report.status = 'invalidated';
         report.generation = generation;
         frames.clear(); reviews.clear(); candidates.clear();
-        contributionViews.clear(); contributionFrozen = false;
-        delete report.contributionTrace; delete report.contributionChecks; delete report.contributions; delete report.contributionFreeze;
-        delete report.contributionPositions; delete report.contributionEvaluations;
+        invalidateContribution('A');
         displayedIds = null;
         if (splat) scene.projectedSplatRenderer.setDiagnosticOverlay(splat, null);
     };
@@ -258,16 +274,10 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
             const alignment = canvasOf(marked, width, height).toDataURL();
             const maskSHA256 = await sha256(bytes);
             if (epoch !== generation) throw new Error('Scene changed during Mask decoding; evidence rejected');
-            if (report.contributionChecks) delete report.contributionChecks[role];
+            invalidateContribution(role);
             // Every new input capture needs its own review. A invalidates B/C;
             // C inspection cannot change either input or the frozen union.
             if (role !== 'C') {
-                contributionViews.delete(role);
-                if (role === 'A') {
-                    contributionViews.clear(); contributionFrozen = false;
-                    delete report.contributionTrace; delete report.contributionChecks; delete report.contributions; delete report.contributionFreeze;
-                    delete report.contributionPositions; delete report.contributionEvaluations;
-                }
                 for (const affected of role === 'A' ? ['A', 'B'] as const : ['B'] as const) {
                     reviews.delete(affected); candidates.delete(affected);
                 }

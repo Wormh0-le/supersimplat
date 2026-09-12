@@ -1,5 +1,5 @@
 import { probeNativeTrace } from './native-contribution-probe';
-import { cacheColor, halfToFloat, runContribution, type CacheSnapshot, type Contributor, type ROI } from './native-contribution-reference';
+import { cacheColor, compareTraceIdentity, halfToFloat, runContribution, type CacheSnapshot, type Contributor, type ROI } from './native-contribution-reference';
 
 // Chosen from A native RGB/mask only, before running any new B/C comparison.
 const A_TRACE_PIXELS = [
@@ -37,6 +37,22 @@ const blendTrace = (snapshot: CacheSnapshot, contributors: Contributor[]) => {
 
 const traceContribution = async (frame: ContributionFrame, device: GPUDevice, points: readonly { pixel: readonly [number, number]; reason: string }[] = A_TRACE_PIXELS) => {
     const start = performance.now();
+    let hiddenLayerCheck: (Awaited<ReturnType<typeof probeNativeTrace>> & { passed: boolean }) | null = null;
+    if (points === A_TRACE_PIXELS) {
+        const synthetic: CacheSnapshot = { cacheA: new Uint32Array([0, 0x3f800000, 1023 << 10, 0x3c00, 0, 0x3f800000, 1023, 0x3c00]),
+            cacheB: new Uint32Array([0x803c00, 0xff3c00]),
+            order: new Uint32Array([0, 1]),
+            count: 2,
+            entryBase: 0,
+            instanceBase: 0,
+            sourceRows: new Uint32Array([30, 80]),
+            width: 1,
+            height: 1 };
+        const check = await probeNativeTrace(device, [{ pixel: [0, 0], contributors: [] }], 1, 1, synthetic);
+        const fragments = check.results[0].fragments;
+        hiddenLayerCheck = { passed: fragments.length === 2 && fragments[0].id === 0 && fragments[0].rgba[3] > 0 && fragments[1].id === 1 && fragments[1].rgba[3] === 1, ...check };
+        if (!hiddenLayerCheck.passed) throw new Error('Independent GPU collector omitted a fully occluded contributor');
+    }
     const samples = points.map(({ pixel: [x, y], reason }) => {
         const r = runContribution(frame.snapshot, { x, y, width: 1, height: 1 }, frame.mask, [[x, y]]);
         const { contributors } = r.traces[0];
@@ -75,24 +91,27 @@ const traceContribution = async (frame: ContributionFrame, device: GPUDevice, po
     // A fragment write always includes strictly positive gamma-encoded RGB.
     // Zero storage after a full-viewport replay demonstrates no fragment invocation.
     const degenerateNoFragments = !degenerateProbe || degenerateProbe.results[0].fragments.every(f => f.rgba.every(v => v === 0));
-    const probe = await probeNativeTrace(device, samples, frame.snapshot.width, frame.snapshot.height);
+    const probe = await probeNativeTrace(device, samples, frame.snapshot.width, frame.snapshot.height, frame.snapshot);
     const comparison = probe.results.map((gpu, i) => {
         const sample = samples[i];
         const byId = new Map(sample.contributors.map(c => [c.id, c]));
+        const identity = compareTraceIdentity(sample.contributors, gpu.fragments.slice().reverse());
         let T = 1, maxAlphaError = 0, maxWeightError = 0;
         const fragments = gpu.fragments.slice().reverse().map((c) => {
             const cpu = byId.get(c.id);
             const alpha = c.rgba[3], w = alpha * T;
             const incomingT = T;
             T *= 1 - alpha;
-            maxAlphaError = Math.max(maxAlphaError, Math.abs(alpha - cpu.alpha));
-            maxWeightError = Math.max(maxWeightError, Math.abs(w - cpu.w));
-            return { ...c, sourceRow: cpu.sourceRow, alpha, T: incomingT, w };
+            if (cpu) {
+                maxAlphaError = Math.max(maxAlphaError, Math.abs(alpha - cpu.alpha));
+                maxWeightError = Math.max(maxWeightError, Math.abs(w - cpu.w));
+            }
+            return { ...c, sourceRow: frame.snapshot.sourceRows[c.id], alpha, T: incomingT, w };
         });
         const half = gpu.half.map(halfToFloat);
         const replayError = Math.max(...half.map((v, c) => Math.abs(v - sample.native[c])));
         const cpuByteError = Math.max(...sample.ideal.map((v, c) => Math.abs(Math.round(Math.max(0, Math.min(1, v)) * 255) - sample.native8[c])));
-        return { pixel: sample.pixel, half, replayError, cpuByteError, maxAlphaError, maxWeightError, fragments, finalT: T };
+        return { pixel: sample.pixel, ...identity, half, replayError, cpuByteError, maxAlphaError, maxWeightError, fragments, finalT: T };
     });
     // No relaxation of the original .002 output tolerance: the real GPU blend
     // replay replaces an inadequate idealized half-storage model. Also bound the
@@ -100,10 +119,10 @@ const traceContribution = async (frame: ContributionFrame, device: GPUDevice, po
     // a correct replay with an incorrect ROI producer. 1/1024 is one half ULP
     // at unity; RGBA8 may differ by at most one code. All errors are reported.
     const tolerance = { rgba16f: 0.002, rgba8Codes: 1, alphaAndWeight: 1 / 1024, conservation: 1e-12 };
-    const passed = comparison.every(s => s.replayError <= tolerance.rgba16f && s.cpuByteError <= tolerance.rgba8Codes &&
+    const passed = comparison.every(s => s.drawOrderMatches && s.replayError <= tolerance.rgba16f && s.cpuByteError <= tolerance.rgba8Codes &&
         s.maxAlphaError <= tolerance.alphaAndWeight && s.maxWeightError <= tolerance.alphaAndWeight) &&
         samples.every(s => s.contributors.length > 0 && s.conservationError <= tolerance.conservation) && degenerateNoFragments;
-    return { passed, tolerance, samples, comparison, degenerateProbe, degenerateNoFragments, probeCost: probe.cost, elapsedMs: performance.now() - start, implementation: 'CPU cache reference, 8-bit raster grid; bounded GPU fragment/blend oracle; no alpha gate or truncation' };
+    return { passed, tolerance, hiddenLayerCheck, samples, comparison, degenerateProbe, degenerateNoFragments, probeCost: probe.cost, elapsedMs: performance.now() - start, implementation: 'CPU cache reference, 8-bit raster grid; independent full-live-payload GPU fragment/blend oracle; no alpha gate or truncation' };
 };
 
 const maskROI = (mask: Uint8Array, width: number, height: number): ROI => {

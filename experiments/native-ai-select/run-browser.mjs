@@ -143,6 +143,14 @@ try {
             const badOverlayRejected = await rejects(() => scene.projectedSplatRenderer.setDiagnosticOverlay(api.splat(), [-1]));
             await api.capture('C', api.ids('AB'));
             const invalidOverlayPreservedCandidate = before === JSON.stringify(api.ids('AB'));
+            if (Object.keys(contributionGuards).length) {
+                const aBefore = JSON.stringify(api.report().contributions.A);
+                await api.capture('B', null, true);
+                const refreshed = api.report();
+                contributionGuards.bRecaptureInvalidatesExports = !refreshed.contributions.B && !refreshed.contributionChecks.B && !refreshed.contributionChecks.C && !refreshed.contributionPositions &&
+                    Object.keys(refreshed.contributionEvaluations).every(key => key === 'A.A') && await rejects(() => api.contributionIds('M2', 'AB'));
+                contributionGuards.bRecapturePreservesA = aBefore === JSON.stringify(refreshed.contributions.A) && api.contributionIds('M2', 'A').ids.length > 0;
+            }
             await api.capture('A');
             const recaptureRequiresReview = await rejects(() => api.map('A'));
             if (Object.keys(contributionGuards).length) {

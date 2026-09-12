@@ -1,0 +1,40 @@
+{
+  "schema": "ai-select-teatime-preparation/v1",
+  "scene": "LERF-Mask/teatime",
+  "kind": "real tea-table/cafe scene, not a full restaurant-room capture",
+  "status": "source RGB/annotations prepared; renderer alignment and algorithm/GPU evaluation pending",
+  "decision": "https://github.com/Wormh0-le/supersimplat/issues/37#issuecomment-5643008607",
+  "dataSource": {"repository":"mqye/Gaussian-Grouping","revision":"87eaf79de186f3c717b872846f277d39e16dca07","path":"data/lerf_mask/teatime.zip","sha256":"8e1ac21925d0eb5f4a0a41a71404f73a78f1dcd84bdc046049b6b3e723952ca1","licenseAsPublished":"Apache-2.0","documentation":"https://github.com/lkeab/gaussian-grouping/blob/main/docs/dataset.md"},
+  "modelSource": {"repository":"mqye/Gaussian-Grouping","revision":"34cbf65561144792d7a1861b38274bd7be18c8bc","path":"checkpoint/lerf_mask/teatime.zip","sha256":"d93f1f907197a8cfb807c7b44c180d787eb0fedb1361837fa239de1bde4fa67e","gaussianPlyMember":"teatime/point_cloud/iteration_30000/point_cloud.ply","gaussianPlySHA256":"09c2fe384fcd667645bec188ac7e0dee332496d7ea5580d77cb6222ef6ca49e0","gaussianCount":2746452,"plyBytes":856894946,"trainingCaveat":"Gaussian Grouping checkpoint; not claimed vanilla RGB-only trained baseline","forbiddenSelectionInputs":["obj_dc_*","classifier.pth","chkpnt*.pth","object_mask/*"],"note":"Import geometry/appearance only; preserve full scene occlusion and source row mapping. Never load identity features/classifier for prediction."},
+  "calibrationSource": {"path":"calibration/teatime/sparse/0","camerasSHA256":"36e46ca4427b1f7b2e562a346e4cbf6337e389a5b9546f6f02bc56580e8fb8d1","imagesSHA256":"77962cf057513d9a17d0698bce637c0dfa7a53af0c8b38d92e204f88326ff20b"},
+  "protocol": {"name":"custom development oracle-mask protocol; NOT official LERF-Mask held-out score","inputs":["A","B"],"inspectionOnly":["C"],"CPolicy":"No C RGB/Mask in Seed/Scope, prediction selection or parameter tuning. C annotations are assistant drafts, not official quantitative GT.","renderPolicy":"Source masks are not automatically current-renderer Stable Masks. Render exact cameras with declared native/Companion settings and inspect/correct masks there; no silent resize or realignment.","benchmarkControls":"Same fixed imported scene/cameras/target and named render mode. Compare human task time plus corrections, not only kernel latency."},
+  "tasks": [
+    {"id":"easy-apple","prompt":"apple","difficulty":"easy","definition":"Visible apple only; exclude table/cast shadow.","rationale":"Compact opaque separated object."},
+    {"id":"medium-plate","prompt":"plate","difficulty":"medium","definition":"Visible plate and rim; exclude cookies/table/shadows. B is image-edge truncated.","rationale":"Thin rim, tabletop contact, cookie occlusion and partial framing."},
+    {"id":"hard-glass","prompt":"tea in a glass","difficulty":"hard","definition":"Source silhouette of tea glass and contents; exclude loose tea packaging/tag/table.","rationale":"Transparent rim/body; not physical glass-surface GT."}
+  ],
+  "views": [
+    {"role":"A","sourceTestIndex":0,"fusionInput":true,
+     "sourceRGB":{"path":"reference/rgb/test_0.jpg","sha256":"509ec39b68ef2e4a5db1a64ab160ae2dd6845f3584fba0af82acdddba83e8742","sourceMember":"teatime/images/test_0.jpg","width":988,"height":730},
+     "camera":{"imageId":183,"cameraId":1,"width":988,"height":730,"intrinsicsPINHOLE":[775.3188460434766,778.7358059194906,494.0,365.0],"quaternionWXYZ":[0.9904132887777706,0.06454610015153736,-0.03989006412614856,-0.11543007039606296],"translation":[-0.33158563255162526,-1.0820918700224968,4.268391683180529],"extrinsics":"COLMAP world-to-camera; p_camera=R(q)*p_world+t","axes":"OpenCV +X right,+Y down,+Z forward; source units not assumed meters"},
+     "annotations":[
+       {"taskId":"easy-apple","sourcePath":"reference/test_mask/0/apple.png","sha256":"9e2bdcacfb714c4b5d32ecb50e8e71a66c92cabe404182635735bedcf11a6dad","provenance":"publisher-test-mask","status":"not-confirmed-for-current-renderer"},
+       {"taskId":"medium-plate","sourcePath":"reference/test_mask/0/plate.png","sha256":"ea2455341f7129187330c986d09446a2de0baa8f5a9283b5ad7bce969fa934c2","provenance":"publisher-test-mask","status":"not-confirmed-for-current-renderer"},
+       {"taskId":"hard-glass","sourcePath":"reference/test_mask/0/tea in a glass.png","sha256":"6434f740968243cd0b07a11b609bb6d4157f70a8a506eb7d268c4d1cdcc7330a","provenance":"publisher-test-mask","status":"not-confirmed-for-current-renderer"}]},
+    {"role":"B","sourceTestIndex":2,"fusionInput":true,
+     "sourceRGB":{"path":"reference/rgb/test_2.jpg","sha256":"8747af575dfacbd08fed64d9d8bd311518a34290090f6a2986ed3c6c5f945e85","sourceMember":"teatime/images/test_2.jpg","width":988,"height":730},
+     "camera":{"imageId":182,"cameraId":1,"width":988,"height":730,"intrinsicsPINHOLE":[775.3188460434766,778.7358059194906,494.0,365.0],"quaternionWXYZ":[0.834702124450056,0.0008471267071233317,0.39361853149968495,0.38514425540949865],"translation":[1.7355931121251162,-0.5228412141262797,1.5672433953710208],"extrinsics":"COLMAP world-to-camera; p_camera=R(q)*p_world+t","axes":"OpenCV +X right,+Y down,+Z forward; source units not assumed meters"},
+     "annotations":[
+       {"taskId":"easy-apple","sourcePath":"reference/test_mask/2/apple.png","sha256":"c0ee2e30487dab4d2522d99892657f679e15d76320ded6289fcc1840a326916c","provenance":"publisher-test-mask","status":"not-confirmed-for-current-renderer"},
+       {"taskId":"medium-plate","sourcePath":"reference/test_mask/2/plate.png","sha256":"fd9aefe75613ccf7bc7484ae35695ce4c5f466e983f00b03d7cd888104386822","provenance":"publisher-test-mask","status":"not-confirmed-for-current-renderer"},
+       {"taskId":"hard-glass","sourcePath":"reference/test_mask/2/tea in a glass.png","sha256":"b55a4102b1cc9069be25af03d21c841516bf0f40901b944cd3574efa15f95cef","provenance":"publisher-test-mask","status":"not-confirmed-for-current-renderer"}]},
+    {"role":"C","sourceTestIndex":1,"fusionInput":false,
+     "sourceRGB":{"path":"reference/rgb/test_1.jpg","sha256":"b5d6ab2483630569f77ed2d32ac9e20875b72258d3bd178da884c1bf51bf35d3","sourceMember":"teatime/images/test_1.jpg","width":988,"height":730},
+     "camera":{"imageId":181,"cameraId":1,"width":988,"height":730,"intrinsicsPINHOLE":[775.3188460434766,778.7358059194906,494.0,365.0],"quaternionWXYZ":[0.9367770222927669,0.2849001674689209,0.19829028299368553,0.04429072985130943],"translation":[-0.9383004837356028,-0.3943216229796878,0.874153030293668],"extrinsics":"COLMAP world-to-camera; p_camera=R(q)*p_world+t","axes":"OpenCV +X right,+Y down,+Z forward; source units not assumed meters"},
+     "annotations":[
+       {"taskId":"easy-apple","sourcePath":"C.annotations.json","provenance":"assistant-polygon-draft","status":"not-human-confirmed"},
+       {"taskId":"medium-plate","sourcePath":"C.annotations.json","provenance":"assistant-polygon-draft","status":"not-human-confirmed"},
+       {"taskId":"hard-glass","sourcePath":"C.annotations.json","provenance":"assistant-polygon-draft","status":"not-human-confirmed"}]}
+  ],
+  "verification":{"sourceDownloadRun":"https://github.com/Wormh0-le/supersimplat/actions/runs/34668993112","sourceArchivesVerified":true,"RGBMasksChecked":true,"gpuRendered":false,"nativeImported":false,"userConfirmed":false}
+}

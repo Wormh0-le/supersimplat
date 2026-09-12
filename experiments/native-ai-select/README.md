@@ -1,6 +1,6 @@
 # Native-first AI Select · 有界验证分支
 
-**状态：上游基线与迁移边界已建立；AI Select 尚未移植。** 不是新的生产版本，不能因为本分支构建成功就宣称已经移除算法后端。
+**状态：Teatime 苹果已有可运行的原生 Mask→Gaussian 诊断闭环；生产 AI Select 尚未移植。** 诊断运行方法、四类检查图与缺口见 [Teatime 诊断](TEATIME.md)。不能因为构建成功就宣称已经移除算法后端。
 
 当前决定：[Issue #37](https://github.com/Wormh0-le/supersimplat/issues/37#issuecomment-5643008607)。本文件只记录这个分支怎么验证，不建立第二套 Spec 或 Ticket 图。
 
@@ -48,7 +48,7 @@
 
 若轻量映射已经够好，先保留轻量实现；若明确在常见重叠场景失败，再验证贡献pass，不能因原计划写过P/N/V就预先重建全部后端。
 
-该实验仍未实现。本次只创建干净上游开发基线、范围约束和真实benchmark准备，不把文档当算法交付。
+该有界实验通过 `?nativeMaskDiagnostic` 启用，使用已合入 `ai-select-v1@4265d862a81dd6f1895746d106425b19b8316ca6` 的输入准备。A-only 后才开放 B，A∪B 冻结后才开放 C 检查；只显示独立实例染色，不写 Native Selection。当前命名近似与失败证据见 [TEATIME.md](TEATIME.md)。
 
 ## 本地启动与验证
 

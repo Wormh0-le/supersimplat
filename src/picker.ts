@@ -90,7 +90,10 @@ class Picker {
     }
 
     // Prepare for ID picking by rendering the specified splat
-    prepareId(splat: Splat, mode: 'add' | 'remove' | 'set' | 'intersect') {
+    prepareId(splat: Splat, mode: 'add' | 'remove' | 'set' | 'intersect', alphaThreshold = 0) {
+        if (!Number.isFinite(alphaThreshold) || alphaThreshold < 0 || alphaThreshold > 1) {
+            throw new Error('Invalid diagnostic pick alpha threshold');
+        }
         if (!this.idRenderTarget) {
             return;
         }
@@ -104,6 +107,7 @@ class Picker {
 
         // Hide non-selected elements
         const splats = this.scene.getElementsByType(ElementType.splat) as Splat[];
+        const enabled = splats.map(s => s.entity.enabled);
         splats.forEach((s) => {
             s.entity.enabled = s === splat;
         });
@@ -116,21 +120,21 @@ class Picker {
         // Set picker uniforms
         this.device.scope.resolve('pickOp').setValue(pickOpIndex);
         this.device.scope.resolve('pickMode').setValue(0);
-        this.scene.projectedSplatRenderer.preparePick(splat, pickOpIndex, false);
+        this.scene.projectedSplatRenderer.preparePick(splat, pickOpIndex, false, alphaThreshold);
 
-        // Render ID picking pass
-        const emptyMap = new Map();
-        this.renderPass.blendState = BlendState.NOBLEND;
-        this.renderPass.init(this.idRenderTarget);
-        this.renderPass.setClearColor(idClearColor);
-        this.renderPass.update(this.scene.camera.camera, this.scene.app.scene, [splatLayer], emptyMap, false);
-        this.renderPass.render();
-        this.scene.projectedSplatRenderer.finishPick();
-
-        // Re-enable all splats
-        splats.forEach((s) => {
-            s.entity.enabled = true;
-        });
+        try {
+            const emptyMap = new Map();
+            this.renderPass.blendState = BlendState.NOBLEND;
+            this.renderPass.init(this.idRenderTarget);
+            this.renderPass.setClearColor(idClearColor);
+            this.renderPass.update(this.scene.camera.camera, this.scene.app.scene, [splatLayer], emptyMap, false);
+            this.renderPass.render();
+        } finally {
+            this.scene.projectedSplatRenderer.finishPick();
+            splats.forEach((s, i) => {
+                s.entity.enabled = enabled[i];
+            });
+        }
     }
 
     // Read single splat ID at normalized screen position (after prepareId)

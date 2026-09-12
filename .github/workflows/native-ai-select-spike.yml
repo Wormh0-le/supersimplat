@@ -1,6 +1,11 @@
 name: Native AI Select baseline
 on:
   workflow_dispatch:
+    inputs:
+      browser:
+        description: 'Replay reviewed Teatime development masks and upload external browser figures'
+        type: boolean
+        default: false
   push:
     branches: [spike/supersplat-3.0-native-ai-select]
 permissions:
@@ -25,9 +30,58 @@ jobs:
           git rev-parse HEAD > /tmp/native-baseline/commit.txt
           node --version > /tmp/native-baseline/node.txt
           sha256sum package-lock.json > /tmp/native-baseline/lock.txt
-          echo 'Upstream build/lint only. AI Select port, native Evidence, browser SAM and GPU runtime validation not implemented or tested.' > /tmp/native-baseline/scope.txt
+          echo 'Build/lint only. Native Mask diagnostic runtime has separate evidence; no SAM, P/N/V equivalence or production AI Select qualification.' > /tmp/native-baseline/scope.txt
       - uses: actions/upload-artifact@v7
         with:
           name: native-baseline-${{ github.sha }}
           path: /tmp/native-baseline/
+          retention-days: 30
+  browser:
+    if: github.event_name == 'push' || inputs.browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.x'
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: npm ci && npm run build
+      - name: Reuse the merged preparation at its exact commit
+        run: |
+          mkdir -p "$RUNNER_TEMP/teatime-source"
+          git fetch origin 4265d862a81dd6f1895746d106425b19b8316ca6
+          git archive FETCH_HEAD benchmarks/teatime scripts/prepare-teatime.py scripts/bundle-teatime.py | tar -x -C "$RUNNER_TEMP/teatime-source"
+          pip install Pillow==11.3.0
+          python "$RUNNER_TEMP/teatime-source/scripts/prepare-teatime.py" --out "$RUNNER_TEMP/teatime" --with-model
+          python "$RUNNER_TEMP/teatime-source/scripts/bundle-teatime.py" --prepared "$RUNNER_TEMP/teatime/prepared" --out "$RUNNER_TEMP/bundle"
+      - name: Start a real browser and local read-only asset server
+        run: |
+          npm install --prefix "$RUNNER_TEMP/browser" playwright-core@1.63.0
+          "$RUNNER_TEMP/browser/node_modules/.bin/playwright-core" install --with-deps chromium
+          export PLAYWRIGHT_MODULE="$RUNNER_TEMP/browser/node_modules/playwright-core/index.mjs"
+          echo "PLAYWRIGHT_MODULE=$PLAYWRIGHT_MODULE" >> "$GITHUB_ENV"
+          node experiments/native-ai-select/serve.mjs "$RUNNER_TEMP/bundle" "$RUNNER_TEMP/teatime/point_cloud.ply" > "$RUNNER_TEMP/server.log" 2>&1 &
+          node experiments/native-ai-select/start-browser.mjs > "$RUNNER_TEMP/browser.log" 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://localhost:9333/json/version && break || sleep 1; done
+      - name: Replay A, then B, then inspect C without fusion
+        run: |
+          node experiments/native-ai-select/run-browser.mjs a "$RUNNER_TEMP/evidence"
+          node experiments/native-ai-select/run-browser.mjs review-a "$RUNNER_TEMP/evidence" 'Automated replay of the visually reviewed fixed A development input. Inspect the artifact for this renderer; not a fresh human confirmation.'
+          node experiments/native-ai-select/run-browser.mjs review-b "$RUNNER_TEMP/evidence" 'Automated replay of the visually reviewed fixed B development input. No C input or threshold tuning; not User Confirmed.'
+          node experiments/native-ai-select/run-browser.mjs identity "$RUNNER_TEMP/evidence"
+          node experiments/native-ai-select/run-browser.mjs screenshot "$RUNNER_TEMP/evidence"
+          node experiments/native-ai-select/make-figures.mjs "$RUNNER_TEMP/evidence" "$RUNNER_TEMP/bundle"
+          node experiments/native-ai-select/run-browser.mjs guards "$RUNNER_TEMP/evidence"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-teatime-browser-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/evidence/
+            ${{ runner.temp }}/browser.log
+            ${{ runner.temp }}/server.log
           retention-days: 30

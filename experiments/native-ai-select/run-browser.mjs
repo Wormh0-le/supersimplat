@@ -27,7 +27,8 @@ page.on('pageerror', error => { errors.push(String(error)); console.error(error)
 page.on('console', message => {
     if (message.type() !== 'error') return;
     const value = message.text();
-    if (phase === 'guards' && value.includes('CommandQueue task failed') && value.includes('Scene changed during Mask decoding; evidence rejected')) expectedErrors.push(value);
+    const guardErrors = ['Scene changed during Mask decoding; evidence rejected', 'Contribution capture requires raw appearance and no native selection or pending grade', 'Freeze A contribution rule before B/C capture'];
+    if (phase === 'guards' && value.includes('CommandQueue task failed') && guardErrors.some(expected => value.includes(expected))) expectedErrors.push(value);
     else errors.push(value);
     console.error(value);
 });
@@ -155,6 +156,8 @@ try {
             const recaptureRequiresReview = await rejects(() => api.map('A'));
             if (Object.keys(contributionGuards).length) {
                 contributionGuards.recaptureInvalidatesContribution = await rejects(() => api.contributionIds('M2', 'AB'));
+                api.review('A', 'Guard fixture: previously inspected unchanged A alignment');
+                api.map('A');
                 contributionGuards.bRequiresAFrozen = await rejects(() => api.capture('B', null, true));
             }
             const originalFetch = window.fetch;

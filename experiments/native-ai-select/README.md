@@ -50,6 +50,8 @@
 
 该有界实验通过 `?nativeMaskDiagnostic` 启用，使用已合入 `ai-select-v1@4265d862a81dd6f1895746d106425b19b8316ca6` 的输入准备。A-only 后才开放 B，A∪B 冻结后才开放 C 检查；只显示独立实例染色，不写 Native Selection。当前命名近似与失败证据见 [TEATIME.md](TEATIME.md)。
 
+后续的 [原生贡献对照](CONTRIBUTION.md) 在同一苹果上比较 M0/M1/M2，记录固定像素的独立 GPU 贡献者校验、A-only/A+B 结果、C 回归、成本及受控附件。M2 的 A+B 结果提高了目标贡献比例、减少了桌面污染，但 A-only 与 C 仍有漏选；没有生产切换。
+
 ## 本地启动与验证
 
 ```sh

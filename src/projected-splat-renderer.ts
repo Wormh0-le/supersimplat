@@ -206,6 +206,54 @@ class ProjectedSplatRenderer {
         this.scene.forceRender = true;
     }
 
+    // Diagnostic-only readback of the exact cache and payload used by the last
+    // sorted draw. Queue every copy before awaiting: a picker re-projects and
+    // re-sorts, so reading after pickPrep would not describe that RGB frame.
+    async readDiagnosticSnapshot(splat: Splat, maxBytes = 96 * 1024 * 1024) {
+        const placement = this.placements.find(item => item.splat === splat);
+        if (!this.scene.lockedRenderMode || this.stochastic || this.diagnostic ||
+            this.placements.length !== 1 || !placement || !this.cacheA || !this.cacheB || !this.sorter.sortedIndices) {
+            throw new Error('Contribution snapshot requires a locked sorted, untinted single-layer frame');
+        }
+        const { width, height } = this.scene.camera.targetSize;
+        const cachePixels = this.cacheWidth * this.cacheHeight;
+        const readbackBytes = cachePixels * 20 + this.capacity * 4 + 4;
+        const cpuBytes = readbackBytes + splat.instances.count * 4;
+        if (cpuBytes > maxBytes) throw new Error(`Contribution snapshot incomplete: ${cpuBytes} bytes exceeds ${maxBytes}`);
+        const start = performance.now();
+        const cacheA = new Uint32Array(cachePixels * 4);
+        const cacheB = new Uint32Array(cachePixels);
+        const order = new Uint32Array(this.capacity);
+        const counter = new Uint32Array(1);
+        const sourceRows = splat.instances.sourceRow.slice(0, splat.instances.count);
+        const entryBase = placement.entryBase;
+        const instanceBase = placement.instanceBase;
+        const radixBits = this.sorter.radixBits;
+        const cacheSize = [this.cacheWidth, this.cacheHeight];
+        // Texture.read pads each staging row to 256 bytes and makes a temporary
+        // CPU copy before stripping that padding. These are allocation bounds,
+        // not measured GPU residency or JavaScript heap.
+        const textureStagingBytes = (roundUp(this.cacheWidth * 16, 256) + roundUp(this.cacheWidth * 4, 256)) * this.cacheHeight;
+        const stagingBytes = textureStagingBytes + this.capacity * 4 + 4;
+        await Promise.all([
+            this.cacheA.read(0, 0, this.cacheWidth, this.cacheHeight, { data: cacheA, immediate: true }),
+            this.cacheB.read(0, 0, this.cacheWidth, this.cacheHeight, { data: cacheB, immediate: true }),
+            this.sorter.sortedIndices.read(0, order.byteLength, order, true),
+            this.splatCounter.read(0, 4, counter, true)
+        ]);
+        if (counter[0] > order.length) throw new Error('Contribution snapshot count outside actual sort payload');
+        return { cacheA,
+            cacheB,
+            order,
+            count: counter[0],
+            entryBase,
+            instanceBase,
+            sourceRows,
+            width,
+            height,
+            cost: { readbackBytes, cpuBytes, cpuReadPeakBytes: cpuBytes + textureStagingBytes, stagingBytes, readbackWallMs: performance.now() - start, cacheSize, radixBits, gpuElapsedMs: null as number | null, gpuTotalMemoryBytes: null as number | null } };
+    }
+
     constructor(scene: Scene) {
         this.scene = scene;
         this.device = scene.graphicsDevice;

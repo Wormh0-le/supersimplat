@@ -6,8 +6,8 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 const [phase, outputArg, note] = process.argv.slice(2);
-if (!['a', 'review-a', 'review-b', 'identity', 'screenshot', 'guards'].includes(phase) || !outputArg) {
-    throw new Error('Usage: run-browser.mjs a|review-a|review-b|identity|screenshot|guards EXTERNAL_OUTPUT [review note]');
+if (!['a', 'review-a', 'review-b', 'contribution-a', 'contribution-review-a', 'contribution-review-b', 'identity', 'screenshot', 'guards'].includes(phase) || !outputArg) {
+    throw new Error('Usage: run-browser.mjs [contribution-]a|[contribution-]review-a|[contribution-]review-b|identity|screenshot|guards EXTERNAL_OUTPUT [review note]');
 }
 const output = resolve(outputArg);
 if (output.startsWith(resolve('.') + '/')) throw new Error('Evidence must remain outside the repo');
@@ -18,7 +18,7 @@ const context = browser.contexts()[0];
 let page = context.pages().filter(p => p.url().startsWith('http://localhost:3187/?nativeMaskDiagnostic')).at(-1);
 const errors = [];
 const expectedErrors = [];
-if (phase === 'a') {
+if (phase === 'a' || phase === 'contribution-a') {
     if (page) await page.close();
     page = await context.newPage();
 }
@@ -27,7 +27,8 @@ page.on('pageerror', error => { errors.push(String(error)); console.error(error)
 page.on('console', message => {
     if (message.type() !== 'error') return;
     const value = message.text();
-    if (phase === 'guards' && value.includes('CommandQueue task failed') && value.includes('Scene changed during Mask decoding; evidence rejected')) expectedErrors.push(value);
+    const guardErrors = ['Scene changed during Mask decoding; evidence rejected', 'Contribution capture requires raw appearance and no native selection or pending grade', 'Freeze A contribution rule before B/C capture'];
+    if (phase === 'guards' && value.includes('CommandQueue task failed') && guardErrors.some(expected => value.includes(expected))) expectedErrors.push(value);
     else errors.push(value);
     console.error(value);
 });
@@ -41,8 +42,19 @@ const save = async (name, result) => {
     }
     console.log(name, result.record);
 };
+const evaluate = async (role, mode) => {
+    const result = await call('evaluateContribution', role, mode);
+    for (let i = 0; i < 3; i++) await writeFile(resolve(output, `${role}.M${i}.${mode}.q.png`), Buffer.from(result.qImages[i].split(',')[1], 'base64'));
+    console.log(role, mode, result.comparison.map(m => ({ method: m.name, instances: m.ids.length, ...m.metrics })), result.summary);
+};
+const overlays = async (role, mode) => {
+    for (const method of ['M0', 'M1', 'M2']) {
+        const { ids } = await call('contributionIds', method, mode);
+        await save(`${role}.${method}.${mode}`, await call('capture', role, ids));
+    }
+};
 try {
-    if (phase === 'a') {
+    if (phase === 'a' || phase === 'contribution-a') {
         await page.setViewportSize({ width: 1380, height: 980 });
         await page.goto('http://localhost:3187/?nativeMaskDiagnostic');
         await page.waitForFunction(() => window.scene?.events.functions.has('nativeMaskDiagnostic'));
@@ -56,7 +68,35 @@ try {
         });
         await writeFile(resolve(output, 'gpu.json'), JSON.stringify(gpu, null, 2));
         console.log('loaded', await call('load', '/bundle/', '/point_cloud.ply'));
-        await save('A.native', await call('capture', 'A'));
+        await save('A.native', await call('capture', 'A', null, phase === 'contribution-a'));
+    } else if (phase === 'contribution-review-a') {
+        if (!note) throw new Error('Supply actual A visual alignment review');
+        await call('review', 'A', note);
+        await call('map', 'A');
+        const trace = await call('trace');
+        await writeFile(resolve(output, 'contribution-trace.json'), JSON.stringify(trace, null, 2));
+        if (!trace.passed) throw new Error('Native contribution reconstruction gate FAILED; no selection comparison permitted');
+        const first = await call('analyze', 'A');
+        console.log('A analysis', first.summary);
+        await evaluate('A', 'A');
+        await overlays('A', 'A');
+        console.log('frozen', await call('freezeContribution'));
+        await save('B.native', await call('capture', 'B', null, true));
+    } else if (phase === 'contribution-review-b') {
+        if (!note) throw new Error('Supply actual B visual alignment review');
+        await call('review', 'B', note);
+        await call('map', 'B');
+        if (!(await call('trace', 'B')).passed) throw new Error('B native numerical regression failed');
+        console.log('B analysis', (await call('analyze', 'B')).summary);
+        await call('contributionPositions');
+        await evaluate('A', 'AB'); await evaluate('B', 'A'); await evaluate('B', 'AB');
+        await overlays('A', 'AB'); await overlays('B', 'A'); await overlays('B', 'AB');
+        const before = await call('contributionIds', 'M2', 'AB');
+        await save('C.native', await call('capture', 'C', null, true));
+        if (!(await call('trace', 'C')).passed) throw new Error('C native numerical regression failed');
+        await evaluate('C', 'A'); await evaluate('C', 'AB');
+        await overlays('C', 'A'); await overlays('C', 'AB');
+        if (JSON.stringify(before) !== JSON.stringify(await call('contributionIds', 'M2', 'AB'))) throw new Error('C changed contribution fusion');
     } else if (phase === 'review-a') {
         if (!note) throw new Error('Supply an actual visual alignment review note');
         await call('review', 'A', note);
@@ -81,6 +121,7 @@ try {
         const statsAfter = await page.locator('.status-bar-stat-value').allTextContents();
         const ui = { before: statsBefore, after: statsAfter, unchanged: JSON.stringify(statsBefore) === JSON.stringify(statsAfter) };
         await writeFile(resolve(output, 'identity-ui.json'), JSON.stringify(ui, null, 2));
+        await writeFile(resolve(output, 'identity.json'), JSON.stringify(identity, null, 2));
         console.log(JSON.stringify(identity, null, 2));
         if (!identity.passed) throw new Error('Identity fixture failed');
         if (!ui.unchanged || statsBefore.length !== 4) throw new Error('Identity fixture changed editor status bar');
@@ -90,11 +131,35 @@ try {
             const rejects = async fn => { try { await fn(); return false; } catch { return true; } };
             const before = JSON.stringify(api.ids('AB'));
             const cRejected = await rejects(() => api.map('C'));
+            const contributionGuards = {};
+            if (api.report().contributions) {
+                const beforeContribution = JSON.stringify(api.contributionIds('M2', 'AB'));
+                const raw = api.analyze('B');
+                contributionGuards.rawSupportImmutable = Object.isFrozen(raw.rows) && raw.rows.every(Object.isFrozen) && Object.isFrozen(raw.winnerIds);
+                contributionGuards.cCannotAnalyze = await rejects(() => api.analyze('C'));
+                contributionGuards.cCannotFuse = await rejects(() => api.contributionIds('M2', 'C'));
+                contributionGuards.tintedCannotCaptureEvidence = await rejects(() => api.capture('A', [0], true));
+                contributionGuards.invalidCallsPreserveFusion = beforeContribution === JSON.stringify(api.contributionIds('M2', 'AB'));
+            }
             const badOverlayRejected = await rejects(() => scene.projectedSplatRenderer.setDiagnosticOverlay(api.splat(), [-1]));
             await api.capture('C', api.ids('AB'));
             const invalidOverlayPreservedCandidate = before === JSON.stringify(api.ids('AB'));
+            if (Object.keys(contributionGuards).length) {
+                const aBefore = JSON.stringify(api.report().contributions.A);
+                await api.capture('B', null, true);
+                const refreshed = api.report();
+                contributionGuards.bRecaptureInvalidatesExports = !refreshed.contributions.B && !refreshed.contributionChecks.B && !refreshed.contributionChecks.C && !refreshed.contributionPositions &&
+                    Object.keys(refreshed.contributionEvaluations).every(key => key === 'A.A') && await rejects(() => api.contributionIds('M2', 'AB'));
+                contributionGuards.bRecapturePreservesA = aBefore === JSON.stringify(refreshed.contributions.A) && api.contributionIds('M2', 'A').ids.length > 0;
+            }
             await api.capture('A');
             const recaptureRequiresReview = await rejects(() => api.map('A'));
+            if (Object.keys(contributionGuards).length) {
+                contributionGuards.recaptureInvalidatesContribution = await rejects(() => api.contributionIds('M2', 'AB'));
+                api.review('A', 'Guard fixture: previously inspected unchanged A alignment');
+                api.map('A');
+                contributionGuards.bRequiresAFrozen = await rejects(() => api.capture('B', null, true));
+            }
             const originalFetch = window.fetch;
             let started, release;
             const start = new Promise(resolve => { started = resolve; });
@@ -117,7 +182,7 @@ try {
             scene.events.fire('tool.sphereBrushSelection');
             const sphereBrushAvailable = scene.events.invoke('tool.active') === 'sphereBrushSelection';
             if (oldTool) scene.events.fire(`tool.${oldTool}`); else scene.events.fire('tool.deactivate');
-            return { cRejected, badOverlayRejected, invalidOverlayPreservedCandidate, recaptureRequiresReview, lateCaptureRejected, noLateCandidate, flagsUnchanged, sphereBrushAvailable };
+            return { ...contributionGuards, cRejected, badOverlayRejected, invalidOverlayPreservedCandidate, recaptureRequiresReview, lateCaptureRejected, noLateCandidate, flagsUnchanged, sphereBrushAvailable };
         });
         await writeFile(resolve(output, 'guards.json'), JSON.stringify(result, null, 2));
         console.log(result);
@@ -134,10 +199,10 @@ try {
         const a = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
         return { vendor: a.info.vendor, architecture: a.info.architecture, device: a.info.device, description: a.info.description, limits: { maxBufferSize: a.limits.maxBufferSize, maxStorageBufferBindingSize: a.limits.maxStorageBufferBindingSize } };
     });
-    if (phase !== 'guards') await writeFile(resolve(output, 'report.json'), JSON.stringify({
+    if (!['guards', 'identity'].includes(phase)) await writeFile(resolve(output, 'report.json'), JSON.stringify({
         ...report, browser: browser.version(), adapter,
         sha: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
-        dirty: execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' }).trim(),
+        dirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim(),
         executedAt: new Date().toISOString()
     }, null, 2) + '\n');
 } finally {

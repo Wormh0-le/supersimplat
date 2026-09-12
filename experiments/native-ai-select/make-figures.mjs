@@ -16,6 +16,17 @@ const panels = [
     { file: '03-ab.png', title: `3. A union B — ${report.unionInstances} instances; alpha threshold fixed at ${report.alphaThreshold}`, roles: ['A','B'], variants: ['native.png', 'AB.png'], labels: ['Native RGB', 'A+B Gaussian tint (cyan)'] },
     { file: '04-c-inspection.png', title: '4. C inspection only — never used in mapping or threshold tuning', roles: ['C'], variants: ['native.alignment', 'A-only.png', 'AB.png'], labels: ['C + draft boundary (not certified GT)', 'A-only seen from C', 'A+B seen from C'] }
 ];
+if (report.contributions) {
+    panels.splice(1);
+    for (const mode of ['A', 'AB']) for (const kind of ['overlay', 'q']) {
+        panels.push({ file: `contribution-${mode}-${kind}.png`,
+            title: `${mode === 'A' ? 'A only' : 'A+B fixed fusion'}: M0 / M1 / M2 ${kind}; C regression only, draft mask is NOT ground truth`,
+            roles: ['A', 'B', 'C'],
+            variants: [0, 1, 2].map(i => `M${i}.${mode}.${kind === 'q' ? 'q' : 'png'}`),
+            labels: ['M0: alpha >= .1 frontmost', 'M1: maximum w per mask pixel', 'M2: local support ratio >= .8'],
+            kind });
+    }
+}
 try {
     for (const panel of panels) {
         const rows = [];
@@ -29,7 +40,7 @@ try {
             const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = 85 + 620 * rows.length;
             const ctx = canvas.getContext('2d'); ctx.fillStyle = '#14212b'; ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.fillStyle = '#ffffff'; ctx.font = 'bold 19px sans-serif'; ctx.fillText(panel.title, 15, 28);
-            ctx.font = '14px sans-serif'; ctx.fillText('988 × 730 evidence; crop magnification only. Cyan tints original Gaussian opacity; no Native Selection writes.', 15, 56);
+            ctx.font = '14px sans-serif'; ctx.fillText(panel.kind === 'q' ? 'Q_selected = sum of selected w using ORIGINAL full-scene T. Black outside bounded ROI. Crop magnification only.' : '988 × 730 evidence; crop magnification only. Cyan tints original Gaussian opacity; no Native Selection writes.', 15, 56);
             for (let row = 0; row < rows.length; row++) {
                 const mask = await load(rows[row].mask);
                 const mc = document.createElement('canvas'); mc.width = mask.width; mc.height = mask.height;

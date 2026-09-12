@@ -64,7 +64,7 @@ Final runtime evidence uses clean `49c3221c32d28d63996f6a4f610c7decb214cec5`, Wi
 
 Node 24 numerical/target tests: **20 passed**. Lint, locales, build and `tsc --noEmit` passed. Apple **17 existing + 10 target/capacity guards** passed, as did identity/transform/compaction/SelectOp Undo with unchanged main UI counts. Diagnostic-disabled full 2,746,452-row loading, zero native flags, absent diagnostic chunk and Sphere Brush passed. No SwiftShader replay or new cross-GPU qualification is claimed.
 
-Post-commit review at fixed base `9ada1fa3` found no Standards findings and one Spec P1: a request invalidated while waiting in the command queue could execute under the next target. Actual browser red evidence reproduced this. `92c0f0f` binds generation before enqueue; untinted/tinted queued switch/cancel and in-flight invalidation checks pass. Independent focused follow-up confirmed the fix.
+Post-commit review at fixed base `9ada1fa3` found no Standards findings and one Spec P1: a request invalidated while waiting in the command queue could execute under the next target. Actual browser red evidence reproduced this. `92c0f0f` binds generation before enqueue; untinted/tinted queued switch/cancel and in-flight invalidation checks pass. Independent focused follow-up confirmed the fix. Final independent Standards and Spec reviews of `9ada1fa3...740e376` found no further actionable issues; all software checks passed again at clean `740e376`.
 
 ### Apple regression
 
@@ -81,7 +81,9 @@ Each cell is **target contribution % / local-negative contribution %**, with ori
 
 M0/M2 counts are 428/336 (A-only) and 641/970 (A+B). M2 A+B changes M0 by +445/−116; raw fused support reports 13,390 unknown and 12 conflict IDs. Visual inspection confirms much less downward/table contamination and fuller apple tint, but C's upper red cap remains missed. A-only M2 still underperforms M0 on C draft target contribution.
 
-The final M0 A count is 428 versus #119's 427; an intermediate run also gave M2 A+B 968 rather than 970. All actual reports are preserved rather than asserting historical counts. Captures can differ around native sort/raster ties; importantly, on each identical final A/B snapshot, monolithic versus four horizontal bands gives **exact zero difference** in regions, total/T/RGBA/Q, raw P/N and classification. No selection epsilon was added. All 17 apple fixed-pixel full-live GPU identity/order and numerical gates pass; RGBA16F replay error is zero.
+The final A+B M0 and M2 **ID sets exactly match #119**, not merely their counts. M0 A alone adds ID 2495896 (428 versus 427); that ID was already present in B, so the union is unchanged. The intermediate `b483001` run gave M2 968: IDs 7483 and 2713313 had fused P=0.954695 and 0.967942, respectively, below the unchanged minimum 1. At `49c3221`, their B raw contributions increase and fused P becomes 1.229031 and 1.016861; both have N=0. `apple-cross-run-delta.json` retains exact A/B rows and changing capture hashes. The native cross-capture cause was not isolated; no claim that a specific sort tie caused it is made.
+
+All reports are retained rather than forcing historical counts. On each identical final A/B snapshot, monolithic versus four horizontal bands gives **exact zero difference** in regions, total/T/RGBA/Q, raw P/N and classification. No selection epsilon was added. All 17 apple fixed-pixel full-live GPU identity/order and numerical gates pass; RGBA16F replay error is zero.
 
 ### Plate: explicit storage failure, not algorithm failure
 
@@ -112,4 +114,4 @@ Plate A snapshot readback is 65,932,620 bytes / 259.6 ms; retained snapshot CPU 
 
 Snapshot(s) + half images + current evaluator give a logical non-verification subtotal of about **257.0 MB** at apple A/B evaluation and **174.6 MB** for plate A. The apple parity instrument separately retains two ~91 MB evaluator outputs; it is not product memory. These subtotals exclude JS compact rows/GC, PNG encoding, baseline buffers and driver residency. GPU total memory, GPU elapsed time, actual process/heap peak and human correction time remain unmeasured. The bounded tiling implementation has CPU/fixture and apple same-snapshot evidence, not production capacity approval.
 
-Complete images, original bytes, raw/failed reports, numerical traces, summaries, source-row data, timing/check logs and checksums are retained externally; evidence link is recorded with the PR. #119 history remains unchanged.
+Complete images, original bytes, raw/failed reports, numerical traces, summaries, source-row data, timing/check logs and checksums are in the [controlled draft release](https://github.com/Wormh0-le/supersimplat/releases/tag/untagged-a36e356652e53997b0b0), tag `native-m2-plate-evidence-49c3221`. Authenticated retrieval: `gh release download native-m2-plate-evidence-49c3221 --repo Wormh0-le/supersimplat`. Keep the release draft; no full PLY is duplicated. #119 history remains unchanged.

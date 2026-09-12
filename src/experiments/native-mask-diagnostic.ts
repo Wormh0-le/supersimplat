@@ -152,8 +152,12 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
     const serial = async <T>(fn: () => Promise<T>) => {
         if (busy) throw new Error('Diagnostic is busy');
         busy = true;
+        const epoch = generation;
         try {
-            return await scene.commandQueue.enqueue(fn);
+            return await scene.commandQueue.enqueue(() => {
+                if (epoch !== generation) throw new Error('Queued diagnostic invalidated before execution');
+                return fn();
+            });
         } finally {
             busy = false;
         }

@@ -30,7 +30,7 @@ page.on('pageerror', error => { errors.push(String(error)); console.error(error)
 page.on('console', message => {
     if (message.type() !== 'error') return;
     const value = message.text();
-    const guardErrors = ['Scene changed during Mask decoding; evidence rejected', 'Contribution capture requires raw appearance and no native selection or pending grade', 'Freeze A contribution rule before B/C capture', 'Trace must pass; use reviewed A/B only', 'Incomplete contribution:', 'Scene changed during contribution analysis'];
+    const guardErrors = ['Scene changed during Mask decoding; evidence rejected', 'Contribution capture requires raw appearance and no native selection or pending grade', 'Freeze A contribution rule before B/C capture', 'Trace must pass; use reviewed A/B only', 'Incomplete contribution:', 'Scene changed during contribution analysis', 'Queued diagnostic invalidated before execution'];
     if (['guards', 'target-guards'].includes(phase) && value.includes('CommandQueue task failed') && guardErrors.some(expected => value.includes(expected))) expectedErrors.push(value);
     else errors.push(value);
     console.error(value);
@@ -144,6 +144,16 @@ try {
             const originalTarget = d.report().taskId;
             const other = originalTarget === 'easy-apple' ? 'medium-plate' : 'easy-apple';
             const rejected = async (fn, pattern) => { try { await fn(); return false; } catch (error) { return pattern.test(String(error)); } };
+            let queuedSwitchRejected = true, queuedCancelRejected = true;
+            for (const ids of [null, [0]]) {
+                const switched = rejected(() => d.capture('A', ids), /Queued diagnostic invalidated/);
+                d.setTarget(other);
+                queuedSwitchRejected &&= await switched;
+                d.setTarget(originalTarget);
+                const cancelled = rejected(() => d.capture('A', ids), /Queued diagnostic invalidated/);
+                d.cancel();
+                queuedCancelRejected &&= await cancelled;
+            }
             await d.capture('A', null, true);
             d.review('A', 'Guard fixture only: replay of previously visually inspected A input; not User Confirmed');
             d.map('A');
@@ -170,7 +180,7 @@ try {
                 await start; d.setTarget(originalTarget); release(); lateMaskRejected = await late;
             } finally { window.fetch = originalFetch; release?.(); }
             const noPartialPublication = d.ids('AB').length === 0 && Object.keys(d.report().captures).length === 0;
-            return { capacityRejected, capacityPreservesComplete, lateAnalysisRejected, switchClearsTargetEvidence, oldReviewRejected, lateMaskRejected, noPartialPublication, flagsUnchanged: d.splat().instances.flags.every(v => v === 0) };
+            return { queuedSwitchRejected, queuedCancelRejected, capacityRejected, capacityPreservesComplete, lateAnalysisRejected, switchClearsTargetEvidence, oldReviewRejected, lateMaskRejected, noPartialPublication, flagsUnchanged: d.splat().instances.flags.every(v => v === 0) };
         });
         await writeFile(resolve(output, 'target-guards.json'), JSON.stringify(result, null, 2));
         console.log(result);

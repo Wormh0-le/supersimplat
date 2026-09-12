@@ -13,6 +13,13 @@ var<storage, read> splatCount: array<u32>;
 var cacheA: texture_2d<u32>;
 var cacheB: texture_2d<u32>;
 
+#ifdef DIAGNOSTIC_OVERLAY
+var diagnosticMask: texture_2d<u32>;
+uniform diagnosticWidth: u32;
+uniform diagnosticBase: u32;
+uniform diagnosticCount: u32;
+#endif
+
 uniform cacheWidth: u32;
 uniform viewportSize: vec4f;
 uniform clipZParams: vec4f;
@@ -122,6 +129,16 @@ fn vertexMain(input: VertexInput) -> VertexOutput {
     let color = vec3f(vec3u(rgbBits, rgbBits >> 10u, rgbBits >> 20u) & vec3u(1023u))
         * (f32(1u << (rgbBits >> 30u)) / 1023.0);
     var gaussianRgb = color;
+    #ifdef DIAGNOSTIC_OVERLAY
+        #ifndef PICK_PASS
+            if (entry >= uniform.diagnosticBase && entry < uniform.diagnosticBase + uniform.diagnosticCount) {
+                let id = entry - uniform.diagnosticBase;
+                if (textureLoad(diagnosticMask, vec2i(i32(id % uniform.diagnosticWidth), i32(id / uniform.diagnosticWidth)), 0).x != 0u) {
+                    gaussianRgb = mix(color, vec3f(0.0, 1.0, 0.65), 0.85);
+                }
+            }
+        #endif
+    #endif
     if (entry >= uniform.ringsBase && entry < uniform.ringsBase + uniform.ringsCount && (flags & 2u) == 0u) {
         gaussianRgb = mix(gaussianRgb, uniform.unselectedColor.rgb, uniform.unselectedColor.a);
         if ((flags & 1u) != 0u) {
@@ -179,6 +196,7 @@ uniform ringSelectionOnly: u32;
 uniform ringsBase: u32;
 uniform ringsCount: u32;
 uniform pickMode: i32;
+uniform pickAlphaThreshold: f32;
 uniform cameraParams: vec4f;
 
 const EXP4 = exp(-4.0);
@@ -218,6 +236,11 @@ fn fragmentMain(input: FragmentInput) -> FragmentOutput {
             let alpha = gaussianColor.a;
             output.color = vec4f(depth * alpha, 0.0, 0.0, alpha);
         } else {
+            // Opt-in diagnostic approximation. Default zero preserves native
+            // selection picking; alpha here is not alpha * incoming T or P/N/V.
+            if (normExp(radius) * gaussianColor.a < uniform.pickAlphaThreshold) {
+                discard;
+            }
             let id = gaussianId;
             output.color = vec4f(vec4u(id, id >> 8u, id >> 16u, id >> 24u) & vec4u(255u)) / 255.0;
         }

@@ -283,6 +283,11 @@ const main = async () => {
     // load async models
     scene.start();
 
+    if (url.searchParams.has('nativeMaskDiagnostic')) {
+        const { registerNativeMaskDiagnostic } = await import('./experiments/native-mask-diagnostic');
+        registerNativeMaskDiagnostic(scene);
+    }
+
     // handle load params
     const loadList = url.searchParams.getAll('load');
     const filenameList = url.searchParams.getAll('filename');

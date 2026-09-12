@@ -169,6 +169,42 @@ class ProjectedSplatRenderer {
     private layoutDirty = true;
     private submissionCpuMs = 0;
     private stochastic = false;
+    private diagnostic: { splat: Splat, texture: Texture } | null = null;
+
+    // A read-only instance tint. Never writes selection flags, palettes or history.
+    setDiagnosticOverlay(splat: Splat, ids: readonly number[] | null) {
+        for (const id of ids ?? []) {
+            if (!Number.isInteger(id) || id < 0 || id >= splat.instances.count) {
+                throw new Error('Diagnostic ID outside instance list');
+            }
+        }
+        const previous = this.diagnostic;
+        let next: typeof this.diagnostic = null;
+        if (ids?.length) {
+            const width = Math.min(2048, Math.max(1, splat.instances.count));
+            const texture = new Texture(this.device, {
+                name: 'native-mask-diagnostic',
+                width,
+                height: Math.ceil(splat.instances.count / width),
+                format: PIXELFORMAT_R32U,
+                mipmaps: false
+            });
+            const data = texture.lock() as Uint32Array;
+            data.fill(0);
+            for (const id of ids) {
+                data[id] = 1;
+            }
+            texture.unlock();
+            next = { splat, texture };
+            this.material.setParameter('diagnosticMask', texture);
+            this.material.setParameter('diagnosticWidth', width);
+        }
+        this.diagnostic = next;
+        this.material.setDefine('DIAGNOSTIC_OVERLAY', next ? '' : undefined);
+        this.material.update();
+        previous?.texture.destroy();
+        this.scene.forceRender = true;
+    }
 
     constructor(scene: Scene) {
         this.scene = scene;
@@ -208,6 +244,7 @@ class ProjectedSplatRenderer {
         this.material.setParameter('ringsBase', 0);
         this.material.setParameter('ringsCount', 0);
         this.material.setParameter('pickMode', 0);
+        this.material.setParameter('pickAlphaThreshold', 0);
         this.material.setParameter('pickFootprint', 1);
         this.material.setParameter('cameraParams', [0, 1, 0, 0]);
         this.material.update();
@@ -247,6 +284,7 @@ class ProjectedSplatRenderer {
     }
 
     remove(splat: Splat) {
+        if (this.diagnostic?.splat === splat) this.setDiagnosticOverlay(splat, null);
         const index = this.placements.findIndex(placement => placement.splat === splat);
         if (index !== -1) {
             this.placements[index].compute?.destroy();
@@ -258,6 +296,7 @@ class ProjectedSplatRenderer {
     // pick up a change in a splat's live instance count. called after every edit,
     // so it must stay a no-op when nothing moved
     replace(splat: Splat) {
+        if (this.diagnostic?.splat === splat) this.setDiagnosticOverlay(splat, null);
         const placement = this.placements.find(item => item.splat === splat);
         if (placement && placement.count !== splat.instances.count) {
             placement.count = splat.instances.count;
@@ -275,7 +314,7 @@ class ProjectedSplatRenderer {
         this.render(true);
     }
 
-    preparePick(splat: Splat, pickOp: number, depth: boolean) {
+    preparePick(splat: Splat, pickOp: number, depth: boolean, alphaThreshold = 0) {
         if (this.drawSlot >= 0) {
             this.meshInstance.setIndirect(null, this.drawSlot, 1);
         }
@@ -284,6 +323,7 @@ class ProjectedSplatRenderer {
         this.material.setParameter('pickCount', placement?.count ?? 0);
         this.material.setParameter('pickOp', pickOp);
         this.material.setParameter('pickMode', depth ? 1 : 0);
+        this.material.setParameter('pickAlphaThreshold', alphaThreshold);
         // id picks select by the footprint value when it is fractional. At 0
         // (centers mode) the id pass is the full-size occlusion surface for the
         // visibility compute, and depth estimation always uses true footprints,
@@ -293,6 +333,7 @@ class ProjectedSplatRenderer {
     }
 
     finishPick() {
+        this.material.setParameter('pickAlphaThreshold', 0);
         this.material.setParameter('pickBase', 0);
         this.material.setParameter('pickCount', this.capacity);
         this.material.setParameter('pickOp', 2);
@@ -600,8 +641,11 @@ class ProjectedSplatRenderer {
         }
 
         const start = performance.now();
-        const { camera, targetSize, events } = this.scene;
+        const { camera, events } = this.scene;
+        const { targetSize } = camera;
         const cameraComponent = camera.camera;
+        // The compute projector runs before the engine's camera callback.
+        cameraComponent.calculateProjection?.(cameraComponent.projectionMatrix, 0);
         const view = cameraComponent.viewMatrix;
         // match the depth convention of engine-drawn meshes: the forward
         // renderer maps clip z to WebGPU's 0..1 range (setCameraUniforms), so
@@ -814,6 +858,11 @@ class ProjectedSplatRenderer {
         ]);
         this.material.setParameter('ringsBase', ringsBase);
         this.material.setParameter('ringsCount', ringsCount);
+        if (this.diagnostic) {
+            const placement = this.placements.find(item => item.splat === this.diagnostic.splat);
+            this.material.setParameter('diagnosticBase', placement?.entryBase ?? 0);
+            this.material.setParameter('diagnosticCount', placement?.count ?? 0);
+        }
         this.material.setParameter('cameraParams', [1 / cameraComponent.farClip, cameraComponent.farClip, cameraComponent.nearClip, cameraComponent.projection]);
         // clip z is affine in view depth for perspective/ortho projections:
         // z = -m22 * depth + m23, taken from the WebGPU-transformed projection
@@ -852,6 +901,7 @@ class ProjectedSplatRenderer {
     }
 
     destroy() {
+        this.diagnostic?.texture.destroy();
         for (const placement of this.placements) {
             placement.compute?.destroy();
         }

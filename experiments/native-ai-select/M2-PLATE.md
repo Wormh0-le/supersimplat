@@ -56,4 +56,60 @@ The runner separately records same-snapshot first/three warm analyses, apple mon
 
 ## Execution outcome
 
-Pending fixed-SHA hardware run and committed-diff review. No algorithm effectiveness or production capacity claim is made by this implementation alone. No SAM, Companion, native Apply, fourth view, semantic checkpoint features, production reduction, new benchmark queue or production cutover is added.
+**Capacity requirements are not met: cross-object M2 validation is incomplete.** Apple regression succeeds; plate M2 is neither qualified as effective nor demonstrated ineffective. Do not advance to the interactive prototype, increase the fixed ceiling again, introduce a remedy, or add more benchmark objects in this task.
+
+### Exact execution and checks
+
+Final runtime evidence uses clean `49c3221c32d28d63996f6a4f610c7decb214cec5`, Windows Chrome 153.0.8010.36 / RTX 4070 Laptop, NVIDIA Lovelace. Main apple, plate failure and plate M0 reports have empty dirty state. Later default-load and B M0 A-only overlay replay used identical built browser source; their sidecars explicitly record the offline `make-figures.mjs` working change. Later figure/document commits do not change runtime selection code.
+
+Node 24 numerical/target tests: **20 passed**. Lint, locales, build and `tsc --noEmit` passed. Apple **17 existing + 10 target/capacity guards** passed, as did identity/transform/compaction/SelectOp Undo with unchanged main UI counts. Diagnostic-disabled full 2,746,452-row loading, zero native flags, absent diagnostic chunk and Sphere Brush passed. No SwiftShader replay or new cross-GPU qualification is claimed.
+
+Post-commit review at fixed base `9ada1fa3` found no Standards findings and one Spec P1: a request invalidated while waiting in the command queue could execute under the next target. Actual browser red evidence reproduced this. `92c0f0f` binds generation before enqueue; untinted/tinted queued switch/cancel and in-flight invalidation checks pass. Independent focused follow-up confirmed the fix.
+
+### Apple regression
+
+Each cell is **target contribution % / local-negative contribution %**, with original-full-scene T. The external report retains every numerator and denominator; these are not IoU or geometric precision.
+
+| Frozen selection | Evaluation | M0 | M2 |
+|---|---|---:|---:|
+| A-only | A | 53.631 / 0.690 | 56.610 / 0.024 |
+| A-only | B | 43.679 / 1.578 | 45.935 / 0.110 |
+| A-only | C draft | 36.192 / 0.422 | 34.202 / 0.330 |
+| A+B | A | 65.355 / 4.400 | 80.867 / 0.110 |
+| A+B | B | 63.056 / 9.513 | 83.168 / 0.226 |
+| A+B | C draft | 55.077 / 1.198 | 69.149 / 1.008 |
+
+M0/M2 counts are 428/336 (A-only) and 641/970 (A+B). M2 A+B changes M0 by +445/−116; raw fused support reports 13,390 unknown and 12 conflict IDs. Visual inspection confirms much less downward/table contamination and fuller apple tint, but C's upper red cap remains missed. A-only M2 still underperforms M0 on C draft target contribution.
+
+The final M0 A count is 428 versus #119's 427; an intermediate run also gave M2 A+B 968 rather than 970. All actual reports are preserved rather than asserting historical counts. Captures can differ around native sort/raster ties; importantly, on each identical final A/B snapshot, monolithic versus four horizontal bands gives **exact zero difference** in regions, total/T/RGBA/Q, raw P/N and classification. No selection epsilon was added. All 17 apple fixed-pixel full-live GPU identity/order and numerical gates pass; RGBA16F replay error is zero.
+
+### Plate: explicit storage failure, not algorithm failure
+
+A/B native alignment was inspected before their respective mapping. Original Mask bytes were retained, including cookie holes and A's thin annotation exclusion slit. B clips the plate at the right and bottom viewport edges. No out-of-frame negatives were invented and no development review is called User Confirmed.
+
+Plate A's seven fixed samples `(428,378), (465,430), (474,375), (445,407), (465,444), (395,392), (510,399)` all pass the unchanged full-live GPU gate and hidden-far check. Replay error is zero; maximum alpha error is 0.000374727, weight error 0.000014077, RGBA8 difference 1 code. No failing sample was removed.
+
+The 19,220-pixel A ROI records **68,497 distinct instance IDs** across 6,132,733 footprint records, exceeding the frozen compact limit 65,536. These are ROI-recorded identities, not a claim that all are visibly contributing or selected. A read-only debugger inspection of the retained snapshot at the existing throw recovered the exact count/summary; it did not alter limits, inspect labels, drop IDs or modify candidates. Both the initial 20,000-cap failure and final 65,536-cap failure remain external. No complete plate M2 support or selection was published.
+
+Independent M0 continuation retains A-only 1,126, B 1,201 and A+B 1,936 IDs, with A/B native overlays and frozen C draft inspection. Detail crops show rim/contact, cookie holes, the retained slit and B clipping. Some B cookie tint and table/rim contamination remain visible in M0; this is a baseline observation, not a measured M2 counterexample.
+
+**Missing:** plate M2 A-only/A+B selections and overlays, plate M0/M2 Q metrics, B/C M2 numerical/evaluator runs, plate warm/per-tile timings, plate monolithic/tiled hardware comparison and semantic failure attribution. Without complete support these must not be replaced by zero scores or an inference that frozen M2 fails on plates.
+
+### Cost and remaining limits
+
+| Measured item | Apple A | Apple B |
+|---|---:|---:|
+| First same-snapshot no-Q evaluator ms | 261.9 | 255.3 |
+| Three subsequent no-Q evaluator ms | 282.1 / 237.9 / 237.6 | 239.8 / 242.2 / 241.0 |
+| Footprint records | 1,504,024 | 2,864,616 |
+| New evaluator typed-array bytes (no Q) | 91,036,704 | 91,415,514 |
+| Snapshot readback bytes | 65,932,620 | 65,932,620 |
+| Snapshot readback wall ms | 211.2 | 104.0 |
+
+These are shared reference timings, not isolated M2 speedups or cold-start/product latency. Independent GPU oracle readback costs are additional: A 65,348,304 bytes / 199.6 ms, B 21,093,040 / 94.6 ms, C 23,869,120 / 100.5 ms. Full trace workflows additionally include CPU/sample verification; do not substitute them for product runtime.
+
+Plate A snapshot readback is 65,932,620 bytes / 259.6 ms; retained snapshot CPU arrays are 76,918,428 bytes. Its complete numeric evaluator before compact failure allocates 91,959,096 typed-array bytes. The debugger-audited evaluator reports 710.4 ms, explicitly **instrumented verification**, not an ordinary first/warm timing. A was one block; real B/C tiles were not reached. Plate A's GPU oracle is an additional 65,348,304-byte readback / 197.8 ms, with 2,633 emitted verification records.
+
+Snapshot(s) + half images + current evaluator give a logical non-verification subtotal of about **257.0 MB** at apple A/B evaluation and **174.6 MB** for plate A. The apple parity instrument separately retains two ~91 MB evaluator outputs; it is not product memory. These subtotals exclude JS compact rows/GC, PNG encoding, baseline buffers and driver residency. GPU total memory, GPU elapsed time, actual process/heap peak and human correction time remain unmeasured. The bounded tiling implementation has CPU/fixture and apple same-snapshot evidence, not production capacity approval.
+
+Complete images, original bytes, raw/failed reports, numerical traces, summaries, source-row data, timing/check logs and checksums are retained externally; evidence link is recorded with the PR. #119 history remains unchanged.

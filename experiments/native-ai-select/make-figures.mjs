@@ -10,6 +10,8 @@ const browser = await chromium.connectOverCDP(process.env.CDP_URL ?? 'http://127
 const page = await browser.contexts()[0].newPage();
 const uri = async path => `data:image/png;base64,${(await readFile(path)).toString('base64')}`;
 const report = JSON.parse(await readFile(resolve(output, 'report.json'), 'utf8'));
+const bundle = JSON.parse(await readFile(resolve(bundleArg, 'bundle-report.json'), 'utf8'));
+const task = report.taskId ?? 'easy-apple';
 const panels = [
     { file: '01-alignment.png', title: '1. Fixed native RGB and source Mask alignment', roles: ['A','B'], variants: ['native.png', 'native.alignment'], labels: ['Native RGB', 'Source Mask boundary (magenta)'] },
     { file: '02-a-only.png', title: `2. A-only native 3D Overlay — ${report.mappings.A.instances} instances`, roles: ['A'], variants: ['native.png', 'A-only.png'], labels: ['Native RGB', 'A-only Gaussian tint (cyan)'] },
@@ -20,10 +22,10 @@ if (report.contributions) {
     panels.splice(1);
     for (const mode of ['A', 'AB']) for (const kind of ['overlay', 'q']) {
         panels.push({ file: `contribution-${mode}-${kind}.png`,
-            title: `${mode === 'A' ? 'A only' : 'A+B fixed fusion'}: M0 / M1 / M2 ${kind}; C regression only, draft mask is NOT ground truth`,
+            title: `${mode === 'A' ? 'A only' : 'A+B fixed fusion'}: ${report.contributionEvaluations['A.A'].comparison.map(m => m.name).join(' / ')} ${kind}; C is draft cross-view regression only`,
             roles: ['A', 'B', 'C'],
-            variants: [0, 1, 2].map(i => `M${i}.${mode}.${kind === 'q' ? 'q' : 'png'}`),
-            labels: ['M0: alpha >= .1 frontmost', 'M1: maximum w per mask pixel', 'M2: local support ratio >= .8'],
+            variants: report.contributionEvaluations['A.A'].comparison.map(m => `${m.name}.${mode}.${kind === 'q' ? 'q' : 'png'}`),
+            labels: report.contributionEvaluations['A.A'].comparison.map(m => ({ M0: 'M0: alpha >= .1 frontmost', M1: 'M1: maximum w per mask pixel', M2: 'M2: local support ratio >= .8' })[m.name]),
             kind });
     }
 }
@@ -31,7 +33,9 @@ try {
     for (const panel of panels) {
         const rows = [];
         for (const role of panel.roles) {
-            rows.push({ role, mask: await uri(resolve(bundleArg, `${role}.easy-apple.mask.png`)), images: await Promise.all(panel.variants.map(v => uri(resolve(output, `${role}.${v}.png`)))) });
+            const input = bundle.masks.find(m => m.task === task && m.role === role);
+            if (!input) throw new Error(`Missing Mask manifest entry for ${role}/${task}`);
+            rows.push({ role, mask: await uri(resolve(bundleArg, input.path)), images: await Promise.all(panel.variants.map(v => uri(resolve(output, `${role}.${v}.png`)))) });
         }
         const png = await page.evaluate(async ({ panel, rows }) => {
             const load = async src => { const img = new Image(); img.src = src; await img.decode(); return img; };

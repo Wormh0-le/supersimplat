@@ -18,7 +18,7 @@ type View = {
 type Frame = { rgb: Uint8Array; ids: number[]; mask: Uint8Array; png: string; alignment: string };
 const method = 'native-alpha-gated-frontmost-id-hit/v1';
 // Frozen on A before B/C: a 3.7%-opacity foreground ellipse wins every apple
-// pixel at native threshold 0 and at 1/255. This excludes translucent winners,
+// pixel at native threshold 0. This excludes translucent winners,
 // and consequently cannot qualify transparent objects or exact contribution.
 const alphaThreshold = 0.1;
 const sha256 = async (bytes: Uint8Array) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>)))

@@ -1,6 +1,7 @@
 import { Mat4, Quat, Vec3 } from 'playcanvas';
 
 import { SelectOp } from '../edit-ops';
+import { Events } from '../events';
 import { GaussianInstances } from '../gaussian-instances';
 import { IndexRanges } from '../index-ranges';
 import { PermutedChunkSource } from '../io/read/loader';
@@ -50,14 +51,17 @@ const checkNativeIdentity = async (scene: Scene, loaded: Splat) => {
         let historyApplyEvents = 0;
         const historyListener = scene.events.on('edit.apply', () => historyApplyEvents++);
         let stateEvents = 0;
-        const listener = scene.events.on('splat.stateChanged', (splat: Splat) => {
+        // Share the native GPU processors/camera, but keep disposable fixture
+        // notifications away from the editor status bar and selection listeners.
+        const fixtureScene: Scene = Object.create(scene);
+        fixtureScene.events = new Events();
+        const listener = fixtureScene.events.on('splat.stateChanged', (splat: Splat) => {
             if (splat === fixture) stateEvents++;
         });
 
         // Native compute reads splat.scene.camera; the fixture is deliberately
         // absent from scene.elements, rendering placements and the edit history.
-        fixture.scene = scene;
-        const previousBoundDirty = scene.boundDirty;
+        fixture.scene = fixtureScene;
         try {
             for (let i = 0; i < rows.length; i++) {
                 const paletteIndex = fixture.transformPalette.alloc();
@@ -168,7 +172,6 @@ const checkNativeIdentity = async (scene: Scene, loaded: Splat) => {
             historyListener.off();
             fixture.scene = null;
             fixture.destroy();
-            scene.boundDirty = previousBoundDirty;
         }
     });
 };

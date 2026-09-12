@@ -8,7 +8,7 @@
 
 Gaussian Grouping checkpoint 有语义训练来源。原生上传只请求 position/geometric/color，不读取 `obj_dc_*`、classifier、object_mask 或 pickle 来选择目标。没有裁切全场景遮挡体。
 
-A=`test_0`/183，B=`test_2`/182，C=`test_1`/181；全部 988×730，完整 K 和 COLMAP w2c 保存在报告。相机采用 `model × inverse(COLMAP w2c) × diag(1,-1,-1)`，包括 PLY 默认导入旋转。fx/fy 分别进入投影矩阵，不用单个 FOV 近似。原生 compute projector 在计算前应用自定义投影，并读取实际离屏尺寸。RGB 使用 sorted alpha blend、SH3、linear tone mapping、黑背景、无网格/工具 gizmo，near=.01/far=1000。
+A=`test_0`/183，B=`test_2`/182，C=`test_1`/181；全部 988×730，完整 K 和 COLMAP w2c 保存在报告。相机采用 `model × inverse(COLMAP w2c) × diag(1,-1,-1)`，包括 PLY 默认导入旋转。fx/fy 分别进入投影矩阵，不用单个 FOV 近似。原生 compute projector 在计算前应用自定义投影，并读取实际离屏尺寸。RGB 使用 sorted alpha blend、SH3、linear tone mapping、exposure=1、minPixelSize=0、黑背景、无网格/工具 gizmo，near=.01/far=1000。
 
 A/B 来源 Mask 字节与尺寸必须匹配。先导出当前 native RGB 和洋红边界叠图，检查位置、轮廓及桌面投影排除，再记录发展实验可视核准。此记录明确不是 `User Confirmed Stable Mask`；CI 只重放已检查输入，新的 CI 图仍可供审阅。C 为 assistant polygon draft，只在 A+B 后加载检查，不能进入 `map()`，不报告正式 C IoU。
 
@@ -71,11 +71,11 @@ await d.focus(); // 只调浏览相机；可继续自由旋转，Sphere Brush �
 | `03-ab.png` | 固定 A∪B 在 A/B 中的表现 |
 | `04-c-inspection.png` | 独立 C 的 draft 边界、A-only 和 A+B；不参与融合或调参 |
 
-另有真实编辑器 `browser.png`，可看 Native Selection 计数与保留的工具栏。手工触发 `Native AI Select baseline` workflow 并令 `browser=true`，可下载同一 SHA 的 `native-teatime-browser-*` artifact（30 天保留）。该远端运行使用 SwiftShader 软件 WebGPU，证明可复现性，不代表硬件性能。
+另有真实编辑器 `browser.png`，可看 Native Selection 计数与保留的工具栏。`identity-ui.json` 核验 fixture 前后状态栏仍为完整模型、零原生选区/锁定/删除。推送此 spike 或手工触发 `Native AI Select baseline` workflow 并令 `browser=true`，会尝试生成同一 SHA 的 `native-teatime-browser-*` artifact（30 天保留）。远端使用 SwiftShader 软件 WebGPU，不代表硬件性能；必须检查 job 结果，失败 artifact 可能只有错误日志。`8fad7d1` 的远端及本地软件运行发生 device-lost；测试启动器禁用 GPU watchdog 后的结果见 PR，不把构建通过当成软件回放成功。
 
 具体失败和限制：
 
-- 原生门限 0 和片元门限 1/255 在 A 的全部 1,478 个苹果 Mask 像素上只命中 source row **2502665**，重复运行仍相同。该行 logit opacity=-3.265126（中心 alpha≈.03679），位置 `[-.8270288, 2.0386415, .1504044]`，log-scales `[-1.1319680,-1.7521006,-16.1265965]`。低透明度前景椭圆可以占满 ID，却几乎不贡献苹果的 RGB；picking 与 P/N/V 不等价。
+- 原生门限 0 在 A 的全部 1,478 个苹果 Mask 像素上只命中 source row **2502665**，重复运行仍相同。该行 logit opacity=-3.265126（中心 alpha≈.03679），位置 `[-.8270288, 2.0386415, .1504044]`，log-scales `[-1.1319680,-1.7521006,-16.1265965]`。低透明度前景椭圆可以占满 ID，却几乎不贡献苹果的 RGB；picking 与 P/N/V 不等价。固定配置 `8fad7d1` 实测较低门限 1/255 得到 63 个实例，仍包含该污染行；每次报告都实际重测两个对照门限，不将中间运行的数量当常数。
 - 0.1 门限能形成可见苹果 Overlay，但它会漏掉低 alpha、有用的后方贡献和未被 A/B 看到的表面。A+B 的 C 图仍有红色未染区域及斑驳，不能将“Mask 像素都有 ID”解释为完整对象被选中。边缘染色可能略伸到桌面，当前没有三维 GT 定量污染率。
 - 不跨 layer 推断完整遮挡：上游 picker 会过滤到单个 layer。此 harness 明确拒绝多 layer/锁定/编辑后的输入，而非静默减弱旧遮挡与输入身份保证。
 - 当前排序的深度量化和单 ID 舍弃其它贡献；alpha≥.1 不包含 incoming T。透明物体、精确 P/N/V、CWED 和旧 Direct Evidence 数值对照均未资格验证。

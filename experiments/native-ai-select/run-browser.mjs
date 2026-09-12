@@ -46,6 +46,15 @@ try {
         await page.setViewportSize({ width: 1380, height: 980 });
         await page.goto('http://localhost:3187/?nativeMaskDiagnostic');
         await page.waitForFunction(() => window.scene?.events.functions.has('nativeMaskDiagnostic'));
+        const gpu = await page.evaluate(() => {
+            const device = window.scene.graphicsDevice;
+            device.wgpu.lost.then(info => console.error(`GPU device lost: ${info.reason}: ${info.message}`));
+            device.wgpu.addEventListener('uncapturederror', event => console.error(`GPU validation: ${event.error.message}`));
+            const a = device.gpuAdapter;
+            return { vendor: a.info.vendor, architecture: a.info.architecture, device: a.info.device, description: a.info.description,
+                maxBufferSize: a.limits.maxBufferSize, maxStorageBufferBindingSize: a.limits.maxStorageBufferBindingSize };
+        });
+        await writeFile(resolve(output, 'gpu.json'), JSON.stringify(gpu, null, 2));
         console.log('loaded', await call('load', '/bundle/', '/point_cloud.ply'));
         await save('A.native', await call('capture', 'A'));
     } else if (phase === 'review-a') {
@@ -67,9 +76,14 @@ try {
         await save('C.AB', await call('capture', 'C', ids));
         if (JSON.stringify(ids) !== JSON.stringify(await call('ids', 'AB'))) throw new Error('C changed fusion IDs');
     } else if (phase === 'identity') {
+        const statsBefore = await page.locator('.status-bar-stat-value').allTextContents();
         const identity = await call('checkIdentity');
+        const statsAfter = await page.locator('.status-bar-stat-value').allTextContents();
+        const ui = { before: statsBefore, after: statsAfter, unchanged: JSON.stringify(statsBefore) === JSON.stringify(statsAfter) };
+        await writeFile(resolve(output, 'identity-ui.json'), JSON.stringify(ui, null, 2));
         console.log(JSON.stringify(identity, null, 2));
         if (!identity.passed) throw new Error('Identity fixture failed');
+        if (!ui.unchanged || statsBefore.length !== 4) throw new Error('Identity fixture changed editor status bar');
     } else if (phase === 'guards') {
         const result = await page.evaluate(async () => {
             const scene = window.scene, api = scene.events.invoke('nativeMaskDiagnostic');

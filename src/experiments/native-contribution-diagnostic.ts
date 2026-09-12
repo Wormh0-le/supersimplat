@@ -1,5 +1,5 @@
 import { probeNativeTrace } from './native-contribution-probe';
-import { cacheColor, classifySupport, compareTraceIdentity, CONTRIBUTION_LIMITS, halfToFloat, runContribution, runContributionTiled, type CacheSnapshot, type Contributor, type ROI, type TiledContributionOptions } from './native-contribution-reference';
+import { cacheColor, classifySupport, compactSupport, compareTraceIdentity, CONTRIBUTION_LIMITS, halfToFloat, runContribution, runContributionTiled, type CacheSnapshot, type Contributor, type ROI, type SupportRow, type TiledContributionOptions } from './native-contribution-reference';
 
 // Chosen from A native RGB/mask only, before running any new B/C comparison.
 const A_TRACE_PIXELS = [
@@ -175,7 +175,6 @@ const regressionTracePixels = (frame: ContributionFrame) => {
 };
 export { regressionTracePixels };
 
-type SupportRow = Readonly<{ id: number; sourceRow: number; positive: number; negative: number; visible: number; target: number }>;
 type ContributionAnalysis = Awaited<ReturnType<typeof analyzeContribution>>;
 
 const analyzeContribution = async (frame: ContributionFrame, sets: readonly (readonly number[])[] = [], options: TiledContributionOptions = {}) => {
@@ -185,13 +184,7 @@ const analyzeContribution = async (frame: ContributionFrame, sets: readonly (rea
     const result = tiled ? await runContributionTiled(frame.snapshot, roi, frame.mask, [], { ...options, selectionSets: sets }) :
         runContribution(frame.snapshot, roi, frame.mask, [], { selectionSets: sets });
     if (options.isCurrent && !options.isCurrent()) throw new Error('Contribution incomplete: stale target');
-    const rows: SupportRow[] = [];
-    for (let id = 0; id < result.stats.touched.length; id++) {
-        if (!result.stats.touched[id]) continue;
-        if (rows.length === 20000) throw new Error('Contribution incomplete: compact support row capacity');
-        const { sourceRows, positive, negative, visible, target } = result.stats;
-        rows.push({ id, sourceRow: sourceRows[id], positive: positive[id], negative: negative[id], visible: visible[id], target: target[id] });
-    }
+    const rows = compactSupport(result.stats);
     const metrics = sets.map((_, index) => {
         let target = 0, targetSelected = 0, negative = 0, negativeSelected = 0;
         for (let p = 0; p < result.total.length; p++) {
@@ -227,7 +220,7 @@ const analyzeContribution = async (frame: ContributionFrame, sets: readonly (rea
         canvas.getContext('2d').putImageData(image, 0, 0);
         return canvas.toDataURL();
     });
-    return Object.freeze({ roi, rows: Object.freeze(rows.map(row => Object.freeze(row))), winnerIds: Object.freeze(Array.from(new Set(Array.from(result.winnerIds).filter(id => id >= 0))).sort((a, b) => a - b)), metrics, qImages, summary: result.summary, conservationError, maxRGBA8Error, meanRGBA8Error });
+    return Object.freeze({ roi, rows, winnerIds: Object.freeze(Array.from(new Set(Array.from(result.winnerIds).filter(id => id >= 0))).sort((a, b) => a - b)), metrics, qImages, summary: result.summary, conservationError, maxRGBA8Error, meanRGBA8Error });
 };
 
 // Verification-only: retained two results are explicitly additional oracle memory.

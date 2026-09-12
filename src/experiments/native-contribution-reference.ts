@@ -454,6 +454,23 @@ export const runContributionTiled = async (
     }
 };
 
+// Raised once after plate A explicitly exceeded the historical 20,000-row cap.
+// Fixed for this experiment before inspecting plate support or selection quality.
+export const COMPACT_SUPPORT_LIMIT = 65536;
+export type SupportRow = Readonly<{ id: number; sourceRow: number; positive: number; negative: number; visible: number; target: number }>;
+export const compactSupport = (stats: ReturnType<typeof runContribution>['stats'], limit = COMPACT_SUPPORT_LIMIT): readonly SupportRow[] => {
+    integer(limit, 'compact support limit');
+    if (limit > COMPACT_SUPPORT_LIMIT) throw new Error('Compact support limit exceeds hard ceiling');
+    const rows: SupportRow[] = [];
+    for (let id = 0; id < stats.touched.length; id++) {
+        if (!stats.touched[id]) continue;
+        if (rows.length === limit) throw new IncompleteContributionError('compact support row capacity');
+        const { sourceRows, positive, negative, visible, target } = stats;
+        rows.push(Object.freeze({ id, sourceRow: sourceRows[id], positive: positive[id], negative: negative[id], visible: visible[id], target: target[id] }));
+    }
+    return Object.freeze(rows);
+};
+
 export type ViewSupport = { readonly positive: number; readonly negative: number };
 export type SupportRule = { ratio: number; minSupport: number };
 export const SUPPORT_RULE: Readonly<SupportRule> = Object.freeze({ ratio: 0.8, minSupport: 1 });

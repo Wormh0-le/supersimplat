@@ -5,7 +5,7 @@ import { MappedReadFileSystem, PermutedChunkSource } from '../io';
 import type { Scene } from '../scene';
 import type { Splat } from '../splat';
 import { analyzeContribution, checkTiledContribution, plateTracePixels, regressionTracePixels, traceContribution, type ContributionFrame, type ContributionAnalysis, type SupportRow } from './native-contribution-diagnostic';
-import { classifySupport, SUPPORT_POLICY, SUPPORT_RULE, type TiledContributionOptions } from './native-contribution-reference';
+import { classifySupport, COMPACT_SUPPORT_LIMIT, CONTRIBUTION_LIMITS, SUPPORT_POLICY, SUPPORT_RULE, TILED_CONTRIBUTION_LIMITS, type TiledContributionOptions } from './native-contribution-reference';
 import { checkNativeIdentity } from './native-mask-identity-check';
 import { maskInputs, taskId, type MaskInput, type TaskId } from './native-mask-target';
 
@@ -433,6 +433,9 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
                 const epoch = generation;
                 const result = await analyzeContribution(frame as ContributionFrame, [], { limits, isCurrent: () => epoch === generation });
                 if (epoch !== generation) throw new Error('Scene changed during contribution analysis');
+                const combinedIds = new Set(result.rows.map(row => row.id));
+                for (const row of contributionViews.get(role === 'A' ? 'B' : 'A')?.rows ?? []) combinedIds.add(row.id);
+                if (combinedIds.size > COMPACT_SUPPORT_LIMIT) throw new Error('Contribution incomplete: fused support row capacity');
                 contributionViews.set(role, result);
                 report.contributions ??= {};
                 report.contributions[role] = { ...result, snapshotCost: frame.snapshot.cost, rgbSHA256: report.captures[role].rgbSHA256 };
@@ -452,7 +455,13 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
             checkScene();
             if (busy || !contributionViews.has('A') || frames.has('B') || frames.has('C')) throw new Error('Freeze after A analysis and before B/C');
             contributionFrozen = true;
-            report.contributionFreeze = { policy: SUPPORT_POLICY, rule: SUPPORT_RULE, roiMargin: 16, observationWeights: [1, 1], protocol: 'ROI-local native contribution support; not Direct Evidence P/N/V', aRGB: report.captures.A.rgbSHA256 };
+            report.contributionFreeze = { policy: SUPPORT_POLICY,
+                rule: SUPPORT_RULE,
+                roiMargin: 16,
+                observationWeights: [1, 1],
+                protocol: 'ROI-local native contribution support; not Direct Evidence P/N/V',
+                aRGB: report.captures.A.rgbSHA256,
+                executionLimits: { monolithic: CONTRIBUTION_LIMITS, tiled: TILED_CONTRIBUTION_LIMITS, compactSupport: COMPACT_SUPPORT_LIMIT } };
             return report.contributionFreeze;
         },
         contributionIds(name: 'M0' | 'M1' | 'M2', mode: 'A' | 'AB') {
@@ -485,7 +494,7 @@ const registerNativeMaskDiagnostic = (scene: Scene) => {
                 checkScene();
                 const epoch = generation;
                 const ids = Array.from(new Set(Array.from(contributionViews.values()).flatMap(v => v.rows.map(r => r.id)))).sort((a, b) => a - b);
-                if (ids.length > 20000) throw new Error('Contribution positions incomplete: row capacity');
+                if (ids.length > COMPACT_SUPPORT_LIMIT) throw new Error('Contribution positions incomplete: row capacity');
                 const rows = Uint32Array.from(ids, id => splat.instances.sourceRow[id]);
                 const { resource } = splat;
                 const position = resource.sourcePool.acquire('position', resource.source.meta.layouts.position, rows.length);

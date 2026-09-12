@@ -311,3 +311,16 @@ test('tiled native identity checks, degenerates and fully occluded trace records
     assert.deepEqual(degenerate.summary.degenerateEntries, [1]);
     assert.deepEqual(degenerate.stats, runContribution(s, roi, mask, []).stats);
 });
+
+test('compact support rejects overflow without truncation and retains immutable raw rows', async () => {
+    const { compactSupport, COMPACT_SUPPORT_LIMIT } = await import('../../src/experiments/native-contribution-reference.ts');
+    const stats = { positive: new Float64Array([1, .5, 0]), negative: new Float64Array([.25, 0, 2]), visible: new Float64Array([2, 1, 3]), target: new Float64Array([1, .5, 0]), touched: new Uint8Array([1, 1, 1]), sourceRows: new Uint32Array([10, 20, 30]) };
+    assert.throws(() => compactSupport(stats, 2), /Incomplete contribution.*compact support/);
+    const rows = compactSupport(stats, 3);
+    assert.deepEqual(rows.map(r => r.id), [0, 1, 2]);
+    assert.equal(rows[0].positive, 1); assert.equal(rows[2].negative, 2);
+    stats.positive[0] = 100;
+    assert.equal(rows[0].positive, 1);
+    assert.ok(Object.isFrozen(rows) && rows.every(Object.isFrozen));
+    assert.throws(() => compactSupport(stats, COMPACT_SUPPORT_LIMIT + 1), /hard ceiling/);
+});

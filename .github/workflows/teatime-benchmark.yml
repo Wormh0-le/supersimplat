@@ -1,0 +1,46 @@
+name: Teatime asset preparation
+on:
+  workflow_dispatch:
+  push:
+    branches: [bench/lerf-teatime-benchmark]
+    paths:
+      - scripts/*teatime*.py
+      - scripts/tests/test_teatime_bundle.py
+      - benchmarks/teatime/**
+      - .github/workflows/teatime-benchmark.yml
+permissions:
+  contents: read
+concurrency:
+  group: teatime-preparation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12.12'
+      - name: Install image reader for asset preparation only
+        run: python -m pip install Pillow==11.3.0
+      - name: Test asset boundaries
+        run: python -m unittest discover -s scripts/tests -v
+      - name: Verify archives and prepare real annotations
+        run: |
+          set -o pipefail
+          python scripts/prepare-teatime.py --out "$RUNNER_TEMP/teatime" --with-model | tee "$RUNNER_TEMP/teatime-inventory.log"
+          python scripts/bundle-teatime.py --prepared "$RUNNER_TEMP/teatime/prepared" --out "$RUNNER_TEMP/teatime-abc"
+          cp benchmarks/teatime/README.md "$RUNNER_TEMP/teatime-abc/README.md"
+          git rev-parse HEAD > "$RUNNER_TEMP/teatime-abc/commit.txt"
+      - name: Preserve RGB, masks, overlays and exact provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: teatime-abc-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/teatime-abc/
+            ${{ runner.temp }}/teatime/prepared/inventory.json
+            ${{ runner.temp }}/teatime-inventory.log
+          if-no-files-found: error
+          retention-days: 30

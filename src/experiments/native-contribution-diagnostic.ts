@@ -248,7 +248,7 @@ const checkTiledContribution = async (frame: ContributionFrame, sets: readonly (
     const monolithic = roi.width * roi.height <= CONTRIBUTION_LIMITS.pixels;
     const mono = monolithic ? runContribution(frame.snapshot, roi, frame.mask, [], { selectionSets: sets }) :
         await runContributionTiled(frame.snapshot, roi, frame.mask, [], { selectionSets: sets, isCurrent });
-    const tilePixels = roi.width * Math.max(1, Math.min(Math.floor(roi.height / 3), Math.floor(CONTRIBUTION_LIMITS.pixels / roi.width)));
+    const tilePixels = roi.width * Math.max(1, Math.min(Math.floor(roi.height / 3), Math.floor(CONTRIBUTION_LIMITS.pixels / roi.width / 2)));
     const tiled = await runContributionTiled(frame.snapshot, roi, frame.mask, [], { selectionSets: sets, isCurrent, limits: { tilePixels } });
     const errors: Record<string, number> = {};
     const compare = (name: string, a: ArrayLike<number>, b: ArrayLike<number>) => {
@@ -266,7 +266,9 @@ const checkTiledContribution = async (frame: ContributionFrame, sets: readonly (
         const b = classifySupport([{ positive: tiled.stats.positive[id], negative: tiled.stats.negative[id] }]);
         if (a.status !== b.status || a.conflict !== b.conflict) classificationDifferences++;
     }
-    return { passed: Object.values(errors).every(error => error === 0) && classificationDifferences === 0, referenceMode: monolithic ? 'monolithic' : 'default-tiles', tolerance: 0, errors, classificationDifferences, mono: mono.summary, tiled: tiled.summary, additionalOracleTypedBytes: mono.summary.typedArrayBytes + tiled.summary.typedArrayBytes };
+    const referenceBands = monolithic ? [{ y: roi.y, height: roi.height }] : mono.summary.tileCosts;
+    const partitionsDiffer = JSON.stringify(referenceBands.map(band => [band.y, band.height])) !== JSON.stringify(tiled.summary.tileCosts.map(band => [band.y, band.height]));
+    return { passed: partitionsDiffer && Object.values(errors).every(error => error === 0) && classificationDifferences === 0, partitionsDiffer, referenceMode: monolithic ? 'monolithic' : 'default-tiles', tolerance: 0, errors, classificationDifferences, mono: mono.summary, tiled: tiled.summary, additionalOracleTypedBytes: mono.summary.typedArrayBytes + tiled.summary.typedArrayBytes };
 };
 export { checkTiledContribution };
 

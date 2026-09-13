@@ -11,7 +11,7 @@ const hook = registerHooks({
         return nextResolve(specifier, context);
     }
 });
-const { analyzeContribution } = await import('../../src/experiments/native-contribution-diagnostic.ts');
+const { analyzeContribution, checkTiledContribution } = await import('../../src/experiments/native-contribution-diagnostic.ts');
 hook.deregister();
 
 // Canvas is an external browser boundary: encode its actual RGBA bytes, not a PNG oracle.
@@ -83,4 +83,22 @@ test('full and Q-only output retain 70,000 touched hidden identities without the
     assert.equal(metrics.metrics[1].targetSelected, 0);
     assert.equal(metrics.metrics[0].negativeRatio, null);
     assert.equal(metrics.summary.records, n);
+});
+
+test('plate B/C parity actually changes bounded band seams', async () => {
+    for (const [width, height] of [[268, 231], [177, 220]]) {
+        const frame = fixture();
+        Object.assign(frame.snapshot, { width, height, count: 0 });
+        frame.mask = new Uint8Array(width * height).fill(1);
+        const result = await checkTiledContribution(frame, [[]], () => true);
+        assert.equal(result.passed, true);
+        assert.equal(result.referenceMode, 'default-tiles');
+        const bands = summary => summary.tileCosts.map(tile => [tile.y, tile.height]);
+        assert.notDeepEqual(bands(result.mono), bands(result.tiled));
+        assert.equal(result.partitionsDiffer, true);
+        for (const summary of [result.mono, result.tiled]) {
+            assert.equal(summary.tileCosts.reduce((sum, tile) => sum + tile.height, 0), height);
+            assert.ok(summary.tileCosts.every(tile => tile.height * width <= 20000));
+        }
+    }
 });

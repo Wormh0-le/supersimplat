@@ -2,6 +2,8 @@
 
 Diagnostic only, based on `c9688a4ff8178c4a494fbb75b23f67fcf1efc8cb`. This is not AI Select production integration, exact P/N/V, SAM inference, or a replacement for Sphere Brush. See [TEATIME.md](TEATIME.md) for the unchanged complete PLY, camera, Mask and identity contracts.
 
+The subsequent frozen-policy apple/plate increment is recorded separately in [M2-PLATE.md](M2-PLATE.md). Results below remain the unchanged #119 history.
+
 ## Reproduction
 
 Use Node 24 (native TypeScript stripping for the focused numerical tests), the installed PlayCanvas version from the lockfile, and a real WebGPU browser. No new test platform or dependencies:

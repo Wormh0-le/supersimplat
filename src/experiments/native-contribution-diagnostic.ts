@@ -1,5 +1,6 @@
 import { probeNativeTrace } from './native-contribution-probe';
-import { cacheColor, compareTraceIdentity, halfToFloat, runContribution, type CacheSnapshot, type Contributor, type ROI } from './native-contribution-reference';
+import { cacheColor, classifySupport, compactSupport as legacyCompactSupport, compareTraceIdentity, CONTRIBUTION_LIMITS, halfToFloat, runContribution, runContributionTiled, type CacheSnapshot, type Contributor, type ROI, type TiledContributionOptions } from './native-contribution-reference';
+import { compactSupport, type SupportStorageOptions } from './native-contribution-support';
 
 // Chosen from A native RGB/mask only, before running any new B/C comparison.
 const A_TRACE_PIXELS = [
@@ -11,6 +12,32 @@ const A_TRACE_PIXELS = [
     { pixel: [459, 536], reason: 'table next to right silhouette' },
     { pixel: [409, 547], reason: 'local table lower left' }
 ] as const;
+
+// Fixed from A RGB/Mask geometry, before any plate support or B/C result.
+// Bounding-box fractions, rounded to pixels; every sample is retained if a gate fails.
+const plateTracePixels = (frame: ContributionFrame) => {
+    const { mask, snapshot: { width, height } } = frame;
+    let x0 = width, y0 = height, x1 = -1, y1 = -1;
+    for (let p = 0; p < mask.length; p++) {
+        if (!mask[p]) continue;
+        x0 = Math.min(x0, p % width); x1 = Math.max(x1, p % width);
+        y0 = Math.min(y0, Math.floor(p / width)); y1 = Math.max(y1, Math.floor(p / width));
+    }
+    if (x1 < 0) throw new Error('Empty plate Mask');
+    const stencil: [number, number, string][] = [
+        [0.2, 0.35, 'white plate interior left of cookies'],
+        [0.5, 0.92, 'thin lower plate rim'],
+        [0.57, 0.32, 'upper cookie occlusion hole'],
+        [0.34, 0.67, 'lower cookie occlusion hole'],
+        [0.5, 1.08, 'table below plate contact'],
+        [-0.07, 0.5, 'table outside left silhouette'],
+        [0.87, 0.58, 'thin boundary beside cookie exclusion seam']
+    ];
+    return stencil.map(([u, v, reason]) => ({
+        pixel: [Math.round(x0 + u * (x1 - x0)), Math.round(y0 + v * (y1 - y0))] as const,
+        reason: `${reason}; fixed bbox fraction (${u},${v}), rounded; A RGB/Mask only`
+    }));
+};
 
 type ContributionFrame = { snapshot: CacheSnapshot; nativeHalf: Uint16Array; rgb: Uint8Array; mask: Uint8Array };
 
@@ -35,10 +62,10 @@ const blendTrace = (snapshot: CacheSnapshot, contributors: Contributor[]) => {
     return rgba;
 };
 
-const traceContribution = async (frame: ContributionFrame, device: GPUDevice, points: readonly { pixel: readonly [number, number]; reason: string }[] = A_TRACE_PIXELS) => {
+const traceContribution = async (frame: ContributionFrame, device: GPUDevice, points: readonly { pixel: readonly [number, number]; reason: string }[] = A_TRACE_PIXELS, checkHidden = points === A_TRACE_PIXELS) => {
     const start = performance.now();
     let hiddenLayerCheck: (Awaited<ReturnType<typeof probeNativeTrace>> & { passed: boolean }) | null = null;
-    if (points === A_TRACE_PIXELS) {
+    if (checkHidden) {
         const synthetic: CacheSnapshot = { cacheA: new Uint32Array([0, 0x3f800000, 1023 << 10, 0x3c00, 0, 0x3f800000, 1023, 0x3c00]),
             cacheB: new Uint32Array([0x803c00, 0xff3c00]),
             order: new Uint32Array([0, 1]),
@@ -139,7 +166,7 @@ const maskROI = (mask: Uint8Array, width: number, height: number): ROI => {
     return { x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 };
 };
 
-export { A_TRACE_PIXELS, traceContribution, maskROI, roundHalf, blendTrace };
+export { A_TRACE_PIXELS, plateTracePixels, traceContribution, maskROI, roundHalf, blendTrace };
 export type { ContributionFrame };
 
 const regressionTracePixels = (frame: ContributionFrame) => {
@@ -149,20 +176,32 @@ const regressionTracePixels = (frame: ContributionFrame) => {
 };
 export { regressionTracePixels };
 
-type SupportRow = Readonly<{ id: number; sourceRow: number; positive: number; negative: number; visible: number; target: number }>;
-type ContributionAnalysis = ReturnType<typeof analyzeContribution>;
+type ContributionAnalysis = Awaited<ReturnType<typeof analyzeContribution>>;
 
-const analyzeContribution = (frame: ContributionFrame, sets: readonly (readonly number[])[] = []) => {
+type AnalysisOptions = TiledContributionOptions & { output?: 'support' | 'metrics'; supportStorage?: SupportStorageOptions };
+const analyzeContribution = async (frame: ContributionFrame, sets: readonly (readonly number[])[] = [], options: AnalysisOptions = {}) => {
     const { width, height } = frame.snapshot;
     const roi = maskROI(frame.mask, width, height);
-    const result = runContribution(frame.snapshot, roi, frame.mask, [], { selectionSets: sets });
-    const rows: SupportRow[] = [];
-    for (let id = 0; id < result.stats.touched.length; id++) {
-        if (!result.stats.touched[id]) continue;
-        if (rows.length === 20000) throw new Error('Contribution incomplete: compact support row capacity');
-        const { sourceRows, positive, negative, visible, target } = result.stats;
-        rows.push({ id, sourceRow: sourceRows[id], positive: positive[id], negative: negative[id], visible: visible[id], target: target[id] });
-    }
+    const current = () => {
+        if (options.signal?.aborted) throw new Error('Contribution incomplete: cancelled');
+        if (options.isCurrent && !options.isCurrent()) throw new Error('Contribution incomplete: stale target');
+    };
+    current();
+    if (options.output !== undefined && !['support', 'metrics'].includes(options.output)) throw new Error('Invalid contribution output');
+    const tiled = roi.width * roi.height > CONTRIBUTION_LIMITS.pixels || options.limits !== undefined;
+    const result = tiled ? await runContributionTiled(frame.snapshot, roi, frame.mask, [], { ...options, selectionSets: sets }) :
+        runContribution(frame.snapshot, roi, frame.mask, [], { selectionSets: sets });
+    current();
+    // Metrics still traverse every contributor and denominator, but own no fusion output.
+    const supportStarted = performance.now();
+    const support = options.output === 'metrics' ? undefined : compactSupport(result.stats, {
+        ...options.supportStorage,
+        // M1's retained winner list is bounded by ROI pixels, not support IDs.
+        retainedBytes: (options.supportStorage?.retainedBytes ?? 0) + result.winnerIds.length * 8,
+        signal: options.signal,
+        isCurrent: options.isCurrent
+    });
+    const supportCopyMs = support ? performance.now() - supportStarted : 0;
     const metrics = sets.map((_, index) => {
         let target = 0, targetSelected = 0, negative = 0, negativeSelected = 0;
         for (let p = 0; p < result.total.length; p++) {
@@ -198,8 +237,67 @@ const analyzeContribution = (frame: ContributionFrame, sets: readonly (readonly 
         canvas.getContext('2d').putImageData(image, 0, 0);
         return canvas.toDataURL();
     });
-    return Object.freeze({ roi, rows: Object.freeze(rows.map(row => Object.freeze(row))), winnerIds: Object.freeze(Array.from(new Set(Array.from(result.winnerIds).filter(id => id >= 0))).sort((a, b) => a - b)), metrics, qImages, summary: result.summary, conservationError, maxRGBA8Error, meanRGBA8Error });
+    current();
+    const winnerIds = support ? Object.freeze(Array.from(new Set(Array.from(result.winnerIds).filter(id => id >= 0))).sort((a, b) => a - b)) : undefined;
+    return Object.freeze({ roi, support, winnerIds, supportBytes: support?.byteLength ?? 0, supportCopyMs, metrics, qImages, summary: result.summary, conservationError, maxRGBA8Error, meanRGBA8Error });
 };
 
+// Verification-only: retained two results are explicitly additional oracle memory.
+const checkTiledContribution = async (frame: ContributionFrame, sets: readonly (readonly number[])[], isCurrent: () => boolean) => {
+    const roi = maskROI(frame.mask, frame.snapshot.width, frame.snapshot.height);
+    const monolithic = roi.width * roi.height <= CONTRIBUTION_LIMITS.pixels;
+    const mono = monolithic ? runContribution(frame.snapshot, roi, frame.mask, [], { selectionSets: sets }) :
+        await runContributionTiled(frame.snapshot, roi, frame.mask, [], { selectionSets: sets, isCurrent });
+    const tilePixels = roi.width * Math.max(1, Math.min(Math.floor(roi.height / 3), Math.floor(CONTRIBUTION_LIMITS.pixels / roi.width / 2)));
+    const tiled = await runContributionTiled(frame.snapshot, roi, frame.mask, [], { selectionSets: sets, isCurrent, limits: { tilePixels } });
+    const errors: Record<string, number> = {};
+    const compare = (name: string, a: ArrayLike<number>, b: ArrayLike<number>) => {
+        if (a.length !== b.length) throw new Error('Tiled comparison shape mismatch');
+        let max = 0;
+        for (let i = 0; i < a.length; i++) max = Math.max(max, Math.abs(a[i] - b[i]));
+        errors[name] = max;
+    };
+    for (const key of ['regions', 'total', 'finalT', 'rgba', 'winnerIds'] as const) compare(key, mono[key], tiled[key]);
+    for (const key of ['positive', 'negative', 'visible', 'target', 'touched'] as const) compare(key, mono.stats[key], tiled.stats[key]);
+    mono.selectedSums.forEach((sum, i) => compare(`Q${i}`, sum, tiled.selectedSums[i]));
+    let classificationDifferences = 0;
+    for (let id = 0; id < mono.stats.positive.length; id++) {
+        const a = classifySupport([{ positive: mono.stats.positive[id], negative: mono.stats.negative[id] }]);
+        const b = classifySupport([{ positive: tiled.stats.positive[id], negative: tiled.stats.negative[id] }]);
+        if (a.status !== b.status || a.conflict !== b.conflict) classificationDifferences++;
+    }
+    const referenceBands = monolithic ? [{ y: roi.y, height: roi.height }] : mono.summary.tileCosts;
+    const partitionsDiffer = JSON.stringify(referenceBands.map(band => [band.y, band.height])) !== JSON.stringify(tiled.summary.tileCosts.map(band => [band.y, band.height]));
+    return { passed: partitionsDiffer && Object.values(errors).every(error => error === 0) && classificationDifferences === 0, partitionsDiffer, referenceMode: monolithic ? 'monolithic' : 'default-tiles', tolerance: 0, errors, classificationDifferences, mono: mono.summary, tiled: tiled.summary, additionalOracleTypedBytes: mono.summary.typedArrayBytes + tiled.summary.typedArrayBytes };
+};
+export { checkTiledContribution };
+
 export { analyzeContribution };
-export type { ContributionAnalysis, SupportRow };
+export type { ContributionAnalysis };
+
+// Verification-only on a borrowed frozen apple snapshot: old object rows vs columns,
+// then support output vs metrics-only. No store publication and no native recapture.
+export const checkStorageContribution = async (frame: ContributionFrame, sets: readonly (readonly number[])[], isCurrent: () => boolean) => {
+    const roi = maskROI(frame.mask, frame.snapshot.width, frame.snapshot.height);
+    const raw = runContribution(frame.snapshot, roi, frame.mask, [], { selectionSets: sets });
+    const legacy = legacyCompactSupport(raw.stats);
+    const table = compactSupport(raw.stats, { isCurrent });
+    let rawDifferences = 0, classificationDifferences = 0;
+    for (let i = 0; i < legacy.length; i++) {
+        const row = table.row(i), old = legacy[i];
+        if (Object.keys(old).some(key => row[key as keyof typeof row] !== old[key as keyof typeof old])) rawDifferences++;
+        if (JSON.stringify(classifySupport([row])) !== JSON.stringify(classifySupport([old]))) classificationDifferences++;
+    }
+    const full = await analyzeContribution(frame, sets, { isCurrent });
+    const metrics = await analyzeContribution(frame, sets, { output: 'metrics', supportStorage: { byteLimit: 0 }, isCurrent });
+    const outputEqual = ['roi', 'metrics', 'qImages', 'conservationError', 'maxRGBA8Error', 'meanRGBA8Error'].every(key => JSON.stringify(full[key as keyof typeof full]) === JSON.stringify(metrics[key as keyof typeof metrics]));
+    return { passed: legacy.length === table.length && rawDifferences === 0 && classificationDifferences === 0 && outputEqual && !metrics.support && !metrics.winnerIds,
+        rawDifferences,
+        classificationDifferences,
+        outputEqual,
+        rows: table.length,
+        columnBytes: table.byteLength,
+        metricsSupportBytes: metrics.supportBytes,
+        additionalOracleTypedBytes: raw.summary.typedArrayBytes + Math.max(full.summary.typedArrayBytes, metrics.summary.typedArrayBytes) + table.byteLength + full.supportBytes,
+        legacyObjectsAndPNGBytes: 'unmeasured; verification only' };
+};

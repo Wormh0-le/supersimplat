@@ -1,6 +1,6 @@
 // Phased browser evidence: inspect A before review-a; inspect B before review-b.
 // PLAYWRIGHT_MODULE points to an external playwright-core installation.
-import { mkdir, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, rename, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
@@ -21,6 +21,7 @@ const context = browser.contexts()[0];
 let page = context.pages().filter(p => p.url().startsWith('http://localhost:3187/?nativeMaskDiagnostic')).at(-1);
 const errors = [];
 const expectedErrors = [];
+let storageGuardActive = false;
 if (phase === 'a' || phase === 'contribution-a') {
     if (page) await page.close();
     page = await context.newPage();
@@ -30,8 +31,8 @@ page.on('pageerror', error => { errors.push(String(error)); console.error(error)
 page.on('console', message => {
     if (message.type() !== 'error') return;
     const value = message.text();
-    const guardErrors = ['Scene changed during Mask decoding; evidence rejected', 'Contribution capture requires raw appearance and no native selection or pending grade', 'Freeze A contribution rule before B/C capture', 'Trace must pass; use reviewed A/B only', 'Incomplete contribution:', 'Scene changed during contribution analysis', 'Queued diagnostic invalidated before execution'];
-    if (['guards', 'target-guards'].includes(phase) && value.includes('CommandQueue task failed') && guardErrors.some(expected => value.includes(expected))) expectedErrors.push(value);
+    const guardErrors = ['Scene changed during Mask decoding; evidence rejected', 'Contribution capture requires raw appearance and no native selection or pending grade', 'Freeze A contribution rule before B/C capture', 'Trace must pass; use reviewed A/B only', 'Incomplete contribution:', 'Incomplete support:', 'Stale support export', 'Support page out of range', 'Scene changed during contribution analysis', 'Queued diagnostic invalidated before execution'];
+    if ((storageGuardActive || ['guards', 'target-guards'].includes(phase)) && value.includes('CommandQueue task failed') && guardErrors.some(expected => value.includes(expected))) expectedErrors.push(value);
     else errors.push(value);
     console.error(value);
 });
@@ -45,16 +46,66 @@ const save = async (name, result) => {
     }
     console.log(name, result.record);
 };
+const timing = result => ({ ...result.summary, supportCopyMs: result.supportCopyMs, mergeMs: result.mergeMs, analysisWallMs: result.analysisWallMs, storage: result.storage });
 const evaluate = async (role, mode) => {
     const result = await call('evaluateContribution', role, mode, methods);
     for (let i = 0; i < result.comparison.length; i++) await writeFile(resolve(output, `${role}.${result.comparison[i].name}.${mode}.q.png`), Buffer.from(result.qImages[i].split(',')[1], 'base64'));
-    console.log(role, mode, result.comparison.map(m => ({ method: m.name, instances: m.ids.length, ...m.metrics })), result.summary);
+    console.log(role, mode, result.comparison.map(m => ({ method: m.name, instances: m.instances, ...m.metrics })), result.summary);
+    return result;
 };
 const overlays = async (role, mode) => {
     for (const method of methods) {
         const { ids } = await call('contributionIds', method, mode);
         await save(`${role}.${method}.${mode}`, await call('capture', role, ids));
     }
+};
+// Export one bounded page at a time. No browser report owns the expanded object table.
+const exportSupport = async (role) => {
+    const partial = resolve(output, `${role}.support.jsonl.partial`);
+    await writeFile(partial, '');
+    let offset = 0, length, token, byteLength;
+    do {
+        const page = await call('support', role, offset);
+        if (token && token !== page.token) throw new Error('Support changed during paged export');
+        token = page.token; length = page.length; byteLength = page.byteLength;
+        if (page.offset !== offset || (offset < length && !page.rows.length)) throw new Error('Incomplete support page');
+        await appendFile(partial, page.rows.map(row => JSON.stringify(row)).join('\n') + (page.rows.length ? '\n' : ''));
+        offset += page.rows.length;
+    } while (offset < length);
+    if (offset !== length) throw new Error('Support export count mismatch');
+    await rename(partial, resolve(output, `${role}.support.jsonl`));
+    return { role, token, rows: length, byteLength };
+};
+const exportPositions = async (token) => {
+    const partial = resolve(output, 'AB.positions.jsonl.partial');
+    await writeFile(partial, '');
+    let offset = 0, length, maxScratchTypedBytes = 0, maxSerializedBytes = 0;
+    do {
+        const page = await call('contributionPositions', offset, 4096, token);
+        if (page.token !== token || page.offset !== offset) throw new Error('Positions changed during paged export');
+        length = page.length;
+        if (offset < length && !page.rows.length) throw new Error('Incomplete positions page');
+        maxScratchTypedBytes = Math.max(maxScratchTypedBytes, page.cost.scratchTypedBytes);
+        maxSerializedBytes = Math.max(maxSerializedBytes, page.cost.serializedBytes);
+        await appendFile(partial, page.rows.map(row => JSON.stringify(row)).join('\n') + (page.rows.length ? '\n' : ''));
+        offset += page.rows.length;
+    } while (offset < length);
+    if (offset !== length) throw new Error('Position export count mismatch');
+    await rename(partial, resolve(output, 'AB.positions.jsonl'));
+    return { rows: length, maxScratchTypedBytes, maxSerializedBytes };
+};
+const parity = async (role) => {
+    const tiling = await call('checkTiling', role);
+    await writeFile(resolve(output, `${role}.tiling-check.json`), JSON.stringify(tiling, null, 2));
+    if (!tiling.passed) throw new Error(`${role} same-snapshot tiling mismatch`);
+    if (target === 'easy-apple' && role !== 'C') {
+        const storage = await call('checkStorage', role);
+        await writeFile(resolve(output, `${role}.storage-check.json`), JSON.stringify(storage, null, 2));
+        if (!storage.passed) throw new Error(`${role} same-snapshot storage/output mismatch`);
+    }
+};
+const exportSelections = async (mode) => {
+    for (const method of methods) await writeFile(resolve(output, `${method}.${mode}.selection.json`), JSON.stringify(await call('contributionIds', method, mode)));
 };
 try {
     if (phase === 'a' || phase === 'contribution-a') {
@@ -84,12 +135,12 @@ try {
         if (!trace.passed) throw new Error('Native contribution reconstruction gate FAILED; no selection comparison permitted');
         const first = await call('analyze', 'A');
         console.log('A analysis', first.summary);
-        const tiling = await call('checkTiling', 'A');
-        await writeFile(resolve(output, 'A.tiling-check.json'), JSON.stringify(tiling, null, 2));
-        if (!tiling.passed) throw new Error('A monolithic/tiled mismatch');
-        const warm = [first.summary];
-        for (let i = 0; i < 3; i++) warm.push((await call('analyze', 'A')).summary);
+        const warm = [timing(first)];
+        for (let i = 0; i < 3; i++) warm.push(timing(await call('analyze', 'A')));
         await writeFile(resolve(output, 'A.warm.json'), JSON.stringify(warm, null, 2));
+        await parity('A');
+        await writeFile(resolve(output, 'A.export.json'), JSON.stringify(await exportSupport('A'), null, 2));
+        await exportSelections('A');
         await evaluate('A', 'A');
         await overlays('A', 'A');
         console.log('frozen', await call('freezeContribution'));
@@ -102,22 +153,46 @@ try {
         if (!(await call('trace', 'B')).passed) throw new Error('B native numerical regression failed');
         const first = await call('analyze', 'B');
         console.log('B analysis', first.summary);
-        if (target === 'easy-apple') {
-            const tiling = await call('checkTiling', 'B');
-            await writeFile(resolve(output, 'B.tiling-check.json'), JSON.stringify(tiling, null, 2));
-            if (!tiling.passed) throw new Error('B monolithic/tiled mismatch');
-        }
-        const warm = [first.summary];
-        for (let i = 0; i < 3; i++) warm.push((await call('analyze', 'B')).summary);
+        const warm = [timing(first)];
+        for (let i = 0; i < 3; i++) warm.push(timing(await call('analyze', 'B')));
         await writeFile(resolve(output, 'B.warm.json'), JSON.stringify(warm, null, 2));
-        await call('contributionPositions');
+        storageGuardActive = true;
+        try {
+            const guards = await page.evaluate(async () => {
+                const d = window.scene.events.invoke('nativeMaskDiagnostic'), r = d.report();
+                const before = JSON.stringify({ a: d.support('A'), b: d.support('B'), ab: d.support('AB'), selection: d.contributionIds('M2', 'AB'), report: r });
+                const b = r.contributions.B, storage = r.supportStorage;
+                // Fits complete B + conservative winner payload, but not its new A+B merge.
+                const byteLimit = storage.retainedAfterBytes + b.supportBytes + b.roi.width * b.roi.height * 8 + storage.exportReserveBytes;
+                if (byteLimit >= storage.retainedAfterBytes + b.supportBytes + b.winnerCount * 8 + storage.unionBytes + storage.exportReserveBytes) throw new Error('Fixture does not isolate merge budget');
+                let mergeBudgetRejected = false;
+                try { await d.analyze('B', undefined, byteLimit); } catch (error) { mergeBudgetRejected = /Incomplete support: byte budget/.test(String(error)); }
+                const oldTablesPreserved = before === JSON.stringify({ a: d.support('A'), b: d.support('B'), ab: d.support('AB'), selection: d.contributionIds('M2', 'AB'), report: d.report() });
+                let staleExportRejected = false, invalidPageRejected = false;
+                try { await d.contributionPositions(0, 1, 'stale'); } catch (error) { staleExportRejected = /Stale support export/.test(String(error)); }
+                try { await d.contributionPositions(0, 4097); } catch (error) { invalidPageRejected = /Support page out of range/.test(String(error)); }
+                return { passed: mergeBudgetRejected && oldTablesPreserved && staleExportRejected && invalidPageRejected, mergeBudgetRejected, oldTablesPreserved, staleExportRejected, invalidPageRejected, byteLimit };
+            });
+            await writeFile(resolve(output, 'support-guards.json'), JSON.stringify(guards, null, 2));
+            if (!guards.passed) throw new Error('Support atomicity/export guard failed');
+        } finally { storageGuardActive = false; }
+        await parity('B');
+        const supportExports = [await exportSupport('A'), await exportSupport('B'), await exportSupport('AB')];
+        const positions = await exportPositions(supportExports[2].token);
+        await writeFile(resolve(output, 'AB.export.json'), JSON.stringify({ supportExports, positions }, null, 2));
+        await exportSelections('AB');
         await evaluate('A', 'AB'); await evaluate('B', 'A'); await evaluate('B', 'AB');
         await overlays('A', 'AB'); await overlays('B', 'A'); await overlays('B', 'AB');
         await call('releaseSnapshot', 'A'); await call('releaseSnapshot', 'B');
         const before = await call('contributionIds', 'M2', 'AB');
         await save('C.native', await call('capture', 'C', null, true));
         if (!(await call('trace', 'C')).passed) throw new Error('C native numerical regression failed');
-        await evaluate('C', 'A'); await evaluate('C', 'AB');
+        await evaluate('C', 'A');
+        const cFirst = await evaluate('C', 'AB');
+        const cWarm = [cFirst.summary];
+        for (let i = 0; i < 3; i++) cWarm.push((await evaluate('C', 'AB')).summary);
+        await writeFile(resolve(output, 'C.warm.json'), JSON.stringify({ mode: 'metrics-only; M0/M2 Q sets', summaries: cWarm }, null, 2));
+        await parity('C');
         await overlays('C', 'A'); await overlays('C', 'AB');
         if (JSON.stringify(before) !== JSON.stringify(await call('contributionIds', 'M2', 'AB'))) throw new Error('C changed contribution fusion');
     } else if (phase === 'review-a') {
@@ -162,6 +237,8 @@ try {
             const complete = JSON.stringify(d.report().contributions.A), ids = JSON.stringify(d.ids('A'));
             const capacityRejected = await rejected(() => d.analyze('A', { tilePixels: 512, records: 1 }), /Incomplete contribution.*record/);
             const capacityPreservesComplete = complete === JSON.stringify(d.report().contributions.A) && ids === JSON.stringify(d.ids('A'));
+            const byteBudgetRejected = await rejected(() => d.analyze('A', undefined, 0), /[Bb]udget|byte/);
+            const byteBudgetPreservesComplete = complete === JSON.stringify(d.report().contributions.A) && ids === JSON.stringify(d.ids('A'));
             const pending = rejected(() => d.analyze('A', { tilePixels: 512 }), /Incomplete contribution.*stale|Scene changed during contribution analysis/);
             setTimeout(() => d.setTarget(other), 0);
             const lateAnalysisRejected = await pending;
@@ -180,7 +257,7 @@ try {
                 await start; d.setTarget(originalTarget); release(); lateMaskRejected = await late;
             } finally { window.fetch = originalFetch; release?.(); }
             const noPartialPublication = d.ids('AB').length === 0 && Object.keys(d.report().captures).length === 0;
-            return { queuedSwitchRejected, queuedCancelRejected, capacityRejected, capacityPreservesComplete, lateAnalysisRejected, switchClearsTargetEvidence, oldReviewRejected, lateMaskRejected, noPartialPublication, flagsUnchanged: d.splat().instances.flags.every(v => v === 0) };
+            return { queuedSwitchRejected, queuedCancelRejected, capacityRejected, capacityPreservesComplete, byteBudgetRejected, byteBudgetPreservesComplete, lateAnalysisRejected, switchClearsTargetEvidence, oldReviewRejected, lateMaskRejected, noPartialPublication, flagsUnchanged: d.splat().instances.flags.every(v => v === 0) };
         });
         await writeFile(resolve(output, 'target-guards.json'), JSON.stringify(result, null, 2));
         console.log(result);
@@ -205,7 +282,9 @@ try {
             if (api.report().contributions) {
                 const beforeContribution = JSON.stringify(api.contributionIds('M2', 'AB'));
                 const raw = api.support('B');
-                contributionGuards.rawSupportImmutable = Object.isFrozen(raw.rows) && raw.rows.every(Object.isFrozen) && Object.isFrozen(raw.winnerIds);
+                const firstRow = raw.rows[0], original = JSON.stringify(raw.rows);
+                const mutationRejected = !Reflect.set(firstRow, 'positive', -1);
+                contributionGuards.rawSupportImmutable = Object.isFrozen(raw.rows) && raw.rows.every(Object.isFrozen) && mutationRejected && original === JSON.stringify(api.support('B').rows);
                 contributionGuards.cCannotAnalyze = await rejects(() => api.analyze('C'));
                 contributionGuards.cCannotFuse = await rejects(() => api.contributionIds('M2', 'C'));
                 contributionGuards.tintedCannotCaptureEvidence = await rejects(() => api.capture('A', [0], true));

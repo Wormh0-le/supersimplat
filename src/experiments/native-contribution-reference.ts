@@ -266,6 +266,7 @@ const contributionKernel = function *(
     const cacheFloats = new Float32Array(cacheA.buffer, cacheA.byteOffset, cacheA.length);
     const f = Math.fround;
     let tiles = 0;
+    const tileCosts: { y: number; height: number; records: number; elapsedMs: number }[] = [];
     for (let bandY = roi.y; bandY < roi.y + roi.height; bandY += bandRows) {
         const bandEnd = Math.min(roi.y + roi.height, bandY + bandRows);
         const tileStarted = performance.now();
@@ -388,6 +389,7 @@ const contributionKernel = function *(
         }
         checkTime();
         tiles++;
+        if (tiled) tileCosts.push({ y: bandY, height: bandEnd - bandY, records: records - startRecords, elapsedMs: performance.now() - tileStarted });
         if (tiled) {
             yield tiles;
             if (performance.now() - started >= limits.elapsedMs) overflow('total wall-time limit exceeded');
@@ -405,7 +407,7 @@ const contributionKernel = function *(
         selectedSums,
         traces,
         stats: { positive, negative, visible, target, touched, sourceRows },
-        summary: { ...(tiled ? { tiles } : {}), typedArrayBytes, elapsedMs: performance.now() - started, records, traceRecords, processedPixels: pixels, scannedSplats: count, intersectingSplats, touchedCount, positivePixels, negativePixels, targetPixels, degenerateEntries, truncated: false as const, residualBound: 0 as const }
+        summary: { ...(tiled ? { tiles, tileCosts } : {}), typedArrayBytes, elapsedMs: performance.now() - started, records, traceRecords, processedPixels: pixels, scannedSplats: count, intersectingSplats, touchedCount, positivePixels, negativePixels, targetPixels, degenerateEntries, truncated: false as const, residualBound: 0 as const }
     };
 };
 
@@ -454,8 +456,8 @@ export const runContributionTiled = async (
     }
 };
 
-// Raised once after plate A explicitly exceeded the historical 20,000-row cap.
-// Fixed for this experiment before inspecting plate support or selection quality.
+// Frozen eab90a3 object representation, retained ONLY for historical/same-snapshot
+// verification. Production diagnostic consumers use native-contribution-support.
 export const COMPACT_SUPPORT_LIMIT = 65536;
 export type SupportRow = Readonly<{ id: number; sourceRow: number; positive: number; negative: number; visible: number; target: number }>;
 export const compactSupport = (stats: ReturnType<typeof runContribution>['stats'], limit = COMPACT_SUPPORT_LIMIT): readonly SupportRow[] => {

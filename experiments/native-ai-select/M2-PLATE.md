@@ -1,5 +1,7 @@
 # Frozen M2: apple regression and plate transfer
 
+**Current continuation:** the support-row blocker is removed, but plate B fails the unchanged numerical gate. See [continuation evidence and remaining blocker](#continuation-evidence-and-remaining-blocker). Earlier execution outcomes below are preserved historical records, not the current storage status.
+
 This increment starts at PR #119's actual unmerged head `9ada1fa31e27990d57919e489453b8e932a3b87d`; its PR base is `feat/native-contribution-attribution`. The initial checkout was clean at `7da53f3c`, on `feat/native-contribution-diagnostic`; that branch and unrelated documentation worktrees were preserved. Fetch confirmed spike at `c9688a4ff8178c4a494fbb75b23f67fcf1efc8cb` and the read-only upstream ref at `0911f786db652a7700068fe6ccdfe32e24269e1d`.
 
 ## Frozen input and decision
@@ -128,4 +130,71 @@ No writable column reference escapes the table. Reports retain summaries, not ex
 
 Q/metrics-only analysis runs the same full-occlusion kernel but does not materialize support or M1 output. C cannot publish into the A/B store. Snapshot and evaluator arrays retain their separate original bounds/accounting; oracle parity checks retain additional outputs and are explicitly verification costs, not product latency. Apple checks compare the old object representation against columns on a single snapshot, and full-output against metrics-only Q/metrics. Large B/C ROIs compare two bounded band partitions (not an over-limit monolithic run); each band's wall time and records are retained.
 
-Implementation/hardware results for this continuation are pending; build or CPU tests alone do not complete the plate comparison.
+### Continuation evidence and remaining blocker
+
+**The old support-row blocker is removed; the plate experiment is still incomplete, now at B's frozen numerical gate.** This is neither GPU OOM nor evidence that M2 is ineffective on plates. No interactive prototype or numerical-policy change is authorized by these results.
+
+Implementation commit `b0b38fdb9186c4d33771ba69a66cd632dfc948fb` passed 29 Node 24 tests, lint, locales, TypeScript and build. Independent Standards and Spec reviews of `eab90a3...b0b38fd` found the same P2: plate C's purported comparison used identical bands. `9d5e46564d8fc2f9c0a51a605e5b7e3ad778c00b` fixes comparison partition selection and requires `partitionsDiffer`; 30 tests and all software checks pass. Independent follow-up confirmed the fix. CPU fixtures verify B `[112,108]` versus `[56,56,56,52]`, C `[74,74,74,9]` versus `[37,37,37,37,37,37,9]`, complete coverage and unchanged per-band bounds. These fixtures are not B/C GPU qualification.
+
+Hardware evidence is separately bound to **clean `b0b38fd` for apple** and **clean `9d5e465` for plate/default loading**, on Chrome 153.0.8010.36 / RTX 4070 Laptop, driver 32.0.16.1062. The latter commit changes verification partitioning only, not selection or contribution arithmetic; apple evidence is not relabelled as a later tested SHA. Full PLY, bundle and Mask hashes remain pinned.
+
+#### Apple: representation parity and cross-capture difference
+
+On each retained A/B snapshot, old object rows versus new columns have **zero identity, raw-statistic, unknown/conflict and classification differences**. Full-output versus metrics-only Q/metrics are identical; metrics-only support bytes are zero. A has 15,153 rows / 606,120 bytes, B 9,729 / 389,160; A+B has 15,387 / 615,480. External reconstruction verifies every A+B raw sum and selected ID, and all 15,387 position rows restore the same identities/source rows. Numerical A/B/C and same-snapshot tiling gates pass.
+
+M0/M2 A-only counts remain 428/336. A+B is 641/969, not historical 641/970: ID 7483 has unchanged A P=0.21475289740309023, but B P=0.739941888160625 versus historical 1.0142779382189813, so fused P=0.9546947855637152 is below 1, with N=0. It is retained as unknown, not dropped from support. All other historical M2 A+B IDs match. Capture hashes and exact rows are in `apple-cross-capture-delta.json`; the underlying cross-capture cause remains unisolated. No epsilon or historical-count assertion masks the difference.
+
+Current **target contribution % / local-negative contribution %**, always using original-full-scene T:
+
+| Apple selection | Evaluation | M0 | M2 |
+|---|---|---:|---:|
+| A-only | A | 53.634 / 0.690 | 56.615 / 0.024 |
+| A-only | B | 43.686 / 1.578 | 45.943 / 0.110 |
+| A-only | C draft | 36.192 / 0.422 | 34.204 / 0.330 |
+| A+B | A | 65.358 / 4.400 | 80.852 / 0.110 |
+| A+B | B | 63.063 / 9.513 | 83.152 / 0.226 |
+| A+B | C draft | 55.078 / 1.198 | 69.129 / 1.008 |
+
+A+B changes M0 by +444/−116, with 13,391 unknown and 12 conflict IDs. Inspected overlays/Q retain the fuller apple and reduced table contamination, but miss C's upper red cap; A-only M2 remains worse on C's target contribution. These are observed regressions, not held-out scores.
+
+#### Plate A succeeds; B fails before support publication
+
+Actual A/B native alignment was inspected before the respective analysis. Original cookie holes, A's thin exclusion slit and B's right/bottom viewport clipping remain unchanged; reviews are development-only. A's seven numerical samples, hidden-far check and exact same-snapshot tiling comparison pass. Its full **19,220 pixels / 6,132,733 records / 68,497 touched IDs** now produce **2,739,880 column bytes**. All 68,497 raw rows and paged positions export and restore matching identities. No significant-contribution filter or row cap is used.
+
+A-only M0 selects 1,126 IDs; M2 selects 986 (+383/−523 relative to M0). Complete raw support retains 66,016 unknown and 16 conflict IDs. With target denominator 5,638 and local-negative denominator 8,401:
+
+| Plate A-only, evaluated at A | M0 | M2 |
+|---|---:|---:|
+| Target numerator / ratio | 3018.332818 / 53.5355% | 3250.572579 / 57.6547% |
+| Local-negative numerator / ratio | 154.614685 / 1.84043% | 2.057224 / 0.0244878% |
+
+Inspected A overlays/Q show support concentrated on the plate around the preserved holes and less local spill; the outer rim still has incomplete support. This limited A-only improvement does not establish A+B transfer or plate-wide usefulness.
+
+B's unchanged five-point full-live oracle fails at **pixel (971,620), ID/source row 25346, draw slot 167601**: CPU alpha `0.37306782945514244`, GPU alpha `0.3745875954627991`, error **0.001519766007656631 > 1/1024 (0.0009765625)**. All five identity/order comparisons match and replay errors are zero; small weight error does not waive the alpha bound. One recheck on the **same retained snapshot, without recapture**, reproduces the failure.
+
+An external, alpha-only replay of this saved packed record through both previous `eab90a3` and current CPU kernels gives exactly the same failing CPU alpha. This local diagnosis is not subset GPU qualification; it locates the discrepancy before support materialization, without establishing the underlying raster/interpolation cause or changing the contribution calculation.
+
+B analysis is correctly rejected; no B support or A+B fusion is published. C capture is correctly rejected because B support is absent. A remains unchanged after these calls and an explicit zero-byte-budget rejection. **Still missing:** qualified plate B support, B/C real tiling/evaluation and warm/per-band costs, A+B M0/M2 Q/overlays, C inspection and a cross-object M2 conclusion. Missing results are not zeros. Proceeding requires addressing the numerical discrepancy without silently relaxing the frozen contract; this support-only continuation does not rewrite that kernel.
+
+#### Costs, guards and evidence
+
+“First” below means the first of four recorded same-snapshot no-Q analyses after verification, not cold startup or M2-only/product latency.
+
+| Same-snapshot no-Q analysis | Apple A | Apple B | Plate A |
+|---|---:|---:|---:|
+| First kernel ms | 276.8 | 258.2 | 635.3 |
+| Three subsequent kernel ms | 317.7 / 328.7 / 241.5 | 248.2 / 251.5 / 268.0 | 595.0 / 583.5 / 587.7 |
+| Support copy ms, first / three subsequent | 46.8 / 44.4 / 48.4 / 52.3 | 61.8 / 38.3 / 48.9 / 62.3 | 41.9 / 44.0 / 45.5 / 58.7 |
+| Merge ms, first / three subsequent | 0 / 0 / 0 / 0 | 8.1 / 6.3 / 3.3 / 4.8 | 0 / 0 / 0 / 0 |
+| First end-to-end analysis ms | 328.2 | 334.3 | 684.2 |
+| Maximum support replacement + reserve logical bytes | 5,413,104 | 6,820,776 | 9,689,904 |
+| New no-Q evaluator typed-array bytes | 91,036,704 | 91,415,514 | 91,959,096 |
+| Snapshot readback bytes / wall ms | 65,932,620 / 186.8 | 65,932,620 / 66.3 | 65,932,620 / 170.1 |
+
+Support retention after apple A+B is 1,617,936 bytes including winner payloads; plate A is 2,747,800. Plate A positions use at most 65,536 scratch typed bytes and an estimated 1,538,756-byte serialized page, within the 4 MiB export reserve; no claim of measured JS serialization/GC peak is made. Each snapshot retains 76,918,428 CPU bytes, with reported readback CPU peak 132,063,388 and staging 66,131,460 bytes. Per-band records/times, all Q numerator/denominator values and support budgets remain in the reports. Plate B/C costs are unavailable, not extrapolated.
+
+Independent plate A/B GPU oracle costs are additional: 65,348,304 / 21,093,040 readback bytes and 220.5 / 109.6 ms on the initial trace; B's separate recheck is 136.7 ms. Oracle and dual-output parity costs are verification, not product latency. Existing snapshot/evaluator ceilings remain separate from support; actual process/JS heap/GC and GPU residency/elapsed time remain **unmeasured**.
+
+Apple identity/compaction/transform/SelectOp Undo checks, 17 existing guards, 12 target/capacity guards and four support export/merge guards pass. They cover immutable exports, atomic low-budget failure, queued/in-flight invalidation, C non-fusion and unchanged native flags/UI counts. At clean `9d5e465`, diagnostic-disabled full 2,746,452-row loading, absent diagnostic chunk, zero flags, no browser errors and Sphere Brush pass. No production selection path is enabled.
+
+New evidence is kept separately in the [controlled draft release](https://github.com/Wormh0-le/supersimplat/releases/tag/untagged-994565a4a7b1c051913c), tag `native-m2-support-evidence-9d5e465`, not latest; the historical draft release above is untouched. Retrieve with `gh release download native-m2-support-evidence-9d5e465 --repo Wormh0-le/supersimplat` and verify its accompanying archive checksum. It contains original input bundle, raw/support/position exports, actual overlays/Q, the preserved B failure/recheck, old-kernel alpha diagnostic, software/review logs and internal checksums; no full PLY is duplicated.
